@@ -7,6 +7,7 @@ WORKDIR /app
 ARG GOPRIVATE_ARG
 ARG GOPROXY_ARG
 ARG GOSUMDB_ARG=off
+ARG APK_MIRROR_ARG="mirrors.tencent.com"
 
 # 设置Go环境变量
 ENV GOPRIVATE=${GOPRIVATE_ARG}
@@ -14,7 +15,9 @@ ENV GOPROXY=${GOPROXY_ARG}
 ENV GOSUMDB=${GOSUMDB_ARG}
 
 # Install dependencies
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories && \
+RUN if [ -n "$APK_MIRROR_ARG" ]; then \
+        sed -i "s@dl-cdn.alpinelinux.org@${APK_MIRROR_ARG}@g" /etc/apk/repositories; \
+    fi && \
     apk add --no-cache git build-base
 
 # Install migrate tool
@@ -46,13 +49,18 @@ FROM alpine:3.17
 
 WORKDIR /app
 
-# Install runtime dependencies
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories && \
+ARG APK_MIRROR_ARG="mirrors.tencent.com"
+
+RUN if [ -n "$APK_MIRROR_ARG" ]; then \
+        sed -i "s@dl-cdn.alpinelinux.org@${APK_MIRROR_ARG}@g" /etc/apk/repositories; \
+    fi && \
     apk update && apk upgrade && \
     apk add --no-cache build-base postgresql-client mysql-client ca-certificates tzdata sed curl bash vim wget \
-    nodejs npm python3 py3-pip && \
-    pip3 install --no-cache-dir pipx && \
-    pipx install uvx
+        nodejs npm python3 py3-pip python3-dev libffi-dev openssl-dev cargo && \
+    python3 -m pip install --upgrade pip setuptools wheel && \
+    # 使用官方安装脚本安装 uvx
+    curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    ln -sf /root/.cargo/bin/uvx /usr/local/bin/uvx
 
 # Create a non-root user and switch to it
 RUN mkdir -p /data/files && \
