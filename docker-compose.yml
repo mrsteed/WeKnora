@@ -113,6 +113,9 @@ services:
 
   frontend:
     image: wechatopenai/weknora-ui:latest
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     container_name: WeKnora-frontend
     ports:
       - "${FRONTEND_PORT:-80}:80"

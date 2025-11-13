@@ -64,16 +64,7 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
 
 # Create a non-root user and switch to it
 RUN mkdir -p /data/files && \
-    adduser -D -g '' appuser && \
-    chown -R appuser:appuser /app /data/files
-
-# Copy migrate tool from builder stage
-COPY --from=builder /go/bin/migrate /usr/local/bin/
-COPY --from=builder /app/yanyiwu/ /go/pkg/mod/github.com/yanyiwu/
-
-# Create a non-root user and switch to it
-RUN mkdir -p /data/files && \
-    adduser -D -g '' appuser && \
+    id -u appuser >/dev/null 2>&1 || adduser -D -g '' appuser && \
     chown -R appuser:appuser /app /data/files
 
 # Copy migrate tool from builder stage
