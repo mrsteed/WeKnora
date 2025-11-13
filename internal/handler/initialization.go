@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Tencent/WeKnora/docreader/client"
+	"github.com/Tencent/WeKnora/docreader/proto"
 	chatpipline "github.com/Tencent/WeKnora/internal/application/service/chat_pipline"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/errors"
@@ -24,8 +26,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/utils"
-	"github.com/Tencent/WeKnora/services/docreader/src/client"
-	"github.com/Tencent/WeKnora/services/docreader/src/proto"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/ollama/ollama/api"
@@ -779,11 +779,7 @@ func (h *InitializationHandler) CheckOllamaModels(c *gin.Context) {
 
 	// 检查每个模型是否存在
 	for _, modelName := range req.Models {
-		checkModelName := modelName
-		if !strings.Contains(modelName, ":") {
-			checkModelName = modelName + ":latest"
-		}
-		available, err := h.ollamaService.IsModelAvailable(ctx, checkModelName)
+		available, err := h.ollamaService.IsModelAvailable(ctx, modelName)
 		if err != nil {
 			logger.ErrorWithFields(ctx, err, map[string]interface{}{
 				"model_name": modelName,
