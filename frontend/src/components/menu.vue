@@ -65,7 +65,7 @@
                                     {{ subitem.title }}
                                 </span>
                                 <t-dropdown 
-                                    :options="[{ content: '删除记录', value: 'delete' }]"
+                                    :options="[{ content: t('upload.deleteRecord'), value: 'delete' }]"
                                     @click="(data) => data.value === 'delete' && delCard(subitem.originalIndex, subitem)"
                                     placement="bottom-right"
                                     trigger="click">
@@ -104,6 +104,9 @@ import { useAuthStore } from '@/stores/auth';
 import { useUIStore } from '@/stores/ui';
 import { MessagePlugin } from "tdesign-vue-next";
 import UserMenu from '@/components/UserMenu.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 let uploadInput = ref();
 const usemenuStore = useMenuStore();
 const authStore = useAuthStore();
@@ -195,7 +198,7 @@ const initializedKnowledgeBases = computed(() => {
 
 // 时间分组函数
 const getTimeCategory = (dateStr: string): string => {
-    if (!dateStr) return '更早';
+    if (!dateStr) return t('time.earlier');
     
     const date = new Date(dateStr);
     const now = new Date();
@@ -208,17 +211,17 @@ const getTimeCategory = (dateStr: string): string => {
     const sessionDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
     
     if (sessionDate.getTime() >= today.getTime()) {
-        return '今天';
+        return t('time.today');
     } else if (sessionDate.getTime() >= yesterday.getTime()) {
-        return '昨天';
+        return t('time.yesterday');
     } else if (date.getTime() >= sevenDaysAgo.getTime()) {
-        return '近7天';
+        return t('time.last7Days');
     } else if (date.getTime() >= thirtyDaysAgo.getTime()) {
-        return '近30天';
+        return t('time.last30Days');
     } else if (date.getTime() >= oneYearAgo.getTime()) {
-        return '近1年';
+        return t('time.lastYear');
     } else {
-        return '更早';
+        return t('time.earlier');
     }
 };
 
@@ -230,12 +233,12 @@ const groupedSessions = computed(() => {
     }
     
     const groups: { [key: string]: any[] } = {
-        '今天': [],
-        '昨天': [],
-        '近7天': [],
-        '近30天': [],
-        '近1年': [],
-        '更早': []
+        [t('time.today')]: [],
+        [t('time.yesterday')]: [],
+        [t('time.last7Days')]: [],
+        [t('time.last30Days')]: [],
+        [t('time.lastYear')]: [],
+        [t('time.earlier')]: []
     };
     
     // 将sessions按时间分组
@@ -248,7 +251,7 @@ const groupedSessions = computed(() => {
     });
     
     // 按顺序返回非空分组
-    const orderedLabels = ['今天', '昨天', '近7天', '近30天', '近1年', '更早'];
+    const orderedLabels = [t('time.today'), t('time.yesterday'), t('time.last7Days'), t('time.last30Days'), t('time.lastYear'), t('time.earlier')];
     return orderedLabels
         .filter(label => groups[label].length > 0)
         .map(label => ({
@@ -267,10 +270,10 @@ const kbMenuItem = computed(() => {
 })
 
 const loading = ref(false)
-const uploadActionOptions = [
-    { content: '上传文档', value: 'upload' },
-    { content: '在线编辑', value: 'manual' },
-]
+const uploadActionOptions = computed(() => [
+    { content: t('upload.uploadDocument'), value: 'upload' },
+    { content: t('upload.onlineEdit'), value: 'manual' },
+])
 const uploadFile = async () => {
     // 获取当前知识库ID
     const currentKbId = await getCurrentKbId();
@@ -284,12 +287,12 @@ const uploadFile = async () => {
             // 检查知识库是否已初始化（有 EmbeddingModelID 和 SummaryModelID）
             if (!kb.embedding_model_id || kb.embedding_model_id === '' || 
                 !kb.summary_model_id || kb.summary_model_id === '') {
-                MessagePlugin.warning("该知识库尚未完成初始化配置，请先前往设置页面配置模型信息后再上传文件");
+                MessagePlugin.warning(t('knowledgeBase.notInitialized'));
                 return;
             }
         } catch (error) {
             console.error('获取知识库信息失败:', error);
-            MessagePlugin.error("获取知识库信息失败，无法上传文件");
+            MessagePlugin.error(t('knowledgeBase.getInfoFailed'));
             return;
         }
     }

@@ -2,8 +2,8 @@
     <div class="refer">
         <div class="refer_header" @click="referBoxSwitch" v-if="session.knowledge_references && session.knowledge_references.length">
             <div class="refer_title">
-                <img src="@/assets/img/ziliao.svg" alt="" />
-                <span>参考了{{ session.knowledge_references && session.knowledge_references.length }}个相关内容</span>
+                <img src="@/assets/img/ziliao.svg" :alt="$t('chat.referenceIconAlt')" />
+                <span>{{ $t('chat.referencesTitle', { count: session.knowledge_references?.length ?? 0 }) }}</span>
             </div>
             <div class="refer_show_icon">
                 <t-icon :name="showReferBox ? 'chevron-up' : 'chevron-down'" />

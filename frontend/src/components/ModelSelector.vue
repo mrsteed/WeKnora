@@ -3,7 +3,7 @@
     <t-select
       :value="selectedModelId"
       @change="handleModelChange"
-      :placeholder="placeholder"
+      :placeholder="placeholderText"
       :disabled="disabled"
       :loading="loading"
       filterable
@@ -19,7 +19,7 @@
         <div class="model-option">
           <t-icon name="check-circle-filled" class="model-icon" />
           <span class="model-name">{{ model.name }}</span>
-          <t-tag v-if="model.is_default" size="small" theme="success">默认</t-tag>
+          <t-tag v-if="model.is_default" size="small" theme="success">{{ $t('model.defaultTag') }}</t-tag>
         </div>
       </t-option>
       
@@ -31,7 +31,7 @@
       >
         <div class="model-option add">
           <t-icon name="add" class="add-icon" />
-          <span class="model-name">前往全局设置添加模型</span>
+          <span class="model-name">{{ $t('model.addModelInSettings') }}</span>
         </div>
       </t-option>
     </t-select>
@@ -42,6 +42,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { listModels, type ModelConfig } from '@/api/model'
 import { MessagePlugin } from 'tdesign-vue-next'
+import { useI18n } from 'vue-i18n'
 
 interface Props {
   modelType: 'KnowledgeQA' | 'Embedding' | 'Rerank' | 'VLLM'
@@ -54,7 +55,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   disabled: false,
-  placeholder: '请选择模型'
+  placeholder: ''
 })
 
 const emit = defineEmits<{
@@ -64,6 +65,11 @@ const emit = defineEmits<{
 
 const models = ref<ModelConfig[]>([])
 const loading = ref(false)
+const { t } = useI18n()
+
+const placeholderText = computed(() => {
+  return props.placeholder || t('model.selectModelPlaceholder')
+})
 
 // 监听 allModels 变化，自动过滤当前类型的模型
 watch(() => props.allModels, (newModels) => {
@@ -94,8 +100,8 @@ const loadModels = async () => {
       models.value = []
     }
   } catch (error) {
-    console.error('加载模型列表失败:', error)
-    MessagePlugin.error('加载模型列表失败')
+    console.error(t('model.loadFailed'), error)
+    MessagePlugin.error(t('model.loadFailed'))
     models.value = []
   } finally {
     loading.value = false

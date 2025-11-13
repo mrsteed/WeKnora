@@ -9,12 +9,12 @@
         <div ref="parentMd" v-if="!session.hideContent && !session.isAgentMode">
             <!-- 消息正在总结中则渲染加载gif  -->
             <img v-if="session.thinking" class="botanswer_laoding_gif" src="@/assets/img/botanswer_loading.gif"
-                alt="正在总结答案……">
+                :alt="$t('chat.summaryInProgress')">
             <!-- 直接渲染完整内容，避免切分导致的问题，样式与 thinking 一致 -->
             <div class="content-wrapper">
                 <div class="ai-markdown-template markdown-content" v-html="processMarkdown(content || session.content)"></div>
             </div>
-            <div v-if="isImgLoading" class="img_loading"><t-loading size="small"></t-loading><span>加载中...</span></div>
+            <div v-if="isImgLoading" class="img_loading"><t-loading size="small"></t-loading><span>{{ $t('common.loading') }}</span></div>
         </div>
         <picturePreview :reviewImg="reviewImg" :reviewUrl="reviewUrl" @closePreImg="closePreImg"></picturePreview>
     </div>
@@ -27,6 +27,7 @@ import deepThink from './deepThink.vue';
 import AgentStreamDisplay from './AgentStreamDisplay.vue';
 import picturePreview from '@/components/picture-preview.vue';
 import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL } from '@/utils/security';
+import { useI18n } from 'vue-i18n';
 
 marked.use({
     mangle: false,
@@ -34,6 +35,7 @@ marked.use({
     breaks: true,  // 全局启用单个换行支持
 });
 const emit = defineEmits(['scroll-bottom'])
+const { t } = useI18n()
 const renderer = new marked.Renderer();
 let parentMd = ref()
 let reviewUrl = ref('')
@@ -116,7 +118,7 @@ const processMarkdown = (markdownText) => {
     customRenderer.image = function(href, title, text) {
         // 验证图片 URL 是否安全
         if (!isValidImageURL(href)) {
-            return `<p>无效的图片链接</p>`;
+            return `<p>${t('error.invalidImageLink')}</p>`;
         }
         // 使用安全的图片创建函数
         return createSafeImage(href, text || '', title || '');

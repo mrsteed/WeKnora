@@ -13,7 +13,7 @@
                 </div>
                 <div v-if="loading"
                     style="height: 41px;display: flex;align-items: center;background: #fff;width: 58px;">
-                    <img class="botanswer_laoding_gif" src="@/assets/img/botanswer_loading.gif" alt="正在等待答案……">
+                    <img class="botanswer_laoding_gif" src="@/assets/img/botanswer_loading.gif" :alt="$t('chat.waitingForAnswer')">
                 </div>
             </div>
         </div>
@@ -40,8 +40,10 @@ import { useStream } from '../../api/chat/streame'
 import { useMenuStore } from '@/stores/menu';
 import { useSettingsStore } from '@/stores/settings';
 import { MessagePlugin } from 'tdesign-vue-next';
+import { useI18n } from 'vue-i18n';
 const usemenuStore = useMenuStore();
 const useSettingsStoreInstance = useSettingsStore();
+const { t } = useI18n();
 const { menuArr, isFirstSession, firstQuery } = storeToRefs(usemenuStore);
 const { output, onChunk, isStreaming, isLoading, error, startStream, stopStream } = useStream();
 const route = useRoute();
@@ -233,7 +235,7 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
         // 只给非Agent模式的空内容已完成消息设置默认错误消息
         // Agent模式的消息内容在agent_steps中，content为空是正常的
         if (item.is_completed && !item.content && !item.isAgentMode) {
-            item.content = "抱歉，我无法回答这个问题。";
+            item.content = t('chat.cannotAnswer');
         }
         messagesList.unshift(item);
         if (isFirstEnter.value) {
@@ -292,7 +294,7 @@ const sendMsg = async (value, modelId = '') => {
     
     // Validate knowledge_base_ids before sending (only when agent mode is enabled)
     if (agentEnabled && kbIds.length === 0) {
-        MessagePlugin.warning('请至少选择一个知识库');
+        MessagePlugin.warning(t('chat.selectKnowledgeBaseWarning'));
         isReplying.value = false;
         loading.value = false;
         // 清空当前 assistant message ID
@@ -651,12 +653,12 @@ const handleAgentChunk = (data) => {
                 
                 // If this is an error response without tool data, handle it
                 if (data.response_type === 'error' && !toolName) {
-                    message.content = data.content || '处理出错';
+                    message.content = data.content || t('chat.processError');
                     isReplying.value = false;
                 }
             } else if (data.response_type === 'error') {
                 // Generic error without tool context
-                message.content = data.content || '处理出错';
+                message.content = data.content || t('chat.processError');
                 isReplying.value = false;
             }
             break;

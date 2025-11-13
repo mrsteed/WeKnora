@@ -8,11 +8,11 @@
     </div>
     <div v-if="hasInfo" class="info-section">
       <div v-if="chunkId" class="info-field">
-        <span class="field-label">片段ID:</span>
+        <span class="field-label">{{ $t('chat.chunkIdLabel') }}</span>
         <span class="field-value"><code>{{ chunkId }}</code></span>
       </div>
       <div v-if="knowledgeId" class="info-field">
-        <span class="field-label">文档ID:</span>
+        <span class="field-label">{{ $t('chat.documentIdLabel') }}</span>
         <span class="field-value"><code>{{ knowledgeId }}</code></span>
       </div>
     </div>

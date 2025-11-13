@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { UserInfo, TenantInfo, KnowledgeBaseInfo } from '@/api/auth'
+import i18n from '@/i18n'
 
 export const useAuthStore = defineStore('auth', () => {
   // 状态
@@ -99,7 +100,7 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         user.value = JSON.parse(storedUser)
       } catch (e) {
-        console.error('解析用户信息失败:', e)
+        console.error(i18n.global.t('authStore.errors.parseUserFailed'), e)
       }
     }
 
@@ -107,7 +108,7 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         tenant.value = JSON.parse(storedTenant)
       } catch (e) {
-        console.error('解析租户信息失败:', e)
+        console.error(i18n.global.t('authStore.errors.parseTenantFailed'), e)
       }
     }
 
@@ -124,7 +125,7 @@ export const useAuthStore = defineStore('auth', () => {
         const parsed = JSON.parse(storedKnowledgeBases)
         knowledgeBases.value = Array.isArray(parsed) ? parsed : []
       } catch (e) {
-        console.error('解析知识库列表失败:', e)
+        console.error(i18n.global.t('authStore.errors.parseKnowledgeBasesFailed'), e)
         knowledgeBases.value = []
       }
     }
@@ -133,7 +134,7 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         currentKnowledgeBase.value = JSON.parse(storedCurrentKb)
       } catch (e) {
-        console.error('解析当前知识库失败:', e)
+        console.error(i18n.global.t('authStore.errors.parseCurrentKnowledgeBaseFailed'), e)
       }
     }
   }

@@ -1,23 +1,23 @@
 <template>
   <div class="websearch-settings">
     <div class="section-header">
-      <h2>网络搜索配置</h2>
-      <p class="section-description">配置网络搜索功能，在回答问题时可以从互联网获取实时信息补充知识库内容</p>
+      <h2>{{ t('webSearchSettings.title') }}</h2>
+      <p class="section-description">{{ t('webSearchSettings.description') }}</p>
     </div>
 
     <div class="settings-group">
       <!-- 搜索引擎提供商 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>搜索引擎提供商</label>
-          <p class="desc">选择用于网络搜索的搜索引擎服务</p>
+          <label>{{ t('webSearchSettings.providerLabel') }}</label>
+          <p class="desc">{{ t('webSearchSettings.providerDescription') }}</p>
         </div>
         <div class="setting-control">
           <t-select
             v-model="localProvider"
             :loading="loadingProviders"
             filterable
-            placeholder="选择搜索引擎..."
+            :placeholder="t('webSearchSettings.providerPlaceholder')"
             @change="handleProviderChange"
             @focus="loadProviders"
             style="width: 280px;"
@@ -41,14 +41,14 @@
       <!-- API 密钥 -->
       <div v-if="selectedProvider && selectedProvider.requires_api_key" class="setting-row">
         <div class="setting-info">
-          <label>API 密钥</label>
-          <p class="desc">输入所选搜索引擎的 API 密钥</p>
+          <label>{{ t('webSearchSettings.apiKeyLabel') }}</label>
+          <p class="desc">{{ t('webSearchSettings.apiKeyDescription') }}</p>
         </div>
         <div class="setting-control">
           <t-input
             v-model="localAPIKey"
             type="password"
-            placeholder="请输入 API 密钥"
+            :placeholder="t('webSearchSettings.apiKeyPlaceholder')"
             @change="handleAPIKeyChange"
             style="width: 400px;"
             :show-password="true"
@@ -59,8 +59,8 @@
       <!-- 最大结果数 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>最大结果数</label>
-          <p class="desc">每次搜索返回的最大结果数量（1-50）</p>
+          <label>{{ t('webSearchSettings.maxResultsLabel') }}</label>
+          <p class="desc">{{ t('webSearchSettings.maxResultsDescription') }}</p>
         </div>
         <div class="setting-control">
           <div class="slider-with-value">
@@ -81,8 +81,8 @@
       <!-- 包含日期 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>包含发布日期</label>
-          <p class="desc">在搜索结果中包含内容的发布日期信息</p>
+          <label>{{ t('webSearchSettings.includeDateLabel') }}</label>
+          <p class="desc">{{ t('webSearchSettings.includeDateDescription') }}</p>
         </div>
         <div class="setting-control">
           <t-switch
@@ -95,8 +95,8 @@
       <!-- 压缩方法 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>压缩方法</label>
-          <p class="desc">对搜索结果内容的压缩处理方法</p>
+          <label>{{ t('webSearchSettings.compressionLabel') }}</label>
+          <p class="desc">{{ t('webSearchSettings.compressionDescription') }}</p>
         </div>
         <div class="setting-control">
           <t-select
@@ -104,8 +104,12 @@
             @change="handleCompressionMethodChange"
             style="width: 280px;"
           >
-            <t-option value="none" label="无压缩">无压缩</t-option>
-            <t-option value="llm_summary" label="LLM 摘要">LLM 摘要</t-option>
+            <t-option value="none" :label="t('webSearchSettings.compressionNone')">
+              {{ t('webSearchSettings.compressionNone') }}
+            </t-option>
+            <t-option value="llm_summary" :label="t('webSearchSettings.compressionSummary')">
+              {{ t('webSearchSettings.compressionSummary') }}
+            </t-option>
           </t-select>
         </div>
       </div>
@@ -113,13 +117,13 @@
       <!-- 黑名单 -->
       <div class="setting-row vertical">
         <div class="setting-info">
-          <label>URL 黑名单</label>
-          <p class="desc">排除特定域名或 URL 的搜索结果，每行一个。支持通配符（*）和正则表达式（以/开头和结尾）</p>
+          <label>{{ t('webSearchSettings.blacklistLabel') }}</label>
+          <p class="desc">{{ t('webSearchSettings.blacklistDescription') }}</p>
         </div>
         <div class="setting-control">
           <t-textarea
             v-model="localBlacklistText"
-            placeholder="例如：&#10;*://*.example.com/*&#10;/example\.(net|org)/"
+            :placeholder="t('webSearchSettings.blacklistPlaceholder')"
             :autosize="{ minRows: 4, maxRows: 8 }"
             @change="handleBlacklistChange"
             style="width: 500px;"
@@ -133,7 +137,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
+import { useI18n } from 'vue-i18n'
 import { getWebSearchProviders, getTenantWebSearchConfig, updateTenantWebSearchConfig, type WebSearchProviderConfig, type WebSearchConfig } from '@/api/web-search'
+
+const { t } = useI18n()
 
 // 本地状态
 const loadingProviders = ref(false)
@@ -167,7 +174,8 @@ const loadProviders = async () => {
     }
   } catch (error: any) {
     console.error('Failed to load web search providers:', error)
-    MessagePlugin.error('加载搜索引擎列表失败: ' + (error.message || '未知错误'))
+    const errorMessage = error?.message || t('webSearchSettings.errors.unknown')
+    MessagePlugin.error(t('webSearchSettings.toasts.loadProvidersFailed', { message: errorMessage }))
   } finally {
     loadingProviders.value = false
   }
@@ -314,10 +322,11 @@ const saveConfig = async () => {
       blacklist: [...config.blacklist]
     }
     
-    MessagePlugin.success('网络搜索配置已保存')
+    MessagePlugin.success(t('webSearchSettings.toasts.saveSuccess'))
   } catch (error: any) {
     console.error('Failed to save web search config:', error)
-    MessagePlugin.error('保存配置失败: ' + (error.message || '未知错误'))
+    const errorMessage = error?.message || t('webSearchSettings.errors.unknown')
+    MessagePlugin.error(t('webSearchSettings.toasts.saveFailed', { message: errorMessage }))
     throw error
   }
 }

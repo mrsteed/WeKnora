@@ -5,6 +5,9 @@ import { downKnowledgeDetails } from "@/api/knowledge-base/index";
 import { MessagePlugin } from "tdesign-vue-next";
 import picturePreview from '@/components/picture-preview.vue';
 import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL } from '@/utils/security';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 marked.use({
   mangle: false,
@@ -41,7 +44,7 @@ const checkImage = (url) => {
 renderer.image = function (href, title, text) {
   // 安全地处理图片链接
   if (!isValidImageURL(href)) {
-    return `<p>无效的图片链接</p>`;
+    return `<p>${t('error.invalidImageLink')}</p>`;
   }
   
   // 使用安全的图片创建函数
@@ -120,7 +123,7 @@ const downloadFile = () => {
       }
     })
     .catch((err) => {
-      MessagePlugin.error("获取文件失败！");
+      MessagePlugin.error(t('file.downloadFailed'));
     });
 };
 const handleDetailsScroll = () => {
@@ -144,7 +147,7 @@ const handleDetailsScroll = () => {
       }}</template>
       <div class="doc_box">
         <a :href="url" style="display: none" ref="down" :download="details.title"></a>
-        <span class="label">文档标题</span>
+        <span class="label">{{ $t('knowledgeBase.fileName') }}</span>
         <div class="download_box">
           <span class="doc_t">{{ details.title }}</span>
           <div class="icon_box" @click="downloadFile()">
@@ -153,10 +156,10 @@ const handleDetailsScroll = () => {
         </div>
       </div>
       <div class="content_header">
-        <span class="label">文档内容</span>
-        <span class="time"> 更新时间：{{ details.time }} </span>
+        <span class="label">{{ $t('knowledgeBase.fileContent') }}</span>
+        <span class="time"> {{ $t('knowledgeBase.uploadTime') }}：{{ details.time }} </span>
       </div>
-      <div v-if="details.md.length == 0" class="no_content">暂无数据</div>
+      <div v-if="details.md.length == 0" class="no_content">{{ $t('common.noData') }}</div>
       <div v-else class="content" v-for="(item, index) in details.md" :key="index" :style="index % 2 !== 0
         ? 'background: #07c05f26;'
         : 'background: #3032360f;'
@@ -164,8 +167,8 @@ const handleDetailsScroll = () => {
         <div class="md-content" v-html="processMarkdown(item.content)"></div>
       </div>
       <template #footer>
-        <t-button @click="handleClose">确定</t-button>
-        <t-button theme="default" @click="handleClose">取消</t-button>
+        <t-button @click="handleClose">{{ $t('common.confirm') }}</t-button>
+        <t-button theme="default" @click="handleClose">{{ $t('common.cancel') }}</t-button>
       </template>
     </t-drawer>
     <picturePreview :reviewImg="reviewImg" :reviewUrl="reviewUrl" @closePreImg="closePreImg"></picturePreview>

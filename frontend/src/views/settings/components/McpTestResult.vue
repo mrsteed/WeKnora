@@ -1,7 +1,7 @@
 <template>
   <t-dialog
     v-model:visible="dialogVisible"
-    :header="`测试结果: ${serviceName}`"
+    :header="$t('mcp.testResult.title', { name: serviceName })"
     width="600px"
     :footer="false"
   >
@@ -10,11 +10,11 @@
       <div class="status-section">
         <div v-if="result.success" class="status-success">
           <t-icon name="check-circle-filled" size="20px" />
-          <span class="status-text">连接成功</span>
+          <span class="status-text">{{ $t('mcp.testResult.connectionSuccess') }}</span>
         </div>
         <div v-else class="status-error">
           <t-icon name="close-circle-filled" size="20px" />
-          <span class="status-text">连接失败</span>
+          <span class="status-text">{{ $t('mcp.testResult.connectionFailed') }}</span>
         </div>
         <p v-if="result.message" class="status-message">{{ result.message }}</p>
       </div>
@@ -24,7 +24,7 @@
         <!-- Tools List -->
         <div v-if="result.tools && result.tools.length > 0" class="section">
           <div class="section-header">
-            <h3>可用工具</h3>
+            <h3>{{ $t('mcp.testResult.toolsTitle') }}</h3>
             <t-tag theme="primary" variant="light" size="small">{{ result.tools.length }}</t-tag>
           </div>
           <div class="tools-grid">
@@ -51,11 +51,11 @@
               </div>
               <div v-if="expandedToolIndex === index" class="tool-card-content">
                 <div v-if="tool.description" class="tool-description">
-                  <div class="label">描述</div>
+                  <div class="label">{{ $t('mcp.testResult.descriptionLabel') }}</div>
                   <div class="value">{{ tool.description }}</div>
                 </div>
                 <div v-if="tool.inputSchema" class="tool-schema">
-                  <div class="label">参数结构</div>
+                  <div class="label">{{ $t('mcp.testResult.schemaLabel') }}</div>
                   <div class="schema-content">
                     <pre>{{ formatSchema(tool.inputSchema) }}</pre>
                   </div>
@@ -68,7 +68,7 @@
         <!-- Resources List -->
         <div v-if="result.resources && result.resources.length > 0" class="section">
           <div class="section-header">
-            <h3>可用资源</h3>
+            <h3>{{ $t('mcp.testResult.resourcesTitle') }}</h3>
             <t-tag theme="primary" variant="light" size="small">{{ result.resources.length }}</t-tag>
           </div>
           <div class="resources-grid">
@@ -107,13 +107,13 @@
           "
           class="empty-state"
         >
-          <t-empty description="该服务未提供工具或资源" />
+          <t-empty :description="$t('mcp.testResult.emptyDescription')" />
         </div>
       </div>
     </div>
 
     <template #footer>
-      <t-button @click="handleClose">关闭</t-button>
+      <t-button @click="handleClose">{{ $t('common.close') }}</t-button>
     </template>
   </t-dialog>
 </template>
@@ -121,6 +121,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { MCPTestResult } from '@/api/mcp-service'
+import { useI18n } from 'vue-i18n'
 
 interface Props {
   visible: boolean
@@ -136,7 +137,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const expandedToolIndex = ref<number | null>(null)
-
+const { t } = useI18n()
 
 const dialogVisible = computed({
   get: () => props.visible,

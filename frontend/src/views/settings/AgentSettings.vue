@@ -1,13 +1,13 @@
 <template>
   <div class="agent-settings">
     <div class="section-header">
-      <h2>Agent 配置</h2>
-      <p class="section-description">配置 AI Agent 的默认行为和参数，这些设置将应用于所有启用 Agent 模式的对话</p>
+      <h2>{{ $t('agentSettings.title') }}</h2>
+      <p class="section-description">{{ $t('agentSettings.description') }}</p>
       
       <!-- Agent 状态显示 -->
       <div class="agent-status-row">
         <div class="status-label">
-          <label>Agent 状态</label>
+          <label>{{ $t('agentSettings.status.label') }}</label>
         </div>
         <div class="status-control">
           <div class="status-badge" :class="{ ready: isAgentReady }">
@@ -22,7 +22,7 @@
               class="status-icon"
             />
             <span class="status-text">
-              {{ isAgentReady ? '可用' : '未就绪' }}
+              {{ isAgentReady ? $t('agentSettings.status.ready') : $t('agentSettings.status.notReady') }}
             </span>
           </div>
           <span v-if="!isAgentReady" class="status-hint">
@@ -30,7 +30,7 @@
           </span>
           <p v-if="!isAgentReady" class="status-tip">
             <t-icon name="info-circle" class="tip-icon" />
-            配置完成后，Agent 状态将自动变为"可用"，此时可在对话界面开启 Agent 模式
+            {{ $t('agentSettings.status.hint') }}
           </p>
         </div>
       </div>
@@ -41,8 +41,8 @@
       <!-- 最大迭代次数 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>最大迭代次数</label>
-          <p class="desc">Agent 执行任务时的最大推理步骤数</p>
+          <label>{{ $t('agentSettings.maxIterations.label') }}</label>
+          <p class="desc">{{ $t('agentSettings.maxIterations.desc') }}</p>
         </div>
         <div class="setting-control">
           <div class="slider-with-value">
@@ -63,11 +63,11 @@
       <!-- 思考模型 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>思考模型</label>
-          <p class="desc">用于 Agent 推理和规划的 LLM 模型</p>
+          <label>{{ $t('agentSettings.thinkingModel.label') }}</label>
+          <p class="desc">{{ $t('agentSettings.thinkingModel.desc') }}</p>
           <p class="hint-tip">
             <t-icon name="info-circle" class="tip-icon" />
-            需要支持 Function call 的大尺寸模型，如 deepseek-v3.1-termius
+            {{ $t('agentSettings.thinkingModel.hint') }}
           </p>
         </div>
         <div class="setting-control">
@@ -75,7 +75,7 @@
           v-model="localThinkingModelId"
           :loading="loadingModels"
           filterable
-          placeholder="搜索模型..."
+          :placeholder="$t('agentSettings.model.placeholder')"
           @change="handleThinkingModelChange"
           @focus="loadAllModels"
           style="width: 280px;"
@@ -90,7 +90,7 @@
             <div class="model-option">
               <t-icon name="check-circle-filled" class="model-icon" />
               <span class="model-name">{{ model.name }}</span>
-              <t-tag v-if="model.is_default" size="small" theme="success">默认</t-tag>
+              <t-tag v-if="model.is_default" size="small" theme="success">{{ $t('common.default') }}</t-tag>
             </div>
           </t-option>
           
@@ -98,7 +98,7 @@
           <t-option value="__add_model__" class="add-model-option">
             <div class="model-option add">
               <t-icon name="add" class="add-icon" />
-              <span class="model-name">添加新的对话模型</span>
+              <span class="model-name">{{ $t('agentSettings.model.addChat') }}</span>
             </div>
           </t-option>
         </t-select>
@@ -108,15 +108,15 @@
       <!-- Rerank 模型 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>Rerank 模型</label>
-          <p class="desc">搜索结果重排序，统一不同来源的相关度分数</p>
+          <label>{{ $t('agentSettings.rerankModel.label') }}</label>
+          <p class="desc">{{ $t('agentSettings.rerankModel.desc') }}</p>
         </div>
         <div class="setting-control">
         <t-select
           v-model="localRerankModelId"
           :loading="loadingModels"
           filterable
-          placeholder="搜索模型..."
+          :placeholder="$t('agentSettings.model.placeholder')"
           @change="handleRerankModelChange"
           @focus="loadAllModels"
           style="width: 280px;"
@@ -131,7 +131,7 @@
             <div class="model-option">
               <t-icon name="check-circle-filled" class="model-icon" />
               <span class="model-name">{{ model.name }}</span>
-              <t-tag v-if="model.is_default" size="small" theme="success">默认</t-tag>
+              <t-tag v-if="model.is_default" size="small" theme="success">{{ $t('common.default') }}</t-tag>
             </div>
           </t-option>
           
@@ -139,7 +139,7 @@
           <t-option value="__add_model__" class="add-model-option">
             <div class="model-option add">
               <t-icon name="add" class="add-icon" />
-              <span class="model-name">添加新的 Rerank 模型</span>
+              <span class="model-name">{{ $t('agentSettings.model.addRerank') }}</span>
             </div>
           </t-option>
         </t-select>
@@ -149,8 +149,8 @@
       <!-- 温度参数 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>温度参数</label>
-          <p class="desc">控制模型输出的随机性，0 最确定，1 最随机</p>
+          <label>{{ $t('agentSettings.temperature.label') }}</label>
+          <p class="desc">{{ $t('agentSettings.temperature.desc') }}</p>
         </div>
         <div class="setting-control">
           <div class="slider-with-value">
@@ -171,14 +171,14 @@
       <!-- 允许的工具 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>允许的工具</label>
-          <p class="desc">选择 Agent 可以使用的工具，至少选择一个</p>
+          <label>{{ $t('agentSettings.allowedTools.label') }}</label>
+          <p class="desc">{{ $t('agentSettings.allowedTools.desc') }}</p>
         </div>
         <div class="setting-control">
           <t-select
             v-model="localAllowedTools"
             multiple
-            placeholder="请选择工具..."
+            :placeholder="$t('agentSettings.allowedTools.placeholder')"
             @change="handleAllowedToolsChange"
             style="width: 400px;"
           >
@@ -198,25 +198,25 @@
       <!-- 系统 Prompt -->
       <div class="setting-row vertical">
         <div class="setting-info">
-          <label>系统 Prompt</label>
-          <p class="desc">配置 Agent 的系统提示词，支持占位符模板。占位符会在运行时自动替换为实际内容。</p>
+          <label>{{ $t('agentSettings.systemPrompt.label') }}</label>
+          <p class="desc">{{ $t('agentSettings.systemPrompt.desc') }}</p>
           <div class="placeholder-hint">
-            <p class="hint-title">可用占位符：</p>
+            <p class="hint-title">{{ $t('agentSettings.systemPrompt.availablePlaceholders') }}</p>
             <ul class="placeholder-list">
               <li v-for="placeholder in availablePlaceholders" :key="placeholder.name">
                 <code v-html="`{{${placeholder.name}}}`"></code> - {{ placeholder.label }}（{{ placeholder.description }}）
               </li>
             </ul>
-            <p class="hint-tip">提示：输入 <code>&#123;&#123;</code> 时会自动显示可用占位符</p>
+            <p class="hint-tip">{{ $t('agentSettings.systemPrompt.hintPrefix') }} <code>&#123;&#123;</code> {{ $t('agentSettings.systemPrompt.hintSuffix') }}</p>
           </div>
         </div>
         <div class="setting-control full-width" style="position: relative;">
           <div class="prompt-header">
             <div class="prompt-toggle">
-              <span class="prompt-toggle-label">自定义 Prompt</span>
+              <span class="prompt-toggle-label">{{ $t('agentSettings.systemPrompt.custom') }}</span>
               <t-switch
                 v-model="localUseCustomSystemPrompt"
-                :label="['关闭', '开启']"
+                :label="[$t('common.off'), $t('common.on')]"
                 size="large"
                 @change="handleUseCustomPromptToggle"
               />
@@ -228,18 +228,18 @@
               @click="handleResetToDefault"
               :loading="isResettingPrompt"
             >
-              恢复默认
+              {{ $t('common.resetToDefault') }}
             </t-button>
           </div>
           <p v-if="!localUseCustomSystemPrompt" class="prompt-disabled-hint">
-            当前使用系统默认 Prompt，开启自定义后才会应用下方内容。
+            {{ $t('agentSettings.systemPrompt.disabledHint') }}
           </p>
           <div class="prompt-textarea-wrapper">
             <t-textarea
               ref="promptTextareaRef"
               v-model="localSystemPrompt"
               :autosize="{ minRows: 15, maxRows: 30 }"
-              placeholder="请输入系统 Prompt，或留空使用默认 Prompt..."
+              :placeholder="$t('agentSettings.systemPrompt.placeholder')"
               @blur="handleSystemPromptChange"
               @input="handlePromptInput"
               @keydown="handlePromptKeydown"
@@ -279,11 +279,13 @@ import { ref, onMounted, watch, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
+import { useI18n } from 'vue-i18n'
 import { listModels, type ModelConfig } from '@/api/model'
 import { getAgentConfig, updateAgentConfig, type AgentConfig, type ToolDefinition, type PlaceholderDefinition } from '@/api/system'
 
 const settingsStore = useSettingsStore()
 const router = useRouter()
+const { t } = useI18n()
 
 // 本地状态
 const localMaxIterations = ref(5)
@@ -307,20 +309,20 @@ const agentStatusMessage = computed(() => {
   const missing: string[] = []
   
   if (!localThinkingModelId.value) {
-    missing.push('思考模型')
+    missing.push(t('agentSettings.status.missingThinkingModel'))
   }
   if (!localRerankModelId.value) {
-    missing.push('Rerank 模型')
+    missing.push(t('agentSettings.status.missingRerankModel'))
   }
   if (localAllowedTools.value.length === 0) {
-    missing.push('允许的工具')
+    missing.push(t('agentSettings.status.missingAllowedTools'))
   }
   
   if (missing.length === 0) {
     return ''
   }
   
-  return `请配置${missing.join('、')}`
+  return t('agentSettings.status.pleaseConfigure', { items: missing.join('、') })
 })
 
 // 模型列表状态
@@ -528,17 +530,17 @@ const getErrorMessage = (error: any): string => {
   
   switch (errorCode) {
     case 2100:
-      return '启用Agent模式前，请先选择思考模型'
+      return t('agentSettings.errors.selectThinkingModel')
     case 2101:
-      return '至少需要选择一个允许的工具'
+      return t('agentSettings.errors.selectAtLeastOneTool')
     case 2102:
-      return '最大迭代次数必须在1-20之间'
+      return t('agentSettings.errors.iterationsRange')
     case 2103:
-      return '温度参数必须在0-2之间'
+      return t('agentSettings.errors.temperatureRange')
     case 1010:
-      return errorMessage || '配置验证失败'
+      return errorMessage || t('agentSettings.errors.validationFailed')
     default:
-      return errorMessage || '保存失败，请重试'
+      return errorMessage || t('common.saveFailed')
   }
 }
 
@@ -593,7 +595,7 @@ const handleMaxIterationsChangeDebounced = (value: number) => {
     await updateAgentConfig(config)
       settingsStore.updateAgentConfig({ maxIterations: numValue })
       lastSavedValue = numValue // 记录已保存的值
-    MessagePlugin.success('最大迭代次数已保存')
+    MessagePlugin.success(t('agentSettings.toasts.iterationsSaved'))
   } catch (error) {
     console.error('保存失败:', error)
     MessagePlugin.error(getErrorMessage(error))
@@ -658,7 +660,7 @@ const handleThinkingModelChange = async (value: string) => {
     await updateAgentConfig(config)
     // 更新 store，确保 isAgentReady 能正确计算
     settingsStore.updateAgentConfig({ thinkingModelId: value })
-    MessagePlugin.success('思考模型已保存')
+    MessagePlugin.success(t('agentSettings.toasts.thinkingModelSaved'))
   } catch (error) {
     console.error('保存失败:', error)
     MessagePlugin.error(getErrorMessage(error))
@@ -692,7 +694,7 @@ const handleRerankModelChange = async (value: string) => {
     
     await updateAgentConfig(config)
     settingsStore.updateAgentConfig({ rerankModelId: value })
-    MessagePlugin.success('Rerank 模型已保存')
+    MessagePlugin.success(t('agentSettings.toasts.rerankModelSaved'))
   } catch (error) {
     console.error('保存失败:', error)
     MessagePlugin.error(getErrorMessage(error))
@@ -774,7 +776,7 @@ const handleTemperatureChange = async (value: number) => {
     
     await updateAgentConfig(config)
     settingsStore.updateAgentConfig({ temperature: value })
-    MessagePlugin.success('温度参数已保存')
+    MessagePlugin.success(t('agentSettings.toasts.temperatureSaved'))
   } catch (error) {
     console.error('保存失败:', error)
     MessagePlugin.error(getErrorMessage(error))
@@ -801,7 +803,7 @@ const handleAllowedToolsChange = async (value: string[]) => {
     
     await updateAgentConfig(config)
     settingsStore.updateAgentConfig({ allowedTools: value })
-    MessagePlugin.success('工具配置已更新')
+    MessagePlugin.success(t('agentSettings.toasts.toolsUpdated'))
   } catch (error) {
     console.error('保存工具配置失败:', error)
     MessagePlugin.error(getErrorMessage(error))
@@ -831,7 +833,7 @@ const handleUseCustomPromptToggle = async (value: boolean) => {
     await updateAgentConfig(config)
     savedUseCustomSystemPrompt = value
 
-    MessagePlugin.success(value ? '已启用自定义 Prompt' : '已切换为默认 Prompt')
+    MessagePlugin.success(value ? t('agentSettings.toasts.customPromptEnabled') : t('agentSettings.toasts.defaultPromptEnabled'))
   } catch (error) {
     console.error('切换自定义 Prompt 失败:', error)
     MessagePlugin.error(getErrorMessage(error))
@@ -1034,10 +1036,10 @@ const insertPlaceholder = (placeholderName: string) => {
 // 恢复默认 Prompt
 const handleResetToDefault = async () => {
   const confirmDialog = DialogPlugin.confirm({
-    header: '恢复默认 Prompt',
-    body: '确定要恢复为默认 Prompt 吗？当前的自定义 Prompt 将被覆盖。',
-    confirmBtn: '确定',
-    cancelBtn: '取消',
+    header: t('agentSettings.reset.header'),
+    body: t('agentSettings.reset.body'),
+    confirmBtn: t('common.confirm'),
+    cancelBtn: t('common.cancel'),
     onConfirm: async () => {
       try {
         isResettingPrompt.value = true
@@ -1069,7 +1071,7 @@ const handleResetToDefault = async () => {
         localUseCustomSystemPrompt.value = useCustom
         savedUseCustomSystemPrompt = useCustom
         
-        MessagePlugin.success('已恢复为默认 Prompt')
+        MessagePlugin.success(t('agentSettings.toasts.resetToDefault'))
         confirmDialog.hide()
       } catch (error) {
         console.error('恢复默认 Prompt 失败:', error)
@@ -1125,7 +1127,7 @@ const handleSystemPromptChange = async (e?: FocusEvent) => {
     
     await updateAgentConfig(config)
     savedSystemPrompt = localSystemPrompt.value // 更新已保存的值
-    MessagePlugin.success('系统 Prompt 已保存')
+    MessagePlugin.success(t('agentSettings.toasts.systemPromptSaved'))
   } catch (error) {
     console.error('保存系统 Prompt 失败:', error)
     MessagePlugin.error(getErrorMessage(error))
@@ -1138,7 +1140,7 @@ watch(isAgentReady, (newValue, oldValue) => {
     // 如果配置从"就绪"变为"未就绪"，且 Agent 当前是启用状态，自动关闭
     if (!newValue && oldValue && settingsStore.isAgentEnabled) {
       settingsStore.toggleAgent(false)
-      MessagePlugin.warning('Agent 配置不完整，已自动关闭 Agent 模式')
+      MessagePlugin.warning(t('agentSettings.toasts.autoDisabled'))
     }
     // 注意：配置从"未就绪"变为"就绪"时，不自动启用（让用户自己决定是否启用）
   }

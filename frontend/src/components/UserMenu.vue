@@ -3,7 +3,7 @@
     <!-- 用户按钮 -->
     <div class="user-button" @click="toggleMenu">
       <div class="user-avatar">
-        <img v-if="userAvatar" :src="userAvatar" alt="用户头像" />
+        <img v-if="userAvatar" :src="userAvatar" :alt="$t('common.avatar')" />
         <span v-else class="avatar-placeholder">{{ userInitial }}</span>
       </div>
       <div class="user-info">
@@ -18,7 +18,7 @@
       <div v-if="menuVisible" class="user-dropdown" @click.stop>
         <div class="menu-item" @click="handleQuickNav('models')">
           <t-icon name="control-platform" class="menu-icon" />
-          <span>模型配置</span>
+          <span>{{ $t('settings.modelConfig') }}</span>
         </div>
         <div class="menu-item" @click="handleQuickNav('ollama')">
           <t-icon name="server" class="menu-icon" />
@@ -27,25 +27,49 @@
         <div class="menu-divider"></div>
         <div class="menu-item" @click="handleSettings">
           <t-icon name="setting" class="menu-icon" />
-          <span>全部设置</span>
+          <span>{{ $t('general.allSettings') }}</span>
         </div>
         <div class="menu-divider"></div>
         <div class="menu-item" @click="openApiDoc">
           <t-icon name="book" class="menu-icon" />
-          <span>API 文档</span>
+          <span class="menu-text-with-icon">
+            <span>{{ $t('tenant.apiDocument') }}</span>
+            <svg class="menu-external-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12.667 8a.667.667 0 0 1 .666.667v4a2.667 2.667 0 0 1-2.666 2.666H4.667a2.667 2.667 0 0 1-2.667-2.666V5.333a2.667 2.667 0 0 1 2.667-2.666h4a.667.667 0 1 1 0 1.333h-4a1.333 1.333 0 0 0-1.333 1.333v7.334A1.333 1.333 0 0 0 4.667 13.333h6a1.333 1.333 0 0 0 1.333-1.333v-4A.667.667 0 0 1 12.667 8Zm2.666-6.667v4a.667.667 0 0 1-1.333 0V3.276l-5.195 5.195a.667.667 0 0 1-.943-.943l5.195-5.195h-2.057a.667.667 0 0 1 0-1.333h4a.667.667 0 0 1 .666.666Z"
+              />
+            </svg>
+          </span>
         </div>
         <div class="menu-item" @click="openWebsite">
           <t-icon name="home" class="menu-icon" />
-          <span>官网</span>
+          <span class="menu-text-with-icon">
+            <span>{{ $t('common.website') }}</span>
+            <svg class="menu-external-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12.667 8a.667.667 0 0 1 .666.667v4a2.667 2.667 0 0 1-2.666 2.666H4.667a2.667 2.667 0 0 1-2.667-2.666V5.333a2.667 2.667 0 0 1 2.667-2.666h4a.667.667 0 1 1 0 1.333h-4a1.333 1.333 0 0 0-1.333 1.333v7.334A1.333 1.333 0 0 0 4.667 13.333h6a1.333 1.333 0 0 0 1.333-1.333v-4A.667.667 0 0 1 12.667 8Zm2.666-6.667v4a.667.667 0 0 1-1.333 0V3.276l-5.195 5.195a.667.667 0 0 1-.943-.943l5.195-5.195h-2.057a.667.667 0 0 1 0-1.333h4a.667.667 0 0 1 .666.666Z"
+              />
+            </svg>
+          </span>
         </div>
         <div class="menu-item" @click="openGithub">
           <t-icon name="logo-github" class="menu-icon" />
-          <span>GitHub</span>
+          <span class="menu-text-with-icon">
+            <span>GitHub</span>
+            <svg class="menu-external-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12.667 8a.667.667 0 0 1 .666.667v4a2.667 2.667 0 0 1-2.666 2.666H4.667a2.667 2.667 0 0 1-2.667-2.666V5.333a2.667 2.667 0 0 1 2.667-2.666h4a.667.667 0 1 1 0 1.333h-4a1.333 1.333 0 0 0-1.333 1.333v7.334A1.333 1.333 0 0 0 4.667 13.333h6a1.333 1.333 0 0 0 1.333-1.333v-4A.667.667 0 0 1 12.667 8Zm2.666-6.667v4a.667.667 0 0 1-1.333 0V3.276l-5.195 5.195a.667.667 0 0 1-.943-.943l5.195-5.195h-2.057a.667.667 0 0 1 0-1.333h4a.667.667 0 0 1 .666.666Z"
+              />
+            </svg>
+          </span>
         </div>
         <div class="menu-divider"></div>
         <div class="menu-item danger" @click="handleLogout">
           <t-icon name="logout" class="menu-icon" />
-          <span>注销</span>
+          <span>{{ $t('auth.logout') }}</span>
         </div>
       </div>
     </Transition>
@@ -59,6 +83,9 @@ import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { getCurrentUser, logout as logoutApi } from '@/api/auth'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const router = useRouter()
 const uiStore = useUIStore()
@@ -142,7 +169,7 @@ const handleLogout = async () => {
   // 清理所有状态和本地存储
   authStore.logout()
   
-  MessagePlugin.success('已退出登录')
+  MessagePlugin.success(t('auth.logout'))
   
   // 跳转到登录页
   router.push('/login')
@@ -154,7 +181,7 @@ const loadUserInfo = async () => {
     const response = await getCurrentUser()
     if (response.success && response.data && response.data.user) {
       userInfo.value = {
-        username: response.data.user.username || '用户',
+        username: response.data.user.username || t('common.info'),
         email: response.data.user.email || 'user@example.com',
         avatar: response.data.user.avatar || ''
       }
@@ -303,6 +330,34 @@ onUnmounted(() => {
   .menu-icon {
     font-size: 16px;
     color: #666666;
+  }
+
+  .menu-text-with-icon {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: inherit;
+    min-width: 0;
+
+    span {
+      display: inline-flex;
+      align-items: center;
+      min-width: 0;
+    }
+  }
+
+  .menu-external-icon {
+    width: 14px;
+    height: 14px;
+    color: #9ca3af;
+    flex-shrink: 0;
+    transition: color 0.2s ease;
+    pointer-events: none;
+  }
+
+  &:hover .menu-external-icon {
+    color: #07c05f;
   }
 }
 

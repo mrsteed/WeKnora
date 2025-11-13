@@ -1,26 +1,27 @@
 <template>
   <div class="general-settings">
     <div class="section-header">
-      <h2>常规设置</h2>
-      <p class="section-description">配置语言、外观等基础选项</p>
+      <h2>{{ $t('general.title') }}</h2>
+      <p class="section-description">{{ $t('general.description') }}</p>
     </div>
 
     <div class="settings-group">
       <!-- 语言选择 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>语言</label>
-          <p class="desc">选择界面显示语言</p>
+          <label>{{ $t('language.language') }}</label>
+          <p class="desc">{{ $t('language.languageDescription') }}</p>
         </div>
         <div class="setting-control">
           <t-select
             v-model="localLanguage"
-            placeholder="选择语言"
+            :placeholder="$t('language.selectLanguage')"
             @change="handleLanguageChange"
             style="width: 280px;"
           >
-            <t-option value="zh-CN" label="中文">中文</t-option>
-            <t-option value="en-US" label="English">English</t-option>
+            <t-option value="zh-CN" :label="$t('language.zhCN')">{{ $t('language.zhCN') }}</t-option>
+            <t-option value="en-US" :label="$t('language.enUS')">{{ $t('language.enUS') }}</t-option>
+            <t-option value="ru-RU" :label="$t('language.ruRU')">{{ $t('language.ruRU') }}</t-option>
           </t-select>
         </div>
       </div>
@@ -29,8 +30,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
+import { useI18n } from 'vue-i18n'
+
+const { t, locale } = useI18n()
 
 // 本地状态
 const localLanguage = ref('zh-CN')
@@ -38,40 +42,31 @@ const localTheme = ref('light')
 
 // 初始化加载
 onMounted(() => {
-  // 从 localStorage 加载常规设置
-  const savedSettings = localStorage.getItem('WeKnora_general_settings')
-  if (savedSettings) {
-    try {
-      const parsed = JSON.parse(savedSettings)
-      localLanguage.value = parsed.language || 'zh-CN'
-      localTheme.value = parsed.theme || 'light'
-    } catch (e) {
-      console.error('加载常规设置失败:', e)
-    }
+  // 从 localStorage 加载语言设置
+  const savedLocale = localStorage.getItem('locale')
+  if (savedLocale) {
+    localLanguage.value = savedLocale
+    locale.value = savedLocale
+  } else {
+    localLanguage.value = locale.value
   }
 })
 
-// 保存设置到 localStorage
-const saveSettings = () => {
+// 处理语言变化
+const handleLanguageChange = () => {
+  locale.value = localLanguage.value
+  localStorage.setItem('locale', localLanguage.value)
+  MessagePlugin.success(t('language.languageSaved'))
+    }
+
+// 处理主题变化
+const handleThemeChange = () => {
   const settings = {
     language: localLanguage.value,
     theme: localTheme.value
   }
   localStorage.setItem('WeKnora_general_settings', JSON.stringify(settings))
-}
-
-// 处理语言变化
-const handleLanguageChange = () => {
-  saveSettings()
-  MessagePlugin.success('语言设置已保存')
-  // TODO: 实际的语言切换逻辑可后续添加
-}
-
-// 处理主题变化
-const handleThemeChange = () => {
-  saveSettings()
-  MessagePlugin.success('主题设置已保存')
-  // TODO: 实际的主题切换逻辑可后续添加
+  MessagePlugin.success(t('common.success'))
 }
 </script>
 

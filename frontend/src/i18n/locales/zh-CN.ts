@@ -15,6 +15,7 @@ export default {
   knowledgeBase: {
     title: '知识库',
     list: '知识库列表',
+    fileContent: '文件内容',
     detail: '知识库详情',
     create: '创建知识库',
     edit: '编辑知识库',
@@ -46,7 +47,7 @@ export default {
     updateFailed: '知识库更新失败',
     deleteSuccess: '知识库删除成功',
     deleteConfirm: '确定要删除此知识库吗？',
-    fileName: '文件名',
+    fileName: '文件名称',
     fileSize: '文件大小',
     uploadTime: '上传时间',
     status: '状态',
@@ -66,6 +67,10 @@ export default {
     totalFiles: '文件总数',
     totalSize: '总大小',
     newSession: '新会话',
+    editDocument: '编辑文档',
+    draft: '草稿',
+    draftTip: '暂存内容，未参与检索',
+    untitledDocument: '未命名文档',
     deleteDocument: '删除文档',
     parsingFailed: '解析失败',
     parsingInProgress: '解析中...',
@@ -105,7 +110,11 @@ export default {
     emptyKnowledgeDragDrop: '知识为空，拖放上传',
     pdfDocFormat: 'pdf、doc 格式文件，不超过10M',
     textMarkdownFormat: 'text、markdown格式文件，不超过200K',
-    dragFileNotText: '请拖拽文件而不是文本或链接'
+    dragFileNotText: '请拖拽文件而不是文本或链接',
+    searchPlaceholder: '搜索知识库...',
+    noMatch: '未找到匹配的知识库',
+    noKnowledge: '暂无可用知识库',
+    loadingFailed: '加载知识库失败'
   },
   chat: {
     title: '对话',
@@ -135,8 +144,24 @@ export default {
     createSessionError: '创建会话出错',
     unableToGetKnowledgeBaseId: '无法获取知识库ID'
   },
+  agent: {
+    taskLabel: '任务:',
+    copy: '复制',
+    addToKnowledgeBase: '添加到知识库',
+    updatePlan: '更新计划',
+    webSearchFound: '找到 <strong>{count}</strong> 个网络搜索结果',
+    argumentsLabel: '参数',
+    toolFallback: '工具'
+  },
   settings: {
     title: '设置',
+    modelConfig: '模型配置',
+    agentConfig: 'Agent配置',
+    webSearchConfig: '网络搜索',
+    mcpService: 'MCP服务',
+    systemSettings: '系统设置',
+    tenantInfo: '租户信息',
+    apiInfo: 'API信息',
     system: '系统设置',
     systemConfig: '系统配置',
     knowledgeBaseSettings: '知识库设置',
@@ -174,6 +199,35 @@ export default {
     cancel: '取消',
     saveFailedSettings: '设置保存失败',
     enterNameRequired: '请输入名称'
+  },
+  webSearchSettings: {
+    title: '网络搜索配置',
+    description: '配置网络搜索功能，在回答问题时可以从互联网获取实时信息补充知识库内容',
+    providerLabel: '搜索引擎提供商',
+    providerDescription: '选择用于网络搜索的搜索引擎服务',
+    providerPlaceholder: '选择搜索引擎...',
+    apiKeyLabel: 'API 密钥',
+    apiKeyDescription: '输入所选搜索引擎的 API 密钥',
+    apiKeyPlaceholder: '请输入 API 密钥',
+    maxResultsLabel: '最大结果数',
+    maxResultsDescription: '每次搜索返回的最大结果数量（1-50）',
+    includeDateLabel: '包含发布日期',
+    includeDateDescription: '在搜索结果中包含内容的发布日期信息',
+    compressionLabel: '压缩方法',
+    compressionDescription: '对搜索结果内容的压缩处理方法',
+    compressionNone: '无压缩',
+    compressionSummary: 'LLM 摘要',
+    blacklistLabel: 'URL 黑名单',
+    blacklistDescription: '排除特定域名或 URL 的搜索结果，每行一个。支持通配符（*）和正则表达式（以/开头和结尾）',
+    blacklistPlaceholder: '例如：\n*://*.example.com/*\n/example\\.(net|org)/',
+    errors: {
+      unknown: '未知错误'
+    },
+    toasts: {
+      loadProvidersFailed: '加载搜索引擎列表失败: {message}',
+      saveSuccess: '网络搜索配置已保存',
+      saveFailed: '保存配置失败: {message}'
+    }
   },
   initialization: {
     title: '初始化',
@@ -415,12 +469,21 @@ export default {
     registerError: '注册错误，请稍后重试',
     forgotPasswordNotAvailable: '密码找回功能暂不可用，请联系管理员'
   },
+  authStore: {
+    errors: {
+      parseUserFailed: '解析用户信息失败',
+      parseTenantFailed: '解析租户信息失败',
+      parseKnowledgeBasesFailed: '解析知识库列表失败',
+      parseCurrentKnowledgeBaseFailed: '解析当前知识库失败'
+    }
+  },
   common: {
     confirm: '确认',
     cancel: '取消',
     save: '保存',
     delete: '删除',
     edit: '编辑',
+    default: '默认',
     create: '创建',
     search: '搜索',
     filter: '筛选',
@@ -435,6 +498,7 @@ export default {
     success: '成功',
     warning: '警告',
     info: '信息',
+    selectAll: '全选',
     yes: '是',
     no: '否',
     ok: '确定',
@@ -444,7 +508,12 @@ export default {
     finish: '完成',
     all: '全部',
     reset: '重置',
-    clear: '清空'
+    clear: '清空',
+    website: '官方网站',
+    on: '开启',
+    off: '关闭',
+    resetToDefault: '恢复默认',
+    confirmDelete: '确认删除'
   },
   file: {
     upload: '上传文件',
@@ -461,6 +530,8 @@ export default {
   },
   tenant: {
     title: '租户信息',
+    sectionDescription: '查看租户的详细配置信息',
+    apiDocument: 'API文档',
     name: '租户名称',
     id: '租户ID',
     createdAt: '创建时间',
@@ -498,13 +569,93 @@ export default {
     useApiKey: '使用您的API密钥开始开发，查看完整的API文档和代码示例。',
     viewApiDoc: '查看API文档',
     loadingAccountInfo: '加载账户信息中...',
+    loadingInfo: '正在加载信息...',
     loadFailed: '加载失败',
     retry: '重试',
     apiKeyCopied: 'API密钥已复制到剪贴板',
     unknown: '未知',
     formatError: '格式错误'
+    ,
+    details: {
+      idLabel: '租户 ID',
+      idDescription: '您所属租户的唯一标识',
+      nameLabel: '租户名称',
+      nameDescription: '您所属的租户名称',
+      descriptionLabel: '租户描述',
+      descriptionDescription: '租户的详细描述信息',
+      businessLabel: '租户业务',
+      businessDescription: '租户所属的业务类型',
+      statusLabel: '租户状态',
+      statusDescription: '租户当前的运行状态',
+      createdAtLabel: '租户创建时间',
+      createdAtDescription: '租户创建的时间'
+    },
+    storage: {
+      quotaLabel: '存储配额',
+      quotaDescription: '租户的总存储空间配额',
+      usedLabel: '已使用存储',
+      usedDescription: '已经使用的存储空间',
+      usageLabel: '存储使用率',
+      usageDescription: '存储空间的使用百分比'
+    },
+    messages: {
+      fetchFailed: '获取租户信息失败',
+      networkError: '网络错误，请稍后重试'
+    },
+    api: {
+      title: 'API 信息',
+      description: '查看和管理您的 API 密钥',
+      keyLabel: 'API Key',
+      keyDescription: '用于 API 调用的密钥，请妥善保管',
+      copyTitle: '复制 API Key',
+      docLabel: 'API 文档',
+      docDescription: '查看完整的 API 调用文档和示例，',
+      openDoc: '打开文档',
+      userSectionTitle: '用户信息',
+      userIdLabel: '用户 ID',
+      userIdDescription: '您的唯一用户标识',
+      usernameLabel: '用户名',
+      usernameDescription: '您的登录用户名',
+      emailLabel: '邮箱',
+      emailDescription: '您的注册邮箱地址',
+      createdAtLabel: '注册时间',
+      createdAtDescription: '账户创建的时间',
+      noKey: '暂无 API Key',
+      copySuccess: 'API Key 已复制到剪贴板',
+      copyFailed: '复制失败，请手动复制'
+    }
+  },
+  system: {
+    title: '系统信息',
+    sectionDescription: '查看系统版本信息和用户账户配置',
+    loadingInfo: '正在加载信息...',
+    retry: '重试',
+    versionLabel: '系统版本',
+    versionDescription: '当前系统的版本号',
+    buildTimeLabel: '构建时间',
+    buildTimeDescription: '系统构建的时间',
+    goVersionLabel: 'Go 版本',
+    goVersionDescription: '后端使用的 Go 语言版本',
+    unknown: '未知',
+    messages: {
+      fetchFailed: '获取系统信息失败',
+      networkError: '网络错误，请稍后重试'
+    }
+  },
+  mcp: {
+    testResult: {
+      title: '测试结果: {name}',
+      connectionSuccess: '连接成功',
+      connectionFailed: '连接失败',
+      toolsTitle: '可用工具',
+      resourcesTitle: '可用资源',
+      descriptionLabel: '描述',
+      schemaLabel: '参数结构',
+      emptyDescription: '该服务未提供工具或资源'
+    }
   },
   error: {
+    invalidImageLink: '无效的图片链接',
     network: '网络错误',
     server: '服务器错误',
     notFound: '未找到',
@@ -531,6 +682,715 @@ export default {
     topP: 'Top P',
     selectModel: '选择模型',
     customModel: '自定义模型',
-    builtinModel: '内置模型'
+    builtinModel: '内置模型',
+    defaultTag: '默认',
+    addModelInSettings: '前往全局设置添加模型',
+    loadFailed: '加载模型列表失败',
+  selectModelPlaceholder: '请选择模型',
+  searchPlaceholder: '搜索模型...',
+  editor: {
+    addTitle: '添加模型',
+    editTitle: '编辑模型',
+    sourceLabel: '模型来源',
+    sourceLocal: 'Ollama（本地）',
+    sourceRemote: 'Remote API（远程）',
+    description: {
+      chat: '配置用于对话的大语言模型',
+      embedding: '配置用于文本向量化的嵌入模型',
+      rerank: '配置用于结果重排序的模型',
+      vllm: '配置用于视觉理解和多模态的视觉语言模型',
+      default: '配置模型信息'
+    },
+    modelNamePlaceholder: {
+      local: '例如：llama2:latest',
+      remote: '例如：gpt-4, claude-3-opus',
+      localVllm: '例如：llava:latest',
+      remoteVllm: '例如：gpt-4-vision-preview'
+    },
+    baseUrlLabel: 'Base URL',
+    baseUrlPlaceholder: '例如：https://api.openai.com/v1',
+    baseUrlPlaceholderVllm: '例如：http://localhost:11434/v1',
+    apiKeyOptional: 'API Key（可选）',
+    apiKeyPlaceholder: '输入 API Key',
+    connectionTest: '连接测试',
+    testing: '测试中...',
+    testConnection: '测试连接',
+    searchPlaceholder: '搜索模型...',
+    downloadLabel: '下载: {keyword}',
+    refreshList: '刷新列表',
+    dimensionLabel: '向量维度',
+    dimensionPlaceholder: '例如：1536',
+    checkDimension: '检测维度',
+    dimensionDetected: '检测成功，向量维度：{value}',
+    dimensionFailed: '检测失败，请手动输入维度',
+    remoteDimensionDetected: '检测到向量维度：{value}',
+    dimensionHint: '模型已选择，点击“检测维度”按钮自动获取向量维度',
+    setAsDefault: '设为默认模型',
+    loadModelListFailed: '加载模型列表失败',
+    listRefreshed: '列表已刷新',
+    fillModelAndUrl: '请先填写模型标识和 Base URL',
+    remoteBaseUrlRequired: 'Remote API 类型必须填写 Base URL',
+    unsupportedModelType: '不支持的模型类型',
+    connectionSuccess: '连接成功',
+    connectionFailed: '连接失败',
+    connectionConfigError: '连接失败，请检查配置',
+    downloadStarted: '开始下载 {name}',
+    downloadCompleted: '{name} 下载完成',
+    downloadFailed: '{name} 下载失败',
+    downloadStartFailed: '启动下载失败',
+    validation: {
+      modelNameRequired: '请输入模型名称',
+      modelNameEmpty: '模型名称不能为空',
+      modelNameMax: '模型名称不能超过100个字符',
+      baseUrlRequired: '请输入 Base URL',
+      baseUrlEmpty: 'Base URL 不能为空',
+      baseUrlInvalid: 'Base URL 格式不正确，请输入有效的 URL'
+    }
+  }
+  },
+  language: {
+    zhCN: '简体中文',
+    enUS: 'English',
+    ruRU: 'Русский',
+    selectLanguage: '选择语言',
+    language: '语言',
+    languageDescription: '选择界面显示语言',
+    languageSaved: '语言设置已保存'
+  },
+  general: {
+    title: '常规设置',
+    allSettings: '全部设置',
+    description: '配置语言、外观等基础选项',
+    settings: '设置',
+    close: '关闭设置'
+  },
+  platform: {
+    subtitle: '企业级智能文档检索框架',
+    description: '让复杂文档理解与精准检索变得简单',
+    rag: 'RAG 增强生成',
+    hybridSearch: '混合检索',
+    localDeploy: '本地部署',
+    multimodalParsing: '多模态文档解析',
+    hybridSearchEngine: '混合检索引擎',
+    ragQandA: 'RAG 智能问答',
+    independentTenant: '独立租户空间',
+    fullApiAccess: '完整 API 访问',
+    knowledgeBaseManagement: '知识库管理',  
+    carousel: {
+      agenticRagTitle: 'Agentic RAG',
+      agenticRagDesc: '问题改写 + 智能召回 + 重排序',
+      hybridSearchTitle: '混合检索策略',
+      hybridSearchDesc: 'BM25 + 向量 + 知识图谱',
+      smartDocRetrievalTitle: '智能文档检索',
+      smartDocRetrievalDesc: 'PDF/Word/图片多格式解析'
+    }
+  },
+  time: {
+    today: '今天',
+    yesterday: '昨天',
+    last7Days: '近7天',
+    last30Days: '近30天',
+    lastYear: '近1年',
+    earlier: '更早'
+  },
+  upload: {
+    uploadDocument: '上传文档',
+    onlineEdit: '在线编辑',
+    deleteRecord: '删除记录'
+  },
+  manualEditor: {
+    placeholders: {
+      heading: '标题{level}',
+      listItem: '列表项',
+      taskItem: '任务项',
+      quote: '引用内容',
+      code: '代码内容',
+      linkText: '链接文本',
+      imageAlt: '描述',
+      bold: '加粗文本',
+      italic: '斜体文本',
+      strike: '删除线',
+      inlineCode: 'code'
+    },
+    table: {
+      column1: '列1',
+      column2: '列2',
+      cell: '内容'
+    },
+    toolbar: {
+      bold: '加粗',
+      italic: '斜体',
+      strike: '删除线',
+      inlineCode: '行内代码',
+      heading1: '一级标题',
+      heading2: '二级标题',
+      heading3: '三级标题',
+      bulletList: '无序列表',
+      orderedList: '有序列表',
+      taskList: '任务列表',
+      blockquote: '引用',
+      codeBlock: '代码块',
+      link: '插入链接',
+      image: '插入图片',
+      table: '插入表格',
+      horizontalRule: '分割线'
+    },
+    view: {
+      toggleToEdit: '切换到编辑视图',
+      toggleToPreview: '切换到预览视图',
+      editLabel: '返回编辑',
+      previewLabel: '预览内容'
+    },
+    preview: {
+      empty: '暂无内容'
+    },
+    title: {
+      edit: '编辑 Markdown 知识',
+      create: '在线编辑 Markdown 知识'
+    },
+    labels: {
+      currentKnowledgeBase: '当前知识库'
+    },
+    defaultTitlePrefix: '新建文档',
+    error: {
+      fetchDetailFailed: '获取知识详情失败',
+      saveFailed: '保存失败，请稍后重试'
+    },
+    warning: {
+      selectKnowledgeBase: '请选择目标知识库',
+      enterTitle: '请输入知识标题',
+      enterContent: '请输入知识内容',
+      contentTooShort: '内容过短，建议补充更多信息后再发布'
+    },
+    success: {
+      draftSaved: '草稿已保存',
+      published: '知识已发布并开始索引'
+    },
+    form: {
+      knowledgeBaseLabel: '目标知识库',
+      knowledgeBasePlaceholder: '请选择知识库',
+      titleLabel: '知识标题',
+      titlePlaceholder: '请输入标题',
+      contentPlaceholder: '支持 Markdown 语法，可使用 # 标题、列表、代码块等'
+    },
+    status: {
+      draftTag: '当前状态：草稿',
+      publishedTag: '当前状态：已发布',
+      lastUpdated: '最近更新：{time}'
+    },
+    loading: {
+      content: '正在加载内容',
+      preparing: '正在准备编辑器'
+    },
+    actions: {
+      cancel: '取消',
+      saveDraft: '暂存草稿',
+      publish: '发布入库'
+    }
+  },
+  createChat: {
+    title: '基于知识库内容问答 - AI 问答',
+    newSessionTitle: '新会话',
+    messages: {
+      selectKnowledgeBase: '请先选择知识库',
+      createFailed: '创建会话失败',
+      createError: '创建会话失败，请稍后重试'
+    }
+  },
+  knowledgeList: {
+    create: '新建知识库',
+    uninitializedBanner: '部分知识库尚未初始化，需要先在设置中配置模型信息才能添加知识文档',
+    empty: {
+      title: '暂无知识库',
+      description: '点击右上角“新建知识库”按钮创建第一个知识库'
+    },
+    delete: {
+      confirmTitle: '删除确认',
+      confirmMessage: '确认要删除知识库“{name}”？删除后不可恢复',
+      confirmButton: '确认删除'
+    },
+    messages: {
+      deleted: '已删除',
+      deleteFailed: '删除失败'
+    }
+  },
+  knowledgeEditor: {
+    titleCreate: '新建知识库',
+    titleEdit: '知识库设置',
+    sidebar: {
+      basic: '基本信息',
+      models: '模型配置',
+      chunking: '分块设置',
+      advanced: '高级设置'
+    },
+    basic: {
+      title: '基本信息',
+      description: '设置知识库的名称和描述信息',
+      nameLabel: '知识库名称',
+      namePlaceholder: '请输入知识库名称',
+      descriptionLabel: '知识库描述',
+      descriptionPlaceholder: '请输入知识库描述（可选）'
+    },
+    buttons: {
+      create: '创建知识库',
+      save: '保存配置'
+    },
+    messages: {
+      loadModelsFailed: '加载模型列表失败',
+      loadDataFailed: '加载知识库数据失败',
+      notFound: '知识库不存在',
+      nameRequired: '请输入知识库名称',
+      embeddingRequired: '请选择 Embedding 模型',
+      summaryRequired: '请选择 Summary 模型',
+      multimodalInvalid: '多模态配置验证失败',
+      createSuccess: '知识库创建成功',
+      createFailed: '创建知识库失败',
+      missingId: '缺少知识库 ID',
+      buildDataFailed: '数据构建失败',
+      updateSuccess: '配置保存成功'
+    },
+    models: {
+      title: '模型配置',
+      description: '为知识库选择合适的 AI 模型',
+      llmLabel: 'LLM 大语言模型',
+      llmDesc: '用于对话和问答的大语言模型',
+      llmPlaceholder: '请选择 LLM 模型',
+      embeddingLabel: 'Embedding 嵌入模型',
+      embeddingDesc: '用于文本向量化的嵌入模型',
+      embeddingPlaceholder: '请选择 Embedding 模型',
+      embeddingLocked: '知识库中已有文件，无法修改 Embedding 模型',
+      rerankLabel: 'ReRank 重排序模型',
+      rerankDesc: '用于搜索结果重排序的模型（可选）',
+      rerankPlaceholder: '请选择 ReRank 模型（可选）'
+    },
+    chunking: {
+      title: '分块设置',
+      description: '配置文档分块参数，优化检索效果',
+      sizeLabel: '分块大小',
+      sizeDescription: '控制每个文档分块的字符数（100-4000）',
+      characters: '字符',
+      overlapLabel: '分块重叠',
+      overlapDescription: '相邻文档块之间的重叠字符数（0-500）',
+      separatorsLabel: '分隔符',
+      separatorsDescription: '文档分块时使用的分隔符',
+      separatorsPlaceholder: '选择分隔符',
+      separators: {
+        doubleNewline: '双换行 (\\n\\n)',
+        singleNewline: '单换行 (\\n)',
+        periodCn: '中文句号 (。)',
+        exclamationCn: '感叹号 (！)',
+        questionCn: '问号 (？)',
+        semicolonCn: '中文分号 (；)',
+        semicolonEn: '英文分号 (;)',
+        space: '空格 ( )'
+      }
+    },
+    advanced: {
+      title: '高级设置',
+      description: '配置多模态、知识图谱等高级功能',
+      multimodal: {
+        label: '多模态功能',
+        description: '启用图片、视频等多模态内容的理解能力',
+        vllmLabel: 'VLLM 视觉模型',
+        vllmDescription: '用于多模态理解的视觉语言模型（必选）',
+        vllmPlaceholder: '请选择 VLLM 模型（必选）',
+        storageTitle: '存储配置',
+        storageTypeLabel: '存储类型',
+        storageTypeDescription: '选择多模态文件的存储方式（MinIO 或腾讯云 COS 二选一）',
+        storageTypeOptions: {
+          minio: 'MinIO',
+          cos: '腾讯云 COS'
+        },
+        minio: {
+          bucketLabel: 'Bucket 名称',
+          bucketDescription: 'MinIO 存储桶名称（必填）',
+          bucketPlaceholder: '请输入 Bucket 名称（必填）',
+          useSslLabel: '使用 SSL',
+          useSslDescription: '是否使用 SSL 连接',
+          pathPrefixLabel: '路径前缀',
+          pathPrefixDescription: '文件存储路径前缀（可选）',
+          pathPrefixPlaceholder: '请输入路径前缀'
+        },
+        cos: {
+          secretIdLabel: 'SecretId',
+          secretIdDescription: '腾讯云 API 密钥 ID（必填）',
+          secretIdPlaceholder: '请输入 SecretId（必填）',
+          secretKeyLabel: 'SecretKey',
+          secretKeyDescription: '腾讯云 API 密钥 Key（必填）',
+          secretKeyPlaceholder: '请输入 SecretKey（必填）',
+          regionLabel: '地域',
+          regionDescription: 'COS 存储桶所在地域（必填）',
+          regionPlaceholder: '如：ap-guangzhou（必填）',
+          bucketLabel: 'Bucket 名称',
+          bucketDescription: 'COS 存储桶名称（必填）',
+          bucketPlaceholder: '请输入 Bucket 名称（必填）',
+          appIdLabel: 'AppId',
+          appIdDescription: '腾讯云应用 ID（必填）',
+          appIdPlaceholder: '请输入 AppId（必填）',
+          pathPrefixLabel: '路径前缀',
+          pathPrefixDescription: '文件存储路径前缀（可选）',
+          pathPrefixPlaceholder: '请输入路径前缀'
+        }
+      },
+      graph: {
+        label: '知识图谱提取',
+        description: '从文档中自动提取实体和关系，构建知识图谱',
+        configTitle: '图谱配置',
+        promptLabel: '提示文本',
+        promptDescription: '用于引导模型提取实体和关系的提示文本',
+        promptPlaceholder: '请输入提示文本',
+        tagsLabel: '标签',
+        tagsDescription: '预定义的实体标签（多个标签用逗号分隔）',
+        tagsPlaceholder: '输入标签后按回车'
+      }
+    }
+  },
+  input: {
+    placeholder: '基于知识库提问',
+    agentMode: 'Agent 模式',
+    normalMode: '普通模式',
+    normalModeDesc: '基于知识库的 RAG 问答',
+    agentModeDesc: 'ReAct 推理框架，多步思考',
+    agentNotReadyTooltip: 'Agent 未就绪，请先在设置中完成配置',
+    agentNotReadyDetail: 'Agent 未就绪，请先在设置中完成 Agent 配置（思考模型、Rerank 模型和允许的工具）',
+    goToSettings: '前往设置 →',
+    webSearch: {
+      toggleOn: '开启网络搜索',
+      toggleOff: '关闭网络搜索',
+      notConfigured: '未配置网络搜索引擎'
+    },
+  chat: {
+    summaryInProgress: '正在总结答案……',
+    thinking: '思考中···',
+    thinkingAlt: '正在思考',
+    deepThoughtCompleted: '已深度思考',
+    deepThoughtAlt: '深度思考完成',
+    referencesTitle: '参考了{count}个相关内容',
+    referenceIconAlt: '参考内容图标',
+    chunkIdLabel: '片段ID:',
+    documentIdLabel: '文档ID:',
+    noPlanSteps: '未提供具体步骤',
+    chunkIndexLabel: '片段 #{index}',
+    chunkPositionLabel: '(位置: {position})',
+    noRelatedChunks: '没有找到相关片段',
+    noSearchResults: '没有找到搜索结果',
+    relevanceHigh: '高相关',
+    relevanceMedium: '中相关',
+    relevanceLow: '低相关',
+    relevanceWeak: '弱相关',
+    webSearchNoResults: '未找到搜索结果',
+    otherSource: '其他来源',
+    webGroupIntro: '以下 {count} 条内容来自',
+    graphConfigTitle: '图谱配置',
+    entityTypesLabel: '实体类型:',
+    relationTypesLabel: '关系类型:',
+    graphResultsHeader: '找到 {count} 条相关结果',
+    graphNoResults: '未找到相关的图谱信息',
+    unknownLink: '未知链接',
+    contentLengthLabel: '长度 {value}',
+    notProvided: '未提供',
+    promptLabel: '提示词',
+    errorMessageLabel: '错误信息',
+    summaryLabel: '总结',
+    rawTextLabel: '原始文本',
+    collapseRaw: '收起原文',
+    expandRaw: '展开原文',
+    noWebContent: '未获取到网页内容',
+    lengthChars: '{value} 字',
+    lengthThousands: '{value} 千字',
+    lengthTenThousands: '{value} 万字',
+    sqlQueryExecuted: '执行的 SQL 查询:',
+    sqlResultsLabel: '返回结果:',
+    rowsLabel: '行',
+    columnsLabel: '列',
+    noDatabaseRecords: '未找到匹配的记录',
+    nullValuePlaceholder: '<NULL>',
+    documentTitleLabel: '文档标题:',
+    chunkCountLabel: '片段数量:',
+    chunkCountValue: '至少 {count} 个',
+    statusDescription: '状态说明',
+    statusIndexed: '文档已索引并可搜索',
+    statusSearchable: '可使用搜索工具查找文档内容',
+    statusChunkDetailAvailable: '可使用 get_chunk_detail 查看片段详情',
+    positionLabel: '位置:',
+    chunkPositionValue: '第 {index} 个片段',
+    contentLengthLabelSimple: '内容长度:',
+    fullContentLabel: '完整内容',
+    copyContent: '复制内容',
+    knowledgeBaseCount: '共 {count} 个知识库',
+    noKnowledgeBases: '没有可用的知识库',
+    enterDescription: '请输入描述文案',
+    rawOutputLabel: '原始输出',
+    waitingForAnswer: '正在等待答案……',
+    cannotAnswer: '抱歉，我无法回答这个问题。',
+    selectKnowledgeBaseWarning: '请至少选择一个知识库',
+    processError: '处理出错'
+  },
+    knowledgeBase: '知识库',
+    knowledgeBaseWithCount: '知识库({count})',
+    notConfigured: '未配置',
+    model: '模型',
+    remote: '远程',
+    noModel: '暂无可用模型',
+    stopGeneration: '停止生成',
+    send: '发送',
+    thinkingLabel: 'Thinking:',
+    messages: {
+      enterContent: '请先输入内容!',
+      selectKnowledge: '请先选择知识库!',
+      replying: '正在回复中，请稍后再试!',
+      agentSwitchedOn: '已切换到 Agent 模式',
+      agentSwitchedOff: '已切换到普通模式',
+      agentEnabled: 'Agent 模式已启用',
+      agentDisabled: 'Agent 模式已禁用',
+      agentNotReadyDetail: 'Agent 未就绪，请先在设置中完成 Agent 配置（思考模型、Rerank 模型和允许的工具）',
+      webSearchNotConfigured: '未配置网络搜索引擎，请先在设置中完成搜索引擎选择与接口配置。',
+      webSearchEnabled: '网络搜索已开启',
+      webSearchDisabled: '网络搜索已关闭',
+      sessionMissing: '会话 ID 不存在',
+      messageMissing: '无法获取消息 ID，请刷新页面后重试',
+      stopSuccess: '已停止生成',
+      stopFailed: '停止失败，请重试'
+    },
+  },
+  // 新增：Agent 设置
+  agentSettings: {
+    title: 'Agent 配置',
+    description: '配置 AI Agent 的默认行为和参数，这些设置将应用于所有启用 Agent 模式的对话',
+    status: {
+      label: 'Agent 状态',
+      ready: '可用',
+      notReady: '未就绪',
+      hint: '配置完成后，Agent 状态将自动变为“可用”，此时可在对话界面开启 Agent 模式',
+      missingThinkingModel: '思考模型',
+      missingRerankModel: 'Rerank 模型',
+      missingAllowedTools: '允许的工具',
+      pleaseConfigure: '请配置{items}'
+    },
+    maxIterations: {
+      label: '最大迭代次数',
+      desc: 'Agent 执行任务时的最大推理步骤数'
+    },
+    thinkingModel: {
+      label: '思考模型',
+      desc: '用于 Agent 推理和规划的 LLM 模型',
+      hint: '需要支持 Function call 的大尺寸模型，如 deepseek 等'
+    },
+    rerankModel: {
+      label: 'Rerank 模型',
+      desc: '搜索结果重排序，统一不同来源的相关度分数'
+    },
+    model: {
+      placeholder: '搜索模型...',
+      addChat: '添加新的对话模型',
+      addRerank: '添加新的 Rerank 模型'
+    },
+    temperature: {
+      label: '温度参数',
+      desc: '控制模型输出的随机性，0 最确定，1 最随机'
+    },
+    allowedTools: {
+      label: '允许的工具',
+      desc: '选择 Agent 可以使用的工具，至少选择一个',
+      placeholder: '请选择工具...'
+    },
+    systemPrompt: {
+      label: '系统 Prompt',
+      desc: '配置 Agent 的系统提示词，支持占位符模板。占位符会在运行时自动替换为实际内容。',
+      availablePlaceholders: '可用占位符：',
+      hintPrefix: '提示：输入',
+      hintSuffix: '时会自动显示可用占位符',
+      custom: '自定义 Prompt',
+      disabledHint: '当前使用系统默认 Prompt，开启自定义后才会应用下方内容。',
+      placeholder: '请输入系统 Prompt，或留空使用默认 Prompt...'
+    },
+    reset: {
+      header: '恢复默认 Prompt',
+      body: '确定要恢复为默认 Prompt 吗？当前的自定义 Prompt 将被覆盖。'
+    },
+    errors: {
+      selectThinkingModel: '启用Agent模式前，请先选择思考模型',
+      selectAtLeastOneTool: '至少需要选择一个允许的工具',
+      iterationsRange: '最大迭代次数必须在1-20之间',
+      temperatureRange: '温度参数必须在0-2之间',
+      validationFailed: '配置验证失败'
+    },
+    toasts: {
+      iterationsSaved: '最大迭代次数已保存',
+      thinkingModelSaved: '思考模型已保存',
+      rerankModelSaved: 'Rerank 模型已保存',
+      temperatureSaved: '温度参数已保存',
+      toolsUpdated: '工具配置已更新',
+      customPromptEnabled: '已启用自定义 Prompt',
+      defaultPromptEnabled: '已切换为默认 Prompt',
+      resetToDefault: '已恢复为默认 Prompt',
+      systemPromptSaved: '系统 Prompt 已保存',
+      autoDisabled: 'Agent 配置不完整，已自动关闭 Agent 模式'
+    }
+  },
+  // 新增：MCP 设置
+  mcpSettings: {
+    title: 'MCP 服务管理',
+    description: '管理外部 MCP (Model Context Protocol) 服务，在 Agent 模式下调用外部工具和资源',
+    configuredServices: '已配置的服务',
+    manageAndTest: '管理和测试 MCP 服务连接',
+    addService: '添加服务',
+    empty: '暂无 MCP 服务',
+    addFirst: '添加第一个 MCP 服务',
+    actions: {
+      test: '测试连接'
+    },
+    toasts: {
+      loadFailed: '加载 MCP 服务列表失败',
+      enabled: '已启用 MCP 服务',
+      disabled: '已禁用 MCP 服务',
+      updateStateFailed: '更新 MCP 服务状态失败',
+      testing: '正在测试 {name}...',
+      noResponse: '测试失败：未收到服务器响应',
+      testFailed: '测试 MCP 服务失败',
+      deleted: 'MCP 服务已删除',
+      deleteFailed: '删除 MCP 服务失败'
+    },
+    deleteConfirmBody: '确定要删除 MCP 服务“{name}”吗？此操作无法撤销。',
+    unnamed: '未命名'
+  },
+
+  // 新增：模型设置
+  modelSettings: {
+    title: '模型配置',
+    description: '管理不同类型的 AI 模型，支持 Ollama 本地模型和远程 API',
+    actions: {
+      addModel: '添加模型',
+      setDefault: '设为默认'
+    },
+    source: {
+      remote: 'Remote',
+      openaiCompatible: 'OpenAI兼容'
+    },
+    chat: {
+      title: '对话模型',
+      desc: '配置用于对话的大语言模型',
+      empty: '暂无对话模型'
+    },
+    embedding: {
+      title: 'Embedding 模型',
+      desc: '配置用于文本向量化的嵌入模型',
+      empty: '暂无 Embedding 模型'
+    },
+    rerank: {
+      title: 'ReRank 模型',
+      desc: '配置用于结果重排序的模型',
+      empty: '暂无 ReRank 模型'
+    },
+    vllm: {
+      title: 'VLLM 视觉模型',
+      desc: '配置用于视觉理解和多模态的视觉语言模型',
+      empty: '暂无 VLLM 视觉模型'
+    },
+    toasts: {
+      nameRequired: '模型名称不能为空',
+      nameTooLong: '模型名称不能超过100个字符',
+      baseUrlRequired: 'Remote API 类型必须填写 Base URL',
+      baseUrlInvalid: 'Base URL 格式不正确，请输入有效的 URL',
+      dimensionInvalid: 'Embedding 模型必须填写有效的向量维度（128-4096）',
+      updated: '模型已更新',
+      added: '模型已添加',
+      saveFailed: '保存模型失败',
+      deleted: '模型已删除',
+      deleteFailed: '删除模型失败',
+      setDefault: '已设为默认模型',
+      setDefaultFailed: '设置默认模型失败'
+    },
+    confirmDelete: '确定删除此模型吗？'
+  },
+  // 新增：Ollama 设置
+  ollamaSettings: {
+    title: 'Ollama 配置',
+    description: '管理本地 Ollama 服务，查看和下载模型',
+    status: {
+      label: 'Ollama 服务状态',
+      desc: '自动检测本地 Ollama 服务是否可用。如果服务未运行或地址配置错误，将显示“不可用”状态',
+      testing: '检测中',
+      available: '可用',
+      unavailable: '不可用',
+      untested: '未检测',
+      retest: '重新检测'
+    },
+    address: {
+      label: '服务地址',
+      desc: '本地 Ollama 服务的 API 地址，由系统自动检测。如需修改，请在 .env 配置文件中设置',
+      placeholder: 'http://localhost:11434',
+      failed: '连接失败，请检查 Ollama 是否运行或服务地址是否正确'
+    },
+    download: {
+      title: '下载新模型',
+      descPrefix: '输入模型名称下载，',
+      browse: '浏览 Ollama 模型库',
+      placeholder: '如：qwen2.5:0.5b',
+      download: '下载',
+      downloading: '正在下载: {name}'
+    },
+    installed: {
+      title: '已下载的模型',
+      desc: '已安装在 Ollama 中的模型列表',
+      empty: '暂无已下载的模型'
+    },
+    toasts: {
+      connected: '连接成功',
+      connectFailed: '连接失败，请检查 Ollama 是否运行',
+      listFailed: '获取模型列表失败',
+      downloadFailed: '下载失败，请稍后重试',
+      downloadStarted: '已开始下载模型 {name}',
+      downloadCompleted: '模型 {name} 下载完成',
+      progressFailed: '查询下载进度失败'
+    }
+  },
+  // 新增：MCP 服务对话框
+  mcpServiceDialog: {
+    addTitle: '添加 MCP 服务',
+    editTitle: '编辑 MCP 服务',
+    name: '服务名称',
+    namePlaceholder: '请输入服务名称',
+    description: '描述',
+    descriptionPlaceholder: '请输入服务描述',
+    transportType: '传输类型',
+    transport: {
+      sse: 'SSE (Server-Sent Events)',
+      httpStreamable: 'HTTP Streamable',
+      stdio: 'Stdio'
+    },
+    serviceUrl: '服务 URL',
+    serviceUrlPlaceholder: 'https://example.com/mcp',
+    command: '命令',
+    args: '参数',
+    argPlaceholder: '参数 {index}',
+    addArg: '添加参数',
+    envVars: '环境变量',
+    envKeyPlaceholder: '变量名',
+    envValuePlaceholder: '变量值',
+    addEnvVar: '添加环境变量',
+    enableService: '启用服务',
+    authConfig: '认证配置',
+    apiKey: 'API Key',
+    bearerToken: 'Bearer Token',
+    optional: '可选',
+    advancedConfig: '高级配置',
+    timeoutSec: '超时时间(秒)',
+    retryCount: '重试次数',
+    retryDelaySec: '重试延迟(秒)',
+    rules: {
+      nameRequired: '请输入服务名称',
+      transportRequired: '请选择传输类型',
+      urlRequired: '请输入服务 URL',
+      urlInvalid: '请输入有效的 URL',
+      commandRequired: '请选择命令 (uvx 或 npx)',
+      argsRequired: '请至少输入一个参数'
+    },
+    toasts: {
+      created: 'MCP 服务已创建',
+      updated: 'MCP 服务已更新',
+      createFailed: '创建 MCP 服务失败',
+      updateFailed: '更新 MCP 服务失败'
+    }
   }
 }

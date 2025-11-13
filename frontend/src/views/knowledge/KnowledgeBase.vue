@@ -17,7 +17,9 @@ import {
   listKnowledgeFiles,
 } from "@/api/knowledge-base/index";
 import { formatStringDate } from "@/utils/index";
+import { useI18n } from 'vue-i18n';
 const route = useRoute();
+const { t } = useI18n();
 const kbId = computed(() => (route.params as any).kbId as string || '');
 let { cardList, total, moreIndex, details, getKnowled, delKnowledge, openMore, onVisibleChange, getCardDetails, getfDetails } = useKnowledgeBase(kbId.value)
 let isCardDetails = ref(false);
@@ -52,7 +54,7 @@ const loadKnowledgeFiles = async (kbIdValue: string) => {
     }
     
     const cardList_ = data.map((item: any) => {
-      const rawName = item.file_name || item.title || item.source || '未命名文档'
+      const rawName = item.file_name || item.title || item.source || t('knowledgeBase.untitledDocument')
       const dotIndex = rawName.lastIndexOf('.')
       const displayName = dotIndex > 0 ? rawName.substring(0, dotIndex) : rawName
       const fileTypeSource = item.file_type || (item.type === 'manual' ? 'MANUAL' : '')
@@ -224,7 +226,7 @@ const handleKBEditorSuccess = (kbIdValue: string) => {
 const getTitle = (session_id: string, value: string) => {
   const now = new Date().toISOString();
   let obj = { 
-    title: '新会话', 
+    title: t('knowledgeBase.newSession'), 
     path: `chat/${session_id}`, 
     id: session_id, 
     isMore: false, 
@@ -245,10 +247,10 @@ async function createNewSession(value: string): Promise<void> {
       getTitle(res.data.id, value);
     } else {
       // 错误处理
-      console.error("创建会话失败");
+      console.error(t('knowledgeBase.createSessionFailed'));
     }
   }).catch(error => {
-    console.error("创建会话出错:", error);
+    console.error(t('knowledgeBase.createSessionError'), error);
   });
 }
 </script>
@@ -274,14 +276,14 @@ async function createNewSession(value: string): Promise<void> {
                     @click.stop="handleManualEdit(index, item)"
                   >
                     <t-icon class="icon" name="edit" />
-                    <span>编辑文档</span>
+                    <span>{{ t('knowledgeBase.editDocument') }}</span>
                   </div>
                   <div
                     class="card-menu-item danger"
                     @click.stop="delCard(index, item)"
                   >
                     <t-icon class="icon" name="delete" />
-                    <span>删除文档</span>
+                    <span>{{ t('knowledgeBase.deleteDocument') }}</span>
                   </div>
                 </div>
               </template>
@@ -292,18 +294,18 @@ async function createNewSession(value: string): Promise<void> {
             class="card-analyze"
           >
             <t-icon name="loading" class="card-analyze-loading"></t-icon>
-            <span class="card-analyze-txt">解析中...</span>
+            <span class="card-analyze-txt">{{ t('knowledgeBase.parsingInProgress') }}</span>
           </div>
           <div
             v-else-if="item.parse_status === 'failed'"
             class="card-analyze failure"
           >
             <t-icon name="close-circle" class="card-analyze-loading failure"></t-icon>
-            <span class="card-analyze-txt failure">解析失败</span>
+            <span class="card-analyze-txt failure">{{ t('knowledgeBase.parsingFailed') }}</span>
           </div>
           <div v-else-if="item.parse_status === 'draft'" class="card-draft">
-            <t-tag size="small" theme="warning" variant="light-outline">草稿</t-tag>
-            <span class="card-draft-tip">暂存内容，未参与检索</span>
+            <t-tag size="small" theme="warning" variant="light-outline">{{ t('knowledgeBase.draft') }}</t-tag>
+            <span class="card-draft-tip">{{ t('knowledgeBase.draftTip') }}</span>
           </div>
           <div v-else-if="item.parse_status === 'completed'" class="card-content-txt">
             {{ item.description }}
@@ -321,14 +323,14 @@ async function createNewSession(value: string): Promise<void> {
         <div class="circle-wrap">
           <div class="header">
             <img class="circle-img" src="@/assets/img/circle.png" alt="">
-            <span class="circle-title">删除确认</span>
+            <span class="circle-title">{{ t('knowledgeBase.deleteConfirmation') }}</span>
           </div>
           <span class="del-circle-txt">
-            {{ `确认要删除技能"${knowledge.file_name}"，删除后不可恢复` }}
+            {{ t('knowledgeBase.confirmDeleteDocument', { fileName: knowledge.file_name || '' }) }}
           </span>
           <div class="circle-btn">
-            <span class="circle-btn-txt" @click="delDialog = false">取消</span>
-            <span class="circle-btn-txt confirm" @click="delCardConfirm">确认删除</span>
+            <span class="circle-btn-txt" @click="delDialog = false">{{ t('common.cancel') }}</span>
+            <span class="circle-btn-txt confirm" @click="delCardConfirm">{{ t('knowledgeBase.confirmDelete') }}</span>
           </div>
         </div>
       </t-dialog>

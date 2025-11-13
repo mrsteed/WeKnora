@@ -2,7 +2,7 @@
   <div class="knowledge-base-list">
     <div v-if="data.knowledge_bases && data.knowledge_bases.length > 0">
       <div class="stats-card">
-        <div class="stats-title">共 {{ data.count }} 个知识库</div>
+        <div class="stats-title">{{ $t('chat.knowledgeBaseCount', { count: data.count }) }}</div>
       </div>
 
       <div class="card-grid">
@@ -29,7 +29,7 @@
     </div>
 
     <div v-else class="empty-state">
-      没有可用的知识库
+      {{ $t('chat.noKnowledgeBases') }}
     </div>
   </div>
 </template>

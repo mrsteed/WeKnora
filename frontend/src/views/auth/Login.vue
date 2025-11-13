@@ -179,22 +179,22 @@
     </div>
 
     <!-- Logo - Top Left -->
-    <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-logo" title="GitHub 仓库">
+    <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-logo" :title="$t('common.github')">
       <img src="@/assets/img/weknora.png" alt="WeKnora" class="logo-image" />
     </a>
 
     <!-- Header Links - Top Right -->
     <div class="header-links">
-      <a href="https://weknora.weixin.qq.com" target="_blank" class="header-link" title="官方网站">
+      <a href="https://weknora.weixin.qq.com" target="_blank" class="header-link" :title="$t('common.website')">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
           <circle cx="12" cy="12" r="10"/>
           <line x1="2" y1="12" x2="22" y2="12"/>
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
         </svg>
-        <span class="link-text">官网</span>
+        <span class="link-text">{{ $t('common.website') }}</span>
       </a>
       
-      <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-link" title="GitHub 仓库">
+      <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-link" :title="$t('common.info')">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
           <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
         </svg>
@@ -230,13 +230,13 @@
     <!-- Left Showcase Section -->
     <div class="showcase-section">
       <div class="showcase-content">
-        <p class="showcase-subtitle">企业级智能文档检索框架</p>
-        <p class="showcase-description">让复杂文档理解与精准检索变得简单</p>
+        <p class="showcase-subtitle">{{ $t('platform.subtitle') }}</p>
+        <p class="showcase-description">{{ $t('platform.description') }}</p>
 
         <div class="feature-tags">
-          <span class="tag">RAG 增强生成</span>
-          <span class="tag">混合检索</span>
-          <span class="tag">本地部署</span>
+          <span class="tag">{{ $t('platform.rag') }}</span>
+          <span class="tag">{{ $t('platform.hybridSearch') }}</span>
+          <span class="tag">{{ $t('platform.localDeploy') }}</span>
         </div>
 
         <!-- Swiper Carousel -->
@@ -271,8 +271,8 @@
         <!-- Login Card -->
         <div class="form-card" v-if="!isRegisterMode">
                 <div class="form-header">
-                  <h2 class="form-title">登录账户</h2>
-                  <p class="form-welcome">欢迎回来，开始您的智能知识之旅</p>
+                  <h2 class="form-title">{{ $t('auth.login') }}</h2>
+                  <p class="form-welcome">{{ $t('auth.subtitle') }}</p>
                 </div>
 
           <div class="form-content">
@@ -283,20 +283,20 @@
           @submit="handleLogin"
           layout="vertical"
         >
-          <t-form-item label="邮箱" name="email">
+          <t-form-item :label="$t('auth.email')" name="email">
             <t-input
               v-model="formData.email"
-              placeholder="请输入邮箱地址"
+              :placeholder="$t('auth.emailPlaceholder')"
               type="email"
               size="large"
               :disabled="loading"
             />
           </t-form-item>
 
-          <t-form-item label="密码" name="password">
+          <t-form-item :label="$t('auth.password')" name="password">
             <t-input
               v-model="formData.password"
-              placeholder="请输入密码（8-32位，包含字母和数字）"
+              :placeholder="$t('auth.passwordPlaceholder')"
               type="password"
               size="large"
               :disabled="loading"
@@ -312,14 +312,14 @@
             :loading="loading"
                 class="submit-button"
           >
-                {{ loading ? '登录中...' : '立即登录' }}
+                {{ loading ? $t('auth.loggingIn') : $t('auth.login') }}
           </t-button>
         </t-form>
 
             <div class="form-footer">
-          <span>还没有账号？</span>
+          <span>{{ $t('auth.noAccount') }}</span>
               <a href="#" @click.prevent="toggleMode" class="link-button">
-            立即注册
+            {{ $t('auth.registerNow') }}
           </a>
         </div>
 
@@ -327,15 +327,15 @@
             <div class="login-features">
               <div class="feature-item">
                 <span class="feature-icon">✓</span>
-                <span class="feature-text">多模态文档解析</span>
+                <span class="feature-text">{{ $t('platform.multimodalParsing') }}</span>
               </div>
               <div class="feature-item">
                 <span class="feature-icon">✓</span>
-                <span class="feature-text">混合检索引擎</span>
+                <span class="feature-text">{{ $t('platform.hybridSearchEngine') }}</span>
               </div>
               <div class="feature-item">
                 <span class="feature-icon">✓</span>
-                <span class="feature-text">RAG 智能问答</span>
+                <span class="feature-text">{{ $t('platform.ragQandA') }}</span>
               </div>
             </div>
       </div>
@@ -344,8 +344,8 @@
         <!-- Register Card -->
         <div class="form-card" v-if="isRegisterMode">
           <div class="form-header">
-            <h2 class="form-title">创建账户</h2>
-            <p class="form-subtitle">注册后系统将为您创建专属租户</p>
+            <h2 class="form-title">{{ $t('auth.createAccount') }}</h2>
+            <p class="form-subtitle">{{ $t('auth.registerSubtitle') }}</p>
       </div>
 
           <div class="form-content">
@@ -356,39 +356,39 @@
           @submit="handleRegister"
           layout="vertical"
         >
-          <t-form-item label="用户名" name="username">
+          <t-form-item :label="$t('auth.username')" name="username">
             <t-input
               v-model="registerData.username"
-              placeholder="请输入用户名"
+              :placeholder="$t('auth.usernamePlaceholder')"
               size="large"
               :disabled="loading"
             />
           </t-form-item>
 
-          <t-form-item label="邮箱" name="email">
+          <t-form-item :label="$t('auth.email')" name="email">
             <t-input
               v-model="registerData.email"
-              placeholder="请输入邮箱地址"
+              :placeholder="$t('auth.emailPlaceholder')"
               type="email"
               size="large"
               :disabled="loading"
             />
           </t-form-item>
 
-          <t-form-item label="密码" name="password">
+          <t-form-item :label="$t('auth.password')" name="password">
             <t-input
               v-model="registerData.password"
-              placeholder="请输入密码（8-32位，包含字母和数字）"
+              :placeholder="$t('auth.passwordPlaceholder')"
               type="password"
               size="large"
               :disabled="loading"
             />
           </t-form-item>
 
-          <t-form-item label="确认密码" name="confirmPassword">
+          <t-form-item :label="$t('auth.confirmPassword')" name="confirmPassword">
             <t-input
               v-model="registerData.confirmPassword"
-              placeholder="请再次输入密码"
+              :placeholder="$t('auth.confirmPasswordPlaceholder')"
               type="password"
               size="large"
               :disabled="loading"
@@ -404,14 +404,14 @@
             :loading="loading"
                 class="submit-button"
           >
-            {{ loading ? '注册中...' : '注册' }}
+            {{ loading ? $t('auth.registering') : $t('auth.register') }}
           </t-button>
         </t-form>
 
             <div class="form-footer">
-          <span>已有账号？</span>
+          <span>{{ $t('auth.haveAccount') }}</span>
               <a href="#" @click.prevent="toggleMode" class="link-button">
-            返回登录
+            {{ $t('auth.backToLogin') }}
           </a>
         </div>
 
@@ -419,15 +419,15 @@
             <div class="login-features">
               <div class="feature-item">
                 <span class="feature-icon">✓</span>
-                <span class="feature-text">独立租户空间</span>
+                <span class="feature-text">{{ $t('platform.independentTenant') }}</span>
       </div>
               <div class="feature-item">
                 <span class="feature-icon">✓</span>
-                <span class="feature-text">完整 API 访问</span>
+                <span class="feature-text">{{ $t('platform.fullApiAccess') }}</span>
               </div>
               <div class="feature-item">
                 <span class="feature-icon">✓</span>
-                <span class="feature-text">知识库管理</span>
+                <span class="feature-text">{{ $t('platform.knowledgeBaseManagement') }}</span>
               </div>
             </div>
           </div>
@@ -438,7 +438,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, nextTick, onMounted } from 'vue'
+import { ref, reactive, nextTick, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { Swiper, SwiperSlide } from 'swiper/vue'
@@ -448,6 +448,7 @@ import 'swiper/css/effect-fade'
 import 'swiper/css/pagination'
 import { login, register } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from 'vue-i18n'
 
 // Import screenshot images
 import screenshot1 from '@/assets/img/screenshot-1.svg'
@@ -456,6 +457,7 @@ import screenshot4 from '@/assets/img/screenshot-4.svg'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { t, locale } = useI18n()
 
 // Swiper modules
 const modules = [Autoplay, EffectFade, Pagination]
@@ -464,18 +466,18 @@ const modules = [Autoplay, EffectFade, Pagination]
 const slides = [
   {
     image: screenshot4,
-    title: 'Agentic RAG',
-    description: '问题改写 + 智能召回 + 重排序'
+    title: t('platform.carousel.agenticRagTitle'),
+    description: t('platform.carousel.agenticRagDesc')
   },
   {
     image: screenshot2,
-    title: '混合检索策略',
-    description: 'BM25 + 向量 + 知识图谱'
+    title: t('platform.carousel.hybridSearchTitle'),
+    description: t('platform.carousel.hybridSearchDesc')
   },
   {
     image: screenshot1,
-    title: '智能文档检索',
-    description: 'PDF/Word/图片多格式解析'
+    title: t('platform.carousel.smartDocRetrievalTitle'),
+    description: t('platform.carousel.smartDocRetrievalDesc')
   }
 ]
 
@@ -486,15 +488,17 @@ const registerFormRef = ref()
 // State management
 const loading = ref(false)
 const isRegisterMode = ref(false)
-const currentLanguage = ref('zh') // 'zh', 'en', or 'ru'
 const showLanguageMenu = ref(false)
 
 // Language options
 const languageOptions = [
-  { value: 'zh', label: '简体中文', shortLabel: '中文', flag: '🇨🇳' },
-  { value: 'en', label: 'English', shortLabel: 'EN', flag: '🇺🇸' },
-  { value: 'ru', label: 'Русский', shortLabel: 'RU', flag: '🇷🇺' }
+  { value: 'zh-CN', label: '简体中文', shortLabel: '中文', flag: '🇨🇳' },
+  { value: 'en-US', label: 'English', shortLabel: 'EN', flag: '🇺🇸' },
+  { value: 'ru-RU', label: 'Русский', shortLabel: 'RU', flag: '🇷🇺' }
 ]
+
+// Current language computed from i18n
+const currentLanguage = computed(() => locale.value)
 
 // Login form data
 const formData = reactive<{[key: string]: any}>({
@@ -511,52 +515,52 @@ const registerData = reactive<{[key: string]: any}>({
 })
 
 // Login form validation rules
-const formRules = {
+const formRules = computed(() => ({
   email: [
-    { required: true, message: '请输入邮箱地址', type: 'error' },
-    { email: true, message: '请输入正确的邮箱格式', type: 'error' }
+    { required: true, message: t('auth.emailRequired'), type: 'error' },
+    { email: true, message: t('auth.emailInvalid'), type: 'error' }
   ],
   password: [
-    { required: true, message: '请输入密码', type: 'error' },
-    { min: 8, message: '密码至少8位', type: 'error' },
-    { max: 32, message: '密码不能超过32位', type: 'error' },
-    { pattern: /[a-zA-Z]/, message: '密码必须包含字母', type: 'error' },
-    { pattern: /\d/, message: '密码必须包含数字', type: 'error' }
+    { required: true, message: t('auth.passwordRequired'), type: 'error' },
+    { min: 8, message: t('auth.passwordMinLength'), type: 'error' },
+    { max: 32, message: t('auth.passwordMaxLength'), type: 'error' },
+    { pattern: /[a-zA-Z]/, message: t('auth.passwordMustContainLetter'), type: 'error' },
+    { pattern: /\d/, message: t('auth.passwordMustContainNumber'), type: 'error' }
   ]
-}
+}))
 
 // Register form validation rules
-const registerRules = {
+const registerRules = computed(() => ({
   username: [
-    { required: true, message: '请输入用户名', type: 'error' },
-    { min: 2, message: '用户名至少2位', type: 'error' },
-    { max: 20, message: '用户名不能超过20位', type: 'error' },
+    { required: true, message: t('auth.usernameRequired'), type: 'error' },
+    { min: 2, message: t('auth.usernameMinLength'), type: 'error' },
+    { max: 20, message: t('auth.usernameMaxLength'), type: 'error' },
     { 
       pattern: /^[a-zA-Z0-9_\u4e00-\u9fa5]+$/, 
-      message: '用户名只能包含字母、数字、下划线和中文', 
+      message: t('auth.usernameInvalid'), 
       type: 'error' 
     }
   ],
   email: [
-    { required: true, message: '请输入邮箱地址', type: 'error' },
-    { email: true, message: '请输入正确的邮箱格式', type: 'error' }
+    { required: true, message: t('auth.emailRequired'), type: 'error' },
+    { email: true, message: t('auth.emailInvalid'), type: 'error' }
   ],
   password: [
-    { required: true, message: '请输入密码', type: 'error' },
-    { min: 8, message: '密码至少8位', type: 'error' },
-    { max: 32, message: '密码不能超过32位', type: 'error' },
-    { pattern: /[a-zA-Z]/, message: '密码必须包含字母', type: 'error' },
-    { pattern: /\d/, message: '密码必须包含数字', type: 'error' }
+    { required: true, message: t('auth.passwordRequired'), type: 'error' },
+    { min: 8, message: t('auth.passwordMinLength'), type: 'error' },
+    { max: 32, message: t('auth.passwordMaxLength'), type: 'error' },
+    { pattern: /[a-zA-Z]/, message: t('auth.passwordMustContainLetter'), type: 'error' },
+    { pattern: /\d/, message: t('auth.passwordMustContainNumber'), type: 'error' }
   ],
   confirmPassword: [
-    { required: true, message: '请确认密码', type: 'error' },
+    { required: true, message: t('auth.confirmPasswordRequired'), type: 'error' },
     {
       validator: (val: string) => val === registerData.password,
-      message: '两次输入的密码不一致',
+      message: t('auth.passwordMismatch'),
       type: 'error'
     }
   ]
-}
+}))
 
 // Toggle login/register mode
 const toggleMode = () => {
@@ -574,10 +578,10 @@ const toggleLanguageMenu = () => {
 
 // Select language
 const selectLanguage = (lang: string) => {
-  currentLanguage.value = lang
+  locale.value = lang
+  localStorage.setItem('locale', lang)
   showLanguageMenu.value = false
-  // 这里可以添加实际的语言切换逻辑
-  // 比如：i18n.global.locale = currentLanguage.value
+  MessagePlugin.success(t('language.languageSaved'))
 }
 
 // Close language menu when clicking outside
@@ -638,17 +642,17 @@ const handleLogin = async () => {
           })
         }
       
-      MessagePlugin.success('登录成功！')
+      MessagePlugin.success(t('auth.loginSuccess'))
 
       // Wait for state update before redirect
       await nextTick()
       router.replace('/platform/knowledge-bases')
     } else {
-      MessagePlugin.error(response.message || '登录失败，请检查邮箱或密码')
+      MessagePlugin.error(response.message || t('auth.loginError'))
     }
   } catch (error: any) {
     console.error('登录错误:', error)
-    MessagePlugin.error(error.message || '登录失败，请稍后重试')
+    MessagePlugin.error(error.message || t('auth.loginErrorRetry'))
   } finally {
     loading.value = false
   }
@@ -669,7 +673,7 @@ const handleRegister = async () => {
     })
 
     if (response.success) {
-      MessagePlugin.success('注册成功！系统已为您创建专属租户，请登录使用')
+      MessagePlugin.success(t('auth.registerSuccess'))
       
       // Switch to login mode and fill in email
       isRegisterMode.value = false
@@ -680,11 +684,11 @@ const handleRegister = async () => {
         (registerData as any)[key] = ''
       })
     } else {
-      MessagePlugin.error(response.message || '注册失败')
+      MessagePlugin.error(response.message || t('auth.registerFailed'))
     }
   } catch (error: any) {
     console.error('注册错误:', error)
-    MessagePlugin.error(error.message || '注册失败，请稍后重试')
+    MessagePlugin.error(error.message || t('auth.registerError'))
   } finally {
     loading.value = false
   }

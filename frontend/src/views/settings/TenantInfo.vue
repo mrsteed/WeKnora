@@ -1,76 +1,76 @@
 <template>
   <div class="tenant-info">
     <div class="section-header">
-      <h2>租户信息</h2>
-      <p class="section-description">查看租户的详细配置信息</p>
+      <h2>{{ $t('tenant.title') }}</h2>
+      <p class="section-description">{{ $t('tenant.sectionDescription') }}</p>
     </div>
 
-    <!-- 加载状态 -->
+    <!-- Loading state -->
     <div v-if="loading" class="loading-inline">
       <t-loading size="small" />
-      <span>正在加载信息...</span>
+      <span>{{ $t('tenant.loadingInfo') }}</span>
     </div>
 
-    <!-- 错误状态 -->
+    <!-- Error state -->
     <div v-else-if="error" class="error-inline">
       <t-alert theme="error" :message="error">
         <template #operation>
-          <t-button size="small" @click="loadInfo">重试</t-button>
+          <t-button size="small" @click="loadInfo">{{ $t('tenant.retry') }}</t-button>
         </template>
       </t-alert>
     </div>
 
-    <!-- 信息内容 -->
+    <!-- Content -->
     <div v-else class="settings-group">
-      <!-- 租户 ID -->
+      <!-- Tenant ID -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>租户 ID</label>
-          <p class="desc">您所属租户的唯一标识</p>
+          <label>{{ $t('tenant.details.idLabel') }}</label>
+          <p class="desc">{{ $t('tenant.details.idDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ tenantInfo?.id || '-' }}</span>
         </div>
       </div>
 
-      <!-- 租户名称 -->
+      <!-- Tenant name -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>租户名称</label>
-          <p class="desc">您所属的租户名称</p>
+          <label>{{ $t('tenant.details.nameLabel') }}</label>
+          <p class="desc">{{ $t('tenant.details.nameDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ tenantInfo?.name || '-' }}</span>
         </div>
       </div>
 
-      <!-- 租户描述 -->
+      <!-- Tenant description -->
       <div v-if="tenantInfo?.description" class="setting-row">
         <div class="setting-info">
-          <label>租户描述</label>
-          <p class="desc">租户的详细描述信息</p>
+          <label>{{ $t('tenant.details.descriptionLabel') }}</label>
+          <p class="desc">{{ $t('tenant.details.descriptionDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ tenantInfo.description }}</span>
         </div>
       </div>
 
-      <!-- 租户业务 -->
+      <!-- Tenant business -->
       <div v-if="tenantInfo?.business" class="setting-row">
         <div class="setting-info">
-          <label>租户业务</label>
-          <p class="desc">租户所属的业务类型</p>
+          <label>{{ $t('tenant.details.businessLabel') }}</label>
+          <p class="desc">{{ $t('tenant.details.businessDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ tenantInfo.business }}</span>
         </div>
       </div>
 
-      <!-- 租户状态 -->
+      <!-- Tenant status -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>租户状态</label>
-          <p class="desc">租户当前的运行状态</p>
+          <label>{{ $t('tenant.details.statusLabel') }}</label>
+          <p class="desc">{{ $t('tenant.details.statusDescription') }}</p>
         </div>
         <div class="setting-control">
           <t-tag 
@@ -83,44 +83,44 @@
         </div>
       </div>
 
-      <!-- 租户创建时间 -->
+      <!-- Tenant creation time -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>租户创建时间</label>
-          <p class="desc">租户创建的时间</p>
+          <label>{{ $t('tenant.details.createdAtLabel') }}</label>
+          <p class="desc">{{ $t('tenant.details.createdAtDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ formatDate(tenantInfo?.created_at) }}</span>
         </div>
       </div>
 
-      <!-- 存储配额 -->
+      <!-- Storage quota -->
       <div v-if="tenantInfo?.storage_quota !== undefined" class="setting-row">
         <div class="setting-info">
-          <label>存储配额</label>
-          <p class="desc">租户的总存储空间配额</p>
+          <label>{{ $t('tenant.storage.quotaLabel') }}</label>
+          <p class="desc">{{ $t('tenant.storage.quotaDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ formatBytes(tenantInfo.storage_quota) }}</span>
         </div>
       </div>
 
-      <!-- 已使用存储 -->
+      <!-- Used storage -->
       <div v-if="tenantInfo?.storage_quota !== undefined" class="setting-row">
         <div class="setting-info">
-          <label>已使用存储</label>
-          <p class="desc">已经使用的存储空间</p>
+          <label>{{ $t('tenant.storage.usedLabel') }}</label>
+          <p class="desc">{{ $t('tenant.storage.usedDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ formatBytes(tenantInfo.storage_used || 0) }}</span>
         </div>
       </div>
 
-      <!-- 存储使用率 -->
+      <!-- Storage usage -->
       <div v-if="tenantInfo?.storage_quota !== undefined" class="setting-row">
         <div class="setting-info">
-          <label>存储使用率</label>
-          <p class="desc">存储空间的使用百分比</p>
+          <label>{{ $t('tenant.storage.usageLabel') }}</label>
+          <p class="desc">{{ $t('tenant.storage.usageDescription') }}</p>
         </div>
         <div class="setting-control">
           <div class="usage-control">
@@ -143,13 +143,16 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { getCurrentUser, type TenantInfo } from '@/api/auth'
+import { useI18n } from 'vue-i18n'
 
-// 响应式数据
+const { t, locale } = useI18n()
+
+// Reactive state
 const tenantInfo = ref<TenantInfo | null>(null)
 const loading = ref(true)
 const error = ref('')
 
-// 方法
+// Methods
 const loadInfo = async () => {
   try {
     loading.value = true
@@ -157,13 +160,13 @@ const loadInfo = async () => {
     
     const userResponse = await getCurrentUser()
     
-    if (userResponse.success && userResponse.data) {
+    if ((userResponse as any).success && userResponse.data) {
       tenantInfo.value = userResponse.data.tenant
     } else {
-      error.value = userResponse.message || '获取租户信息失败'
+      error.value = userResponse.message || t('tenant.messages.fetchFailed')
     }
   } catch (err: any) {
-    error.value = err.message || '网络错误，请稍后重试'
+    error.value = err?.message || t('tenant.messages.networkError')
   } finally {
     loading.value = false
   }
@@ -172,13 +175,13 @@ const loadInfo = async () => {
 const getStatusText = (status: string | undefined) => {
   switch (status) {
     case 'active':
-      return '活跃'
+      return t('tenant.statusActive')
     case 'inactive':
-      return '未激活'
+      return t('tenant.statusInactive')
     case 'suspended':
-      return '已暂停'
+      return t('tenant.statusSuspended')
     default:
-      return '未知'
+      return t('tenant.statusUnknown')
   }
 }
 
@@ -196,19 +199,20 @@ const getStatusTheme = (status: string | undefined) => {
 }
 
 const formatDate = (dateStr: string | undefined) => {
-  if (!dateStr) return '未知'
+  if (!dateStr) return t('tenant.unknown')
   
   try {
     const date = new Date(dateStr)
-    return date.toLocaleString('zh-CN', {
+    const formatter = new Intl.DateTimeFormat(locale.value || 'zh-CN', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit'
     })
+    return formatter.format(date)
   } catch {
-    return '格式错误'
+    return t('tenant.formatError')
   }
 }
 
@@ -232,7 +236,7 @@ const getUsagePercentage = () => {
   return Math.min(Math.round(percentage * 100) / 100, 100)
 }
 
-// 生命周期
+// Lifecycle
 onMounted(() => {
   loadInfo()
 })

@@ -1,7 +1,7 @@
 <template>
   <div class="thinking-display">
     <div class="thinking-content">
-      <div class="thinking-icon">💭</div>
+      <div class="thinking-icon" aria-hidden="true">💭</div>
       <div class="thinking-text">{{ data.thought }}</div>
     </div>
   </div>
@@ -10,10 +10,13 @@
 <script setup lang="ts">
 import { defineProps } from 'vue';
 import type { ThinkingData } from '@/types/tool-results';
+import { useI18n } from 'vue-i18n';
 
 const props = defineProps<{
   data: ThinkingData;
 }>();
+
+useI18n(); // ensure component reacts to locale changes if needed
 </script>
 
 <style lang="less" scoped>

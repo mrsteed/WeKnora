@@ -1,54 +1,108 @@
-import { ref, computed, reactive } from 'vue'
+import { reactive, ref, watch } from 'vue'
+import { defineStore } from 'pinia'
+import i18n from '@/i18n'
 
-import { defineStore } from 'pinia';
+type MenuChild = Record<string, any>
 
-export const useMenuStore = defineStore('menuStore', {
-    state: () => ({
-        menuArr: reactive([
-            { title: '知识库', icon: 'zhishiku', path: 'knowledge-bases' },
-            {
-                title: '对话',
-                icon: 'prefixIcon',
-                path: 'creatChat',
-                childrenPath: 'chat',
-                children: reactive<object[]>([]),
-            },
-            { title: '设置', icon: 'setting', path: 'settings' },
-            { title: '退出登录', icon: 'logout', path: 'logout' }
-        ]),
-        isFirstSession: false,
-        firstQuery: ''
+interface MenuItem {
+  title: string
+  titleKey?: string
+  icon: string
+  path: string
+  childrenPath?: string
+  children?: MenuChild[]
+}
+
+const createMenuChildren = () => reactive<MenuChild[]>([])
+
+export const useMenuStore = defineStore('menuStore', () => {
+  const menuArr = reactive<MenuItem[]>([
+    { title: '', titleKey: 'menu.knowledgeBase', icon: 'zhishiku', path: 'knowledge-bases' },
+    {
+      title: '',
+      titleKey: 'menu.chat',
+      icon: 'prefixIcon',
+      path: 'creatChat',
+      childrenPath: 'chat',
+      children: createMenuChildren()
+    },
+    { title: '', titleKey: 'menu.settings', icon: 'setting', path: 'settings' },
+    { title: '', titleKey: 'menu.logout', icon: 'logout', path: 'logout' }
+  ])
+
+  const isFirstSession = ref(false)
+  const firstQuery = ref('')
+
+  const applyMenuTranslations = () => {
+    menuArr.forEach(item => {
+      if (item.titleKey) {
+        item.title = i18n.global.t(item.titleKey)
+      }
+    })
+  }
+
+  applyMenuTranslations()
+
+  watch(
+    () => i18n.global.locale.value,
+    () => {
+      applyMenuTranslations()
     }
-    ),
-    actions: {
-        clearMenuArr() {
-            this.menuArr[1].children = reactive<object[]>([]);
-        },
-        updatemenuArr(obj: any) {
-            // 检查是否已存在相同 ID 的 session，避免重复添加
-            const exists = this.menuArr[1].children?.some((item: any) => item.id === obj.id);
-            if (!exists) {
-                this.menuArr[1].children?.push(obj);
-            }
-        },
-        updataMenuChildren(item: object) {
-            this.menuArr[1].children?.unshift(item)
-        },
-        updatasessionTitle(session_id: string, title: string) {
-            this.menuArr[1].children?.forEach((item: any) => {
-                if (item.id == session_id) {
-                    item.title = title;
-                    item.isNoTitle = false;
-                }
-            });
-        },
-        changeIsFirstSession(payload: boolean) {
-            this.isFirstSession = payload;
-        },
-        changeFirstQuery(payload: string) {
-            this.firstQuery = payload;
-        }
+  )
+
+  const clearMenuArr = () => {
+    const chatMenu = menuArr[1]
+    if (chatMenu && chatMenu.children) {
+      chatMenu.children = createMenuChildren()
     }
-});
+  }
 
+  const updatemenuArr = (obj: any) => {
+    const chatMenu = menuArr[1]
+    if (!chatMenu.children) {
+      chatMenu.children = createMenuChildren()
+    }
+    const exists = chatMenu.children.some((item: MenuChild) => item.id === obj.id)
+    if (!exists) {
+      chatMenu.children.push(obj)
+    }
+  }
 
+  const updataMenuChildren = (item: MenuChild) => {
+    const chatMenu = menuArr[1]
+    if (!chatMenu.children) {
+      chatMenu.children = createMenuChildren()
+    }
+    chatMenu.children.unshift(item)
+  }
+
+  const updatasessionTitle = (sessionId: string, title: string) => {
+    const chatMenu = menuArr[1]
+    chatMenu.children?.forEach((item: MenuChild) => {
+      if (item.id === sessionId) {
+        item.title = title
+        item.isNoTitle = false
+      }
+    })
+  }
+
+  const changeIsFirstSession = (payload: boolean) => {
+    isFirstSession.value = payload
+  }
+
+  const changeFirstQuery = (payload: string) => {
+    firstQuery.value = payload
+  }
+
+  return {
+    menuArr,
+    isFirstSession,
+    firstQuery,
+    clearMenuArr,
+    updatemenuArr,
+    updataMenuChildren,
+    updatasessionTitle,
+    changeIsFirstSession,
+    changeFirstQuery
+  }
+})

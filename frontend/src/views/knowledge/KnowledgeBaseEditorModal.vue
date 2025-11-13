@@ -4,7 +4,7 @@
       <div v-if="visible" class="settings-overlay" @click.self="handleClose">
         <div class="settings-modal">
           <!-- 关闭按钮 -->
-          <button class="close-btn" @click="handleClose" aria-label="关闭">
+          <button class="close-btn" @click="handleClose" :aria-label="$t('general.close')">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
               <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
             </svg>
@@ -14,7 +14,7 @@
             <!-- 左侧导航 -->
             <div class="settings-sidebar">
               <div class="sidebar-header">
-                <h2 class="sidebar-title">{{ mode === 'create' ? '新建知识库' : '知识库设置' }}</h2>
+                <h2 class="sidebar-title">{{ mode === 'create' ? $t('knowledgeEditor.titleCreate') : $t('knowledgeEditor.titleEdit') }}</h2>
               </div>
               <div class="settings-nav">
                 <div 
@@ -36,23 +36,23 @@
                 <div v-show="currentSection === 'basic'" class="section">
                   <div v-if="formData" class="section-content">
                     <div class="section-header">
-                      <h3 class="section-title">基本信息</h3>
-                      <p class="section-desc">设置知识库的名称和描述信息</p>
+                      <h3 class="section-title">{{ $t('knowledgeEditor.basic.title') }}</h3>
+                      <p class="section-desc">{{ $t('knowledgeEditor.basic.description') }}</p>
                     </div>
                     <div class="section-body">
                       <div class="form-item">
-                        <label class="form-label required">知识库名称</label>
+                        <label class="form-label required">{{ $t('knowledgeEditor.basic.nameLabel') }}</label>
                         <t-input 
                           v-model="formData.name" 
-                          placeholder="请输入知识库名称"
+                          :placeholder="$t('knowledgeEditor.basic.namePlaceholder')"
                           :maxlength="50"
                         />
                       </div>
                       <div class="form-item">
-                        <label class="form-label">知识库描述</label>
+                        <label class="form-label">{{ $t('knowledgeEditor.basic.descriptionLabel') }}</label>
                         <t-textarea 
                           v-model="formData.description" 
-                          placeholder="请输入知识库描述（可选）"
+                          :placeholder="$t('knowledgeEditor.basic.descriptionPlaceholder')"
                           :maxlength="200"
                           :autosize="{ minRows: 3, maxRows: 6 }"
                         />
@@ -99,10 +99,10 @@
               <!-- 保存按钮 -->
               <div class="settings-footer">
                 <t-button theme="default" variant="outline" @click="handleClose">
-                  取消
+                  {{ $t('common.cancel') }}
                 </t-button>
                 <t-button theme="primary" @click="handleSubmit" :loading="saving">
-                  {{ mode === 'create' ? '创建知识库' : '保存配置' }}
+                  {{ mode === 'create' ? $t('knowledgeEditor.buttons.create') : $t('knowledgeEditor.buttons.save') }}
                 </t-button>
               </div>
             </div>
@@ -123,8 +123,10 @@ import { useUIStore } from '@/stores/ui'
 import KBModelConfig from './settings/KBModelConfig.vue'
 import KBChunkingSettings from './settings/KBChunkingSettings.vue'
 import KBAdvancedSettings from './settings/KBAdvancedSettings.vue'
+import { useI18n } from 'vue-i18n'
 
 const uiStore = useUIStore()
+const { t } = useI18n()
 
 // Props
 const props = defineProps<{
@@ -145,12 +147,12 @@ const loading = ref(false)
 const allModels = ref<any[]>([])
 const hasFiles = ref(false)
 
-const navItems = [
-  { key: 'basic', icon: 'info-circle', label: '基本信息' },
-  { key: 'models', icon: 'control-platform', label: '模型配置' },
-  { key: 'chunking', icon: 'file-copy', label: '分块设置' },
-  { key: 'advanced', icon: 'setting', label: '高级设置' }
-]
+const navItems = computed(() => [
+  { key: 'basic', icon: 'info-circle', label: t('knowledgeEditor.sidebar.basic') },
+  { key: 'models', icon: 'control-platform', label: t('knowledgeEditor.sidebar.models') },
+  { key: 'chunking', icon: 'file-copy', label: t('knowledgeEditor.sidebar.chunking') },
+  { key: 'advanced', icon: 'setting', label: t('knowledgeEditor.sidebar.advanced') }
+])
 
 // 模型配置引用
 const modelConfigRef = ref<InstanceType<typeof KBModelConfig>>()
@@ -206,8 +208,8 @@ const loadAllModels = async () => {
     const models = await listModels()
     allModels.value = models || []
   } catch (error) {
-    console.error('加载模型列表失败:', error)
-    MessagePlugin.error('加载模型列表失败')
+    console.error('Failed to load model list:', error)
+    MessagePlugin.error(t('knowledgeEditor.messages.loadModelsFailed'))
     allModels.value = []
   }
 }
@@ -225,7 +227,7 @@ const loadKBData = async () => {
     ])
     
     if (!kbInfo || !kbInfo.data) {
-      throw new Error('知识库不存在')
+      throw new Error(t('knowledgeEditor.messages.notFound'))
     }
 
     const kb = kbInfo.data
@@ -270,8 +272,8 @@ const loadKBData = async () => {
       }
     }
   } catch (error) {
-    console.error('加载知识库数据失败:', error)
-    MessagePlugin.error('加载知识库数据失败')
+    console.error('Failed to load knowledge base data:', error)
+    MessagePlugin.error(t('knowledgeEditor.messages.loadDataFailed'))
     handleClose()
   } finally {
     loading.value = false
@@ -309,29 +311,29 @@ const validateForm = (): boolean => {
 
   // 验证基本信息
   if (!formData.value.name || !formData.value.name.trim()) {
-    MessagePlugin.warning('请输入知识库名称')
+    MessagePlugin.warning(t('knowledgeEditor.messages.nameRequired'))
     currentSection.value = 'basic'
     return false
   }
 
   // 验证模型配置 - 必须配置 embedding 和 summary 模型
   if (!formData.value.modelConfig.embeddingModelId) {
-    MessagePlugin.warning('请选择 Embedding 模型')
+    MessagePlugin.warning(t('knowledgeEditor.messages.embeddingRequired'))
     currentSection.value = 'models'
     return false
   }
 
   if (!formData.value.modelConfig.llmModelId) {
-    MessagePlugin.warning('请选择 Summary 模型')
+    MessagePlugin.warning(t('knowledgeEditor.messages.summaryRequired'))
     currentSection.value = 'models'
     return false
   }
 
   // 验证多模态配置（如果启用）
   if (formData.value.multimodalConfig.enabled) {
-    const validation = advancedSettingsRef.value?.validateMultimodal()
+    const validation = (advancedSettingsRef.value as any)?.validateMultimodal?.()
     if (validation && !validation.valid) {
-      MessagePlugin.warning(validation.message || '多模态配置验证失败')
+      MessagePlugin.warning(validation.message || t('knowledgeEditor.messages.multimodalInvalid'))
       currentSection.value = 'advanced'
       return false
     }
@@ -411,21 +413,21 @@ const handleSubmit = async () => {
   try {
     const data = buildSubmitData()
     if (!data) {
-      throw new Error('数据构建失败')
+      throw new Error(t('knowledgeEditor.messages.buildDataFailed'))
     }
 
     if (props.mode === 'create') {
       // 创建模式：一次性创建知识库及所有配置
-      const result = await createKnowledgeBase(data)
+      const result: any = await createKnowledgeBase(data)
       if (!result.success || !result.data?.id) {
-        throw new Error(result.message || '创建知识库失败')
+        throw new Error(result.message || t('knowledgeEditor.messages.createFailed'))
       }
-      MessagePlugin.success('知识库创建成功')
+      MessagePlugin.success(t('knowledgeEditor.messages.createSuccess'))
       emit('success', result.data.id)
     } else {
       // 编辑模式：分别更新基本信息和配置
       if (!props.kbId) {
-        throw new Error('缺少知识库ID')
+        throw new Error(t('knowledgeEditor.messages.missingId'))
       }
 
       // 1. 更新基本信息（名称、描述）
@@ -473,14 +475,14 @@ const handleSubmit = async () => {
       }
 
       await updateKBConfig(props.kbId, config)
-      MessagePlugin.success('配置保存成功')
+      MessagePlugin.success(t('knowledgeEditor.messages.updateSuccess'))
       emit('success', props.kbId)
     }
     
     handleClose()
   } catch (error: any) {
-    console.error('操作失败:', error)
-    MessagePlugin.error(error.message || '操作失败')
+    console.error('Knowledge base operation failed:', error)
+    MessagePlugin.error(error?.message || t('common.operationFailed'))
   } finally {
     saving.value = false
   }

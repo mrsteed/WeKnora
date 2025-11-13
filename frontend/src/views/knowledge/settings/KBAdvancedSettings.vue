@@ -1,16 +1,16 @@
 <template>
   <div class="kb-advanced-settings">
     <div class="section-header">
-      <h2>高级设置</h2>
-      <p class="section-description">配置多模态、知识图谱等高级功能</p>
+      <h2>{{ $t('knowledgeEditor.advanced.title') }}</h2>
+      <p class="section-description">{{ $t('knowledgeEditor.advanced.description') }}</p>
     </div>
 
     <div class="settings-group">
-      <!-- 多模态功能 -->
+      <!-- Multimodal feature -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>多模态功能</label>
-          <p class="desc">启用图片、视频等多模态内容的理解能力</p>
+          <label>{{ $t('knowledgeEditor.advanced.multimodal.label') }}</label>
+          <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.description') }}</p>
         </div>
         <div class="setting-control">
           <t-switch
@@ -21,13 +21,13 @@
         </div>
       </div>
 
-      <!-- 多模态存储配置 -->
+      <!-- Multimodal storage configuration -->
       <div v-if="localMultimodal.enabled" class="subsection">
-        <!-- VLLM 视觉模型 -->
+        <!-- VLLM model -->
         <div class="setting-row">
           <div class="setting-info">
-            <label>VLLM 视觉模型 <span class="required">*</span></label>
-            <p class="desc">用于多模态理解的视觉语言模型（必选）</p>
+            <label>{{ $t('knowledgeEditor.advanced.multimodal.vllmLabel') }} <span class="required">*</span></label>
+            <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.vllmDescription') }}</p>
           </div>
           <div class="setting-control">
             <ModelSelector
@@ -37,39 +37,39 @@
               :all-models="allModels"
               @update:selected-model-id="handleVLLMChange"
               @add-model="handleAddModel('vllm')"
-              placeholder="请选择VLLM模型（必选）"
+              :placeholder="$t('knowledgeEditor.advanced.multimodal.vllmPlaceholder')"
             />
           </div>
         </div>
 
         <div class="subsection-header">
-          <h4>存储配置 <span class="required">*</span></h4>
+          <h4>{{ $t('knowledgeEditor.advanced.multimodal.storageTitle') }} <span class="required">*</span></h4>
         </div>
         
         <div class="setting-row">
           <div class="setting-info">
-            <label>存储类型 <span class="required">*</span></label>
-            <p class="desc">选择多模态文件的存储方式（MinIO或腾讯云COS二选一）</p>
+            <label>{{ $t('knowledgeEditor.advanced.multimodal.storageTypeLabel') }} <span class="required">*</span></label>
+            <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.storageTypeDescription') }}</p>
           </div>
           <div class="setting-control">
             <t-radio-group v-model="localMultimodal.storageType" @change="handleStorageTypeChange">
-              <t-radio value="minio">MinIO</t-radio>
-              <t-radio value="cos">腾讯云COS</t-radio>
+              <t-radio value="minio">{{ $t('knowledgeEditor.advanced.multimodal.storageTypeOptions.minio') }}</t-radio>
+              <t-radio value="cos">{{ $t('knowledgeEditor.advanced.multimodal.storageTypeOptions.cos') }}</t-radio>
             </t-radio-group>
           </div>
         </div>
 
-        <!-- MinIO配置 -->
+        <!-- MinIO configuration -->
         <div v-if="localMultimodal.storageType === 'minio'" class="storage-config">
           <div class="setting-row">
             <div class="setting-info">
-              <label>Bucket名称 <span class="required">*</span></label>
-              <p class="desc">MinIO存储桶名称（必填）</p>
+              <label>{{ $t('knowledgeEditor.advanced.multimodal.minio.bucketLabel') }} <span class="required">*</span></label>
+              <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.minio.bucketDescription') }}</p>
             </div>
             <div class="setting-control">
               <t-input
                 v-model="localMultimodal.minio.bucketName"
-                placeholder="请输入Bucket名称（必填）"
+                :placeholder="$t('knowledgeEditor.advanced.multimodal.minio.bucketPlaceholder')"
                 @change="handleConfigChange"
                 style="width: 280px;"
               />
@@ -78,8 +78,8 @@
 
           <div class="setting-row">
             <div class="setting-info">
-              <label>使用SSL</label>
-              <p class="desc">是否使用SSL连接</p>
+              <label>{{ $t('knowledgeEditor.advanced.multimodal.minio.useSslLabel') }}</label>
+              <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.minio.useSslDescription') }}</p>
             </div>
             <div class="setting-control">
               <t-switch
@@ -92,13 +92,13 @@
 
           <div class="setting-row">
             <div class="setting-info">
-              <label>路径前缀</label>
-              <p class="desc">文件存储路径前缀（可选）</p>
+              <label>{{ $t('knowledgeEditor.advanced.multimodal.minio.pathPrefixLabel') }}</label>
+              <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.minio.pathPrefixDescription') }}</p>
             </div>
             <div class="setting-control">
               <t-input
                 v-model="localMultimodal.minio.pathPrefix"
-                placeholder="请输入路径前缀"
+                :placeholder="$t('knowledgeEditor.advanced.multimodal.minio.pathPrefixPlaceholder')"
                 @change="handleConfigChange"
                 style="width: 280px;"
               />
@@ -106,17 +106,17 @@
           </div>
         </div>
 
-        <!-- COS配置 -->
+        <!-- COS configuration -->
         <div v-if="localMultimodal.storageType === 'cos'" class="storage-config">
           <div class="setting-row">
             <div class="setting-info">
-              <label>SecretId <span class="required">*</span></label>
-              <p class="desc">腾讯云API密钥ID（必填）</p>
+              <label>{{ $t('knowledgeEditor.advanced.multimodal.cos.secretIdLabel') }} <span class="required">*</span></label>
+              <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.cos.secretIdDescription') }}</p>
             </div>
             <div class="setting-control">
               <t-input
                 v-model="localMultimodal.cos.secretId"
-                placeholder="请输入SecretId（必填）"
+                :placeholder="$t('knowledgeEditor.advanced.multimodal.cos.secretIdPlaceholder')"
                 @change="handleConfigChange"
                 style="width: 280px;"
               />
@@ -125,14 +125,14 @@
 
           <div class="setting-row">
             <div class="setting-info">
-              <label>SecretKey <span class="required">*</span></label>
-              <p class="desc">腾讯云API密钥Key（必填）</p>
+              <label>{{ $t('knowledgeEditor.advanced.multimodal.cos.secretKeyLabel') }} <span class="required">*</span></label>
+              <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.cos.secretKeyDescription') }}</p>
             </div>
             <div class="setting-control">
               <t-input
                 v-model="localMultimodal.cos.secretKey"
                 type="password"
-                placeholder="请输入SecretKey（必填）"
+                :placeholder="$t('knowledgeEditor.advanced.multimodal.cos.secretKeyPlaceholder')"
                 @change="handleConfigChange"
                 style="width: 280px;"
               />
@@ -141,13 +141,13 @@
 
           <div class="setting-row">
             <div class="setting-info">
-              <label>地域 <span class="required">*</span></label>
-              <p class="desc">COS存储桶所在地域（必填）</p>
+              <label>{{ $t('knowledgeEditor.advanced.multimodal.cos.regionLabel') }} <span class="required">*</span></label>
+              <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.cos.regionDescription') }}</p>
             </div>
             <div class="setting-control">
               <t-input
                 v-model="localMultimodal.cos.region"
-                placeholder="如：ap-guangzhou（必填）"
+                :placeholder="$t('knowledgeEditor.advanced.multimodal.cos.regionPlaceholder')"
                 @change="handleConfigChange"
                 style="width: 280px;"
               />
@@ -156,13 +156,13 @@
 
           <div class="setting-row">
             <div class="setting-info">
-              <label>Bucket名称 <span class="required">*</span></label>
-              <p class="desc">COS存储桶名称（必填）</p>
+              <label>{{ $t('knowledgeEditor.advanced.multimodal.cos.bucketLabel') }} <span class="required">*</span></label>
+              <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.cos.bucketDescription') }}</p>
             </div>
             <div class="setting-control">
               <t-input
                 v-model="localMultimodal.cos.bucketName"
-                placeholder="请输入Bucket名称（必填）"
+                :placeholder="$t('knowledgeEditor.advanced.multimodal.cos.bucketPlaceholder')"
                 @change="handleConfigChange"
                 style="width: 280px;"
               />
@@ -171,13 +171,13 @@
 
           <div class="setting-row">
             <div class="setting-info">
-              <label>AppId <span class="required">*</span></label>
-              <p class="desc">腾讯云应用ID（必填）</p>
+              <label>{{ $t('knowledgeEditor.advanced.multimodal.cos.appIdLabel') }} <span class="required">*</span></label>
+              <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.cos.appIdDescription') }}</p>
             </div>
             <div class="setting-control">
               <t-input
                 v-model="localMultimodal.cos.appId"
-                placeholder="请输入AppId（必填）"
+                :placeholder="$t('knowledgeEditor.advanced.multimodal.cos.appIdPlaceholder')"
                 @change="handleConfigChange"
                 style="width: 280px;"
               />
@@ -186,13 +186,13 @@
 
           <div class="setting-row">
             <div class="setting-info">
-              <label>路径前缀</label>
-              <p class="desc">文件存储路径前缀（可选）</p>
+              <label>{{ $t('knowledgeEditor.advanced.multimodal.cos.pathPrefixLabel') }}</label>
+              <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.cos.pathPrefixDescription') }}</p>
             </div>
             <div class="setting-control">
               <t-input
                 v-model="localMultimodal.cos.pathPrefix"
-                placeholder="请输入路径前缀"
+                :placeholder="$t('knowledgeEditor.advanced.multimodal.cos.pathPrefixPlaceholder')"
                 @change="handleConfigChange"
                 style="width: 280px;"
               />
@@ -201,11 +201,11 @@
         </div>
       </div>
 
-      <!-- 知识图谱提取 -->
+      <!-- Knowledge graph extraction -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>知识图谱提取</label>
-          <p class="desc">从文档中自动提取实体和关系构建知识图谱</p>
+          <label>{{ $t('knowledgeEditor.advanced.graph.label') }}</label>
+          <p class="desc">{{ $t('knowledgeEditor.advanced.graph.description') }}</p>
         </div>
         <div class="setting-control">
           <t-switch
@@ -216,21 +216,21 @@
         </div>
       </div>
 
-      <!-- 知识图谱配置 -->
+      <!-- Knowledge graph configuration -->
       <div v-if="localNodeExtract.enabled" class="subsection">
         <div class="subsection-header">
-          <h4>图谱配置</h4>
+          <h4>{{ $t('knowledgeEditor.advanced.graph.configTitle') }}</h4>
         </div>
         
         <div class="setting-row">
           <div class="setting-info">
-            <label>提示文本</label>
-            <p class="desc">用于引导模型提取实体和关系的提示文本</p>
+            <label>{{ $t('knowledgeEditor.advanced.graph.promptLabel') }}</label>
+            <p class="desc">{{ $t('knowledgeEditor.advanced.graph.promptDescription') }}</p>
           </div>
           <div class="setting-control">
             <t-textarea
               v-model="localNodeExtract.text"
-              placeholder="请输入提示文本"
+              :placeholder="$t('knowledgeEditor.advanced.graph.promptPlaceholder')"
               :autosize="{ minRows: 3, maxRows: 6 }"
               @change="handleConfigChange"
               style="width: 280px;"
@@ -240,13 +240,13 @@
 
         <div class="setting-row">
           <div class="setting-info">
-            <label>标签</label>
-            <p class="desc">预定义的实体标签（多个标签用逗号分隔）</p>
+            <label>{{ $t('knowledgeEditor.advanced.graph.tagsLabel') }}</label>
+            <p class="desc">{{ $t('knowledgeEditor.advanced.graph.tagsDescription') }}</p>
           </div>
           <div class="setting-control">
             <t-tag-input
               v-model="localNodeExtract.tags"
-              placeholder="输入标签后按回车"
+              :placeholder="$t('knowledgeEditor.advanced.graph.tagsPlaceholder')"
               @change="handleConfigChange"
               style="width: 280px;"
             />
@@ -307,7 +307,7 @@ const localNodeExtract = ref<NodeExtractConfig>({ ...props.nodeExtract })
 
 const vllmSelectorRef = ref()
 
-// 监听props变化
+// Watch for prop changes
 watch(() => props.multimodal, (newVal) => {
   localMultimodal.value = { ...newVal }
 }, { deep: true })
@@ -316,9 +316,9 @@ watch(() => props.nodeExtract, (newVal) => {
   localNodeExtract.value = { ...newVal }
 }, { deep: true })
 
-// 处理多模态开关
+// Handle multimodal toggle
 const handleMultimodalToggle = () => {
-  // 如果关闭多模态，清空相关配置
+  // Reset related configuration when multimodal is disabled
   if (!localMultimodal.value.enabled) {
     localMultimodal.value.vllmModelId = ''
     localMultimodal.value.minio = {
@@ -338,34 +338,34 @@ const handleMultimodalToggle = () => {
   emit('update:multimodal', localMultimodal.value)
 }
 
-// 处理存储类型变化
+// Handle storage type change
 const handleStorageTypeChange = () => {
   emit('update:multimodal', localMultimodal.value)
 }
 
-// 处理VLLM模型变化
+// Handle VLLM model change
 const handleVLLMChange = (modelId: string) => {
   localMultimodal.value.vllmModelId = modelId
   emit('update:multimodal', localMultimodal.value)
 }
 
-// 处理添加模型
+// Navigate to model management when adding models
 const handleAddModel = (subSection: string) => {
   uiStore.openSettings('models', subSection)
 }
 
-// 处理知识图谱开关
+// Handle knowledge graph toggle
 const handleNodeExtractToggle = () => {
   emit('update:nodeExtract', localNodeExtract.value)
 }
 
-// 处理配置变化
+// Handle configuration change
 const handleConfigChange = () => {
   emit('update:multimodal', localMultimodal.value)
   emit('update:nodeExtract', localNodeExtract.value)
 }
 
-// 由于使用了 allModels prop，不再需要单独刷新
+// The allModels prop keeps model options in sync
 </script>
 
 <style lang="less" scoped>

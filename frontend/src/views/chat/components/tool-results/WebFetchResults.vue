@@ -19,11 +19,11 @@
             >
               <span class="result-domain">{{ safeHostname(item.url) }}</span>
             </a>
-            <span v-else class="result-domain">未知链接</span>
+            <span v-else class="result-domain">{{ $t('chat.unknownLink') }}</span>
           </div>
           <div class="result-meta">
             <span v-if="item.method" class="meta-pill">{{ formatMethod(item.method) }}</span>
-            <span v-if="item.content_length" class="meta-text">长度 {{ formatLength(item.content_length) }}</span>
+            <span v-if="item.content_length" class="meta-text">{{ $t('chat.contentLengthLabel', { value: formatLength(item.content_length) }) }}</span>
             <t-icon
               :name="isExpanded(index) ? 'chevron-up' : 'chevron-down'"
               class="expand-icon"
@@ -42,29 +42,29 @@
                   target="_blank"
                   rel="noopener noreferrer"
                 >{{ item.url }}</a>
-                <span v-else>未提供</span>
+                <span v-else>{{ $t('chat.notProvided') }}</span>
               </span>
             </div>
             <div v-if="item.prompt" class="info-field">
-              <span class="field-label">提示词</span>
+              <span class="field-label">{{ $t('chat.promptLabel') }}</span>
               <span class="field-value">{{ item.prompt }}</span>
             </div>
           </div>
 
           <div v-if="item.error" class="info-section">
-            <div class="info-section-title error">错误信息</div>
+            <div class="info-section-title error">{{ $t('chat.errorMessageLabel') }}</div>
             <div class="full-content error-text">{{ item.error }}</div>
           </div>
 
           <div v-else>
             <div v-if="item.summary" class="info-section">
-              <div class="info-section-title">总结</div>
+              <div class="info-section-title">{{ $t('chat.summaryLabel') }}</div>
               <div class="full-content">{{ item.summary }}</div>
             </div>
 
             <div v-if="item.raw_content" class="info-section">
               <div class="info-section-title">
-                原始文本
+                {{ $t('chat.rawTextLabel') }}
                 <span class="raw-length" v-if="item.content_length">
                   （{{ formatLength(item.content_length) }}）
                 </span>
@@ -76,7 +76,7 @@
                 {{ truncate(item.raw_content) }}
               </div>
               <button class="action-button" @click.stop="toggleRaw(index)">
-                {{ isRawExpanded(index) ? '收起原文' : '展开原文' }}
+                {{ isRawExpanded(index) ? $t('chat.collapseRaw') : $t('chat.expandRaw') }}
               </button>
             </div>
           </div>
@@ -84,19 +84,21 @@
       </div>
     </div>
 
-    <div v-else class="empty-state">未获取到网页内容</div>
+    <div v-else class="empty-state">{{ $t('chat.noWebContent') }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { WebFetchResultsData, WebFetchResultItem } from '@/types/tool-results';
+import { useI18n } from 'vue-i18n';
 
 interface Props {
   data: WebFetchResultsData;
 }
 
 const props = defineProps<Props>();
+const { t } = useI18n();
 
 const items = computed<WebFetchResultItem[]>(() => props.data.results || []);
 const expandedCards = ref<Set<number>>(new Set());
@@ -147,14 +149,14 @@ const safeHostname = (url: string): string => {
 };
 
 const formatLength = (length: number): string => {
-  if (!length || Number.isNaN(length)) return '0';
+  if (!length || Number.isNaN(length)) return t('chat.lengthChars', { value: 0 });
   if (length >= 10000) {
-    return `${(length / 10000).toFixed(1)} 万字`;
+    return t('chat.lengthTenThousands', { value: (length / 10000).toFixed(1) });
   }
   if (length >= 1000) {
-    return `${(length / 1000).toFixed(1)} 千字`;
+    return t('chat.lengthThousands', { value: (length / 1000).toFixed(1) });
   }
-  return `${length} 字`;
+  return t('chat.lengthChars', { value: length });
 };
 
 const formatMethod = (method: string): string => {

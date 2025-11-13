@@ -1,11 +1,11 @@
 <template>
   <t-dialog
     v-model:visible="dialogVisible"
-    :header="mode === 'add' ? '添加 MCP 服务' : '编辑 MCP 服务'"
+    :header="mode === 'add' ? t('mcpServiceDialog.addTitle') : t('mcpServiceDialog.editTitle')"
     width="700px"
     :on-confirm="handleSubmit"
     :on-cancel="handleClose"
-    :confirm-btn="{ content: '保存', loading: submitting }"
+    :confirm-btn="{ content: t('common.save'), loading: submitting }"
   >
     <t-form
       ref="formRef"
@@ -13,45 +13,45 @@
       :rules="rules"
       label-width="120px"
     >
-      <t-form-item label="服务名称" name="name">
-        <t-input v-model="formData.name" placeholder="请输入服务名称" />
+      <t-form-item :label="t('mcpServiceDialog.name')" name="name">
+        <t-input v-model="formData.name" :placeholder="t('mcpServiceDialog.namePlaceholder')" />
       </t-form-item>
 
-      <t-form-item label="描述" name="description">
+      <t-form-item :label="t('mcpServiceDialog.description')" name="description">
         <t-textarea
           v-model="formData.description"
           :autosize="{ minRows: 3, maxRows: 5 }"
-          placeholder="请输入服务描述"
+          :placeholder="t('mcpServiceDialog.descriptionPlaceholder')"
         />
       </t-form-item>
 
-      <t-form-item label="传输类型" name="transport_type">
+      <t-form-item :label="t('mcpServiceDialog.transportType')" name="transport_type">
         <t-radio-group v-model="formData.transport_type">
-          <t-radio value="sse">SSE (Server-Sent Events)</t-radio>
-          <t-radio value="http-streamable">HTTP Streamable</t-radio>
-          <t-radio value="stdio">Stdio</t-radio>
+          <t-radio value="sse">{{ t('mcpServiceDialog.transport.sse') }}</t-radio>
+          <t-radio value="http-streamable">{{ t('mcpServiceDialog.transport.httpStreamable') }}</t-radio>
+          <t-radio value="stdio">{{ t('mcpServiceDialog.transport.stdio') }}</t-radio>
         </t-radio-group>
       </t-form-item>
 
       <!-- URL for SSE/HTTP Streamable -->
       <t-form-item 
         v-if="formData.transport_type !== 'stdio'" 
-        label="服务 URL" 
+        :label="t('mcpServiceDialog.serviceUrl')" 
         name="url"
       >
-        <t-input v-model="formData.url" placeholder="https://example.com/mcp" />
+        <t-input v-model="formData.url" :placeholder="t('mcpServiceDialog.serviceUrlPlaceholder')" />
       </t-form-item>
 
       <!-- Stdio Config -->
       <template v-if="formData.transport_type === 'stdio'">
-        <t-form-item label="命令" name="stdio_config.command">
+        <t-form-item :label="t('mcpServiceDialog.command')" name="stdio_config.command">
           <t-radio-group v-model="formData.stdio_config.command">
             <t-radio value="uvx">uvx</t-radio>
             <t-radio value="npx">npx</t-radio>
           </t-radio-group>
         </t-form-item>
 
-        <t-form-item label="参数" name="stdio_config.args">
+        <t-form-item :label="t('mcpServiceDialog.args')" name="stdio_config.args">
           <div class="args-input-container">
             <div 
               v-for="(arg, index) in formData.stdio_config.args" 
@@ -60,7 +60,7 @@
             >
               <t-input 
                 v-model="formData.stdio_config.args[index]" 
-                :placeholder="`参数 ${index + 1}`"
+                :placeholder="t('mcpServiceDialog.argPlaceholder', { index: index + 1 })"
                 class="arg-input"
               />
               <t-button 
@@ -79,12 +79,12 @@
               class="add-arg-btn"
             >
               <template #icon><t-icon name="add" /></template>
-              添加参数
+              {{ t('mcpServiceDialog.addArg') }}
             </t-button>
           </div>
         </t-form-item>
 
-        <t-form-item label="环境变量">
+        <t-form-item :label="t('mcpServiceDialog.envVars')">
           <div class="env-vars-container">
             <div 
               v-for="(value, key, index) in formData.env_vars" 
@@ -93,13 +93,13 @@
             >
               <t-input 
                 v-model="envVarKeys[index]" 
-                placeholder="变量名"
+                :placeholder="t('mcpServiceDialog.envKeyPlaceholder')"
                 class="env-key-input"
                 @blur="updateEnvVarKey(index, envVarKeys[index])"
               />
               <t-input 
                 v-model="formData.env_vars[key]" 
-                placeholder="变量值"
+                :placeholder="t('mcpServiceDialog.envValuePlaceholder')"
                 type="password"
                 class="env-value-input"
               />
@@ -118,38 +118,38 @@
               class="add-env-var-btn"
             >
               <template #icon><t-icon name="add" /></template>
-              添加环境变量
+              {{ t('mcpServiceDialog.addEnvVar') }}
             </t-button>
           </div>
         </t-form-item>
       </template>
 
-      <t-form-item label="启用服务" name="enabled">
+      <t-form-item :label="t('mcpServiceDialog.enableService')" name="enabled">
         <t-switch v-model="formData.enabled" />
       </t-form-item>
 
       <!-- Authentication Config -->
       <t-collapse :default-value="[]">
-        <t-collapse-panel header="认证配置" value="auth">
-          <t-form-item label="API Key">
+        <t-collapse-panel :header="t('mcpServiceDialog.authConfig')" value="auth">
+          <t-form-item :label="t('mcpServiceDialog.apiKey')">
             <t-input
               v-model="formData.auth_config.api_key"
               type="password"
-              placeholder="可选"
+              :placeholder="t('mcpServiceDialog.optional')"
             />
           </t-form-item>
-          <t-form-item label="Bearer Token">
+          <t-form-item :label="t('mcpServiceDialog.bearerToken')">
             <t-input
               v-model="formData.auth_config.token"
               type="password"
-              placeholder="可选"
+              :placeholder="t('mcpServiceDialog.optional')"
             />
           </t-form-item>
         </t-collapse-panel>
 
         <!-- Advanced Config -->
-        <t-collapse-panel header="高级配置" value="advanced">
-          <t-form-item label="超时时间(秒)">
+        <t-collapse-panel :header="t('mcpServiceDialog.advancedConfig')" value="advanced">
+          <t-form-item :label="t('mcpServiceDialog.timeoutSec')">
             <t-input-number
               v-model="formData.advanced_config.timeout"
               :min="1"
@@ -157,7 +157,7 @@
               placeholder="30"
             />
           </t-form-item>
-          <t-form-item label="重试次数">
+          <t-form-item :label="t('mcpServiceDialog.retryCount')">
             <t-input-number
               v-model="formData.advanced_config.retry_count"
               :min="0"
@@ -165,7 +165,7 @@
               placeholder="3"
             />
           </t-form-item>
-          <t-form-item label="重试延迟(秒)">
+          <t-form-item :label="t('mcpServiceDialog.retryDelaySec')">
             <t-input-number
               v-model="formData.advanced_config.retry_delay"
               :min="0"
@@ -183,6 +183,7 @@
 import { ref, watch, computed } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import type { FormInstanceFunctions, FormRule } from 'tdesign-vue-next'
+import { useI18n } from 'vue-i18n'
 import {
   createMCPService,
   updateMCPService,
@@ -205,6 +206,7 @@ const emit = defineEmits<Emits>()
 
 const formRef = ref<FormInstanceFunctions>()
 const submitting = ref(false)
+const { t } = useI18n()
 
 const formData = ref({
   name: '',
@@ -232,24 +234,24 @@ const formData = ref({
 const envVarKeys = ref<string[]>([])
 
 const rules: Record<string, FormRule[]> = {
-  name: [{ required: true, message: '请输入服务名称', type: 'error' }],
-  transport_type: [{ required: true, message: '请选择传输类型', type: 'error' }],
+  name: [{ required: true, message: t('mcpServiceDialog.rules.nameRequired') as string, type: 'error' }],
+  transport_type: [{ required: true, message: t('mcpServiceDialog.rules.transportRequired') as string, type: 'error' }],
   url: [
     { 
       validator: (val: string) => {
         if (formData.value.transport_type !== 'stdio') {
           if (!val || val.trim() === '') {
-            return { result: false, message: '请输入服务 URL', type: 'error' }
+            return { result: false, message: t('mcpServiceDialog.rules.urlRequired') as string, type: 'error' }
           }
           // Basic URL validation
           try {
             new URL(val)
-            return { result: true }
+            return { result: true, message: '', type: 'success' }
           } catch {
-            return { result: false, message: '请输入有效的 URL', type: 'error' }
+            return { result: false, message: t('mcpServiceDialog.rules.urlInvalid') as string, type: 'error' }
           }
         }
-        return { result: true }
+        return { result: true, message: '', type: 'success' }
       }
     }
   ],
@@ -258,10 +260,10 @@ const rules: Record<string, FormRule[]> = {
       validator: (val: string) => {
         if (formData.value.transport_type === 'stdio') {
           if (!val || (val !== 'uvx' && val !== 'npx')) {
-            return { result: false, message: '请选择命令 (uvx 或 npx)', type: 'error' }
+            return { result: false, message: t('mcpServiceDialog.rules.commandRequired') as string, type: 'error' }
           }
         }
-        return { result: true }
+        return { result: true, message: '', type: 'success' }
       }
     }
   ],
@@ -270,10 +272,10 @@ const rules: Record<string, FormRule[]> = {
       validator: (val: string[]) => {
         if (formData.value.transport_type === 'stdio') {
           if (!val || val.length === 0 || val.every(arg => !arg || arg.trim() === '')) {
-            return { result: false, message: '请至少输入一个参数', type: 'error' }
+            return { result: false, message: t('mcpServiceDialog.rules.argsRequired') as string, type: 'error' }
           }
         }
-        return { result: true }
+        return { result: true, message: '', type: 'success' }
       }
     }
   ]
@@ -435,7 +437,7 @@ const handleSubmit = async () => {
       const args = formData.value.stdio_config.args.filter(arg => arg && arg.trim() !== '')
       data.stdio_config = {
         command: formData.value.stdio_config.command,
-        args: args.length > 0 ? args : undefined
+        args
       }
       // Filter out empty env vars
       const envVars: Record<string, string> = {}
@@ -451,16 +453,16 @@ const handleSubmit = async () => {
 
     if (props.mode === 'add') {
       await createMCPService(data)
-      MessagePlugin.success('MCP 服务已创建')
+      MessagePlugin.success(t('mcpServiceDialog.toasts.created'))
     } else {
       await updateMCPService(props.service!.id, data)
-      MessagePlugin.success('MCP 服务已更新')
+      MessagePlugin.success(t('mcpServiceDialog.toasts.updated'))
     }
 
     emit('success')
   } catch (error) {
     MessagePlugin.error(
-      props.mode === 'add' ? '创建 MCP 服务失败' : '更新 MCP 服务失败'
+      props.mode === 'add' ? (t('mcpServiceDialog.toasts.createFailed') as string) : (t('mcpServiceDialog.toasts.updateFailed') as string)
     )
     console.error('Failed to save MCP service:', error)
   } finally {

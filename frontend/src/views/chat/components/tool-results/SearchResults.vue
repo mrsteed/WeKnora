@@ -26,7 +26,7 @@
             <div class="result-title">
               <span class="result-index">#{{ result.result_index }}</span>
               <span class="relevance-badge" :class="getRelevanceClass(result.relevance_level)">
-                {{ result.relevance_level }}
+                {{ getRelevanceLabel(result.relevance_level) }}
               </span>
               <span class="knowledge-title">{{ result.knowledge_title }}</span>
             </div>
@@ -37,7 +37,7 @@
 
     <!-- Empty State -->
     <div v-else class="empty-state">
-      没有找到搜索结果
+      {{ $t('chat.noSearchResults') }}
     </div>
   </div>
 </template>
@@ -47,11 +47,14 @@ import { ref, defineProps, computed } from 'vue';
 import type { SearchResultsData, SearchResultItem, RelevanceLevel } from '@/types/tool-results';
 import { getMatchTypeIcon } from '@/utils/tool-icons';
 import ContentPopup from './ContentPopup.vue';
+import { useI18n } from 'vue-i18n';
 
 const props = defineProps<{
   data: SearchResultsData;
   arguments?: Record<string, any> | string;
 }>();
+
+const { t } = useI18n();
 
 const results = computed(() => props.data.results || []);
 const kbCounts = computed(() => props.data.kb_counts);
@@ -104,6 +107,16 @@ const getRelevanceClass = (level: RelevanceLevel): string => {
     '弱相关': 'weak',
   };
   return classMap[level] || 'weak';
+};
+
+const getRelevanceLabel = (level: RelevanceLevel): string => {
+  const labelMap: Record<RelevanceLevel, string> = {
+    '高相关': t('chat.relevanceHigh'),
+    '中相关': t('chat.relevanceMedium'),
+    '低相关': t('chat.relevanceLow'),
+    '弱相关': t('chat.relevanceWeak'),
+  };
+  return labelMap[level] || level;
 };
 </script>
 

@@ -70,7 +70,7 @@
     <!-- Fallback: Display raw output -->
     <div v-else class="fallback-output">
       <div class="fallback-header">
-        <span class="fallback-label">原始输出</span>
+        <span class="fallback-label">{{ $t('chat.rawOutputLabel') }}</span>
       </div>
       <div class="detail-output-wrapper">
         <div class="detail-output">{{ output }}</div>

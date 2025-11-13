@@ -2,14 +2,14 @@
   <div class="database-query-display">
     <!-- Query Display -->
     <div v-if="data.query" class="query-section">
-      <div class="section-header">执行的 SQL 查询:</div>
+      <div class="section-header">{{ $t('chat.sqlQueryExecuted') }}</div>
       <pre class="query-code">{{ data.query }}</pre>
     </div>
     
     <!-- Results Summary -->
     <div class="results-summary">
-      <strong>返回结果:</strong> {{ data.row_count }} 行
-      <span v-if="data.columns"> × {{ data.columns.length }} 列</span>
+      <strong>{{ $t('chat.sqlResultsLabel') }}</strong> {{ data.row_count }} {{ $t('chat.rowsLabel') }}
+      <span v-if="data.columns"> × {{ data.columns.length }} {{ $t('chat.columnsLabel') }}</span>
     </div>
     
     <!-- Results Table -->
@@ -32,23 +32,25 @@
     
     <!-- No Results -->
     <div v-else class="no-results">
-      未找到匹配的记录
+      {{ $t('chat.noDatabaseRecords') }}
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { DatabaseQueryData } from '@/types/tool-results';
+import { useI18n } from 'vue-i18n';
 
 interface Props {
   data: DatabaseQueryData;
 }
 
 const props = defineProps<Props>();
+const { t } = useI18n();
 
 const formatValue = (value: any): string => {
   if (value === null || value === undefined) {
-    return '<NULL>';
+    return t('chat.nullValuePlaceholder');
   }
   if (typeof value === 'object') {
     return JSON.stringify(value);

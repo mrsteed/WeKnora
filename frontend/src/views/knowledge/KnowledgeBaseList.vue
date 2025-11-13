@@ -2,17 +2,17 @@
   <div class="kb-list-container">
     <!-- 头部 -->
     <div class="header">
-      <h2>知识库</h2>
+      <h2>{{ $t('knowledgeBase.title') }}</h2>
       <button class="create-btn" @click="openCreateModal">
         <t-icon name="add" size="16px" class="btn-icon" />
-        <span>新建知识库</span>
+        <span>{{ $t('knowledgeList.create') }}</span>
       </button>
     </div>
     
     <!-- 未初始化知识库提示 -->
     <div v-if="hasUninitializedKbs" class="warning-banner">
       <t-icon name="info-circle" size="16px" />
-      <span>部分知识库尚未初始化，需要先在设置中配置模型信息才能添加知识文档</span>
+      <span>{{ $t('knowledgeList.uninitializedBanner') }}</span>
     </div>
 
     <!-- 卡片网格 -->
@@ -47,11 +47,11 @@
               <div class="popup-menu" @click.stop>
                 <div class="popup-menu-item" @click.stop="handleSettings(kb)">
                   <t-icon class="menu-icon" name="setting" />
-                  <span>设置</span>
+                  <span>{{ $t('knowledgeBase.settings') }}</span>
                 </div>
                 <div class="popup-menu-item delete" @click.stop="handleDelete(kb)">
                   <t-icon class="menu-icon" name="delete" />
-                  <span>删除</span>
+                  <span>{{ $t('common.delete') }}</span>
                 </div>
               </div>
             </template>
@@ -61,7 +61,7 @@
         <!-- 卡片内容 -->
         <div class="card-content">
           <div class="card-description">
-            {{ kb.description || '暂无描述' }}
+            {{ kb.description || $t('knowledgeBase.noDescription') }}
           </div>
         </div>
 
@@ -69,7 +69,7 @@
         <div class="card-bottom">
           <div class="status-badge" :class="{ 'initialized': isInitialized(kb), 'uninitialized': !isInitialized(kb) }">
             <span v-if="!isInitialized(kb)" class="warning-icon">⚠</span>
-            <span>{{ isInitialized(kb) ? '已初始化' : '未初始化' }}</span>
+            <span>{{ isInitialized(kb) ? $t('knowledgeBase.initializedStatus') : $t('knowledgeBase.notInitializedStatus') }}</span>
           </div>
           <span class="card-time">{{ kb.updated_at }}</span>
         </div>
@@ -79,8 +79,8 @@
     <!-- 空状态 -->
     <div v-else-if="!loading" class="empty-state">
       <img class="empty-img" src="@/assets/img/upload.svg" alt="">
-      <span class="empty-txt">暂无知识库</span>
-      <span class="empty-desc">点击右上角"新建知识库"按钮创建第一个知识库</span>
+      <span class="empty-txt">{{ $t('knowledgeList.empty.title') }}</span>
+      <span class="empty-desc">{{ $t('knowledgeList.empty.description') }}</span>
     </div>
 
 
@@ -95,14 +95,14 @@
       <div class="circle-wrap">
         <div class="dialog-header">
           <img class="circle-img" src="@/assets/img/circle.png" alt="">
-          <span class="circle-title">删除确认</span>
+          <span class="circle-title">{{ $t('knowledgeList.delete.confirmTitle') }}</span>
         </div>
         <span class="del-circle-txt">
-          {{ `确认要删除知识库"${deletingKb?.name}"？删除后不可恢复` }}
+          {{ $t('knowledgeList.delete.confirmMessage', { name: deletingKb?.name ?? '' }) }}
         </span>
         <div class="circle-btn">
-          <span class="circle-btn-txt" @click="deleteVisible = false">取消</span>
-          <span class="circle-btn-txt confirm" @click="confirmDelete">确认删除</span>
+          <span class="circle-btn-txt" @click="deleteVisible = false">{{ $t('common.cancel') }}</span>
+          <span class="circle-btn-txt confirm" @click="confirmDelete">{{ $t('knowledgeList.delete.confirmButton') }}</span>
         </div>
       </div>
     </t-dialog>
@@ -130,9 +130,11 @@ import { formatStringDate } from '@/utils/index'
 import { useUIStore } from '@/stores/ui'
 import KnowledgeBaseEditorModal from './KnowledgeBaseEditorModal.vue'
 import Settings from '@/views/settings/Settings.vue'
+import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
 const uiStore = useUIStore()
+const { t } = useI18n()
 
 interface KB { 
   id: string; 
@@ -203,15 +205,15 @@ const confirmDelete = () => {
   
   deleteKnowledgeBase(deletingKb.value.id).then((res: any) => {
     if (res.success) {
-      MessagePlugin.success('已删除')
+      MessagePlugin.success(t('knowledgeList.messages.deleted'))
       deleteVisible.value = false
       deletingKb.value = null
       fetchList()
     } else {
-      MessagePlugin.error(res.message || '删除失败')
+      MessagePlugin.error(res.message || t('knowledgeList.messages.deleteFailed'))
     }
   }).catch((e: any) => {
-    MessagePlugin.error(e?.message || '删除失败')
+    MessagePlugin.error(e?.message || t('knowledgeList.messages.deleteFailed'))
   })
 }
 
@@ -244,7 +246,7 @@ const goSettings = (id: string) => {
 
 // 知识库编辑器成功回调（创建或编辑成功）
 const handleKBEditorSuccess = (kbId: string) => {
-  console.log('知识库操作成功:', kbId)
+  console.log('[KnowledgeBaseList] knowledge operation success:', kbId)
   fetchList()
 }
 </script>
@@ -407,6 +409,7 @@ const handleKBEditorSuccess = (kbId: string) => {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
   color: #00000066;
   font-family: "PingFang SC";

@@ -1,31 +1,31 @@
 <template>
   <div class="mcp-settings">
     <div class="section-header">
-      <h2>MCP 服务管理</h2>
+      <h2>{{ $t('mcpSettings.title') }}</h2>
       <p class="section-description">
-        管理外部 MCP (Model Context Protocol) 服务，在 Agent 模式下调用外部工具和资源
+        {{ $t('mcpSettings.description') }}
       </p>
     </div>
 
     <div v-if="loading" class="loading-container">
-      <t-loading text="加载中..." />
+      <t-loading :text="$t('common.loading')" />
     </div>
 
     <div v-else class="services-container">
       <div class="services-header">
         <div class="header-info">
-          <h3>已配置的服务</h3>
-          <p>管理和测试 MCP 服务连接</p>
+          <h3>{{ $t('mcpSettings.configuredServices') }}</h3>
+          <p>{{ $t('mcpSettings.manageAndTest') }}</p>
         </div>
         <t-button size="small" theme="primary" @click="handleAdd">
           <template #icon><t-icon name="add" /></template>
-          添加服务
+          {{ $t('mcpSettings.addService') }}
         </t-button>
       </div>
 
       <div v-if="services.length === 0" class="empty-state">
-        <t-empty description="暂无 MCP 服务">
-          <t-button theme="primary" @click="handleAdd">添加第一个 MCP 服务</t-button>
+        <t-empty :description="$t('mcpSettings.empty')" >
+          <t-button theme="primary" @click="handleAdd">{{ $t('mcpSettings.addFirst') }}</t-button>
         </t-empty>
       </div>
 
@@ -89,6 +89,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
+import { useI18n } from 'vue-i18n'
 import {
   listMCPServices,
   updateMCPService,
@@ -99,6 +100,8 @@ import {
 } from '@/api/mcp-service'
 import McpServiceDialog from './components/McpServiceDialog.vue'
 import McpTestResult from './components/McpTestResult.vue'
+
+const { t } = useI18n()
 
 const services = ref<MCPService[]>([])
 const loading = ref(false)
@@ -116,7 +119,7 @@ const loadServices = async () => {
   try {
     services.value = await listMCPServices()
   } catch (error) {
-    MessagePlugin.error('加载 MCP 服务列表失败')
+    MessagePlugin.error(t('mcpSettings.toasts.loadFailed'))
     console.error('Failed to load MCP services:', error)
   } finally {
     loading.value = false
@@ -150,11 +153,11 @@ const handleToggleEnabled = async (service: MCPService) => {
   const originalState = service.enabled
   try {
     await updateMCPService(service.id, { enabled: service.enabled })
-    MessagePlugin.success(`已${service.enabled ? '启用' : '禁用'} MCP 服务`)
+    MessagePlugin.success(service.enabled ? t('mcpSettings.toasts.enabled') : t('mcpSettings.toasts.disabled'))
   } catch (error) {
     // Revert on error
     service.enabled = originalState
-    MessagePlugin.error('更新 MCP 服务状态失败')
+    MessagePlugin.error(t('mcpSettings.toasts.updateStateFailed'))
     console.error('Failed to update MCP service:', error)
   }
 }
@@ -168,7 +171,7 @@ const handleTest = async (service: MCPService) => {
   
   // 显示测试开始提示
   MessagePlugin.info({
-    content: `正在测试 ${service.name}...`,
+    content: t('mcpSettings.toasts.testing', { name: service.name }),
     duration: 0, // 不自动关闭
     closeBtn: false
   })
@@ -186,7 +189,7 @@ const handleTest = async (service: MCPService) => {
       // 即使没有结果，也显示错误对话框
       testResult.value = {
         success: false,
-        message: '测试失败：未收到服务器响应'
+        message: t('mcpSettings.toasts.noResponse')
       }
       testDialogVisible.value = true
       return
@@ -203,7 +206,7 @@ const handleTest = async (service: MCPService) => {
     MessagePlugin.closeAll()
     
     // 显示错误信息
-    const errorMessage = error?.response?.data?.error?.message || error?.message || '测试 MCP 服务失败'
+    const errorMessage = error?.response?.data?.error?.message || error?.message || t('mcpSettings.toasts.testFailed')
     console.error('Failed to test MCP service:', error)
     
     // 即使出错也显示结果对话框，显示错误信息
@@ -223,19 +226,19 @@ const handleDelete = async (service: MCPService) => {
   if (!service || !service.id) return
   
   const confirmDialog = DialogPlugin.confirm({
-    header: '确认删除',
-    body: `确定要删除 MCP 服务"${service.name || '未命名'}"吗？此操作无法撤销。`,
-    confirmBtn: '删除',
-    cancelBtn: '取消',
+    header: t('common.confirmDelete'),
+    body: t('mcpSettings.deleteConfirmBody', { name: service.name || t('mcpSettings.unnamed') }),
+    confirmBtn: t('common.delete'),
+    cancelBtn: t('common.cancel'),
     theme: 'warning',
     onConfirm: async () => {
       try {
         await deleteMCPService(service.id)
-        MessagePlugin.success('MCP 服务已删除')
+        MessagePlugin.success(t('mcpSettings.toasts.deleted'))
         confirmDialog.hide()
         loadServices()
       } catch (error) {
-        MessagePlugin.error('删除 MCP 服务失败')
+        MessagePlugin.error(t('mcpSettings.toasts.deleteFailed'))
         console.error('Failed to delete MCP service:', error)
       }
     }
@@ -246,15 +249,15 @@ const handleDelete = async (service: MCPService) => {
 const getServiceOptions = (service: MCPService) => {
   return [
     {
-      content: '测试连接',
+      content: t('mcpSettings.actions.test'),
       value: `test-${service.id}`
     },
     {
-      content: '编辑',
+      content: t('common.edit'),
       value: `edit-${service.id}`
     },
     {
-      content: '删除',
+      content: t('common.delete'),
       value: `delete-${service.id}`,
       theme: 'error'
     }

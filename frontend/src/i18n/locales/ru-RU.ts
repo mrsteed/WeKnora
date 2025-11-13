@@ -15,6 +15,7 @@ export default {
   knowledgeBase: {
     title: 'База знаний',
     list: 'Список баз знаний',
+    fileContent: 'Содержимое файла',
     detail: 'Детали базы знаний',
     create: 'Создать базу знаний',
     edit: 'Редактировать базу знаний',
@@ -67,6 +68,10 @@ export default {
     totalSize: 'Общий размер',
     // Дополнительные переводы для KnowledgeBase.vue
     newSession: 'Новый диалог',
+    editDocument: 'Редактировать документ',
+    draft: 'Черновик',
+    draftTip: 'Временно сохранён, не участвует в поиске',
+    untitledDocument: 'Документ без названия',
     deleteDocument: 'Удалить документ',
     parsingFailed: 'Парсинг не удался',
     parsingInProgress: 'Парсинг...',
@@ -107,39 +112,30 @@ export default {
     emptyKnowledgeDragDrop: 'База знаний пуста, перетащите файлы для загрузки',
     pdfDocFormat: 'Файлы pdf, doc формата, не более 10 МБ',
     textMarkdownFormat: 'Файлы text, markdown формата, не более 200 КБ',
-    dragFileNotText: 'Пожалуйста, перетащите файлы, а не текст или ссылки'
+    dragFileNotText: 'Пожалуйста, перетащите файлы, а не текст или ссылки',
+    searchPlaceholder: 'Поиск по базам знаний...',
+    noMatch: 'Совпадающих баз знаний не найдено',
+    noKnowledge: 'Нет доступных баз знаний',
+    loadingFailed: 'Не удалось загрузить базы знаний'
   },
-  chat: {
-    title: 'Диалог',
-    newChat: 'Новый чат',
-    inputPlaceholder: 'Введите ваше сообщение...',
-    send: 'Отправить',
-    thinking: 'Думаю...',
-    regenerate: 'Сгенерировать заново',
+  agent: {
+    taskLabel: 'Задача:',
     copy: 'Копировать',
-    delete: 'Удалить',
-    reference: 'Ссылка',
-    noMessages: 'Нет сообщений',
-    // Дополнительные переводы для компонентов чата
-    waitingForAnswer: 'Ожидание ответа...',
-    cannotAnswer: 'Извините, я не могу ответить на этот вопрос.',
-    summarizingAnswer: 'Подведение итогов ответа...',
-    loading: 'Загрузка...',
-    enterDescription: 'Введите описание',
-    referencedContent: 'Использовано {count} связанных материалов',
-    deepThinking: 'Глубокое мышление завершено',
-    knowledgeBaseQandA: 'Вопросы и ответы на основе базы знаний',
-    askKnowledgeBase: 'Задайте вопрос базе знаний',
-    sourcesCount: '{count} источников',
-    pleaseEnterContent: 'Пожалуйста, введите содержимое!',
-    pleaseUploadKnowledgeBase: 'Пожалуйста, сначала загрузите базу знаний!',
-    replyingPleaseWait: 'Идёт ответ, пожалуйста, попробуйте позже!',
-    createSessionFailed: 'Не удалось создать сеанс',
-    createSessionError: 'Ошибка создания сеанса',
-    unableToGetKnowledgeBaseId: 'Невозможно получить ID базы знаний'
+    addToKnowledgeBase: 'Добавить в базу знаний',
+    updatePlan: 'Обновить план',
+    webSearchFound: 'Найдено <strong>{count}</strong> результатов веб‑поиска',
+    argumentsLabel: 'Параметры',
+    toolFallback: 'Инструмент'
   },
   settings: {
     title: 'Настройки',
+    modelConfig: 'Настройки модели',
+    agentConfig: 'Настройки агента',
+    webSearchConfig: 'Сетевой поиск',
+    mcpService: 'Сервис MCP',
+    systemSettings: 'Настройки системы',
+    tenantInfo: 'Информация о арендаторе',
+    apiInfo: 'Информация API',
     system: 'Настройки системы',
     systemConfig: 'Системная конфигурация',
     knowledgeBaseSettings: 'Настройки базы знаний',
@@ -177,6 +173,35 @@ export default {
     cancel: 'Отмена',
     saveFailedSettings: 'Не удалось сохранить настройки',
     enterNameRequired: 'Введите название'
+  },
+  webSearchSettings: {
+    title: 'Настройки веб-поиска',
+    description: 'Настройте веб-поиск, чтобы ответы могли включать актуальную информацию из интернета.',
+    providerLabel: 'Провайдер поиска',
+    providerDescription: 'Выберите поисковый сервис, используемый для веб-поиска',
+    providerPlaceholder: 'Выберите поисковую систему...',
+    apiKeyLabel: 'API-ключ',
+    apiKeyDescription: 'Введите API-ключ выбранного провайдера поиска',
+    apiKeyPlaceholder: 'Введите API-ключ',
+    maxResultsLabel: 'Максимум результатов',
+    maxResultsDescription: 'Максимальное количество результатов за один поиск (1-50)',
+    includeDateLabel: 'Включать дату публикации',
+    includeDateDescription: 'Добавлять информацию о дате публикации в результаты поиска',
+    compressionLabel: 'Метод сжатия',
+    compressionDescription: 'Выберите, как обрабатывать содержимое результатов поиска',
+    compressionNone: 'Без сжатия',
+    compressionSummary: 'LLM-конспект',
+    blacklistLabel: 'Чёрный список URL',
+    blacklistDescription: 'Исключите домены или URL из результатов. По одному в строке. Поддерживаются подстановки (*) и регулярные выражения (/pattern/).',
+    blacklistPlaceholder: 'Например:\n*://*.example.com/*\n/example\\.(net|org)/',
+    errors: {
+      unknown: 'Неизвестная ошибка'
+    },
+    toasts: {
+      loadProvidersFailed: 'Не удалось загрузить список поисковых провайдеров: {message}',
+      saveSuccess: 'Настройки веб-поиска сохранены',
+      saveFailed: 'Не удалось сохранить настройки: {message}'
+    }
   },
   initialization: {
     title: 'Инициализация',
@@ -431,12 +456,21 @@ export default {
     registerError: 'Ошибка регистрации, пожалуйста, повторите попытку позже',
     forgotPasswordNotAvailable: 'Функция восстановления пароля временно недоступна, пожалуйста, свяжитесь с администратором'
   },
+  authStore: {
+    errors: {
+      parseUserFailed: 'Не удалось разобрать данные пользователя',
+      parseTenantFailed: 'Не удалось разобрать данные арендатора',
+      parseKnowledgeBasesFailed: 'Не удалось разобрать список баз знаний',
+      parseCurrentKnowledgeBaseFailed: 'Не удалось разобрать текущую базу знаний'
+    }
+  },
   common: {
     confirm: 'Подтвердить',
     cancel: 'Отмена',
     save: 'Сохранить',
     delete: 'Удалить',
     edit: 'Редактировать',
+    default: 'По умолчанию',
     create: 'Создать',
     search: 'Поиск',
     filter: 'Фильтр',
@@ -451,6 +485,7 @@ export default {
     success: 'Успешно',
     warning: 'Предупреждение',
     info: 'Информация',
+    selectAll: 'Выбрать все',
     yes: 'Да',
     no: 'Нет',
     ok: 'OK',
@@ -460,7 +495,14 @@ export default {
     finish: 'Завершить',
     all: 'Все',
     reset: 'Сбросить',
-    clear: 'Очистить'
+    clear: 'Очистить',
+    website: 'Официальный сайт',
+    github: 'GitHub',
+    wechat: '微信公众号',
+    on: 'Вкл',
+    off: 'Выкл',
+    resetToDefault: 'Сбросить по умолчанию',
+    confirmDelete: 'Подтвердить удаление'
   },
   file: {
     upload: 'Загрузить файл',
@@ -477,6 +519,8 @@ export default {
   },
   tenant: {
     title: 'Информация об арендаторе',
+    sectionDescription: 'Просмотр детальной конфигурации арендатора',
+    apiDocument: 'Документация API',
     name: 'Имя арендатора',
     id: 'ID арендатора',
     createdAt: 'Дата создания',
@@ -515,11 +559,89 @@ export default {
     useApiKey: 'Используйте ваш API Key для начала разработки, просмотрите полную документацию API и примеры кода.',
     viewApiDoc: 'Просмотреть документацию API',
     loadingAccountInfo: 'Загрузка информации об учётной записи...',
+    loadingInfo: 'Загрузка данных...',
     loadFailed: 'Загрузка не удалась',
     retry: 'Повторить',
     apiKeyCopied: 'API Key скопирован в буфер обмена',
     unknown: 'Неизвестно',
-    formatError: 'Ошибка формата'
+    formatError: 'Ошибка формата',
+    details: {
+      idLabel: 'ID арендатора',
+      idDescription: 'Уникальный идентификатор вашего арендатора',
+      nameLabel: 'Название арендатора',
+      nameDescription: 'Название арендатора, к которому вы принадлежите',
+      descriptionLabel: 'Описание арендатора',
+      descriptionDescription: 'Подробное описание арендатора',
+      businessLabel: 'Бизнес арендатора',
+      businessDescription: 'Бизнес-направление, к которому относится арендатор',
+      statusLabel: 'Статус арендатора',
+      statusDescription: 'Текущий рабочий статус арендатора',
+      createdAtLabel: 'Время создания арендатора',
+      createdAtDescription: 'Дата и время создания арендатора'
+    },
+    storage: {
+      quotaLabel: 'Квота хранения',
+      quotaDescription: 'Общий объём хранилища, выделенный арендатору',
+      usedLabel: 'Использовано хранения',
+      usedDescription: 'Объём уже использованного пространства',
+      usageLabel: 'Использование хранения',
+      usageDescription: 'Процент использованного пространства'
+    },
+    messages: {
+      fetchFailed: 'Не удалось получить информацию об арендаторе',
+      networkError: 'Ошибка сети, попробуйте позже'
+    },
+    api: {
+      title: 'Информация об API',
+      description: 'Просматривайте и управляйте своим API-ключом',
+      keyLabel: 'API Key',
+      keyDescription: 'Ключ для API-запросов. Храните его в безопасности.',
+      copyTitle: 'Скопировать API Key',
+      docLabel: 'Документация API',
+      docDescription: 'Ознакомьтесь с полной документацией и примерами API,',
+      openDoc: 'Открыть документацию',
+      userSectionTitle: 'Информация о пользователе',
+      userIdLabel: 'ID пользователя',
+      userIdDescription: 'Ваш уникальный идентификатор пользователя',
+      usernameLabel: 'Имя пользователя',
+      usernameDescription: 'Имя, используемое для входа',
+      emailLabel: 'Электронная почта',
+      emailDescription: 'Ваш зарегистрированный адрес электронной почты',
+      createdAtLabel: 'Время регистрации',
+      createdAtDescription: 'Время создания учётной записи',
+      noKey: 'API Key отсутствует',
+      copySuccess: 'API Key скопирован в буфер обмена',
+      copyFailed: 'Не удалось скопировать, пожалуйста, сделайте это вручную'
+    }
+  },
+  system: {
+    title: 'Системная информация',
+    sectionDescription: 'Просмотр сведений о версии системы и конфигурации учётной записи пользователя',
+    loadingInfo: 'Загрузка данных...',
+    retry: 'Повторить',
+    versionLabel: 'Версия системы',
+    versionDescription: 'Текущий номер версии системы',
+    buildTimeLabel: 'Время сборки',
+    buildTimeDescription: 'Время, когда система была собрана',
+    goVersionLabel: 'Версия Go',
+    goVersionDescription: 'Версия языка Go, используемая backend',
+    unknown: 'Неизвестно',
+    messages: {
+      fetchFailed: 'Не удалось получить информацию о системе',
+      networkError: 'Ошибка сети, попробуйте позже'
+    }
+  },
+  mcp: {
+    testResult: {
+      title: 'Результат теста: {name}',
+      connectionSuccess: 'Соединение установлено',
+      connectionFailed: 'Соединение не удалось',
+      toolsTitle: 'Доступные инструменты',
+      resourcesTitle: 'Доступные ресурсы',
+      descriptionLabel: 'Описание',
+      schemaLabel: 'Структура параметров',
+      emptyDescription: 'Сервис не предоставил инструменты или ресурсы'
+    }
   },
   error: {
     network: 'Ошибка сети',
@@ -548,6 +670,730 @@ export default {
     topP: 'Top P',
     selectModel: 'Выберите модель',
     customModel: 'Пользовательская модель',
-    builtinModel: 'Встроенная модель'
+    builtinModel: 'Встроенная модель',
+    defaultTag: 'По умолчанию',
+    addModelInSettings: 'Перейти в общие настройки для добавления моделей',
+    loadFailed: 'Не удалось загрузить список моделей',
+    selectModelPlaceholder: 'Выберите модель',
+    searchPlaceholder: 'Поиск моделей...',
+    editor: {
+      addTitle: 'Добавить модель',
+      editTitle: 'Редактировать модель',
+      sourceLabel: 'Источник модели',
+      sourceLocal: 'Ollama (локальный)',
+      sourceRemote: 'Remote API (удалённый)',
+      description: {
+        chat: 'Настройте языковую модель для диалогов',
+        embedding: 'Настройте модель встраивания для текстовой векторизации',
+        rerank: 'Настройте модель для повторного ранжирования результатов',
+        vllm: 'Настройте визуально-языковую модель для мультимодального понимания',
+        default: 'Настройте информацию о модели'
+      },
+      modelNamePlaceholder: {
+        local: 'например: llama2:latest',
+        remote: 'например: gpt-4, claude-3-opus',
+        localVllm: 'например: llava:latest',
+        remoteVllm: 'например: gpt-4-vision-preview'
+      },
+      baseUrlLabel: 'Base URL',
+      baseUrlPlaceholder: 'например: https://api.openai.com/v1',
+      baseUrlPlaceholderVllm: 'например: http://localhost:11434/v1',
+      apiKeyOptional: 'API Key (опционально)',
+      apiKeyPlaceholder: 'Введите API Key',
+      connectionTest: 'Проверка соединения',
+      testing: 'Проверка...',
+      testConnection: 'Проверить соединение',
+      searchPlaceholder: 'Поиск моделей...',
+      downloadLabel: 'Скачать: {keyword}',
+      refreshList: 'Обновить список',
+      dimensionLabel: 'Размерность вектора',
+      dimensionPlaceholder: 'например: 1536',
+      checkDimension: 'Определить размерность',
+      dimensionDetected: 'Определение выполнено, размерность: {value}',
+      dimensionFailed: 'Не удалось определить, введите размерность вручную',
+      remoteDimensionDetected: 'Обнаружена размерность: {value}',
+      dimensionHint: 'Модель выбрана. Нажмите «Определить размерность», чтобы автоматически получить значение.',
+      setAsDefault: 'Сделать модель по умолчанию',
+      loadModelListFailed: 'Не удалось загрузить список моделей',
+      listRefreshed: 'Список обновлён',
+      fillModelAndUrl: 'Сначала заполните идентификатор модели и Base URL',
+      remoteBaseUrlRequired: 'Для Remote API необходимо указать Base URL',
+      unsupportedModelType: 'Неподдерживаемый тип модели',
+      connectionSuccess: 'Соединение установлено',
+      connectionFailed: 'Соединение не установлено',
+      connectionConfigError: 'Соединение не установлено, проверьте конфигурацию',
+      downloadStarted: 'Начата загрузка {name}',
+      downloadCompleted: '{name} успешно загружена',
+      downloadFailed: 'Не удалось загрузить {name}',
+      downloadStartFailed: 'Не удалось запустить загрузку',
+      validation: {
+        modelNameRequired: 'Введите название модели',
+        modelNameEmpty: 'Название модели не может быть пустым',
+        modelNameMax: 'Название модели не может превышать 100 символов',
+        baseUrlRequired: 'Введите Base URL',
+        baseUrlEmpty: 'Base URL не может быть пустым',
+        baseUrlInvalid: 'Недопустимый Base URL, введите корректный адрес'
+      }
+    }
+  },
+  createChat: {
+    title: 'Вопросы и ответы на основе базы знаний — AI помощник',
+    newSessionTitle: 'Новая сессия',
+    messages: {
+      selectKnowledgeBase: 'Сначала выберите базу знаний',
+      createFailed: 'Не удалось создать сессию',
+      createError: 'Не удалось создать сессию, попробуйте позже'
+    }
+  },
+  knowledgeList: {
+    create: 'Создать базу знаний',
+    uninitializedBanner: 'Некоторые базы знаний не инициализированы. Сначала настройте модели в разделе настроек, чтобы добавлять документы.',
+    empty: {
+      title: 'Базы знаний отсутствуют',
+      description: 'Нажмите «Создать базу знаний» в правом верхнем углу, чтобы добавить первую базу.'
+    },
+    delete: {
+      confirmTitle: 'Подтверждение удаления',
+      confirmMessage: 'Удалить базу знаний «{name}»? Отменить действие будет невозможно.',
+      confirmButton: 'Удалить'
+    },
+    messages: {
+      deleted: 'База знаний удалена',
+      deleteFailed: 'Не удалось удалить базу знаний'
+    }
+  },
+  knowledgeEditor: {
+    titleCreate: 'Создать базу знаний',
+    titleEdit: 'Настройки базы знаний',
+    sidebar: {
+      basic: 'Основная информация',
+      models: 'Конфигурация моделей',
+      chunking: 'Настройки разбиения',
+      advanced: 'Дополнительные настройки'
+    },
+    basic: {
+      title: 'Основная информация',
+      description: 'Укажите название и описание базы знаний',
+      nameLabel: 'Название базы знаний',
+      namePlaceholder: 'Введите название базы знаний',
+      descriptionLabel: 'Описание базы знаний',
+      descriptionPlaceholder: 'Введите описание базы знаний (необязательно)'
+    },
+    buttons: {
+      create: 'Создать базу знаний',
+      save: 'Сохранить настройки'
+    },
+    messages: {
+      loadModelsFailed: 'Не удалось загрузить список моделей',
+      loadDataFailed: 'Не удалось загрузить данные базы знаний',
+      notFound: 'База знаний не найдена',
+      nameRequired: 'Пожалуйста, введите название базы знаний',
+      embeddingRequired: 'Пожалуйста, выберите модель встраивания',
+      summaryRequired: 'Пожалуйста, выберите модель суммаризации',
+      multimodalInvalid: 'Проверка мультимодальной конфигурации не удалась',
+      createSuccess: 'База знаний успешно создана',
+      createFailed: 'Не удалось создать базу знаний',
+      missingId: 'Отсутствует ID базы знаний',
+      buildDataFailed: 'Не удалось сформировать данные для отправки',
+      updateSuccess: 'Настройки сохранены'
+    },
+    models: {
+      title: 'Конфигурация моделей',
+      description: 'Выберите подходящие AI-модели для базы знаний',
+      llmLabel: 'LLM модель',
+      llmDesc: 'Большая языковая модель для диалогов и вопросов-ответов',
+      llmPlaceholder: 'Выберите LLM модель',
+      embeddingLabel: 'Модель встраивания',
+      embeddingDesc: 'Модель встраивания для векторизации текста',
+      embeddingPlaceholder: 'Выберите модель встраивания',
+      embeddingLocked: 'В базе знаний уже есть файлы. Модель встраивания нельзя изменить',
+      rerankLabel: 'Модель ReRank',
+      rerankDesc: 'Модель для переранжирования результатов поиска (необязательно)',
+      rerankPlaceholder: 'Выберите модель ReRank (необязательно)'
+    },
+    chunking: {
+      title: 'Настройки разбиения',
+      description: 'Настройте параметры разбиения документов для улучшения качества поиска',
+      sizeLabel: 'Размер блока',
+      sizeDescription: 'Определяет количество символов в каждом блоке (100-4000)',
+      characters: 'символов',
+      overlapLabel: 'Перекрытие блоков',
+      overlapDescription: 'Количество перекрывающихся символов между соседними блоками (0-500)',
+      separatorsLabel: 'Разделители',
+      separatorsDescription: 'Разделители, используемые при разбиении документов',
+      separatorsPlaceholder: 'Выберите разделители',
+      separators: {
+        doubleNewline: 'Двойной перевод строки (\\n\\n)',
+        singleNewline: 'Одинарный перевод строки (\\n)',
+        periodCn: 'Китайская точка (。)',
+        exclamationCn: 'Восклицательный знак (！)',
+        questionCn: 'Вопросительный знак (？)',
+        semicolonCn: 'Китайская точка с запятой (；)',
+        semicolonEn: 'Точка с запятой (;)',
+        space: 'Пробел ( )'
+      }
+    },
+    advanced: {
+      title: 'Расширенные настройки',
+      description: 'Настройте мультимодальные возможности и извлечение знаний',
+      multimodal: {
+        label: 'Мультимодальная функция',
+        description: 'Включите понимание мультимедийного контента, такого как изображения и видео',
+        vllmLabel: 'VLLM модель для зрения',
+        vllmDescription: 'Визуально-языковая модель, необходимая для мультимодального понимания',
+        vllmPlaceholder: 'Выберите VLLM модель (обязательно)',
+        storageTitle: 'Конфигурация хранилища',
+        storageTypeLabel: 'Тип хранилища',
+        storageTypeDescription: 'Выберите способ хранения мультимодальных файлов (MinIO или Tencent Cloud COS)',
+        storageTypeOptions: {
+          minio: 'MinIO',
+          cos: 'Tencent Cloud COS'
+        },
+        minio: {
+          bucketLabel: 'Имя Bucket',
+          bucketDescription: 'Название бакета MinIO (обязательно)',
+          bucketPlaceholder: 'Введите имя Bucket (обязательно)',
+          useSslLabel: 'Использовать SSL',
+          useSslDescription: 'Определяет, использовать ли SSL-соединение',
+          pathPrefixLabel: 'Префикс пути',
+          pathPrefixDescription: 'Необязательный префикс для путей хранения файлов',
+          pathPrefixPlaceholder: 'Введите префикс пути'
+        },
+        cos: {
+          secretIdLabel: 'SecretId',
+          secretIdDescription: 'ID секретного ключа Tencent Cloud API (обязательно)',
+          secretIdPlaceholder: 'Введите SecretId (обязательно)',
+          secretKeyLabel: 'SecretKey',
+          secretKeyDescription: 'Секретный ключ Tencent Cloud API (обязательно)',
+          secretKeyPlaceholder: 'Введите SecretKey (обязательно)',
+          regionLabel: 'Регион',
+          regionDescription: 'Регион, в котором находится бакет COS (обязательно)',
+          regionPlaceholder: 'Например: ap-guangzhou (обязательно)',
+          bucketLabel: 'Имя Bucket',
+          bucketDescription: 'Название бакета COS (обязательно)',
+          bucketPlaceholder: 'Введите имя Bucket (обязательно)',
+          appIdLabel: 'AppId',
+          appIdDescription: 'ID приложения Tencent Cloud (обязательно)',
+          appIdPlaceholder: 'Введите AppId (обязательно)',
+          pathPrefixLabel: 'Префикс пути',
+          pathPrefixDescription: 'Необязательный префикс для путей хранения файлов',
+          pathPrefixPlaceholder: 'Введите префикс пути'
+        }
+      },
+      graph: {
+        label: 'Извлечение знаний',
+        description: 'Автоматически извлекайте сущности и связи для построения графа знаний',
+        configTitle: 'Настройки графа',
+        promptLabel: 'Текст подсказки',
+        promptDescription: 'Текст подсказки, который помогает модели извлекать сущности и связи',
+        promptPlaceholder: 'Введите текст подсказки',
+        tagsLabel: 'Теги',
+        tagsDescription: 'Предопределённые теги сущностей (несколько тегов разделяйте запятыми)',
+        tagsPlaceholder: 'Введите тег и нажмите Enter'
+      }
+    }
+  },
+  chat: {
+    title: 'Диалог',
+    newChat: 'Новый чат',
+    inputPlaceholder: 'Введите ваше сообщение...',
+    send: 'Отправить',
+    thinking: 'Думаю...',
+    regenerate: 'Сгенерировать заново',
+    copy: 'Копировать',
+    delete: 'Удалить',
+    reference: 'Ссылка',
+    noMessages: 'Нет сообщений',
+    // Дополнительные переводы для компонентов чата
+    waitingForAnswer: 'Ожидание ответа...',
+    cannotAnswer: 'Извините, я не могу ответить на этот вопрос.',
+    summarizingAnswer: 'Подведение итогов ответа...',
+    loading: 'Загрузка...',
+    enterDescription: 'Введите описание',
+    referencedContent: 'Использовано {count} связанных материалов',
+    deepThinking: 'Глубокое мышление завершено',
+    knowledgeBaseQandA: 'Вопросы и ответы на основе базы знаний',
+    askKnowledgeBase: 'Задайте вопрос базе знаний',
+    sourcesCount: '{count} источников',
+    pleaseEnterContent: 'Пожалуйста, введите содержимое!',
+    pleaseUploadKnowledgeBase: 'Пожалуйста, сначала загрузите базу знаний!',
+    replyingPleaseWait: 'Идёт ответ, пожалуйста, попробуйте позже!',
+    createSessionFailed: 'Не удалось создать сеанс',
+    createSessionError: 'Ошибка создания сеанса',
+    unableToGetKnowledgeBaseId: 'Невозможно получить ID базы знаний',
+    summaryInProgress: 'Идёт подготовка ответа…',
+    referencesTitle: 'Использовано {count} связанного материала',
+    referenceIconAlt: 'Иконка ссылок на материалы',
+    chunkIdLabel: 'ID фрагмента:',
+    documentIdLabel: 'ID документа:',
+    noPlanSteps: 'Подробные шаги не предоставлены',
+    chunkIndexLabel: 'Фрагмент №{index}',
+    chunkPositionLabel: '(позиция: {position})',
+    noRelatedChunks: 'Связанные фрагменты не найдены',
+    noSearchResults: 'Результаты поиска не найдены',
+    relevanceHigh: 'Высокая релевантность',
+    relevanceMedium: 'Средняя релевантность',
+    relevanceLow: 'Низкая релевантность',
+    relevanceWeak: 'Слабая релевантность',
+    webSearchNoResults: 'Результаты веб-поиска не найдены',
+    otherSource: 'Другие источники',
+    webGroupIntro: 'Следующие {count} записей получены из',
+    graphConfigTitle: 'Настройки графа',
+    entityTypesLabel: 'Типы сущностей:',
+    relationTypesLabel: 'Типы связей:',
+    graphResultsHeader: 'Найдено {count} связанных результатов',
+    graphNoResults: 'Данные графа не найдены',
+    unknownLink: 'Неизвестная ссылка',
+    contentLengthLabel: 'Длина {value}',
+    notProvided: 'Не указано',
+    promptLabel: 'Промпт',
+    errorMessageLabel: 'Сообщение об ошибке',
+    summaryLabel: 'Сводка',
+    rawTextLabel: 'Исходный текст',
+    collapseRaw: 'Свернуть оригинал',
+    expandRaw: 'Развернуть оригинал',
+    noWebContent: 'Содержимое страницы не получено',
+    lengthChars: '{value} символов',
+    lengthThousands: '{value} тыс. символов',
+    lengthTenThousands: '{value} ×10⁴ символов',
+    sqlQueryExecuted: 'Выполненный SQL-запрос:',
+    sqlResultsLabel: 'Результаты:',
+    rowsLabel: 'строк',
+    columnsLabel: 'столбцов',
+    noDatabaseRecords: 'Совпадающих записей не найдено',
+    nullValuePlaceholder: '<NULL>',
+    documentTitleLabel: 'Название документа:',
+    chunkCountLabel: 'Количество фрагментов:',
+    chunkCountValue: 'Не менее {count}',
+    statusDescription: 'Информация о статусе',
+    statusIndexed: 'Документ проиндексирован и доступен для поиска',
+    statusSearchable: 'Можно искать содержимое документа с помощью инструментов',
+    statusChunkDetailAvailable: 'Используйте get_chunk_detail для просмотра фрагментов',
+    positionLabel: 'Позиция:',
+    chunkPositionValue: 'Фрагмент №{index}',
+    contentLengthLabelSimple: 'Длина содержимого:',
+    fullContentLabel: 'Полный текст',
+    copyContent: 'Скопировать содержимое',
+    knowledgeBaseCount: '{count} баз знаний',
+    noKnowledgeBases: 'Нет доступных баз знаний',
+    rawOutputLabel: 'Исходный вывод',
+    selectKnowledgeBaseWarning: 'Пожалуйста, выберите хотя бы одну базу знаний',
+    processError: 'Ошибка обработки'
+  },
+  language: {
+    zhCN: '简体中文',
+    enUS: 'English',
+    ruRU: 'Русский',
+    selectLanguage: 'Выбрать язык',
+    language: 'Язык',
+    languageDescription: 'Выберите язык отображения интерфейса',
+    languageSaved: 'Настройки языка сохранены'
+  },
+  general: {
+    title: 'Общие настройки',
+    allSettings: 'Все настройки',
+    description: 'Настройка языка, внешнего вида и других базовых параметров',
+    settings: 'Настройки',
+    close: 'Закрыть настройки'
+  },
+  platform: {
+    subtitle: 'Корпоративная платформа интеллектуального поиска документов',
+    description: 'Упрощение понимания сложных документов и точного поиска',
+    rag: 'RAG расширенная генерация',
+    hybridSearch: 'Гибридный поиск',
+    localDeploy: 'Локальное развертывание',
+    multimodalParsing: 'Мультимодальный анализ документов',
+    hybridSearchEngine: 'Гибридная поисковая система',
+    ragQandA: 'RAG интеллектуальный вопрос-ответ',
+    independentTenant: 'Независимое пространство арендатора',
+    fullApiAccess: 'Полный доступ к API',
+    knowledgeBaseManagement: 'Управление базой знаний',
+    carousel: {
+      agenticRagTitle: 'Agentic RAG',
+      agenticRagDesc: 'Переформулировка запроса + умный отбор + повторная ранжировка',
+      hybridSearchTitle: 'Гибридная стратегия поиска',
+      hybridSearchDesc: 'BM25 + Вектор + Граф знаний',
+      smartDocRetrievalTitle: 'Интеллектуальный поиск документов',
+      smartDocRetrievalDesc: 'Многоформатный разбор PDF/Word/изображений'
+    }
+  },
+  time: {
+    today: 'Сегодня',
+    yesterday: 'Вчера',
+    last7Days: 'Последние 7 дней',
+    last30Days: 'Последние 30 дней',
+    lastYear: 'Последний год',
+    earlier: 'Ранее'
+  },
+  upload: {
+    uploadDocument: 'Загрузить документ',
+    onlineEdit: 'Онлайн редактирование',
+    deleteRecord: 'Удалить запись'
+  },
+  // Новые разделы
+  agentSettings: {
+    title: 'Настройки Agent',
+    description: 'Настройте поведение и параметры AI Agent. Эти параметры применяются ко всем чатам с включённым режимом Agent.',
+    status: {
+      label: 'Статус Agent',
+      ready: 'Готов',
+      notReady: 'Не готов',
+      hint: 'После завершения конфигурации статус автоматически изменится на «Готов». Затем можно включить режим Agent в диалоге.',
+      missingThinkingModel: 'модель мышления',
+      missingRerankModel: 'модель ранжирования',
+      missingAllowedTools: 'разрешённые инструменты',
+      pleaseConfigure: 'Пожалуйста, настройте: {items}'
+    },
+    maxIterations: {
+      label: 'Макс. число итераций',
+      desc: 'Максимальное число шагов рассуждений при выполнении задач'
+    },
+    thinkingModel: {
+      label: 'Модель мышления',
+      desc: 'LLM для рассуждений и планирования',
+      hint: 'Требуется модель с поддержкой function call'
+    },
+    rerankModel: {
+      label: 'Модель Rerank',
+      desc: 'Повторная ранжировка результатов поиска и нормализация релевантности'
+    },
+    model: {
+      placeholder: 'Поиск моделей...',
+      addChat: 'Добавить новую модель диалога',
+      addRerank: 'Добавить новую модель Rerank'
+    },
+    temperature: {
+      label: 'Температура',
+      desc: 'Контролирует случайность ответа. 0 — детерминированно, 1 — максимально случайно'
+    },
+    allowedTools: {
+      label: 'Разрешённые инструменты',
+      desc: 'Выберите инструменты, которые может использовать Agent (минимум один)',
+      placeholder: 'Выберите инструменты...'
+    },
+    systemPrompt: {
+      label: 'Системный промпт',
+      desc: 'Настройте системный промпт Agent. Подстановки будут заменены во время выполнения.',
+      availablePlaceholders: 'Доступные подстановки:',
+      hintPrefix: 'Подсказка: при вводе',
+      hintSuffix: 'откроется список доступных подстановок',
+      custom: 'Пользовательский промпт',
+      disabledHint: 'Сейчас используется промпт по умолчанию. Включите пользовательский, чтобы применить содержимое ниже.',
+      placeholder: 'Введите системный промпт или оставьте пустым для значения по умолчанию...'
+    },
+    reset: {
+      header: 'Сбросить к промпту по умолчанию',
+      body: 'Сбросить к значению по умолчанию? Текущий пользовательский промпт будет перезаписан.'
+    },
+    errors: {
+      selectThinkingModel: 'Выберите модель мышления перед включением режима Agent',
+      selectAtLeastOneTool: 'Выберите хотя бы один инструмент',
+      iterationsRange: 'Макс. число итераций должно быть от 1 до 20',
+      temperatureRange: 'Температура должна быть от 0 до 2',
+      validationFailed: 'Ошибка проверки конфигурации'
+    },
+    toasts: {
+      iterationsSaved: 'Макс. число итераций сохранено',
+      thinkingModelSaved: 'Модель мышления сохранена',
+      rerankModelSaved: 'Модель Rerank сохранена',
+      temperatureSaved: 'Температура сохранена',
+      toolsUpdated: 'Инструменты обновлены',
+      customPromptEnabled: 'Пользовательский промпт включён',
+      defaultPromptEnabled: 'Включён промпт по умолчанию',
+      resetToDefault: 'Восстановлено значение по умолчанию',
+      systemPromptSaved: 'Системный промпт сохранён',
+      autoDisabled: 'Конфигурация Agent неполная. Режим Agent автоматически выключен'
+    }
+  },
+  mcpSettings: {
+    title: 'Сервисы MCP',
+    description: 'Управление внешними сервисами MCP (Model Context Protocol) для использования инструментов и ресурсов в режиме Agent',
+    configuredServices: 'Настроенные сервисы',
+    manageAndTest: 'Управляйте и тестируйте подключения MCP',
+    addService: 'Добавить сервис',
+    empty: 'Сервисы MCP отсутствуют',
+    addFirst: 'Добавить первый сервис MCP',
+    actions: {
+      test: 'Тест соединения'
+    },
+    toasts: {
+      loadFailed: 'Не удалось загрузить список MCP сервисов',
+      enabled: 'Сервис MCP включён',
+      disabled: 'Сервис MCP выключен',
+      updateStateFailed: 'Не удалось обновить статус сервиса MCP',
+      testing: 'Тестируем {name}...',
+      noResponse: 'Тест не удался: нет ответа от сервера',
+      testFailed: 'Не удалось протестировать сервис MCP',
+      deleted: 'Сервис MCP удалён',
+      deleteFailed: 'Не удалось удалить сервис MCP'
+    },
+    deleteConfirmBody: 'Удалить сервис MCP «{name}»? Действие необратимо.',
+    unnamed: 'Без названия'
+  },
+  modelSettings: {
+    title: 'Настройки моделей',
+    description: 'Управление типами AI‑моделей: локальные (Ollama) и удалённые API',
+    actions: {
+      addModel: 'Добавить модель',
+      setDefault: 'Сделать по умолчанию'
+    },
+    chat: {
+      title: 'Модели диалога',
+      desc: 'Модели для диалога',
+      empty: 'Нет моделей диалога'
+    },
+    source: {
+      remote: 'Удалённая',
+      openaiCompatible: 'Совместимо с OpenAI'
+    },
+    embedding: {
+      title: 'Модели встраивания',
+      desc: 'Модели для векторизации текста',
+      empty: 'Нет моделей встраивания'
+    },
+    rerank: {
+      title: 'Модели ReRank',
+      desc: 'Модели для повторной ранжировки результатов',
+      empty: 'Нет моделей ReRank'
+    },
+    vllm: {
+      title: 'VLLM модели зрения',
+      desc: 'Визуально-языковые модели для мультимодального понимания',
+      empty: 'Нет VLLM моделей'
+    },
+    toasts: {
+      nameRequired: 'Название модели не может быть пустым',
+      nameTooLong: 'Название модели не может превышать 100 символов',
+      baseUrlRequired: 'Для удалённых API требуется Base URL',
+      baseUrlInvalid: 'Некорректный Base URL, укажите правильный адрес',
+      dimensionInvalid: 'Размерность встраивания должна быть 128–4096',
+      updated: 'Модель обновлена',
+      added: 'Модель добавлена',
+      saveFailed: 'Не удалось сохранить модель',
+      deleted: 'Модель удалена',
+      deleteFailed: 'Не удалось удалить модель',
+      setDefault: 'Установлено по умолчанию',
+      setDefaultFailed: 'Не удалось установить по умолчанию'
+    },
+    confirmDelete: 'Удалить эту модель?'
+  },
+  ollamaSettings: {
+    title: 'Настройки Ollama',
+    description: 'Управление локальным сервисом Ollama и моделями',
+    status: {
+      label: 'Статус Ollama',
+      desc: 'Автоматическая проверка доступности локального сервиса Ollama. При ошибке адреса или остановке сервиса статус будет «Недоступно».',
+      testing: 'Проверка',
+      available: 'Доступно',
+      unavailable: 'Недоступно',
+      untested: 'Не проверено',
+      retest: 'Проверить снова'
+    },
+    address: {
+      label: 'Адрес сервиса',
+      desc: 'API‑адрес локального сервиса Ollama, определяется автоматически. Чтобы изменить, задайте значение в .env',
+      placeholder: 'http://localhost:11434',
+      failed: 'Ошибка подключения. Проверьте, запущен ли Ollama и корректен ли адрес'
+    },
+    download: {
+      title: 'Загрузка моделей',
+      descPrefix: 'Введите имя модели для загрузки,',
+      browse: 'Открыть каталог моделей Ollama',
+      placeholder: 'например: qwen2.5:0.5b',
+      download: 'Скачать',
+      downloading: 'Загрузка: {name}'
+    },
+    installed: {
+      title: 'Установленные модели',
+      desc: 'Список моделей, установленных в Ollama',
+      empty: 'Установленные модели отсутствуют'
+    },
+    toasts: {
+      connected: 'Соединение установлено',
+      connectFailed: 'Не удалось подключиться. Проверьте, запущен ли Ollama',
+      listFailed: 'Не удалось получить список моделей',
+      downloadFailed: 'Не удалось загрузить. Попробуйте позже',
+      downloadStarted: 'Начата загрузка модели {name}',
+      downloadCompleted: 'Модель {name} загружена',
+      progressFailed: 'Не удалось получить прогресс загрузки'
+    }
+  },
+  mcpServiceDialog: {
+    addTitle: 'Добавить сервис MCP',
+    editTitle: 'Редактировать сервис MCP',
+    name: 'Название сервиса',
+    namePlaceholder: 'Введите название сервиса',
+    description: 'Описание',
+    descriptionPlaceholder: 'Введите описание сервиса',
+    transportType: 'Тип транспорта',
+    transport: {
+      sse: 'SSE (Server-Sent Events)',
+      httpStreamable: 'HTTP Streamable',
+      stdio: 'Stdio'
+    },
+    serviceUrl: 'URL сервиса',
+    serviceUrlPlaceholder: 'https://example.com/mcp',
+    command: 'Команда',
+    args: 'Аргументы',
+    argPlaceholder: 'Аргумент {index}',
+    addArg: 'Добавить аргумент',
+    envVars: 'Переменные окружения',
+    envKeyPlaceholder: 'Имя переменной',
+    envValuePlaceholder: 'Значение',
+    addEnvVar: 'Добавить переменную',
+    enableService: 'Включить сервис',
+    authConfig: 'Аутентификация',
+    apiKey: 'API Key',
+    bearerToken: 'Bearer Token',
+    optional: 'Необязательно',
+    advancedConfig: 'Дополнительно',
+    timeoutSec: 'Таймаут (с)',
+    retryCount: 'Число попыток',
+    retryDelaySec: 'Задержка (с)',
+    rules: {
+      nameRequired: 'Введите название сервиса',
+      transportRequired: 'Выберите тип транспорта',
+      urlRequired: 'Введите URL сервиса',
+      urlInvalid: 'Введите корректный URL',
+      commandRequired: 'Выберите команду (uvx или npx)',
+      argsRequired: 'Введите хотя бы один аргумент'
+    },
+    toasts: {
+      created: 'Сервис MCP создан',
+      updated: 'Сервис MCP обновлён',
+      createFailed: 'Не удалось создать сервис MCP',
+      updateFailed: 'Не удалось обновить сервис MCP'
+    }
+  },
+  manualEditor: {
+    placeholders: {
+      heading: 'Заголовок {level}',
+      listItem: 'Элемент списка',
+      taskItem: 'Задача',
+      quote: 'Текст цитаты',
+      code: 'Содержимое кода',
+      linkText: 'Текст ссылки',
+      imageAlt: 'Описание',
+      bold: 'Жирный текст',
+      italic: 'Курсив',
+      strike: 'Зачеркнутый текст',
+      inlineCode: 'code'
+    },
+    table: {
+      column1: 'Колонка 1',
+      column2: 'Колонка 2',
+      cell: 'Содержимое'
+    },
+    toolbar: {
+      bold: 'Жирный',
+      italic: 'Курсив',
+      strike: 'Зачёркнутый',
+      inlineCode: 'Встроенный код',
+      heading1: 'Заголовок 1',
+      heading2: 'Заголовок 2',
+      heading3: 'Заголовок 3',
+      bulletList: 'Маркированный список',
+      orderedList: 'Нумерованный список',
+      taskList: 'Список задач',
+      blockquote: 'Цитата',
+      codeBlock: 'Блок кода',
+      link: 'Вставить ссылку',
+      image: 'Вставить изображение',
+      table: 'Вставить таблицу',
+      horizontalRule: 'Горизонтальная линия'
+    },
+    view: {
+      toggleToEdit: 'Переключить в режим редактирования',
+      toggleToPreview: 'Переключить в режим предпросмотра',
+      editLabel: 'Вернуться к редактированию',
+      previewLabel: 'Предпросмотр'
+    },
+    preview: {
+      empty: 'Пока нет содержимого'
+    },
+    title: {
+      edit: 'Редактировать Markdown-знание',
+      create: 'Создать Markdown-знание'
+    },
+    labels: {
+      currentKnowledgeBase: 'Текущая база знаний'
+    },
+    defaultTitlePrefix: 'Новый документ',
+    error: {
+      fetchDetailFailed: 'Не удалось получить сведения о знании',
+      saveFailed: 'Не удалось сохранить, попробуйте позже'
+    },
+    warning: {
+      selectKnowledgeBase: 'Пожалуйста, выберите целевую базу знаний',
+      enterTitle: 'Введите заголовок знания',
+      enterContent: 'Введите содержимое знания',
+      contentTooShort: 'Контент слишком короткий. Добавьте больше информации перед публикацией'
+    },
+    success: {
+      draftSaved: 'Черновик сохранён',
+      published: 'Знание опубликовано и начата индексация'
+    },
+    form: {
+      knowledgeBaseLabel: 'Целевая база знаний',
+      knowledgeBasePlaceholder: 'Выберите базу знаний',
+      titleLabel: 'Заголовок знания',
+      titlePlaceholder: 'Введите заголовок',
+      contentPlaceholder: 'Поддерживается Markdown. Используйте # заголовки, списки, блоки кода и т.д.'
+    },
+    status: {
+      draftTag: 'Статус: Черновик',
+      publishedTag: 'Статус: Опубликовано',
+      lastUpdated: 'Последнее обновление: {time}'
+    },
+    loading: {
+      content: 'Загрузка содержимого...',
+      preparing: 'Подготовка редактора...'
+    },
+    actions: {
+      cancel: 'Отмена',
+      saveDraft: 'Сохранить черновик',
+      publish: 'Опубликовать'
+    }
+  },
+  input: {
+    placeholder: 'Задайте вопрос на основе базы знаний',
+    agentMode: 'Agent режим',
+    normalMode: 'Обычный режим',
+    normalModeDesc: 'RAG-вопросы и ответы по базе знаний',
+    agentModeDesc: 'Шаблон рассуждений ReAct, многошаговое мышление',
+    agentNotReadyTooltip: 'Agent не готов. Пожалуйста, завершите настройку.',
+    agentNotReadyDetail: 'Agent не готов. Сначала завершите настройку агента в параметрах (модель мышления, модель rerank и разрешённые инструменты).',
+    goToSettings: 'Перейти к настройкам →',
+    webSearch: {
+      toggleOn: 'Включить веб-поиск',
+      toggleOff: 'Выключить веб-поиск',
+      notConfigured: 'Веб-поиск не настроен'
+    },
+    knowledgeBase: 'База знаний',
+    knowledgeBaseWithCount: 'База знаний ({count})',
+    notConfigured: 'Не настроено',
+    model: 'Модель',
+    remote: 'Удалённая',
+    noModel: 'Нет доступных моделей',
+    stopGeneration: 'Остановить генерацию',
+    send: 'Отправить',
+    thinkingLabel: 'Thinking:',
+    messages: {
+      enterContent: 'Сначала введите содержимое!',
+      selectKnowledge: 'Пожалуйста, выберите базу знаний!',
+      replying: 'Ответ формируется, попробуйте позже!',
+      agentSwitchedOn: 'Переключено в Agent режим',
+      agentSwitchedOff: 'Переключено в обычный режим',
+      agentEnabled: 'Agent режим включён',
+      agentDisabled: 'Agent режим отключён',
+      agentNotReadyDetail: 'Agent не готов. Сначала завершите настройку агента в параметрах (модель мышления, модель rerank и разрешённые инструменты).',
+      webSearchNotConfigured: 'Веб-поиск не настроен. Сначала выберите провайдера и настройте ключи в разделе настроек.',
+      webSearchEnabled: 'Веб-поиск включён',
+      webSearchDisabled: 'Веб-поиск выключен',
+      sessionMissing: 'ID сессии не существует',
+      messageMissing: 'Не удалось получить ID сообщения. Обновите страницу и попробуйте снова.',
+      stopSuccess: 'Генерация остановлена',
+      stopFailed: 'Не удалось остановить. Попробуйте ещё раз.'
+    }
   }
 }

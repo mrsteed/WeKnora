@@ -1,16 +1,16 @@
 <template>
   <div class="ollama-settings">
     <div class="section-header">
-      <h2>Ollama 配置</h2>
-      <p class="section-description">管理本地 Ollama 服务，查看和下载模型</p>
+      <h2>{{ $t('ollamaSettings.title') }}</h2>
+      <p class="section-description">{{ $t('ollamaSettings.description') }}</p>
     </div>
 
     <div class="settings-group">
       <!-- Ollama 服务状态 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>Ollama 服务状态</label>
-          <p class="desc">自动检测本地 Ollama 服务是否可用。如果服务未运行或地址配置错误，将显示"不可用"状态</p>
+          <label>{{ $t('ollamaSettings.status.label') }}</label>
+          <p class="desc">{{ $t('ollamaSettings.status.desc') }}</p>
         </div>
         <div class="setting-control">
           <div class="status-display">
@@ -20,7 +20,7 @@
               variant="light"
             >
               <t-icon name="loading" class="status-icon spinning" />
-              检测中
+              {{ $t('ollamaSettings.status.testing') }}
             </t-tag>
             <t-tag 
               v-else-if="connectionStatus === true"
@@ -28,7 +28,7 @@
               variant="light"
             >
               <t-icon name="check-circle-filled" />
-              可用
+              {{ $t('ollamaSettings.status.available') }}
             </t-tag>
             <t-tag 
               v-else-if="connectionStatus === false"
@@ -36,7 +36,7 @@
               variant="light"
             >
               <t-icon name="close-circle-filled" />
-              不可用
+              {{ $t('ollamaSettings.status.unavailable') }}
             </t-tag>
             <t-tag 
               v-else
@@ -44,7 +44,7 @@
               variant="light"
             >
               <t-icon name="help-circle" />
-              未检测
+              {{ $t('ollamaSettings.status.untested') }}
             </t-tag>
             <t-button 
               size="small" 
@@ -53,7 +53,7 @@
               @click="testConnection"
             >
               <t-icon name="refresh" />
-              重新检测
+              {{ $t('ollamaSettings.status.retest') }}
             </t-button>
           </div>
         </div>
@@ -62,14 +62,14 @@
       <!-- Ollama 服务地址 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>服务地址</label>
-          <p class="desc">本地 Ollama 服务的 API 地址，由系统自动检测。如需修改，请在 .env 配置文件中设置</p>
+          <label>{{ $t('ollamaSettings.address.label') }}</label>
+          <p class="desc">{{ $t('ollamaSettings.address.desc') }}</p>
         </div>
         <div class="setting-control">
           <div class="url-control-group">
             <t-input 
               v-model="localBaseUrl" 
-              placeholder="http://localhost:11434"
+              :placeholder="$t('ollamaSettings.address.placeholder')"
               disabled
               style="flex: 1;"
             />
@@ -77,7 +77,7 @@
           <t-alert 
             v-if="connectionStatus === false"
             theme="warning"
-            message="连接失败，请检查 Ollama 是否运行或服务地址是否正确"
+            :message="$t('ollamaSettings.address.failed')"
             style="margin-top: 8px;"
           />
         </div>
@@ -89,11 +89,11 @@
     <div v-if="connectionStatus === true" class="model-category-section">
       <div class="category-header">
         <div class="header-info">
-          <h3>下载新模型</h3>
+          <h3>{{ $t('ollamaSettings.download.title') }}</h3>
           <p>
-            输入模型名称下载，
+            {{ $t('ollamaSettings.download.descPrefix') }}
             <a href="https://ollama.com/search" target="_blank" rel="noopener noreferrer" class="model-link">
-              浏览 Ollama 模型库
+              {{ $t('ollamaSettings.download.browse') }}
               <t-icon name="link" class="link-icon" />
             </a>
           </p>
@@ -104,7 +104,7 @@
         <div class="input-group">
           <t-input 
             v-model="downloadModelName" 
-            placeholder="如：qwen2.5:0.5b"
+            :placeholder="$t('ollamaSettings.download.placeholder')"
             style="flex: 1;"
           />
           <t-button 
@@ -114,13 +114,13 @@
             :disabled="!downloadModelName.trim()"
             @click="downloadModel"
           >
-            下载
+            {{ $t('ollamaSettings.download.download') }}
           </t-button>
         </div>
         
         <div v-if="downloadProgress > 0" class="download-progress">
           <div class="progress-info">
-            <span>正在下载: {{ downloadModelName }}</span>
+            <span>{{ $t('ollamaSettings.download.downloading', { name: downloadModelName }) }}</span>
             <span>{{ downloadProgress.toFixed(2) }}%</span>
           </div>
           <t-progress :percentage="downloadProgress" size="small" />
@@ -132,8 +132,8 @@
     <div v-if="connectionStatus === true" class="model-category-section">
       <div class="category-header">
         <div class="header-info">
-          <h3>已下载的模型</h3>
-          <p>已安装在 Ollama 中的模型列表</p>
+          <h3>{{ $t('ollamaSettings.installed.title') }}</h3>
+          <p>{{ $t('ollamaSettings.installed.desc') }}</p>
         </div>
         <t-button 
           size="small" 
@@ -141,13 +141,13 @@
           :loading="loadingModels"
           @click="refreshModels"
         >
-          <t-icon name="refresh" />刷新
+          <t-icon name="refresh" />{{ $t('common.refresh') }}
         </t-button>
       </div>
       
       <div v-if="loadingModels" class="loading-state">
         <t-loading size="small" />
-        <span>加载中...</span>
+        <span>{{ $t('common.loading') }}</span>
       </div>
       <div v-else-if="downloadedModels.length > 0" class="model-list-container">
         <div v-for="model in downloadedModels" :key="model.name" class="model-card">
@@ -161,7 +161,7 @@
         </div>
       </div>
       <div v-else class="empty-state">
-        <p class="empty-text">暂无已下载的模型</p>
+        <p class="empty-text">{{ $t('ollamaSettings.installed.empty') }}</p>
       </div>
     </div>
   </div>
@@ -171,9 +171,11 @@
 import { ref, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { MessagePlugin } from 'tdesign-vue-next'
+import { useI18n } from 'vue-i18n'
 import { checkOllamaStatus, listOllamaModels, downloadOllamaModel, getDownloadProgress, type OllamaModelInfo } from '@/api/initialization'
 
 const settingsStore = useSettingsStore()
+const { t } = useI18n()
 
 const localBaseUrl = ref(settingsStore.settings.ollamaConfig?.baseUrl ?? '')
 
@@ -206,14 +208,14 @@ const testConnection = async () => {
     connectionStatus.value = result.available
     
     if (connectionStatus.value) {
-      MessagePlugin.success('连接成功')
+      MessagePlugin.success(t('ollamaSettings.toasts.connected'))
       refreshModels()
     } else {
-      MessagePlugin.error(result.error || '连接失败，请检查 Ollama 是否运行')
+      MessagePlugin.error(result.error || t('ollamaSettings.toasts.connectFailed'))
     }
   } catch (error: any) {
     connectionStatus.value = false
-    MessagePlugin.error(error.message || '连接失败')
+    MessagePlugin.error(error.message || t('ollamaSettings.toasts.connectFailed'))
   } finally {
     testing.value = false
   }
@@ -229,7 +231,7 @@ const refreshModels = async () => {
     downloadedModels.value = models
   } catch (error: any) {
     console.error('获取模型列表失败:', error)
-    MessagePlugin.error(error.message || '获取模型列表失败')
+    MessagePlugin.error(error.message || t('ollamaSettings.toasts.listFailed'))
   } finally {
     loadingModels.value = false
   }
@@ -275,13 +277,13 @@ const downloadModel = async () => {
     const result = await downloadOllamaModel(downloadModelName.value)
     
     if (result.status === 'failed') {
-      MessagePlugin.error('下载失败，请稍后重试')
+      MessagePlugin.error(t('ollamaSettings.toasts.downloadFailed'))
       downloading.value = false
       downloadProgress.value = 0
       return
     }
     
-    MessagePlugin.success(`已开始下载模型 ${downloadModelName.value}`)
+    MessagePlugin.success(t('ollamaSettings.toasts.downloadStarted', { name: downloadModelName.value }))
     
     // 查询下载进度
     const taskId = result.taskId
@@ -292,27 +294,27 @@ const downloadModel = async () => {
         
         if (task.status === 'completed') {
           clearInterval(progressInterval)
-          MessagePlugin.success(`模型 ${downloadModelName.value} 下载完成`)
+          MessagePlugin.success(t('ollamaSettings.toasts.downloadCompleted', { name: downloadModelName.value }))
           downloadModelName.value = ''
           downloadProgress.value = 0
           downloading.value = false
           refreshModels()
         } else if (task.status === 'failed') {
           clearInterval(progressInterval)
-          MessagePlugin.error(task.message || '下载失败')
+          MessagePlugin.error(task.message || t('ollamaSettings.toasts.downloadFailed'))
           downloading.value = false
           downloadProgress.value = 0
         }
       } catch (error) {
         clearInterval(progressInterval)
-        MessagePlugin.error('查询下载进度失败')
+        MessagePlugin.error(t('ollamaSettings.toasts.progressFailed'))
         downloading.value = false
         downloadProgress.value = 0
       }
     }, 1000)
   } catch (error: any) {
     console.error('下载失败:', error)
-    MessagePlugin.error(error.message || '下载失败')
+    MessagePlugin.error(error.message || t('ollamaSettings.toasts.downloadFailed'))
     downloading.value = false
     downloadProgress.value = 0
   }

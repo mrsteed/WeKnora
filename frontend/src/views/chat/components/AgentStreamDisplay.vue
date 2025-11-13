@@ -22,7 +22,7 @@
         <div v-if="event.type === 'plan_task_change'" class="plan-task-change-event">
           <div class="plan-task-change-card">
             <div class="plan-task-change-content">
-              <strong>任务:</strong> {{ event.task }}
+              <strong>{{ $t('agent.taskLabel') }}</strong> {{ event.task }}
             </div>
           </div>
         </div>
@@ -58,10 +58,10 @@
             </div>
           </div>
           <div v-if="event.done" class="answer-toolbar">
-            <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer(event)" title="复制">
+            <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer(event)" :title="$t('agent.copy')">
               <t-icon name="copy" />
             </t-button>
-            <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge(event)" title="添加到知识库">
+            <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge(event)" :title="$t('agent.addToKnowledgeBase')">
               <t-icon name="add" />
             </t-button>
           </div>
@@ -81,9 +81,9 @@
               <img v-if="event.tool_name && !isBookIcon(event.tool_name)" class="action-title-icon" :src="getToolIcon(event.tool_name)" alt="" />
               <t-icon v-if="event.tool_name && isBookIcon(event.tool_name)" class="action-title-icon" name="book" />
               <!-- Custom header for todo_write tool -->
-              <t-tooltip v-if="event.tool_name === 'todo_write' && event.tool_data?.steps" :content="'更新计划'" placement="top">
+              <t-tooltip v-if="event.tool_name === 'todo_write' && event.tool_data?.steps" :content="t('agent.updatePlan')" placement="top">
                 <span class="action-name">
-                  更新计划
+                  {{ $t('agent.updatePlan') }}
                 </span>
               </t-tooltip>
               <!-- Use tool summary as title if available, otherwise use description -->
@@ -114,7 +114,7 @@
           
           <!-- Web Search Results Summary (Fixed, always visible, outside action-details) -->
           <div v-if="!event.pending && event.tool_name === 'web_search' && event.tool_data" class="search-results-summary-fixed">
-            <div class="results-summary-text">找到 <strong>{{ getResultsCount(event.tool_data) }}</strong> 个网络搜索结果</div>
+            <div class="results-summary-text" v-html="t('agent.webSearchFound', { count: getResultsCount(event.tool_data) })"></div>
           </div>
           
           <div v-if="isEventExpanded(event.tool_call_id) && !event.pending" class="action-details">
@@ -140,7 +140,7 @@
               <!-- Fallback to original output display -->
               <div v-else-if="event.output" class="tool-output-wrapper">
                 <div class="fallback-header">
-                  <span class="fallback-label">原始输出</span>
+                  <span class="fallback-label">{{ $t('chat.rawOutputLabel') }}</span>
                 </div>
                 <div class="detail-output-wrapper">
                   <div class="detail-output">{{ event.output }}</div>
@@ -150,7 +150,7 @@
               <!-- Show Arguments only if no display_type and not for todo_write -->
               <div v-if="event.arguments && event.tool_name !== 'todo_write' && !event.display_type" class="tool-arguments-wrapper">
                 <div class="arguments-header">
-                  <span class="arguments-label">参数</span>
+                  <span class="arguments-label">{{ $t('agent.argumentsLabel') }}</span>
                 </div>
                 <pre class="detail-code">{{ formatJSON(event.arguments) }}</pre>
               </div>
@@ -182,10 +182,10 @@
         </template>
         <template v-else>
           <div v-if="floatPopup.knowledgeTitle" class="tip-meta"><strong>{{ floatPopup.knowledgeTitle }}</strong></div>
-          <div v-if="floatPopup.loading" class="tip-loading">加载中...</div>
+          <div v-if="floatPopup.loading" class="tip-loading">{{ $t('common.loading') }}</div>
           <div v-else-if="floatPopup.error" class="tip-error">{{ floatPopup.error }}</div>
           <div v-else class="tip-content" v-html="floatPopup.content"></div>
-          <div v-if="floatPopup.chunkId" class="tip-meta">片段ID: {{ floatPopup.chunkId }}</div>
+          <div v-if="floatPopup.chunkId" class="tip-meta">{{ $t('chat.chunkIdLabel') }} {{ floatPopup.chunkId }}</div>
         </template>
       </div>
     </div>
@@ -201,9 +201,11 @@ import ToolResultRenderer from './ToolResultRenderer.vue';
 import { getChunkByIdOnly } from '@/api/knowledge-base';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useUIStore } from '@/stores/ui';
+import { useI18n } from 'vue-i18n';
 
 const router = useRouter();
 const uiStore = useUIStore();
+const { t } = useI18n();
 
 const TOOL_NAME_I18N: Record<string, string> = {
   search_knowledge: '知识库检索',
@@ -220,7 +222,7 @@ const TOOL_NAME_I18N: Record<string, string> = {
 };
 
 const getLocalizedToolName = (toolName?: string | null): string => {
-  if (!toolName) return '工具';
+  if (!toolName) return t('agent.toolFallback');
   return TOOL_NAME_I18N[toolName] || toolName;
 };
 

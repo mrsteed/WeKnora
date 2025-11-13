@@ -4,7 +4,7 @@
       <div v-if="dialogVisible" class="model-editor-overlay" @click.self="handleCancel">
         <div class="model-editor-modal">
           <!-- 关闭按钮 -->
-          <button class="close-btn" @click="handleCancel" aria-label="关闭">
+          <button class="close-btn" @click="handleCancel" :aria-label="$t('common.close')">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
               <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
             </svg>
@@ -12,7 +12,7 @@
 
           <!-- 标题区域 -->
           <div class="modal-header">
-            <h2 class="modal-title">{{ isEdit ? '编辑模型' : '添加模型' }}</h2>
+            <h2 class="modal-title">{{ isEdit ? $t('model.editor.editTitle') : $t('model.editor.addTitle') }}</h2>
             <p class="modal-desc">{{ getModalDescription() }}</p>
           </div>
 
@@ -21,16 +21,16 @@
             <t-form ref="formRef" :data="formData" :rules="rules" layout="vertical">
         <!-- 模型来源 -->
         <div class="form-item">
-          <label class="form-label required">模型来源</label>
+          <label class="form-label required">{{ $t('model.editor.sourceLabel') }}</label>
           <t-radio-group v-model="formData.source">
-            <t-radio value="local">Ollama (本地)</t-radio>
-            <t-radio value="remote">Remote API (远程)</t-radio>
+            <t-radio value="local">{{ $t('model.editor.sourceLocal') }}</t-radio>
+            <t-radio value="remote">{{ $t('model.editor.sourceRemote') }}</t-radio>
           </t-radio-group>
         </div>
 
         <!-- Ollama 本地模型选择器 -->
         <div v-if="formData.source === 'local'" class="form-item">
-          <label class="form-label required">模型名称</label>
+          <label class="form-label required">{{ $t('model.modelName') }}</label>
           <div class="model-select-row">
             <t-select
               v-model="formData.modelName"
@@ -39,7 +39,7 @@
               :style="downloading ? `--progress: ${downloadProgress}%` : ''"
               filterable
               :filter="handleModelFilter"
-              placeholder="搜索模型..."
+              :placeholder="$t('model.searchPlaceholder')"
               @focus="loadOllamaModels"
               @visible-change="handleDropdownVisibleChange"
             >
@@ -61,12 +61,12 @@
               <t-option
                 v-if="showDownloadOption"
                 :value="`__download__${searchKeyword}`"
-                :label="`下载: ${searchKeyword}`"
+                :label="$t('model.editor.downloadLabel', { keyword: searchKeyword })"
                 class="download-option"
               >
                 <div class="model-option download">
                   <t-icon name="download" class="download-icon" />
-                  <span class="model-name">下载: {{ searchKeyword }}</span>
+                  <span class="model-name">{{ $t('model.editor.downloadLabel', { keyword: searchKeyword }) }}</span>
                 </div>
               </t-option>
               
@@ -88,14 +88,14 @@
               class="refresh-btn"
             >
               <t-icon name="refresh" />
-              刷新列表
+              {{ $t('model.editor.refreshList') }}
             </t-button>
           </div>
         </div>
 
         <!-- Remote API 和 VLLM 保持原有的 input -->
         <div v-else class="form-item">
-          <label class="form-label required">模型名称</label>
+          <label class="form-label required">{{ $t('model.modelName') }}</label>
           <t-input 
             v-model="formData.modelName" 
             :placeholder="getModelNamePlaceholder()"
@@ -105,25 +105,25 @@
         <!-- Remote API 配置 -->
         <template v-if="formData.source === 'remote'">
           <div class="form-item">
-            <label class="form-label required">Base URL</label>
+            <label class="form-label required">{{ $t('model.editor.baseUrlLabel') }}</label>
             <t-input 
               v-model="formData.baseUrl" 
-              :placeholder="modelType === 'vllm' ? '如：http://localhost:11434/v1' : '如：https://api.openai.com/v1'"
+              :placeholder="getBaseUrlPlaceholder()"
             />
           </div>
 
           <div class="form-item">
-            <label class="form-label">API Key (可选)</label>
+            <label class="form-label">{{ $t('model.editor.apiKeyOptional') }}</label>
             <t-input 
               v-model="formData.apiKey" 
               type="password"
-              placeholder="输入 API Key"
+              :placeholder="$t('model.editor.apiKeyPlaceholder')"
             />
           </div>
 
           <!-- Remote API 校验 -->
           <div class="form-item">
-            <label class="form-label">连接测试</label>
+            <label class="form-label">{{ $t('model.editor.connectionTest') }}</label>
             <div class="api-test-section">
               <t-button 
                 variant="outline" 
@@ -143,7 +143,7 @@
                     class="status-icon unavailable"
                   />
                 </template>
-                {{ checking ? '测试中...' : '测试连接' }}
+                {{ checking ? $t('model.editor.testing') : $t('model.editor.testConnection') }}
               </t-button>
               <span v-if="remoteChecked" :class="['test-message', remoteAvailable ? 'success' : 'error']">
                 {{ remoteMessage }}
@@ -154,14 +154,14 @@
 
         <!-- Embedding 专用：维度 -->
         <div v-if="modelType === 'embedding'" class="form-item">
-          <label class="form-label">向量维度</label>
+          <label class="form-label">{{ $t('model.editor.dimensionLabel') }}</label>
           <div class="dimension-control">
             <t-input 
               v-model.number="formData.dimension" 
               type="number"
             :min="128"
             :max="4096"
-            placeholder="如：1536"
+            :placeholder="$t('model.editor.dimensionPlaceholder')"
               :disabled="formData.source === 'local' && checking"
             />
             <!-- Ollama 本地模型：自动检测维度按钮 -->
@@ -174,7 +174,7 @@
               class="dimension-check-btn"
             >
               <t-icon name="refresh" />
-              检测维度
+              {{ $t('model.editor.checkDimension') }}
             </t-button>
           </div>
           <p v-if="dimensionChecked && dimensionMessage" class="dimension-hint" :class="{ success: dimensionSuccess }">
@@ -184,7 +184,7 @@
 
         <!-- 设为默认 -->
         <div class="form-item">
-          <t-checkbox v-model="formData.isDefault">设为默认模型</t-checkbox>
+          <t-checkbox v-model="formData.isDefault">{{ $t('model.editor.setAsDefault') }}</t-checkbox>
         </div>
       </t-form>
           </div>
@@ -192,10 +192,10 @@
           <!-- 底部按钮区域 -->
           <div class="modal-footer">
             <t-button theme="default" variant="outline" @click="handleCancel">
-              取消
+              {{ $t('common.cancel') }}
             </t-button>
             <t-button theme="primary" @click="handleConfirm" :loading="saving">
-              保存
+              {{ $t('common.save') }}
             </t-button>
           </div>
         </div>
@@ -208,6 +208,7 @@
 import { ref, watch, computed, onUnmounted } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { checkOllamaModels, checkRemoteModel, testEmbeddingModel, checkRerankModel, listOllamaModels, downloadOllamaModel, getDownloadProgress, type OllamaModelInfo } from '@/api/initialization'
+import { useI18n } from 'vue-i18n'
 
 interface ModelFormData {
   id: string
@@ -226,6 +227,8 @@ interface Props {
   modelType: 'chat' | 'embedding' | 'rerank' | 'vllm'
   modelData?: ModelFormData | null
 }
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
@@ -277,16 +280,16 @@ const formData = ref<ModelFormData>({
   isDefault: false
 })
 
-const rules = {
+const rules = computed(() => ({
   modelName: [
-    { required: true, message: '请输入模型名称' },
+    { required: true, message: t('model.editor.validation.modelNameRequired') },
     { 
       validator: (val: string) => {
         if (!val || !val.trim()) {
-          return { result: false, message: '模型名称不能为空' }
+          return { result: false, message: t('model.editor.validation.modelNameEmpty') }
         }
         if (val.trim().length > 100) {
-          return { result: false, message: '模型名称不能超过100个字符' }
+          return { result: false, message: t('model.editor.validation.modelNameMax') }
         }
         return { result: true }
       },
@@ -296,44 +299,49 @@ const rules = {
   baseUrl: [
     { 
       required: true, 
-      message: '请输入 Base URL',
+      message: t('model.editor.validation.baseUrlRequired'),
       trigger: 'blur'
     },
     {
       validator: (val: string) => {
         if (!val || !val.trim()) {
-          return { result: false, message: 'Base URL 不能为空' }
+          return { result: false, message: t('model.editor.validation.baseUrlEmpty') }
         }
         // 简单的 URL 格式校验
         try {
           new URL(val.trim())
           return { result: true }
         } catch {
-          return { result: false, message: 'Base URL 格式不正确，请输入有效的 URL' }
+          return { result: false, message: t('model.editor.validation.baseUrlInvalid') }
         }
       },
       trigger: 'blur'
     }
   ]
-}
+}))
 
 // 获取弹窗描述文字
 const getModalDescription = () => {
-  const typeDesc = {
-    chat: '配置用于对话的大语言模型',
-    embedding: '配置用于文本向量化的嵌入模型',
-    rerank: '配置用于结果重排序的模型',
-    vllm: '配置用于视觉理解和多模态的视觉语言模型'
-  }
-  return typeDesc[props.modelType] || '配置模型信息'
+  const key = `model.editor.description.${props.modelType}` as const
+  return t(key) || t('model.editor.description.default')
 }
 
 // 获取模型名称占位符
 const getModelNamePlaceholder = () => {
   if (props.modelType === 'vllm') {
-    return formData.value.source === 'local' ? '如：llava:latest' : '如：gpt-4-vision-preview'
+    return formData.value.source === 'local'
+      ? t('model.editor.modelNamePlaceholder.localVllm')
+      : t('model.editor.modelNamePlaceholder.remoteVllm')
   }
-  return formData.value.source === 'local' ? '如：llama2:latest' : '如：gpt-4, claude-3-opus'
+  return formData.value.source === 'local'
+    ? t('model.editor.modelNamePlaceholder.local')
+    : t('model.editor.modelNamePlaceholder.remote')
+}
+
+const getBaseUrlPlaceholder = () => {
+  return props.modelType === 'vllm'
+    ? t('model.editor.baseUrlPlaceholderVllm')
+    : t('model.editor.baseUrlPlaceholder')
 }
 
 // 监听 visible 变化，初始化表单
@@ -417,8 +425,8 @@ const loadOllamaModels = async () => {
     const models = await listOllamaModels()
     ollamaModelList.value = models
   } catch (error) {
-    console.error('加载 Ollama 模型列表失败:', error)
-    MessagePlugin.error('加载模型列表失败')
+    console.error(t('model.editor.loadModelListFailed'), error)
+    MessagePlugin.error(t('model.editor.loadModelListFailed'))
   } finally {
     loadingOllamaModels.value = false
   }
@@ -428,7 +436,7 @@ const loadOllamaModels = async () => {
 const refreshOllamaModels = async () => {
   ollamaModelList.value = [] // 清空以强制重新加载
   await loadOllamaModels()
-  MessagePlugin.success('列表已刷新')
+  MessagePlugin.success(t('model.editor.listRefreshed'))
 }
 
 // 监听下拉框可见性变化
@@ -485,17 +493,17 @@ const checkOllamaDimension = async () => {
     
     if (result.available && result.dimension) {
       formData.value.dimension = result.dimension
-      dimensionMessage.value = `检测成功，向量维度：${result.dimension}`
+      dimensionMessage.value = t('model.editor.dimensionDetected', { value: result.dimension })
       MessagePlugin.success(dimensionMessage.value)
     } else {
-      dimensionMessage.value = result.message || '检测失败，请手动输入维度'
+      dimensionMessage.value = result.message || t('model.editor.dimensionFailed')
       MessagePlugin.warning(dimensionMessage.value)
     }
   } catch (error: any) {
     console.error('检测 Ollama 模型维度失败:', error)
     dimensionChecked.value = true
     dimensionSuccess.value = false
-    dimensionMessage.value = error.message || '检测失败，请手动输入维度'
+    dimensionMessage.value = error.message || t('model.editor.dimensionFailed')
     MessagePlugin.error(dimensionMessage.value)
   } finally {
     checking.value = false
@@ -505,7 +513,7 @@ const checkOllamaDimension = async () => {
 // 检查 Remote API 连接（根据模型类型调用不同的接口）
 const checkRemoteAPI = async () => {
   if (!formData.value.modelName || !formData.value.baseUrl) {
-    MessagePlugin.warning('请先填写模型标识和 Base URL')
+    MessagePlugin.warning(t('model.editor.fillModelAndUrl'))
     return
   }
   
@@ -539,7 +547,7 @@ const checkRemoteAPI = async () => {
         // 如果测试成功且返回了维度，自动填充
         if (result.available && result.dimension) {
           formData.value.dimension = result.dimension
-          MessagePlugin.info(`检测到向量维度：${result.dimension}`)
+        MessagePlugin.info(t('model.editor.remoteDimensionDetected', { value: result.dimension }))
         }
         break
         
@@ -563,13 +571,13 @@ const checkRemoteAPI = async () => {
         break
         
       default:
-        MessagePlugin.error('不支持的模型类型')
+        MessagePlugin.error(t('model.editor.unsupportedModelType'))
         return
     }
     
     remoteChecked.value = true
     remoteAvailable.value = result.available || false
-    remoteMessage.value = result.message || (result.available ? '连接成功' : '连接失败')
+    remoteMessage.value = result.message || (result.available ? t('model.editor.connectionSuccess') : t('model.editor.connectionFailed'))
     
     if (result.available) {
       MessagePlugin.success(remoteMessage.value)
@@ -580,7 +588,7 @@ const checkRemoteAPI = async () => {
     console.error('Remote API 校验失败:', error)
     remoteChecked.value = true
     remoteAvailable.value = false
-    remoteMessage.value = error.message || '连接失败，请检查配置'
+    remoteMessage.value = error.message || t('model.editor.connectionConfigError')
     MessagePlugin.error(remoteMessage.value)
   } finally {
     checking.value = false
@@ -592,19 +600,19 @@ const handleConfirm = async () => {
   try {
     // 手动校验必填字段
     if (!formData.value.modelName || !formData.value.modelName.trim()) {
-      MessagePlugin.warning('请输入模型名称')
+      MessagePlugin.warning(t('model.editor.validation.modelNameRequired'))
       return
     }
     
     if (formData.value.modelName.trim().length > 100) {
-      MessagePlugin.warning('模型名称不能超过100个字符')
+      MessagePlugin.warning(t('model.editor.validation.modelNameMax'))
       return
     }
     
     // 如果是 remote 类型，必须填写 baseUrl
     if (formData.value.source === 'remote') {
       if (!formData.value.baseUrl || !formData.value.baseUrl.trim()) {
-        MessagePlugin.warning('Remote API 类型必须填写 Base URL')
+        MessagePlugin.warning(t('model.editor.remoteBaseUrlRequired'))
         return
       }
       
@@ -612,7 +620,7 @@ const handleConfirm = async () => {
       try {
         new URL(formData.value.baseUrl.trim())
       } catch {
-        MessagePlugin.warning('Base URL 格式不正确，请输入有效的 URL')
+        MessagePlugin.warning(t('model.editor.validation.baseUrlInvalid'))
         return
       }
     }
@@ -659,7 +667,7 @@ watch(() => formData.value.modelName, async (newValue, oldValue) => {
       newValue !== oldValue && 
       oldValue !== '') {
     // 提示用户可以检测维度
-    MessagePlugin.info('模型已选择，点击"检测维度"按钮自动获取向量维度')
+    MessagePlugin.info(t('model.editor.dimensionHint'))
   }
 })
 
@@ -674,7 +682,7 @@ const startDownload = async (modelName: string) => {
     const result = await downloadOllamaModel(modelName)
     const taskId = result.taskId
     
-    MessagePlugin.success(`开始下载 ${modelName}`)
+    MessagePlugin.success(t('model.editor.downloadStarted', { name: modelName }))
     
     // 轮询下载进度
     downloadInterval = setInterval(async () => {
@@ -688,7 +696,7 @@ const startDownload = async (modelName: string) => {
           downloadInterval = null
           downloading.value = false
           
-          MessagePlugin.success(`${modelName} 下载完成`)
+          MessagePlugin.success(t('model.editor.downloadCompleted', { name: modelName }))
           
           // 刷新模型列表
           await loadOllamaModels()
@@ -705,7 +713,7 @@ const startDownload = async (modelName: string) => {
           clearInterval(downloadInterval)
           downloadInterval = null
           downloading.value = false
-          MessagePlugin.error(progress.message || `${modelName} 下载失败`)
+          MessagePlugin.error(progress.message || t('model.editor.downloadFailed', { name: modelName }))
           downloadProgress.value = 0
           currentDownloadModel.value = ''
         }
@@ -718,7 +726,7 @@ const startDownload = async (modelName: string) => {
     downloading.value = false
     downloadProgress.value = 0
     currentDownloadModel.value = ''
-    MessagePlugin.error(error.message || '启动下载失败')
+    MessagePlugin.error(error.message || t('model.editor.downloadStartFailed'))
   }
 }
 

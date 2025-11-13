@@ -1,36 +1,36 @@
 <template>
   <div class="system-info">
     <div class="section-header">
-      <h2>系统信息</h2>
-      <p class="section-description">查看系统版本信息和用户账户配置</p>
+      <h2>{{ $t('system.title') }}</h2>
+      <p class="section-description">{{ $t('system.sectionDescription') }}</p>
     </div>
 
-    <!-- 加载状态 -->
+    <!-- Loading state -->
     <div v-if="loading" class="loading-inline">
       <t-loading size="small" />
-      <span>正在加载信息...</span>
+      <span>{{ $t('system.loadingInfo') }}</span>
     </div>
 
-    <!-- 错误状态 -->
+    <!-- Error state -->
     <div v-else-if="error" class="error-inline">
       <t-alert theme="error" :message="error">
         <template #operation>
-          <t-button size="small" @click="loadInfo">重试</t-button>
+          <t-button size="small" @click="loadInfo">{{ $t('system.retry') }}</t-button>
         </template>
       </t-alert>
     </div>
 
-    <!-- 信息内容 -->
+    <!-- Content -->
     <div v-else class="settings-group">
-      <!-- 系统版本 -->
+      <!-- System version -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>系统版本</label>
-          <p class="desc">当前系统的版本号</p>
+          <label>{{ $t('system.versionLabel') }}</label>
+          <p class="desc">{{ $t('system.versionDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">
-              {{ systemInfo?.version || '未知' }}
+              {{ systemInfo?.version || $t('system.unknown') }}
               <span v-if="systemInfo?.commit_id" class="commit-info">
                 ({{ systemInfo.commit_id }})
               </span>
@@ -38,22 +38,22 @@
         </div>
       </div>
 
-      <!-- 构建时间 -->
+      <!-- Build time -->
       <div v-if="systemInfo?.build_time" class="setting-row">
         <div class="setting-info">
-          <label>构建时间</label>
-          <p class="desc">系统构建的时间</p>
+          <label>{{ $t('system.buildTimeLabel') }}</label>
+          <p class="desc">{{ $t('system.buildTimeDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ systemInfo.build_time }}</span>
         </div>
       </div>
 
-      <!-- Go版本 -->
+      <!-- Go version -->
       <div v-if="systemInfo?.go_version" class="setting-row">
         <div class="setting-info">
-          <label>Go 版本</label>
-          <p class="desc">后端使用的 Go 语言版本</p>
+          <label>{{ $t('system.goVersionLabel') }}</label>
+          <p class="desc">{{ $t('system.goVersionDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ systemInfo.go_version }}</span>
@@ -67,13 +67,16 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { getSystemInfo, type SystemInfo } from '@/api/system'
+import { useI18n } from 'vue-i18n'
 
-// 响应式数据
+const { t } = useI18n()
+
+// Reactive state
 const systemInfo = ref<SystemInfo | null>(null)
 const loading = ref(true)
 const error = ref('')
 
-// 方法
+// Methods
 const loadInfo = async () => {
   try {
     loading.value = true
@@ -84,16 +87,16 @@ const loadInfo = async () => {
     if (systemResponse.data) {
       systemInfo.value = systemResponse.data
     } else {
-      error.value = '获取系统信息失败'
+      error.value = t('system.messages.fetchFailed')
     }
   } catch (err: any) {
-    error.value = err.message || '网络错误，请稍后重试'
+    error.value = err?.message || t('system.messages.networkError')
   } finally {
     loading.value = false
   }
 }
 
-// 生命周期
+// Lifecycle
 onMounted(() => {
   loadInfo()
 })

@@ -7,7 +7,7 @@
           ref="searchInput"
           v-model="searchQuery"
           type="text"
-          placeholder="搜索知识库..."
+          :placeholder="$t('knowledgeBase.searchPlaceholder')"
           class="kb-search-input"
           @keydown.down.prevent="moveSelection(1)"
           @keydown.up.prevent="moveSelection(-1)"
@@ -33,20 +33,20 @@
             </div>
             <div class="kb-name-wrap">
               <span class="kb-name">{{ kb.name }}</span>
-              <span class="kb-docs" v-if="kb.docsCount !== undefined">{{ kb.docsCount }} docs</span>
+              <span class="kb-docs" v-if="kb.docsCount !== undefined">{{ kb.docsCount }} {{ $t('knowledgeBase.documents') }}</span>
             </div>
           </div>
         </div>
 
         <div v-if="filteredKnowledgeBases.length === 0" class="kb-empty">
-          {{ searchQuery ? '未找到匹配的知识库' : '暂无可用知识库' }}
+          {{ searchQuery ? $t('knowledgeBase.noMatch') : $t('knowledgeBase.noKnowledge') }}
         </div>
       </div>
 
       <!-- 底部操作 -->
       <div class="kb-actions">
-        <button @click="selectAll" class="kb-btn">全选</button>
-        <button @click="clearAll" class="kb-btn">清空</button>
+        <button @click="selectAll" class="kb-btn">{{ $t('common.selectAll') }}</button>
+        <button @click="clearAll" class="kb-btn">{{ $t('common.clear') }}</button>
       </div>
     </div>
   </div>
@@ -56,6 +56,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { listKnowledgeBases } from '@/api/knowledge-base'
+import { useI18n } from 'vue-i18n'
 
 interface KnowledgeBase {
   id: string
@@ -64,6 +65,8 @@ interface KnowledgeBase {
   embedding_model_id?: string
   summary_model_id?: string
 }
+
+const { t } = useI18n()
 
 const props = defineProps<{
   visible: boolean
@@ -151,7 +154,7 @@ const loadKnowledgeBases = async () => {
     const res: any = await listKnowledgeBases()
     if (res?.data && Array.isArray(res.data)) knowledgeBases.value = res.data
   } catch (e) {
-    console.error('加载知识库失败', e)
+    console.error(t('knowledgeBase.loadingFailed'), e)
   }
 }
 

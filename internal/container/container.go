@@ -124,13 +124,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// SessionService is created after AgentService and passes itself to AgentService.CreateAgentEngine when needed
 	must(container.Provide(service.NewSessionService))
 
-	// Chat pipeline components for processing chat requests
-	must(container.Provide(chatpipline.NewEventManager))
-	// Ensure Async task components are registered before invoking plugins that depend on KnowledgeService
-	// KnowledgeService depends on *asynq.Client, and plugins (like PluginSearch) are invoked below.
 	must(container.Provide(router.NewAsyncqClient))
 	must(container.Provide(router.NewAsynqServer))
-	must(container.Invoke(router.RunAsynqServer))
+
+	// Chat pipeline components for processing chat requests
+	must(container.Provide(chatpipline.NewEventManager))
 	must(container.Invoke(chatpipline.NewPluginTracing))
 	must(container.Invoke(chatpipline.NewPluginSearch))
 	must(container.Invoke(chatpipline.NewPluginRerank))
@@ -162,8 +160,6 @@ func BuildContainer(container *dig.Container) *dig.Container {
 
 	// Router configuration
 	must(container.Provide(router.NewRouter))
-	must(container.Provide(router.NewAsyncqClient))
-	must(container.Provide(router.NewAsynqServer))
 	must(container.Invoke(router.RunAsynqServer))
 
 	return container

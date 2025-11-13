@@ -4,7 +4,7 @@
       <div v-if="visible" class="settings-overlay">
         <div class="settings-modal">
           <!-- 关闭按钮 -->
-          <button class="close-btn" @click="handleClose" aria-label="关闭设置">
+          <button class="close-btn" @click="handleClose" :aria-label="$t('general.close')">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
               <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
             </svg>
@@ -14,7 +14,7 @@
             <!-- 左侧导航 -->
             <div class="settings-sidebar">
               <div class="sidebar-header">
-                <h2 class="sidebar-title">设置</h2>
+                <h2 class="sidebar-title">{{ $t('general.settings') }}</h2>
               </div>
               <div class="settings-nav">
                 <template v-for="(item, index) in navItems" :key="index">
@@ -131,6 +131,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
+import { useI18n } from 'vue-i18n'
 import AgentSettings from './AgentSettings.vue'
 import SystemInfo from './SystemInfo.vue'
 import TenantInfo from './TenantInfo.vue'
@@ -144,32 +145,33 @@ import WebSearchSettings from './WebSearchSettings.vue'
 const route = useRoute()
 const router = useRouter()
 const uiStore = useUIStore()
+const { t } = useI18n()
 
 const currentSection = ref<string>('general')
 const currentSubSection = ref<string>('')
 const expandedMenus = ref<string[]>([])
 
-const navItems = [
-  { key: 'general', icon: 'setting', label: '常规' },
+const navItems = computed(() => [
+  { key: 'general', icon: 'setting', label: t('general.title') },
   { 
     key: 'models', 
     icon: 'control-platform', 
-    label: '模型配置',
+    label: t('settings.modelConfig'),
     children: [
-      { key: 'chat', label: '对话模型' },
-      { key: 'embedding', label: 'Embedding' },
-      { key: 'rerank', label: 'ReRank' },
-      { key: 'vllm', label: 'VLLM' }
+      { key: 'chat', label: t('model.llmModel') },
+      { key: 'embedding', label: t('model.embeddingModel') },
+      { key: 'rerank', label: t('model.rerankModel') },
+      { key: 'vllm', label: t('model.vlmModel') }
     ]
   },
   { key: 'ollama', icon: 'server', label: 'Ollama' },
-  { key: 'agent', icon: 'chat', label: 'Agent 配置' },
-  { key: 'websearch', icon: 'search', label: '网络搜索' },
-  { key: 'mcp', icon: 'link', label: 'MCP 服务' },
-  { key: 'system', icon: 'info-circle', label: '系统信息' },
-  { key: 'tenant', icon: 'user-circle', label: '租户信息' },
-  { key: 'api', icon: 'secured', label: 'API 信息' }
-]
+  { key: 'agent', icon: 'chat', label: t('settings.agentConfig') },
+  { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig')  },
+{ key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
+  { key: 'system', icon: 'info-circle', label: t('settings.systemSettings') },
+  { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
+  { key: 'api', icon: 'secured', label: t('settings.apiInfo') }
+])
 
 // 导航项点击处理
 const handleNavClick = (item: any) => {

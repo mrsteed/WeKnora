@@ -8,7 +8,7 @@
         class="results-group"
       >
         <!-- <div class="group-header">
-          <span class="group-intro">以下 {{ group.items.length }} 条内容来自</span>
+          <span class="group-intro">{{ $t('chat.webGroupIntro', { count: group.items.length }) }}</span>
           <span class="group-source">{{ group.label }}</span>
         </div> -->
         <div class="results-list">
@@ -47,7 +47,7 @@
     
     <!-- Empty State -->
     <div v-else class="empty-state">
-      未找到搜索结果
+      {{ $t('chat.webSearchNoResults') }}
     </div>
   </div>
 </template>
@@ -55,12 +55,14 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { WebSearchResultsData, WebSearchResultItem } from '@/types/tool-results';
+import { useI18n } from 'vue-i18n';
 
 interface Props {
   data: WebSearchResultsData;
 }
 
 const props = defineProps<Props>();
+const { t, locale } = useI18n();
 
 const results = computed(() => props.data.results || []);
 
@@ -79,7 +81,7 @@ const groupedResults = computed<Group[]>(() => {
     } else {
       // fallback to domain
       const url = (item as any).url as string | undefined;
-      const hostname = url ? safeHostname(url) : '其他';
+      const hostname = url ? safeHostname(url) : t('chat.otherSource');
       key = `dom:${hostname}`;
       label = hostname;
     }
@@ -94,7 +96,7 @@ const groupedResults = computed<Group[]>(() => {
   for (const item of list) {
     const source = (item as any).source as string | undefined;
     const url = (item as any).url as string | undefined;
-    const hostname = url ? safeHostname(url) : '其他';
+    const hostname = url ? safeHostname(url) : t('chat.otherSource');
     const key = source && source.trim() ? `src:${source.trim()}` : `dom:${hostname}`;
     if (!seen.has(key)) {
       seen.add(key);
@@ -118,7 +120,7 @@ const safeHostname = (url: string): string => {
     const urlObj = new URL(url);
     return urlObj.hostname;
   } catch {
-    return '其他';
+    return t('chat.otherSource');
   }
 };
 
@@ -131,7 +133,7 @@ const truncateContent = (content: string, maxLength: number = 300): string => {
 const formatDate = (dateStr: string): string => {
   try {
     const date = new Date(dateStr);
-    return date.toLocaleDateString('zh-CN', {
+    return date.toLocaleDateString(locale.value || 'zh-CN', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'

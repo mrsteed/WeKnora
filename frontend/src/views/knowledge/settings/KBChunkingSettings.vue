@@ -1,16 +1,16 @@
 <template>
   <div class="kb-chunking-settings">
     <div class="section-header">
-      <h2>分块设置</h2>
-      <p class="section-description">配置文档分块参数，优化检索效果</p>
+      <h2>{{ $t('knowledgeEditor.chunking.title') }}</h2>
+      <p class="section-description">{{ $t('knowledgeEditor.chunking.description') }}</p>
     </div>
 
     <div class="settings-group">
       <!-- Chunk Size -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>分块大小</label>
-          <p class="desc">控制每个文档分块的字符数（100-4000）</p>
+          <label>{{ $t('knowledgeEditor.chunking.sizeLabel') }}</label>
+          <p class="desc">{{ $t('knowledgeEditor.chunking.sizeDescription') }}</p>
         </div>
         <div class="setting-control">
           <div class="slider-container">
@@ -23,7 +23,7 @@
               @change="handleChunkSizeChange"
               style="width: 200px;"
             />
-            <span class="value-display">{{ localChunkSize }} 字符</span>
+            <span class="value-display">{{ localChunkSize }} {{ $t('knowledgeEditor.chunking.characters') }}</span>
           </div>
         </div>
       </div>
@@ -31,8 +31,8 @@
       <!-- Chunk Overlap -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>分块重叠</label>
-          <p class="desc">相邻文档块之间的重叠字符数（0-500）</p>
+          <label>{{ $t('knowledgeEditor.chunking.overlapLabel') }}</label>
+          <p class="desc">{{ $t('knowledgeEditor.chunking.overlapDescription') }}</p>
         </div>
         <div class="setting-control">
           <div class="slider-container">
@@ -45,23 +45,23 @@
               @change="handleChunkOverlapChange"
               style="width: 200px;"
             />
-            <span class="value-display">{{ localChunkOverlap }} 字符</span>
+            <span class="value-display">{{ localChunkOverlap }} {{ $t('knowledgeEditor.chunking.characters') }}</span>
           </div>
         </div>
       </div>
 
-      <!-- 分隔符 -->
+      <!-- Separators -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>分隔符</label>
-          <p class="desc">文档分块时使用的分隔符</p>
+          <label>{{ $t('knowledgeEditor.chunking.separatorsLabel') }}</label>
+          <p class="desc">{{ $t('knowledgeEditor.chunking.separatorsDescription') }}</p>
         </div>
         <div class="setting-control">
           <t-select
             v-model="localSeparators"
             :options="separatorOptions"
             multiple
-            placeholder="选择分隔符"
+            :placeholder="$t('knowledgeEditor.chunking.separatorsPlaceholder')"
             @change="handleSeparatorsChange"
             style="width: 280px;"
           />
@@ -72,7 +72,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 interface ChunkingConfig {
   chunkSize: number
@@ -93,42 +94,43 @@ const emit = defineEmits<{
 const localChunkSize = ref(props.config.chunkSize)
 const localChunkOverlap = ref(props.config.chunkOverlap)
 const localSeparators = ref([...props.config.separators])
+const { t } = useI18n()
 
-// 分隔符选项
-const separatorOptions = [
-  { label: '双换行 (\\n\\n)', value: '\n\n' },
-  { label: '单换行 (\\n)', value: '\n' },
-  { label: '中文句号 (。)', value: '。' },
-  { label: '感叹号 (！)', value: '！' },
-  { label: '问号 (？)', value: '？' },
-  { label: '中文分号 (；)', value: '；' },
-  { label: '英文分号 (;)', value: ';' },
-  { label: '空格 ( )', value: ' ' }
-]
+// Separator options
+const separatorOptions = computed(() => [
+  { label: t('knowledgeEditor.chunking.separators.doubleNewline'), value: '\n\n' },
+  { label: t('knowledgeEditor.chunking.separators.singleNewline'), value: '\n' },
+  { label: t('knowledgeEditor.chunking.separators.periodCn'), value: '。' },
+  { label: t('knowledgeEditor.chunking.separators.exclamationCn'), value: '！' },
+  { label: t('knowledgeEditor.chunking.separators.questionCn'), value: '？' },
+  { label: t('knowledgeEditor.chunking.separators.semicolonCn'), value: '；' },
+  { label: t('knowledgeEditor.chunking.separators.semicolonEn'), value: ';' },
+  { label: t('knowledgeEditor.chunking.separators.space'), value: ' ' }
+])
 
-// 监听props变化
+// Watch for prop changes
 watch(() => props.config, (newConfig) => {
   localChunkSize.value = newConfig.chunkSize
   localChunkOverlap.value = newConfig.chunkOverlap
   localSeparators.value = [...newConfig.separators]
 }, { deep: true })
 
-// 处理分块大小变化
+// Handle chunk size change
 const handleChunkSizeChange = () => {
   emitUpdate()
 }
 
-// 处理分块重叠变化
+// Handle chunk overlap change
 const handleChunkOverlapChange = () => {
   emitUpdate()
 }
 
-// 处理分隔符变化
+// Handle separator change
 const handleSeparatorsChange = () => {
   emitUpdate()
 }
 
-// 发出更新事件
+// Emit update event
 const emitUpdate = () => {
   emit('update:config', {
     chunkSize: localChunkSize.value,

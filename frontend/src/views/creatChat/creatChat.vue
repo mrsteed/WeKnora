@@ -2,7 +2,7 @@
     <div class="dialogue-wrap">
         <div class="dialogue-answers">
             <div class="dialogue-title">
-                <span>基于知识库内容问答 - AI 问答</span>
+                <span>{{ $t('createChat.title') }}</span>
             </div>
             <InputField @send-msg="sendMsg"></InputField>
         </div>
@@ -16,11 +16,13 @@ import { useMenuStore } from '@/stores/menu';
 import { useSettingsStore } from '@/stores/settings';
 import { useRoute, useRouter } from 'vue-router';
 import { MessagePlugin } from 'tdesign-vue-next';
+import { useI18n } from 'vue-i18n';
 
 const router = useRouter();
 const route = useRoute();
 const usemenuStore = useMenuStore();
 const settingsStore = useSettingsStore();
+const { t } = useI18n();
 
 const sendMsg = (value: string) => {
     createNewSession(value);
@@ -30,7 +32,7 @@ async function createNewSession(value: string) {
     const selectedKbs = settingsStore.settings.selectedKnowledgeBases;
     
     if (!selectedKbs || selectedKbs.length === 0) {
-        MessagePlugin.warning('请先选择知识库');
+        MessagePlugin.warning(t('createChat.messages.selectKnowledgeBase'));
         return;
     }
 
@@ -52,19 +54,19 @@ async function createNewSession(value: string) {
         if (res.data && res.data.id) {
             await navigateToSession(res.data.id, value);
         } else {
-            console.error("创建会话失败");
-            MessagePlugin.error("创建会话失败");
+            console.error('[createChat] Failed to create session');
+            MessagePlugin.error(t('createChat.messages.createFailed'));
         }
     } catch (error) {
-        console.error("创建会话出错:", error);
-        MessagePlugin.error("创建会话失败，请稍后重试");
+        console.error('[createChat] Create session error:', error);
+        MessagePlugin.error(t('createChat.messages.createError'));
     }
 }
 
 const navigateToSession = async (sessionId: string, value: string) => {
     const now = new Date().toISOString();
     let obj = { 
-        title: '新会话', 
+        title: t('createChat.newSessionTitle'), 
         path: `chat/${sessionId}`, 
         id: sessionId, 
         isMore: false, 

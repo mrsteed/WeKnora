@@ -1,22 +1,22 @@
 <template>
   <div class="model-settings">
     <div class="section-header">
-      <h2>模型配置</h2>
-      <p class="section-description">管理不同类型的 AI 模型，支持 Ollama 本地模型和远程 API</p>
+      <h2>{{ $t('modelSettings.title') }}</h2>
+      <p class="section-description">{{ $t('modelSettings.description') }}</p>
     </div>
 
     <!-- 对话模型 -->
     <div class="model-category-section" data-model-type="chat">
       <div class="category-header">
         <div class="header-info">
-          <h3>对话模型</h3>
-          <p>配置用于对话的大语言模型</p>
+          <h3>{{ $t('modelSettings.chat.title') }}</h3>
+          <p>{{ $t('modelSettings.chat.desc') }}</p>
         </div>
         <t-button size="small" theme="primary" @click="openAddDialog('chat')">
           <template #icon>
             <t-icon name="add" />
           </template>
-          添加模型
+          {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
       
@@ -25,10 +25,10 @@
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
-              <t-tag v-if="model.isDefault" theme="success" size="small">默认</t-tag>
+              <t-tag v-if="model.isDefault" theme="success" size="small">{{ $t('common.default') }}</t-tag>
             </div>
             <div class="model-meta">
-              <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : 'Remote' }}</span>
+              <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.remote') }}</span>
               <!-- <span class="model-id">{{ model.modelName }}</span> -->
             </div>
           </div>
@@ -47,9 +47,9 @@
         </div>
       </div>
       <div v-else class="empty-state">
-        <p class="empty-text">暂无对话模型</p>
+        <p class="empty-text">{{ $t('modelSettings.chat.empty') }}</p>
         <t-button theme="default" variant="outline" size="small" @click="openAddDialog('chat')">
-          添加模型
+          {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
     </div>
@@ -58,14 +58,14 @@
     <div class="model-category-section" data-model-type="embedding">
       <div class="category-header">
         <div class="header-info">
-          <h3>Embedding 模型</h3>
-          <p>配置用于文本向量化的嵌入模型</p>
+          <h3>{{ $t('modelSettings.embedding.title') }}</h3>
+          <p>{{ $t('modelSettings.embedding.desc') }}</p>
         </div>
         <t-button size="small" theme="primary" @click="openAddDialog('embedding')">
           <template #icon>
             <t-icon name="add" />
           </template>
-          添加模型
+          {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
       
@@ -74,12 +74,12 @@
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
-              <t-tag v-if="model.isDefault" theme="success" size="small">默认</t-tag>
+              <t-tag v-if="model.isDefault" theme="success" size="small">{{ $t('common.default') }}</t-tag>
             </div>
             <div class="model-meta">
-              <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : 'Remote' }}</span>
+              <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.remote') }}</span>
               <!-- <span class="model-id">{{ model.modelName }}</span> -->
-              <span v-if="model.dimension" class="dimension">维度: {{ model.dimension }}</span>
+              <span v-if="model.dimension" class="dimension">{{ $t('model.editor.dimensionLabel') }}: {{ model.dimension }}</span>
             </div>
           </div>
           <div class="model-actions">
@@ -97,9 +97,9 @@
         </div>
       </div>
       <div v-else class="empty-state">
-        <p class="empty-text">暂无 Embedding 模型</p>
+        <p class="empty-text">{{ $t('modelSettings.embedding.empty') }}</p>
         <t-button theme="default" variant="outline" size="small" @click="openAddDialog('embedding')">
-          添加模型
+          {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
     </div>
@@ -108,14 +108,14 @@
     <div class="model-category-section" data-model-type="rerank">
       <div class="category-header">
         <div class="header-info">
-          <h3>ReRank 模型</h3>
-          <p>配置用于结果重排序的模型</p>
+          <h3>{{ $t('modelSettings.rerank.title') }}</h3>
+          <p>{{ $t('modelSettings.rerank.desc') }}</p>
         </div>
         <t-button size="small" theme="primary" @click="openAddDialog('rerank')">
           <template #icon>
             <t-icon name="add" />
           </template>
-          添加模型
+          {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
       
@@ -124,10 +124,10 @@
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
-              <t-tag v-if="model.isDefault" theme="success" size="small">默认</t-tag>
+              <t-tag v-if="model.isDefault" theme="success" size="small">{{ $t('common.default') }}</t-tag>
             </div>
             <div class="model-meta">
-              <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : 'Remote' }}</span>
+              <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.remote') }}</span>
               <!-- <span class="model-id">{{ model.modelName }}</span> -->
             </div>
           </div>
@@ -146,9 +146,9 @@
         </div>
       </div>
       <div v-else class="empty-state">
-        <p class="empty-text">暂无 ReRank 模型</p>
+        <p class="empty-text">{{ $t('modelSettings.rerank.empty') }}</p>
         <t-button theme="default" variant="outline" size="small" @click="openAddDialog('rerank')">
-          添加模型
+          {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
     </div>
@@ -157,14 +157,14 @@
     <div class="model-category-section" data-model-type="vllm">
       <div class="category-header">
         <div class="header-info">
-          <h3>VLLM 视觉模型</h3>
-          <p>配置用于视觉理解和多模态的视觉语言模型</p>
+          <h3>{{ $t('modelSettings.vllm.title') }}</h3>
+          <p>{{ $t('modelSettings.vllm.desc') }}</p>
         </div>
         <t-button size="small" theme="primary" @click="openAddDialog('vllm')">
           <template #icon>
             <t-icon name="add" />
           </template>
-          添加模型
+          {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
       
@@ -173,10 +173,10 @@
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
-              <t-tag v-if="model.isDefault" theme="success" size="small">默认</t-tag>
+              <t-tag v-if="model.isDefault" theme="success" size="small">{{ $t('common.default') }}</t-tag>
             </div>
             <div class="model-meta">
-              <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : 'OpenAI兼容' }}</span>
+              <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.openaiCompatible') }}</span>
               <!-- <span class="model-id">{{ model.modelName }}</span> -->
             </div>
           </div>
@@ -215,8 +215,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
+import { useI18n } from 'vue-i18n'
 import ModelEditorDialog from '@/components/ModelEditorDialog.vue'
 import { listModels, createModel, updateModel as updateModelAPI, deleteModel as deleteModelAPI, type ModelConfig } from '@/api/model'
+
+const { t } = useI18n()
 
 const showDialog = ref(false)
 const currentModelType = ref<'chat' | 'embedding' | 'rerank' | 'vllm'>('chat')
@@ -337,19 +340,19 @@ const handleModelSave = async (modelData: any) => {
   try {
     // 字段校验
     if (!modelData.modelName || !modelData.modelName.trim()) {
-      MessagePlugin.warning('模型名称不能为空')
+      MessagePlugin.warning(t('modelSettings.toasts.nameRequired'))
       return
     }
     
     if (modelData.modelName.trim().length > 100) {
-      MessagePlugin.warning('模型名称不能超过100个字符')
+      MessagePlugin.warning(t('modelSettings.toasts.nameTooLong'))
       return
     }
     
     // Remote 类型必须填写 baseUrl
     if (modelData.source === 'remote') {
       if (!modelData.baseUrl || !modelData.baseUrl.trim()) {
-        MessagePlugin.warning('Remote API 类型必须填写 Base URL')
+        MessagePlugin.warning(t('modelSettings.toasts.baseUrlRequired'))
         return
       }
       
@@ -357,7 +360,7 @@ const handleModelSave = async (modelData: any) => {
       try {
         new URL(modelData.baseUrl.trim())
       } catch {
-        MessagePlugin.warning('Base URL 格式不正确，请输入有效的 URL')
+        MessagePlugin.warning(t('modelSettings.toasts.baseUrlInvalid'))
         return
       }
     }
@@ -365,7 +368,7 @@ const handleModelSave = async (modelData: any) => {
     // Embedding 模型必须填写维度
     if (currentModelType.value === 'embedding') {
       if (!modelData.dimension || modelData.dimension < 128 || modelData.dimension > 4096) {
-        MessagePlugin.warning('Embedding 模型必须填写有效的向量维度（128-4096）')
+        MessagePlugin.warning(t('modelSettings.toasts.dimensionInvalid'))
         return
       }
     }
@@ -392,18 +395,18 @@ const handleModelSave = async (modelData: any) => {
     if (editingModel.value && editingModel.value.id) {
       // 更新现有模型
       await updateModelAPI(editingModel.value.id, apiModelData)
-      MessagePlugin.success('模型已更新')
+      MessagePlugin.success(t('modelSettings.toasts.updated'))
     } else {
       // 添加新模型
       await createModel(apiModelData)
-      MessagePlugin.success('模型已添加')
+      MessagePlugin.success(t('modelSettings.toasts.added'))
     }
     
     // 重新加载模型列表
     await loadModels()
   } catch (error: any) {
     console.error('保存模型失败:', error)
-    MessagePlugin.error(error.message || '保存模型失败')
+    MessagePlugin.error(error.message || t('modelSettings.toasts.saveFailed'))
   }
 }
 
@@ -411,12 +414,12 @@ const handleModelSave = async (modelData: any) => {
 const deleteModel = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm', modelId: string) => {
   try {
     await deleteModelAPI(modelId)
-    MessagePlugin.success('模型已删除')
+    MessagePlugin.success(t('modelSettings.toasts.deleted'))
     // 重新加载模型列表
     await loadModels()
   } catch (error: any) {
     console.error('删除模型失败:', error)
-    MessagePlugin.error(error.message || '删除模型失败')
+    MessagePlugin.error(error.message || t('modelSettings.toasts.deleteFailed'))
   }
 }
 
@@ -425,12 +428,12 @@ const setDefault = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm', modelI
   try {
     // 更新模型的 is_default 字段
     await updateModelAPI(modelId, { is_default: true })
-    MessagePlugin.success('已设为默认模型')
+    MessagePlugin.success(t('modelSettings.toasts.setDefault'))
     // 重新加载模型列表
     await loadModels()
   } catch (error: any) {
     console.error('设置默认模型失败:', error)
-    MessagePlugin.error(error.message || '设置默认模型失败')
+    MessagePlugin.error(error.message || t('modelSettings.toasts.setDefaultFailed'))
   }
 }
 
@@ -441,20 +444,20 @@ const getModelOptions = (type: 'chat' | 'embedding' | 'rerank' | 'vllm', model: 
   // 如果不是默认模型，显示"设为默认"选项
   if (!model.isDefault) {
     options.push({
-      content: '设为默认',
+      content: t('modelSettings.actions.setDefault'),
       value: `set-default-${type}-${model.id}`
     })
   }
   
   // 编辑选项
   options.push({
-    content: '编辑',
+    content: t('common.edit'),
     value: `edit-${type}-${model.id}`
   })
   
   // 删除选项
   options.push({
-    content: '删除',
+    content: t('common.delete'),
     value: `delete-${type}-${model.id}`,
     theme: 'error'
   })
@@ -472,7 +475,7 @@ const handleMenuAction = (data: { value: string }, type: 'chat' | 'embedding' | 
     editModel(type, model)
   } else if (value.indexOf('delete-') === 0) {
     // 使用确认对话框进行确认
-    if (confirm('确定删除此模型吗？')) {
+    if (confirm(t('modelSettings.confirmDelete'))) {
       deleteModel(type, model.id)
     }
   }

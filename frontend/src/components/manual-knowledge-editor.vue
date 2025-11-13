@@ -5,6 +5,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { useUIStore } from '@/stores/ui'
 import { listKnowledgeBases, getKnowledgeDetails, createManualKnowledge, updateManualKnowledge } from '@/api/knowledge-base'
 import { sanitizeHTML, safeMarkdownToHTML } from '@/utils/security'
+import { useI18n } from 'vue-i18n'
 
 interface KnowledgeBaseOption {
   label: string
@@ -23,6 +24,7 @@ interface KnowledgeDetailResponse {
 type ManualStatus = 'draft' | 'publish'
 
 const uiStore = useUIStore()
+const { t } = useI18n()
 
 const visible = computed({
   get: () => uiStore.manualEditorVisible,
@@ -205,7 +207,7 @@ const applyHeading = (level: number) => {
   const hashes = '#'.repeat(level)
   transformSelectedLines((line) => {
     const trimmed = line.replace(/^#+\s*/, '').trim()
-    const content = trimmed || `标题${level}`
+    const content = trimmed || t('manualEditor.placeholders.heading', { level })
     return `${hashes} ${content}`
   })
 }
@@ -217,7 +219,7 @@ const applyBulletList = () => {
   transformSelectedLines((line) => {
     const trimmed = line.trim()
     const content = trimmed.replace(listPrefixPattern, '').trim()
-    return `- ${content || '列表项'}`
+    return `- ${content || t('manualEditor.placeholders.listItem')}`
   })
 }
 
@@ -225,7 +227,7 @@ const applyOrderedList = () => {
   transformSelectedLines((line, index) => {
     const trimmed = line.trim()
     const content = trimmed.replace(listPrefixPattern, '').trim()
-    return `${index + 1}. ${content || '列表项'}`
+    return `${index + 1}. ${content || t('manualEditor.placeholders.listItem')}`
   })
 }
 
@@ -233,19 +235,19 @@ const applyTaskList = () => {
   transformSelectedLines((line) => {
     const trimmed = line.trim()
     const content = trimmed.replace(listPrefixPattern, '').trim()
-    return `- [ ] ${content || '任务项'}`
+    return `- [ ] ${content || t('manualEditor.placeholders.taskItem')}`
   })
 }
 
 const applyBlockquote = () => {
   transformSelectedLines((line) => {
     const trimmed = line.trim().replace(/^>\s?/, '').trim()
-    return `> ${trimmed || '引用内容'}`
+    return `> ${trimmed || t('manualEditor.placeholders.quote')}`
   })
 }
 
 const insertCodeBlock = () => {
-  const placeholder = '代码内容'
+  const placeholder = t('manualEditor.placeholders.code')
   const block = `\n\`\`\`\n${placeholder}\n\`\`\`\n`
   const startOffset = block.indexOf(placeholder)
   insertBlock(block, startOffset, startOffset + placeholder.length)
@@ -256,9 +258,10 @@ const insertHorizontalRule = () => {
 }
 
 const insertTable = () => {
-  const template = '\n| 列1 | 列2 |\n| --- | --- |\n| 内容 | 内容 |\n'
-  const placeholderIndex = template.indexOf('内容')
-  insertBlock(template, placeholderIndex, placeholderIndex + 2)
+  const cell = t('manualEditor.table.cell')
+  const template = `\n| ${t('manualEditor.table.column1')} | ${t('manualEditor.table.column2')} |\n| --- | --- |\n| ${cell} | ${cell} |\n`
+  const placeholderIndex = template.indexOf(cell)
+  insertBlock(template, placeholderIndex, placeholderIndex + cell.length)
 }
 
 const insertLink = () => {
@@ -266,7 +269,7 @@ const insertLink = () => {
   const { start, end } = getSelectionRange()
   const { safeStart, safeEnd } = clampRange(start, end, value.length)
   const selectedText =
-    safeEnd > safeStart ? value.slice(safeStart, safeEnd) : '链接文本'
+    safeEnd > safeStart ? value.slice(safeStart, safeEnd) : t('manualEditor.placeholders.linkText')
   const urlPlaceholder = 'https://'
   const result =
     value.slice(0, safeStart) +
@@ -281,7 +284,7 @@ const insertImage = () => {
   const value = form.content ?? ''
   const { start, end } = getSelectionRange()
   const { safeStart, safeEnd } = clampRange(start, end, value.length)
-  const altText = safeEnd > safeStart ? value.slice(safeStart, safeEnd) : '描述'
+  const altText = safeEnd > safeStart ? value.slice(safeStart, safeEnd) : t('manualEditor.placeholders.imageAlt')
   const urlPlaceholder = 'https://'
   const result =
     value.slice(0, safeStart) +
@@ -304,49 +307,55 @@ type ToolbarGroup = {
   buttons: ToolbarButton[]
 }
 
-const toolbarGroups: ToolbarGroup[] = [
+const toolbarGroups = computed<ToolbarGroup[]>(() => [
   {
     key: 'format',
     buttons: [
-      { key: 'bold', icon: 'textformat-bold', tooltip: '加粗', action: () => wrapSelection('**', '**', '加粗文本') },
-      { key: 'italic', icon: 'textformat-italic', tooltip: '斜体', action: () => wrapSelection('*', '*', '斜体文本') },
-      { key: 'strike', icon: 'textformat-strikethrough', tooltip: '删除线', action: () => wrapSelection('~~', '~~', '删除线') },
-      { key: 'inline-code', icon: 'code', tooltip: '行内代码', action: () => wrapSelection('`', '`', 'code') },
+      { key: 'bold', icon: 'textformat-bold', tooltip: t('manualEditor.toolbar.bold'), action: () => wrapSelection('**', '**', t('manualEditor.placeholders.bold')) },
+      { key: 'italic', icon: 'textformat-italic', tooltip: t('manualEditor.toolbar.italic'), action: () => wrapSelection('*', '*', t('manualEditor.placeholders.italic')) },
+      { key: 'strike', icon: 'textformat-strikethrough', tooltip: t('manualEditor.toolbar.strike'), action: () => wrapSelection('~~', '~~', t('manualEditor.placeholders.strike')) },
+      { key: 'inline-code', icon: 'code', tooltip: t('manualEditor.toolbar.inlineCode'), action: () => wrapSelection('`', '`', t('manualEditor.placeholders.inlineCode')) },
     ],
   },
   {
     key: 'heading',
     buttons: [
-      { key: 'h1', icon: 'numbers-1', tooltip: '一级标题', action: () => applyHeading(1) },
-      { key: 'h2', icon: 'numbers-2', tooltip: '二级标题', action: () => applyHeading(2) },
-      { key: 'h3', icon: 'numbers-3', tooltip: '三级标题', action: () => applyHeading(3) },
+      { key: 'h1', icon: 'numbers-1', tooltip: t('manualEditor.toolbar.heading1'), action: () => applyHeading(1) },
+      { key: 'h2', icon: 'numbers-2', tooltip: t('manualEditor.toolbar.heading2'), action: () => applyHeading(2) },
+      { key: 'h3', icon: 'numbers-3', tooltip: t('manualEditor.toolbar.heading3'), action: () => applyHeading(3) },
     ],
   },
   {
     key: 'list',
     buttons: [
-      { key: 'ul', icon: 'view-list', tooltip: '无序列表', action: applyBulletList },
-      { key: 'ol', icon: 'list-numbered', tooltip: '有序列表', action: applyOrderedList },
-      { key: 'task', icon: 'check-rectangle', tooltip: '任务列表', action: applyTaskList },
-      { key: 'quote', icon: 'quote', tooltip: '引用', action: applyBlockquote },
+      { key: 'ul', icon: 'view-list', tooltip: t('manualEditor.toolbar.bulletList'), action: applyBulletList },
+      { key: 'ol', icon: 'list-numbered', tooltip: t('manualEditor.toolbar.orderedList'), action: applyOrderedList },
+      { key: 'task', icon: 'check-rectangle', tooltip: t('manualEditor.toolbar.taskList'), action: applyTaskList },
+      { key: 'quote', icon: 'quote', tooltip: t('manualEditor.toolbar.blockquote'), action: applyBlockquote },
     ],
   },
   {
     key: 'insert',
     buttons: [
-      { key: 'codeblock', icon: 'code-1', tooltip: '代码块', action: insertCodeBlock },
-      { key: 'link', icon: 'link', tooltip: '插入链接', action: insertLink },
-      { key: 'image', icon: 'image', tooltip: '插入图片', action: insertImage },
-      { key: 'table', icon: 'table', tooltip: '插入表格', action: insertTable },
-      { key: 'hr', icon: 'component-divider-horizontal', tooltip: '分割线', action: insertHorizontalRule },
+      { key: 'codeblock', icon: 'code-1', tooltip: t('manualEditor.toolbar.codeBlock'), action: insertCodeBlock },
+      { key: 'link', icon: 'link', tooltip: t('manualEditor.toolbar.link'), action: insertLink },
+      { key: 'image', icon: 'image', tooltip: t('manualEditor.toolbar.image'), action: insertImage },
+      { key: 'table', icon: 'table', tooltip: t('manualEditor.toolbar.table'), action: insertTable },
+      { key: 'hr', icon: 'component-divider-horizontal', tooltip: t('manualEditor.toolbar.horizontalRule'), action: insertHorizontalRule },
     ],
   },
-]
+])
 
 const isPreviewMode = computed(() => activeTab.value === 'preview')
 const viewToggleIcon = computed(() => (isPreviewMode.value ? 'edit' : 'view-module'))
-const viewToggleTooltip = computed(() => (isPreviewMode.value ? '切换到编辑视图' : '切换到预览视图'))
-const viewToggleLabel = computed(() => (isPreviewMode.value ? '返回编辑' : '预览内容'))
+const viewToggleTooltip = computed(() =>
+  isPreviewMode.value
+    ? t('manualEditor.view.toggleToEdit')
+    : t('manualEditor.view.toggleToPreview'),
+)
+const viewToggleLabel = computed(() =>
+  isPreviewMode.value ? t('manualEditor.view.editLabel') : t('manualEditor.view.previewLabel'),
+)
 
 const handleToolbarAction = (action: ToolbarAction) => {
   if (saving.value) {
@@ -374,7 +383,9 @@ marked.use({
 })
 
 const previewHTML = computed(() => {
-  if (!form.content) return '<p class="empty-preview">暂无内容</p>'
+  if (!form.content) {
+    return `<p class="empty-preview">${t('manualEditor.preview.empty')}</p>`
+  }
   const safeMarkdown = safeMarkdownToHTML(form.content)
   const html = marked.parse(safeMarkdown)
   return sanitizeHTML(html)
@@ -382,12 +393,13 @@ const previewHTML = computed(() => {
 
 const kbDisabled = computed(() => mode.value === 'edit' && !!form.kbId)
 
-const dialogTitle = computed(() => {
-  if (mode.value === 'edit') {
-    return '编辑 Markdown 知识'
-  }
-  return '在线编辑 Markdown 知识'
-})
+const dialogTitle = computed(() =>
+  mode.value === 'edit' ? t('manualEditor.title.edit') : t('manualEditor.title.create'),
+)
+
+const lastUpdatedText = computed(() =>
+  lastUpdatedAt.value ? t('manualEditor.status.lastUpdated', { time: lastUpdatedAt.value }) : '',
+)
 
 const loadKnowledgeBases = async () => {
   kbLoading.value = true
@@ -403,7 +415,10 @@ const loadKnowledgeBases = async () => {
       if (presetKbId) {
         const exists = list.find((item) => item.value === presetKbId)
         if (!exists) {
-          kbOptions.value.unshift({ label: '当前知识库', value: presetKbId })
+          kbOptions.value.unshift({
+            label: t('manualEditor.labels.currentKnowledgeBase'),
+            value: presetKbId,
+          })
         }
         form.kbId = presetKbId
       } else {
@@ -411,7 +426,7 @@ const loadKnowledgeBases = async () => {
       }
     }
   } catch (error) {
-    console.error('加载知识库列表失败:', error)
+    console.error('[ManualEditor] Failed to load knowledge base list:', error)
     kbOptions.value = []
   } finally {
     kbLoading.value = false
@@ -438,7 +453,7 @@ const parseManualMetadata = (
       }
     }
   } catch (error) {
-    console.warn('解析手工知识元数据失败:', error)
+    console.warn('[ManualEditor] Failed to parse manual metadata:', error)
   }
   return null
 }
@@ -452,7 +467,7 @@ const loadKnowledgeContent = async () => {
     const res: any = await getKnowledgeDetails(knowledgeId.value)
     const data: KnowledgeDetailResponse | undefined = res?.data
     if (!data) {
-      MessagePlugin.error('获取知识详情失败')
+      MessagePlugin.error(t('manualEditor.error.fetchDetailFailed'))
       return
     }
 
@@ -470,11 +485,14 @@ const loadKnowledgeContent = async () => {
     }
 
     if (form.kbId && !kbOptions.value.find((item) => item.value === form.kbId)) {
-      kbOptions.value.unshift({ label: '当前知识库', value: form.kbId })
+      kbOptions.value.unshift({
+        label: t('manualEditor.labels.currentKnowledgeBase'),
+        value: form.kbId,
+      })
     }
   } catch (error) {
-    console.error('加载手工知识失败:', error)
-    MessagePlugin.error('获取知识详情失败')
+    console.error('[ManualEditor] Failed to load manual knowledge:', error)
+    MessagePlugin.error(t('manualEditor.error.fetchDetailFailed'))
   } finally {
     contentLoading.value = false
   }
@@ -496,7 +514,7 @@ const generateDefaultTitle = () => {
   if (uiStore.manualEditorInitialTitle) {
     return uiStore.manualEditorInitialTitle
   }
-  return `新建文档-${new Date().toLocaleString()}`
+  return `${t('manualEditor.defaultTitlePrefix')}-${new Date().toLocaleString()}`
 }
 
 const initialize = async () => {
@@ -521,19 +539,19 @@ const initialize = async () => {
 
 const validateForm = (targetStatus: ManualStatus): boolean => {
   if (!form.kbId) {
-    MessagePlugin.warning('请选择目标知识库')
+    MessagePlugin.warning(t('manualEditor.warning.selectKnowledgeBase'))
     return false
   }
   if (!form.title || !form.title.trim()) {
-    MessagePlugin.warning('请输入知识标题')
+    MessagePlugin.warning(t('manualEditor.warning.enterTitle'))
     return false
   }
   if (!form.content || !form.content.trim()) {
-    MessagePlugin.warning('请输入知识内容')
+    MessagePlugin.warning(t('manualEditor.warning.enterContent'))
     return false
   }
   if (targetStatus === 'publish' && form.content.trim().length < 10) {
-    MessagePlugin.warning('内容过短，建议补充更多信息后再发布')
+    MessagePlugin.warning(t('manualEditor.warning.contentTooShort'))
     return false
   }
   return true
@@ -564,7 +582,11 @@ const handleSave = async (targetStatus: ManualStatus) => {
     }
 
     if (response?.success) {
-      MessagePlugin.success(targetStatus === 'draft' ? '草稿已保存' : '知识已发布并开始索引')
+      MessagePlugin.success(
+        targetStatus === 'draft'
+          ? t('manualEditor.success.draftSaved')
+          : t('manualEditor.success.published'),
+      )
       if (knowledgeID) {
         uiStore.notifyManualEditorSuccess({
           kbId,
@@ -574,11 +596,11 @@ const handleSave = async (targetStatus: ManualStatus) => {
       }
       uiStore.closeManualEditor()
     } else {
-      const message = response?.message || '保存失败，请稍后重试'
+      const message = response?.message || t('manualEditor.error.saveFailed')
       MessagePlugin.error(message)
     }
   } catch (error: any) {
-    const message = error?.error?.message || error?.message || '保存失败，请稍后重试'
+    const message = error?.error?.message || error?.message || t('manualEditor.error.saveFailed')
     MessagePlugin.error(message)
   } finally {
     saving.value = false
@@ -630,31 +652,31 @@ onBeforeUnmount(() => {
   >
     <div class="editor-body" v-if="initialLoaded">
       <div class="form-row">
-        <label class="form-label">目标知识库</label>
+        <label class="form-label">{{ $t('manualEditor.form.knowledgeBaseLabel') }}</label>
         <t-select
           v-model="form.kbId"
           :disabled="kbDisabled"
           :loading="kbLoading"
           :options="kbOptions"
-          placeholder="请选择知识库"
+          :placeholder="$t('manualEditor.form.knowledgeBasePlaceholder')"
           :popup-props="{ overlayStyle: { zIndex: 2200 } }"
         />
       </div>
 
       <div class="form-row">
-        <label class="form-label">知识标题</label>
+        <label class="form-label">{{ $t('manualEditor.form.titleLabel') }}</label>
         <t-input
           v-model="form.title"
           maxlength="100"
-          placeholder="请输入标题"
+          :placeholder="$t('manualEditor.form.titlePlaceholder')"
           showLimitNumber
         />
       </div>
 
       <div class="status-row" v-if="mode === 'edit'">
-        <t-tag theme="warning" v-if="form.status === 'draft'">当前状态：草稿</t-tag>
-        <t-tag theme="success" v-else>当前状态：已发布</t-tag>
-        <span v-if="lastUpdatedAt" class="status-timestamp">最近更新：{{ lastUpdatedAt }}</span>
+        <t-tag theme="warning" v-if="form.status === 'draft'">{{ $t('manualEditor.status.draftTag') }}</t-tag>
+        <t-tag theme="success" v-else>{{ $t('manualEditor.status.publishedTag') }}</t-tag>
+        <span v-if="lastUpdatedText" class="status-timestamp">{{ lastUpdatedText }}</span>
       </div>
 
       <div class="editor-toolbar">
@@ -687,11 +709,11 @@ onBeforeUnmount(() => {
             ref="textareaComponent"
             v-if="!contentLoading"
             v-model="form.content"
-            placeholder="支持 Markdown 语法，可使用 # 标题、列表、代码块等"
+            :placeholder="$t('manualEditor.form.contentPlaceholder')"
             :autosize="{ minRows: 16, maxRows: 24 }"
           />
           <div v-else class="loading-placeholder">
-            <t-loading size="small" text="正在加载内容" />
+            <t-loading size="small" :text="$t('manualEditor.loading.content')" />
           </div>
         </div>
         <div class="editor-pane" v-show="activeTab === 'preview'">
@@ -701,7 +723,9 @@ onBeforeUnmount(() => {
 
       <div class="dialog-footer">
         <div class="footer-left">
-          <t-button variant="outline" theme="default" @click="handleClose">取消</t-button>
+          <t-button variant="outline" theme="default" @click="handleClose">
+            {{ $t('manualEditor.actions.cancel') }}
+          </t-button>
         </div>
         <div class="footer-right">
           <t-tooltip :content="viewToggleTooltip" placement="top">
@@ -722,20 +746,20 @@ onBeforeUnmount(() => {
             @click="handleSave('draft')"
             :loading="saving && savingAction === 'draft'"
           >
-            暂存草稿
+            {{ $t('manualEditor.actions.saveDraft') }}
           </t-button>
           <t-button
             theme="primary"
             @click="handleSave('publish')"
             :loading="saving && savingAction === 'publish'"
           >
-            发布入库
+            {{ $t('manualEditor.actions.publish') }}
           </t-button>
         </div>
       </div>
     </div>
     <div v-else class="loading-wrapper">
-      <t-loading size="medium" text="正在准备编辑器" />
+      <t-loading size="medium" :text="$t('manualEditor.loading.preparing')" />
     </div>
   </t-dialog>
 </template>

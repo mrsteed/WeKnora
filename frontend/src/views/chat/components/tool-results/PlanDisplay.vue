@@ -19,7 +19,7 @@
     </div>
     
     <div v-else class="no-steps">
-      未提供具体步骤
+      {{ $t('chat.noPlanSteps') }}
     </div>
   </div>
 </template>

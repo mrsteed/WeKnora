@@ -15,6 +15,7 @@ export default {
   knowledgeBase: {
     title: 'Knowledge Base',
     list: 'Knowledge Base List',
+    fileContent: 'File Content',
     detail: 'Knowledge Base Details',
     create: 'Create Knowledge Base',
     edit: 'Edit Knowledge Base',
@@ -67,6 +68,10 @@ export default {
     totalSize: 'Total size',
     // Additional translations for KnowledgeBase.vue
     newSession: 'New Chat',
+    editDocument: 'Edit Document',
+    draft: 'Draft',
+    draftTip: 'Temporarily saved and not included in retrieval',
+    untitledDocument: 'Untitled Document',
     deleteDocument: 'Delete Document',
     parsingFailed: 'Parsing failed',
     parsingInProgress: 'Parsing...',
@@ -107,39 +112,31 @@ export default {
     emptyKnowledgeDragDrop: 'Knowledge is empty, drag and drop to upload',
     pdfDocFormat: 'pdf, doc format files, max 10M',
     textMarkdownFormat: 'text, markdown format files, max 200K',
-    dragFileNotText: 'Please drag files instead of text or links'
+    dragFileNotText: 'Please drag files instead of text or links',
+    searchPlaceholder: 'Search knowledge bases...',
+    noMatch: 'No matching knowledge base found',
+    noKnowledge: 'No knowledge bases available',
+    loadingFailed: 'Failed to load knowledge bases'
   },
-  chat: {
-    title: 'Chat',
-    newChat: 'New Chat',
-    inputPlaceholder: 'Enter your message...',
-    send: 'Send',
-    thinking: 'Thinking...',
-    regenerate: 'Regenerate',
+
+  agent: {
+    taskLabel: 'Task:',
     copy: 'Copy',
-    delete: 'Delete',
-    reference: 'Reference',
-    noMessages: 'No messages',
-    // Additional translations for chat components
-    waitingForAnswer: 'Waiting for answer...',
-    cannotAnswer: 'Sorry, I cannot answer this question.',
-    summarizingAnswer: 'Summarizing answer...',
-    loading: 'Loading...',
-    enterDescription: 'Enter description',
-    referencedContent: '{count} related materials used',
-    deepThinking: 'Deep thinking completed',
-    knowledgeBaseQandA: 'Knowledge Base Q&A',
-    askKnowledgeBase: 'Ask the knowledge base',
-    sourcesCount: '{count} sources',
-    pleaseEnterContent: 'Please enter content!',
-    pleaseUploadKnowledgeBase: 'Please upload knowledge base first!',
-    replyingPleaseWait: 'Replying, please try again later!',
-    createSessionFailed: 'Failed to create session',
-    createSessionError: 'Session creation error',
-    unableToGetKnowledgeBaseId: 'Unable to get knowledge base ID'
+    addToKnowledgeBase: 'Add to Knowledge Base',
+    updatePlan: 'Update Plan',
+    webSearchFound: 'Found <strong>{count}</strong> web search result(s)',
+    argumentsLabel: 'Arguments',
+    toolFallback: 'Tool'
   },
   settings: {
     title: 'Settings',
+    modelConfig: 'Model Settings',
+    agentConfig: 'Agent Settings',
+    webSearchConfig: 'Web Search',
+    mcpService: 'MCP Service',
+    systemSettings: 'System Settings',
+    tenantInfo: 'Tenant Info',
+    apiInfo: 'API Info',
     system: 'System Settings',
     systemConfig: 'System Configuration',
     knowledgeBaseSettings: 'Knowledge Base Settings',
@@ -177,6 +174,35 @@ export default {
     cancel: 'Cancel',
     saveFailedSettings: 'Failed to save settings',
     enterNameRequired: 'Enter name'
+  },
+  webSearchSettings: {
+    title: 'Web Search Configuration',
+    description: 'Configure web search so answers can include up-to-date information from the internet.',
+    providerLabel: 'Search Provider',
+    providerDescription: 'Choose the search engine service used for web search',
+    providerPlaceholder: 'Select a search engine...',
+    apiKeyLabel: 'API Key',
+    apiKeyDescription: 'Enter the API key for the selected search provider',
+    apiKeyPlaceholder: 'Enter API key',
+    maxResultsLabel: 'Maximum Results',
+    maxResultsDescription: 'Maximum number of results returned per search (1-50)',
+    includeDateLabel: 'Include Publish Date',
+    includeDateDescription: 'Include publish date information in search results',
+    compressionLabel: 'Compression Method',
+    compressionDescription: 'Choose how to compress content from search results',
+    compressionNone: 'No Compression',
+    compressionSummary: 'LLM Summary',
+    blacklistLabel: 'URL Blacklist',
+    blacklistDescription: 'Exclude specific domains or URLs from search results. One per line. Supports wildcards (*) and regular expressions (/pattern/).',
+    blacklistPlaceholder: 'For example:\n*://*.example.com/*\n/example\\.(net|org)/',
+    errors: {
+      unknown: 'Unknown error'
+    },
+    toasts: {
+      loadProvidersFailed: 'Failed to load search providers: {message}',
+      saveSuccess: 'Web search configuration saved',
+      saveFailed: 'Failed to save configuration: {message}'
+    }
   },
   initialization: {
     title: 'Initialization',
@@ -431,12 +457,21 @@ export default {
     registerError: 'Registration error, please try again later',
     forgotPasswordNotAvailable: 'Password recovery function is temporarily unavailable, please contact administrator'
   },
+  authStore: {
+    errors: {
+      parseUserFailed: 'Failed to parse user information',
+      parseTenantFailed: 'Failed to parse tenant information',
+      parseKnowledgeBasesFailed: 'Failed to parse knowledge base list',
+      parseCurrentKnowledgeBaseFailed: 'Failed to parse current knowledge base'
+    }
+  },
   common: {
     confirm: 'Confirm',
     cancel: 'Cancel',
     save: 'Save',
     delete: 'Delete',
     edit: 'Edit',
+    default: 'Default',
     create: 'Create',
     search: 'Search',
     filter: 'Filter',
@@ -451,6 +486,7 @@ export default {
     success: 'Success',
     warning: 'Warning',
     info: 'Information',
+    selectAll: 'Select All',
     yes: 'Yes',
     no: 'No',
     ok: 'OK',
@@ -460,7 +496,12 @@ export default {
     finish: 'Finish',
     all: 'All',
     reset: 'Reset',
-    clear: 'Clear'
+    clear: 'Clear',
+    website: 'Official Website',
+    on: 'On',
+    off: 'Off',
+    resetToDefault: 'Reset to default',
+    confirmDelete: 'Confirm Delete'
   },
   file: {
     upload: 'Upload File',
@@ -475,8 +516,388 @@ export default {
     maxSizeExceeded: 'Maximum file size exceeded',
     selectFile: 'Select File'
   },
+  manualEditor: {
+    placeholders: {
+      heading: 'Heading {level}',
+      listItem: 'List item',
+      taskItem: 'Task item',
+      quote: 'Quoted text',
+      code: 'Code content',
+      linkText: 'Link text',
+      imageAlt: 'Description',
+      bold: 'Bold text',
+      italic: 'Italic text',
+      strike: 'Strikethrough',
+      inlineCode: 'code'
+    },
+    table: {
+      column1: 'Column 1',
+      column2: 'Column 2',
+      cell: 'Content'
+    },
+    toolbar: {
+      bold: 'Bold',
+      italic: 'Italic',
+      strike: 'Strikethrough',
+      inlineCode: 'Inline code',
+      heading1: 'Heading 1',
+      heading2: 'Heading 2',
+      heading3: 'Heading 3',
+      bulletList: 'Bullet list',
+      orderedList: 'Numbered list',
+      taskList: 'Task list',
+      blockquote: 'Blockquote',
+      codeBlock: 'Code block',
+      link: 'Insert link',
+      image: 'Insert image',
+      table: 'Insert table',
+      horizontalRule: 'Horizontal rule'
+    },
+    view: {
+      toggleToEdit: 'Switch to edit view',
+      toggleToPreview: 'Switch to preview view',
+      editLabel: 'Back to edit',
+      previewLabel: 'Preview content'
+    },
+    preview: {
+      empty: 'No content yet'
+    },
+    title: {
+      edit: 'Edit Markdown Knowledge',
+      create: 'Create Markdown Knowledge'
+    },
+    labels: {
+      currentKnowledgeBase: 'Current knowledge base'
+    },
+    defaultTitlePrefix: 'New Document',
+    error: {
+      fetchDetailFailed: 'Failed to fetch knowledge details',
+      saveFailed: 'Save failed, please try again later'
+    },
+    warning: {
+      selectKnowledgeBase: 'Please select a target knowledge base',
+      enterTitle: 'Please enter a knowledge title',
+      enterContent: 'Please enter knowledge content',
+      contentTooShort: 'Content is too short. Please add more information before publishing'
+    },
+    success: {
+      draftSaved: 'Draft saved',
+      published: 'Knowledge published and indexing started'
+    },
+    form: {
+      knowledgeBaseLabel: 'Target knowledge base',
+      knowledgeBasePlaceholder: 'Select knowledge base',
+      titleLabel: 'Knowledge title',
+      titlePlaceholder: 'Enter title',
+      contentPlaceholder: 'Supports Markdown. Use # headings, lists, code blocks, etc.'
+    },
+    status: {
+      draftTag: 'Status: Draft',
+      publishedTag: 'Status: Published',
+      lastUpdated: 'Last updated: {time}'
+    },
+    loading: {
+      content: 'Loading content...',
+      preparing: 'Preparing editor...'
+    },
+    actions: {
+      cancel: 'Cancel',
+      saveDraft: 'Save Draft',
+      publish: 'Publish'
+    }
+  },
+  input: {
+    placeholder: 'Ask questions based on the knowledge base',
+    agentMode: 'Agent Mode',
+    normalMode: 'Normal Mode',
+    normalModeDesc: 'Knowledge base RAG Q&A',
+    agentModeDesc: 'ReAct reasoning framework with multi-step thinking',
+    agentNotReadyTooltip: 'Agent is not ready. Please finish configuration first.',
+    agentNotReadyDetail: 'Agent is not ready. Please complete the agent configuration in settings (thinking model, rerank model, and allowed tools).',
+    goToSettings: 'Go to settings →',
+    webSearch: {
+      toggleOn: 'Enable Web Search',
+      toggleOff: 'Disable Web Search',
+      notConfigured: 'Web search engine not configured'
+    },
+    knowledgeBase: 'Knowledge Base',
+    knowledgeBaseWithCount: 'Knowledge Base ({count})',
+    notConfigured: 'Not configured',
+    model: 'Model',
+    remote: 'Remote',
+    noModel: 'No available models',
+    stopGeneration: 'Stop Generation',
+    send: 'Send',
+    thinkingLabel: 'Thinking:',
+    messages: {
+      enterContent: 'Please enter content first!',
+      selectKnowledge: 'Please select a knowledge base first!',
+      replying: 'Currently replying, please try again later!',
+      agentSwitchedOn: 'Switched to Agent Mode',
+      agentSwitchedOff: 'Switched to Normal Mode',
+      agentEnabled: 'Agent Mode enabled',
+      agentDisabled: 'Agent Mode disabled',
+      agentNotReadyDetail: 'Agent is not ready. Please complete the agent configuration in settings (thinking model, rerank model, and allowed tools).',
+      webSearchNotConfigured: 'Web search engine is not configured. Please configure a provider and credentials in settings.',
+      webSearchEnabled: 'Web search enabled',
+      webSearchDisabled: 'Web search disabled',
+      sessionMissing: 'Session ID does not exist',
+      messageMissing: 'Unable to get message ID. Please refresh the page and try again.',
+      stopSuccess: 'Generation stopped',
+      stopFailed: 'Failed to stop. Please try again.'
+    }
+  },
+  createChat: {
+    title: 'Knowledge-base Q&A - AI Assistant',
+    newSessionTitle: 'New Session',
+    messages: {
+      selectKnowledgeBase: 'Please select a knowledge base first',
+      createFailed: 'Failed to create session',
+      createError: 'Failed to create session, please try again later'
+    }
+  },
+  knowledgeList: {
+    create: 'Create Knowledge Base',
+    uninitializedBanner: 'Some knowledge bases are not initialized. Configure model information in settings before adding documents.',
+    empty: {
+      title: 'No knowledge bases yet',
+      description: 'Click “Create Knowledge Base” in the top-right corner to add your first one.'
+    },
+    delete: {
+      confirmTitle: 'Delete Confirmation',
+      confirmMessage: 'Are you sure you want to delete the knowledge base “{name}”? This action cannot be undone.',
+      confirmButton: 'Delete'
+    },
+    messages: {
+      deleted: 'Knowledge base deleted',
+      deleteFailed: 'Failed to delete knowledge base'
+    }
+  },
+  knowledgeEditor: {
+    titleCreate: 'Create Knowledge Base',
+    titleEdit: 'Knowledge Base Settings',
+    sidebar: {
+      basic: 'Basic Information',
+      models: 'Model Configuration',
+      chunking: 'Chunking Settings',
+      advanced: 'Advanced Settings'
+    },
+    basic: {
+      title: 'Basic Information',
+      description: 'Configure the knowledge base name and description',
+      nameLabel: 'Knowledge Base Name',
+      namePlaceholder: 'Enter knowledge base name',
+      descriptionLabel: 'Knowledge Base Description',
+      descriptionPlaceholder: 'Enter knowledge base description (optional)'
+    },
+    buttons: {
+      create: 'Create Knowledge Base',
+      save: 'Save Configuration'
+    },
+    messages: {
+      loadModelsFailed: 'Failed to load model list',
+      loadDataFailed: 'Failed to load knowledge base data',
+      notFound: 'Knowledge base not found',
+      nameRequired: 'Please enter the knowledge base name',
+      embeddingRequired: 'Please select an embedding model',
+      summaryRequired: 'Please select a summary model',
+      multimodalInvalid: 'Multimodal configuration validation failed',
+      createSuccess: 'Knowledge base created successfully',
+      createFailed: 'Failed to create knowledge base',
+      missingId: 'Knowledge base ID is missing',
+      buildDataFailed: 'Failed to construct submission data',
+      updateSuccess: 'Configuration saved successfully'
+    },
+    models: {
+      title: 'Model Configuration',
+      description: 'Select appropriate AI models for the knowledge base',
+      llmLabel: 'LLM Model',
+      llmDesc: 'Large language model used for conversations and Q&A',
+      llmPlaceholder: 'Select an LLM model',
+      embeddingLabel: 'Embedding Model',
+      embeddingDesc: 'Embedding model used for text vectorization',
+      embeddingPlaceholder: 'Select an embedding model',
+      embeddingLocked: 'Knowledge base already has files. Embedding model cannot be modified',
+      rerankLabel: 'ReRank Model',
+      rerankDesc: 'Model for re-ranking search results (optional)',
+      rerankPlaceholder: 'Select a ReRank model (optional)'
+    },
+    chunking: {
+      title: 'Chunking Settings',
+      description: 'Configure document chunking parameters to improve retrieval quality',
+      sizeLabel: 'Chunk Size',
+      sizeDescription: 'Controls the number of characters in each chunk (100-4000)',
+      characters: 'characters',
+      overlapLabel: 'Chunk Overlap',
+      overlapDescription: 'Number of overlapping characters between adjacent chunks (0-500)',
+      separatorsLabel: 'Separators',
+      separatorsDescription: 'Separators used when chunking documents',
+      separatorsPlaceholder: 'Select separators',
+      separators: {
+        doubleNewline: 'Double newline (\\n\\n)',
+        singleNewline: 'Single newline (\\n)',
+        periodCn: 'Chinese period (。)',
+        exclamationCn: 'Exclamation mark (！)',
+        questionCn: 'Question mark (？)',
+        semicolonCn: 'Chinese semicolon (；)',
+        semicolonEn: 'Semicolon (;)',
+        space: 'Space ( )'
+      }
+    },
+    advanced: {
+      title: 'Advanced Settings',
+      description: 'Configure multimodal and knowledge graph features',
+      multimodal: {
+        label: 'Multimodal Feature',
+        description: 'Enable understanding of multimodal content such as images and videos',
+        vllmLabel: 'VLLM Vision Model',
+        vllmDescription: 'Vision-language model required for multimodal understanding',
+        vllmPlaceholder: 'Select a VLLM model (required)',
+        storageTitle: 'Storage Configuration',
+        storageTypeLabel: 'Storage Type',
+        storageTypeDescription: 'Choose the storage solution for multimodal files (MinIO or Tencent Cloud COS)',
+        storageTypeOptions: {
+          minio: 'MinIO',
+          cos: 'Tencent Cloud COS'
+        },
+        minio: {
+          bucketLabel: 'Bucket Name',
+          bucketDescription: 'Name of the MinIO bucket (required)',
+          bucketPlaceholder: 'Enter bucket name (required)',
+          useSslLabel: 'Use SSL',
+          useSslDescription: 'Whether to use SSL connection',
+          pathPrefixLabel: 'Path Prefix',
+          pathPrefixDescription: 'Optional prefix for stored file paths',
+          pathPrefixPlaceholder: 'Enter path prefix'
+        },
+        cos: {
+          secretIdLabel: 'SecretId',
+          secretIdDescription: 'Tencent Cloud API secret ID (required)',
+          secretIdPlaceholder: 'Enter SecretId (required)',
+          secretKeyLabel: 'SecretKey',
+          secretKeyDescription: 'Tencent Cloud API secret key (required)',
+          secretKeyPlaceholder: 'Enter SecretKey (required)',
+          regionLabel: 'Region',
+          regionDescription: 'Region where the COS bucket is located (required)',
+          regionPlaceholder: 'e.g. ap-guangzhou (required)',
+          bucketLabel: 'Bucket Name',
+          bucketDescription: 'COS bucket name (required)',
+          bucketPlaceholder: 'Enter bucket name (required)',
+          appIdLabel: 'AppId',
+          appIdDescription: 'Tencent Cloud application ID (required)',
+          appIdPlaceholder: 'Enter AppId (required)',
+          pathPrefixLabel: 'Path Prefix',
+          pathPrefixDescription: 'Optional prefix for stored file paths',
+          pathPrefixPlaceholder: 'Enter path prefix'
+        }
+      },
+      graph: {
+        label: 'Knowledge Graph Extraction',
+        description: 'Automatically extract entities and relationships to build a knowledge graph',
+        configTitle: 'Graph Configuration',
+        promptLabel: 'Prompt Text',
+        promptDescription: 'Prompt used to guide the model when extracting entities and relationships',
+        promptPlaceholder: 'Enter prompt text',
+        tagsLabel: 'Tags',
+        tagsDescription: 'Predefined entity tags (separate multiple tags with commas)',
+        tagsPlaceholder: 'Enter a tag and press Enter'
+      }
+    }
+  },
+  chat: {
+    title: 'Chat',
+    newChat: 'New Chat',
+    inputPlaceholder: 'Enter your message...',
+    send: 'Send',
+    thinking: 'Thinking...',
+    regenerate: 'Regenerate',
+    copy: 'Copy',
+    delete: 'Delete',
+    reference: 'Reference',
+    noMessages: 'No messages',
+    // Additional translations for chat components
+    waitingForAnswer: 'Waiting for answer...',
+    cannotAnswer: 'Sorry, I cannot answer this question.',
+    summarizingAnswer: 'Summarizing answer...',
+    loading: 'Loading...',
+    referencedContent: '{count} related materials used',
+    deepThinking: 'Deep thinking completed',
+    knowledgeBaseQandA: 'Knowledge Base Q&A',
+    askKnowledgeBase: 'Ask the knowledge base',
+    sourcesCount: '{count} sources',
+    pleaseEnterContent: 'Please enter content!',
+    pleaseUploadKnowledgeBase: 'Please upload knowledge base first!',
+    replyingPleaseWait: 'Replying, please try again later!',
+    createSessionFailed: 'Failed to create session',
+    createSessionError: 'Session creation error',
+    unableToGetKnowledgeBaseId: 'Unable to get knowledge base ID',
+    summaryInProgress: 'Summarizing answer…',
+    thinkingAlt: 'Thinking in progress',
+    deepThoughtCompleted: 'Deep thinking completed',
+    deepThoughtAlt: 'Deep thinking finished',
+    referencesTitle: 'Referenced {count} related item(s)',
+    referenceIconAlt: 'Reference materials icon',
+    chunkIdLabel: 'Chunk ID:',
+    documentIdLabel: 'Document ID:',
+    noPlanSteps: 'No detailed steps provided',
+    chunkIndexLabel: 'Chunk #{index}',
+    chunkPositionLabel: '(Position: {position})',
+    noRelatedChunks: 'No related chunks found',
+    noSearchResults: 'No search results found',
+    relevanceHigh: 'High relevance',
+    relevanceMedium: 'Medium relevance',
+    relevanceLow: 'Low relevance',
+    relevanceWeak: 'Weak relevance',
+    webSearchNoResults: 'No web search results found',
+    otherSource: 'Other sources',
+    webGroupIntro: 'The following {count} items are from',
+    graphConfigTitle: 'Graph Configuration',
+    entityTypesLabel: 'Entity types:',
+    relationTypesLabel: 'Relation types:',
+    graphResultsHeader: '{count} related results found',
+    graphNoResults: 'No related graph information found',
+    unknownLink: 'Unknown link',
+    contentLengthLabel: 'Length {value}',
+    notProvided: 'Not provided',
+    promptLabel: 'Prompt',
+    errorMessageLabel: 'Error message',
+    summaryLabel: 'Summary',
+    rawTextLabel: 'Raw text',
+    collapseRaw: 'Collapse original',
+    expandRaw: 'Expand original',
+    noWebContent: 'No web content fetched',
+    lengthChars: '{value} characters',
+    lengthThousands: '{value}k characters',
+    lengthTenThousands: '{value} ten-thousand characters',
+    sqlQueryExecuted: 'Executed SQL query:',
+    sqlResultsLabel: 'Results:',
+    rowsLabel: 'rows',
+    columnsLabel: 'columns',
+    noDatabaseRecords: 'No matching records found',
+    nullValuePlaceholder: '<NULL>',
+    documentTitleLabel: 'Document title:',
+    chunkCountLabel: 'Chunk count:',
+    chunkCountValue: 'At least {count}',
+    statusDescription: 'Status notes',
+    statusIndexed: 'Document is indexed and searchable',
+    statusSearchable: 'Search tools can locate document content',
+    statusChunkDetailAvailable: 'Use get_chunk_detail to view chunk details',
+    positionLabel: 'Position:',
+    chunkPositionValue: 'Chunk #{index}',
+    contentLengthLabelSimple: 'Content length:',
+    fullContentLabel: 'Full content',
+    copyContent: 'Copy content',
+    knowledgeBaseCount: '{count} knowledge bases',
+    noKnowledgeBases: 'No knowledge bases available',
+    enterDescription: 'Enter description',
+    rawOutputLabel: 'Raw output',
+    selectKnowledgeBaseWarning: 'Please select at least one knowledge base',
+    processError: 'Processing error'
+  },
   tenant: {
     title: 'Tenant Information',
+    sectionDescription: 'View detailed configuration for the tenant',
+    apiDocument: 'API Document',
     name: 'Tenant Name',
     id: 'Tenant ID',
     createdAt: 'Created At',
@@ -515,11 +936,89 @@ export default {
     useApiKey: 'Use your API Key to start development, view complete API documentation and code examples.',
     viewApiDoc: 'View API Documentation',
     loadingAccountInfo: 'Loading account information...',
+    loadingInfo: 'Loading information...',
     loadFailed: 'Load failed',
     retry: 'Retry',
     apiKeyCopied: 'API Key copied to clipboard',
     unknown: 'Unknown',
-    formatError: 'Format error'
+    formatError: 'Format error',
+    details: {
+      idLabel: 'Tenant ID',
+      idDescription: 'Unique identifier of your tenant',
+      nameLabel: 'Tenant Name',
+      nameDescription: 'Name of your tenant',
+      descriptionLabel: 'Tenant Description',
+      descriptionDescription: 'Detailed description of the tenant',
+      businessLabel: 'Tenant Business',
+      businessDescription: 'Business domain that the tenant belongs to',
+      statusLabel: 'Tenant Status',
+      statusDescription: 'Current operational status of the tenant',
+      createdAtLabel: 'Tenant Creation Time',
+      createdAtDescription: 'Time when the tenant was created'
+    },
+    storage: {
+      quotaLabel: 'Storage Quota',
+      quotaDescription: 'Total storage capacity allocated to the tenant',
+      usedLabel: 'Used Storage',
+      usedDescription: 'Storage space that has been used',
+      usageLabel: 'Storage Usage',
+      usageDescription: 'Percentage of storage capacity used'
+    },
+    messages: {
+      fetchFailed: 'Failed to fetch tenant information',
+      networkError: 'Network error, please try again later'
+    },
+    api: {
+      title: 'API Information',
+      description: 'View and manage your API key',
+      keyLabel: 'API Key',
+      keyDescription: 'Secret used for API requests. Keep it safe.',
+      copyTitle: 'Copy API Key',
+      docLabel: 'API Documentation',
+      docDescription: 'View complete API documentation and examples,',
+      openDoc: 'Open documentation',
+      userSectionTitle: 'User Information',
+      userIdLabel: 'User ID',
+      userIdDescription: 'Your unique user identifier',
+      usernameLabel: 'Username',
+      usernameDescription: 'Your login username',
+      emailLabel: 'Email',
+      emailDescription: 'Your registered email address',
+      createdAtLabel: 'Registration Time',
+      createdAtDescription: 'Time when the account was created',
+      noKey: 'No API Key available',
+      copySuccess: 'API Key copied to clipboard',
+      copyFailed: 'Copy failed, please copy manually'
+    }
+  },
+  system: {
+    title: 'System Information',
+    sectionDescription: 'View system version information and user account configuration',
+    loadingInfo: 'Loading information...',
+    retry: 'Retry',
+    versionLabel: 'System Version',
+    versionDescription: 'Current version number of the system',
+    buildTimeLabel: 'Build Time',
+    buildTimeDescription: 'Time when the system was built',
+    goVersionLabel: 'Go Version',
+    goVersionDescription: 'Go language version used by the backend',
+    unknown: 'Unknown',
+    messages: {
+      fetchFailed: 'Failed to fetch system information',
+      networkError: 'Network error, please try again later'
+    }
+  },
+  mcp: {
+    testResult: {
+      title: 'Test Result: {name}',
+      connectionSuccess: 'Connection successful',
+      connectionFailed: 'Connection failed',
+      toolsTitle: 'Available tools',
+      resourcesTitle: 'Available resources',
+      descriptionLabel: 'Description',
+      schemaLabel: 'Parameter schema',
+      emptyDescription: 'This service did not provide tools or resources'
+    }
   },
   error: {
     network: 'Network error',
@@ -548,6 +1047,358 @@ export default {
     topP: 'Top P',
     selectModel: 'Select Model',
     customModel: 'Custom Model',
-    builtinModel: 'Built-in Model'
+    builtinModel: 'Built-in Model',
+    defaultTag: 'Default',
+    addModelInSettings: 'Go to global settings to add models',
+    loadFailed: 'Failed to load model list',
+    selectModelPlaceholder: 'Select a model',
+    searchPlaceholder: 'Search models...',
+    editor: {
+      addTitle: 'Add Model',
+      editTitle: 'Edit Model',
+      sourceLabel: 'Model Source',
+      sourceLocal: 'Ollama (Local)',
+      sourceRemote: 'Remote API',
+      description: {
+        chat: 'Configure large language models for conversations',
+        embedding: 'Configure embedding models for text vectorization',
+        rerank: 'Configure models for result re-ranking',
+        vllm: 'Configure vision-language models for multimodal understanding',
+        default: 'Configure model information'
+      },
+      modelNamePlaceholder: {
+        local: 'e.g. llama2:latest',
+        remote: 'e.g. gpt-4, claude-3-opus',
+        localVllm: 'e.g. llava:latest',
+        remoteVllm: 'e.g. gpt-4-vision-preview'
+      },
+      baseUrlLabel: 'Base URL',
+      baseUrlPlaceholder: 'e.g. https://api.openai.com/v1',
+      baseUrlPlaceholderVllm: 'e.g. http://localhost:11434/v1',
+      apiKeyOptional: 'API Key (optional)',
+      apiKeyPlaceholder: 'Enter API Key',
+      connectionTest: 'Connection Test',
+      testing: 'Testing...',
+      testConnection: 'Test Connection',
+      searchPlaceholder: 'Search models...',
+      downloadLabel: 'Download: {keyword}',
+      refreshList: 'Refresh List',
+      dimensionLabel: 'Vector Dimension',
+      dimensionPlaceholder: 'e.g. 1536',
+      checkDimension: 'Detect Dimension',
+      dimensionDetected: 'Detection succeeded. Vector dimension: {value}',
+      dimensionFailed: 'Detection failed, please enter the dimension manually',
+      remoteDimensionDetected: 'Detected vector dimension: {value}',
+      dimensionHint: 'Model selected. Click “Detect Dimension” to fetch the vector dimension automatically.',
+      setAsDefault: 'Set as default model',
+      loadModelListFailed: 'Failed to load model list',
+      listRefreshed: 'List refreshed',
+      fillModelAndUrl: 'Please fill in the model identifier and Base URL first',
+      remoteBaseUrlRequired: 'Remote API type requires a Base URL',
+      unsupportedModelType: 'Unsupported model type',
+      connectionSuccess: 'Connection succeeded',
+      connectionFailed: 'Connection failed',
+      connectionConfigError: 'Connection failed, please check the configuration',
+      downloadStarted: 'Started downloading {name}',
+      downloadCompleted: '{name} downloaded successfully',
+      downloadFailed: 'Failed to download {name}',
+      downloadStartFailed: 'Failed to start download',
+      validation: {
+        modelNameRequired: 'Please enter the model name',
+        modelNameEmpty: 'Model name cannot be empty',
+        modelNameMax: 'Model name cannot exceed 100 characters',
+        baseUrlRequired: 'Please enter the Base URL',
+        baseUrlEmpty: 'Base URL cannot be empty',
+        baseUrlInvalid: 'Invalid Base URL, please enter a valid URL'
+      }
+    }
+  },
+  language: {
+    zhCN: '简体中文',
+    enUS: 'English',
+    ruRU: 'Русский',
+    selectLanguage: 'Select Language',
+    language: 'Language',
+    languageDescription: 'Select interface display language',
+    languageSaved: 'Language settings saved'
+  },
+  general: {
+    title: 'General Settings',
+    allSettings: 'All Settings',
+    description: 'Configure language, appearance and other basic options',
+    settings: 'Settings',
+    close: 'Close Settings'
+  },
+  platform: {
+    subtitle: 'Enterprise-level Intelligent Document Retrieval Framework',
+    description: 'Making complex document understanding and precise retrieval simple',
+    rag: 'RAG Enhanced Generation',
+    hybridSearch: 'Hybrid Search',
+    localDeploy: 'Local Deployment',
+    multimodalParsing: 'Multimodal Document Parsing',
+    hybridSearchEngine: 'Hybrid Search Engine',
+    ragQandA: 'RAG Intelligent Q&A',
+    independentTenant: 'Independent Tenant Space',
+    fullApiAccess: 'Full API Access',
+    knowledgeBaseManagement: 'Knowledge Base Management',  
+    carousel: {
+      agenticRagTitle: 'Agentic RAG',
+      agenticRagDesc: 'Query rewriting + smart recall + re-ranking',
+      hybridSearchTitle: 'Hybrid search strategy',
+      hybridSearchDesc: 'BM25 + Vector + Knowledge Graph',
+      smartDocRetrievalTitle: 'Intelligent document retrieval',
+      smartDocRetrievalDesc: 'PDF/Word/Image multi-format parsing'
+    }
+  },
+  time: {
+    today: 'Today',
+    yesterday: 'Yesterday',
+    last7Days: 'Last 7 Days',
+    last30Days: 'Last 30 Days',
+    lastYear: 'Last Year',
+    earlier: 'Earlier'
+  },
+  upload: {
+    uploadDocument: 'Upload Document',
+    onlineEdit: 'Online Edit',
+    deleteRecord: 'Delete Record'
+  },
+  agentSettings: {
+    title: 'Agent Settings',
+    description: 'Configure the default behavior and parameters for the AI Agent. These settings apply to all chats with Agent mode enabled.',
+    status: {
+      label: 'Agent Status',
+      ready: 'Ready',
+      notReady: 'Not Ready',
+      hint: 'Once configuration is complete, the status will change to "Ready". You can then enable Agent mode in the chat.',
+      missingThinkingModel: 'Thinking model',
+      missingRerankModel: 'Rerank model',
+      missingAllowedTools: 'Allowed tools',
+      pleaseConfigure: 'Please configure {items}'
+    },
+    maxIterations: {
+      label: 'Max Iterations',
+      desc: 'Maximum reasoning steps when the Agent executes tasks'
+    },
+    thinkingModel: {
+      label: 'Thinking Model',
+      desc: 'LLM used for Agent reasoning and planning',
+      hint: 'Requires a function-call-capable model'
+    },
+    rerankModel: {
+      label: 'Rerank Model',
+      desc: 'Re-rank search results and normalize relevance scores'
+    },
+    model: {
+      placeholder: 'Search models...',
+      addChat: 'Add a new chat model',
+      addRerank: 'Add a new Rerank model'
+    },
+    temperature: {
+      label: 'Temperature',
+      desc: 'Controls randomness in outputs. 0 is most deterministic; 1 is most random'
+    },
+    allowedTools: {
+      label: 'Allowed Tools',
+      desc: 'Select tools the Agent can use (at least one)',
+      placeholder: 'Select tools...'
+    },
+    systemPrompt: {
+      label: 'System Prompt',
+      desc: 'Configure the Agent’s system prompt with placeholders that are resolved at runtime.',
+      availablePlaceholders: 'Available placeholders:',
+      hintPrefix: 'Tip: typing',
+      hintSuffix: 'will show available placeholders automatically',
+      custom: 'Custom Prompt',
+      disabledHint: 'Currently using the default prompt. Enable custom to apply the content below.',
+      placeholder: 'Enter the system prompt, or leave blank to use the default...'
+    },
+    reset: {
+      header: 'Reset to Default Prompt',
+      body: 'Are you sure you want to reset to the default prompt? Your custom prompt will be overwritten.'
+    },
+    errors: {
+      selectThinkingModel: 'Please select a thinking model before enabling Agent mode',
+      selectAtLeastOneTool: 'Please select at least one tool',
+      iterationsRange: 'Max iterations must be between 1 and 20',
+      temperatureRange: 'Temperature must be between 0 and 2',
+      validationFailed: 'Configuration validation failed'
+    },
+    toasts: {
+      iterationsSaved: 'Max iterations saved',
+      thinkingModelSaved: 'Thinking model saved',
+      rerankModelSaved: 'Rerank model saved',
+      temperatureSaved: 'Temperature saved',
+      toolsUpdated: 'Tools updated',
+      customPromptEnabled: 'Custom prompt enabled',
+      defaultPromptEnabled: 'Switched to default prompt',
+      resetToDefault: 'Reset to default prompt',
+      systemPromptSaved: 'System prompt saved',
+      autoDisabled: 'Agent configuration incomplete. Agent mode has been disabled automatically'
+    }
+  },
+  // New: MCP Settings
+  mcpSettings: {
+    title: 'MCP Services',
+    description: 'Manage external MCP (Model Context Protocol) services for tools/resources in Agent mode',
+    configuredServices: 'Configured Services',
+    manageAndTest: 'Manage and test MCP service connections',
+    addService: 'Add Service',
+    empty: 'No MCP services',
+    addFirst: 'Add the first MCP service',
+    actions: {
+      test: 'Test Connection'
+    },
+    toasts: {
+      loadFailed: 'Failed to load MCP services',
+      enabled: 'MCP service enabled',
+      disabled: 'MCP service disabled',
+      updateStateFailed: 'Failed to update MCP service status',
+      testing: 'Testing {name}...',
+      noResponse: 'Test failed: no response from server',
+      testFailed: 'Failed to test MCP service',
+      deleted: 'MCP service deleted',
+      deleteFailed: 'Failed to delete MCP service'
+    },
+    deleteConfirmBody: 'Delete MCP service “{name}”? This action cannot be undone.',
+    unnamed: 'Unnamed'
+  },
+  // New: Model Settings
+  modelSettings: {
+    title: 'Model Settings',
+    description: 'Manage different types of AI models, including local Ollama and remote APIs',
+    actions: {
+      addModel: 'Add Model',
+      setDefault: 'Set as Default'
+    },
+    source: {
+      remote: 'Remote',
+      openaiCompatible: 'OpenAI-compatible'
+    },
+    chat: {
+      title: 'Chat Models',
+      desc: 'Configure large language models for chatting',
+      empty: 'No chat models'
+    },
+    embedding: {
+      title: 'Embedding Models',
+      desc: 'Configure embedding models for text vectorization',
+      empty: 'No embedding models'
+    },
+    rerank: {
+      title: 'ReRank Models',
+      desc: 'Configure models for result re-ranking',
+      empty: 'No re-rank models'
+    },
+    vllm: {
+      title: 'VLLM Vision Models',
+      desc: 'Configure vision-language models for multimodal understanding',
+      empty: 'No VLLM models'
+    },
+    toasts: {
+      nameRequired: 'Model name cannot be empty',
+      nameTooLong: 'Model name cannot exceed 100 characters',
+      baseUrlRequired: 'Base URL is required for remote APIs',
+      baseUrlInvalid: 'Invalid Base URL, please enter a valid URL',
+      dimensionInvalid: 'Embedding dimension must be between 128 and 4096',
+      updated: 'Model updated',
+      added: 'Model added',
+      saveFailed: 'Failed to save model',
+      deleted: 'Model deleted',
+      deleteFailed: 'Failed to delete model',
+      setDefault: 'Set as default',
+      setDefaultFailed: 'Failed to set default model'
+    },
+    confirmDelete: 'Are you sure you want to delete this model?'
+  },
+  // New: Ollama Settings
+  ollamaSettings: {
+    title: 'Ollama Settings',
+    description: 'Manage local Ollama service and view/download models',
+    status: {
+      label: 'Ollama Service Status',
+      desc: 'Automatically detect local Ollama service availability. If the service is down or the URL is incorrect, status will be “Unavailable”.',
+      testing: 'Testing',
+      available: 'Available',
+      unavailable: 'Unavailable',
+      untested: 'Not Tested',
+      retest: 'Retest'
+    },
+    address: {
+      label: 'Service URL',
+      desc: 'The API address of the local Ollama service, auto-detected by the system. To modify, set it in the .env file.',
+      placeholder: 'http://localhost:11434',
+      failed: 'Connection failed. Please check whether Ollama is running or the URL is correct'
+    },
+    download: {
+      title: 'Download Models',
+      descPrefix: 'Enter a model name to download,',
+      browse: 'Browse Ollama model library',
+      placeholder: 'e.g. qwen2.5:0.5b',
+      download: 'Download',
+      downloading: 'Downloading: {name}'
+    },
+    installed: {
+      title: 'Installed Models',
+      desc: 'Models installed in Ollama',
+      empty: 'No installed models'
+    },
+    toasts: {
+      connected: 'Connected successfully',
+      connectFailed: 'Connection failed. Please check whether Ollama is running',
+      listFailed: 'Failed to get model list',
+      downloadFailed: 'Download failed. Please try again later',
+      downloadStarted: 'Started downloading model {name}',
+      downloadCompleted: 'Model {name} downloaded successfully',
+      progressFailed: 'Failed to query download progress'
+    }
+  },
+  // New: MCP Service Dialog
+  mcpServiceDialog: {
+    addTitle: 'Add MCP Service',
+    editTitle: 'Edit MCP Service',
+    name: 'Service Name',
+    namePlaceholder: 'Enter service name',
+    description: 'Description',
+    descriptionPlaceholder: 'Enter service description',
+    transportType: 'Transport Type',
+    transport: {
+      sse: 'SSE (Server-Sent Events)',
+      httpStreamable: 'HTTP Streamable',
+      stdio: 'Stdio'
+    },
+    serviceUrl: 'Service URL',
+    serviceUrlPlaceholder: 'https://example.com/mcp',
+    command: 'Command',
+    args: 'Arguments',
+    argPlaceholder: 'Argument {index}',
+    addArg: 'Add Argument',
+    envVars: 'Environment Variables',
+    envKeyPlaceholder: 'Key',
+    envValuePlaceholder: 'Value',
+    addEnvVar: 'Add Environment Variable',
+    enableService: 'Enable Service',
+    authConfig: 'Authentication',
+    apiKey: 'API Key',
+    bearerToken: 'Bearer Token',
+    optional: 'Optional',
+    advancedConfig: 'Advanced',
+    timeoutSec: 'Timeout (s)',
+    retryCount: 'Retry Count',
+    retryDelaySec: 'Retry Delay (s)',
+    rules: {
+      nameRequired: 'Please enter the service name',
+      transportRequired: 'Please select a transport type',
+      urlRequired: 'Please enter the service URL',
+      urlInvalid: 'Please enter a valid URL',
+      commandRequired: 'Please select a command (uvx or npx)',
+      argsRequired: 'Please enter at least one argument'
+    },
+    toasts: {
+      created: 'MCP service created',
+      updated: 'MCP service updated',
+      createFailed: 'Failed to create MCP service',
+      updateFailed: 'Failed to update MCP service'
+    }
   }
 }

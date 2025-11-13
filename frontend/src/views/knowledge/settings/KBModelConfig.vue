@@ -1,16 +1,16 @@
 <template>
   <div class="kb-model-config">
     <div class="section-header">
-      <h2>模型配置</h2>
-      <p class="section-description">为知识库选择合适的AI模型</p>
+      <h2>{{ $t('knowledgeEditor.models.title') }}</h2>
+      <p class="section-description">{{ $t('knowledgeEditor.models.description') }}</p>
     </div>
 
     <div class="settings-group">
       <!-- LLM 大语言模型 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>LLM 大语言模型 <span class="required">*</span></label>
-          <p class="desc">用于对话和问答的大语言模型</p>
+          <label>{{ $t('knowledgeEditor.models.llmLabel') }} <span class="required">*</span></label>
+          <p class="desc">{{ $t('knowledgeEditor.models.llmDesc') }}</p>
         </div>
         <div class="setting-control">
           <ModelSelector
@@ -20,7 +20,7 @@
             :all-models="allModels"
             @update:selected-model-id="handleLLMChange"
             @add-model="handleAddModel('chat')"
-            placeholder="请选择LLM模型"
+            :placeholder="$t('knowledgeEditor.models.llmPlaceholder')"
           />
         </div>
       </div>
@@ -28,12 +28,12 @@
       <!-- Embedding 嵌入模型 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>Embedding 嵌入模型 <span class="required">*</span></label>
-          <p class="desc">用于文本向量化的嵌入模型</p>
+          <label>{{ $t('knowledgeEditor.models.embeddingLabel') }} <span class="required">*</span></label>
+          <p class="desc">{{ $t('knowledgeEditor.models.embeddingDesc') }}</p>
           <t-alert 
             v-if="hasFiles" 
             theme="warning" 
-            message="知识库中已有文件，无法修改Embedding模型" 
+            :message="$t('knowledgeEditor.models.embeddingLocked')" 
             style="margin-top: 8px;"
           />
         </div>
@@ -46,7 +46,7 @@
             :disabled="hasFiles"
             @update:selected-model-id="handleEmbeddingChange"
             @add-model="handleAddModel('embedding')"
-            placeholder="请选择Embedding模型"
+            :placeholder="$t('knowledgeEditor.models.embeddingPlaceholder')"
           />
         </div>
       </div>
@@ -54,8 +54,8 @@
       <!-- ReRank 重排序模型 -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>ReRank 重排序模型</label>
-          <p class="desc">用于搜索结果重排序的模型（可选）</p>
+          <label>{{ $t('knowledgeEditor.models.rerankLabel') }}</label>
+          <p class="desc">{{ $t('knowledgeEditor.models.rerankDesc') }}</p>
         </div>
         <div class="setting-control">
           <ModelSelector
@@ -65,7 +65,7 @@
             :all-models="allModels"
             @update:selected-model-id="handleRerankChange"
             @add-model="handleAddModel('rerank')"
-            placeholder="请选择ReRank模型（可选）"
+            :placeholder="$t('knowledgeEditor.models.rerankPlaceholder')"
           />
         </div>
       </div>
@@ -76,9 +76,9 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
 import { useUIStore } from '@/stores/ui'
 import ModelSelector from '@/components/ModelSelector.vue'
+import { useI18n } from 'vue-i18n'
 
 interface ModelConfig {
   llmModelId?: string
@@ -100,6 +100,7 @@ const emit = defineEmits<{
 }>()
 
 const uiStore = useUIStore()
+const { t } = useI18n()
 
 // 引用各个模型选择器
 const llmSelectorRef = ref<InstanceType<typeof ModelSelector>>()

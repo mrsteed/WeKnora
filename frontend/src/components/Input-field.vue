@@ -10,6 +10,7 @@ import { stopSession } from '@/api/chat';
 import KnowledgeBaseSelector from './KnowledgeBaseSelector.vue';
 import { getModel, type ModelConfig } from '@/api/model';
 import { getTenantWebSearchConfig } from '@/api/web-search';
+import { useI18n } from 'vue-i18n';
 
 const route = useRoute();
 const router = useRouter();
@@ -55,6 +56,8 @@ const thinkingModelName = ref<string>('');
 const showModelSelector = ref(false);
 const modelButtonRef = ref<HTMLElement>();
 const modelDropdownStyle = ref<Record<string, string>>({});
+
+const { t } = useI18n();
 
 // 显示的知识库标签（最多显示2个）
 const displayedKbs = computed(() => selectedKbs.value.slice(0, 2));
@@ -299,15 +302,15 @@ const emit = defineEmits(['send-msg', 'stop-generation']);
 
 const createSession = (val: string) => {
   if (!val.trim()) {
-    MessagePlugin.info("请先输入内容!");
+    MessagePlugin.info(t('input.messages.enterContent'));
     return;
   }
   if (selectedKbIds.value.length === 0) {
-    MessagePlugin.warning("请先选择知识库!");
+    MessagePlugin.warning(t('input.messages.selectKnowledge'));
     return;
   }
   if (props.isReplying) {
-    return MessagePlugin.error("正在回复中，请稍后再试!");
+    return MessagePlugin.error(t('input.messages.replying'));
   }
   emit('send-msg', val, selectedModelId.value);
   clearvalue();
@@ -438,7 +441,7 @@ const selectAgentMode = (mode: 'normal' | 'agent') => {
   const shouldEnableAgent = mode === 'agent';
   if (shouldEnableAgent !== isAgentEnabled.value) {
     settingsStore.toggleAgent(shouldEnableAgent);
-    MessagePlugin.success(shouldEnableAgent ? '已切换到 Agent 模式' : '已切换到普通模式');
+    MessagePlugin.success(shouldEnableAgent ? t('input.messages.agentSwitchedOn') : t('input.messages.agentSwitchedOff'));
   }
   showAgentModeSelector.value = false;
 }
@@ -482,7 +485,7 @@ const toggleAgentMode = () => {
     if (!agentReady) {
       // 创建带跳转链接的自定义消息
       const messageContent = h('div', { style: 'display: flex; align-items: center; gap: 8px; flex-wrap: wrap;' }, [
-        h('span', { style: 'flex: 1; min-width: 0;' }, 'Agent 未就绪，请先在设置中完成 Agent 配置（思考模型、Rerank 模型和允许的工具）'),
+        h('span', { style: 'flex: 1; min-width: 0;' }, t('input.messages.agentNotReadyDetail')),
         h('a', {
           href: '#',
           onClick: (e: Event) => {
@@ -496,7 +499,7 @@ const toggleAgentMode = () => {
           onMouseleave: (e: Event) => {
             (e.target as HTMLElement).style.textDecoration = 'none';
           }
-        }, '去设置 →')
+        }, t('input.goToSettings'))
       ]);
       
       MessagePlugin.warning({
@@ -509,14 +512,14 @@ const toggleAgentMode = () => {
   
   // 正常切换 Agent 状态
   settingsStore.toggleAgent(!isAgentEnabled.value);
-  const message = isAgentEnabled.value ? 'Agent 模式已启用' : 'Agent 模式已禁用';
+  const message = isAgentEnabled.value ? t('input.messages.agentEnabled') : t('input.messages.agentDisabled');
   MessagePlugin.success(message);
 }
 
 const toggleWebSearch = () => {
   if (!isWebSearchConfigured.value) {
     const messageContent = h('div', { style: 'display: flex; flex-direction: column; gap: 6px; max-width: 280px;' }, [
-      h('span', { style: 'color: #333; line-height: 1.5;' }, '未配置网络搜索引擎，请先在设置中完成搜索引擎选择与接口配置。'),
+      h('span', { style: 'color: #333; line-height: 1.5;' }, t('input.messages.webSearchNotConfigured')),
       h('a', {
         href: '#',
         onClick: (e: Event) => {
@@ -530,7 +533,7 @@ const toggleWebSearch = () => {
         onMouseleave: (e: Event) => {
           (e.target as HTMLElement).style.textDecoration = 'none';
         }
-      }, '去设置 →')
+      }, t('input.goToSettings'))
     ]);
     MessagePlugin.warning({
       content: () => messageContent,
@@ -542,7 +545,7 @@ const toggleWebSearch = () => {
   const currentValue = settingsStore.isWebSearchEnabled;
   const newValue = !currentValue;
   settingsStore.toggleWebSearch(newValue);
-  MessagePlugin.success(newValue ? '网络搜索已开启' : '网络搜索已关闭');
+  MessagePlugin.success(newValue ? t('input.messages.webSearchEnabled') : t('input.messages.webSearchDisabled'));
 };
 
 const toggleKbSelector = () => {
@@ -555,13 +558,13 @@ const removeKb = (kbId: string) => {
 
 const handleStop = async () => {
   if (!props.sessionId) {
-    MessagePlugin.warning('会话 ID 不存在');
+    MessagePlugin.warning(t('input.messages.sessionMissing'));
     return;
   }
   
   if (!props.assistantMessageId) {
     console.error('[Stop] Assistant message ID is empty');
-    MessagePlugin.warning('无法获取消息 ID，请刷新页面后重试');
+    MessagePlugin.warning(t('input.messages.messageMissing'));
     return;
   }
   
@@ -572,10 +575,10 @@ const handleStop = async () => {
   
   try {
     await stopSession(props.sessionId, props.assistantMessageId);
-    MessagePlugin.success('已停止生成');
+    MessagePlugin.success(t('input.messages.stopSuccess'));
   } catch (error) {
     console.error('Failed to stop session:', error);
-    MessagePlugin.error('停止失败，请重试');
+    MessagePlugin.error(t('input.messages.stopFailed'));
   }
 }
 
@@ -587,7 +590,7 @@ onBeforeRouteUpdate((to, from, next) => {
 </script>
 <template>
   <div class="answers-input">
-    <t-textarea v-model="query" placeholder="基于知识库提问" name="description" :autosize="true" @keydown="onKeydown" />
+    <t-textarea v-model="query" :placeholder="$t('input.placeholder')" name="description" :autosize="true" @keydown="onKeydown" />
     
     <!-- 控制栏 -->
     <div class="control-bar">
@@ -606,7 +609,7 @@ onBeforeRouteUpdate((to, from, next) => {
           <img 
             v-if="isAgentEnabled"
             :src="getImgSrc('agent-active.svg')" 
-            alt="Agent模式" 
+            :alt="$t('input.agentMode')" 
             class="control-icon agent-icon"
           />
           <svg 
@@ -621,7 +624,7 @@ onBeforeRouteUpdate((to, from, next) => {
             <path d="M8 4.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM6 8a2 2 0 1 1 4 0 2 2 0 0 1-4 0z"/>
           </svg>
           <span class="agent-mode-text">
-            {{ isAgentEnabled ? 'Agent 模式' : '普通模式' }}
+            {{ isAgentEnabled ? $t('input.agentMode') : $t('input.normalMode') }}
           </span>
           <svg 
             width="12" 
@@ -649,8 +652,8 @@ onBeforeRouteUpdate((to, from, next) => {
                 @click="selectAgentMode('normal')"
               >
                 <div class="agent-mode-option-main">
-                  <span class="agent-mode-option-name">普通模式</span>
-                  <span class="agent-mode-option-desc">基于知识库的 RAG 问答</span>
+                  <span class="agent-mode-option-name">{{ $t('input.normalMode') }}</span>
+                  <span class="agent-mode-option-desc">{{ $t('input.normalModeDesc') }}</span>
                 </div>
                 <svg 
                   v-if="!isAgentEnabled"
@@ -672,8 +675,8 @@ onBeforeRouteUpdate((to, from, next) => {
                 @click="selectAgentMode('agent')"
               >
                 <div class="agent-mode-option-main">
-                  <span class="agent-mode-option-name">Agent 模式</span>
-                  <span class="agent-mode-option-desc">ReAct 推理框架，多步思考</span>
+                  <span class="agent-mode-option-name">{{ $t('input.agentMode') }}</span>
+                  <span class="agent-mode-option-desc">{{ $t('input.agentModeDesc') }}</span>
                 </div>
                 <svg 
                   v-if="isAgentEnabled"
@@ -686,7 +689,7 @@ onBeforeRouteUpdate((to, from, next) => {
                   <path d="M13.5 4.5L6 12L2.5 8.5L3.5 7.5L6 10L12.5 3.5L13.5 4.5Z"/>
                 </svg>
                 <div v-if="!settingsStore.isAgentReady && !isAgentEnabled" class="agent-mode-warning">
-                  <t-tooltip content="Agent 未就绪，请先在设置中完成配置" placement="left">
+                  <t-tooltip :content="$t('input.agentNotReadyTooltip')" placement="left">
                     <t-icon name="error-circle" class="warning-icon" />
                   </t-tooltip>
                 </div>
@@ -697,7 +700,7 @@ onBeforeRouteUpdate((to, from, next) => {
                   @click.prevent="handleGoToAgentSettings"
                   class="agent-mode-link"
                 >
-                  前往设置 →
+                  {{ $t('input.goToSettings') }}
                 </a>
               </div>
             </div>
@@ -707,10 +710,10 @@ onBeforeRouteUpdate((to, from, next) => {
         <!-- WebSearch 开关按钮 -->
         <t-tooltip placement="top">
           <template #content>
-            <span v-if="isWebSearchConfigured">{{ isWebSearchEnabled ? '关闭网络搜索' : '开启网络搜索' }}</span>
+            <span v-if="isWebSearchConfigured">{{ isWebSearchEnabled ? $t('input.webSearch.toggleOff') : $t('input.webSearch.toggleOn') }}</span>
             <div v-else class="websearch-tooltip-disabled">
-              <span>未配置网络搜索引擎</span>
-              <a href="#" @click.prevent="handleGoToWebSearchSettings">前往设置 →</a>
+              <span>{{ $t('input.webSearch.notConfigured') }}</span>
+              <a href="#" @click.prevent="handleGoToWebSearchSettings">{{ $t('input.goToSettings') }}</a>
             </div>
           </template>
           <div 
@@ -745,7 +748,7 @@ onBeforeRouteUpdate((to, from, next) => {
         >
           <img :src="getImgSrc('at-icon.svg')" alt="@" class="control-icon" />
           <span class="kb-btn-text">
-            {{ selectedKbIds.length > 0 ? `知识库(${selectedKbIds.length})` : '知识库' }}
+            {{ selectedKbIds.length > 0 ? $t('input.knowledgeBaseWithCount', { count: selectedKbIds.length }) : $t('input.knowledgeBase') }}
           </span>
           <svg 
             width="12" 
@@ -778,8 +781,8 @@ onBeforeRouteUpdate((to, from, next) => {
         <div v-if="selectedKbIds.length > 0" class="model-display">
           <!-- Agent 模式：只读显示 Thinking 模型 -->
           <div v-if="isAgentEnabled" class="model-badge">
-            <span class="model-label">Thinking:</span>
-            <span class="model-name">{{ thinkingModelName || '未配置' }}</span>
+            <span class="model-label">{{ $t('input.thinkingLabel') }}</span>
+            <span class="model-name">{{ thinkingModelName || $t('input.notConfigured') }}</span>
           </div>
 
           <!-- 非 Agent 模式：可选择的模型下拉 -->
@@ -791,7 +794,7 @@ onBeforeRouteUpdate((to, from, next) => {
             @click.stop="toggleModelSelector"
           >
             <span class="model-btn-text">
-              {{ selectedModel ? selectedModel.name : '模型' }}
+              {{ selectedModel ? selectedModel.name : $t('input.model') }}
             </span>
             <svg 
               width="12" 
@@ -823,7 +826,7 @@ onBeforeRouteUpdate((to, from, next) => {
                   >
                     <div class="model-option-main">
                       <span class="model-option-name">{{ model.name }}</span>
-                      <span v-if="model.source === 'remote'" class="model-badge-remote">远程</span>
+                      <span v-if="model.source === 'remote'" class="model-badge-remote">{{ $t('input.remote') }}</span>
                       <span v-else-if="model.parameters?.parameter_size" class="model-badge-local">
                         {{ model.parameters.parameter_size }}
                       </span>
@@ -833,7 +836,7 @@ onBeforeRouteUpdate((to, from, next) => {
                     </div>
                   </div>
                   <div v-if="availableModels.length === 0" class="model-option empty">
-                    暂无可用模型
+                    {{ $t('input.noModel') }}
                   </div>
                 </div>
               </div>
@@ -847,7 +850,7 @@ onBeforeRouteUpdate((to, from, next) => {
         <!-- 停止按钮（仅在回复中时显示） -->
         <t-tooltip 
           v-if="isReplying"
-          content="停止生成"
+          :content="$t('input.stopGeneration')"
           placement="top"
         >
           <div 
@@ -867,7 +870,7 @@ onBeforeRouteUpdate((to, from, next) => {
         class="control-btn send-btn"
         :class="{ 'disabled': !query.length || selectedKbIds.length === 0 }"
       >
-        <img src="../assets/img/sending-aircraft.svg" alt="发送" />
+        <img src="../assets/img/sending-aircraft.svg" :alt="$t('input.send')" />
         </div>
       </div>
     </div>

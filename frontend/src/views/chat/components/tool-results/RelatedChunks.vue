@@ -22,8 +22,8 @@
           </template>
           <div class="result-header">
             <div class="result-title">
-              <span class="chunk-index">片段 #{{ chunk.index }}</span>
-              <span class="chunk-position">(位置: {{ chunk.chunk_index }})</span>
+              <span class="chunk-index">{{ $t('chat.chunkIndexLabel', { index: chunk.index }) }}</span>
+              <span class="chunk-position">{{ $t('chat.chunkPositionLabel', { position: chunk.chunk_index }) }}</span>
             </div>
           </div>
         </t-popup>
@@ -31,7 +31,7 @@
     </div>
 
     <div v-else class="empty-state">
-      没有找到相关片段
+      {{ $t('chat.noRelatedChunks') }}
     </div>
   </div>
 </template>

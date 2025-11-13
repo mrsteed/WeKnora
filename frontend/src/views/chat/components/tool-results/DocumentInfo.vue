@@ -3,25 +3,25 @@
     <div class="info-card">
       <div class="info-section">
         <div class="info-field">
-          <span class="field-label">文档ID:</span>
+          <span class="field-label">{{ $t('chat.documentIdLabel') }}</span>
           <span class="field-value"><code>{{ data.knowledge_id }}</code></span>
         </div>
         <div class="info-field">
-          <span class="field-label">文档标题:</span>
+          <span class="field-label">{{ $t('chat.documentTitleLabel') }}</span>
           <span class="field-value">{{ data.title }}</span>
         </div>
         <div class="info-field">
-          <span class="field-label">片段数量:</span>
-          <span class="field-value">至少 {{ data.chunk_count_min }} 个</span>
+          <span class="field-label">{{ $t('chat.chunkCountLabel') }}</span>
+          <span class="field-value">{{ $t('chat.chunkCountValue', { count: data.chunk_count_min }) }}</span>
         </div>
       </div>
 
       <div class="status-section">
-        <div class="status-title">状态说明</div>
+        <div class="status-title">{{ $t('chat.statusDescription') }}</div>
         <div class="status-list">
-          <div class="status-item">✓ 文档已索引并可搜索</div>
-          <div class="status-item">✓ 可使用搜索工具查找文档内容</div>
-          <div class="status-item">✓ 可使用 get_chunk_detail 查看片段详情</div>
+          <div class="status-item">✓ {{ $t('chat.statusIndexed') }}</div>
+          <div class="status-item">✓ {{ $t('chat.statusSearchable') }}</div>
+          <div class="status-item">✓ {{ $t('chat.statusChunkDetailAvailable') }}</div>
         </div>
       </div>
     </div>

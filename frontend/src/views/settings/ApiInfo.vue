@@ -1,32 +1,32 @@
 <template>
   <div class="api-info">
     <div class="section-header">
-      <h2>API 信息</h2>
-      <p class="section-description">查看和管理您的 API 密钥</p>
+      <h2>{{ $t('tenant.api.title') }}</h2>
+      <p class="section-description">{{ $t('tenant.api.description') }}</p>
     </div>
 
-    <!-- 加载状态 -->
+    <!-- Loading state -->
     <div v-if="loading" class="loading-inline">
       <t-loading size="small" />
-      <span>正在加载信息...</span>
+      <span>{{ $t('tenant.loadingInfo') }}</span>
     </div>
 
-    <!-- 错误状态 -->
+    <!-- Error state -->
     <div v-else-if="error" class="error-inline">
       <t-alert theme="error" :message="error">
         <template #operation>
-          <t-button size="small" @click="loadInfo">重试</t-button>
+          <t-button size="small" @click="loadInfo">{{ $t('tenant.retry') }}</t-button>
         </template>
       </t-alert>
     </div>
 
-    <!-- 信息内容 -->
+    <!-- Content -->
     <div v-else class="settings-group">
       <!-- API Key -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>API Key</label>
-          <p class="desc">用于 API 调用的密钥，请妥善保管</p>
+          <label>{{ $t('tenant.api.keyLabel') }}</label>
+          <p class="desc">{{ $t('tenant.api.keyDescription') }}</p>
         </div>
         <div class="setting-control">
           <div class="api-key-control">
@@ -47,7 +47,7 @@
               size="small" 
               variant="text"
               @click="copyApiKey"
-              title="复制 API Key"
+              :title="$t('tenant.api.copyTitle')"
             >
               <t-icon name="file-copy" />
             </t-button>
@@ -55,61 +55,61 @@
         </div>
       </div>
 
-      <!-- API 文档 -->
+      <!-- API docs -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>API 文档</label>
+          <label>{{ $t('tenant.api.docLabel') }}</label>
           <p class="desc">
-            查看完整的 API 调用文档和示例，
+            {{ $t('tenant.api.docDescription') }}
             <a @click="openApiDoc" class="doc-link">
-              打开文档
+              {{ $t('tenant.api.openDoc') }}
               <t-icon name="link" class="link-icon" />
             </a>
           </p>
         </div>
       </div>
 
-      <!-- 用户信息 -->
-      <div class="info-section-title">用户信息</div>
+      <!-- User info -->
+      <div class="info-section-title">{{ $t('tenant.api.userSectionTitle') }}</div>
 
-      <!-- 用户 ID -->
+      <!-- User ID -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>用户 ID</label>
-          <p class="desc">您的唯一用户标识</p>
+          <label>{{ $t('tenant.api.userIdLabel') }}</label>
+          <p class="desc">{{ $t('tenant.api.userIdDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ userInfo?.id || '-' }}</span>
         </div>
       </div>
 
-      <!-- 用户名 -->
+      <!-- Username -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>用户名</label>
-          <p class="desc">您的登录用户名</p>
+          <label>{{ $t('tenant.api.usernameLabel') }}</label>
+          <p class="desc">{{ $t('tenant.api.usernameDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ userInfo?.username || '-' }}</span>
         </div>
       </div>
 
-      <!-- 邮箱 -->
+      <!-- Email -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>邮箱</label>
-          <p class="desc">您的注册邮箱地址</p>
+          <label>{{ $t('tenant.api.emailLabel') }}</label>
+          <p class="desc">{{ $t('tenant.api.emailDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ userInfo?.email || '-' }}</span>
         </div>
       </div>
 
-      <!-- 用户创建时间 -->
+      <!-- Created at -->
       <div class="setting-row">
         <div class="setting-info">
-          <label>注册时间</label>
-          <p class="desc">账户创建的时间</p>
+          <label>{{ $t('tenant.api.createdAtLabel') }}</label>
+          <p class="desc">{{ $t('tenant.api.createdAtDescription') }}</p>
         </div>
         <div class="setting-control">
           <span class="info-value">{{ formatDate(userInfo?.created_at) }}</span>
@@ -124,15 +124,18 @@
 import { ref, computed, onMounted } from 'vue'
 import { getCurrentUser, type TenantInfo, type UserInfo } from '@/api/auth'
 import { MessagePlugin } from 'tdesign-vue-next'
+import { useI18n } from 'vue-i18n'
 
-// 响应式数据
+const { t, locale } = useI18n()
+
+// Reactive state
 const tenantInfo = ref<TenantInfo | null>(null)
 const userInfo = ref<UserInfo | null>(null)
 const loading = ref(true)
 const error = ref('')
 const showApiKey = ref(false)
 
-// 计算属性
+// Computed
 const displayApiKey = computed(() => {
   if (!tenantInfo.value?.api_key) return ''
   if (showApiKey.value) {
@@ -145,7 +148,7 @@ const displayApiKey = computed(() => {
   return masked
 })
 
-// 方法
+// Methods
 const loadInfo = async () => {
   try {
     loading.value = true
@@ -153,14 +156,14 @@ const loadInfo = async () => {
     
     const userResponse = await getCurrentUser()
     
-    if (userResponse.success && userResponse.data) {
+    if ((userResponse as any).success && userResponse.data) {
       userInfo.value = userResponse.data.user
       tenantInfo.value = userResponse.data.tenant
     } else {
-      error.value = userResponse.message || '获取用户信息失败'
+      error.value = userResponse.message || t('tenant.messages.fetchFailed')
     }
   } catch (err: any) {
-    error.value = err.message || '网络错误，请稍后重试'
+    error.value = err?.message || t('tenant.messages.networkError')
   } finally {
     loading.value = false
   }
@@ -172,36 +175,37 @@ const openApiDoc = () => {
 
 const copyApiKey = async () => {
   if (!tenantInfo.value?.api_key) {
-    MessagePlugin.warning('暂无 API Key')
+    MessagePlugin.warning(t('tenant.api.noKey'))
     return
   }
   
   try {
     await navigator.clipboard.writeText(tenantInfo.value.api_key)
-    MessagePlugin.success('API Key 已复制到剪贴板')
+    MessagePlugin.success(t('tenant.api.copySuccess'))
   } catch (err) {
-    MessagePlugin.error('复制失败，请手动复制')
+    MessagePlugin.error(t('tenant.api.copyFailed'))
   }
 }
 
 const formatDate = (dateStr: string | undefined) => {
-  if (!dateStr) return '未知'
+  if (!dateStr) return t('tenant.unknown')
   
   try {
     const date = new Date(dateStr)
-    return date.toLocaleString('zh-CN', {
+    const formatter = new Intl.DateTimeFormat(locale.value || 'zh-CN', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit'
     })
+    return formatter.format(date)
   } catch {
-    return '格式错误'
+    return t('tenant.formatError')
   }
 }
 
-// 生命周期
+// Lifecycle
 onMounted(() => {
   loadInfo()
 })
