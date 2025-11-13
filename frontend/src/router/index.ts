@@ -64,13 +64,6 @@ const router = createRouter({
           meta: { requiresInit: true, requiresAuth: true }
         },
         {
-          path: "knowledge-bases/:kbId/settings",
-          name: "knowledgeBaseSettings",
-          component: () => import("../views/initialization/InitializationContent.vue"),
-          props: { isKbSettings: true },
-          meta: { requiresInit: true, requiresAuth: true }
-        },
-        {
           path: "chat/:chatid",
           name: "chat",
           component: () => import("../views/chat/index.vue"),
