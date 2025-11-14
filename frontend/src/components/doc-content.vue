@@ -83,14 +83,22 @@ const processMarkdown = (markdownText) => {
     return '';
   }
   
+  // 先将文本中的 <br> 标签（作为纯文本）转换为换行符
+  // 这样 marked.parse 会将其正确解析为段落分隔或换行
+  let processedText = markdownText.replace(/<br\s*\/?>/gi, '\n');
+  
   // 首先对 Markdown 内容进行安全处理
-  const safeMarkdown = safeMarkdownToHTML(markdownText);
+  const safeMarkdown = safeMarkdownToHTML(processedText);
   
   // 使用安全的渲染器
   marked.use({ renderer });
   let html = marked.parse(safeMarkdown);
   
-  // 使用 DOMPurify 进行最终的安全清理
+  // 如果 marked.parse 转义了 <br> 标签，将其还原为实际的 <br> 标签
+  // 这样可以确保原本的 <br> 标签被正确渲染为换行
+  html = html.replace(/&lt;br\s*\/?&gt;/gi, '<br>');
+  
+  // 使用 DOMPurify 进行最终的安全清理（br 标签在允许列表中）
   const sanitizedHTML = sanitizeHTML(html);
   
   return sanitizedHTML;
