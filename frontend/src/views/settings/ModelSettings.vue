@@ -3,6 +3,25 @@
     <div class="section-header">
       <h2>{{ $t('modelSettings.title') }}</h2>
       <p class="section-description">{{ $t('modelSettings.description') }}</p>
+      
+      <!-- 内置模型说明 -->
+      <div class="builtin-models-info">
+        <div class="info-box">
+          <div class="info-header">
+            <t-icon name="info-circle" class="info-icon" />
+            <span class="info-title">内置模型</span>
+          </div>
+          <div class="info-content">
+            <p>内置模型对所有租户可见，敏感信息会被隐藏，且不可编辑或删除。</p>
+            <p class="doc-link">
+              <t-icon name="link" class="link-icon" />
+              <a href="https://github.com/Tencent/WeKnora/blob/main/docs/BUILTIN_MODELS.md" target="_blank" rel="noopener noreferrer">
+                查看内置模型管理指南
+              </a>
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 对话模型 -->
@@ -12,19 +31,20 @@
           <h3>{{ $t('modelSettings.chat.title') }}</h3>
           <p>{{ $t('modelSettings.chat.desc') }}</p>
         </div>
-        <t-button size="small" theme="primary" @click="openAddDialog('chat')">
+        <t-button size="small" theme="primary" @click="openAddDialog('chat')" class="add-model-btn">
           <template #icon>
-            <t-icon name="add" />
+            <t-icon name="add" class="add-icon" />
           </template>
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
       
       <div v-if="chatModels.length > 0" class="model-list-container">
-        <div v-for="model in chatModels" :key="model.id" class="model-card">
+        <div v-for="model in chatModels" :key="model.id" class="model-card" :class="{ 'builtin-model': model.isBuiltin }">
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
+              <t-tag v-if="model.isBuiltin" theme="primary" size="small">内置</t-tag>
               <t-tag v-if="model.isDefault" theme="success" size="small">{{ $t('common.default') }}</t-tag>
             </div>
             <div class="model-meta">
@@ -61,19 +81,20 @@
           <h3>{{ $t('modelSettings.embedding.title') }}</h3>
           <p>{{ $t('modelSettings.embedding.desc') }}</p>
         </div>
-        <t-button size="small" theme="primary" @click="openAddDialog('embedding')">
+        <t-button size="small" theme="primary" @click="openAddDialog('embedding')" class="add-model-btn">
           <template #icon>
-            <t-icon name="add" />
+            <t-icon name="add" class="add-icon" />
           </template>
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
       
       <div v-if="embeddingModels.length > 0" class="model-list-container">
-        <div v-for="model in embeddingModels" :key="model.id" class="model-card">
+        <div v-for="model in embeddingModels" :key="model.id" class="model-card" :class="{ 'builtin-model': model.isBuiltin }">
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
+              <t-tag v-if="model.isBuiltin" theme="primary" size="small">内置</t-tag>
               <t-tag v-if="model.isDefault" theme="success" size="small">{{ $t('common.default') }}</t-tag>
             </div>
             <div class="model-meta">
@@ -111,19 +132,20 @@
           <h3>{{ $t('modelSettings.rerank.title') }}</h3>
           <p>{{ $t('modelSettings.rerank.desc') }}</p>
         </div>
-        <t-button size="small" theme="primary" @click="openAddDialog('rerank')">
+        <t-button size="small" theme="primary" @click="openAddDialog('rerank')" class="add-model-btn">
           <template #icon>
-            <t-icon name="add" />
+            <t-icon name="add" class="add-icon" />
           </template>
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
       
       <div v-if="rerankModels.length > 0" class="model-list-container">
-        <div v-for="model in rerankModels" :key="model.id" class="model-card">
+        <div v-for="model in rerankModels" :key="model.id" class="model-card" :class="{ 'builtin-model': model.isBuiltin }">
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
+              <t-tag v-if="model.isBuiltin" theme="primary" size="small">内置</t-tag>
               <t-tag v-if="model.isDefault" theme="success" size="small">{{ $t('common.default') }}</t-tag>
             </div>
             <div class="model-meta">
@@ -160,19 +182,20 @@
           <h3>{{ $t('modelSettings.vllm.title') }}</h3>
           <p>{{ $t('modelSettings.vllm.desc') }}</p>
         </div>
-        <t-button size="small" theme="primary" @click="openAddDialog('vllm')">
+        <t-button size="small" theme="primary" @click="openAddDialog('vllm')" class="add-model-btn">
           <template #icon>
-            <t-icon name="add" />
+            <t-icon name="add" class="add-icon" />
           </template>
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
       
       <div v-if="vllmModels.length > 0" class="model-list-container">
-        <div v-for="model in vllmModels" :key="model.id" class="model-card">
+        <div v-for="model in vllmModels" :key="model.id" class="model-card" :class="{ 'builtin-model': model.isBuiltin }">
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
+              <t-tag v-if="model.isBuiltin" theme="primary" size="small">内置</t-tag>
               <t-tag v-if="model.isDefault" theme="success" size="small">{{ $t('common.default') }}</t-tag>
             </div>
             <div class="model-meta">
@@ -272,7 +295,8 @@ function convertToLegacyFormat(model: ModelConfig) {
     baseUrl: model.parameters.base_url || '',
     apiKey: model.parameters.api_key || '',
     dimension: model.parameters.embedding_parameters?.dimension,
-    isDefault: model.is_default || false
+    isDefault: model.is_default || false,
+    isBuiltin: model.is_builtin || false
   }
 }
 
@@ -330,6 +354,11 @@ const openAddDialog = (type: 'chat' | 'embedding' | 'rerank' | 'vllm') => {
 
 // 编辑模型
 const editModel = (type: 'chat' | 'embedding' | 'rerank' | 'vllm', model: any) => {
+  // 内置模型不能编辑
+  if (model.isBuiltin) {
+    MessagePlugin.warning('内置模型不能编辑')
+    return
+  }
   currentModelType.value = type
   editingModel.value = { ...model }
   showDialog.value = true
@@ -412,6 +441,13 @@ const handleModelSave = async (modelData: any) => {
 
 // 删除模型
 const deleteModel = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm', modelId: string) => {
+  // 检查是否是内置模型
+  const model = allModels.value.find(m => m.id === modelId)
+  if (model?.is_builtin) {
+    MessagePlugin.warning('内置模型不能删除')
+    return
+  }
+  
   try {
     await deleteModelAPI(modelId)
     MessagePlugin.success(t('modelSettings.toasts.deleted'))
@@ -440,6 +476,18 @@ const setDefault = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm', modelI
 // 获取模型操作菜单选项
 const getModelOptions = (type: 'chat' | 'embedding' | 'rerank' | 'vllm', model: any) => {
   const options: any[] = []
+  
+  // 内置模型不能编辑和删除，只能设为默认
+  if (model.isBuiltin) {
+    // 如果不是默认模型，显示"设为默认"选项
+    if (!model.isDefault) {
+      options.push({
+        content: t('modelSettings.actions.setDefault'),
+        value: `set-default-${type}-${model.id}`
+      })
+    }
+    return options
+  }
   
   // 如果不是默认模型，显示"设为默认"选项
   if (!model.isDefault) {
@@ -556,7 +604,20 @@ onMounted(() => {
       line-height: 1.5;
     }
   }
+}
 
+// 添加模型按钮样式优化
+:deep(.add-model-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  
+  .add-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+  }
 }
 
 .model-list-container {
@@ -584,6 +645,39 @@ onMounted(() => {
   &:hover {
     border-color: #07C05F;
     background: #ffffff;
+  }
+
+  // 内置模型置灰样式
+  &.builtin-model {
+    opacity: 0.7;
+    background: #f5f5f5;
+    border-color: #d9d9d9;
+    cursor: not-allowed;
+
+    &:hover {
+      border-color: #d9d9d9;
+      background: #f5f5f5;
+      opacity: 0.8;
+    }
+
+    .model-info {
+      .model-name {
+        color: #999999;
+      }
+
+      .model-meta {
+        color: #999999;
+
+        .source-tag {
+          background: #e5e5e5;
+          color: #999999;
+        }
+      }
+    }
+
+    .model-actions {
+      opacity: 0.6;
+    }
   }
 }
 
@@ -659,6 +753,70 @@ onMounted(() => {
     font-size: 14px;
     color: #999999;
     margin: 0 0 16px 0;
+  }
+}
+
+.builtin-models-info {
+  margin-top: 20px;
+
+  .info-box {
+    background: #f8f9fa;
+    border: 1px solid #e5e7eb;
+    border-left: 3px solid #07C05F;
+    border-radius: 4px;
+    padding: 12px 16px;
+  }
+
+  .info-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+
+    .info-icon {
+      font-size: 16px;
+      color: #07C05F;
+    }
+
+    .info-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: #333333;
+    }
+  }
+
+  .info-content {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #666666;
+
+    p {
+      margin: 0 0 8px 0;
+
+      &.doc-link {
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+
+        .link-icon {
+          font-size: 14px;
+          color: #07C05F;
+        }
+
+        a {
+          color: #07C05F;
+          text-decoration: none;
+          font-weight: 500;
+          transition: color 0.2s;
+
+          &:hover {
+            color: #06b04d;
+            text-decoration: underline;
+          }
+        }
+      }
+    }
   }
 }
 </style>

@@ -781,12 +781,12 @@ const handleCancel = () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px);
   overflow: hidden; // 防止背景滚动
 }
 
@@ -798,7 +798,7 @@ const handleCancel = () => {
   max-height: 85vh;
   background: #fff;
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -813,41 +813,43 @@ const handleCancel = () => {
   height: 32px;
   border: none;
   background: #f5f5f5;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #666;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
   z-index: 10;
 
   &:hover {
-    background: #e5e5e5;
-    color: #000;
+    background: rgba(7, 192, 95, 0.1);
+    color: #07C05F;
   }
 }
 
 // 标题区域
 .modal-header {
-  padding: 24px 32px 20px;
-  border-bottom: 1px solid #e5e5e5;
+  padding: 28px 32px 20px;
+  border-bottom: 1px solid #f0f0f0;
   flex-shrink: 0;
+  background: linear-gradient(to bottom, #ffffff 0%, #fafafa 100%);
 }
 
 .modal-title {
   margin: 0 0 8px 0;
   font-family: "PingFang SC";
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
-  color: #000000e6;
+  color: #1a1a1a;
+  letter-spacing: -0.3px;
 }
 
 .modal-desc {
   margin: 0;
   font-family: "PingFang SC";
   font-size: 14px;
-  color: #00000066;
+  color: #666666;
   line-height: 22px;
 }
 
@@ -855,7 +857,8 @@ const handleCancel = () => {
 .modal-body {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 32px;
+  padding: 28px 32px;
+  background: #ffffff;
 
   // 自定义滚动条
   &::-webkit-scrollbar {
@@ -870,9 +873,10 @@ const handleCancel = () => {
   &::-webkit-scrollbar-thumb {
     background: #d0d0d0;
     border-radius: 3px;
+    transition: background 0.2s;
 
     &:hover {
-      background: #b0b0b0;
+      background: #07C05F;
     }
   }
 
@@ -894,16 +898,18 @@ const handleCancel = () => {
 
 .form-label {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   font-family: "PingFang SC";
   font-size: 14px;
   font-weight: 500;
-  color: #000000e6;
+  color: #333333;
+  letter-spacing: -0.2px;
 
   &.required::after {
     content: '*';
     color: #FA5151;
     margin-left: 4px;
+    font-weight: 600;
   }
 }
 
@@ -914,26 +920,53 @@ const handleCancel = () => {
 :deep(.t-input-number) {
   width: 100%;
   font-size: 14px;
+  transition: all 0.2s ease;
   
   .t-input__inner,
   input {
     font-size: 14px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+  }
+  
+  &:hover .t-input__inner,
+  &:hover input {
+    border-color: #07C05F;
+  }
+  
+  &.t-is-focused .t-input__inner,
+  &.t-is-focused input {
+    border-color: #07C05F;
+    box-shadow: 0 0 0 2px rgba(7, 192, 95, 0.1);
   }
 }
 
 // 单选按钮组
 :deep(.t-radio-group) {
   display: flex;
-  gap: 16px;
+  gap: 20px;
   
   .t-radio {
     margin-right: 0;
     font-size: 14px;
+    transition: all 0.2s ease;
+    
+    &:hover {
+      .t-radio__label {
+        color: #07C05F;
+      }
+    }
   }
 
   .t-radio__label {
     font-size: 14px;
-    color: #000000e6;
+    color: #333333;
+    transition: color 0.2s ease;
+  }
+  
+  .t-radio__input:checked + .t-radio__label {
+    color: #07C05F;
+    font-weight: 500;
   }
 }
 
@@ -949,12 +982,37 @@ const handleCancel = () => {
 
 // 底部按钮区域
 .modal-footer {
-  padding: 16px 32px;
-  border-top: 1px solid #e5e5e5;
+  padding: 20px 32px;
+  border-top: 1px solid #f0f0f0;
   display: flex;
   justify-content: flex-end;
   gap: 12px;
   flex-shrink: 0;
+  background: #fafafa;
+  
+  :deep(.t-button) {
+    min-width: 88px;
+    height: 36px;
+    font-weight: 500;
+    border-radius: 6px;
+    
+    &.t-button--theme-primary {
+      background: #07C05F;
+      border-color: #07C05F;
+      
+      &:hover {
+        background: #06b04d;
+        border-color: #06b04d;
+      }
+    }
+    
+    &.t-button--variant-outline {
+      &:hover {
+        border-color: #07C05F;
+        color: #07C05F;
+      }
+    }
+  }
 }
 
 // 过渡动画

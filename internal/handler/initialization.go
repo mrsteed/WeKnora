@@ -1155,28 +1155,36 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 
 	// 按类型分组模型
 	for _, model := range models {
+		// Hide sensitive information for builtin models
+		baseURL := model.Parameters.BaseURL
+		apiKey := model.Parameters.APIKey
+		if model.IsBuiltin {
+			baseURL = ""
+			apiKey = ""
+		}
+
 		switch model.Type {
 		case types.ModelTypeKnowledgeQA:
 			config["llm"] = map[string]interface{}{
 				"source":    string(model.Source),
 				"modelName": model.Name,
-				"baseUrl":   model.Parameters.BaseURL,
-				"apiKey":    model.Parameters.APIKey,
+				"baseUrl":   baseURL,
+				"apiKey":    apiKey,
 			}
 		case types.ModelTypeEmbedding:
 			config["embedding"] = map[string]interface{}{
 				"source":    string(model.Source),
 				"modelName": model.Name,
-				"baseUrl":   model.Parameters.BaseURL,
-				"apiKey":    model.Parameters.APIKey,
+				"baseUrl":   baseURL,
+				"apiKey":    apiKey,
 				"dimension": model.Parameters.EmbeddingParameters.Dimension,
 			}
 		case types.ModelTypeRerank:
 			config["rerank"] = map[string]interface{}{
 				"enabled":   true,
 				"modelName": model.Name,
-				"baseUrl":   model.Parameters.BaseURL,
-				"apiKey":    model.Parameters.APIKey,
+				"baseUrl":   baseURL,
+				"apiKey":    apiKey,
 			}
 		case types.ModelTypeVLLM:
 			if config["multimodal"] == nil {
@@ -1187,8 +1195,8 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 			multimodal := config["multimodal"].(map[string]interface{})
 			multimodal["vlm"] = map[string]interface{}{
 				"modelName": model.Name,
-				"baseUrl":   model.Parameters.BaseURL,
-				"apiKey":    model.Parameters.APIKey,
+				"baseUrl":   baseURL,
+				"apiKey":    apiKey,
 			}
 		}
 	}

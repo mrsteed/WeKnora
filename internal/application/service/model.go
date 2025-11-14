@@ -178,6 +178,20 @@ func (s *modelService) UpdateModel(ctx context.Context, model *types.Model) erro
 	logger.Info(ctx, "Start updating model")
 	logger.Infof(ctx, "Updating model ID: %s, name: %s", model.ID, model.Name)
 
+	// Check if the model is builtin - builtin models cannot be updated
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	existingModel, err := s.repo.GetByID(ctx, tenantID, model.ID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"model_id": model.ID,
+		})
+		return err
+	}
+	if existingModel != nil && existingModel.IsBuiltin {
+		logger.Warnf(ctx, "Attempted to update builtin model: %s", model.ID)
+		return errors.New("builtin models cannot be updated")
+	}
+
 	// If this model is set as default, unset other default models of the same type
 	if model.IsDefault {
 		logger.Infof(ctx, "Model is set as default, clearing other default models of type: %s", model.Type)
@@ -192,7 +206,7 @@ func (s *modelService) UpdateModel(ctx context.Context, model *types.Model) erro
 	}
 
 	// Update model in repository
-	err := s.repo.Update(ctx, model)
+	err = s.repo.Update(ctx, model)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"model_id":   model.ID,
@@ -213,8 +227,21 @@ func (s *modelService) DeleteModel(ctx context.Context, id string) error {
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 
+	// Check if the model is builtin - builtin models cannot be deleted
+	existingModel, err := s.repo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"model_id": id,
+		})
+		return err
+	}
+	if existingModel != nil && existingModel.IsBuiltin {
+		logger.Warnf(ctx, "Attempted to delete builtin model: %s", id)
+		return errors.New("builtin models cannot be deleted")
+	}
+
 	// Delete model from repository
-	err := s.repo.Delete(ctx, tenantID, id)
+	err = s.repo.Delete(ctx, tenantID, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"model_id":  id,

@@ -19,6 +19,7 @@ export interface ModelConfig {
     parameter_size?: string; // Ollama模型参数大小 (e.g., "7B", "13B", "70B")
   };
   is_default?: boolean;
+  is_builtin?: boolean;
   status?: string;
   created_at?: string;
   updated_at?: string;

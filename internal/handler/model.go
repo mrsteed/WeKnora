@@ -27,6 +27,37 @@ func NewModelHandler(service interfaces.ModelService) *ModelHandler {
 	return &ModelHandler{service: service}
 }
 
+// hideSensitiveInfo hides sensitive information (APIKey, BaseURL) for builtin models
+// Returns a copy of the model with sensitive fields cleared if it's a builtin model
+func hideSensitiveInfo(model *types.Model) *types.Model {
+	if !model.IsBuiltin {
+		return model
+	}
+
+	// Create a copy with sensitive information hidden
+	return &types.Model{
+		ID:          model.ID,
+		TenantID:    model.TenantID,
+		Name:        model.Name,
+		Type:        model.Type,
+		Source:      model.Source,
+		Description: model.Description,
+		Parameters: types.ModelParameters{
+			// Hide APIKey and BaseURL for builtin models
+			BaseURL: "",
+			APIKey:  "",
+			// Keep other parameters like embedding dimensions
+			EmbeddingParameters: model.Parameters.EmbeddingParameters,
+			ParameterSize:       model.Parameters.ParameterSize,
+		},
+		IsDefault: model.IsDefault,
+		IsBuiltin: model.IsBuiltin,
+		Status:    model.Status,
+		CreatedAt: model.CreatedAt,
+		UpdatedAt: model.UpdatedAt,
+	}
+}
+
 // CreateModelRequest defines the structure for model creation requests
 // Contains all fields required to create a new model in the system
 type CreateModelRequest struct {
@@ -82,9 +113,13 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Model created successfully, ID: %s, Name: %s", model.ID, model.Name)
+
+	// Hide sensitive information for builtin models (though newly created models are unlikely to be builtin)
+	responseModel := hideSensitiveInfo(model)
+
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
-		"data":    model,
+		"data":    responseModel,
 	})
 }
 
@@ -119,9 +154,16 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Retrieved model successfully, ID: %s, Name: %s", model.ID, model.Name)
+
+	// Hide sensitive information for builtin models
+	responseModel := hideSensitiveInfo(model)
+	if model.IsBuiltin {
+		logger.Infof(ctx, "Builtin model detected, hiding sensitive information for model: %s", model.ID)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    model,
+		"data":    responseModel,
 	})
 }
 
@@ -150,9 +192,19 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Retrieved model list successfully, Tenant ID: %d, Total: %d models", tenantID, len(models))
+
+	// Hide sensitive information for builtin models in the list
+	responseModels := make([]*types.Model, len(models))
+	for i, model := range models {
+		responseModels[i] = hideSensitiveInfo(model)
+		if model.IsBuiltin {
+			logger.Infof(ctx, "Builtin model detected in list, hiding sensitive information for model: %s", model.ID)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    models,
+		"data":    responseModels,
 	})
 }
 
@@ -224,9 +276,13 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Model updated successfully, ID: %s", id)
+
+	// Hide sensitive information for builtin models (though builtin models cannot be updated)
+	responseModel := hideSensitiveInfo(model)
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    model,
+		"data":    responseModel,
 	})
 }
 

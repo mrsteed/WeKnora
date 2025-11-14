@@ -66,6 +66,8 @@ type Model struct {
 	Parameters ModelParameters `yaml:"parameters" json:"parameters" gorm:"type:json"`
 	// Whether the model is the default model
 	IsDefault bool `yaml:"is_default" json:"is_default"`
+	// Whether the model is a builtin model (visible to all tenants)
+	IsBuiltin bool `yaml:"is_builtin" json:"is_builtin" gorm:"default:false"`
 	// Model status, default: active, possible: downloading, download_failed
 	Status ModelStatus `yaml:"status" json:"status"`
 	// Creation time of the model

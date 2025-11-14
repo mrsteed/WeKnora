@@ -535,6 +535,16 @@ watch(() => props.visible, async (newVal) => {
     }, 300)
   }
 })
+
+// 监听全局设置弹窗关闭后刷新模型列表
+watch(
+  () => uiStore.showSettingsModal,
+  async (visible, previous) => {
+    if (!visible && previous && props.visible) {
+      await loadAllModels()
+    }
+  }
+)
 </script>
 
 <style scoped lang="less">
