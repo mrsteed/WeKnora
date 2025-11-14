@@ -26,7 +26,7 @@
     "vue-i18n": "^11.1.12",
     "vue-router": "^4.5.0",
     "webpack": "^5.94.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "file:../packages/xlsx-0.20.2.tgz"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22.0.1",
