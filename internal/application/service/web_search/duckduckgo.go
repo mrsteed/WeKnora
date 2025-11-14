@@ -72,6 +72,10 @@ func (p *DuckDuckGoProvider) searchHTML(ctx context.Context, query string, maxRe
 	// Use a realistic UA to avoid blocks
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
+	// print curl of request
+	curlCommand := fmt.Sprintf("curl -X GET '%s' -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'", req.URL.String())
+	logger.Infof(ctx, "Curl of request: %s", curlCommand)
+
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform request: %w", err)

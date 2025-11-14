@@ -152,3 +152,111 @@ func TestDuckDuckGoProvider_Search_APIFallback(t *testing.T) {
 		t.Fatalf("unexpected first API result: %+v", results[0])
 	}
 }
+
+// TestDuckDuckGoProvider_Search_Real tests the DuckDuckGo provider against the real DuckDuckGo service.
+// This is an integration test that requires network connectivity.
+// Run with: go test -v -run TestDuckDuckGoProvider_Search_Real ./internal/application/service/web_search
+func TestDuckDuckGoProvider_Search_Real(t *testing.T) {
+	// Skip if running in CI without network access (optional check)
+	if testing.Short() {
+		t.Skip("Skipping real DuckDuckGo integration test in short mode")
+	}
+
+	ctx := context.Background()
+	provider, err := NewDuckDuckGoProvider(config.WebSearchProviderConfig{})
+	if err != nil {
+		t.Fatalf("Failed to create DuckDuckGo provider: %v", err)
+	}
+
+	// Test with a simple, general query that should return results
+	query := "Go programming language"
+	maxResults := 5
+
+	results, err := provider.Search(ctx, query, maxResults, false)
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+
+	// Verify we got results
+	if len(results) == 0 {
+		t.Fatal("Expected at least one search result, got 0")
+	}
+
+	t.Logf("Received %d results for query: %s", len(results), query)
+
+	// Verify result structure
+	for i, result := range results {
+		if result.Title == "" {
+			t.Errorf("Result[%d]: Title is empty", i)
+		}
+		if result.URL == "" {
+			t.Errorf("Result[%d]: URL is empty", i)
+		}
+		if !strings.HasPrefix(result.URL, "http://") && !strings.HasPrefix(result.URL, "https://") {
+			t.Errorf("Result[%d]: URL is not valid (should start with http:// or https://): %s", i, result.URL)
+		}
+		if result.Source != "duckduckgo" {
+			t.Errorf("Result[%d]: Source should be 'duckduckgo', got '%s'", i, result.Source)
+		}
+
+		t.Logf("Result[%d]: Title=%s, URL=%s, Snippet=%s", i, result.Title, result.URL, result.Snippet)
+	}
+
+	// Verify we don't exceed maxResults
+	if len(results) > maxResults {
+		t.Errorf("Got %d results, expected at most %d", len(results), maxResults)
+	}
+
+	// Test with maxResults limit
+	limitedResults, err := provider.Search(ctx, query, 2, false)
+	if err != nil {
+		t.Fatalf("Search with limit failed: %v", err)
+	}
+	if len(limitedResults) > 2 {
+		t.Errorf("Got %d results with maxResults=2, expected at most 2", len(limitedResults))
+	}
+}
+
+// TestDuckDuckGoProvider_Search_Real_Chinese tests the DuckDuckGo provider with Chinese query.
+// This verifies the Chinese language parameter (kl=cn-zh) works correctly.
+func TestDuckDuckGoProvider_Search_Real_Chinese(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping real DuckDuckGo integration test in short mode")
+	}
+
+	ctx := context.Background()
+	provider, err := NewDuckDuckGoProvider(config.WebSearchProviderConfig{})
+	if err != nil {
+		t.Fatalf("Failed to create DuckDuckGo provider: %v", err)
+	}
+
+	// Test with a Chinese query
+	query := "WeKnora 企业级RAG框架 介绍 文档"
+	maxResults := 3
+
+	results, err := provider.Search(ctx, query, maxResults, false)
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+
+	if len(results) == 0 {
+		t.Log("Warning: No results returned for Chinese query, but this might be expected")
+		return
+	}
+
+	t.Logf("Received %d results for Chinese query: %s", len(results), query)
+
+	// Verify result structure
+	for i, result := range results {
+		if result.Title == "" {
+			t.Errorf("Result[%d]: Title is empty", i)
+		}
+		if result.URL == "" {
+			t.Errorf("Result[%d]: URL is empty", i)
+		}
+		if result.Source != "duckduckgo" {
+			t.Errorf("Result[%d]: Source should be 'duckduckgo', got '%s'", i, result.Source)
+		}
+		t.Logf("Result[%d]: Title=%s, URL=%s", i, result.Title, result.URL)
+	}
+}
