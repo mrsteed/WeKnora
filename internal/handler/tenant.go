@@ -354,12 +354,6 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 
 	// Get existing tenant
 	tenant := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
-	if tenant.AgentConfig == nil {
-		logger.Error(ctx, "Tenant has no agent config")
-		c.Error(errors.NewBadRequestError("Tenant has no agent config"))
-		return
-	}
-
 	// Update agent configuration
 	useCustomPrompt := tenant.AgentConfig.UseCustomSystemPrompt
 	if req.UseCustomPrompt != nil {
