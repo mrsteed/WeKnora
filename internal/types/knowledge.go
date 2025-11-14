@@ -11,6 +11,7 @@ import (
 
 const (
 	KnowledgeTypeManual = "manual"
+	KnowledgeTypeFAQ    = "faq"
 )
 
 const (

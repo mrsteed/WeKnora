@@ -645,14 +645,16 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 				fallbackID := generateEventID("fallback")
 				if err := chatManage.EventBus.Emit(ctx, types.Event{
 					ID:        fallbackID,
-					Type:      types.EventType(event.EventAgentThought),
+					Type:      types.EventType(event.EventAgentFinalAnswer),
 					SessionID: chatManage.SessionID,
-					Data: event.AgentThoughtData{
+					Data: event.AgentFinalAnswerData{
 						Content: chatManage.FallbackResponse,
 						Done:    true,
 					},
 				}); err != nil {
 					logger.Errorf(ctx, "Failed to emit fallback answer event: %v", err)
+				} else {
+					logger.Infof(ctx, "Fallback answer event emitted successfully")
 				}
 			}
 			return nil

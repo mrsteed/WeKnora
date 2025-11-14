@@ -50,6 +50,16 @@ type KnowledgeService interface {
 	CloneKnowledgeBase(ctx context.Context, srcID, dstID string) error
 	// UpdateImageInfo updates image information for a knowledge chunk.
 	UpdateImageInfo(ctx context.Context, knowledgeID string, chunkID string, imageInfo string) error
+	// ListFAQEntries lists FAQ entries under a FAQ knowledge base.
+	ListFAQEntries(ctx context.Context, kbID string, page *types.Pagination) (*types.PageResult, error)
+	// UpsertFAQEntries imports or appends FAQ entries.
+	UpsertFAQEntries(ctx context.Context, kbID string, payload *types.FAQBatchUpsertPayload) error
+	// UpdateFAQEntry updates a single FAQ entry.
+	UpdateFAQEntry(ctx context.Context, kbID string, entryID string, payload *types.FAQEntryPayload) error
+	// DeleteFAQEntries deletes FAQ entries in batch.
+	DeleteFAQEntries(ctx context.Context, kbID string, entryIDs []string) error
+	// SearchFAQEntries searches FAQ entries using hybrid search.
+	SearchFAQEntries(ctx context.Context, kbID string, req *types.FAQSearchRequest) ([]*types.FAQEntry, error)
 }
 
 // KnowledgeRepository defines the interface for knowledge repositories.

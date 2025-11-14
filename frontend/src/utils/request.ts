@@ -193,6 +193,6 @@ export function put(url: string, data = {}) {
   return instance.put(url, data);
 }
 
-export function del(url: string) {
-  return instance.delete(url);
+export function del(url: string, data?: any) {
+  return instance.delete(url, { data });
 }

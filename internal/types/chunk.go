@@ -24,6 +24,8 @@ const (
 	ChunkTypeEntity ChunkType = "entity"
 	// ChunkTypeRelationship 表示关系类型的 Chunk
 	ChunkTypeRelationship ChunkType = "relationship"
+	// ChunkTypeFAQ 表示 FAQ 条目 Chunk
+	ChunkTypeFAQ ChunkType = "faq"
 )
 
 // ImageInfo 表示与 Chunk 关联的图片信息
@@ -79,6 +81,8 @@ type Chunk struct {
 	RelationChunks JSON `json:"relation_chunks" gorm:"type:json"`
 	// 间接关系 Chunk ID，用于关联间接关系 Chunk 和原始文本 Chunk
 	IndirectRelationChunks JSON `json:"indirect_relation_chunks" gorm:"type:json"`
+	// Metadata 存储 chunk 级别的扩展信息，例如 FAQ 元数据
+	Metadata JSON `json:"metadata" gorm:"type:json"`
 	// 图片信息，存储为 JSON
 	ImageInfo string `json:"image_info" gorm:"type:text"`
 	// Chunk creation time

@@ -8,6 +8,7 @@ export function listKnowledgeBases() {
 export function createKnowledgeBase(data: { 
   name: string; 
   description?: string; 
+  type?: 'document' | 'faq';
   chunking_config?: any;
   embedding_model_id?: string;
   summary_model_id?: string;
@@ -16,6 +17,7 @@ export function createKnowledgeBase(data: {
   vlm_config?: any;
   cos_config?: any;
   extract_config?: any;
+  faq_config?: { index_mode: string; question_index_mode?: string };
 }) {
   return post(`/api/v1/knowledge-bases`, data);
 }
@@ -76,4 +78,43 @@ export function getKnowledgeDetailsCon(id: string, page: number) {
 // Get chunk by chunk_id only (new endpoint - to be added to backend)
 export function getChunkByIdOnly(chunkId: string) {
   return get(`/api/v1/chunks/by-id/${chunkId}`);
+}
+
+const buildQuery = (params?: Record<string, any>) => {
+  if (!params) return '';
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    query.append(key, String(value));
+  });
+  const queryString = query.toString();
+  return queryString ? `?${queryString}` : '';
+};
+
+export function listFAQEntries(kbId: string, params?: { page?: number; page_size?: number }) {
+  const query = buildQuery(params);
+  return get(`/api/v1/knowledge-bases/${kbId}/faq/entries${query}`);
+}
+
+export function upsertFAQEntries(kbId: string, data: { entries: any[]; mode: 'append' | 'replace' }) {
+  return post(`/api/v1/knowledge-bases/${kbId}/faq/entries`, data);
+}
+
+export function updateFAQEntry(kbId: string, entryId: string, data: any) {
+  return put(`/api/v1/knowledge-bases/${kbId}/faq/entries/${entryId}`, data);
+}
+
+export function deleteFAQEntries(kbId: string, ids: string[]) {
+  return del(`/api/v1/knowledge-bases/${kbId}/faq/entries`, { ids });
+}
+
+export function searchFAQEntries(
+  kbId: string,
+  data: {
+    query_text: string
+    vector_threshold?: number
+    match_count?: number
+  }
+) {
+  return post(`/api/v1/knowledge-bases/${kbId}/faq/search`, data);
 }

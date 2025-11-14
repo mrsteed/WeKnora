@@ -2021,6 +2021,668 @@ func (s *knowledgeService) CloneChunk(ctx context.Context, src, dst *types.Knowl
 	return nil
 }
 
+// ListFAQEntries lists FAQ entries under a FAQ knowledge base.
+func (s *knowledgeService) ListFAQEntries(ctx context.Context,
+	kbID string, page *types.Pagination,
+) (*types.PageResult, error) {
+	if page == nil {
+		page = &types.Pagination{}
+	}
+	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return nil, err
+	}
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	faqKnowledge, err := s.findFAQKnowledge(ctx, tenantID, kb.ID)
+	if err != nil {
+		return nil, err
+	}
+	if faqKnowledge == nil {
+		return types.NewPageResult(0, page, []*types.FAQEntry{}), nil
+	}
+	chunkType := []types.ChunkType{types.ChunkTypeFAQ}
+	chunks, total, err := s.chunkRepo.ListPagedChunksByKnowledgeID(
+		ctx, tenantID, faqKnowledge.ID, page, chunkType,
+	)
+	if err != nil {
+		return nil, err
+	}
+	kb.EnsureDefaults()
+	entries := make([]*types.FAQEntry, 0, len(chunks))
+	for _, chunk := range chunks {
+		entry, err := s.chunkToFAQEntry(chunk, kb)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	return types.NewPageResult(total, page, entries), nil
+}
+
+// UpsertFAQEntries imports or appends FAQ entries.
+func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
+	kbID string, payload *types.FAQBatchUpsertPayload,
+) error {
+	if payload == nil || len(payload.Entries) == 0 {
+		return werrors.NewBadRequestError("FAQ 条目不能为空")
+	}
+	if payload.Mode == "" {
+		payload.Mode = types.FAQBatchModeAppend
+	}
+	if payload.Mode != types.FAQBatchModeAppend && payload.Mode != types.FAQBatchModeReplace {
+		return werrors.NewBadRequestError("模式仅支持 append 或 replace")
+	}
+
+	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return err
+	}
+
+	kb.EnsureDefaults()
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	faqKnowledge, err := s.ensureFAQKnowledge(ctx, tenantID, kb)
+	if err != nil {
+		return err
+	}
+
+	if payload.Mode == types.FAQBatchModeReplace {
+		if err := s.cleanupFAQKnowledge(ctx, faqKnowledge); err != nil {
+			return err
+		}
+	}
+
+	startIndex := 0
+	if payload.Mode == types.FAQBatchModeAppend {
+		_, total, err := s.chunkRepo.ListPagedChunksByKnowledgeID(ctx,
+			tenantID,
+			faqKnowledge.ID,
+			&types.Pagination{Page: 1, PageSize: 1},
+			[]types.ChunkType{types.ChunkTypeFAQ},
+		)
+		if err != nil {
+			return err
+		}
+		startIndex = int(total)
+	}
+
+	// 获取索引模式
+	indexMode := types.FAQIndexModeQuestionOnly
+	if kb.FAQConfig != nil && kb.FAQConfig.IndexMode != "" {
+		indexMode = kb.FAQConfig.IndexMode
+	}
+
+	chunks := make([]*types.Chunk, 0, len(payload.Entries))
+	for idx := range payload.Entries {
+		entry := payload.Entries[idx]
+		meta, err := sanitizeFAQEntryPayload(&entry)
+		if err != nil {
+			return err
+		}
+		chunk := &types.Chunk{
+			ID:              uuid.New().String(),
+			TenantID:        tenantID,
+			KnowledgeID:     faqKnowledge.ID,
+			KnowledgeBaseID: kb.ID,
+			Content:         buildFAQChunkContent(meta, indexMode),
+			ChunkIndex:      startIndex + idx + 1,
+			IsEnabled:       true,
+			ChunkType:       types.ChunkTypeFAQ,
+		}
+		if err := chunk.SetFAQMetadata(meta); err != nil {
+			return err
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	if err := s.chunkService.CreateChunks(ctx, chunks); err != nil {
+		return err
+	}
+
+	if err := s.indexFAQChunks(ctx, kb, faqKnowledge, chunks, true); err != nil {
+		for _, chunk := range chunks {
+			_ = s.chunkService.DeleteChunk(ctx, chunk.ID)
+		}
+		return err
+	}
+
+	return nil
+}
+
+// UpdateFAQEntry updates a single FAQ entry.
+func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
+	kbID string, entryID string, payload *types.FAQEntryPayload,
+) error {
+	if payload == nil {
+		return werrors.NewBadRequestError("请求体不能为空")
+	}
+	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return err
+	}
+	kb.EnsureDefaults()
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	chunk, err := s.chunkRepo.GetChunkByID(ctx, tenantID, entryID)
+	if err != nil {
+		return err
+	}
+	if chunk.KnowledgeBaseID != kb.ID {
+		return werrors.NewForbiddenError("无权操作该 FAQ 条目")
+	}
+	if chunk.ChunkType != types.ChunkTypeFAQ {
+		return werrors.NewBadRequestError("仅支持更新 FAQ 条目")
+	}
+	meta, err := sanitizeFAQEntryPayload(payload)
+	if err != nil {
+		return err
+	}
+	if existing, err := chunk.FAQMetadata(); err == nil && existing != nil {
+		meta.Version = existing.Version + 1
+	}
+	if err := chunk.SetFAQMetadata(meta); err != nil {
+		return err
+	}
+	// 获取索引模式
+	indexMode := types.FAQIndexModeQuestionOnly
+	if kb.FAQConfig != nil && kb.FAQConfig.IndexMode != "" {
+		indexMode = kb.FAQConfig.IndexMode
+	}
+	chunk.Content = buildFAQChunkContent(meta, indexMode)
+	chunk.UpdatedAt = time.Now()
+	if err := s.chunkService.UpdateChunk(ctx, chunk); err != nil {
+		return err
+	}
+	faqKnowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, chunk.KnowledgeID)
+	if err != nil {
+		return err
+	}
+	return s.indexFAQChunks(ctx, kb, faqKnowledge, []*types.Chunk{chunk}, false)
+}
+
+// SearchFAQEntries searches FAQ entries using hybrid search.
+func (s *knowledgeService) SearchFAQEntries(ctx context.Context,
+	kbID string, req *types.FAQSearchRequest,
+) ([]*types.FAQEntry, error) {
+	// Validate FAQ knowledge base
+	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set default values
+	if req.VectorThreshold <= 0 {
+		req.VectorThreshold = 0.7
+	}
+	if req.MatchCount <= 0 {
+		req.MatchCount = 10
+	}
+	if req.MatchCount > 50 {
+		req.MatchCount = 50
+	}
+
+	// Prepare search parameters
+	searchParams := types.SearchParams{
+		QueryText:            req.QueryText,
+		VectorThreshold:      req.VectorThreshold,
+		MatchCount:           req.MatchCount,
+		DisableKeywordsMatch: true,
+	}
+
+	// Call HybridSearch
+	searchResults, err := s.kbService.HybridSearch(ctx, kbID, searchParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(searchResults) == 0 {
+		return []*types.FAQEntry{}, nil
+	}
+
+	// Extract chunk IDs and build score/match type maps
+	chunkIDs := make([]string, 0, len(searchResults))
+	chunkScores := make(map[string]float64)
+	chunkMatchTypes := make(map[string]types.MatchType)
+	for _, result := range searchResults {
+		// SearchResult.ID is the chunk ID
+		chunkID := result.ID
+		chunkIDs = append(chunkIDs, chunkID)
+		chunkScores[chunkID] = result.Score
+		chunkMatchTypes[chunkID] = result.MatchType
+	}
+
+	// Batch fetch chunks
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	chunks, err := s.chunkRepo.ListChunksByID(ctx, tenantID, chunkIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter FAQ chunks and convert to FAQEntry
+	kb.EnsureDefaults()
+	entries := make([]*types.FAQEntry, 0, len(chunks))
+	for _, chunk := range chunks {
+		// Only process FAQ type chunks
+		if chunk.ChunkType != types.ChunkTypeFAQ {
+			continue
+		}
+
+		entry, err := s.chunkToFAQEntry(chunk, kb)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to convert chunk to FAQ entry: %v", err)
+			continue
+		}
+
+		// Preserve score and match type from search results
+		// Note: Negative question filtering is now handled in HybridSearch
+		if score, ok := chunkScores[chunk.ID]; ok {
+			entry.Score = score
+		}
+		if matchType, ok := chunkMatchTypes[chunk.ID]; ok {
+			entry.MatchType = matchType
+		}
+
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
+}
+
+// DeleteFAQEntries deletes FAQ entries in batch.
+func (s *knowledgeService) DeleteFAQEntries(ctx context.Context,
+	kbID string, entryIDs []string,
+) error {
+	if len(entryIDs) == 0 {
+		return werrors.NewBadRequestError("请选择需要删除的 FAQ 条目")
+	}
+	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return err
+	}
+
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	var faqKnowledge *types.Knowledge
+	chunksToRemove := make([]*types.Chunk, 0, len(entryIDs))
+	for _, id := range entryIDs {
+		if id == "" {
+			continue
+		}
+		chunk, err := s.chunkRepo.GetChunkByID(ctx, tenantID, id)
+		if err != nil {
+			return err
+		}
+		if chunk.KnowledgeBaseID != kb.ID || chunk.ChunkType != types.ChunkTypeFAQ {
+			return werrors.NewBadRequestError("包含无效的 FAQ 条目")
+		}
+		if err := s.chunkService.DeleteChunk(ctx, id); err != nil {
+			return err
+		}
+		if faqKnowledge == nil {
+			faqKnowledge, err = s.repo.GetKnowledgeByID(ctx, tenantID, chunk.KnowledgeID)
+			if err != nil {
+				return err
+			}
+		}
+		chunksToRemove = append(chunksToRemove, chunk)
+	}
+	if len(chunksToRemove) > 0 && faqKnowledge != nil {
+		if err := s.deleteFAQChunkVectors(ctx, kb, faqKnowledge, chunksToRemove); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *knowledgeService) validateFAQKnowledgeBase(ctx context.Context, kbID string) (*types.KnowledgeBase, error) {
+	if kbID == "" {
+		return nil, werrors.NewBadRequestError("知识库 ID 不能为空")
+	}
+	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		return nil, err
+	}
+	kb.EnsureDefaults()
+	if kb.Type != types.KnowledgeBaseTypeFAQ {
+		return nil, werrors.NewBadRequestError("仅 FAQ 知识库支持该操作")
+	}
+	return kb, nil
+}
+
+func (s *knowledgeService) findFAQKnowledge(ctx context.Context, tenantID uint, kbID string) (*types.Knowledge, error) {
+	knowledges, err := s.repo.ListKnowledgeByKnowledgeBaseID(ctx, tenantID, kbID)
+	if err != nil {
+		return nil, err
+	}
+	for _, knowledge := range knowledges {
+		if knowledge.Type == types.KnowledgeTypeFAQ {
+			return knowledge, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *knowledgeService) ensureFAQKnowledge(ctx context.Context, tenantID uint, kb *types.KnowledgeBase) (*types.Knowledge, error) {
+	existing, err := s.findFAQKnowledge(ctx, tenantID, kb.ID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+	knowledge := &types.Knowledge{
+		TenantID:         tenantID,
+		KnowledgeBaseID:  kb.ID,
+		Type:             types.KnowledgeTypeFAQ,
+		Title:            fmt.Sprintf("%s - FAQ", kb.Name),
+		Description:      "FAQ 条目容器",
+		Source:           types.KnowledgeTypeFAQ,
+		ParseStatus:      "completed",
+		EnableStatus:     "enabled",
+		EmbeddingModelID: kb.EmbeddingModelID,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+	if err := s.repo.CreateKnowledge(ctx, knowledge); err != nil {
+		return nil, err
+	}
+	return knowledge, nil
+}
+
+func (s *knowledgeService) chunkToFAQEntry(chunk *types.Chunk, kb *types.KnowledgeBase) (*types.FAQEntry, error) {
+	meta, err := chunk.FAQMetadata()
+	if err != nil {
+		return nil, err
+	}
+	if meta == nil {
+		meta = &types.FAQChunkMetadata{StandardQuestion: chunk.Content}
+	}
+	entry := &types.FAQEntry{
+		ID:                chunk.ID,
+		ChunkID:           chunk.ID,
+		KnowledgeID:       chunk.KnowledgeID,
+		KnowledgeBaseID:   chunk.KnowledgeBaseID,
+		StandardQuestion:  meta.StandardQuestion,
+		SimilarQuestions:  meta.SimilarQuestions,
+		NegativeQuestions: meta.NegativeQuestions,
+		Answers:           meta.Answers,
+		IndexMode:         kb.FAQConfig.IndexMode,
+		UpdatedAt:         chunk.UpdatedAt,
+		CreatedAt:         chunk.CreatedAt,
+		ChunkType:         chunk.ChunkType,
+	}
+	return entry, nil
+}
+
+func buildFAQChunkContent(meta *types.FAQChunkMetadata, mode types.FAQIndexMode) string {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("Q: %s\n", meta.StandardQuestion))
+	if len(meta.SimilarQuestions) > 0 {
+		builder.WriteString("Similar Questions:\n")
+		for _, q := range meta.SimilarQuestions {
+			builder.WriteString(fmt.Sprintf("- %s\n", q))
+		}
+	}
+	// 负例不应该包含在 Content 中，因为它们不应该被索引
+	// 答案根据索引模式决定是否包含
+	if mode == types.FAQIndexModeQuestionAnswer && len(meta.Answers) > 0 {
+		builder.WriteString("Answers:\n")
+		for _, ans := range meta.Answers {
+			builder.WriteString(fmt.Sprintf("- %s\n", ans))
+		}
+	}
+	return builder.String()
+}
+
+func sanitizeFAQEntryPayload(payload *types.FAQEntryPayload) (*types.FAQChunkMetadata, error) {
+	meta := &types.FAQChunkMetadata{
+		StandardQuestion:  strings.TrimSpace(payload.StandardQuestion),
+		SimilarQuestions:  payload.SimilarQuestions,
+		NegativeQuestions: payload.NegativeQuestions,
+		Answers:           payload.Answers,
+		Version:           1,
+		Source:            "faq",
+	}
+	meta.Normalize()
+	if meta.StandardQuestion == "" {
+		return nil, werrors.NewBadRequestError("标准问不能为空")
+	}
+	if len(meta.Answers) == 0 {
+		return nil, werrors.NewBadRequestError("至少提供一个答案")
+	}
+	return meta, nil
+}
+
+func buildFAQIndexContent(meta *types.FAQChunkMetadata, mode types.FAQIndexMode) string {
+	var builder strings.Builder
+	builder.WriteString(meta.StandardQuestion)
+	for _, q := range meta.SimilarQuestions {
+		builder.WriteString("\n")
+		builder.WriteString(q)
+	}
+	if mode == types.FAQIndexModeQuestionAnswer {
+		for _, ans := range meta.Answers {
+			builder.WriteString("\n")
+			builder.WriteString(ans)
+		}
+	}
+	return builder.String()
+}
+
+// buildFAQIndexInfoList 构建FAQ索引信息列表，支持分别索引模式
+func (s *knowledgeService) buildFAQIndexInfoList(ctx context.Context, kb *types.KnowledgeBase, chunk *types.Chunk) ([]*types.IndexInfo, error) {
+	indexMode := types.FAQIndexModeQuestionAnswer
+	questionIndexMode := types.FAQQuestionIndexModeCombined
+	if kb.FAQConfig != nil {
+		if kb.FAQConfig.IndexMode != "" {
+			indexMode = kb.FAQConfig.IndexMode
+		}
+		if kb.FAQConfig.QuestionIndexMode != "" {
+			questionIndexMode = kb.FAQConfig.QuestionIndexMode
+		}
+	}
+	logger.Infof(ctx, "buildFAQIndexInfoList: indexMode: %s, questionIndexMode: %s", indexMode, questionIndexMode)
+
+	meta, err := chunk.FAQMetadata()
+	if err != nil {
+		return nil, err
+	}
+	if meta == nil {
+		meta = &types.FAQChunkMetadata{StandardQuestion: chunk.Content}
+	}
+
+	// 如果是一起索引模式，使用原有逻辑
+	if questionIndexMode == types.FAQQuestionIndexModeCombined {
+		content := buildFAQIndexContent(meta, indexMode)
+		return []*types.IndexInfo{
+			{
+				Content:         content,
+				SourceID:        chunk.ID,
+				SourceType:      types.ChunkSourceType,
+				ChunkID:         chunk.ID,
+				KnowledgeID:     chunk.KnowledgeID,
+				KnowledgeBaseID: chunk.KnowledgeBaseID,
+			},
+		}, nil
+	}
+
+	// 分别索引模式：为每个问题创建独立的索引项
+	indexInfoList := make([]*types.IndexInfo, 0)
+
+	// 标准问索引项
+	standardContent := meta.StandardQuestion
+	if indexMode == types.FAQIndexModeQuestionAnswer && len(meta.Answers) > 0 {
+		var builder strings.Builder
+		builder.WriteString(meta.StandardQuestion)
+		for _, ans := range meta.Answers {
+			builder.WriteString("\n")
+			builder.WriteString(ans)
+		}
+		standardContent = builder.String()
+	}
+	indexInfoList = append(indexInfoList, &types.IndexInfo{
+		Content:         standardContent,
+		SourceID:        chunk.ID,
+		SourceType:      types.ChunkSourceType,
+		ChunkID:         chunk.ID,
+		KnowledgeID:     chunk.KnowledgeID,
+		KnowledgeBaseID: chunk.KnowledgeBaseID,
+	})
+
+	// 每个相似问创建一个索引项
+	for i, similarQ := range meta.SimilarQuestions {
+		similarContent := similarQ
+		if indexMode == types.FAQIndexModeQuestionAnswer && len(meta.Answers) > 0 {
+			var builder strings.Builder
+			builder.WriteString(similarQ)
+			for _, ans := range meta.Answers {
+				builder.WriteString("\n")
+				builder.WriteString(ans)
+			}
+			similarContent = builder.String()
+		}
+		sourceID := fmt.Sprintf("%s-%d", chunk.ID, i)
+		indexInfoList = append(indexInfoList, &types.IndexInfo{
+			Content:         similarContent,
+			SourceID:        sourceID,
+			SourceType:      types.ChunkSourceType,
+			ChunkID:         chunk.ID,
+			KnowledgeID:     chunk.KnowledgeID,
+			KnowledgeBaseID: chunk.KnowledgeBaseID,
+		})
+	}
+	logger.Infof(ctx, "buildFAQIndexInfoList: indexInfoList: %v", indexInfoList)
+
+	return indexInfoList, nil
+}
+
+func (s *knowledgeService) indexFAQChunks(ctx context.Context,
+	kb *types.KnowledgeBase, knowledge *types.Knowledge, chunks []*types.Chunk, adjustStorage bool,
+) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+	if err != nil {
+		return err
+	}
+	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+	if err != nil {
+		return err
+	}
+
+	indexInfo := make([]*types.IndexInfo, 0)
+	chunkIDs := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		infoList, err := s.buildFAQIndexInfoList(ctx, kb, chunk)
+		if err != nil {
+			return err
+		}
+		indexInfo = append(indexInfo, infoList...)
+		chunkIDs = append(chunkIDs, chunk.ID)
+	}
+
+	var size int64
+	if adjustStorage {
+		size = retrieveEngine.EstimateStorageSize(ctx, embeddingModel, indexInfo)
+		if tenantInfo.StorageQuota > 0 && tenantInfo.StorageUsed+size > tenantInfo.StorageQuota {
+			return types.NewStorageQuotaExceededError()
+		}
+	}
+
+	if err := retrieveEngine.DeleteByChunkIDList(ctx, chunkIDs, embeddingModel.GetDimensions()); err != nil {
+		logger.Warnf(ctx, "Delete FAQ vectors failed: %v", err)
+	}
+	if err := retrieveEngine.BatchIndex(ctx, embeddingModel, indexInfo); err != nil {
+		return err
+	}
+
+	if adjustStorage && size > 0 {
+		if err := s.tenantRepo.AdjustStorageUsed(ctx, tenantInfo.ID, size); err == nil {
+			tenantInfo.StorageUsed += size
+		}
+		knowledge.StorageSize += size
+	}
+
+	now := time.Now()
+	knowledge.UpdatedAt = now
+	knowledge.ProcessedAt = &now
+	return s.repo.UpdateKnowledge(ctx, knowledge)
+}
+
+func (s *knowledgeService) deleteFAQChunkVectors(ctx context.Context,
+	kb *types.KnowledgeBase, knowledge *types.Knowledge, chunks []*types.Chunk,
+) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+	if err != nil {
+		return err
+	}
+	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+	if err != nil {
+		return err
+	}
+
+	indexInfo := make([]*types.IndexInfo, 0)
+	chunkIDs := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		infoList, err := s.buildFAQIndexInfoList(ctx, kb, chunk)
+		if err != nil {
+			return err
+		}
+		indexInfo = append(indexInfo, infoList...)
+		chunkIDs = append(chunkIDs, chunk.ID)
+	}
+
+	size := retrieveEngine.EstimateStorageSize(ctx, embeddingModel, indexInfo)
+	if err := retrieveEngine.DeleteByChunkIDList(ctx, chunkIDs, embeddingModel.GetDimensions()); err != nil {
+		return err
+	}
+	if size > 0 {
+		if err := s.tenantRepo.AdjustStorageUsed(ctx, tenantInfo.ID, -size); err == nil {
+			tenantInfo.StorageUsed -= size
+			if tenantInfo.StorageUsed < 0 {
+				tenantInfo.StorageUsed = 0
+			}
+		}
+		if knowledge.StorageSize >= size {
+			knowledge.StorageSize -= size
+		} else {
+			knowledge.StorageSize = 0
+		}
+	}
+	knowledge.UpdatedAt = time.Now()
+	return s.repo.UpdateKnowledge(ctx, knowledge)
+}
+
+func (s *knowledgeService) cleanupFAQKnowledge(ctx context.Context, knowledge *types.Knowledge) error {
+	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	if knowledge.EmbeddingModelID != "" {
+		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+		if err == nil {
+			if embeddingModel, modelErr := s.modelService.GetEmbeddingModel(ctx, knowledge.EmbeddingModelID); modelErr == nil {
+				_ = retrieveEngine.DeleteByKnowledgeIDList(ctx, []string{knowledge.ID}, embeddingModel.GetDimensions())
+			}
+		}
+	}
+	if err := s.chunkService.DeleteChunksByKnowledgeID(ctx, knowledge.ID); err != nil {
+		return err
+	}
+	if knowledge.StorageSize > 0 {
+		if err := s.tenantRepo.AdjustStorageUsed(ctx, tenantInfo.ID, -knowledge.StorageSize); err == nil {
+			tenantInfo.StorageUsed -= knowledge.StorageSize
+			if tenantInfo.StorageUsed < 0 {
+				tenantInfo.StorageUsed = 0
+			}
+		}
+		knowledge.StorageSize = 0
+	}
+	knowledge.UpdatedAt = time.Now()
+	knowledge.ProcessedAt = nil
+	return s.repo.UpdateKnowledge(ctx, knowledge)
+}
+
 func ensureManualFileName(title string) string {
 	if title == "" {
 		return fmt.Sprintf("manual-%s%s", time.Now().Format("20060102-150405"), manualFileExtension)

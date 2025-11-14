@@ -25,7 +25,7 @@ func (r *chunkRepository) CreateChunks(ctx context.Context, chunks []*types.Chun
 	for _, chunk := range chunks {
 		chunk.Content = common.CleanInvalidUTF8(chunk.Content)
 	}
-	return r.db.WithContext(ctx).CreateInBatches(chunks, 100).Error
+	return r.db.Debug().WithContext(ctx).CreateInBatches(chunks, 100).Error
 }
 
 // GetChunkByID retrieves a chunk by its ID and tenant ID
@@ -45,7 +45,7 @@ func (r *chunkRepository) ListChunksByID(
 	ctx context.Context, tenantID uint, ids []string,
 ) ([]*types.Chunk, error) {
 	var chunks []*types.Chunk
-	if err := r.db.WithContext(ctx).
+	if err := r.db.Debug().WithContext(ctx).
 		Where("tenant_id = ? AND id IN ?", tenantID, ids).
 		Find(&chunks).Error; err != nil {
 		return nil, err
@@ -77,15 +77,15 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 
 	// First query the total count
 	if err := r.db.WithContext(ctx).Model(&types.Chunk{}).
-		Where("tenant_id = ? AND knowledge_id = ?", tenantID, knowledgeID).
+		Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?)", tenantID, knowledgeID, chunk_type).
 		Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	// Then query the paginated data
 	if err := r.db.WithContext(ctx).
-		Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info").
-		Where("tenant_id = ? AND knowledge_id = ? and chunk_type in (?)", tenantID, knowledgeID, chunk_type).
+		Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info, metadata").
+		Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?)", tenantID, knowledgeID, chunk_type).
 		Order("chunk_index ASC").
 		Offset(page.Offset()).
 		Limit(page.Limit()).

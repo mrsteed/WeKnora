@@ -15,12 +15,17 @@ const router = useRouter();
 import {
   batchQueryKnowledge,
   listKnowledgeFiles,
+  getKnowledgeBaseById,
 } from "@/api/knowledge-base/index";
+import FAQEntryManager from './components/FAQEntryManager.vue';
 import { formatStringDate } from "@/utils/index";
 import { useI18n } from 'vue-i18n';
 const route = useRoute();
 const { t } = useI18n();
 const kbId = computed(() => (route.params as any).kbId as string || '');
+const kbInfo = ref<any>(null);
+const kbLoading = ref(false);
+const isFAQ = computed(() => (kbInfo.value?.type || '') === 'faq');
 let { cardList, total, moreIndex, details, getKnowled, delKnowledge, openMore, onVisibleChange, getCardDetails, getfDetails } = useKnowledgeBase(kbId.value)
 let isCardDetails = ref(false);
 let timeout: ReturnType<typeof setInterval> | null = null;
@@ -76,10 +81,34 @@ const loadKnowledgeFiles = async (kbIdValue: string) => {
   }
 };
 
+const loadKnowledgeBaseInfo = async (targetKbId: string) => {
+  if (!targetKbId) {
+    kbInfo.value = null;
+    return;
+  }
+  kbLoading.value = true;
+  try {
+    const res: any = await getKnowledgeBaseById(targetKbId);
+    kbInfo.value = res?.data || null;
+    if (!isFAQ.value) {
+      getKnowled({ page: 1, page_size: pageSize }, targetKbId);
+      loadKnowledgeFiles(targetKbId);
+    } else {
+      cardList.value = [];
+      total.value = 0;
+    }
+  } catch (error) {
+    console.error('Failed to load knowledge base info:', error);
+    kbInfo.value = null;
+  } finally {
+    kbLoading.value = false;
+  }
+};
+
 // 监听路由参数变化，重新获取知识库内容
 watch(() => kbId.value, (newKbId, oldKbId) => {
   if (newKbId && newKbId !== oldKbId) {
-    loadKnowledgeFiles(newKbId);
+    loadKnowledgeBaseInfo(newKbId);
   }
 }, { immediate: false });
 
@@ -87,7 +116,7 @@ watch(() => kbId.value, (newKbId, oldKbId) => {
 const handleFileUploaded = (event: CustomEvent) => {
   const uploadedKbId = event.detail.kbId;
   console.log('接收到文件上传事件，上传的知识库ID:', uploadedKbId, '当前知识库ID:', kbId.value);
-  if (uploadedKbId && uploadedKbId === kbId.value) {
+  if (uploadedKbId && uploadedKbId === kbId.value && !isFAQ.value) {
     console.log('匹配当前知识库，开始刷新文件列表');
     // 如果上传的文件属于当前知识库，使用 loadKnowledgeFiles 刷新文件列表
     loadKnowledgeFiles(uploadedKbId);
@@ -95,7 +124,7 @@ const handleFileUploaded = (event: CustomEvent) => {
 };
 
 onMounted(() => {
-  getKnowled({ page: 1, page_size: pageSize });
+  loadKnowledgeBaseInfo(kbId.value);
   
   // 监听文件上传事件
   window.addEventListener('knowledgeFileUploaded', handleFileUploaded as EventListener);
@@ -105,6 +134,7 @@ onUnmounted(() => {
   window.removeEventListener('knowledgeFileUploaded', handleFileUploaded as EventListener);
 });
 watch(() => cardList.value, (newValue) => {
+  if (isFAQ.value) return;
   let analyzeList = [];
   analyzeList = newValue.filter(item => {
     return item.parse_status == 'pending' || item.parse_status == 'processing';
@@ -172,12 +202,13 @@ const delCard = (index: number, item: KnowledgeCard) => {
 };
 
 const manualEditorSuccess = ({ kbId: savedKbId }: { kbId: string; knowledgeId: string; status: 'draft' | 'publish' }) => {
-  if (savedKbId === kbId.value) {
+  if (savedKbId === kbId.value && !isFAQ.value) {
     loadKnowledgeFiles(savedKbId);
   }
 };
 
 const handleManualEdit = (index: number, item: KnowledgeCard) => {
+  if (isFAQ.value) return;
   if (cardList.value[index]) {
     cardList.value[index].isMore = false;
   }
@@ -190,6 +221,7 @@ const handleManualEdit = (index: number, item: KnowledgeCard) => {
 };
 
 const handleScroll = () => {
+  if (isFAQ.value) return;
   const element = knowledgeScroll.value;
   if (element) {
     let pageNum = Math.ceil(total.value / pageSize)
@@ -256,95 +288,103 @@ async function createNewSession(value: string): Promise<void> {
 </script>
 
 <template>
-  <div v-show="cardList.length" class="knowledge-card-box" style="position: relative">
-    <div class="knowledge-card-wrap" ref="knowledgeScroll" @scroll="handleScroll">
-      <div class="knowledge-card" v-for="(item, index) in cardList" :key="index" @click="openCardDetails(item)">
-        <div class="card-content">
-          <div class="card-content-nav">
-            <span class="card-content-title">{{ item.file_name }}</span>
-            <t-popup v-model="item.isMore" overlayClassName="card-more"
-              :on-visible-change="onVisibleChange" trigger="click" destroy-on-close placement="bottom-right">
-              <div variant="outline" class="more-wrap" @click.stop="openMore(index)"
-                :class="[moreIndex == index ? 'active-more' : '']">
-                <img class="more" src="@/assets/img/more.png" alt="" />
-              </div>
-              <template #content>
-                <div class="card-menu">
-                  <div
-                    v-if="item.type === 'manual'"
-                    class="card-menu-item"
-                    @click.stop="handleManualEdit(index, item)"
-                  >
-                    <t-icon class="icon" name="edit" />
-                    <span>{{ t('knowledgeBase.editDocument') }}</span>
-                  </div>
-                  <div
-                    class="card-menu-item danger"
-                    @click.stop="delCard(index, item)"
-                  >
-                    <t-icon class="icon" name="delete" />
-                    <span>{{ t('knowledgeBase.deleteDocument') }}</span>
-                  </div>
+  <template v-if="!isFAQ">
+    <div v-show="cardList.length" class="knowledge-card-box" style="position: relative">
+      <div class="knowledge-card-wrap" ref="knowledgeScroll" @scroll="handleScroll">
+        <div class="knowledge-card" v-for="(item, index) in cardList" :key="index" @click="openCardDetails(item)">
+          <div class="card-content">
+            <div class="card-content-nav">
+              <span class="card-content-title">{{ item.file_name }}</span>
+              <t-popup v-model="item.isMore" overlayClassName="card-more"
+                :on-visible-change="onVisibleChange" trigger="click" destroy-on-close placement="bottom-right">
+                <div variant="outline" class="more-wrap" @click.stop="openMore(index)"
+                  :class="[moreIndex == index ? 'active-more' : '']">
+                  <img class="more" src="@/assets/img/more.png" alt="" />
                 </div>
-              </template>
-            </t-popup>
+                <template #content>
+                  <div class="card-menu">
+                    <div
+                      v-if="item.type === 'manual'"
+                      class="card-menu-item"
+                      @click.stop="handleManualEdit(index, item)"
+                    >
+                      <t-icon class="icon" name="edit" />
+                      <span>{{ t('knowledgeBase.editDocument') }}</span>
+                    </div>
+                    <div
+                      class="card-menu-item danger"
+                      @click.stop="delCard(index, item)"
+                    >
+                      <t-icon class="icon" name="delete" />
+                      <span>{{ t('knowledgeBase.deleteDocument') }}</span>
+                    </div>
+                  </div>
+                </template>
+              </t-popup>
+            </div>
+            <div
+              v-if="item.parse_status === 'processing' || item.parse_status === 'pending'"
+              class="card-analyze"
+            >
+              <t-icon name="loading" class="card-analyze-loading"></t-icon>
+              <span class="card-analyze-txt">{{ t('knowledgeBase.parsingInProgress') }}</span>
+            </div>
+            <div
+              v-else-if="item.parse_status === 'failed'"
+              class="card-analyze failure"
+            >
+              <t-icon name="close-circle" class="card-analyze-loading failure"></t-icon>
+              <span class="card-analyze-txt failure">{{ t('knowledgeBase.parsingFailed') }}</span>
+            </div>
+            <div v-else-if="item.parse_status === 'draft'" class="card-draft">
+              <t-tag size="small" theme="warning" variant="light-outline">{{ t('knowledgeBase.draft') }}</t-tag>
+              <span class="card-draft-tip">{{ t('knowledgeBase.draftTip') }}</span>
+            </div>
+            <div v-else-if="item.parse_status === 'completed'" class="card-content-txt">
+              {{ item.description }}
+            </div>
           </div>
-          <div
-            v-if="item.parse_status === 'processing' || item.parse_status === 'pending'"
-            class="card-analyze"
-          >
-            <t-icon name="loading" class="card-analyze-loading"></t-icon>
-            <span class="card-analyze-txt">{{ t('knowledgeBase.parsingInProgress') }}</span>
-          </div>
-          <div
-            v-else-if="item.parse_status === 'failed'"
-            class="card-analyze failure"
-          >
-            <t-icon name="close-circle" class="card-analyze-loading failure"></t-icon>
-            <span class="card-analyze-txt failure">{{ t('knowledgeBase.parsingFailed') }}</span>
-          </div>
-          <div v-else-if="item.parse_status === 'draft'" class="card-draft">
-            <t-tag size="small" theme="warning" variant="light-outline">{{ t('knowledgeBase.draft') }}</t-tag>
-            <span class="card-draft-tip">{{ t('knowledgeBase.draftTip') }}</span>
-          </div>
-          <div v-else-if="item.parse_status === 'completed'" class="card-content-txt">
-            {{ item.description }}
+          <div class="card-bottom">
+            <span class="card-time">{{ item.updated_at }}</span>
+            <div class="card-type">
+              <span>{{ item.file_type }}</span>
+            </div>
           </div>
         </div>
-        <div class="card-bottom">
-          <span class="card-time">{{ item.updated_at }}</span>
-          <div class="card-type">
-            <span>{{ item.file_type }}</span>
+        <t-dialog v-model:visible="delDialog" dialogClassName="del-knowledge" :closeBtn="false" :cancelBtn="null"
+          :confirmBtn="null">
+          <div class="circle-wrap">
+            <div class="header">
+              <img class="circle-img" src="@/assets/img/circle.png" alt="">
+              <span class="circle-title">{{ t('knowledgeBase.deleteConfirmation') }}</span>
+            </div>
+            <span class="del-circle-txt">
+              {{ t('knowledgeBase.confirmDeleteDocument', { fileName: knowledge.file_name || '' }) }}
+            </span>
+            <div class="circle-btn">
+              <span class="circle-btn-txt" @click="delDialog = false">{{ t('common.cancel') }}</span>
+              <span class="circle-btn-txt confirm" @click="delCardConfirm">{{ t('knowledgeBase.confirmDelete') }}</span>
+            </div>
           </div>
-        </div>
+        </t-dialog>
       </div>
-      <t-dialog v-model:visible="delDialog" dialogClassName="del-knowledge" :closeBtn="false" :cancelBtn="null"
-        :confirmBtn="null">
-        <div class="circle-wrap">
-          <div class="header">
-            <img class="circle-img" src="@/assets/img/circle.png" alt="">
-            <span class="circle-title">{{ t('knowledgeBase.deleteConfirmation') }}</span>
-          </div>
-          <span class="del-circle-txt">
-            {{ t('knowledgeBase.confirmDeleteDocument', { fileName: knowledge.file_name || '' }) }}
-          </span>
-          <div class="circle-btn">
-            <span class="circle-btn-txt" @click="delDialog = false">{{ t('common.cancel') }}</span>
-            <span class="circle-btn-txt confirm" @click="delCardConfirm">{{ t('knowledgeBase.confirmDelete') }}</span>
-          </div>
-        </div>
-      </t-dialog>
+      <InputField @send-msg="sendMsg"></InputField>
+      <DocContent :visible="isCardDetails" :details="details" @closeDoc="closeDoc" @getDoc="getDoc"></DocContent>
     </div>
-    <InputField @send-msg="sendMsg"></InputField>
-    <DocContent :visible="isCardDetails" :details="details" @closeDoc="closeDoc" @getDoc="getDoc"></DocContent>
-  </div>
-  <EmptyKnowledge v-show="!cardList.length"></EmptyKnowledge>
+    <EmptyKnowledge v-show="!cardList.length"></EmptyKnowledge>
+  </template>
+  <template v-else>
+    <div class="faq-manager-wrapper">
+      <FAQEntryManager v-if="kbId" :kb-id="kbId" />
+    </div>
+  </template>
 
   <!-- 知识库编辑器（创建/编辑统一组件） -->
   <KnowledgeBaseEditorModal 
     :visible="uiStore.showKBEditorModal"
     :mode="uiStore.kbEditorMode"
     :kb-id="uiStore.currentKBId || undefined"
+    :initial-type="uiStore.kbEditorType"
     @update:visible="(val) => val ? null : uiStore.closeKBEditor()"
     @success="handleKBEditorSuccess"
   />
@@ -367,6 +407,12 @@ async function createNewSession(value: string): Promise<void> {
 <style scoped lang="less">
 .knowledge-card-box {
   flex: 1;
+}
+
+.faq-manager-wrapper {
+  flex: 1;
+  padding: 24px 44px;
+  overflow-y: auto;
 }
 
 @media (max-width: 1250px) and (min-width: 1045px) {

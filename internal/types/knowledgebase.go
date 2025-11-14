@@ -12,12 +12,39 @@ const (
 	InitDefaultKnowledgeBaseID = "kb-00000001"
 )
 
+const (
+	KnowledgeBaseTypeDocument = "document"
+	KnowledgeBaseTypeFAQ      = "faq"
+)
+
+// FAQIndexMode 表示 FAQ 索引策略：仅索引标准问还是同时索引问答内容
+type FAQIndexMode string
+
+const (
+	// FAQIndexModeQuestionOnly 仅使用标准问及相似问向量化
+	FAQIndexModeQuestionOnly FAQIndexMode = "question_only"
+	// FAQIndexModeQuestionAnswer 将标准问与答案拼接后向量化
+	FAQIndexModeQuestionAnswer FAQIndexMode = "question_answer"
+)
+
+// FAQQuestionIndexMode 表示 FAQ 问题索引方式：一起索引还是分别索引
+type FAQQuestionIndexMode string
+
+const (
+	// FAQQuestionIndexModeCombined 将标准问和相似问一起索引（当前方式）
+	FAQQuestionIndexModeCombined FAQQuestionIndexMode = "combined"
+	// FAQQuestionIndexModeSeparate 将标准问和相似问分别索引
+	FAQQuestionIndexModeSeparate FAQQuestionIndexMode = "separate"
+)
+
 // KnowledgeBase represents a knowledge base
 type KnowledgeBase struct {
 	// Unique identifier of the knowledge base
 	ID string `yaml:"id" json:"id" gorm:"type:varchar(36);primaryKey"`
 	// Name of the knowledge base
 	Name string `yaml:"name" json:"name"`
+	// Type of the knowledge base (document, faq, etc.)
+	Type string `yaml:"type" json:"type" gorm:"type:varchar(32);default:'document'"`
 	// Whether this knowledge base is temporary (ephemeral) and should be hidden from UI
 	IsTemporary bool `yaml:"is_temporary" json:"is_temporary" gorm:"default:false"`
 	// Description of the knowledge base
@@ -42,6 +69,8 @@ type KnowledgeBase struct {
 	StorageConfig StorageConfig `yaml:"cos_config" json:"cos_config" gorm:"column:cos_config;type:json"`
 	// Extract config
 	ExtractConfig *ExtractConfig `yaml:"extract_config" json:"extract_config" gorm:"column:extract_config;type:json"`
+	// FAQConfig stores FAQ specific configuration such as indexing strategy
+	FAQConfig *FAQConfig `yaml:"faq_config" json:"faq_config" gorm:"column:faq_config;type:json"`
 	// Creation time of the knowledge base
 	CreatedAt time.Time `yaml:"created_at" json:"created_at"`
 	// Last updated time of the knowledge base
@@ -56,6 +85,8 @@ type KnowledgeBaseConfig struct {
 	ChunkingConfig ChunkingConfig `yaml:"chunking_config" json:"chunking_config"`
 	// Image processing configuration
 	ImageProcessingConfig ImageProcessingConfig `yaml:"image_processing_config" json:"image_processing_config"`
+	// FAQ configuration (only for FAQ type knowledge bases)
+	FAQConfig *FAQConfig `yaml:"faq_config" json:"faq_config"`
 }
 
 // ChunkingConfig represents the document splitting configuration
@@ -194,4 +225,54 @@ func (e *ExtractConfig) Scan(value interface{}) error {
 		return nil
 	}
 	return json.Unmarshal(b, e)
+}
+
+// FAQConfig 存储 FAQ 知识库的特有配置
+type FAQConfig struct {
+	IndexMode         FAQIndexMode         `yaml:"index_mode" json:"index_mode"`
+	QuestionIndexMode FAQQuestionIndexMode `yaml:"question_index_mode" json:"question_index_mode"`
+}
+
+// Value implements driver.Valuer
+func (f FAQConfig) Value() (driver.Value, error) {
+	return json.Marshal(f)
+}
+
+// Scan implements sql.Scanner
+func (f *FAQConfig) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return json.Unmarshal(b, f)
+}
+
+// EnsureDefaults 确保类型与配置具备默认值
+func (kb *KnowledgeBase) EnsureDefaults() {
+	if kb == nil {
+		return
+	}
+	if kb.Type == "" {
+		kb.Type = KnowledgeBaseTypeDocument
+	}
+	if kb.Type != KnowledgeBaseTypeFAQ {
+		kb.FAQConfig = nil
+		return
+	}
+	if kb.FAQConfig == nil {
+		kb.FAQConfig = &FAQConfig{
+			IndexMode:         FAQIndexModeQuestionAnswer,
+			QuestionIndexMode: FAQQuestionIndexModeCombined,
+		}
+		return
+	}
+	if kb.FAQConfig.IndexMode == "" {
+		kb.FAQConfig.IndexMode = FAQIndexModeQuestionAnswer
+	}
+	if kb.FAQConfig.QuestionIndexMode == "" {
+		kb.FAQConfig.QuestionIndexMode = FAQQuestionIndexModeCombined
+	}
 }

@@ -41,6 +41,7 @@ type RouterParams struct {
 	SystemHandler         *handler.SystemHandler
 	MCPServiceHandler     *handler.MCPServiceHandler
 	WebSearchHandler      *handler.WebSearchHandler
+	FAQHandler            *handler.FAQHandler
 }
 
 // NewRouter 创建新的路由
@@ -79,6 +80,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterTenantRoutes(v1, params.TenantHandler)
 		RegisterKnowledgeBaseRoutes(v1, params.KBHandler)
 		RegisterKnowledgeRoutes(v1, params.KnowledgeHandler)
+		RegisterFAQRoutes(v1, params.FAQHandler)
 		RegisterChunkRoutes(v1, params.ChunkHandler)
 		RegisterSessionRoutes(v1, params.SessionHandler)
 		RegisterChatRoutes(v1, params.SessionHandler)
@@ -144,6 +146,21 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		k.GET("/:id/download", handler.DownloadKnowledgeFile)
 		// 更新图像分块信息
 		k.PUT("/image/:id/:chunk_id", handler.UpdateImageInfo)
+	}
+}
+
+// RegisterFAQRoutes 注册 FAQ 相关路由
+func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler) {
+	if handler == nil {
+		return
+	}
+	faq := r.Group("/knowledge-bases/:id/faq")
+	{
+		faq.GET("/entries", handler.ListEntries)
+		faq.POST("/entries", handler.UpsertEntries)
+		faq.PUT("/entries/:entry_id", handler.UpdateEntry)
+		faq.DELETE("/entries", handler.DeleteEntries)
+		faq.POST("/search", handler.SearchFAQ)
 	}
 }
 

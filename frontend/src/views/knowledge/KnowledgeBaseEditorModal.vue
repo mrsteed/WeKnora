@@ -41,6 +41,18 @@
                     </div>
                     <div class="section-body">
                       <div class="form-item">
+                        <label class="form-label required">{{ $t('knowledgeEditor.basic.typeLabel') }}</label>
+                        <t-radio-group
+                          v-model="formData.type"
+                          :disabled="mode === 'edit'"
+                          variant="default-filled"
+                        >
+                          <t-radio-button value="document">{{ $t('knowledgeEditor.basic.typeDocument') }}</t-radio-button>
+                          <t-radio-button value="faq">{{ $t('knowledgeEditor.basic.typeFAQ') }}</t-radio-button>
+                        </t-radio-group>
+                        <p class="form-tip">{{ $t('knowledgeEditor.basic.typeDescription') }}</p>
+                      </div>
+                      <div class="form-item">
                         <label class="form-label required">{{ $t('knowledgeEditor.basic.nameLabel') }}</label>
                         <t-input 
                           v-model="formData.name" 
@@ -73,8 +85,45 @@
                   />
                 </div>
 
+                <!-- FAQ 配置 -->
+                <div v-if="isFAQ && formData" v-show="currentSection === 'faq'" class="section">
+                  <div class="section-content">
+                    <div class="section-header">
+                      <h3 class="section-title">{{ $t('knowledgeEditor.faq.title') }}</h3>
+                      <p class="section-desc">{{ $t('knowledgeEditor.faq.description') }}</p>
+                    </div>
+                    <div class="section-body">
+                      <div class="form-item">
+                        <label class="form-label required">{{ $t('knowledgeEditor.faq.indexModeLabel') }}</label>
+                        <t-radio-group
+                          v-model="formData.faqConfig.indexMode"
+                          variant="default-filled"
+                        >
+                          <t-radio-button value="question_only">{{ $t('knowledgeEditor.faq.modes.questionOnly') }}</t-radio-button>
+                          <t-radio-button value="question_answer">{{ $t('knowledgeEditor.faq.modes.questionAnswer') }}</t-radio-button>
+                        </t-radio-group>
+                        <p class="form-tip">{{ $t('knowledgeEditor.faq.indexModeDescription') }}</p>
+                      </div>
+                      <div class="form-item">
+                        <label class="form-label required">{{ $t('knowledgeEditor.faq.questionIndexModeLabel') }}</label>
+                        <t-radio-group
+                          v-model="formData.faqConfig.questionIndexMode"
+                          variant="default-filled"
+                        >
+                          <t-radio-button value="combined">{{ $t('knowledgeEditor.faq.modes.combined') }}</t-radio-button>
+                          <t-radio-button value="separate">{{ $t('knowledgeEditor.faq.modes.separate') }}</t-radio-button>
+                        </t-radio-group>
+                        <p class="form-tip">{{ $t('knowledgeEditor.faq.questionIndexModeDescription') }}</p>
+                      </div>
+                      <div class="faq-guide">
+                        <p>{{ $t('knowledgeEditor.faq.entryGuide') }}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- 分块设置 -->
-                <div v-show="currentSection === 'chunking'" class="section">
+                <div v-if="!isFAQ" v-show="currentSection === 'chunking'" class="section">
                   <KBChunkingSettings
                     v-if="formData"
                     :config="formData.chunkingConfig"
@@ -83,7 +132,7 @@
                 </div>
 
                 <!-- 高级设置 -->
-                <div v-show="currentSection === 'advanced'" class="section">
+                <div v-if="!isFAQ" v-show="currentSection === 'advanced'" class="section">
                   <KBAdvancedSettings
                     ref="advancedSettingsRef"
                     v-if="formData"
@@ -133,6 +182,7 @@ const props = defineProps<{
   visible: boolean
   mode: 'create' | 'edit'
   kbId?: string
+  initialType?: 'document' | 'faq'
 }>()
 
 // Emits
@@ -147,12 +197,21 @@ const loading = ref(false)
 const allModels = ref<any[]>([])
 const hasFiles = ref(false)
 
-const navItems = computed(() => [
-  { key: 'basic', icon: 'info-circle', label: t('knowledgeEditor.sidebar.basic') },
-  { key: 'models', icon: 'control-platform', label: t('knowledgeEditor.sidebar.models') },
-  { key: 'chunking', icon: 'file-copy', label: t('knowledgeEditor.sidebar.chunking') },
-  { key: 'advanced', icon: 'setting', label: t('knowledgeEditor.sidebar.advanced') }
-])
+const navItems = computed(() => {
+  const items = [
+    { key: 'basic', icon: 'info-circle', label: t('knowledgeEditor.sidebar.basic') },
+    { key: 'models', icon: 'control-platform', label: t('knowledgeEditor.sidebar.models') }
+  ]
+  if (formData.value?.type === 'faq') {
+    items.push({ key: 'faq', icon: 'help-circle', label: t('knowledgeEditor.sidebar.faq') })
+  } else {
+    items.push(
+      { key: 'chunking', icon: 'file-copy', label: t('knowledgeEditor.sidebar.chunking') },
+      { key: 'advanced', icon: 'setting', label: t('knowledgeEditor.sidebar.advanced') }
+    )
+  }
+  return items
+})
 
 // 模型配置引用
 const modelConfigRef = ref<InstanceType<typeof KBModelConfig>>()
@@ -160,12 +219,34 @@ const advancedSettingsRef = ref<InstanceType<typeof KBAdvancedSettings>>()
 
 // 表单数据
 const formData = ref<any>(null)
+const isFAQ = computed(() => formData.value?.type === 'faq')
+
+watch(
+  () => formData.value?.type,
+  (newType, oldType) => {
+    if (!formData.value) return
+    if (newType === 'faq') {
+      if (!formData.value.faqConfig) {
+        formData.value.faqConfig = { indexMode: 'question_answer', questionIndexMode: 'combined' }
+      }
+      if (!['basic', 'models', 'faq'].includes(currentSection.value)) {
+        currentSection.value = 'faq'
+      }
+    } else if (oldType === 'faq' && currentSection.value === 'faq') {
+      currentSection.value = 'basic'
+    }
+  }
+)
 
 // 初始化表单数据
-const initFormData = () => {
+const initFormData = (type: 'document' | 'faq' = 'document') => {
   return {
+    type,
     name: '',
     description: '',
+    faqConfig: {
+      indexMode: 'question_answer'
+    },
     modelConfig: {
       llmModelId: '',
       embeddingModelId: '',
@@ -234,9 +315,15 @@ const loadKBData = async () => {
     hasFiles.value = (filesResult as any)?.total > 0
     
     // 设置表单数据
+    const kbType = (kb.type as 'document' | 'faq') || 'document'
     formData.value = {
+      type: kbType,
       name: kb.name || '',
       description: kb.description || '',
+      faqConfig: {
+        indexMode: kb.faq_config?.index_mode || 'question_answer',
+        questionIndexMode: kb.faq_config?.question_index_mode || 'combined'
+      },
       modelConfig: {
         llmModelId: kb.summary_model_id || '',
         embeddingModelId: kb.embedding_model_id || '',
@@ -339,6 +426,12 @@ const validateForm = (): boolean => {
     }
   }
 
+  if (formData.value.type === 'faq' && !formData.value.faqConfig?.indexMode) {
+    MessagePlugin.warning(t('knowledgeEditor.messages.indexModeRequired'))
+    currentSection.value = 'faq'
+    return false
+  }
+
   return true
 }
 
@@ -349,6 +442,7 @@ const buildSubmitData = () => {
   const data: any = {
     name: formData.value.name,
     description: formData.value.description,
+    type: formData.value.type,
     chunking_config: {
       chunk_size: formData.value.chunkingConfig.chunkSize,
       chunk_overlap: formData.value.chunkingConfig.chunkOverlap,
@@ -400,6 +494,13 @@ const buildSubmitData = () => {
     }
   }
 
+  if (formData.value.type === 'faq') {
+    data.faq_config = {
+      index_mode: formData.value.faqConfig?.indexMode || 'question_answer',
+      question_index_mode: formData.value.faqConfig?.questionIndexMode || 'combined'
+    }
+  }
+
   return data
 }
 
@@ -430,11 +531,18 @@ const handleSubmit = async () => {
         throw new Error(t('knowledgeEditor.messages.missingId'))
       }
 
-      // 1. 更新基本信息（名称、描述）
+      // 1. 更新基本信息（名称、描述）和 FAQ 配置
+      const updateConfig: any = {}
+      if (formData.value.type === 'faq' && formData.value.faqConfig) {
+        updateConfig.faq_config = {
+          index_mode: formData.value.faqConfig.indexMode || 'question_answer',
+          question_index_mode: formData.value.faqConfig.questionIndexMode || 'combined'
+        }
+      }
       await updateKnowledgeBase(props.kbId, {
         name: data.name,
         description: data.description,
-        config: {} // 空配置，只更新基本信息
+        config: updateConfig
       })
 
       // 2. 更新完整配置（模型、分块、多模态、知识图谱等）
@@ -524,7 +632,7 @@ watch(() => props.visible, async (newVal) => {
       await loadKBData()
     } else {
       // 创建模式：初始化空表单
-      formData.value = initFormData()
+      formData.value = initFormData(props.initialType || 'document')
       hasFiles.value = false
     }
   } else {
@@ -740,6 +848,22 @@ watch(
   }
 }
 
+.form-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #00000066;
+}
+
+.faq-guide {
+  margin-top: 20px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #f5f5f5;
+  color: #00000099;
+  font-size: 13px;
+  line-height: 20px;
+}
+
 .settings-footer {
   padding: 16px 32px;
   border-top: 1px solid #e5e5e5;
@@ -761,6 +885,49 @@ watch(
 
   .settings-modal {
     transform: scale(0.95);
+  }
+}
+
+// Radio-group 样式优化，符合项目主题风格
+:deep(.t-radio-group) {
+  .t-radio-group--filled {
+    background: #f5f5f5;
+  }
+  .t-radio-button {
+    border-color: #d9d9d9;
+    // color: #00000099;
+
+    &:hover:not(.t-is-disabled) {
+      border-color: #07c05f;
+      color: #07c05f;
+    }
+
+    &.t-is-checked {
+      background: #07c05f;
+      border-color: #07c05f;
+      color: #fff;
+
+      &:hover:not(.t-is-disabled) {
+        background: #05a04f;
+        border-color: #05a04f;
+        color: #fff;
+      }
+    }
+
+    // 禁用状态样式
+    &.t-is-disabled {
+      background: #f5f5f5;
+      border-color: #d9d9d9;
+      color: #00000040;
+      cursor: not-allowed;
+      opacity: 0.6;
+
+      &.t-is-checked {
+        background: #f0f0f0;
+        border-color: #d9d9d9;
+        color: #00000066;
+      }
+    }
   }
 }
 </style>

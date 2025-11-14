@@ -6,6 +6,7 @@ export const useUIStore = defineStore('ui', {
     showKBEditorModal: false,
     kbEditorMode: 'create' as 'create' | 'edit',
     currentKBId: null as string | null,
+    kbEditorType: 'document' as 'document' | 'faq',
     kbEditorInitialSection: null as string | null,
     settingsInitialSection: null as string | null,
     settingsInitialSubSection: null as string | null,
@@ -39,6 +40,7 @@ export const useUIStore = defineStore('ui', {
     openKBSettings(kbId: string, initialSection?: string) {
       this.currentKBId = kbId
       this.kbEditorMode = 'edit'
+       this.kbEditorType = 'document'
       this.kbEditorInitialSection = initialSection || null
       this.showKBEditorModal = true
     },
@@ -47,9 +49,10 @@ export const useUIStore = defineStore('ui', {
       this.openKBSettings(kbId, initialSection)
     },
 
-    openCreateKB() {
+    openCreateKB(type: 'document' | 'faq' = 'document') {
       this.currentKBId = null
       this.kbEditorMode = 'create'
+      this.kbEditorType = type
       this.kbEditorInitialSection = null
       this.showKBEditorModal = true
     },
@@ -58,6 +61,7 @@ export const useUIStore = defineStore('ui', {
       this.showKBEditorModal = false
       this.currentKBId = null
       this.kbEditorInitialSection = null
+      this.kbEditorType = 'document'
     },
 
     openManualEditor(options: {

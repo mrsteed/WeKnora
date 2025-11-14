@@ -609,6 +609,7 @@ func (t *KnowledgeSearchTool) rerankResults(
 }
 
 // rerankWithLLM uses LLM prompt to score and rerank search results
+// Uses batch processing to handle large result sets efficiently
 func (t *KnowledgeSearchTool) rerankWithLLM(
 	ctx context.Context,
 	query string,
@@ -616,75 +617,151 @@ func (t *KnowledgeSearchTool) rerankWithLLM(
 ) ([]*searchResultWithMeta, error) {
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Using LLM for reranking %d results", len(results))
 
-	// Build prompt with query and all passages
-	var passagesBuilder strings.Builder
-	for i, result := range results {
-		passagesBuilder.WriteString(fmt.Sprintf("Passage %d:\n%s\n\n", i+1, result.Content))
+	if len(results) == 0 {
+		return results, nil
 	}
 
-	prompt := fmt.Sprintf(`你是一个相关性评分专家。请根据查询问题，对以下每个段落进行相关性评分。
+	// Batch size: process 15 results at a time to balance quality and token usage
+	// This prevents token overflow and improves processing efficiency
+	const batchSize = 15
+	const maxContentLength = 800 // Maximum characters per passage to avoid excessive tokens
 
-查询问题：%s
+	// Process in batches
+	allScores := make([]float64, len(results))
+	allReranked := make([]*searchResultWithMeta, 0, len(results))
 
-评分要求：
-1. 评分范围：0.0 到 1.0 之间的小数
-2. 1.0 表示完全相关，0.0 表示完全不相关
-3. 考虑语义相关性、信息完整性、准确性等因素
-4. 必须为每个段落返回一个评分
-5. 输出格式：每行一个评分，格式为 "Passage N: X.XX"（N 是段落编号，X.XX 是 0.0-1.0 之间的分数）
+	for batchStart := 0; batchStart < len(results); batchStart += batchSize {
+		batchEnd := batchStart + batchSize
+		if batchEnd > len(results) {
+			batchEnd = len(results)
+		}
 
-段落列表：
+		batch := results[batchStart:batchEnd]
+		logger.Debugf(ctx, "[Tool][KnowledgeSearch] Processing rerank batch %d-%d of %d results",
+			batchStart+1, batchEnd, len(results))
+
+		// Build prompt with query and batch passages
+		var passagesBuilder strings.Builder
+		for i, result := range batch {
+			// Truncate content if too long to save tokens
+			content := result.Content
+			if len([]rune(content)) > maxContentLength {
+				runes := []rune(content)
+				content = string(runes[:maxContentLength]) + "..."
+			}
+			// Use clear separators to distinguish each passage
+			if i > 0 {
+				passagesBuilder.WriteString("\n")
+			}
+			passagesBuilder.WriteString("─────────────────────────────────────────────────────────────\n")
+			passagesBuilder.WriteString(fmt.Sprintf("Passage %d:\n", i+1))
+			passagesBuilder.WriteString("─────────────────────────────────────────────────────────────\n")
+			passagesBuilder.WriteString(content + "\n")
+		}
+
+		// Optimized prompt focused on retrieval matching and reranking
+		prompt := fmt.Sprintf(`You are a search result reranking expert. Your task is to evaluate how well each retrieved passage matches the user's search query and information need.
+
+User Query: %s
+
+Your task: Rerank these search results by evaluating their retrieval relevance - how well each passage answers or relates to the query.
+
+Scoring Criteria (0.0 to 1.0):
+- 1.0 (0.9-1.0): Directly answers the query, contains key information needed, highly relevant
+- 0.8 (0.7-0.8): Strongly related, provides substantial relevant information
+- 0.6 (0.5-0.6): Moderately related, contains some relevant information but may be incomplete
+- 0.4 (0.3-0.4): Weakly related, minimal relevance to the query
+- 0.2 (0.1-0.2): Barely related, mostly irrelevant
+- 0.0 (0.0): Completely irrelevant, no relation to the query
+
+Evaluation Factors:
+1. Query-Answer Match: Does the passage directly address what the user is asking?
+2. Information Completeness: Does it provide sufficient information to answer the query?
+3. Semantic Relevance: Does the content semantically relate to the query intent?
+4. Key Term Coverage: Does it cover important terms/concepts from the query?
+5. Information Accuracy: Is the information accurate and trustworthy?
+
+Retrieved Passages:
 %s
 
-请严格按照以下格式返回每个段落的评分（每行一个，共 %d 个）：
+IMPORTANT: Return exactly %d scores, one per line, in this exact format:
 Passage 1: X.XX
 Passage 2: X.XX
+Passage 3: X.XX
 ...
-Passage %d: X.XX`, query, passagesBuilder.String(), len(results), len(results))
+Passage %d: X.XX
 
-	messages := []chat.Message{
-		{
-			Role:    "system",
-			Content: "你是一个专业的文本相关性评分专家，能够准确评估文本与查询问题的相关性。",
-		},
-		{
-			Role:    "user",
-			Content: prompt,
-		},
-	}
+Output only the scores, no explanations or additional text.`, query, passagesBuilder.String(), len(batch), len(batch))
 
-	response, err := t.chatModel.Chat(ctx, messages, &chat.ChatOptions{
-		Temperature: 0.1, // Low temperature for consistent scoring
-		MaxTokens:   1024,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("LLM rerank call failed: %w", err)
-	}
+		messages := []chat.Message{
+			{
+				Role:    "system",
+				Content: "You are a professional search result reranking expert specializing in information retrieval. You evaluate how well retrieved passages match user queries in search scenarios. Focus on retrieval relevance: whether the passage answers the query, provides needed information, and matches the user's information need. Always respond with scores only, no explanations.",
+			},
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		}
 
-	// Parse scores from response
-	scores, err := t.parseScoresFromResponse(response.Content, len(results))
-	if err != nil {
-		logger.Warnf(ctx, "[Tool][KnowledgeSearch] Failed to parse LLM scores: %v, using original scores", err)
-		return results, nil // Return original results if parsing fails
+		// Calculate appropriate max tokens based on batch size
+		// Each score line is ~15 tokens, add buffer for safety
+		maxTokens := len(batch)*20 + 100
+
+		response, err := t.chatModel.Chat(ctx, messages, &chat.ChatOptions{
+			Temperature: 0.1, // Low temperature for consistent scoring
+			MaxTokens:   maxTokens,
+		})
+		if err != nil {
+			logger.Warnf(ctx, "[Tool][KnowledgeSearch] LLM rerank batch %d-%d failed: %v, using original scores",
+				batchStart+1, batchEnd, err)
+			// Use original scores for this batch on error
+			for i := batchStart; i < batchEnd; i++ {
+				allScores[i] = results[i].Score
+			}
+			continue
+		}
+
+		logger.Infof(ctx, "[Tool][KnowledgeSearch] LLM rerank batch %d-%d response: %s",
+			batchStart+1, batchEnd, response.Content)
+
+		// Parse scores from response
+		batchScores, err := t.parseScoresFromResponse(response.Content, len(batch))
+		if err != nil {
+			logger.Warnf(ctx, "[Tool][KnowledgeSearch] Failed to parse LLM scores for batch %d-%d: %v, using original scores",
+				batchStart+1, batchEnd, err)
+			// Use original scores for this batch on parsing error
+			for i := batchStart; i < batchEnd; i++ {
+				allScores[i] = results[i].Score
+			}
+			continue
+		}
+
+		// Store scores for this batch
+		for i, score := range batchScores {
+			if batchStart+i < len(allScores) {
+				allScores[batchStart+i] = score
+			}
+		}
 	}
 
 	// Create reranked results with new scores
-	reranked := make([]*searchResultWithMeta, 0, len(results))
 	for i, result := range results {
 		newResult := *result
-		if i < len(scores) {
-			newResult.Score = scores[i]
+		if i < len(allScores) {
+			newResult.Score = allScores[i]
 		}
-		reranked = append(reranked, &newResult)
+		allReranked = append(allReranked, &newResult)
 	}
 
 	// Sort by new scores (descending)
-	sort.Slice(reranked, func(i, j int) bool {
-		return reranked[i].Score > reranked[j].Score
+	sort.Slice(allReranked, func(i, j int) bool {
+		return allReranked[i].Score > allReranked[j].Score
 	})
 
-	logger.Infof(ctx, "[Tool][KnowledgeSearch] LLM reranked %d results from %d original results", len(reranked), len(results))
-	return reranked, nil
+	logger.Infof(ctx, "[Tool][KnowledgeSearch] LLM reranked %d results from %d original results (processed in batches)",
+		len(allReranked), len(results))
+	return allReranked, nil
 }
 
 // parseScoresFromResponse parses scores from LLM response text

@@ -16,10 +16,12 @@ import (
 type KnowledgeBase struct {
 	ID                    string                `json:"id"`
 	Name                  string                `json:"name"` // Name must be unique within the same tenant
+	Type                  string                `json:"type"`
 	Description           string                `json:"description"`
 	TenantID              uint                  `json:"tenant_id"` // Changed to uint type
 	ChunkingConfig        ChunkingConfig        `json:"chunking_config"`
 	ImageProcessingConfig ImageProcessingConfig `json:"image_processing_config"`
+	FAQConfig             *FAQConfig            `json:"faq_config"`
 	EmbeddingModelID      string                `json:"embedding_model_id"`
 	SummaryModelID        string                `json:"summary_model_id"` // Summary model ID
 	CreatedAt             time.Time             `json:"created_at"`
@@ -38,6 +40,11 @@ type ChunkingConfig struct {
 	ChunkOverlap     int      `json:"chunk_overlap"`     // Overlap size
 	Separators       []string `json:"separators"`        // Separators
 	EnableMultimodal bool     `json:"enable_multimodal"` // Whether to enable multimodal processing
+}
+
+// FAQConfig represents faq-specific configuration
+type FAQConfig struct {
+	IndexMode string `json:"index_mode"`
 }
 
 // ImageProcessingConfig represents image processing configuration

@@ -73,6 +73,11 @@ type IndexWithScore struct {
 	MatchType MatchType
 }
 
+// GetScore returns the score for ScoreComparable interface
+func (i *IndexWithScore) GetScore() float64 {
+	return i.Score
+}
+
 // RetrieveResult represents the result of retrieval
 type RetrieveResult struct {
 	Results             []*IndexWithScore   // Retrieval results

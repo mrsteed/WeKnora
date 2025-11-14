@@ -3,10 +3,12 @@
     <!-- 头部 -->
     <div class="header">
       <h2>{{ $t('knowledgeBase.title') }}</h2>
-      <button class="create-btn" @click="openCreateModal">
-        <t-icon name="add" size="16px" class="btn-icon" />
-        <span>{{ $t('knowledgeList.create') }}</span>
-      </button>
+      <div class="action-buttons">
+        <button class="create-btn ghost" @click="openCreateModal">
+          <t-icon name="add" size="16px" class="btn-icon" />
+          <span>{{ $t('knowledgeList.create') }}</span>
+        </button>
+      </div>
     </div>
     
     <!-- 未初始化知识库提示 -->
@@ -67,9 +69,8 @@
 
         <!-- 卡片底部 -->
         <div class="card-bottom">
-          <div class="status-badge" :class="{ 'initialized': isInitialized(kb), 'uninitialized': !isInitialized(kb) }">
-            <span v-if="!isInitialized(kb)" class="warning-icon">⚠</span>
-            <span>{{ isInitialized(kb) ? $t('knowledgeBase.initializedStatus') : $t('knowledgeBase.notInitializedStatus') }}</span>
+          <div class="type-badge" :class="{ 'document': (kb.type || 'document') === 'document', 'faq': kb.type === 'faq' }">
+            <span>{{ kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument') }}</span>
           </div>
           <span class="card-time">{{ kb.updated_at }}</span>
         </div>
@@ -112,6 +113,7 @@
       :visible="uiStore.showKBEditorModal"
       :mode="uiStore.kbEditorMode"
       :kb-id="uiStore.currentKBId || undefined"
+      :initial-type="uiStore.kbEditorType"
       @update:visible="(val) => val ? null : uiStore.closeKBEditor()"
       @success="handleKBEditorSuccess"
     />
@@ -143,6 +145,7 @@ interface KB {
   updated_at?: string;
   embedding_model_id?: string;
   summary_model_id?: string;
+  type?: 'document' | 'faq';
   showMore?: boolean;
 }
 
@@ -278,15 +281,19 @@ const handleKBEditorSuccess = (kbId: string) => {
   }
 }
 
+.action-buttons {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 .create-btn {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 20px;
   height: 36px;
-  background: #07c05f;
-  color: #fff;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 8px;
   font-family: "PingFang SC";
   font-size: 14px;
@@ -294,16 +301,38 @@ const handleKBEditorSuccess = (kbId: string) => {
   cursor: pointer;
   transition: all 0.2s ease;
 
+  .btn-icon {
+    flex-shrink: 0;
+  }
+}
+
+.create-btn.primary {
+  background: #07c05f;
+  color: #fff;
+  border-color: #07c05f;
+
   &:hover {
     background: #05a04f;
+    border-color: #05a04f;
   }
 
   &:active {
     background: #048f45;
+    border-color: #048f45;
+  }
+}
+
+.create-btn.ghost {
+  background: transparent;
+  color: #07c05f;
+  border-color: #07c05f;
+
+  &:hover {
+    background: #07c05f1a;
   }
 
-  .btn-icon {
-    flex-shrink: 0;
+  &:active {
+    background: #07c05f33;
   }
 }
 
@@ -428,7 +457,7 @@ const handleKBEditorSuccess = (kbId: string) => {
   margin-top: auto;
 }
 
-.status-badge {
+.type-badge {
   display: flex;
   align-items: center;
   gap: 3px;
@@ -438,18 +467,14 @@ const handleKBEditorSuccess = (kbId: string) => {
   font-size: 12px;
   font-weight: 500;
 
-  &.initialized {
+  &.document {
     background: #07c05f1a;
     color: #07c05f;
   }
 
-  &.uninitialized {
-    background: #fff7e6;
-    color: #d46b08;
-  }
-  
-  .warning-icon {
-    font-size: 12px;
+  &.faq {
+    background: #1890ff1a;
+    color: #1890ff;
   }
 }
 
