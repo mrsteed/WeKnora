@@ -716,8 +716,13 @@ export default {
       updateSuccess: 'Configuration saved successfully',
       indexModeRequired: 'Please select an indexing mode for FAQ knowledge bases'
     },
+    document: {
+      title: 'Document Management',
+      subtitle: 'Upload and manage documents, supporting parsing and chunking of multiple file formats',
+    },
     faq: {
       title: 'FAQ Configuration',
+      subtitle: 'Manage FAQ entries with batch import, edit, and search testing',
       description: 'Configure indexing strategy and guidance for FAQ-style knowledge bases',
       indexModeLabel: 'Indexing Mode',
       indexModeDescription: 'Question-only indexing improves precision, question+answer improves recall.',

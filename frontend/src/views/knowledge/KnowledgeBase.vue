@@ -290,6 +290,13 @@ async function createNewSession(value: string): Promise<void> {
 <template>
   <template v-if="!isFAQ">
     <div v-show="cardList.length" class="knowledge-card-box" style="position: relative">
+      <!-- Header -->
+      <div class="document-header">
+        <div class="document-header-title">
+          <h2>{{ $t('knowledgeEditor.document.title') }}</h2>
+          <p class="document-subtitle">{{ $t('knowledgeEditor.document.subtitle') }}</p>
+        </div>
+      </div>
       <div class="knowledge-card-wrap" ref="knowledgeScroll" @scroll="handleScroll">
         <div class="knowledge-card" v-for="(item, index) in cardList" :key="index" @click="openCardDetails(item)">
           <div class="card-content">
@@ -407,6 +414,43 @@ async function createNewSession(value: string): Promise<void> {
 <style scoped lang="less">
 .knowledge-card-box {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+// Header 样式
+.document-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 44px 0;
+  margin-bottom: 20px;
+  flex-shrink: 0;
+
+  .document-header-title {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  h2 {
+    margin: 0;
+    color: #000000e6;
+    font-family: "PingFang SC";
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 32px;
+  }
+
+  .document-subtitle {
+    margin: 0;
+    color: #00000099;
+    font-family: "PingFang SC";
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+  }
 }
 
 .faq-manager-wrapper {
@@ -457,7 +501,7 @@ async function createNewSession(value: string): Promise<void> {
 
 .knowledge-card-wrap {
   // padding: 24px 44px;
-  padding: 24px 44px 80px 44px;
+  padding: 0 44px 80px 44px;
   box-sizing: border-box;
   display: grid;
   gap: 20px;

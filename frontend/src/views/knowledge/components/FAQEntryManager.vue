@@ -2,7 +2,10 @@
   <div class="faq-manager">
     <!-- Header -->
     <div class="faq-header">
-      <h2>{{ $t('knowledgeEditor.faq.title') }}</h2>
+      <div class="faq-header-title">
+        <h2>{{ $t('knowledgeEditor.faq.title') }}</h2>
+        <p class="faq-subtitle">{{ $t('knowledgeEditor.faq.subtitle') }}</p>
+      </div>
       <div class="action-buttons">
         <button class="create-btn ghost" @click="openEditor()">
           <t-icon name="add" size="16px" class="btn-icon" />
@@ -25,20 +28,16 @@
     <div ref="scrollContainer" class="faq-scroll-container" @scroll="handleScroll">
       <t-loading :loading="loading && entries.length === 0" size="medium">
         <!-- Card List -->
-        <div v-if="entries.length > 0" class="faq-card-list">
+        <div v-if="entries.length > 0" ref="cardListRef" class="faq-card-list">
         <div
           v-for="entry in entries"
           :key="entry.id"
           class="faq-card"
           :class="{ 'selected': selectedRowKeys.includes(entry.id) }"
+          @click="handleCardSelect(entry.id, !selectedRowKeys.includes(entry.id))"
         >
           <!-- Card Header -->
           <div class="faq-card-header">
-            <t-checkbox
-              :checked="selectedRowKeys.includes(entry.id)"
-              @change="(checked: boolean) => handleCardSelect(entry.id, checked)"
-              @click.stop
-            />
             <div class="faq-question" :title="entry.standard_question">
               {{ entry.standard_question }}
             </div>
@@ -55,11 +54,11 @@
               </div>
               <template #content>
                 <div class="card-menu" @click.stop>
-                  <div class="card-menu-item" @click="handleMenuEdit(entry)">
+                  <div class="card-menu-item" @click.stop="handleMenuEdit(entry)">
                     <t-icon class="menu-icon" name="edit" />
                     <span>{{ $t('common.edit') }}</span>
                   </div>
-                  <div class="card-menu-item danger" @click="handleMenuDelete(entry)">
+                  <div class="card-menu-item danger" @click.stop="handleMenuDelete(entry)">
                     <t-icon class="menu-icon" name="delete" />
                     <span>{{ $t('common.delete') }}</span>
                   </div>
@@ -70,78 +69,116 @@
 
           <!-- Card Body -->
           <div class="faq-card-body">
-            <!-- Answers Section -->
-            <div class="faq-section answers">
-              <div class="faq-section-label">{{ $t('knowledgeEditor.faq.answers') }}</div>
-              <div class="faq-tags">
-                <t-tooltip
-                  v-for="answer in entry.answers"
-                  :key="answer"
-                  :content="answer"
-                  placement="top"
-                >
-                  <t-tag
-                    size="small"
-                    theme="success"
-                    variant="light"
-                    class="answer-tag"
-                  >
-                    {{ answer }}
-                  </t-tag>
-                </t-tooltip>
-                <span v-if="!entry.answers?.length" class="empty-tip">
-                  {{ $t('knowledgeEditor.faq.noAnswer') }}
-                </span>
-              </div>
-            </div>
-
             <!-- Similar Questions Section -->
-            <div class="faq-section similar">
-              <div class="faq-section-label">{{ $t('knowledgeEditor.faq.similarQuestions') }}</div>
-              <div class="faq-tags">
-                <t-tooltip
-                  v-for="question in entry.similar_questions"
-                  :key="question"
-                  :content="question"
-                  placement="top"
-                >
-                  <t-tag
-                    size="small"
-                    variant="light-outline"
-                    class="question-tag"
-                  >
-                    {{ question }}
-                  </t-tag>
-                </t-tooltip>
-                <span v-if="!entry.similar_questions?.length" class="empty-tip">
-                  {{ $t('knowledgeEditor.faq.noSimilar') }}
+            <div v-if="entry.similar_questions?.length" class="faq-section similar">
+              <div 
+                class="faq-section-label clickable"
+                @click.stop="entry.similarCollapsed = !entry.similarCollapsed"
+              >
+                <span>{{ $t('knowledgeEditor.faq.similarQuestions') }}</span>
+                <span class="section-count">
+                  ({{ entry.similar_questions.length }})
                 </span>
+                <t-icon 
+                  :name="entry.similarCollapsed ? 'chevron-right' : 'chevron-down'" 
+                  class="collapse-icon"
+                />
               </div>
+              <Transition name="slide-down">
+                <div v-if="!entry.similarCollapsed" class="faq-tags">
+                  <FAQTagTooltip
+                    v-for="question in entry.similar_questions"
+                    :key="question"
+                    :content="question"
+                    type="similar"
+                    placement="top"
+                  >
+                    <t-tag
+                      size="small"
+                      variant="light-outline"
+                      class="question-tag"
+                    >
+                      {{ question }}
+                    </t-tag>
+                  </FAQTagTooltip>
+                </div>
+              </Transition>
             </div>
 
             <!-- Negative Questions Section -->
-            <div class="faq-section negative">
-              <div class="faq-section-label">{{ $t('knowledgeEditor.faq.negativeQuestions') }}</div>
-              <div class="faq-tags">
-                <t-tooltip
-                  v-for="question in entry.negative_questions"
-                  :key="question"
-                  :content="question"
-                  placement="top"
-                >
-                  <t-tag
-                    size="small"
-                    theme="warning"
-                    variant="light-outline"
-                    class="question-tag"
-                  >
-                    {{ question }}
-                  </t-tag>
-                </t-tooltip>
-                <span v-if="!entry.negative_questions?.length" class="empty-tip">
-                  {{ $t('knowledgeEditor.faq.noNegative') }}
+            <div v-if="entry.negative_questions?.length" class="faq-section negative">
+              <div 
+                class="faq-section-label clickable"
+                @click.stop="entry.negativeCollapsed = !entry.negativeCollapsed"
+              >
+                <span>{{ $t('knowledgeEditor.faq.negativeQuestions') }}</span>
+                <span class="section-count">
+                  ({{ entry.negative_questions.length }})
                 </span>
+                <t-icon 
+                  :name="entry.negativeCollapsed ? 'chevron-right' : 'chevron-down'" 
+                  class="collapse-icon"
+                />
               </div>
+              <Transition name="slide-down">
+                <div v-if="!entry.negativeCollapsed" class="faq-tags">
+                  <FAQTagTooltip
+                    v-for="question in entry.negative_questions"
+                    :key="question"
+                    :content="question"
+                    type="negative"
+                    placement="top"
+                  >
+                    <t-tag
+                      size="small"
+                      theme="warning"
+                      variant="light-outline"
+                      class="question-tag"
+                    >
+                      {{ question }}
+                    </t-tag>
+                  </FAQTagTooltip>
+                </div>
+              </Transition>
+            </div>
+
+            <!-- Answers Section -->
+            <div class="faq-section answers">
+              <div 
+                class="faq-section-label clickable"
+                @click.stop="entry.answersCollapsed = !entry.answersCollapsed"
+              >
+                <span>{{ $t('knowledgeEditor.faq.answers') }}</span>
+                <span v-if="entry.answers?.length" class="section-count">
+                  ({{ entry.answers.length }})
+                </span>
+                <t-icon 
+                  :name="entry.answersCollapsed ? 'chevron-right' : 'chevron-down'" 
+                  class="collapse-icon"
+                />
+              </div>
+              <Transition name="slide-down">
+                <div v-if="!entry.answersCollapsed" class="faq-tags">
+                  <FAQTagTooltip
+                    v-for="answer in entry.answers"
+                    :key="answer"
+                    :content="answer"
+                    type="answer"
+                    placement="top"
+                  >
+                    <t-tag
+                      size="small"
+                      variant="light-outline"
+                      class="question-tag"
+                    >
+                      {{ answer }}
+                    </t-tag>
+                  </FAQTagTooltip>
+                  <span v-if="!entry.answers?.length" class="empty-tip">
+                    {{ $t('knowledgeEditor.faq.noAnswer') }}
+                  </span>
+                </div>
+              </Transition>
             </div>
           </div>
 
@@ -167,166 +204,261 @@
       </div>
     </div>
 
-    <!-- Editor Dialog -->
+    <!-- Editor Drawer -->
+    <t-drawer
+      v-model:visible="editorVisible"
+      :header="editorMode === 'create' ? $t('knowledgeEditor.faq.editorCreate') : $t('knowledgeEditor.faq.editorEdit')"
+      :close-btn="true"
+      size="520px"
+      placement="right"
+      class="faq-editor-drawer"
+      @close="handleEditorClose"
+    >
+      <div class="faq-editor-drawer-content">
+        <t-form
+          ref="editorFormRef"
+          :data="editorForm"
+          :rules="editorRules"
+          layout="vertical"
+          class="editor-form"
+        >
+          <t-form-item name="standard_question" :label="$t('knowledgeEditor.faq.standardQuestion')">
+            <t-input v-model="editorForm.standard_question" :maxlength="200" />
+          </t-form-item>
+
+          <t-form-item name="similar_questions" :label="$t('knowledgeEditor.faq.similarQuestions')">
+            <div class="full-width-input-wrapper">
+              <t-input
+                v-model="similarInput"
+                :placeholder="$t('knowledgeEditor.faq.similarPlaceholder')"
+                @keydown.enter.prevent="addSimilar"
+                class="full-width-input"
+              />
+              <t-button
+                theme="primary"
+                variant="outline"
+                :disabled="!similarInput.trim() || editorForm.similar_questions.length >= 10"
+                @click="addSimilar"
+                class="add-item-btn"
+                size="small"
+              >
+                <t-icon name="add" size="16px" />
+              </t-button>
+            </div>
+            <div v-if="editorForm.similar_questions.length > 0" class="item-list">
+              <div
+                v-for="(question, index) in editorForm.similar_questions"
+                :key="index"
+                class="item-row"
+              >
+                <div class="item-content">{{ question }}</div>
+                <t-button
+                  theme="default"
+                  variant="text"
+                  size="small"
+                  @click="removeSimilar(index)"
+                  class="remove-item-btn"
+                >
+                  <t-icon name="close" size="16px" />
+                </t-button>
+              </div>
+            </div>
+          </t-form-item>
+
+          <div class="section-divider"></div>
+
+          <t-form-item name="negative_questions" :label="$t('knowledgeEditor.faq.negativeQuestions')">
+            <div class="full-width-input-wrapper">
+              <t-input
+                v-model="negativeInput"
+                :placeholder="$t('knowledgeEditor.faq.negativePlaceholder')"
+                @keydown.enter.prevent="addNegative"
+                class="full-width-input"
+              />
+              <t-button
+                theme="primary"
+                variant="outline"
+                :disabled="!negativeInput.trim() || editorForm.negative_questions.length >= 10"
+                @click="addNegative"
+                class="add-item-btn"
+                size="small"
+              >
+                <t-icon name="add" size="16px" />
+              </t-button>
+            </div>
+            <div v-if="editorForm.negative_questions.length > 0" class="item-list">
+              <div
+                v-for="(question, index) in editorForm.negative_questions"
+                :key="index"
+                class="item-row negative"
+              >
+                <div class="item-content">{{ question }}</div>
+                <t-button
+                  theme="default"
+                  variant="text"
+                  size="small"
+                  @click="removeNegative(index)"
+                  class="remove-item-btn"
+                >
+                  <t-icon name="close" size="16px" />
+                </t-button>
+              </div>
+            </div>
+          </t-form-item>
+
+          <div class="section-divider"></div>
+
+          <t-form-item name="answers" :label="$t('knowledgeEditor.faq.answers')">
+            <div class="full-width-input-wrapper textarea-wrapper">
+              <t-textarea
+                v-model="answerInput"
+                :placeholder="$t('knowledgeEditor.faq.answerPlaceholder')"
+                :autosize="{ minRows: 3, maxRows: 6 }"
+                class="full-width-textarea"
+                @keydown.ctrl.enter="addAnswer"
+                @keydown.meta.enter="addAnswer"
+              />
+              <t-button
+                theme="primary"
+                variant="outline"
+                :disabled="!answerInput.trim() || editorForm.answers.length >= 5"
+                @click="addAnswer"
+                class="add-item-btn"
+                size="small"
+              >
+                <t-icon name="add" size="16px" />
+              </t-button>
+            </div>
+            <div class="item-count">{{ editorForm.answers.length }}/5</div>
+            <div v-if="editorForm.answers.length > 0" class="item-list">
+              <div
+                v-for="(answer, index) in editorForm.answers"
+                :key="index"
+                class="item-row answer-row"
+              >
+                <div class="item-content">{{ answer }}</div>
+                <t-button
+                  theme="default"
+                  variant="text"
+                  size="small"
+                  @click="removeAnswer(index)"
+                  class="remove-item-btn"
+                >
+                  <t-icon name="close" size="16px" />
+                </t-button>
+              </div>
+            </div>
+          </t-form-item>
+        </t-form>
+      </div>
+
+      <template #footer>
+        <div class="faq-editor-drawer-footer">
+          <t-button theme="default" variant="outline" @click="editorVisible = false">
+            {{ $t('common.cancel') }}
+          </t-button>
+          <t-button theme="primary" @click="handleSubmitEntry" :loading="savingEntry">
+            {{ editorMode === 'create' ? $t('knowledgeEditor.faq.editorCreate') : $t('common.save') }}
+          </t-button>
+        </div>
+      </template>
+    </t-drawer>
+
+    <!-- Import Dialog -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="editorVisible" class="faq-editor-overlay" @click.self="editorVisible = false">
-          <div class="faq-editor-modal">
+        <div v-if="importVisible" class="faq-import-overlay" @click.self="importVisible = false">
+          <div class="faq-import-modal">
             <!-- 关闭按钮 -->
-            <button class="close-btn" @click="editorVisible = false" :aria-label="$t('general.close')">
+            <button class="close-btn" @click="importVisible = false" :aria-label="$t('general.close')">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                 <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
               </svg>
             </button>
 
-            <div class="faq-editor-container">
-              <div class="faq-editor-header">
-                <h2 class="editor-title">{{ editorMode === 'create' ? $t('knowledgeEditor.faq.editorCreate') : $t('knowledgeEditor.faq.editorEdit') }}</h2>
+            <div class="faq-import-container">
+              <div class="faq-import-header">
+                <h2 class="import-title">{{ $t('knowledgeEditor.faqImport.title') }}</h2>
               </div>
 
-              <div class="faq-editor-content">
-                <t-form
-                  ref="editorFormRef"
-                  :data="editorForm"
-                  :rules="editorRules"
-                  layout="vertical"
-                >
-                  <t-form-item name="standard_question" :label="$t('knowledgeEditor.faq.standardQuestion')">
-                    <t-input v-model="editorForm.standard_question" :maxlength="200" />
-                  </t-form-item>
+              <div class="faq-import-content">
+                <!-- 导入模式选择 -->
+                <div class="import-form-item">
+                  <label class="import-form-label required">{{ $t('knowledgeEditor.faqImport.modeLabel') }}</label>
+                  <t-radio-group v-model="importState.mode" variant="default-filled" class="import-radio-group">
+                    <t-radio-button value="append">{{ $t('knowledgeEditor.faqImport.appendMode') }}</t-radio-button>
+                    <t-radio-button value="replace">{{ $t('knowledgeEditor.faqImport.replaceMode') }}</t-radio-button>
+                  </t-radio-group>
+                </div>
 
-                  <t-form-item name="similar_questions" :label="$t('knowledgeEditor.faq.similarQuestions')">
-                    <div class="full-width-input-wrapper">
-                      <t-input
-                        v-model="similarInput"
-                        :placeholder="$t('knowledgeEditor.faq.similarPlaceholder')"
-                        @keydown.enter.prevent="addSimilar"
-                        class="full-width-input"
-                      />
-                      <t-button
-                        theme="primary"
-                        variant="outline"
-                        :disabled="!similarInput.trim() || editorForm.similar_questions.length >= 10"
-                        @click="addSimilar"
-                        class="add-item-btn"
-                        size="small"
-                      >
-                        <t-icon name="add" size="16px" />
-                      </t-button>
-                    </div>
-                    <div v-if="editorForm.similar_questions.length > 0" class="item-list">
-                      <div
-                        v-for="(question, index) in editorForm.similar_questions"
-                        :key="index"
-                        class="item-row"
-                      >
-                        <div class="item-content">{{ question }}</div>
-                        <t-button
-                          theme="default"
-                          variant="text"
-                          size="small"
-                          @click="removeSimilar(index)"
-                          class="remove-item-btn"
-                        >
-                          <t-icon name="close" size="16px" />
-                        </t-button>
+                <!-- 文件上传区域 -->
+                <div class="import-form-item">
+                  <label class="import-form-label required">{{ $t('knowledgeEditor.faqImport.fileLabel') }}</label>
+                  <div class="file-upload-wrapper">
+                    <input
+                      ref="fileInputRef"
+                      type="file"
+                      accept=".json,.csv,.xlsx,.xls"
+                      @change="handleFileChange"
+                      class="file-input-hidden"
+                    />
+                    <div
+                      class="file-upload-area"
+                      :class="{ 'has-file': importState.file }"
+                      @click="fileInputRef?.click()"
+                      @dragover.prevent
+                      @dragenter.prevent
+                      @drop.prevent="handleFileDrop"
+                    >
+                      <div class="file-upload-content">
+                        <t-icon name="upload" size="32px" class="upload-icon" />
+                        <div class="upload-text">
+                          <span v-if="!importState.file" class="upload-primary-text">
+                            {{ $t('knowledgeEditor.faqImport.clickToUpload') }}
+                          </span>
+                          <span v-else class="upload-file-name">
+                            {{ importState.file.name }}
+                          </span>
+                          <span v-if="!importState.file" class="upload-secondary-text">
+                            {{ $t('knowledgeEditor.faqImport.dragDropTip') }}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </t-form-item>
+                    <p class="import-form-tip">{{ $t('knowledgeEditor.faqImport.fileTip') }}</p>
+                  </div>
+                </div>
 
-                  <div class="section-divider"></div>
-
-                  <t-form-item name="negative_questions" :label="$t('knowledgeEditor.faq.negativeQuestions')">
-                    <div class="full-width-input-wrapper">
-                      <t-input
-                        v-model="negativeInput"
-                        :placeholder="$t('knowledgeEditor.faq.negativePlaceholder')"
-                        @keydown.enter.prevent="addNegative"
-                        class="full-width-input"
-                      />
-                      <t-button
-                        theme="primary"
-                        variant="outline"
-                        :disabled="!negativeInput.trim() || editorForm.negative_questions.length >= 10"
-                        @click="addNegative"
-                        class="add-item-btn"
-                        size="small"
-                      >
-                        <t-icon name="add" size="16px" />
-                      </t-button>
+                <!-- 预览区域 -->
+                <div v-if="importState.preview.length" class="import-preview">
+                  <div class="preview-header">
+                    <t-icon name="file-view" size="16px" class="preview-icon" />
+                    <span class="preview-title">
+                      {{ $t('knowledgeEditor.faqImport.previewCount', { count: importState.preview.length }) }}
+                    </span>
+                  </div>
+                  <div class="preview-list">
+                    <div
+                      v-for="(item, index) in importState.preview.slice(0, 5)"
+                      :key="index"
+                      class="preview-item"
+                    >
+                      <span class="preview-index">{{ index + 1 }}</span>
+                      <span class="preview-question">{{ item.standard_question }}</span>
                     </div>
-                    <div v-if="editorForm.negative_questions.length > 0" class="item-list">
-                      <div
-                        v-for="(question, index) in editorForm.negative_questions"
-                        :key="index"
-                        class="item-row negative"
-                      >
-                        <div class="item-content">{{ question }}</div>
-                        <t-button
-                          theme="default"
-                          variant="text"
-                          size="small"
-                          @click="removeNegative(index)"
-                          class="remove-item-btn"
-                        >
-                          <t-icon name="close" size="16px" />
-                        </t-button>
-                      </div>
-                    </div>
-                  </t-form-item>
-
-                  <div class="section-divider"></div>
-
-                  <t-form-item name="answers" :label="$t('knowledgeEditor.faq.answers')">
-                    <div class="full-width-input-wrapper textarea-wrapper">
-                      <t-textarea
-                        v-model="answerInput"
-                        :placeholder="$t('knowledgeEditor.faq.answerPlaceholder')"
-                        :autosize="{ minRows: 3, maxRows: 6 }"
-                        class="full-width-textarea"
-                        @keydown.ctrl.enter="addAnswer"
-                        @keydown.meta.enter="addAnswer"
-                      />
-                      <t-button
-                        theme="primary"
-                        variant="outline"
-                        :disabled="!answerInput.trim() || editorForm.answers.length >= 5"
-                        @click="addAnswer"
-                        class="add-item-btn"
-                        size="small"
-                      >
-                        <t-icon name="add" size="16px" />
-                      </t-button>
-                    </div>
-                    <div class="item-count">{{ editorForm.answers.length }}/5</div>
-                    <div v-if="editorForm.answers.length > 0" class="item-list">
-                      <div
-                        v-for="(answer, index) in editorForm.answers"
-                        :key="index"
-                        class="item-row answer-row"
-                      >
-                        <div class="item-content">{{ answer }}</div>
-                        <t-button
-                          theme="default"
-                          variant="text"
-                          size="small"
-                          @click="removeAnswer(index)"
-                          class="remove-item-btn"
-                        >
-                          <t-icon name="close" size="16px" />
-                        </t-button>
-                      </div>
-                    </div>
-                  </t-form-item>
-                </t-form>
+                  </div>
+                  <p v-if="importState.preview.length > 5" class="preview-more">
+                    {{ $t('knowledgeEditor.faqImport.previewMore', { count: importState.preview.length - 5 }) }}
+                  </p>
+                </div>
               </div>
 
-              <div class="faq-editor-footer">
-                <t-button theme="default" variant="outline" @click="editorVisible = false">
+              <div class="faq-import-footer">
+                <t-button theme="default" variant="outline" @click="importVisible = false">
                   {{ $t('common.cancel') }}
                 </t-button>
-                <t-button theme="primary" @click="handleSubmitEntry" :loading="savingEntry">
-                  {{ editorMode === 'create' ? $t('knowledgeEditor.faq.editorCreate') : $t('common.save') }}
+                <t-button theme="primary" @click="handleImport" :loading="importState.importing">
+                  {{ $t('knowledgeEditor.faqImport.importButton') }}
                 </t-button>
               </div>
             </div>
@@ -334,92 +466,6 @@
         </div>
       </Transition>
     </Teleport>
-
-    <!-- Import Dialog -->
-    <t-dialog
-      v-model:visible="importVisible"
-      :header="$t('knowledgeEditor.faqImport.title')"
-      :confirm-btn="{
-        content: $t('knowledgeEditor.faqImport.importButton'),
-        loading: importState.importing
-      }"
-      :cancel-btn="$t('common.cancel')"
-      @confirm="handleImport"
-      width="600px"
-      class="faq-import-dialog"
-    >
-      <div class="import-dialog-content">
-        <!-- 导入模式选择 -->
-        <div class="import-form-item">
-          <label class="import-form-label required">{{ $t('knowledgeEditor.faqImport.modeLabel') }}</label>
-          <t-radio-group v-model="importState.mode" variant="default-filled" class="import-radio-group">
-            <t-radio-button value="append">{{ $t('knowledgeEditor.faqImport.appendMode') }}</t-radio-button>
-            <t-radio-button value="replace">{{ $t('knowledgeEditor.faqImport.replaceMode') }}</t-radio-button>
-          </t-radio-group>
-        </div>
-
-        <!-- 文件上传区域 -->
-        <div class="import-form-item">
-          <label class="import-form-label required">{{ $t('knowledgeEditor.faqImport.fileLabel') }}</label>
-          <div class="file-upload-wrapper">
-            <input
-              ref="fileInputRef"
-              type="file"
-              accept=".json,.csv,.xlsx,.xls"
-              @change="handleFileChange"
-              class="file-input-hidden"
-            />
-            <div
-              class="file-upload-area"
-              :class="{ 'has-file': importState.file }"
-              @click="fileInputRef?.click()"
-              @dragover.prevent
-              @dragenter.prevent
-              @drop.prevent="handleFileDrop"
-            >
-              <div class="file-upload-content">
-                <t-icon name="upload" size="32px" class="upload-icon" />
-                <div class="upload-text">
-                  <span v-if="!importState.file" class="upload-primary-text">
-                    {{ $t('knowledgeEditor.faqImport.clickToUpload') }}
-                  </span>
-                  <span v-else class="upload-file-name">
-                    {{ importState.file.name }}
-                  </span>
-                  <span v-if="!importState.file" class="upload-secondary-text">
-                    {{ $t('knowledgeEditor.faqImport.dragDropTip') }}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <p class="import-form-tip">{{ $t('knowledgeEditor.faqImport.fileTip') }}</p>
-          </div>
-        </div>
-
-        <!-- 预览区域 -->
-        <div v-if="importState.preview.length" class="import-preview">
-          <div class="preview-header">
-            <t-icon name="file-view" size="16px" class="preview-icon" />
-            <span class="preview-title">
-              {{ $t('knowledgeEditor.faqImport.previewCount', { count: importState.preview.length }) }}
-            </span>
-          </div>
-          <div class="preview-list">
-            <div
-              v-for="(item, index) in importState.preview.slice(0, 5)"
-              :key="index"
-              class="preview-item"
-            >
-              <span class="preview-index">{{ index + 1 }}</span>
-              <span class="preview-question">{{ item.standard_question }}</span>
-            </div>
-          </div>
-          <p v-if="importState.preview.length > 5" class="preview-more">
-            {{ $t('knowledgeEditor.faqImport.previewMore', { count: importState.preview.length - 5 }) }}
-          </p>
-        </div>
-      </div>
-    </t-dialog>
 
     <!-- Search Test Drawer -->
     <t-drawer
@@ -473,8 +519,10 @@
             <t-button
               theme="primary"
               block
+              size="large"
               :loading="searching"
               @click="handleSearch"
+              class="search-button"
             >
               {{ searching ? $t('knowledgeEditor.faq.searching') : $t('knowledgeEditor.faq.searchButton') }}
             </t-button>
@@ -554,7 +602,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted, computed } from 'vue'
+import { ref, reactive, watch, onMounted, computed, nextTick } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import type { FormRules, FormInstanceFunctions } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
@@ -566,6 +614,7 @@ import {
   searchFAQEntries,
 } from '@/api/knowledge-base'
 import * as XLSX from 'xlsx'
+import FAQTagTooltip from '@/components/FAQTagTooltip.vue'
 
 interface FAQEntry {
   id: string
@@ -581,6 +630,9 @@ interface FAQEntry {
   score?: number
   match_type?: string
   expanded?: boolean
+  similarCollapsed?: boolean
+  negativeCollapsed?: boolean
+  answersCollapsed?: boolean
 }
 
 interface FAQEntryPayload {
@@ -601,6 +653,7 @@ const loadingMore = ref(false)
 const entries = ref<FAQEntry[]>([])
 const selectedRowKeys = ref<string[]>([])
 const scrollContainer = ref<HTMLElement | null>(null)
+const cardListRef = ref<HTMLElement | null>(null)
 const hasMore = ref(true)
 const pageSize = 20
 let currentPage = 1
@@ -709,7 +762,10 @@ const loadEntries = async (append = false) => {
     }
     const newEntries = (pageData.data || []).map(entry => ({
       ...entry,
-      showMore: false
+      showMore: false,
+      similarCollapsed: false, // 相似问默认展开
+      negativeCollapsed: true,  // 反例默认折叠
+      answersCollapsed: true    // 答案默认折叠
     }))
     
     if (append) {
@@ -721,6 +777,10 @@ const loadEntries = async (append = false) => {
     // 判断是否还有更多数据
     hasMore.value = entries.value.length < (pageData.total || 0)
     currentPage++
+    
+    // 等待 DOM 更新后重新布局
+    await nextTick()
+    arrangeCards()
   } catch (error: any) {
     MessagePlugin.error(error?.message || t('common.operationFailed'))
   } finally {
@@ -783,6 +843,15 @@ const openEditor = (entry?: FAQEntry) => {
   similarInput.value = ''
   negativeInput.value = ''
   editorVisible.value = true
+}
+
+const handleEditorClose = () => {
+  // 关闭时重置表单
+  resetEditorForm()
+  answerInput.value = ''
+  similarInput.value = ''
+  negativeInput.value = ''
+  editorFormRef.value?.clearValidate?.()
 }
 
 // 添加答案
@@ -1070,6 +1139,9 @@ const handleSearch = async () => {
     })
     searchResults.value = (res.data || []).map((entry: FAQEntry) => ({
       ...entry,
+      similarCollapsed: false, // 相似问默认展开
+      negativeCollapsed: true,  // 反例默认折叠
+      answersCollapsed: true,   // 答案默认折叠
       expanded: false,
     })) as FAQEntry[]
   } catch (error: any) {
@@ -1095,11 +1167,107 @@ const toggleResult = (result: FAQEntry) => {
   result.expanded = !result.expanded
 }
 
+// 瀑布流布局函数
+const arrangeCards = () => {
+  if (!cardListRef.value) return
+  
+  const cards = cardListRef.value.querySelectorAll('.faq-card') as NodeListOf<HTMLElement>
+  if (cards.length === 0) return
+  
+  // 获取容器宽度和列数
+  const containerWidth = cardListRef.value.offsetWidth
+  const gap = 12 // 与 CSS gap 保持一致
+  let columnCount = 1
+  
+  // 根据容器宽度计算列数（增加每行的卡片数量）
+  if (containerWidth >= 2560) columnCount = 12
+  else if (containerWidth >= 1920) columnCount = 10
+  else if (containerWidth >= 1536) columnCount = 8
+  else if (containerWidth >= 1280) columnCount = 6
+  else if (containerWidth >= 1024) columnCount = 5
+  else if (containerWidth >= 768) columnCount = 4
+  else if (containerWidth >= 640) columnCount = 3
+  
+  const columnWidth = (containerWidth - (gap * (columnCount - 1))) / columnCount
+  
+  // 初始化每列的高度数组
+  const columnHeights = new Array(columnCount).fill(0)
+  
+  // 先重置所有卡片的位置，让它们自然排列以获取正确的高度
+  cards.forEach((card) => {
+    card.style.position = 'static'
+    card.style.top = 'auto'
+    card.style.left = 'auto'
+    card.style.width = 'auto'
+  })
+  
+  // 等待浏览器重新计算布局
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      cards.forEach((card) => {
+        // 找到最短的列
+        const shortestColumnIndex = columnHeights.indexOf(Math.min(...columnHeights))
+        
+        // 设置卡片位置
+        const top = columnHeights[shortestColumnIndex]
+        const left = shortestColumnIndex * (columnWidth + gap)
+        
+        card.style.position = 'absolute'
+        card.style.top = `${top}px`
+        card.style.left = `${left}px`
+        card.style.width = `${columnWidth}px`
+        
+        // 更新该列的高度（使用实际高度）
+        const cardHeight = card.offsetHeight || card.getBoundingClientRect().height
+        columnHeights[shortestColumnIndex] += cardHeight + gap
+      })
+      
+      // 设置容器高度
+      const maxHeight = Math.max(...columnHeights)
+      if (cardListRef.value) {
+        cardListRef.value.style.height = `${maxHeight}px`
+        cardListRef.value.style.position = 'relative'
+      }
+    })
+  })
+}
+
+// 监听窗口大小变化
+const handleResize = () => {
+  arrangeCards()
+}
+
 onMounted(() => {
   if (props.kbId) {
     loadEntries()
   }
+  window.addEventListener('resize', handleResize)
 })
+
+// 监听 entries 变化，重新布局
+watch(() => entries.value.length, () => {
+  nextTick(() => {
+    arrangeCards()
+  })
+})
+
+// 监听折叠状态变化，重新布局（包括展开和收起）
+watch(() => entries.value.map(e => ({
+  id: e.id,
+  similarCollapsed: e.similarCollapsed,
+  negativeCollapsed: e.negativeCollapsed,
+  answersCollapsed: e.answersCollapsed
+})), () => {
+  // 使用双重 nextTick 确保 DOM 完全更新后再布局
+  nextTick(() => {
+    nextTick(() => {
+      // 等待 Transition 动画完成（slide-down 动画时长约 300ms）
+      setTimeout(() => {
+        arrangeCards()
+      }, 350)
+    })
+  })
+}, { deep: true })
 </script>
 
 <style scoped lang="less">
@@ -1117,6 +1285,12 @@ onMounted(() => {
   margin-bottom: 20px;
   flex-shrink: 0;
 
+  .faq-header-title {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
   h2 {
     margin: 0;
     color: #000000e6;
@@ -1124,6 +1298,15 @@ onMounted(() => {
     font-size: 24px;
     font-weight: 600;
     line-height: 32px;
+  }
+
+  .faq-subtitle {
+    margin: 0;
+    color: #00000099;
+    font-family: "PingFang SC";
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
   }
 }
 
@@ -1199,37 +1382,39 @@ onMounted(() => {
   padding-right: 4px;
 }
 
-// 卡片列表样式
+// 卡片列表样式 - 使用绝对定位实现瀑布流，下一行补齐上一行空缺
 .faq-card-list {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: 1fr;
+  position: relative;
   width: 100%;
   min-width: 0;
 }
 
 .faq-card {
-  border: 1px solid #f0f0f0;
-  border-radius: 4px;
+  border: 1px solid #E7E7E7;
+  border-radius: 12px;
   background: #fff;
-  padding: 10px 12px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-  transition: all 0.2s ease;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+  height: fit-content; // 高度根据内容自适应
 
   &:hover {
-    border-color: #07c05f;
+    border-color: #07C05F;
     box-shadow: 0 2px 8px rgba(7, 192, 95, 0.1);
   }
 
   &.selected {
-    border-color: #07c05f;
-    background: #f0fdf4;
+    border-color: #07C05F;
+    background: #F0FDF4;
+    box-shadow: 0 2px 8px rgba(7, 192, 95, 0.15);
   }
 }
 
@@ -1238,84 +1423,92 @@ onMounted(() => {
   align-items: flex-start;
   gap: 8px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid #F3F4F6;
   position: relative;
-
-  :deep(.t-checkbox) {
-    flex-shrink: 0;
-    margin-top: 1px;
-  }
 }
 
 .card-more-btn {
   display: flex;
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
   justify-content: center;
   align-items: center;
-  border-radius: 3px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
   flex-shrink: 0;
   margin-left: auto;
+  opacity: 0.6;
 
   &:hover {
-    background: #f5f5f5;
+    background: #F3F4F6;
+    opacity: 1;
   }
 
   .more-icon {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
   }
 }
 
 .card-menu {
   display: flex;
   flex-direction: column;
-  min-width: 120px;
+  min-width: 140px;
+  padding: 4px;
+  border-radius: 8px;
 }
 
 .card-menu-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 10px 14px;
   cursor: pointer;
-  color: #000000e6;
+  color: #111827;
   font-family: "PingFang SC";
-  font-size: 13px;
-  transition: all 0.2s ease;
+  font-size: 14px;
+  border-radius: 6px;
 
   &:hover {
-    background: #f5f5f5;
+    background: #F3F4F6;
+    color: #07C05F;
   }
 
   &.danger {
-    color: #fa5151;
+    color: #EF4444;
+
+    &:hover {
+      background: #FEE2E2;
+      color: #DC2626;
+    }
   }
 
   .menu-icon {
-    font-size: 14px;
+    font-size: 16px;
     flex-shrink: 0;
   }
 }
 
 .faq-question {
   flex: 1;
-  color: #000000e6;
+  color: #111827;
   font-family: "PingFang SC";
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 1.5;
   word-break: break-word;
   min-width: 0;
   overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .faq-card-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -1324,73 +1517,152 @@ onMounted(() => {
 .faq-section {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   min-width: 0;
   overflow: hidden;
 
   .faq-section-label {
-    color: #00000099;
+    color: #6B7280;
     font-family: "PingFang SC";
-    font-size: 11px;
-    font-weight: 500;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+
+    &::before {
+      content: '';
+      width: 3px;
+      height: 12px;
+      background: #07C05F;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    &.clickable {
+      cursor: pointer;
+      user-select: none;
+      padding: 2px 0;
+      border-radius: 4px;
+
+      &:hover {
+        color: #111827;
+        background: #F9FAFB;
+        padding-left: 4px;
+        padding-right: 4px;
+        margin-left: -4px;
+        margin-right: -4px;
+      }
+    }
+
+    .collapse-icon {
+      font-size: 14px;
+      color: #9CA3AF;
+      flex-shrink: 0;
+      margin-left: auto; // 让箭头靠右对齐
+    }
+
+    .section-count {
+      color: #9CA3AF;
+      font-weight: 400;
+      margin-left: 4px;
+    }
+  }
+
+  &.answers .faq-section-label::before {
+    background: #07C05F;
+  }
+
+  &.similar .faq-section-label::before {
+    background: #3B82F6;
+  }
+
+  &.negative .faq-section-label::before {
+    background: #F59E0B;
   }
 }
 
 .faq-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
   min-height: 20px;
   min-width: 0;
-}
-
-.answer-tag,
-.question-tag {
-  font-size: 11px;
-  padding: 2px 6px;
-  max-width: 100%;
-  min-width: 0;
+  width: 100%;
+  overflow: hidden;
   
-  :deep(.t-tag__text) {
-    display: inline-block;
-    vertical-align: middle;
-    max-width: 200px;
-    word-break: break-word;
-    white-space: normal;
-    overflow-wrap: break-word;
-  }
-}
-
-.answer-tag {
-  max-width: 100%;
-  
-  :deep(.t-tag) {
+  // 确保每个标签都有最大宽度限制
+  > * {
     max-width: 100%;
     min-width: 0;
-    display: inline-block;
-    vertical-align: top;
+    flex: 0 1 auto;
   }
   
-  :deep(.t-tag__text) {
+  // 当标签单独一行时，限制最大宽度
+  > *:first-child:last-child {
     max-width: 100%;
-    white-space: normal;
-    word-break: break-word;
-    overflow-wrap: break-word;
+  }
+}
+
+.question-tag {
+  font-size: 12px;
+  padding: 4px 10px;
+  max-width: 100%;
+  min-width: 0;
+  border-radius: 6px;
+  font-family: "PingFang SC";
+  flex: 0 1 auto;
+  
+  :deep(.t-tag) {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    width: auto !important;
+    display: inline-flex !important;
+    align-items: center;
+    vertical-align: middle;
+    overflow: hidden !important;
+    box-sizing: border-box;
+    background: #F9FAFB;
+    border-color: #E5E7EB;
+    color: #374151;
+  }
+  
+  // 针对TDesign tag内部的span元素
+  :deep(.t-tag span),
+  :deep(.t-tag > span) {
+    display: block !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    max-width: 100% !important;
+    width: auto !important;
     line-height: 1.4;
-    display: block;
+    min-width: 0 !important;
   }
 }
 
 // 确保 tag 本身不会超出容器
-:deep(.t-tag) {
+.faq-tags :deep(.t-tag) {
   max-width: 100%;
   min-width: 0;
+  flex-shrink: 1;
+}
+
+.faq-tags :deep(.faq-tag-wrapper) {
+  max-width: 100%;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .empty-tip {
-  color: #999;
-  font-size: 11px;
+  color: #9CA3AF;
+  font-size: 12px;
   font-style: italic;
+  padding: 8px 0;
+  font-family: "PingFang SC";
 }
 
 
@@ -1399,14 +1671,15 @@ onMounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 16px;
-  color: #999;
-  font-size: 12px;
+  padding: 24px 16px;
+  color: #6B7280;
+  font-size: 13px;
   font-family: "PingFang SC";
 }
 
 .faq-no-more {
-  color: #ccc;
+  color: #9CA3AF;
+  font-style: italic;
 }
 
 // 空状态样式
@@ -1415,30 +1688,32 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
   min-height: 400px;
-  padding: 40px 20px;
+  padding: 60px 20px;
 
   .empty-content {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
     text-align: center;
+    max-width: 400px;
   }
 
   .empty-icon {
-    color: #d9d9d9;
+    color: #D1D5DB;
+    opacity: 0.6;
   }
 
   .empty-text {
-    color: #00000099;
+    color: #111827;
     font-family: "PingFang SC";
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 600;
-    line-height: 24px;
+    line-height: 28px;
   }
 
   .empty-desc {
-    color: #00000066;
+    color: #6B7280;
     font-family: "PingFang SC";
     font-size: 14px;
     font-weight: 400;
@@ -1446,92 +1721,112 @@ onMounted(() => {
   }
 }
 
-// 导入对话框样式
-:deep(.faq-import-dialog) {
-  // 确保对话框容器垂直居中
-  &.t-dialog__ctx {
+// 导入对话框样式 - 与创建知识库弹窗风格一致
+.faq-import-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+}
+
+.faq-import-modal {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 6px 28px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+
+  .close-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: #f5f5f5;
+    border-radius: 6px;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-  }
+    color: #666;
+    transition: all 0.2s ease;
+    z-index: 10;
 
-  // 覆盖其他文件中的全局样式，确保垂直居中
-  .t-dialog__position {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    padding: 20px !important;
-    min-height: 100%;
-    top: 0 !important;
-    margin: 0 !important;
-  }
-
-  // 特别处理 t-dialog--top 类的情况，覆盖全局样式
-  .t-dialog__position.t-dialog--top {
-    padding-top: 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-  }
-
-  .t-dialog {
-    margin: 0 !important;
-    max-height: 90vh;
-    max-width: 90vw;
-    display: flex;
-    flex-direction: column;
-    width: 600px;
-  }
-
-  // 覆盖 t-dialog--default 类的边距
-  .t-dialog--default {
-    margin: 0 !important;
-  }
-
-  .t-dialog__header {
-    flex-shrink: 0;
-    padding: 20px 24px;
-    border-bottom: 1px solid #e5e7eb;
-  }
-
-  .t-dialog__body {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 24px;
-    min-height: 0;
-    max-height: calc(90vh - 140px); // 减去 header 和 footer 的高度
-    
-    // 自定义滚动条
-    &::-webkit-scrollbar {
-      width: 6px;
+    &:hover {
+      background: #e5e5e5;
+      color: #000;
     }
-
-    &::-webkit-scrollbar-track {
-      background: #f5f5f5;
-      border-radius: 3px;
-    }
-
-    &::-webkit-scrollbar-thumb {
-      background: #d0d0d0;
-      border-radius: 3px;
-      transition: background 0.2s;
-
-      &:hover {
-        background: #07C05F;
-      }
-    }
-  }
-
-  .t-dialog__footer {
-    flex-shrink: 0;
-    border-top: 1px solid #e5e7eb;
   }
 }
 
-// 导入对话框内容区域
-.import-dialog-content {
-  padding: 0;
+.faq-import-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.faq-import-header {
+  padding: 24px 24px 16px;
+  border-bottom: 1px solid #e5e5e5;
+  flex-shrink: 0;
+
+  .import-title {
+    margin: 0;
+    font-family: "PingFang SC";
+    font-size: 18px;
+    font-weight: 600;
+    color: #000000e6;
+  }
+}
+
+.faq-import-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px;
+  min-height: 0;
+  max-height: calc(90vh - 140px); // 减去 header 和 footer 的高度
+  
+  // 自定义滚动条
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: #f5f5f5;
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #d0d0d0;
+    border-radius: 3px;
+    transition: background 0.2s;
+
+    &:hover {
+      background: #07C05F;
+    }
+  }
+}
+
+.faq-import-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #e5e5e5;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
 }
 
 // 导入表单项
@@ -1762,37 +2057,7 @@ onMounted(() => {
   text-align: center;
 }
 
-// 响应式布局
-@media (min-width: 900px) {
-  .faq-card-list {
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-  }
-}
-
-@media (min-width: 1250px) {
-  .faq-card-list {
-    grid-template-columns: repeat(5, 1fr);
-  }
-}
-
-@media (min-width: 1600px) {
-  .faq-card-list {
-    grid-template-columns: repeat(6, 1fr);
-  }
-}
-
-@media (min-width: 2000px) {
-  .faq-card-list {
-    grid-template-columns: repeat(7, 1fr);
-  }
-}
-
-@media (min-width: 2400px) {
-  .faq-card-list {
-    grid-template-columns: repeat(8, 1fr);
-  }
-}
+// 响应式布局由 JavaScript 动态计算，这里不需要媒体查询
 
 // 卡片菜单弹窗样式
 :deep(.faq-card-popup) {
@@ -1805,88 +2070,66 @@ onMounted(() => {
   }
 }
 
-// FAQ 编辑器对话框样式 - 参考设置页面风格
-.faq-editor-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  backdrop-filter: blur(4px);
-}
-
-.faq-editor-modal {
-  position: relative;
-  width: 100%;
-  max-width: 600px;
-  max-height: 90vh;
-  background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 6px 28px rgba(15, 23, 42, 0.08);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.close-btn {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: #666666;
-  cursor: pointer;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  z-index: 10;
-
-  &:hover {
-    background: #f5f5f5;
-    color: #333333;
+// FAQ 编辑器抽屉样式
+:deep(.faq-editor-drawer) {
+  .t-drawer__body {
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
   }
-}
 
-.faq-editor-container {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-}
-
-.faq-editor-header {
-  padding: 24px 24px 16px;
-  border-bottom: 1px solid #e5e7eb;
-
-  .editor-title {
-    margin: 0;
+  .t-drawer__header {
+    padding: 20px 24px;
+    border-bottom: 1px solid #e5e5e5;
     font-family: "PingFang SC";
     font-size: 18px;
     font-weight: 600;
     color: #000000e6;
   }
+
+  .t-drawer__footer {
+    padding: 16px 24px;
+    border-top: 1px solid #e5e5e5;
+  }
 }
 
-.faq-editor-content {
+.faq-editor-drawer-content {
   flex: 1;
   overflow-y: auto;
-  padding: 24px;
+  overflow-x: hidden;
+  min-height: 0;
+  
+  // 自定义滚动条
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: #f5f5f5;
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #d0d0d0;
+    border-radius: 3px;
+    transition: background 0.2s;
+
+    &:hover {
+      background: #07C05F;
+    }
+  }
+
+  .editor-form {
+    width: 100%;
+  }
 }
 
-.faq-editor-footer {
-  padding: 16px 24px;
-  border-top: 1px solid #e5e7eb;
+.faq-editor-drawer-footer {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  flex-shrink: 0;
 }
 
 // 全宽输入框包装器 - 统一样式
@@ -1915,144 +2158,154 @@ onMounted(() => {
 
   .add-item-btn {
     flex-shrink: 0;
-    width: 20px;
-    height: 20px;
-    min-width: 20px;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
     padding: 0;
     font-family: "PingFang SC";
     transition: all 0.2s ease;
+    border-radius: 8px;
   }
 
   :deep(.add-item-btn) {
-    background: transparent !important;
-    border: 1px solid #07c05f !important;
-    border-radius: 3px !important;
-    color: #07c05f !important;
+    background: #07C05F !important;
+    border: 1px solid #07C05F !important;
+    border-radius: 8px !important;
+    color: #ffffff !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 
     &:hover:not(:disabled) {
-      background: #07c05f1a !important;
-      border-color: #07c05f !important;
+      background: #05a04f !important;
+      border-color: #05a04f !important;
+      transform: scale(1.05);
+      box-shadow: 0 2px 8px rgba(7, 192, 95, 0.3);
     }
 
     &:active:not(:disabled) {
-      background: #07c05f33 !important;
+      background: #048a42 !important;
+      border-color: #048a42 !important;
+      transform: scale(0.98);
     }
 
     &:disabled {
-      opacity: 0.5;
+      background: #E5E7EB !important;
+      border-color: #E5E7EB !important;
+      color: #9CA3AF !important;
       cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .t-icon {
+      font-size: 16px;
     }
   }
 }
 
 .item-count {
   font-size: 13px;
-  color: #00000099;
+  color: #6B7280;
   font-family: "PingFang SC";
   font-weight: 500;
   margin-bottom: 12px;
   text-align: right;
+  padding-right: 4px;
 }
 
 .item-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .section-divider {
   height: 1px;
-  background: #e5e7eb;
-  margin: 16px 0;
+  background: linear-gradient(to right, transparent, #E7E7E7, transparent);
+  margin: 24px 0;
+  border: none;
 }
 
 .item-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 10px 14px;
   background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  border: 1px solid #E7E7E7;
+  border-radius: 8px;
   transition: all 0.2s ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  position: relative;
 
   &.answer-row {
     align-items: flex-start;
+    padding: 12px 14px;
   }
 
   &:hover {
     background: #fafafa;
-    border-color: #07c05f;
-    box-shadow: 0 2px 6px rgba(7, 192, 95, 0.1);
+    border-color: #07C05F;
+    box-shadow: 0 2px 8px rgba(7, 192, 95, 0.12);
+    transform: translateY(-1px);
   }
 
   &.negative {
-    background: #fffbf0;
-    border-color: #ffe7ba;
+    background: #FFFBEB;
+    border-color: #FDE68A;
 
     &:hover {
-      background: #fff7e6;
-      border-color: #ffd591;
-      box-shadow: 0 2px 6px rgba(255, 193, 7, 0.12);
+      background: #FEF3C7;
+      border-color: #FCD34D;
+      box-shadow: 0 2px 8px rgba(251, 191, 36, 0.15);
     }
-  }
-
-  .item-index {
-    flex-shrink: 0;
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, #07c05f 0%, #05a04f 100%);
-    color: #fff;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
-    font-family: "PingFang SC";
-    box-shadow: 0 1px 3px rgba(7, 192, 95, 0.2);
   }
 
   .item-content {
     flex: 1;
-    font-size: 13px;
-    line-height: 1.5;
-    color: #000000e6;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #111827;
     font-family: "PingFang SC";
     white-space: pre-wrap;
     word-break: break-word;
     padding: 0;
+    font-weight: 400;
   }
 
   .remove-item-btn {
     flex-shrink: 0;
-    color: #8c8c8c;
+    color: #9CA3AF;
     padding: 0;
-    width: 20px;
-    height: 20px;
-    min-width: 20px;
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
+    border-radius: 6px;
     transition: all 0.2s ease;
-    opacity: 0.6;
+    background: transparent;
+    border: none;
+    cursor: pointer;
 
     &:hover {
-      color: #fa5151;
-      background: #fff1f0;
-      opacity: 1;
+      color: #EF4444;
+      background: #FEE2E2;
+    }
+
+    &:active {
+      background: #FECACA;
     }
 
     :deep(.t-icon) {
-      font-size: 12px;
+      font-size: 14px;
     }
   }
 
   &.answer-row .remove-item-btn {
-    margin-top: 2px;
+    margin-top: 0;
   }
 }
 
@@ -2063,7 +2316,7 @@ onMounted(() => {
   font-family: "PingFang SC";
 }
 
-// 表单样式优化
+// 表单样式优化 - 与项目整体风格一致
 :deep(.t-form) {
   .t-form__controls-content {
     margin: 0;
@@ -2084,34 +2337,103 @@ onMounted(() => {
     font-family: "PingFang SC";
     font-size: 14px;
     font-weight: 500;
-    color: #000000e6;
-    margin-bottom: 8px;
+    color: #111827;
+    margin-bottom: 10px;
     line-height: 22px;
+    display: block;
   }
 
   .t-form-item__content {
     margin: 0;
+    width: 100%;
   }
 }
 
-:deep(.t-input),
+// Input 组件样式 - 与登录页面一致
+:deep(.t-input) {
+  font-family: "PingFang SC";
+  font-size: 14px;
+  border: 1px solid #E7E7E7;
+  border-radius: 8px;
+  background: #fff;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: #07C05F;
+  }
+
+  &:focus-within {
+    border-color: #07C05F;
+    box-shadow: 0 0 0 3px rgba(7, 192, 95, 0.1);
+  }
+
+  .t-input__inner {
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+    background: transparent;
+    font-size: 14px;
+    font-family: "PingFang SC";
+    padding: 8px 12px;
+    color: #111827;
+
+    &:focus {
+      border: none !important;
+      box-shadow: none !important;
+      outline: none !important;
+    }
+
+    &::placeholder {
+      color: #9CA3AF;
+    }
+  }
+
+  .t-input__wrap {
+    border: none !important;
+    box-shadow: none !important;
+  }
+}
+
+// Textarea 组件样式
 :deep(.t-textarea) {
   font-family: "PingFang SC";
   font-size: 14px;
-  border-radius: 6px;
+  border: 1px solid #E7E7E7;
+  border-radius: 8px;
+  background: #fff;
   transition: all 0.2s ease;
 
-  &:focus {
-    border-color: #07c05f;
-    box-shadow: 0 0 0 2px rgba(7, 192, 95, 0.1);
+  &:hover {
+    border-color: #07C05F;
   }
-}
 
-:deep(.t-textarea__inner) {
-  font-family: "PingFang SC";
-  font-size: 14px;
-  line-height: 1.6;
-  resize: vertical;
+  &:focus-within {
+    border-color: #07C05F;
+    box-shadow: 0 0 0 3px rgba(7, 192, 95, 0.1);
+  }
+
+  .t-textarea__inner {
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+    background: transparent;
+    font-size: 14px;
+    font-family: "PingFang SC";
+    line-height: 1.6;
+    resize: vertical;
+    padding: 8px 12px;
+    color: #111827;
+
+    &:focus {
+      border: none !important;
+      box-shadow: none !important;
+      outline: none !important;
+    }
+
+    &::placeholder {
+      color: #9CA3AF;
+    }
+  }
 }
 
 :deep(.t-button--theme-primary) {
@@ -2124,14 +2446,14 @@ onMounted(() => {
   }
 }
 
-// 弹窗动画
+// 导入弹窗动画
 .modal-enter-active,
 .modal-leave-active {
   transition: opacity 0.2s ease;
 }
 
-.modal-enter-active .faq-editor-modal,
-.modal-leave-active .faq-editor-modal {
+.modal-enter-active .faq-import-modal,
+.modal-leave-active .faq-import-modal {
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
@@ -2140,8 +2462,8 @@ onMounted(() => {
   opacity: 0;
 }
 
-.modal-enter-from .faq-editor-modal,
-.modal-leave-to .faq-editor-modal {
+.modal-enter-from .faq-import-modal,
+.modal-leave-to .faq-import-modal {
   transform: scale(0.95);
   opacity: 0;
 }
@@ -2159,18 +2481,30 @@ onMounted(() => {
   color: #00000099;
 }
 
-// Search test drawer styles
+// Search test drawer styles - 与编辑器抽屉风格一致
 :deep(.faq-search-drawer) {
   .t-drawer__body {
     padding: 20px;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .t-drawer__header {
+    padding: 20px 24px;
+    border-bottom: 1px solid #e5e5e5;
+    font-family: "PingFang SC";
+    font-size: 18px;
+    font-weight: 600;
+    color: #000000e6;
   }
 }
 
 .search-test-content {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   height: 100%;
 }
 
@@ -2179,7 +2513,7 @@ onMounted(() => {
 }
 
 .form-item-compact {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 
   &:last-child {
     margin-bottom: 0;
@@ -2187,9 +2521,11 @@ onMounted(() => {
 }
 
 :deep(.form-item-compact .t-form-item__label) {
-  margin-bottom: 8px;
-  font-size: 13px;
+  margin-bottom: 10px;
+  font-size: 14px;
   font-weight: 500;
+  color: #111827;
+  font-family: "PingFang SC";
 }
 
 :deep(.form-item-compact .t-form-item__content) {
@@ -2202,29 +2538,76 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   width: 100%;
+  padding: 4px 0;
 }
 
 :deep(.slider-wrapper .t-slider) {
   flex: 1;
   min-width: 0;
+
+  .t-slider__rail {
+    background: #E7E7E7;
+    height: 4px;
+    border-radius: 2px;
+  }
+
+  .t-slider__track {
+    background: #07C05F;
+    height: 4px;
+    border-radius: 2px;
+  }
+
+  .t-slider__button {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #07C05F;
+    background: #ffffff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+    &:hover {
+      border-color: #05a04f;
+      box-shadow: 0 2px 8px rgba(7, 192, 95, 0.2);
+    }
+  }
 }
 
 .slider-value {
   flex-shrink: 0;
-  min-width: 40px;
+  min-width: 50px;
   text-align: right;
   font-family: "PingFang SC";
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
-  color: #000000e6;
+  color: #111827;
+  padding: 4px 8px;
+  background: #F9FAFB;
+  border-radius: 6px;
 }
 
 .form-tip {
-  margin-top: 4px;
-  font-size: 11px;
-  color: #00000066;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6B7280;
   font-family: "PingFang SC";
-  line-height: 16px;
+  line-height: 18px;
+}
+
+.search-button {
+  height: 40px;
+  border-radius: 8px;
+  font-family: "PingFang SC";
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(7, 192, 95, 0.3);
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(0);
+  }
 }
 
 .search-results {
@@ -2232,8 +2615,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-top: 1px solid #e5e7eb;
-  padding-top: 16px;
+  border-top: 1px solid #E7E7E7;
+  padding-top: 20px;
   width: 100%;
   box-sizing: border-box;
   overflow-x: hidden;
@@ -2242,24 +2625,31 @@ onMounted(() => {
 .results-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 16px;
   font-family: "PingFang SC";
-  font-size: 13px;
-  font-weight: 500;
-  color: #000000e6;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
   flex-shrink: 0;
+
+  .t-icon {
+    color: #07C05F;
+  }
 }
 
 .no-results {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px 16px;
-  color: #00000066;
+  padding: 48px 16px;
+  color: #6B7280;
   font-family: "PingFang SC";
-  font-size: 13px;
+  font-size: 14px;
   text-align: center;
+  background: #F9FAFB;
+  border-radius: 8px;
+  border: 1px dashed #E7E7E7;
 }
 
 .results-list {
@@ -2267,7 +2657,7 @@ onMounted(() => {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   padding-right: 4px;
 
   &::-webkit-scrollbar {
@@ -2291,52 +2681,51 @@ onMounted(() => {
 }
 
 .result-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 4px;
+  border: 1px solid #E7E7E7;
+  border-radius: 8px;
   background: #fff;
-  padding: 10px;
+  padding: 14px;
   transition: all 0.2s ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   width: 100%;
   box-sizing: border-box;
   min-width: 0;
   overflow: hidden;
 
   &:hover {
-    border-color: #07c05f;
-    box-shadow: 0 2px 6px rgba(7, 192, 95, 0.1);
+    border-color: #07C05F;
+    box-shadow: 0 2px 8px rgba(7, 192, 95, 0.12);
   }
 }
 
 .result-header {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 0;
   border-bottom: none;
   cursor: pointer;
   user-select: none;
-  transition: background-color 0.2s ease;
+  padding: 4px;
+  margin: -4px;
+  border-radius: 6px;
 
   &:hover {
-    background-color: #fafafa;
-    margin: -10px;
-    padding: 10px;
-    border-radius: 4px;
+    background-color: #F9FAFB;
   }
 }
 
 .result-card.expanded .result-header {
-  margin-bottom: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #f5f5f5;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #E7E7E7;
 }
 
 .result-question-wrapper {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
 }
 
@@ -2344,39 +2733,46 @@ onMounted(() => {
   flex: 1;
   min-width: 0;
   font-family: "PingFang SC";
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: #000000e6;
-  line-height: 18px;
+  color: #111827;
+  line-height: 1.6;
   word-break: break-word;
 }
 
 .expand-icon {
   flex-shrink: 0;
-  font-size: 16px;
-  color: #00000066;
+  font-size: 18px;
+  color: #6B7280;
   transition: transform 0.2s ease;
   cursor: pointer;
+
+  &:hover {
+    color: #07C05F;
+  }
 }
 
 .result-meta {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .score-tag,
 .match-type-tag {
-  font-size: 10px;
-  padding: 2px 5px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: "PingFang SC";
 }
 
 .result-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 10px;
-  margin-top: 10px;
+  gap: 12px;
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid #F3F4F6;
 }
 
 // Slide down animation
@@ -2413,15 +2809,17 @@ onMounted(() => {
 .result-section {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
 .section-label {
   font-family: "PingFang SC";
-  font-size: 10px;
-  font-weight: 500;
-  color: #00000099;
-  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6B7280;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .result-tags {
@@ -2448,5 +2846,6 @@ onMounted(() => {
   line-height: 1.4;
 }
 </style>
+
 
 

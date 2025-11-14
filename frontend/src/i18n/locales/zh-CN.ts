@@ -1029,8 +1029,13 @@ export default {
       updateSuccess: "配置保存成功",
       indexModeRequired: "请选择 FAQ 的索引方式",
     },
+    document: {
+      title: "文档管理",
+      subtitle: "上传和管理文档，支持多种文件格式的解析与分块",
+    },
     faq: {
       title: "FAQ 配置",
+      subtitle: "管理 FAQ 条目，支持批量导入、编辑和检索测试",
       description: "设置 FAQ 知识库的索引策略和问答组织方式",
       indexModeLabel: "索引方式",
       indexModeDescription: "仅索引问题可提升精度，索引问答可提高召回率",
