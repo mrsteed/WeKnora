@@ -355,7 +355,10 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 	// Get existing tenant
 	tenant := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	// Update agent configuration
-	useCustomPrompt := tenant.AgentConfig.UseCustomSystemPrompt
+	useCustomPrompt := false
+	if tenant.AgentConfig != nil {
+		useCustomPrompt = tenant.AgentConfig.UseCustomSystemPrompt
+	}
 	if req.UseCustomPrompt != nil {
 		useCustomPrompt = *req.UseCustomPrompt
 	}
