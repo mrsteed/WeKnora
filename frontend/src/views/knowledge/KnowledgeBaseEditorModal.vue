@@ -45,7 +45,6 @@
                         <t-radio-group
                           v-model="formData.type"
                           :disabled="mode === 'edit'"
-                          variant="default-filled"
                         >
                           <t-radio-button value="document">{{ $t('knowledgeEditor.basic.typeDocument') }}</t-radio-button>
                           <t-radio-button value="faq">{{ $t('knowledgeEditor.basic.typeFAQ') }}</t-radio-button>
@@ -97,7 +96,6 @@
                         <label class="form-label required">{{ $t('knowledgeEditor.faq.indexModeLabel') }}</label>
                         <t-radio-group
                           v-model="formData.faqConfig.indexMode"
-                          variant="default-filled"
                         >
                           <t-radio-button value="question_only">{{ $t('knowledgeEditor.faq.modes.questionOnly') }}</t-radio-button>
                           <t-radio-button value="question_answer">{{ $t('knowledgeEditor.faq.modes.questionAnswer') }}</t-radio-button>
@@ -108,7 +106,6 @@
                         <label class="form-label required">{{ $t('knowledgeEditor.faq.questionIndexModeLabel') }}</label>
                         <t-radio-group
                           v-model="formData.faqConfig.questionIndexMode"
-                          variant="default-filled"
                         >
                           <t-radio-button value="combined">{{ $t('knowledgeEditor.faq.modes.combined') }}</t-radio-button>
                           <t-radio-button value="separate">{{ $t('knowledgeEditor.faq.modes.separate') }}</t-radio-button>
@@ -227,7 +224,7 @@ watch(
     if (!formData.value) return
     if (newType === 'faq') {
       if (!formData.value.faqConfig) {
-        formData.value.faqConfig = { indexMode: 'question_answer', questionIndexMode: 'combined' }
+        formData.value.faqConfig = { indexMode: 'question_only', questionIndexMode: 'separate' }
       }
       if (!['basic', 'models', 'faq'].includes(currentSection.value)) {
         currentSection.value = 'faq'
@@ -245,7 +242,8 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
     name: '',
     description: '',
     faqConfig: {
-      indexMode: 'question_answer'
+      indexMode: 'question_only',
+      questionIndexMode: 'separate'
     },
     modelConfig: {
       llmModelId: '',
@@ -321,8 +319,8 @@ const loadKBData = async () => {
       name: kb.name || '',
       description: kb.description || '',
       faqConfig: {
-        indexMode: kb.faq_config?.index_mode || 'question_answer',
-        questionIndexMode: kb.faq_config?.question_index_mode || 'combined'
+        indexMode: kb.faq_config?.index_mode || 'question_only',
+        questionIndexMode: kb.faq_config?.question_index_mode || 'separate'
       },
       modelConfig: {
         llmModelId: kb.summary_model_id || '',
@@ -496,8 +494,8 @@ const buildSubmitData = () => {
 
   if (formData.value.type === 'faq') {
     data.faq_config = {
-      index_mode: formData.value.faqConfig?.indexMode || 'question_answer',
-      question_index_mode: formData.value.faqConfig?.questionIndexMode || 'combined'
+      index_mode: formData.value.faqConfig?.indexMode || 'question_only',
+      question_index_mode: formData.value.faqConfig?.questionIndexMode || 'separate'
     }
   }
 
@@ -535,8 +533,8 @@ const handleSubmit = async () => {
       const updateConfig: any = {}
       if (formData.value.type === 'faq' && formData.value.faqConfig) {
         updateConfig.faq_config = {
-          index_mode: formData.value.faqConfig.indexMode || 'question_answer',
-          question_index_mode: formData.value.faqConfig.questionIndexMode || 'combined'
+          index_mode: formData.value.faqConfig.indexMode || 'question_only',
+          question_index_mode: formData.value.faqConfig.questionIndexMode || 'separate'
         }
       }
       await updateKnowledgeBase(props.kbId, {
