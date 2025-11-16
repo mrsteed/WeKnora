@@ -1103,6 +1103,10 @@ export default {
       invalidJSON: "JSON 文件格式不正确",
       unsupportedFormat: "暂不支持该文件格式",
       selectFile: "请先选择需要导入的文件",
+      downloadExample: "下载示例文件",
+      downloadExampleJSON: "下载 JSON 示例",
+      downloadExampleCSV: "下载 CSV 示例",
+      downloadExampleExcel: "下载 Excel 示例",
     },
     models: {
       title: "模型配置",

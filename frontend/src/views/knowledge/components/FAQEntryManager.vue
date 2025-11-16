@@ -393,7 +393,21 @@
 
                 <!-- 文件上传区域 -->
                 <div class="import-form-item">
-                  <label class="import-form-label required">{{ $t('knowledgeEditor.faqImport.fileLabel') }}</label>
+                  <div class="file-label-row">
+                    <label class="import-form-label required">{{ $t('knowledgeEditor.faqImport.fileLabel') }}</label>
+                    <t-dropdown
+                      :options="downloadExampleOptions"
+                      placement="bottom-right"
+                      trigger="click"
+                      @click="handleDownloadExample"
+                      class="download-example-dropdown"
+                    >
+                      <t-button theme="default" variant="outline" size="small" class="download-example-btn">
+                        <t-icon name="download" size="16px" />
+                        <span>{{ $t('knowledgeEditor.faqImport.downloadExample') }}</span>
+                      </t-button>
+                    </t-dropdown>
+                  </div>
                   <div class="file-upload-wrapper">
                     <input
                       ref="fileInputRef"
@@ -1111,6 +1125,100 @@ const handleImport = async () => {
   } finally {
     importState.importing = false
   }
+}
+
+// 下载示例文件选项
+const downloadExampleOptions = computed(() => [
+  { content: t('knowledgeEditor.faqImport.downloadExampleJSON'), value: 'json' },
+  { content: t('knowledgeEditor.faqImport.downloadExampleCSV'), value: 'csv' },
+  { content: t('knowledgeEditor.faqImport.downloadExampleExcel'), value: 'excel' },
+])
+
+// 示例数据
+const exampleData: FAQEntryPayload[] = [
+  {
+    standard_question: '什么是 WeKnora？',
+    answers: ['WeKnora 是一个智能知识库管理系统', '它支持多种知识库类型和导入方式'],
+    similar_questions: ['WeKnora 是什么？', '介绍一下 WeKnora'],
+    negative_questions: ['这不是 WeKnora', '与 WeKnora 无关'],
+  },
+  {
+    standard_question: '如何创建知识库？',
+    answers: ['点击"新建知识库"按钮', '选择知识库类型并填写相关信息', '完成创建后即可开始使用'],
+    similar_questions: ['怎么创建知识库？', '如何新建知识库？'],
+    negative_questions: [],
+  },
+]
+
+// 下载示例文件
+const handleDownloadExample = (data: { value: string }) => {
+  const { value } = data
+  switch (value) {
+    case 'json':
+      downloadJSONExample()
+      break
+    case 'csv':
+      downloadCSVExample()
+      break
+    case 'excel':
+      downloadExcelExample()
+      break
+  }
+}
+
+// 下载 JSON 示例
+const downloadJSONExample = () => {
+  const jsonStr = JSON.stringify(exampleData, null, 2)
+  const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'faq_example.json'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+// 下载 CSV 示例
+const downloadCSVExample = () => {
+  const headers = ['standard_question', 'answers', 'similar_questions', 'negative_questions']
+  const rows = exampleData.map((item) => {
+    return [
+      item.standard_question,
+      item.answers.join(';'),
+      item.similar_questions.join(';'),
+      item.negative_questions.join(';'),
+    ]
+  })
+  const csvContent = [
+    headers.join(','),
+    ...rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(',')),
+  ].join('\n')
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'faq_example.csv'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+// 下载 Excel 示例
+const downloadExcelExample = () => {
+  const worksheet = XLSX.utils.json_to_sheet(
+    exampleData.map((item) => ({
+      standard_question: item.standard_question,
+      answers: item.answers.join(';'),
+      similar_questions: item.similar_questions.join(';'),
+      negative_questions: item.negative_questions.join(';'),
+    })),
+  )
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'FAQ')
+  XLSX.writeFile(workbook, 'faq_example.xlsx')
 }
 
 watch(
@@ -1838,15 +1946,57 @@ watch(() => entries.value.map(e => ({
   }
 }
 
+// 文件标签行
+.file-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+
+// 下载示例按钮
+.download-example-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "PingFang SC";
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #E7E7E7;
+  background: #ffffff;
+  color: #333333;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    border-color: #07C05F;
+    color: #07C05F;
+    background: #f0fdf4;
+  }
+
+  &:active {
+    background: #e0f9ea;
+  }
+
+  :deep(.t-icon) {
+    font-size: 16px;
+  }
+}
+
 // 导入表单标签
 .import-form-label {
   display: block;
-  margin-bottom: 10px;
+  margin-bottom: 0;
   font-family: "PingFang SC";
   font-size: 14px;
   font-weight: 500;
   color: #333333;
   letter-spacing: -0.2px;
+  flex: 1;
 
   &.required::after {
     content: '*';
@@ -1856,21 +2006,36 @@ watch(() => entries.value.map(e => ({
   }
 }
 
-// 单选按钮组样式
+// 单选按钮组样式 - 符合项目主题风格
 :deep(.import-radio-group) {
+  .t-radio-group--filled {
+    background: #f5f5f5;
+    border-radius: 6px;
+    padding: 2px;
+  }
+  
   .t-radio-button {
     font-family: "PingFang SC";
     font-size: 14px;
+    border-color: #d9d9d9;
     transition: all 0.2s ease;
 
-    &:hover {
-      border-color: #07C05F;
+    &:hover:not(.t-is-disabled) {
+      border-color: #07c05f;
+      color: #07c05f;
     }
 
     &.t-is-checked {
-      background-color: #07C05F;
-      border-color: #07C05F;
-      color: #ffffff;
+      background: #07c05f;
+      border-color: #07c05f;
+      color: #fff;
+      font-weight: 500;
+
+      &:hover:not(.t-is-disabled) {
+        background: #05a04f;
+        border-color: #05a04f;
+        color: #fff;
+      }
     }
   }
 }

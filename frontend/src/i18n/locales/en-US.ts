@@ -790,6 +790,10 @@ export default {
       invalidJSON: 'Invalid JSON format',
       unsupportedFormat: 'Unsupported file format',
       selectFile: 'Please select a file to import first',
+      downloadExample: 'Download Example',
+      downloadExampleJSON: 'Download JSON Example',
+      downloadExampleCSV: 'Download CSV Example',
+      downloadExampleExcel: 'Download Excel Example',
     },
     models: {
       title: 'Model Configuration',

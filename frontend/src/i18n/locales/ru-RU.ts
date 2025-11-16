@@ -875,6 +875,10 @@ export default {
       invalidJSON: 'Неверный формат JSON',
       unsupportedFormat: 'Формат файла не поддерживается',
       selectFile: 'Сначала выберите файл для импорта',
+      downloadExample: 'Скачать пример',
+      downloadExampleJSON: 'Скачать пример JSON',
+      downloadExampleCSV: 'Скачать пример CSV',
+      downloadExampleExcel: 'Скачать пример Excel',
     },
     models: {
       title: 'Конфигурация моделей',
