@@ -243,7 +243,7 @@
             </div>
 
             <!-- 相似问 -->
-            <div class="setting-row vertical setting-row-optional">
+            <div class="setting-row vertical setting-row-optional setting-row-similar">
               <div class="setting-info">
                 <label class="optional-label">{{ $t('knowledgeEditor.faq.similarQuestions') }}</label>
                 <p class="desc optional-desc">{{ $t('knowledgeEditor.faq.similarQuestionsDesc') }}</p>
@@ -289,7 +289,7 @@
             </div>
 
             <!-- 反例 -->
-            <div class="setting-row vertical setting-row-optional">
+            <div class="setting-row vertical setting-row-optional setting-row-negative">
               <div class="setting-info">
                 <label class="optional-label">{{ $t('knowledgeEditor.faq.negativeQuestions') }}</label>
                 <p class="desc optional-desc">{{ $t('knowledgeEditor.faq.negativeQuestionsDesc') }}</p>
@@ -335,7 +335,7 @@
             </div>
 
             <!-- 答案 -->
-            <div class="setting-row vertical setting-row-primary">
+            <div class="setting-row vertical setting-row-primary setting-row-answer">
               <div class="setting-info">
                 <label class="required-label">
                   {{ $t('knowledgeEditor.faq.answers') }}
@@ -609,7 +609,6 @@
         <!-- Search Results -->
         <div v-if="searchResults.length > 0 || hasSearched" class="search-results">
           <div class="results-header">
-            <t-icon name="file-view" size="16px" />
             <span>{{ $t('knowledgeEditor.faq.searchResults') }} ({{ searchResults.length }})</span>
           </div>
           <div v-if="searchResults.length === 0" class="no-results">
@@ -617,23 +616,26 @@
           </div>
           <div v-else class="results-list">
             <div
-              v-for="result in searchResults"
+              v-for="(result, index) in searchResults"
               :key="result.id"
               class="result-card"
               :class="{ 'expanded': result.expanded }"
             >
               <div class="result-header" @click="toggleResult(result)">
                 <div class="result-question-wrapper">
-                  <div class="result-question">{{ result.standard_question }}</div>
+                  <div class="result-question">
+                    <span class="result-index">{{ index + 1 }}.</span>
+                    {{ result.standard_question }}
+                  </div>
+                  <div class="result-meta">
+                    <t-tag size="small" variant="light-outline" class="score-tag">
+                      {{ $t('knowledgeEditor.faq.score') }}: {{ (result.score || 0).toFixed(3) }}
+                    </t-tag>
+                  </div>
                   <t-icon 
                     :name="result.expanded ? 'chevron-up' : 'chevron-down'" 
                     class="expand-icon"
                   />
-                </div>
-                <div class="result-meta">
-                  <t-tag size="small" variant="light-outline" class="score-tag">
-                    {{ $t('knowledgeEditor.faq.score') }}: {{ (result.score || 0).toFixed(3) }}
-                  </t-tag>
                 </div>
               </div>
               <Transition name="slide-down">
@@ -1308,13 +1310,16 @@ const handleSearch = async () => {
       vector_threshold: searchForm.vectorThreshold,
       match_count: searchForm.matchCount,
     })
-    searchResults.value = (res.data || []).map((entry: FAQEntry) => ({
+    const results = (res.data || []).map((entry: FAQEntry) => ({
       ...entry,
       similarCollapsed: false, // 相似问默认展开
       negativeCollapsed: true,  // 反例默认折叠
       answersCollapsed: true,   // 答案默认折叠
       expanded: false,
     })) as FAQEntry[]
+    
+    // 按score从大到小排序
+    searchResults.value = results.sort((a, b) => (b.score || 0) - (a.score || 0))
   } catch (error: any) {
     MessagePlugin.error(error?.message || t('common.operationFailed'))
     searchResults.value = []
@@ -2672,22 +2677,49 @@ watch(() => entries.value.map(e => ({
 
   // 主要字段（标准问、答案）的强调样式
   &.setting-row-primary {
-    background: #fafbfc;
-    padding: 20px;
-    margin: 0 -20px;
-    border-left: 3px solid #07C05F;
-    border-bottom: 1px solid #e5e7eb;
-    border-radius: 0;
+    padding: 20px 0;
+    padding-left: 12px;
+    position: relative;
 
     // 第一个（标准问）去掉顶部间距
     &:first-child {
       padding-top: 0;
-      margin-top: 0;
+    }
+
+    // 左侧颜色标记（标准问和答案都用绿色）
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 20px;
+      width: 3px;
+      height: calc(100% - 40px);
+      background: #07C05F;
+      border-radius: 0 2px 2px 0;
+    }
+
+    &:first-child::before {
+      top: 0;
+      height: calc(100% - 20px);
     }
   }
 
   // 可选字段（相似问、反例）的次要样式
   &.setting-row-optional {
+    padding-left: 12px;
+    position: relative;
+
+    // 左侧颜色标记
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 20px;
+      width: 3px;
+      height: calc(100% - 40px);
+      border-radius: 0 2px 2px 0;
+    }
+
     .setting-info {
       .optional-label {
         color: #333333;
@@ -2699,6 +2731,21 @@ watch(() => entries.value.map(e => ({
       }
     }
   }
+
+  // 相似问的蓝色标记
+  &.setting-row-similar::before {
+    background: #3B82F6;
+  }
+
+  // 反例的橙色标记
+  &.setting-row-negative::before {
+    background: #F59E0B;
+  }
+
+  // 答案去掉底部边框
+  &.setting-row-answer {
+    border-bottom: none;
+  }
 }
 
 .setting-info {
@@ -2709,7 +2756,7 @@ watch(() => entries.value.map(e => ({
   label {
     font-size: 15px;
     font-weight: 500;
-    color: #07C05F;
+    color: #333333;
     display: block;
     margin-bottom: 4px;
   }
@@ -2717,7 +2764,7 @@ watch(() => entries.value.map(e => ({
   .required-label {
     font-size: 15px;
     font-weight: 600;
-    color: #07C05F !important;
+    color: #333333;
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -2733,7 +2780,7 @@ watch(() => entries.value.map(e => ({
   .optional-label {
     font-size: 15px;
     font-weight: 600;
-    color: #07C05F !important;
+    color: #333333;
     display: block;
     margin-bottom: 4px;
   }
@@ -2927,7 +2974,6 @@ watch(() => entries.value.map(e => ({
 :deep(.faq-search-drawer) {
   .t-drawer__body {
     padding: 20px;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -2947,7 +2993,18 @@ watch(() => entries.value.map(e => ({
   display: flex;
   flex-direction: column;
   gap: 16px;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0;
+
+  // 隐藏滚动条但保持滚动功能
+  scrollbar-width: none; // Firefox
+  -ms-overflow-style: none; // IE and Edge
+
+  &::-webkit-scrollbar {
+    display: none; // Chrome, Safari, Opera
+  }
 }
 
 .search-form {
@@ -3092,14 +3149,12 @@ watch(() => entries.value.map(e => ({
 }
 
 .search-results {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   padding-top: 20px;
+  padding-left: 0;
   width: 100%;
   box-sizing: border-box;
-  overflow-x: hidden;
 }
 
 .results-header {
@@ -3107,11 +3162,15 @@ watch(() => entries.value.map(e => ({
   align-items: center;
   gap: 8px;
   margin-bottom: 16px;
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
   font-family: "PingFang SC";
   font-size: 14px;
   font-weight: 600;
   color: #111827;
   flex-shrink: 0;
+  justify-content: flex-start;
 
   .t-icon {
     color: #07C05F;
@@ -3133,31 +3192,9 @@ watch(() => entries.value.map(e => ({
 }
 
 .results-list {
-  flex: 1;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-right: 4px;
-
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: #f5f5f5;
-    border-radius: 3px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: #d0d0d0;
-    border-radius: 3px;
-    transition: background 0.2s;
-
-    &:hover {
-      background: #07C05F;
-    }
-  }
 }
 
 .result-card {
@@ -3165,12 +3202,13 @@ watch(() => entries.value.map(e => ({
   border-radius: 8px;
   background: #fff;
   padding: 14px;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   width: 100%;
   box-sizing: border-box;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
 
   &:hover {
     border-color: #07C05F;
@@ -3189,6 +3227,7 @@ watch(() => entries.value.map(e => ({
   padding: 4px;
   margin: -4px;
   border-radius: 6px;
+  position: relative;
 
   &:hover {
     background-color: #F9FAFB;
@@ -3199,12 +3238,15 @@ watch(() => entries.value.map(e => ({
   margin-bottom: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid #E7E7E7;
+  margin-left: -4px;
+  margin-right: -4px;
+  padding-left: 4px;
+  padding-right: 4px;
 }
 
 .result-question-wrapper {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   width: 100%;
 }
@@ -3218,6 +3260,23 @@ watch(() => entries.value.map(e => ({
   color: #111827;
   line-height: 1.6;
   word-break: break-word;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+
+  .result-index {
+    flex-shrink: 0;
+    color: #07C05F;
+    font-weight: 600;
+  }
+}
+
+.result-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .expand-icon {
@@ -3230,12 +3289,6 @@ watch(() => entries.value.map(e => ({
   &:hover {
     color: #07C05F;
   }
-}
-
-.result-meta {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 .score-tag,
@@ -3251,12 +3304,13 @@ watch(() => entries.value.map(e => ({
   flex-direction: column;
   gap: 12px;
   padding-top: 12px;
-  margin-top: 12px;
+  margin-top: 0;
   border-top: 1px solid #F3F4F6;
+  position: relative;
+  width: 100%;
 }
 
 // Slide down animation - 优化性能
-// 使用 grid-template-rows 和 opacity/transform 来优化动画性能
 .slide-down-enter-active {
   transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), 
               transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -3273,22 +3327,22 @@ watch(() => entries.value.map(e => ({
 
 .slide-down-enter-from {
   opacity: 0;
-  transform: translateY(-8px) scale(0.98);
+  transform: translateY(-8px);
 }
 
 .slide-down-enter-to {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: translateY(0);
 }
 
 .slide-down-leave-from {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: translateY(0);
 }
 
 .slide-down-leave-to {
   opacity: 0;
-  transform: translateY(-8px) scale(0.98);
+  transform: translateY(-8px);
 }
 
 .result-section {
