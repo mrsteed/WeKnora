@@ -23,7 +23,11 @@
         v-for="(kb, index) in kbs" 
         :key="kb.id" 
         class="kb-card"
-        :class="{ 'uninitialized': !isInitialized(kb) }"
+        :class="{ 
+          'uninitialized': !isInitialized(kb),
+          'kb-type-document': (kb.type || 'document') === 'document',
+          'kb-type-faq': kb.type === 'faq'
+        }"
         @click="handleCardClick(kb)"
       >
         <!-- 卡片头部 -->
@@ -382,6 +386,48 @@ const handleKBEditorSuccess = (kbId: string) => {
 
   &.uninitialized {
     opacity: 0.9;
+  }
+
+  // 文档类型背景图案
+  &.kb-type-document::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z' stroke='%2307C05F' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M14 2V8H20' stroke='%2307C05F' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 32px 32px;
+    background-position: top right;
+    opacity: 0.06;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  // 问答类型背景图案
+  &.kb-type-faq::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z' stroke='%231890FF' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M9.09 9C9.3251 8.33167 9.78915 7.76811 10.4 7.40913C11.0108 7.05016 11.7289 6.91894 12.4272 7.03871C13.1255 7.15849 13.7588 7.52152 14.2151 8.06353C14.6713 8.60553 14.9211 9.29152 14.92 10C14.92 12 11.92 13 11.92 13' stroke='%231890FF' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M12 17H12.01' stroke='%231890FF' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 32px 32px;
+    background-position: top right;
+    opacity: 0.06;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  // 确保内容在背景图案之上
+  .card-header,
+  .card-content,
+  .card-bottom {
+    position: relative;
+    z-index: 1;
   }
 }
 
