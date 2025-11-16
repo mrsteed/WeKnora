@@ -5,6 +5,9 @@ export interface SystemInfo {
   commit_id?: string
   build_time?: string
   go_version?: string
+  keyword_index_engine?: string
+  vector_store_engine?: string
+  graph_database_engine?: string
 }
 
 export interface ToolDefinition {

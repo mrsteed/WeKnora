@@ -626,6 +626,12 @@ export default {
     buildTimeDescription: 'Время, когда система была собрана',
     goVersionLabel: 'Версия Go',
     goVersionDescription: 'Версия языка Go, используемая backend',
+    keywordIndexEngineLabel: 'Движок индексации ключевых слов',
+    keywordIndexEngineDescription: 'Используемый в настоящее время движок индексации ключевых слов',
+    vectorStoreEngineLabel: 'Движок векторного хранилища',
+    vectorStoreEngineDescription: 'Используемый в настоящее время движок векторного хранилища',
+    graphDatabaseEngineLabel: 'Движок графовой базы данных',
+    graphDatabaseEngineDescription: 'Используемый в настоящее время движок графовой базы данных',
     unknown: 'Неизвестно',
     messages: {
       fetchFailed: 'Не удалось получить информацию о системе',

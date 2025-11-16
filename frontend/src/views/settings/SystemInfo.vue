@@ -60,6 +60,39 @@
         </div>
       </div>
 
+      <!-- Keyword Index Engine -->
+      <div class="setting-row">
+        <div class="setting-info">
+          <label>{{ $t('system.keywordIndexEngineLabel') }}</label>
+          <p class="desc">{{ $t('system.keywordIndexEngineDescription') }}</p>
+        </div>
+        <div class="setting-control">
+          <span class="info-value">{{ systemInfo?.keyword_index_engine || $t('system.unknown') }}</span>
+        </div>
+      </div>
+
+      <!-- Vector Store Engine -->
+      <div class="setting-row">
+        <div class="setting-info">
+          <label>{{ $t('system.vectorStoreEngineLabel') }}</label>
+          <p class="desc">{{ $t('system.vectorStoreEngineDescription') }}</p>
+        </div>
+        <div class="setting-control">
+          <span class="info-value">{{ systemInfo?.vector_store_engine || $t('system.unknown') }}</span>
+        </div>
+      </div>
+
+      <!-- Graph Database Engine -->
+      <div class="setting-row">
+        <div class="setting-info">
+          <label>{{ $t('system.graphDatabaseEngineLabel') }}</label>
+          <p class="desc">{{ $t('system.graphDatabaseEngineDescription') }}</p>
+        </div>
+        <div class="setting-control">
+          <span class="info-value">{{ systemInfo?.graph_database_engine || $t('system.unknown') }}</span>
+        </div>
+      </div>
+
     </div>
   </div>
 </template>

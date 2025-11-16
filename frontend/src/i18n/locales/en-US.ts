@@ -1089,6 +1089,12 @@ export default {
     buildTimeDescription: 'Time when the system was built',
     goVersionLabel: 'Go Version',
     goVersionDescription: 'Go language version used by the backend',
+    keywordIndexEngineLabel: 'Keyword Index Engine',
+    keywordIndexEngineDescription: 'Currently used keyword index engine',
+    vectorStoreEngineLabel: 'Vector Store Engine',
+    vectorStoreEngineDescription: 'Currently used vector store engine',
+    graphDatabaseEngineLabel: 'Graph Database Engine',
+    graphDatabaseEngineDescription: 'Currently used graph database engine',
     unknown: 'Unknown',
     messages: {
       fetchFailed: 'Failed to fetch system information',
