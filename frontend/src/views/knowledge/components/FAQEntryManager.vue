@@ -220,135 +220,174 @@
           :data="editorForm"
           :rules="editorRules"
           layout="vertical"
-          class="editor-form"
+          :label-width="0"
+          class="faq-editor-form"
         >
-          <t-form-item name="standard_question" :label="$t('knowledgeEditor.faq.standardQuestion')">
-            <t-input v-model="editorForm.standard_question" :maxlength="200" />
-          </t-form-item>
-
-          <t-form-item name="similar_questions" :label="$t('knowledgeEditor.faq.similarQuestions')">
-            <div class="full-width-input-wrapper">
-              <t-input
-                v-model="similarInput"
-                :placeholder="$t('knowledgeEditor.faq.similarPlaceholder')"
-                @keydown.enter.prevent="addSimilar"
-                class="full-width-input"
-              />
-              <t-button
-                theme="primary"
-                variant="outline"
-                :disabled="!similarInput.trim() || editorForm.similar_questions.length >= 10"
-                @click="addSimilar"
-                class="add-item-btn"
-                size="small"
-              >
-                <t-icon name="add" size="16px" />
-              </t-button>
-            </div>
-            <div v-if="editorForm.similar_questions.length > 0" class="item-list">
-              <div
-                v-for="(question, index) in editorForm.similar_questions"
-                :key="index"
-                class="item-row"
-              >
-                <div class="item-content">{{ question }}</div>
-                <t-button
-                  theme="default"
-                  variant="text"
-                  size="small"
-                  @click="removeSimilar(index)"
-                  class="remove-item-btn"
-                >
-                  <t-icon name="close" size="16px" />
-                </t-button>
+          <div class="settings-group">
+            <!-- 标准问 -->
+            <div class="setting-row vertical setting-row-primary">
+              <div class="setting-info">
+                <label class="required-label">
+                  {{ $t('knowledgeEditor.faq.standardQuestion') }}
+                  <span class="required-mark">*</span>
+                </label>
+                <p class="desc">{{ $t('knowledgeEditor.faq.standardQuestionDesc') }}</p>
+              </div>
+              <div class="setting-control">
+                <t-input 
+                  v-model="editorForm.standard_question" 
+                  :maxlength="200"
+                  class="full-width-input"
+                />
               </div>
             </div>
-          </t-form-item>
 
-          <div class="section-divider"></div>
-
-          <t-form-item name="negative_questions" :label="$t('knowledgeEditor.faq.negativeQuestions')">
-            <div class="full-width-input-wrapper">
-              <t-input
-                v-model="negativeInput"
-                :placeholder="$t('knowledgeEditor.faq.negativePlaceholder')"
-                @keydown.enter.prevent="addNegative"
-                class="full-width-input"
-              />
-              <t-button
-                theme="primary"
-                variant="outline"
-                :disabled="!negativeInput.trim() || editorForm.negative_questions.length >= 10"
-                @click="addNegative"
-                class="add-item-btn"
-                size="small"
-              >
-                <t-icon name="add" size="16px" />
-              </t-button>
-            </div>
-            <div v-if="editorForm.negative_questions.length > 0" class="item-list">
-              <div
-                v-for="(question, index) in editorForm.negative_questions"
-                :key="index"
-                class="item-row negative"
-              >
-                <div class="item-content">{{ question }}</div>
-                <t-button
-                  theme="default"
-                  variant="text"
-                  size="small"
-                  @click="removeNegative(index)"
-                  class="remove-item-btn"
-                >
-                  <t-icon name="close" size="16px" />
-                </t-button>
+            <!-- 相似问 -->
+            <div class="setting-row vertical setting-row-optional">
+              <div class="setting-info">
+                <label class="optional-label">{{ $t('knowledgeEditor.faq.similarQuestions') }}</label>
+                <p class="desc optional-desc">{{ $t('knowledgeEditor.faq.similarQuestionsDesc') }}</p>
+              </div>
+              <div class="setting-control">
+                <div class="full-width-input-wrapper">
+                  <t-input
+                    v-model="similarInput"
+                    :placeholder="$t('knowledgeEditor.faq.similarPlaceholder')"
+                    @keydown.enter.prevent="addSimilar"
+                    class="full-width-input"
+                  />
+                  <t-button
+                    theme="primary"
+                    variant="outline"
+                    :disabled="!similarInput.trim() || editorForm.similar_questions.length >= 10"
+                    @click="addSimilar"
+                    class="add-item-btn"
+                    size="small"
+                  >
+                    <t-icon name="add" size="16px" />
+                  </t-button>
+                </div>
+                <div v-if="editorForm.similar_questions.length > 0" class="item-list">
+                  <div
+                    v-for="(question, index) in editorForm.similar_questions"
+                    :key="index"
+                    class="item-row"
+                  >
+                    <div class="item-content">{{ question }}</div>
+                    <t-button
+                      theme="default"
+                      variant="text"
+                      size="small"
+                      @click="removeSimilar(index)"
+                      class="remove-item-btn"
+                    >
+                      <t-icon name="close" size="16px" />
+                    </t-button>
+                  </div>
+                </div>
               </div>
             </div>
-          </t-form-item>
 
-          <div class="section-divider"></div>
-
-          <t-form-item name="answers" :label="$t('knowledgeEditor.faq.answers')">
-            <div class="full-width-input-wrapper textarea-wrapper">
-              <t-textarea
-                v-model="answerInput"
-                :placeholder="$t('knowledgeEditor.faq.answerPlaceholder')"
-                :autosize="{ minRows: 3, maxRows: 6 }"
-                class="full-width-textarea"
-                @keydown.ctrl.enter="addAnswer"
-                @keydown.meta.enter="addAnswer"
-              />
-              <t-button
-                theme="primary"
-                variant="outline"
-                :disabled="!answerInput.trim() || editorForm.answers.length >= 5"
-                @click="addAnswer"
-                class="add-item-btn"
-                size="small"
-              >
-                <t-icon name="add" size="16px" />
-              </t-button>
-            </div>
-            <div class="item-count">{{ editorForm.answers.length }}/5</div>
-            <div v-if="editorForm.answers.length > 0" class="item-list">
-              <div
-                v-for="(answer, index) in editorForm.answers"
-                :key="index"
-                class="item-row answer-row"
-              >
-                <div class="item-content">{{ answer }}</div>
-                <t-button
-                  theme="default"
-                  variant="text"
-                  size="small"
-                  @click="removeAnswer(index)"
-                  class="remove-item-btn"
-                >
-                  <t-icon name="close" size="16px" />
-                </t-button>
+            <!-- 反例 -->
+            <div class="setting-row vertical setting-row-optional">
+              <div class="setting-info">
+                <label class="optional-label">{{ $t('knowledgeEditor.faq.negativeQuestions') }}</label>
+                <p class="desc optional-desc">{{ $t('knowledgeEditor.faq.negativeQuestionsDesc') }}</p>
+              </div>
+              <div class="setting-control">
+                <div class="full-width-input-wrapper">
+                  <t-input
+                    v-model="negativeInput"
+                    :placeholder="$t('knowledgeEditor.faq.negativePlaceholder')"
+                    @keydown.enter.prevent="addNegative"
+                    class="full-width-input"
+                  />
+                  <t-button
+                    theme="primary"
+                    variant="outline"
+                    :disabled="!negativeInput.trim() || editorForm.negative_questions.length >= 10"
+                    @click="addNegative"
+                    class="add-item-btn"
+                    size="small"
+                  >
+                    <t-icon name="add" size="16px" />
+                  </t-button>
+                </div>
+                <div v-if="editorForm.negative_questions.length > 0" class="item-list">
+                  <div
+                    v-for="(question, index) in editorForm.negative_questions"
+                    :key="index"
+                    class="item-row negative"
+                  >
+                    <div class="item-content">{{ question }}</div>
+                    <t-button
+                      theme="default"
+                      variant="text"
+                      size="small"
+                      @click="removeNegative(index)"
+                      class="remove-item-btn"
+                    >
+                      <t-icon name="close" size="16px" />
+                    </t-button>
+                  </div>
+                </div>
               </div>
             </div>
-          </t-form-item>
+
+            <!-- 答案 -->
+            <div class="setting-row vertical setting-row-primary">
+              <div class="setting-info">
+                <label class="required-label">
+                  {{ $t('knowledgeEditor.faq.answers') }}
+                  <span class="required-mark">*</span>
+                </label>
+                <p class="desc">{{ $t('knowledgeEditor.faq.answersDesc') }}</p>
+              </div>
+              <div class="setting-control">
+                <div class="textarea-container">
+                  <div class="full-width-input-wrapper textarea-wrapper">
+                    <t-textarea
+                      v-model="answerInput"
+                      :placeholder="$t('knowledgeEditor.faq.answerPlaceholder')"
+                      :autosize="{ minRows: 3, maxRows: 6 }"
+                      class="full-width-textarea"
+                      @keydown.ctrl.enter="addAnswer"
+                      @keydown.meta.enter="addAnswer"
+                    />
+                    <t-button
+                      theme="primary"
+                      variant="outline"
+                      :disabled="!answerInput.trim() || editorForm.answers.length >= 5"
+                      @click="addAnswer"
+                      class="add-item-btn"
+                      size="small"
+                    >
+                      <t-icon name="add" size="16px" />
+                    </t-button>
+                  </div>
+                  <div class="item-count">{{ editorForm.answers.length }}/5</div>
+                </div>
+                <div v-if="editorForm.answers.length > 0" class="item-list">
+                  <div
+                    v-for="(answer, index) in editorForm.answers"
+                    :key="index"
+                    class="item-row answer-row"
+                  >
+                    <div class="item-content">{{ answer }}</div>
+                    <t-button
+                      theme="default"
+                      variant="text"
+                      size="small"
+                      @click="removeAnswer(index)"
+                      class="remove-item-btn"
+                    >
+                      <t-icon name="close" size="16px" />
+                    </t-button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </t-form>
       </div>
 
@@ -491,56 +530,80 @@
       class="faq-search-drawer"
     >
       <div class="search-test-content">
-        <t-form layout="vertical" class="search-form">
-          <t-form-item :label="$t('knowledgeEditor.faq.queryLabel')" class="form-item-compact">
-            <t-input
-              v-model="searchForm.query"
-              :placeholder="$t('knowledgeEditor.faq.queryPlaceholder')"
-              @keydown.enter.prevent="handleSearch"
-            />
-          </t-form-item>
-
-          <t-form-item :label="$t('knowledgeEditor.faq.similarityThresholdLabel')" class="form-item-compact">
-            <div class="slider-wrapper">
-              <t-slider
-                v-model="searchForm.vectorThreshold"
-                :min="0"
-                :max="1"
-                :step="0.1"
-                :show-tooltip="true"
-                :format-tooltip="(val: number) => val.toFixed(2)"
-              />
-              <div class="slider-value">{{ searchForm.vectorThreshold.toFixed(2) }}</div>
+        <t-form layout="vertical" class="search-form" :label-width="0">
+          <div class="settings-group">
+            <!-- 查询文本 -->
+            <div class="setting-row vertical search-first-row">
+              <div class="setting-info">
+                <label>{{ $t('knowledgeEditor.faq.queryLabel') }}</label>
+                <p class="desc">{{ $t('knowledgeEditor.faq.queryPlaceholder') }}</p>
+              </div>
+              <div class="setting-control">
+                <t-input
+                  v-model="searchForm.query"
+                  :placeholder="$t('knowledgeEditor.faq.queryPlaceholder')"
+                  @keydown.enter.prevent="handleSearch"
+                  class="full-width-input"
+                />
+              </div>
             </div>
-            <div class="form-tip">{{ $t('knowledgeEditor.faq.vectorThresholdDesc') }}</div>
-          </t-form-item>
 
-          <t-form-item :label="$t('knowledgeEditor.faq.matchCountLabel')" class="form-item-compact">
-            <div class="slider-wrapper">
-              <t-slider
-                v-model="searchForm.matchCount"
-                :min="1"
-                :max="50"
-                :step="1"
-                :show-tooltip="true"
-              />
-              <div class="slider-value">{{ searchForm.matchCount }}</div>
+            <!-- 相似度阈值 -->
+            <div class="setting-row vertical">
+              <div class="setting-info">
+                <label>{{ $t('knowledgeEditor.faq.similarityThresholdLabel') }}</label>
+                <p class="desc">{{ $t('knowledgeEditor.faq.vectorThresholdDesc') }}</p>
+              </div>
+              <div class="setting-control">
+                <div class="slider-wrapper">
+                  <t-slider
+                    v-model="searchForm.vectorThreshold"
+                    :min="0"
+                    :max="1"
+                    :step="0.1"
+                    :show-tooltip="true"
+                    :format-tooltip="(val: number) => val.toFixed(2)"
+                  />
+                  <div class="slider-value">{{ searchForm.vectorThreshold.toFixed(2) }}</div>
+                </div>
+              </div>
             </div>
-            <div class="form-tip">{{ $t('knowledgeEditor.faq.matchCountDesc') }}</div>
-          </t-form-item>
 
-          <t-form-item class="form-item-compact">
-            <t-button
-              theme="primary"
-              block
-              size="large"
-              :loading="searching"
-              @click="handleSearch"
-              class="search-button"
-            >
-              {{ searching ? $t('knowledgeEditor.faq.searching') : $t('knowledgeEditor.faq.searchButton') }}
-            </t-button>
-          </t-form-item>
+            <!-- 匹配数量 -->
+            <div class="setting-row vertical">
+              <div class="setting-info">
+                <label>{{ $t('knowledgeEditor.faq.matchCountLabel') }}</label>
+                <p class="desc">{{ $t('knowledgeEditor.faq.matchCountDesc') }}</p>
+              </div>
+              <div class="setting-control">
+                <div class="slider-wrapper">
+                  <t-slider
+                    v-model="searchForm.matchCount"
+                    :min="1"
+                    :max="50"
+                    :step="1"
+                    :show-tooltip="true"
+                  />
+                  <div class="slider-value">{{ searchForm.matchCount }}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 搜索按钮 -->
+            <div class="setting-row vertical">
+              <div class="setting-control">
+                <t-button
+                  theme="primary"
+                  block
+                  :loading="searching"
+                  @click="handleSearch"
+                  class="search-button"
+                >
+                  {{ searching ? $t('knowledgeEditor.faq.searching') : $t('knowledgeEditor.faq.searchButton') }}
+                </t-button>
+              </div>
+            </div>
+          </div>
         </t-form>
 
         <!-- Search Results -->
@@ -616,7 +679,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted, computed, nextTick } from 'vue'
+import { ref, reactive, watch, onMounted, computed, nextTick, onUnmounted } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import type { FormRules, FormInstanceFunctions } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
@@ -1275,7 +1338,19 @@ const toggleResult = (result: FAQEntry) => {
   result.expanded = !result.expanded
 }
 
-// 瀑布流布局函数
+// 防抖函数
+let arrangeCardsTimer: ReturnType<typeof setTimeout> | null = null
+const debounceArrangeCards = (delay = 100) => {
+  if (arrangeCardsTimer) {
+    clearTimeout(arrangeCardsTimer)
+  }
+  arrangeCardsTimer = setTimeout(() => {
+    arrangeCards()
+    arrangeCardsTimer = null
+  }, delay)
+}
+
+// 瀑布流布局函数 - 优化版本，避免闪烁
 const arrangeCards = () => {
   if (!cardListRef.value) return
   
@@ -1301,33 +1376,55 @@ const arrangeCards = () => {
   // 初始化每列的高度数组
   const columnHeights = new Array(columnCount).fill(0)
   
-  // 先重置所有卡片的位置，让它们自然排列以获取正确的高度
-  cards.forEach((card) => {
-    card.style.position = 'static'
-    card.style.top = 'auto'
-    card.style.left = 'auto'
-    card.style.width = 'auto'
-  })
-  
-  // 等待浏览器重新计算布局
+  // 使用 requestAnimationFrame 优化性能
   requestAnimationFrame(() => {
+    // 先设置宽度，保持当前位置不变
+    cards.forEach((card) => {
+      // 确保卡片是绝对定位
+      if (card.style.position !== 'absolute') {
+        card.style.position = 'absolute'
+      }
+      // 设置宽度以便正确计算高度
+      card.style.width = `${columnWidth}px`
+    })
+    
+    // 等待浏览器重新计算布局
     requestAnimationFrame(() => {
+      // 计算所有卡片的高度（不改变位置）
+      const cardHeights: number[] = []
       cards.forEach((card) => {
-        // 找到最短的列
+        const height = card.offsetHeight || card.getBoundingClientRect().height
+        cardHeights.push(height)
+      })
+      
+      // 计算新位置
+      const newPositions: Array<{ top: number; left: number }> = []
+      cardHeights.forEach((height) => {
         const shortestColumnIndex = columnHeights.indexOf(Math.min(...columnHeights))
-        
-        // 设置卡片位置
         const top = columnHeights[shortestColumnIndex]
         const left = shortestColumnIndex * (columnWidth + gap)
+        
+        newPositions.push({ top, left })
+        columnHeights[shortestColumnIndex] += height + gap
+      })
+      
+      // 批量更新所有卡片位置，使用CSS过渡实现平滑移动
+      cards.forEach((card, index) => {
+        const { top, left } = newPositions[index]
+        const currentTop = parseFloat(card.style.top) || 0
+        const currentLeft = parseFloat(card.style.left) || 0
+        
+        // 如果位置发生变化，添加过渡效果
+        if (Math.abs(currentTop - top) > 1 || Math.abs(currentLeft - left) > 1) {
+          // 使用 will-change 提示浏览器优化
+          card.style.willChange = 'top, left'
+          card.style.transition = 'top 0.3s cubic-bezier(0.4, 0, 0.2, 1), left 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+        }
         
         card.style.position = 'absolute'
         card.style.top = `${top}px`
         card.style.left = `${left}px`
         card.style.width = `${columnWidth}px`
-        
-        // 更新该列的高度（使用实际高度）
-        const cardHeight = card.offsetHeight || card.getBoundingClientRect().height
-        columnHeights[shortestColumnIndex] += cardHeight + gap
       })
       
       // 设置容器高度
@@ -1336,13 +1433,28 @@ const arrangeCards = () => {
         cardListRef.value.style.height = `${maxHeight}px`
         cardListRef.value.style.position = 'relative'
       }
+      
+      // 动画完成后移除过渡和 will-change，避免影响后续交互
+      setTimeout(() => {
+        cards.forEach((card) => {
+          card.style.transition = ''
+          card.style.willChange = ''
+        })
+      }, 300)
     })
   })
 }
 
-// 监听窗口大小变化
+// 监听窗口大小变化（使用防抖）
+let resizeTimer: ReturnType<typeof setTimeout> | null = null
 const handleResize = () => {
-  arrangeCards()
+  if (resizeTimer) {
+    clearTimeout(resizeTimer)
+  }
+  resizeTimer = setTimeout(() => {
+    arrangeCards()
+    resizeTimer = null
+  }, 150)
 }
 
 onMounted(() => {
@@ -1352,6 +1464,16 @@ onMounted(() => {
   window.addEventListener('resize', handleResize)
 })
 
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+  if (arrangeCardsTimer) {
+    clearTimeout(arrangeCardsTimer)
+  }
+  if (resizeTimer) {
+    clearTimeout(resizeTimer)
+  }
+})
+
 // 监听 entries 变化，重新布局
 watch(() => entries.value.length, () => {
   nextTick(() => {
@@ -1359,20 +1481,23 @@ watch(() => entries.value.length, () => {
   })
 })
 
-// 监听折叠状态变化，重新布局（包括展开和收起）
+// 监听折叠状态变化，重新布局（使用防抖和动画完成后的回调）
 watch(() => entries.value.map(e => ({
   id: e.id,
   similarCollapsed: e.similarCollapsed,
   negativeCollapsed: e.negativeCollapsed,
   answersCollapsed: e.answersCollapsed
 })), () => {
-  // 使用双重 nextTick 确保 DOM 完全更新后再布局
+  // 使用 nextTick 确保 DOM 更新
   nextTick(() => {
-    nextTick(() => {
-      // 等待 Transition 动画完成（slide-down 动画时长约 300ms）
-      setTimeout(() => {
-        arrangeCards()
-      }, 350)
+    // 等待一个渲染帧，让高度变化生效
+    requestAnimationFrame(() => {
+      // 再等待一个渲染帧，确保高度计算准确
+      requestAnimationFrame(() => {
+        // 等待 Transition 动画完成后再布局（slide-down 动画时长约 200ms）
+        // 使用防抖避免频繁调用
+        debounceArrangeCards(250)
+      })
     })
   })
 }, { deep: true })
@@ -1510,9 +1635,10 @@ watch(() => entries.value.map(e => ({
   max-width: 100%;
   overflow: hidden;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
   box-sizing: border-box;
   height: fit-content; // 高度根据内容自适应
+  // 注意：top 和 left 的 transition 由 JS 动态控制，避免与布局动画冲突
 
   &:hover {
     border-color: #07C05F;
@@ -1620,6 +1746,7 @@ watch(() => entries.value.map(e => ({
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  contain: layout; // 优化渲染性能
 }
 
 .faq-section {
@@ -1701,6 +1828,7 @@ watch(() => entries.value.map(e => ({
   min-width: 0;
   width: 100%;
   overflow: hidden;
+  contain: layout style paint; // 优化渲染性能
   
   // 确保每个标签都有最大宽度限制
   > * {
@@ -2302,14 +2430,16 @@ watch(() => entries.value.map(e => ({
   display: flex;
   gap: 8px;
   align-items: center;
-  margin-bottom: 8px;
+  width: 100%;
 
   .full-width-input {
     flex: 1;
+    min-width: 0;
   }
 
   .full-width-textarea {
     flex: 1;
+    min-width: 0;
     
     :deep(.t-textarea__inner) {
       min-height: 80px;
@@ -2368,29 +2498,31 @@ watch(() => entries.value.map(e => ({
   }
 }
 
+.textarea-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
 .item-count {
   font-size: 13px;
   color: #6B7280;
   font-family: "PingFang SC";
   font-weight: 500;
-  margin-bottom: 12px;
   text-align: right;
-  padding-right: 4px;
+  padding-right: 40px;
+  line-height: 1;
 }
 
 .item-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 12px;
+  width: 100%;
+  margin-top: 8px;
 }
 
-.section-divider {
-  height: 1px;
-  background: linear-gradient(to right, transparent, #E7E7E7, transparent);
-  margin: 24px 0;
-  border: none;
-}
 
 .item-row {
   display: flex;
@@ -2481,35 +2613,180 @@ watch(() => entries.value.map(e => ({
   font-family: "PingFang SC";
 }
 
-// 表单样式优化 - 与项目整体风格一致
-:deep(.t-form) {
-  .t-form__controls-content {
-    margin: 0;
+// FAQ编辑器表单样式 - 完全参考设置页面
+.faq-editor-form {
+  width: 100%;
+
+  // 隐藏Form的默认结构
+  :deep(.t-form__label) {
+    display: none !important;
+    width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  :deep(.t-form__controls) {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+
+  :deep(.t-form__controls-content) {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
     display: block !important;
-    align-items: unset !important;
-    min-height: unset !important;
+  }
+
+  :deep(.t-form-item) {
+    margin-bottom: 0 !important;
+    padding: 0 !important;
   }
 }
 
-:deep(.t-form-item) {
-  margin-bottom: 24px;
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.setting-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 0;
+  border-bottom: 1px solid #e5e7eb;
 
   &:last-child {
-    margin-bottom: 0;
+    border-bottom: none;
   }
 
-  .t-form-item__label {
-    font-family: "PingFang SC";
-    font-size: 14px;
+  &.vertical {
+    flex-direction: column;
+    gap: 12px;
+
+    .setting-control {
+      width: 100%;
+      max-width: 100%;
+    }
+  }
+
+  // 主要字段（标准问、答案）的强调样式
+  &.setting-row-primary {
+    background: #fafbfc;
+    padding: 20px;
+    margin: 0 -20px;
+    border-left: 3px solid #07C05F;
+    border-bottom: 1px solid #e5e7eb;
+    border-radius: 0;
+
+    // 第一个（标准问）去掉顶部间距
+    &:first-child {
+      padding-top: 0;
+      margin-top: 0;
+    }
+  }
+
+  // 可选字段（相似问、反例）的次要样式
+  &.setting-row-optional {
+    .setting-info {
+      .optional-label {
+        color: #333333;
+        font-weight: 500;
+      }
+
+      .optional-desc {
+        color: #666666;
+      }
+    }
+  }
+}
+
+.setting-info {
+  flex: 1;
+  max-width: 65%;
+  padding-right: 24px;
+
+  label {
+    font-size: 15px;
     font-weight: 500;
-    color: #111827;
-    margin-bottom: 10px;
-    line-height: 22px;
+    color: #07C05F;
     display: block;
+    margin-bottom: 4px;
   }
 
-  .t-form-item__content {
+  .required-label {
+    font-size: 15px;
+    font-weight: 600;
+    color: #07C05F !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+
+  .required-mark {
+    color: #FA5151;
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .optional-label {
+    font-size: 15px;
+    font-weight: 600;
+    color: #07C05F !important;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .desc {
+    font-size: 13px;
+    color: #666666;
     margin: 0;
+    line-height: 1.5;
+  }
+
+  .optional-desc {
+    font-size: 13px;
+    color: #666666;
+  }
+}
+
+.setting-row.vertical .setting-info {
+  max-width: 100%;
+  padding-right: 0;
+  width: 100%;
+}
+
+.setting-control {
+  flex-shrink: 0;
+  min-width: 280px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.setting-row.vertical .setting-control {
+  width: 100%;
+  max-width: 100%;
+  min-width: unset;
+  justify-content: flex-start;
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+// 垂直布局中的输入框确保全宽
+.setting-row.vertical .full-width-input {
+  width: 100%;
+
+  :deep(.t-input__wrap) {
+    width: 100%;
+  }
+}
+
+.setting-row.vertical .full-width-textarea {
+  width: 100%;
+
+  :deep(.t-textarea) {
     width: 100%;
   }
 }
@@ -2539,7 +2816,7 @@ watch(() => entries.value.map(e => ({
     background: transparent;
     font-size: 14px;
     font-family: "PingFang SC";
-    padding: 8px 12px;
+    padding: 6px 12px;
     color: #111827;
 
     &:focus {
@@ -2586,7 +2863,7 @@ watch(() => entries.value.map(e => ({
     font-family: "PingFang SC";
     line-height: 1.6;
     resize: vertical;
-    padding: 8px 12px;
+    padding: 6px 12px;
     color: #111827;
 
     &:focus {
@@ -2669,33 +2946,36 @@ watch(() => entries.value.map(e => ({
 .search-test-content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   height: 100%;
 }
 
 .search-form {
   flex-shrink: 0;
-}
 
-.form-item-compact {
-  margin-bottom: 20px;
-
-  &:last-child {
-    margin-bottom: 0;
+  :deep(.t-form__label) {
+    display: none !important;
+    width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
-}
 
-:deep(.form-item-compact .t-form-item__label) {
-  margin-bottom: 10px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #111827;
-  font-family: "PingFang SC";
-}
+  :deep(.t-form__controls) {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
 
-:deep(.form-item-compact .t-form-item__content) {
-  margin: 0;
-  width: 100%;
+  :deep(.t-form__controls-content) {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    display: block !important;
+  }
+
+  :deep(.t-form-item) {
+    margin-bottom: 0 !important;
+    padding: 0 !important;
+  }
 }
 
 .slider-wrapper {
@@ -2703,7 +2983,51 @@ watch(() => entries.value.map(e => ({
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 4px 0;
+  padding: 2px 0;
+}
+
+.search-form .setting-row {
+  padding: 16px 0;
+  border-bottom: 1px solid #e5e7eb;
+
+  &.search-first-row {
+    padding-top: 0;
+  }
+
+  &:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .setting-info {
+    max-width: 100%;
+    padding-right: 0;
+    margin-bottom: 8px;
+
+    label {
+      font-size: 14px;
+      font-weight: 500;
+      color: #333333;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .desc {
+      font-size: 12px;
+      color: #666666;
+      margin: 0;
+      line-height: 1.4;
+    }
+  }
+
+  .setting-control {
+    width: 100%;
+    max-width: 100%;
+    min-width: unset;
+    justify-content: flex-start;
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 :deep(.slider-wrapper .t-slider) {
@@ -2749,16 +3073,8 @@ watch(() => entries.value.map(e => ({
   border-radius: 6px;
 }
 
-.form-tip {
-  margin-top: 8px;
-  font-size: 12px;
-  color: #6B7280;
-  font-family: "PingFang SC";
-  line-height: 18px;
-}
-
 .search-button {
-  height: 40px;
+  height: 36px;
   border-radius: 8px;
   font-family: "PingFang SC";
   font-size: 14px;
@@ -2780,7 +3096,6 @@ watch(() => entries.value.map(e => ({
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-top: 1px solid #E7E7E7;
   padding-top: 20px;
   width: 100%;
   box-sizing: border-box;
@@ -2940,35 +3255,40 @@ watch(() => entries.value.map(e => ({
   border-top: 1px solid #F3F4F6;
 }
 
-// Slide down animation
-.slide-down-enter-active,
-.slide-down-leave-active {
-  transition: all 0.3s ease;
+// Slide down animation - 优化性能
+// 使用 grid-template-rows 和 opacity/transform 来优化动画性能
+.slide-down-enter-active {
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), 
+              transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
+  will-change: opacity, transform;
+}
+
+.slide-down-leave-active {
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), 
+              transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  will-change: opacity, transform;
 }
 
 .slide-down-enter-from {
   opacity: 0;
-  max-height: 0;
-  padding-top: 0;
-  margin-top: 0;
+  transform: translateY(-8px) scale(0.98);
 }
 
 .slide-down-enter-to {
   opacity: 1;
-  max-height: 1000px;
+  transform: translateY(0) scale(1);
 }
 
 .slide-down-leave-from {
   opacity: 1;
-  max-height: 1000px;
+  transform: translateY(0) scale(1);
 }
 
 .slide-down-leave-to {
   opacity: 0;
-  max-height: 0;
-  padding-top: 0;
-  margin-top: 0;
+  transform: translateY(-8px) scale(0.98);
 }
 
 .result-section {
