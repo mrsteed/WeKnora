@@ -2283,6 +2283,10 @@ func (s *knowledgeService) SearchFAQEntries(ctx context.Context,
 		entries = append(entries, entry)
 	}
 
+	slices.SortFunc(entries, func(a, b *types.FAQEntry) int {
+		return int(b.Score - a.Score)
+	})
+
 	return entries, nil
 }
 

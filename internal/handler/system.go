@@ -30,6 +30,7 @@ type GetSystemInfoResponse struct {
 	KeywordIndexEngine  string `json:"keyword_index_engine,omitempty"`
 	VectorStoreEngine   string `json:"vector_store_engine,omitempty"`
 	GraphDatabaseEngine string `json:"graph_database_engine,omitempty"`
+	MinioEnabled        bool   `json:"minio_enabled,omitempty"`
 }
 
 // 编译时注入的版本信息
@@ -53,6 +54,9 @@ func (h *SystemHandler) GetSystemInfo(c *gin.Context) {
 	// Get graph database engine from NEO4J_ENABLE
 	graphDatabaseEngine := h.getGraphDatabaseEngine()
 
+	// Get MinIO enabled status
+	minioEnabled := h.isMinioEnabled()
+
 	response := GetSystemInfoResponse{
 		Version:             Version,
 		CommitID:            CommitID,
@@ -61,6 +65,7 @@ func (h *SystemHandler) GetSystemInfo(c *gin.Context) {
 		KeywordIndexEngine:  keywordIndexEngine,
 		VectorStoreEngine:   vectorStoreEngine,
 		GraphDatabaseEngine: graphDatabaseEngine,
+		MinioEnabled:        minioEnabled,
 	}
 
 	logger.Info(ctx, "System info retrieved successfully")
@@ -130,4 +135,14 @@ func (h *SystemHandler) getGraphDatabaseEngine() string {
 		return "Neo4j"
 	}
 	return "未启用"
+}
+
+// isMinioEnabled checks if MinIO is enabled
+func (h *SystemHandler) isMinioEnabled() bool {
+	// Check if all required MinIO environment variables are set
+	endpoint := os.Getenv("MINIO_ENDPOINT")
+	accessKeyID := os.Getenv("MINIO_ACCESS_KEY_ID")
+	secretAccessKey := os.Getenv("MINIO_SECRET_ACCESS_KEY")
+
+	return endpoint != "" && accessKeyID != "" && secretAccessKey != ""
 }

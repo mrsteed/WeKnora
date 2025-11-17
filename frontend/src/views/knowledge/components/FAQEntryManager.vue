@@ -424,7 +424,7 @@
                 <!-- 导入模式选择 -->
                 <div class="import-form-item">
                   <label class="import-form-label required">{{ $t('knowledgeEditor.faqImport.modeLabel') }}</label>
-                  <t-radio-group v-model="importState.mode" variant="default-filled" class="import-radio-group">
+                  <t-radio-group v-model="importState.mode" class="import-radio-group">
                     <t-radio-button value="append">{{ $t('knowledgeEditor.faqImport.appendMode') }}</t-radio-button>
                     <t-radio-button value="replace">{{ $t('knowledgeEditor.faqImport.replaceMode') }}</t-radio-button>
                   </t-radio-group>

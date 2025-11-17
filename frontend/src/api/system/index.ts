@@ -8,6 +8,7 @@ export interface SystemInfo {
   keyword_index_engine?: string
   vector_store_engine?: string
   graph_database_engine?: string
+  minio_enabled?: boolean
 }
 
 export interface ToolDefinition {

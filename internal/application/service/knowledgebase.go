@@ -407,15 +407,12 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 	// Check if we need iterative retrieval for FAQ with separate indexing
 	// Only use iterative retrieval if we don't have enough unique chunks after first deduplication
 	needsIterativeRetrieval := len(deduplicatedChunks) < params.MatchCount &&
-		kb.Type == types.KnowledgeBaseTypeFAQ &&
-		kb.FAQConfig != nil &&
-		kb.FAQConfig.QuestionIndexMode == types.FAQQuestionIndexModeSeparate
-
+		kb.Type == types.KnowledgeBaseTypeFAQ && len(matchResults) >= params.MatchCount
 	if needsIterativeRetrieval {
-		logger.Infof(ctx, "Not enough unique chunks (%d < %d), using iterative retrieval for FAQ with separate indexing",
+		logger.Infof(ctx, "Not enough unique chunks (%d < %d), using iterative retrieval for FAQ",
 			len(deduplicatedChunks), params.MatchCount)
 		// Use iterative retrieval to get more unique chunks (with negative question filtering inside)
-		deduplicatedChunks = s.iterativeRetrieveWithDeduplication(ctx, retrieveEngine, retrieveParams, params.MatchCount, params.QueryText, kb.Type == types.KnowledgeBaseTypeFAQ)
+		deduplicatedChunks = s.iterativeRetrieveWithDeduplication(ctx, retrieveEngine, retrieveParams, params.MatchCount, params.QueryText)
 	} else if kb.Type == types.KnowledgeBaseTypeFAQ {
 		// Filter by negative questions if not using iterative retrieval
 		deduplicatedChunks = s.filterByNegativeQuestions(ctx, deduplicatedChunks, params.QueryText)
@@ -438,7 +435,6 @@ func (s *knowledgeBaseService) iterativeRetrieveWithDeduplication(ctx context.Co
 	retrieveParams []types.RetrieveParams,
 	matchCount int,
 	queryText string,
-	isFAQ bool,
 ) []*types.IndexWithScore {
 	maxIterations := 5
 	currentTopK := matchCount
@@ -492,14 +488,12 @@ func (s *knowledgeBaseService) iterativeRetrieveWithDeduplication(ctx context.Co
 			chunksSlice = append(chunksSlice, chunk)
 		}
 
-		// Filter by negative questions if this is a FAQ knowledge base
-		if isFAQ {
-			chunksSlice = s.filterByNegativeQuestions(ctx, chunksSlice, queryText)
-			// Update uniqueChunks map with filtered results
-			uniqueChunks = make(map[string]*types.IndexWithScore, len(chunksSlice))
-			for _, chunk := range chunksSlice {
-				uniqueChunks[chunk.ChunkID] = chunk
-			}
+		// Filter by negative questions
+		chunksSlice = s.filterByNegativeQuestions(ctx, chunksSlice, queryText)
+		// Update uniqueChunks map with filtered results
+		uniqueChunks = make(map[string]*types.IndexWithScore, len(chunksSlice))
+		for _, chunk := range chunksSlice {
+			uniqueChunks[chunk.ChunkID] = chunk
 		}
 
 		logger.Infof(ctx, "After iteration %d: retrieved %d results, found %d unique chunks after filtering (target: %d)",

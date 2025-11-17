@@ -50,10 +50,19 @@
           <div class="setting-info">
             <label>{{ $t('knowledgeEditor.advanced.multimodal.storageTypeLabel') }} <span class="required">*</span></label>
             <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.storageTypeDescription') }}</p>
+            <!-- Warning message when MinIO is not enabled -->
+            <t-alert
+              v-if="!isMinioEnabled"
+              theme="warning"
+              :message="$t('knowledgeEditor.advanced.multimodal.minioDisabledWarning')"
+              style="margin-top: 8px;"
+            />
           </div>
           <div class="setting-control">
             <t-radio-group v-model="localMultimodal.storageType" @change="handleStorageTypeChange">
-              <t-radio value="minio">{{ $t('knowledgeEditor.advanced.multimodal.storageTypeOptions.minio') }}</t-radio>
+              <t-radio value="minio" :disabled="!isMinioEnabled">
+                {{ $t('knowledgeEditor.advanced.multimodal.storageTypeOptions.minio') }}
+              </t-radio>
               <t-radio value="cos">{{ $t('knowledgeEditor.advanced.multimodal.storageTypeOptions.cos') }}</t-radio>
             </t-radio-group>
           </div>
@@ -206,18 +215,32 @@
         <div class="setting-info">
           <label>{{ $t('knowledgeEditor.advanced.graph.label') }}</label>
           <p class="desc">{{ $t('knowledgeEditor.advanced.graph.description') }}</p>
+          <!-- Warning message when graph database is not enabled -->
+          <t-alert
+            v-if="!isGraphDatabaseEnabled"
+            theme="warning"
+            :message="$t('knowledgeEditor.advanced.graph.disabledWarning')"
+            style="margin-top: 8px;"
+          >
+            <template #operation>
+              <t-link theme="primary" @click="handleOpenSystemInfo">
+                {{ $t('knowledgeEditor.advanced.graph.howToEnable') }}
+              </t-link>
+            </template>
+          </t-alert>
         </div>
         <div class="setting-control">
           <t-switch
             v-model="localNodeExtract.enabled"
             @change="handleNodeExtractToggle"
+            :disabled="!isGraphDatabaseEnabled"
             size="large"
           />
         </div>
       </div>
 
       <!-- Knowledge graph configuration -->
-      <div v-if="localNodeExtract.enabled" class="subsection">
+      <div v-if="localNodeExtract.enabled && isGraphDatabaseEnabled" class="subsection">
         <div class="subsection-header">
           <h4>{{ $t('knowledgeEditor.advanced.graph.configTitle') }}</h4>
         </div>
@@ -258,9 +281,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import ModelSelector from '@/components/ModelSelector.vue'
 import { useUIStore } from '@/stores/ui'
+import { getSystemInfo } from '@/api/system'
 
 const uiStore = useUIStore()
 
@@ -306,6 +330,60 @@ const localMultimodal = ref<MultimodalConfig>({ ...props.multimodal })
 const localNodeExtract = ref<NodeExtractConfig>({ ...props.nodeExtract })
 
 const vllmSelectorRef = ref()
+const isGraphDatabaseEnabled = ref(false)
+const isMinioEnabled = ref(false)
+
+// Check system status on mount
+onMounted(async () => {
+  try {
+    const systemInfo = await getSystemInfo()
+    
+    // Check graph database status
+    if (systemInfo.data?.graph_database_engine) {
+      // Check if graph database is enabled
+      // Enabled if it's "Neo4j" or any other non-empty value that's not a disabled indicator
+      const engine = systemInfo.data.graph_database_engine.trim()
+      const disabledIndicators = ['未启用', '未配置', 'Unknown', 'Неизвестно', '']
+      isGraphDatabaseEnabled.value = !disabledIndicators.includes(engine) && engine.length > 0
+      
+      // If graph database is disabled, also disable node extract
+      if (!isGraphDatabaseEnabled.value && localNodeExtract.value.enabled) {
+        localNodeExtract.value.enabled = false
+        emit('update:nodeExtract', localNodeExtract.value)
+      }
+    } else {
+      // No graph database engine info, assume disabled
+      isGraphDatabaseEnabled.value = false
+      if (localNodeExtract.value.enabled) {
+        localNodeExtract.value.enabled = false
+        emit('update:nodeExtract', localNodeExtract.value)
+      }
+    }
+    
+    // Check MinIO status
+    isMinioEnabled.value = systemInfo.data?.minio_enabled === true
+    
+    // If MinIO is not enabled and storage type is minio, switch to cos
+    if (!isMinioEnabled.value && localMultimodal.value.storageType === 'minio') {
+      localMultimodal.value.storageType = 'cos'
+      emit('update:multimodal', localMultimodal.value)
+    }
+  } catch (error) {
+    console.error('Failed to fetch system info:', error)
+    // Default to disabled if we can't fetch the info
+    isGraphDatabaseEnabled.value = false
+    isMinioEnabled.value = false
+    if (localNodeExtract.value.enabled) {
+      localNodeExtract.value.enabled = false
+      emit('update:nodeExtract', localNodeExtract.value)
+    }
+    // If MinIO status unknown and storage type is minio, switch to cos
+    if (localMultimodal.value.storageType === 'minio') {
+      localMultimodal.value.storageType = 'cos'
+      emit('update:multimodal', localMultimodal.value)
+    }
+  }
+})
 
 // Watch for prop changes
 watch(() => props.multimodal, (newVal) => {
@@ -340,6 +418,10 @@ const handleMultimodalToggle = () => {
 
 // Handle storage type change
 const handleStorageTypeChange = () => {
+  // Prevent switching to minio if it's not enabled
+  if (localMultimodal.value.storageType === 'minio' && !isMinioEnabled.value) {
+    localMultimodal.value.storageType = 'cos'
+  }
   emit('update:multimodal', localMultimodal.value)
 }
 
@@ -356,7 +438,17 @@ const handleAddModel = (subSection: string) => {
 
 // Handle knowledge graph toggle
 const handleNodeExtractToggle = () => {
+  // Prevent enabling if graph database is not enabled
+  if (!isGraphDatabaseEnabled.value) {
+    localNodeExtract.value.enabled = false
+    return
+  }
   emit('update:nodeExtract', localNodeExtract.value)
+}
+
+// Open system info page to show how to enable graph database
+const handleOpenSystemInfo = () => {
+  uiStore.openSettings('system')
 }
 
 // Handle configuration change

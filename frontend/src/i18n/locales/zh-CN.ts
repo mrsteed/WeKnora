@@ -1171,6 +1171,7 @@ export default {
           minio: "MinIO",
           cos: "腾讯云 COS",
         },
+        minioDisabledWarning: "MinIO 未启用，已自动切换到腾讯云 COS。如需使用 MinIO，请先在系统配置中启用 MinIO。",
         minio: {
           bucketLabel: "Bucket 名称",
           bucketDescription: "MinIO 存储桶名称（必填）",
@@ -1212,6 +1213,8 @@ export default {
         tagsLabel: "标签",
         tagsDescription: "预定义的实体标签（多个标签用逗号分隔）",
         tagsPlaceholder: "输入标签后按回车",
+        disabledWarning: "图数据库未启用，无法使用知识图谱功能。请先启用图数据库后再使用此功能。",
+        howToEnable: "查看如何开启",
       },
     },
   },

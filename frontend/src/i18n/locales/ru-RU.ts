@@ -938,6 +938,7 @@ export default {
           minio: 'MinIO',
           cos: 'Tencent Cloud COS'
         },
+        minioDisabledWarning: 'MinIO не включен. Автоматически переключено на Tencent Cloud COS. Чтобы использовать MinIO, сначала включите его в конфигурации системы.',
         minio: {
           bucketLabel: 'Имя Bucket',
           bucketDescription: 'Название бакета MinIO (обязательно)',
@@ -978,7 +979,9 @@ export default {
         promptPlaceholder: 'Введите текст подсказки',
         tagsLabel: 'Теги',
         tagsDescription: 'Предопределённые теги сущностей (несколько тегов разделяйте запятыми)',
-        tagsPlaceholder: 'Введите тег и нажмите Enter'
+        tagsPlaceholder: 'Введите тег и нажмите Enter',
+        disabledWarning: 'Графовая база данных не включена. Пожалуйста, сначала включите графовую базу данных, чтобы использовать эту функцию.',
+        howToEnable: 'Как включить'
       }
     }
   },

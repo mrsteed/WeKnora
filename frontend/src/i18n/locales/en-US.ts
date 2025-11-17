@@ -847,6 +847,7 @@ export default {
           minio: 'MinIO',
           cos: 'Tencent Cloud COS'
         },
+        minioDisabledWarning: 'MinIO is not enabled. Automatically switched to Tencent Cloud COS. To use MinIO, please enable it in system configuration first.',
         minio: {
           bucketLabel: 'Bucket Name',
           bucketDescription: 'Name of the MinIO bucket (required)',
@@ -887,7 +888,9 @@ export default {
         promptPlaceholder: 'Enter prompt text',
         tagsLabel: 'Tags',
         tagsDescription: 'Predefined entity tags (separate multiple tags with commas)',
-        tagsPlaceholder: 'Enter a tag and press Enter'
+        tagsPlaceholder: 'Enter a tag and press Enter',
+        disabledWarning: 'Graph database is not enabled. Please enable the graph database first to use this feature.',
+        howToEnable: 'How to enable'
       }
     }
   },
