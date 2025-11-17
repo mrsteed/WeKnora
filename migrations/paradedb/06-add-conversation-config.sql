@@ -1,0 +1,7 @@
+-- Add conversation_config column to tenants table
+-- This migration adds support for conversation configuration at tenant level
+-- Used for normal mode conversation settings (prompt, context_template, temperature, max_tokens)
+
+ALTER TABLE tenants 
+ADD COLUMN conversation_config JSONB DEFAULT NULL;
+

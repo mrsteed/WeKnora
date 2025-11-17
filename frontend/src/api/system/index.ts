@@ -38,6 +38,13 @@ export interface AgentConfig {
   available_placeholders?: PlaceholderDefinition[]  // GET 响应中包含，POST/PUT 不需要
 }
 
+export interface ConversationConfig {
+  prompt: string
+  context_template: string
+  temperature: number
+  max_tokens: number
+}
+
 export function getSystemInfo(): Promise<{ data: SystemInfo }> {
   return get('/api/v1/system/info')
 }
@@ -48,4 +55,12 @@ export function getAgentConfig(): Promise<{ data: AgentConfig }> {
 
 export function updateAgentConfig(config: AgentConfig): Promise<{ data: AgentConfig }> {
   return put('/api/v1/tenants/kv/agent-config', config)
+}
+
+export function getConversationConfig(): Promise<{ data: ConversationConfig }> {
+  return get('/api/v1/tenants/kv/conversation-config')
+}
+
+export function updateConversationConfig(config: ConversationConfig): Promise<{ data: ConversationConfig }> {
+  return put('/api/v1/tenants/kv/conversation-config', config)
 }

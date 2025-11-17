@@ -8,6 +8,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/agent"
 	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -19,16 +20,19 @@ import (
 // through the REST API endpoints
 type TenantHandler struct {
 	service interfaces.TenantService
+	config  *config.Config
 }
 
 // NewTenantHandler creates a new tenant handler instance with the provided service
 // Parameters:
 //   - service: An implementation of the TenantService interface for business logic
+//   - config: Application configuration
 //
 // Returns a pointer to the newly created TenantHandler
-func NewTenantHandler(service interfaces.TenantService) *TenantHandler {
+func NewTenantHandler(service interfaces.TenantService, config *config.Config) *TenantHandler {
 	return &TenantHandler{
 		service: service,
+		config:  config,
 	}
 }
 
@@ -410,6 +414,9 @@ func (h *TenantHandler) GetTenantKV(c *gin.Context) {
 	case "web-search-config":
 		h.GetTenantWebSearchConfig(c)
 		return
+	case "conversation-config":
+		h.GetTenantConversationConfig(c)
+		return
 	default:
 		logger.Info(ctx, "KV key not supported", "key", key)
 		c.Error(errors.NewBadRequestError("unsupported key"))
@@ -429,6 +436,9 @@ func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 		return
 	case "web-search-config":
 		h.updateTenantWebSearchConfigInternal(c)
+		return
+	case "conversation-config":
+		h.updateTenantConversationConfigInternal(c)
 		return
 	default:
 		logger.Info(ctx, "KV key not supported", "key", key)
@@ -497,5 +507,104 @@ func (h *TenantHandler) GetTenantWebSearchConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    tenant.WebSearchConfig,
+	})
+}
+
+// GetTenantConversationConfig retrieves the conversation configuration for a tenant
+// This is the global conversation configuration that applies to normal mode sessions by default
+func (h *TenantHandler) GetTenantConversationConfig(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Info(ctx, "Start retrieving tenant conversation config")
+
+	tenant := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	if tenant == nil {
+		logger.Error(ctx, "Tenant is empty")
+		c.Error(errors.NewBadRequestError("Tenant is empty"))
+		return
+	}
+
+	// If tenant has no conversation config, return defaults from config.yaml
+	if tenant.ConversationConfig == nil {
+		logger.Info(ctx, "Tenant has no conversation config, returning defaults")
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data": gin.H{
+				"prompt":           h.config.Conversation.Summary.Prompt,
+				"context_template": h.config.Conversation.Summary.ContextTemplate,
+				"temperature":      h.config.Conversation.Summary.Temperature,
+				"max_tokens":       h.config.Conversation.Summary.MaxTokens,
+			},
+		})
+		return
+	}
+
+	logger.Infof(ctx, "Retrieved tenant conversation config successfully, Tenant ID: %d", tenant.ID)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"prompt":           tenant.ConversationConfig.Prompt,
+			"context_template": tenant.ConversationConfig.ContextTemplate,
+			"temperature":      tenant.ConversationConfig.Temperature,
+			"max_tokens":       tenant.ConversationConfig.MaxTokens,
+		},
+	})
+}
+
+// updateTenantConversationConfigInternal updates the conversation configuration for a tenant
+// This sets the global conversation configuration for normal mode sessions in this tenant
+func (h *TenantHandler) updateTenantConversationConfigInternal(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Info(ctx, "Start updating tenant conversation config")
+
+	var req types.ConversationConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to parse request parameters", err)
+		c.Error(errors.NewValidationError("Invalid request data").WithDetails(err.Error()))
+		return
+	}
+
+	// Validate configuration
+	if req.Temperature < 0 || req.Temperature > 2 {
+		c.Error(errors.NewBadRequestError("temperature must be between 0 and 2"))
+		return
+	}
+	if req.MaxTokens <= 0 || req.MaxTokens > 100000 {
+		c.Error(errors.NewBadRequestError("max_tokens must be between 1 and 100000"))
+		return
+	}
+
+	// Get existing tenant
+	tenant := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	if tenant == nil {
+		logger.Error(ctx, "Tenant is empty")
+		c.Error(errors.NewBadRequestError("Tenant is empty"))
+		return
+	}
+
+	// Update conversation configuration
+	tenant.ConversationConfig = &req
+
+	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			logger.Error(ctx, "Failed to update tenant: application error", appErr)
+			c.Error(appErr)
+		} else {
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(errors.NewInternalServerError("Failed to update tenant conversation config").WithDetails(err.Error()))
+		}
+		return
+	}
+
+	logger.Infof(ctx, "Tenant conversation config updated successfully, Tenant ID: %d", tenant.ID)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"prompt":           updatedTenant.ConversationConfig.Prompt,
+			"context_template": updatedTenant.ConversationConfig.ContextTemplate,
+			"temperature":      updatedTenant.ConversationConfig.Temperature,
+			"max_tokens":       updatedTenant.ConversationConfig.MaxTokens,
+		},
+		"message": "Conversation configuration updated successfully",
 	})
 }

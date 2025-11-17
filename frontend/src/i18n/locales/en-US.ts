@@ -132,6 +132,7 @@ export default {
     title: 'Settings',
     modelConfig: 'Model Settings',
     agentConfig: 'Agent Settings',
+    conversationConfig: 'Conversation Settings',
     webSearchConfig: 'Web Search',
     mcpService: 'MCP Service',
     systemSettings: 'System Settings',
@@ -1331,6 +1332,35 @@ export default {
       resetToDefault: 'Reset to default prompt',
       systemPromptSaved: 'System prompt saved',
       autoDisabled: 'Agent configuration incomplete. Agent mode has been disabled automatically'
+    }
+  },
+  conversationSettings: {
+    description: 'Configure default behavior and parameters for conversation modes, including Prompt settings for Agent mode and normal mode',
+    agentMode: 'Agent Mode',
+    normalMode: 'Normal Mode',
+    contextTemplate: {
+      label: 'Retrieval Result Summary Prompt',
+      desc: 'Prompt template for generating answers based on retrieval results in normal mode',
+      placeholder: 'Enter the prompt template for retrieval result summary...'
+    },
+    systemPrompt: {
+      label: 'System Prompt',
+      desc: 'System-level prompt for normal mode conversations',
+      placeholder: 'Enter the system prompt...'
+    },
+    temperature: {
+      label: 'Temperature',
+      desc: 'Controls randomness in outputs. 0 is most deterministic; 1 is most random'
+    },
+    maxTokens: {
+      label: 'Max Tokens',
+      desc: 'Maximum number of tokens to generate in the response'
+    },
+    toasts: {
+      contextTemplateSaved: 'Retrieval result summary prompt saved',
+      systemPromptSaved: 'System prompt saved',
+      temperatureSaved: 'Temperature saved',
+      maxTokensSaved: 'Max tokens saved'
     }
   },
   // New: MCP Settings

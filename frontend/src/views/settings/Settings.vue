@@ -165,7 +165,7 @@ const navItems = computed(() => [
     ]
   },
   { key: 'ollama', icon: 'server', label: 'Ollama' },
-  { key: 'agent', icon: 'chat', label: t('settings.agentConfig') },
+  { key: 'agent', icon: 'chat', label: t('settings.conversationConfig') },
   { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig')  },
 { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
   { key: 'system', icon: 'info-circle', label: t('settings.systemSettings') },

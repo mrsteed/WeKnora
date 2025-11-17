@@ -34,6 +34,8 @@ type Tenant struct {
 	ContextConfig *ContextConfig `yaml:"context_config" json:"context_config" gorm:"type:jsonb"`
 	// Global WebSearch configuration for this tenant
 	WebSearchConfig *WebSearchConfig `yaml:"web_search_config" json:"web_search_config" gorm:"type:jsonb"`
+	// Global Conversation configuration for this tenant (default for normal mode sessions)
+	ConversationConfig *ConversationConfig `yaml:"conversation_config" json:"conversation_config" gorm:"type:jsonb"`
 	// Creation time
 	CreatedAt time.Time `yaml:"created_at" json:"created_at"`
 	// Last updated time
@@ -60,6 +62,38 @@ func (c RetrieverEngines) Value() (driver.Value, error) {
 
 // Scan implements the sql.Scanner interface, used to convert database value to RetrieverEngines
 func (c *RetrieverEngines) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return json.Unmarshal(b, c)
+}
+
+// ConversationConfig represents the conversation configuration for normal mode
+type ConversationConfig struct {
+	// Prompt is the system prompt
+	Prompt string `json:"prompt"`
+	// ContextTemplate is the prompt template for summarizing retrieval results
+	ContextTemplate string `json:"context_template"`
+	// Temperature controls the randomness of the model output
+	Temperature float64 `json:"temperature"`
+	// MaxTokens is the maximum number of tokens to generate
+	MaxTokens int `json:"max_tokens"`
+}
+
+// Value implements the driver.Valuer interface, used to convert ConversationConfig to database value
+func (c *ConversationConfig) Value() (driver.Value, error) {
+	if c == nil {
+		return nil, nil
+	}
+	return json.Marshal(c)
+}
+
+// Scan implements the sql.Scanner interface, used to convert database value to ConversationConfig
+func (c *ConversationConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}

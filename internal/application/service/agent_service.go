@@ -208,7 +208,15 @@ func (s *agentService) registerTools(
 		case "todo_write":
 			registry.RegisterTool(tools.NewTodoWriteTool())
 		case "knowledge_search":
-			registry.RegisterTool(tools.NewKnowledgeSearchTool(s.knowledgeBaseService, tenantID, config.KnowledgeBases, rerankModel, chatModel))
+			registry.RegisterTool(
+				tools.NewKnowledgeSearchTool(
+					s.knowledgeBaseService,
+					s.chunkService,
+					tenantID,
+					config.KnowledgeBases,
+					rerankModel,
+					chatModel,
+				))
 		case "get_related_chunks":
 			registry.RegisterTool(tools.NewGetRelatedChunksTool(s.chunkService, s.knowledgeBaseService))
 		case "query_knowledge_graph":
@@ -283,6 +291,7 @@ func (s *agentService) getKnowledgeBaseInfos(ctx context.Context, kbIDs []string
 			kbInfos = append(kbInfos, &agent.KnowledgeBaseInfo{
 				ID:          kbID,
 				Name:        kbID,
+				Type:        "document", // Default type
 				Description: "",
 				DocCount:    0,
 				RecentDocs:  []agent.RecentDocInfo{},
@@ -294,37 +303,72 @@ func (s *agentService) getKnowledgeBaseInfos(ctx context.Context, kbIDs []string
 		docCount := 0
 		recentDocs := []agent.RecentDocInfo{}
 
-		// Get recent documents using paged query (first 10, assumed to be sorted by created_at desc)
-		pageResult, err := s.knowledgeService.ListPagedKnowledgeByKnowledgeBaseID(ctx, kbID, &types.Pagination{
-			Page:     1,
-			PageSize: 10,
-		})
-
-		if err == nil && pageResult != nil {
-			docCount = int(pageResult.Total)
-
-			// Convert to Knowledge slice
-			if knowledges, ok := pageResult.Data.([]*types.Knowledge); ok {
-				for _, k := range knowledges {
-					if len(recentDocs) >= 10 {
-						break
+		if kb.Type == types.KnowledgeBaseTypeFAQ {
+			pageResult, err := s.knowledgeService.ListFAQEntries(ctx, kbID, &types.Pagination{
+				Page:     1,
+				PageSize: 10,
+			})
+			if err == nil && pageResult != nil {
+				docCount = int(pageResult.Total)
+				if entries, ok := pageResult.Data.([]*types.FAQEntry); ok {
+					for _, entry := range entries {
+						if len(recentDocs) >= 10 {
+							break
+						}
+						recentDocs = append(recentDocs, agent.RecentDocInfo{
+							KnowledgeID:         entry.ChunkID,
+							Title:               entry.StandardQuestion,
+							Type:                string(types.ChunkTypeFAQ),
+							CreatedAt:           entry.CreatedAt.Format("2006-01-02"),
+							FAQStandardQuestion: entry.StandardQuestion,
+							FAQSimilarQuestions: entry.SimilarQuestions,
+							FAQAnswers:          entry.Answers,
+						})
 					}
-					recentDocs = append(recentDocs, agent.RecentDocInfo{
-						KnowledgeID: k.ID,
-						Title:       k.Title,
-						Description: k.Description,
-						FileName:    k.FileName,
-						Type:        k.FileType,
-						CreatedAt:   k.CreatedAt.Format("2006-01-02"),
-						FileSize:    k.FileSize,
-					})
+				}
+			} else if err != nil {
+				logger.Warnf(ctx, "Failed to list FAQ entries for %s: %v", kbID, err)
+			}
+		}
+
+		// Fallback to generic knowledge listing when not FAQ or FAQ retrieval failed
+		if kb.Type != types.KnowledgeBaseTypeFAQ || len(recentDocs) == 0 {
+			pageResult, err := s.knowledgeService.ListPagedKnowledgeByKnowledgeBaseID(ctx, kbID, &types.Pagination{
+				Page:     1,
+				PageSize: 10,
+			})
+
+			if err == nil && pageResult != nil {
+				docCount = int(pageResult.Total)
+
+				// Convert to Knowledge slice
+				if knowledges, ok := pageResult.Data.([]*types.Knowledge); ok {
+					for _, k := range knowledges {
+						if len(recentDocs) >= 10 {
+							break
+						}
+						recentDocs = append(recentDocs, agent.RecentDocInfo{
+							KnowledgeID: k.ID,
+							Title:       k.Title,
+							Description: k.Description,
+							FileName:    k.FileName,
+							Type:        k.FileType,
+							CreatedAt:   k.CreatedAt.Format("2006-01-02"),
+							FileSize:    k.FileSize,
+						})
+					}
 				}
 			}
 		}
 
+		kbType := kb.Type
+		if kbType == "" {
+			kbType = "document" // Default type
+		}
 		kbInfos = append(kbInfos, &agent.KnowledgeBaseInfo{
 			ID:          kb.ID,
 			Name:        kb.Name,
+			Type:        kbType,
 			Description: kb.Description,
 			DocCount:    docCount,
 			RecentDocs:  recentDocs,

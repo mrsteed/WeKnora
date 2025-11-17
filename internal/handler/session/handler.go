@@ -97,9 +97,9 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		if request.SessionStrategy.SummaryParameters != nil {
 			createdSession.SummaryParameters = request.SessionStrategy.SummaryParameters
 		} else {
-			createdSession.SummaryParameters = h.createDefaultSummaryConfig()
+			createdSession.SummaryParameters = h.createDefaultSummaryConfig(ctx)
 		}
-		h.fillSummaryConfigDefaults(createdSession.SummaryParameters)
+		h.fillSummaryConfigDefaults(ctx, createdSession.SummaryParameters)
 
 		logger.Debug(ctx, "Custom session strategy set")
 	} else {
@@ -113,7 +113,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		createdSession.VectorThreshold = h.config.Conversation.VectorThreshold
 		createdSession.RerankThreshold = h.config.Conversation.RerankThreshold
 		createdSession.RerankTopK = h.config.Conversation.RerankTopK
-		createdSession.SummaryParameters = h.createDefaultSummaryConfig()
+		createdSession.SummaryParameters = h.createDefaultSummaryConfig(ctx)
 
 		logger.Debug(ctx, "Using default session strategy")
 	}

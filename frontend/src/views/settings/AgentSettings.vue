@@ -1,11 +1,16 @@
 <template>
   <div class="agent-settings">
     <div class="section-header">
-      <h2>{{ $t('agentSettings.title') }}</h2>
-      <p class="section-description">{{ $t('agentSettings.description') }}</p>
-      
-      <!-- Agent 状态显示 -->
-      <div class="agent-status-row">
+      <h2>{{ $t('settings.conversationConfig') }}</h2>
+      <p class="section-description">{{ $t('conversationSettings.description') }}</p>
+    </div>
+
+    <t-tabs v-model="activeTab" class="conversation-tabs">
+      <!-- Agent 模式设置 Tab -->
+      <t-tab-panel value="agent" :label="$t('conversationSettings.agentMode')">
+        <div class="tab-content">
+          <!-- Agent 状态显示 -->
+          <div class="agent-status-row">
         <div class="status-label">
           <label>{{ $t('agentSettings.status.label') }}</label>
         </div>
@@ -34,9 +39,8 @@
           </p>
         </div>
       </div>
-      </div>
 
-    <div class="settings-group">
+          <div class="settings-group">
 
       <!-- 最大迭代次数 -->
       <div class="setting-row">
@@ -270,7 +274,91 @@
           </teleport>
         </div>
       </div>
-    </div>
+        </div>
+      </div>
+      </t-tab-panel>
+
+      <!-- 普通模式设置 Tab -->
+      <t-tab-panel value="normal" :label="$t('conversationSettings.normalMode')">
+        <div class="tab-content">
+          <div class="settings-group">
+              <!-- System Prompt -->
+              <div class="setting-row vertical">
+              <div class="setting-info">
+                <label>{{ $t('conversationSettings.systemPrompt.label') }}</label>
+                <p class="desc">{{ $t('conversationSettings.systemPrompt.desc') }}</p>
+              </div>
+              <div class="setting-control full-width">
+                <t-textarea
+                  v-model="localSystemPromptNormal"
+                  :autosize="{ minRows: 10, maxRows: 20 }"
+                  :placeholder="$t('conversationSettings.systemPrompt.placeholder')"
+                  @blur="handleSystemPromptNormalChange"
+                  style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
+                />
+              </div>
+            </div>
+
+            <!-- Context Template -->
+            <div class="setting-row vertical">
+              <div class="setting-info">
+                <label>{{ $t('conversationSettings.contextTemplate.label') }}</label>
+                <p class="desc">{{ $t('conversationSettings.contextTemplate.desc') }}</p>
+              </div>
+              <div class="setting-control full-width">
+                <t-textarea
+                  v-model="localContextTemplate"
+                  :autosize="{ minRows: 15, maxRows: 30 }"
+                  :placeholder="$t('conversationSettings.contextTemplate.placeholder')"
+                  @blur="handleContextTemplateChange"
+                  style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
+                />
+              </div>
+            </div>
+
+            <!-- Temperature -->
+            <div class="setting-row">
+              <div class="setting-info">
+                <label>{{ $t('conversationSettings.temperature.label') }}</label>
+                <p class="desc">{{ $t('conversationSettings.temperature.desc') }}</p>
+              </div>
+              <div class="setting-control">
+                <div class="slider-with-value">
+                  <t-slider 
+                    v-model="localTemperatureNormal" 
+                    :min="0" 
+                    :max="1" 
+                    :step="0.1"
+                    :marks="{ 0: '0', 0.5: '0.5', 1: '1' }"
+                    @change="handleTemperatureNormalChange"
+                    style="width: 200px;"
+                  />
+                  <span class="value-display">{{ localTemperatureNormal.toFixed(1) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Max Tokens -->
+            <div class="setting-row">
+              <div class="setting-info">
+                <label>{{ $t('conversationSettings.maxTokens.label') }}</label>
+                <p class="desc">{{ $t('conversationSettings.maxTokens.desc') }}</p>
+              </div>
+              <div class="setting-control">
+                <t-input-number
+                  v-model="localMaxTokens"
+                  :min="1"
+                  :max="100000"
+                  :step="100"
+                  @change="handleMaxTokensChange"
+                  style="width: 200px;"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </t-tab-panel>
+    </t-tabs>
   </div>
 </template>
 
@@ -281,13 +369,16 @@ import { useSettingsStore } from '@/stores/settings'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import { listModels, type ModelConfig } from '@/api/model'
-import { getAgentConfig, updateAgentConfig, type AgentConfig, type ToolDefinition, type PlaceholderDefinition } from '@/api/system'
+import { getAgentConfig, updateAgentConfig, getConversationConfig, updateConversationConfig, type AgentConfig, type ConversationConfig, type ToolDefinition, type PlaceholderDefinition } from '@/api/system'
 
 const settingsStore = useSettingsStore()
 const router = useRouter()
 const { t } = useI18n()
 
-// 本地状态
+// Tab 状态
+const activeTab = ref('agent')
+
+// Agent 模式本地状态
 const localMaxIterations = ref(5)
 const localTemperature = ref(0.7)
 const localThinkingModelId = ref('')
@@ -295,6 +386,17 @@ const localRerankModelId = ref('')
 const localAllowedTools = ref<string[]>([])
 const localSystemPrompt = ref('')
 const localUseCustomSystemPrompt = ref(false)
+
+// 普通模式本地状态
+const localContextTemplate = ref('')
+const localSystemPromptNormal = ref('')
+const localTemperatureNormal = ref(0.3)
+const localMaxTokens = ref(2048)
+const conversationConfigLoaded = ref(false)
+let savedContextTemplate = ''
+let savedSystemPromptNormal = ''
+let savedTemperatureNormal = 0.3
+let savedMaxTokens = 2048
 
 // 计算 Agent 是否就绪
 const isAgentReady = computed(() => {
@@ -496,6 +598,29 @@ onMounted(async () => {
       rerankModelId: config.rerank_model_id,
       allowedTools: config.allowed_tools || []
     })
+
+    // 加载普通模式配置
+    if (!conversationConfigLoaded.value) {
+      try {
+        const convRes = await getConversationConfig()
+        const convConfig = convRes.data
+        
+        localContextTemplate.value = convConfig.context_template || ''
+        savedContextTemplate = convConfig.context_template || ''
+        localSystemPromptNormal.value = convConfig.prompt || ''
+        savedSystemPromptNormal = convConfig.prompt || ''
+        localTemperatureNormal.value = convConfig.temperature || 0.3
+        savedTemperatureNormal = convConfig.temperature || 0.3
+        localMaxTokens.value = convConfig.max_tokens || 2048
+        savedMaxTokens = convConfig.max_tokens || 2048
+        
+        conversationConfigLoaded.value = true
+      } catch (error) {
+        console.error('加载普通模式配置失败:', error)
+        // 使用默认值
+        conversationConfigLoaded.value = true
+      }
+    }
     
     // 等待下一个 tick，确保所有响应式更新完成
     await nextTick()
@@ -1145,6 +1270,95 @@ watch(isAgentReady, (newValue, oldValue) => {
     // 注意：配置从"未就绪"变为"就绪"时，不自动启用（让用户自己决定是否启用）
   }
 })
+
+// 普通模式配置处理函数
+const handleContextTemplateChange = async () => {
+  if (!conversationConfigLoaded.value) return
+  
+  if (localContextTemplate.value === savedContextTemplate) {
+    return
+  }
+  
+  try {
+    const config: ConversationConfig = {
+      prompt: localSystemPromptNormal.value,
+      context_template: localContextTemplate.value,
+      temperature: localTemperatureNormal.value,
+      max_tokens: localMaxTokens.value
+    }
+    
+    await updateConversationConfig(config)
+    savedContextTemplate = localContextTemplate.value
+    MessagePlugin.success(t('conversationSettings.toasts.contextTemplateSaved'))
+  } catch (error) {
+    console.error('保存Context Template失败:', error)
+    MessagePlugin.error(getErrorMessage(error))
+  }
+}
+
+const handleSystemPromptNormalChange = async () => {
+  if (!conversationConfigLoaded.value) return
+  
+  if (localSystemPromptNormal.value === savedSystemPromptNormal) {
+    return
+  }
+  
+  try {
+    const config: ConversationConfig = {
+      prompt: localSystemPromptNormal.value,
+      context_template: localContextTemplate.value,
+      temperature: localTemperatureNormal.value,
+      max_tokens: localMaxTokens.value
+    }
+    
+    await updateConversationConfig(config)
+    savedSystemPromptNormal = localSystemPromptNormal.value
+    MessagePlugin.success(t('conversationSettings.toasts.systemPromptSaved'))
+  } catch (error) {
+    console.error('保存System Prompt失败:', error)
+    MessagePlugin.error(getErrorMessage(error))
+  }
+}
+
+const handleTemperatureNormalChange = async (value: number) => {
+  if (!conversationConfigLoaded.value) return
+  
+  try {
+    const config: ConversationConfig = {
+      prompt: localSystemPromptNormal.value,
+      context_template: localContextTemplate.value,
+      temperature: value,
+      max_tokens: localMaxTokens.value
+    }
+    
+    await updateConversationConfig(config)
+    savedTemperatureNormal = value
+    MessagePlugin.success(t('conversationSettings.toasts.temperatureSaved'))
+  } catch (error) {
+    console.error('保存Temperature失败:', error)
+    MessagePlugin.error(getErrorMessage(error))
+  }
+}
+
+const handleMaxTokensChange = async (value: number) => {
+  if (!conversationConfigLoaded.value) return
+  
+  try {
+    const config: ConversationConfig = {
+      prompt: localSystemPromptNormal.value,
+      context_template: localContextTemplate.value,
+      temperature: localTemperatureNormal.value,
+      max_tokens: value
+    }
+    
+    await updateConversationConfig(config)
+    savedMaxTokens = value
+    MessagePlugin.success(t('conversationSettings.toasts.maxTokensSaved'))
+  } catch (error) {
+    console.error('保存Max Tokens失败:', error)
+    MessagePlugin.error(getErrorMessage(error))
+  }
+}
 </script>
 
 <style lang="less" scoped>
@@ -1152,8 +1366,8 @@ watch(isAgentReady, (newValue, oldValue) => {
   width: 100%;
 }
 
+
 .section-header {
-  margin-bottom: 32px;
 
   h2 {
     font-size: 20px;
@@ -1168,97 +1382,97 @@ watch(isAgentReady, (newValue, oldValue) => {
     margin: 0 0 20px 0;
     line-height: 1.5;
   }
+}
 
-  .agent-status-row {
+.agent-status-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 0;
+  border-bottom: 1px solid #e5e7eb;
+  margin-top: 8px;
+
+  .status-label {
+    flex: 1;
+    max-width: 65%;
+    padding-right: 24px;
+
+    label {
+      font-size: 15px;
+      font-weight: 500;
+      color: #333333;
+      display: block;
+      margin-bottom: 4px;
+    }
+  }
+
+  .status-control {
+    flex-shrink: 0;
+    min-width: 280px;
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    padding: 20px 0;
-    border-bottom: 1px solid #e5e7eb;
-    margin-top: 8px;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
 
-    .status-label {
-      flex: 1;
-      max-width: 65%;
-      padding-right: 24px;
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
 
-      label {
-        font-size: 15px;
-        font-weight: 500;
-        color: #333333;
-        display: block;
-        margin-bottom: 4px;
+      &.ready {
+        background: #f0fdf4;
+        color: #16a34a;
+        
+        .status-icon {
+          color: #16a34a;
+          font-size: 16px;
+        }
+      }
+
+      &:not(.ready) {
+        background: #fff7ed;
+        color: #ea580c;
+        
+        .status-icon {
+          color: #ea580c;
+          font-size: 16px;
+        }
+      }
+
+      .status-text {
+        line-height: 1.4;
       }
     }
 
-    .status-control {
-      flex-shrink: 0;
-      min-width: 280px;
+    .status-hint {
+      font-size: 13px;
+      color: #666666;
+      text-align: right;
+      line-height: 1.5;
+      max-width: 280px;
+    }
+
+    .status-tip {
+      margin: 8px 0 0 0;
+      font-size: 12px;
+      color: #999999;
+      text-align: right;
+      line-height: 1.5;
+      max-width: 280px;
       display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 8px;
+      align-items: flex-start;
+      gap: 4px;
+      justify-content: flex-end;
 
-      .status-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 4px 12px;
-        border-radius: 4px;
+      .tip-icon {
         font-size: 14px;
-        font-weight: 500;
-
-        &.ready {
-          background: #f0fdf4;
-          color: #16a34a;
-          
-          .status-icon {
-            color: #16a34a;
-            font-size: 16px;
-          }
-        }
-
-        &:not(.ready) {
-          background: #fff7ed;
-          color: #ea580c;
-          
-          .status-icon {
-            color: #ea580c;
-            font-size: 16px;
-          }
-        }
-
-        .status-text {
-          line-height: 1.4;
-        }
-      }
-
-      .status-hint {
-        font-size: 13px;
-        color: #666666;
-        text-align: right;
-        line-height: 1.5;
-        max-width: 280px;
-      }
-
-      .status-tip {
-        margin: 8px 0 0 0;
-        font-size: 12px;
         color: #999999;
-        text-align: right;
-        line-height: 1.5;
-        max-width: 280px;
-        display: flex;
-        align-items: flex-start;
-        gap: 4px;
-        justify-content: flex-end;
-
-        .tip-icon {
-          font-size: 14px;
-          color: #999999;
-          flex-shrink: 0;
-          margin-top: 2px;
-        }
+        flex-shrink: 0;
+        margin-top: 2px;
       }
     }
   }

@@ -162,8 +162,13 @@ func getFloat64(m map[string]interface{}, key string) float64 {
 }
 
 // createDefaultSummaryConfig creates a default summary configuration from config
-func (h *Handler) createDefaultSummaryConfig() *types.SummaryConfig {
-	return &types.SummaryConfig{
+// It prioritizes tenant-level ConversationConfig, then falls back to config.yaml defaults
+func (h *Handler) createDefaultSummaryConfig(ctx context.Context) *types.SummaryConfig {
+	// Try to get tenant from context
+	tenant, _ := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+
+	// Initialize with config.yaml defaults
+	cfg := &types.SummaryConfig{
 		MaxTokens:           h.config.Conversation.Summary.MaxTokens,
 		TopP:                h.config.Conversation.Summary.TopP,
 		TopK:                h.config.Conversation.Summary.TopK,
@@ -177,17 +182,74 @@ func (h *Handler) createDefaultSummaryConfig() *types.SummaryConfig {
 		Seed:                h.config.Conversation.Summary.Seed,
 		MaxCompletionTokens: h.config.Conversation.Summary.MaxCompletionTokens,
 	}
+
+	// Override with tenant-level conversation config if available
+	if tenant != nil && tenant.ConversationConfig != nil {
+		if tenant.ConversationConfig.Prompt != "" {
+			cfg.Prompt = tenant.ConversationConfig.Prompt
+		}
+		if tenant.ConversationConfig.ContextTemplate != "" {
+			cfg.ContextTemplate = tenant.ConversationConfig.ContextTemplate
+		}
+		if tenant.ConversationConfig.Temperature > 0 {
+			cfg.Temperature = tenant.ConversationConfig.Temperature
+		}
+		if tenant.ConversationConfig.MaxTokens > 0 {
+			cfg.MaxTokens = tenant.ConversationConfig.MaxTokens
+		}
+	}
+
+	return cfg
 }
 
 // fillSummaryConfigDefaults fills missing fields in summary config with defaults
-func (h *Handler) fillSummaryConfigDefaults(config *types.SummaryConfig) {
+// It prioritizes tenant-level ConversationConfig, then falls back to config.yaml defaults
+func (h *Handler) fillSummaryConfigDefaults(ctx context.Context, config *types.SummaryConfig) {
+	// Try to get tenant from context
+	tenant, _ := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+
+	// Determine default values: tenant config first, then config.yaml
+	var defaultPrompt, defaultContextTemplate, defaultNoMatchPrefix string
+	var defaultTemperature float64
+	var defaultMaxTokens int
+
+	if tenant != nil && tenant.ConversationConfig != nil {
+		// Use tenant-level config as defaults
+		defaultPrompt = tenant.ConversationConfig.Prompt
+		defaultContextTemplate = tenant.ConversationConfig.ContextTemplate
+		defaultTemperature = tenant.ConversationConfig.Temperature
+		defaultMaxTokens = tenant.ConversationConfig.MaxTokens
+	}
+
+	// Fall back to config.yaml if tenant config is empty
+	if defaultPrompt == "" {
+		defaultPrompt = h.config.Conversation.Summary.Prompt
+	}
+	if defaultContextTemplate == "" {
+		defaultContextTemplate = h.config.Conversation.Summary.ContextTemplate
+	}
+	if defaultTemperature == 0 {
+		defaultTemperature = h.config.Conversation.Summary.Temperature
+	}
+	if defaultMaxTokens == 0 {
+		defaultMaxTokens = h.config.Conversation.Summary.MaxTokens
+	}
+	defaultNoMatchPrefix = h.config.Conversation.Summary.NoMatchPrefix
+
+	// Fill missing fields
 	if config.Prompt == "" {
-		config.Prompt = h.config.Conversation.Summary.Prompt
+		config.Prompt = defaultPrompt
 	}
 	if config.ContextTemplate == "" {
-		config.ContextTemplate = h.config.Conversation.Summary.ContextTemplate
+		config.ContextTemplate = defaultContextTemplate
+	}
+	if config.Temperature == 0 {
+		config.Temperature = defaultTemperature
+	}
+	if config.MaxTokens == 0 {
+		config.MaxTokens = defaultMaxTokens
 	}
 	if config.NoMatchPrefix == "" {
-		config.NoMatchPrefix = h.config.Conversation.Summary.NoMatchPrefix
+		config.NoMatchPrefix = defaultNoMatchPrefix
 	}
 }

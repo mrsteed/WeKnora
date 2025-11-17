@@ -19,14 +19,17 @@ import (
 // searchResultWithMeta wraps search result with metadata about which query matched it
 type searchResultWithMeta struct {
 	*types.SearchResult
-	SourceQuery string
-	QueryType   string // "vector" or "keyword"
+	SourceQuery       string
+	QueryType         string // "vector" or "keyword"
+	KnowledgeBaseID   string // ID of the knowledge base this result came from
+	KnowledgeBaseType string // Type of the knowledge base (document, faq, etc.)
 }
 
 // KnowledgeSearchTool searches knowledge bases with flexible query modes
 type KnowledgeSearchTool struct {
 	BaseTool
 	knowledgeService interfaces.KnowledgeBaseService
+	chunkService     interfaces.ChunkService
 	tenantID         uint
 	allowedKBs       []string
 	rerankModel      rerank.Reranker
@@ -36,6 +39,7 @@ type KnowledgeSearchTool struct {
 // NewKnowledgeSearchTool creates a new knowledge search tool
 func NewKnowledgeSearchTool(
 	knowledgeService interfaces.KnowledgeBaseService,
+	chunkService interfaces.ChunkService,
 	tenantID uint,
 	allowedKBs []string,
 	rerankModel rerank.Reranker,
@@ -110,6 +114,7 @@ func NewKnowledgeSearchTool(
 	return &KnowledgeSearchTool{
 		BaseTool:         NewBaseTool("knowledge_search", description),
 		knowledgeService: knowledgeService,
+		chunkService:     chunkService,
 		tenantID:         tenantID,
 		allowedKBs:       allowedKBs,
 		rerankModel:      rerankModel,
@@ -327,8 +332,10 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 
 	// Execute concurrent search
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Starting concurrent search across %d KBs", len(kbIDs))
+	kbTypeMap := t.getKnowledgeBaseTypes(ctx, kbIDs)
+
 	allResults := t.concurrentSearch(ctx, vectorQueries, keywordQueries, kbIDs,
-		topK, vectorThreshold, keywordThreshold)
+		topK, vectorThreshold, keywordThreshold, kbTypeMap)
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Concurrent search completed: %d raw results", len(allResults))
 
 	// Filter by knowledge_ids if provided
@@ -432,7 +439,7 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 
 	// Build output
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Formatting output with %d final results", len(deduplicatedResults))
-	result, err := t.formatOutput(deduplicatedResults, vectorQueries, keywordQueries,
+	result, err := t.formatOutput(ctx, deduplicatedResults, vectorQueries, keywordQueries,
 		kbIDs, len(allResults), vectorThreshold, keywordThreshold, knowledgeIDsFilter, singleQuery)
 	if err != nil {
 		logger.Errorf(ctx, "[Tool][KnowledgeSearch] Failed to format output: %v", err)
@@ -443,6 +450,30 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 	return result, nil
 }
 
+// getKnowledgeBaseTypes fetches knowledge base types for the given IDs
+func (t *KnowledgeSearchTool) getKnowledgeBaseTypes(ctx context.Context, kbIDs []string) map[string]string {
+	kbTypeMap := make(map[string]string, len(kbIDs))
+
+	for _, kbID := range kbIDs {
+		if kbID == "" {
+			continue
+		}
+		if _, exists := kbTypeMap[kbID]; exists {
+			continue
+		}
+
+		kb, err := t.knowledgeService.GetKnowledgeBaseByID(ctx, kbID)
+		if err != nil {
+			logger.Warnf(ctx, "[Tool][KnowledgeSearch] Failed to fetch knowledge base %s info: %v", kbID, err)
+			continue
+		}
+
+		kbTypeMap[kbID] = kb.Type
+	}
+
+	return kbTypeMap
+}
+
 // concurrentSearch executes vector and keyword searches concurrently
 func (t *KnowledgeSearchTool) concurrentSearch(
 	ctx context.Context,
@@ -450,6 +481,7 @@ func (t *KnowledgeSearchTool) concurrentSearch(
 	kbsToSearch []string,
 	topK int,
 	vectorThreshold, keywordThreshold float64,
+	kbTypeMap map[string]string,
 ) []*searchResultWithMeta {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -461,7 +493,7 @@ func (t *KnowledgeSearchTool) concurrentSearch(
 		go func() {
 			defer wg.Done()
 			results := t.searchWithQueries(ctx, vectorQueries, kbsToSearch, topK,
-				vectorThreshold, 1.0, "vector")
+				vectorThreshold, 1.0, "vector", kbTypeMap)
 			mu.Lock()
 			allResults = append(allResults, results...)
 			mu.Unlock()
@@ -474,7 +506,7 @@ func (t *KnowledgeSearchTool) concurrentSearch(
 		go func() {
 			defer wg.Done()
 			results := t.searchWithQueries(ctx, keywordQueries, kbsToSearch, topK,
-				1.0, keywordThreshold, "keyword")
+				1.0, keywordThreshold, "keyword", kbTypeMap)
 			mu.Lock()
 			allResults = append(allResults, results...)
 			mu.Unlock()
@@ -493,6 +525,7 @@ func (t *KnowledgeSearchTool) searchWithQueries(
 	topK int,
 	vectorThreshold, keywordThreshold float64,
 	queryType string,
+	kbTypeMap map[string]string,
 ) []*searchResultWithMeta {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -503,7 +536,7 @@ func (t *KnowledgeSearchTool) searchWithQueries(
 		go func(q string) {
 			defer wg.Done()
 			results := t.searchSingleQuery(ctx, q, kbsToSearch, topK,
-				vectorThreshold, keywordThreshold, queryType)
+				vectorThreshold, keywordThreshold, queryType, kbTypeMap)
 			mu.Lock()
 			allResults = append(allResults, results...)
 			mu.Unlock()
@@ -522,6 +555,7 @@ func (t *KnowledgeSearchTool) searchSingleQuery(
 	topK int,
 	vectorThreshold, keywordThreshold float64,
 	queryType string,
+	kbTypeMap map[string]string,
 ) []*searchResultWithMeta {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -549,9 +583,11 @@ func (t *KnowledgeSearchTool) searchSingleQuery(
 			mu.Lock()
 			for _, r := range kbResults {
 				results = append(results, &searchResultWithMeta{
-					SearchResult: r,
-					SourceQuery:  query,
-					QueryType:    queryType,
+					SearchResult:      r,
+					SourceQuery:       query,
+					QueryType:         queryType,
+					KnowledgeBaseID:   kb,
+					KnowledgeBaseType: kbTypeMap[kb],
 				})
 			}
 			mu.Unlock()
@@ -594,18 +630,85 @@ func (t *KnowledgeSearchTool) rerankResults(
 	query string,
 	results []*searchResultWithMeta,
 ) ([]*searchResultWithMeta, error) {
-	// If chatModel is available, use LLM-based prompt scoring
-	if t.chatModel != nil {
-		return t.rerankWithLLM(ctx, query, results)
+	// Separate FAQ and non-FAQ results. FAQ results keep original scores.
+	faqResults := make([]*searchResultWithMeta, 0)
+	nonFAQResults := make([]*searchResultWithMeta, 0, len(results))
+
+	for _, result := range results {
+		if result.KnowledgeBaseType == types.KnowledgeBaseTypeFAQ {
+			faqResults = append(faqResults, result)
+		} else {
+			nonFAQResults = append(nonFAQResults, result)
+		}
 	}
 
-	// Fallback to rerank model if available
-	if t.rerankModel != nil {
-		return t.rerankWithModel(ctx, query, results)
+	// If there are no non-FAQ results, return original list (already all FAQ)
+	if len(nonFAQResults) == 0 {
+		return results, nil
 	}
 
-	// No reranking available, return original results
-	return results, nil
+	var (
+		rerankedNonFAQ []*searchResultWithMeta
+		err            error
+	)
+
+	// Apply reranking only to non-FAQ results
+	switch {
+	case t.chatModel != nil:
+		rerankedNonFAQ, err = t.rerankWithLLM(ctx, query, nonFAQResults)
+	case t.rerankModel != nil:
+		rerankedNonFAQ, err = t.rerankWithModel(ctx, query, nonFAQResults)
+	default:
+		rerankedNonFAQ = nonFAQResults
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Combine FAQ results (with original order) and reranked non-FAQ results
+	combined := make([]*searchResultWithMeta, 0, len(results))
+	combined = append(combined, faqResults...)
+	combined = append(combined, rerankedNonFAQ...)
+
+	// Sort by score (descending) to keep consistent output order
+	sort.Slice(combined, func(i, j int) bool {
+		return combined[i].Score > combined[j].Score
+	})
+
+	return combined, nil
+}
+
+func (t *KnowledgeSearchTool) getFAQMetadata(
+	ctx context.Context,
+	chunkID string,
+	cache map[string]*types.FAQChunkMetadata,
+) (*types.FAQChunkMetadata, error) {
+	if chunkID == "" || t.chunkService == nil {
+		return nil, nil
+	}
+
+	if meta, ok := cache[chunkID]; ok {
+		return meta, nil
+	}
+
+	chunk, err := t.chunkService.GetChunkByID(ctx, chunkID)
+	if err != nil {
+		cache[chunkID] = nil
+		return nil, err
+	}
+	if chunk == nil {
+		cache[chunkID] = nil
+		return nil, nil
+	}
+
+	meta, err := chunk.FAQMetadata()
+	if err != nil {
+		cache[chunkID] = nil
+		return nil, err
+	}
+	cache[chunkID] = meta
+	return meta, nil
 }
 
 // rerankWithLLM uses LLM prompt to score and rerank search results
@@ -906,6 +1009,7 @@ func (t *KnowledgeSearchTool) deduplicateResults(results []*searchResultWithMeta
 
 // formatOutput formats the search results for display
 func (t *KnowledgeSearchTool) formatOutput(
+	ctx context.Context,
 	results []*searchResultWithMeta,
 	vectorQueries, keywordQueries []string,
 	kbsToSearch []string,
@@ -992,7 +1096,19 @@ func (t *KnowledgeSearchTool) formatOutput(
 	formattedResults := make([]map[string]interface{}, 0, len(results))
 	currentKB := ""
 
+	faqMetadataCache := make(map[string]*types.FAQChunkMetadata)
+
 	for i, result := range results {
+		var faqMeta *types.FAQChunkMetadata
+		if result.KnowledgeBaseType == types.KnowledgeBaseTypeFAQ {
+			meta, err := t.getFAQMetadata(ctx, result.ID, faqMetadataCache)
+			if err != nil {
+				logger.Warnf(ctx, "[Tool][KnowledgeSearch] Failed to load FAQ metadata for chunk %s: %v", result.ID, err)
+			} else {
+				faqMeta = meta
+			}
+		}
+
 		// Group by knowledge base
 		if result.KnowledgeID != currentKB {
 			currentKB = result.KnowledgeID
@@ -1013,18 +1129,47 @@ func (t *KnowledgeSearchTool) formatOutput(
 		output += fmt.Sprintf("  Content: %s\n", result.Content)
 		output += fmt.Sprintf("  [chunk_id: %s - full content included above]\n", result.ID)
 
+		if faqMeta != nil {
+			if faqMeta.StandardQuestion != "" {
+				output += fmt.Sprintf("  FAQ Standard Question: %s\n", faqMeta.StandardQuestion)
+			}
+			if len(faqMeta.SimilarQuestions) > 0 {
+				output += fmt.Sprintf("  FAQ Similar Questions: %s\n", strings.Join(faqMeta.SimilarQuestions, "; "))
+			}
+			if len(faqMeta.Answers) > 0 {
+				output += "  FAQ Answers:\n"
+				for _, ans := range faqMeta.Answers {
+					output += fmt.Sprintf("    - %s\n", ans)
+				}
+			}
+		}
+
 		formattedResults = append(formattedResults, map[string]interface{}{
-			"result_index":    i + 1,
-			"chunk_id":        result.ID,
-			"content":         result.Content,
-			"score":           result.Score,
-			"relevance_level": relevanceLevel,
-			"knowledge_id":    result.KnowledgeID,
-			"knowledge_title": result.KnowledgeTitle,
-			"match_type":      result.MatchType,
-			"source_query":    result.SourceQuery,
-			"query_type":      result.QueryType,
+			"result_index":        i + 1,
+			"chunk_id":            result.ID,
+			"content":             result.Content,
+			"score":               result.Score,
+			"relevance_level":     relevanceLevel,
+			"knowledge_id":        result.KnowledgeID,
+			"knowledge_title":     result.KnowledgeTitle,
+			"match_type":          result.MatchType,
+			"source_query":        result.SourceQuery,
+			"query_type":          result.QueryType,
+			"knowledge_base_type": result.KnowledgeBaseType,
 		})
+
+		last := formattedResults[len(formattedResults)-1]
+		if faqMeta != nil {
+			if faqMeta.StandardQuestion != "" {
+				last["faq_standard_question"] = faqMeta.StandardQuestion
+			}
+			if len(faqMeta.SimilarQuestions) > 0 {
+				last["faq_similar_questions"] = faqMeta.SimilarQuestions
+			}
+			if len(faqMeta.Answers) > 0 {
+				last["faq_answers"] = faqMeta.Answers
+			}
+		}
 	}
 
 	// // Add usage guidance

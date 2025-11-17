@@ -223,6 +223,7 @@ export default {
     title: "设置",
     modelConfig: "模型配置",
     agentConfig: "Agent配置",
+    conversationConfig: "对话设置",
     webSearchConfig: "网络搜索",
     mcpService: "MCP服务",
     systemSettings: "系统设置",
@@ -1335,6 +1336,35 @@ export default {
       resetToDefault: "已恢复为默认 Prompt",
       systemPromptSaved: "系统 Prompt 已保存",
       autoDisabled: "Agent 配置不完整，已自动关闭 Agent 模式",
+    },
+  },
+  conversationSettings: {
+    description: "配置对话模式的默认行为和参数，包括Agent模式和普通模式的Prompt设置",
+    agentMode: "Agent模式",
+    normalMode: "普通模式",
+    contextTemplate: {
+      label: "总结Prompt",
+      desc: "用于普通模式下基于检索结果生成回答的Prompt模板",
+      placeholder: "请输入检索结果总结的Prompt模板...",
+    },
+    systemPrompt: {
+      label: "系统Prompt",
+      desc: "用于普通模式对话的系统级Prompt",
+      placeholder: "请输入系统Prompt...",
+    },
+    temperature: {
+      label: "温度参数",
+      desc: "控制模型输出的随机性，0最确定，1最随机",
+    },
+    maxTokens: {
+      label: "最大Token数",
+      desc: "生成回答的最大Token数量",
+    },
+    toasts: {
+      contextTemplateSaved: "总结Prompt已保存",
+      systemPromptSaved: "系统Prompt已保存",
+      temperatureSaved: "温度参数已保存",
+      maxTokensSaved: "最大Token数已保存",
     },
   },
   // 新增：MCP 设置

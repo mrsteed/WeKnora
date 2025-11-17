@@ -43,19 +43,23 @@ func formatDocSummary(summary string, maxLen int) string {
 
 // RecentDocInfo contains brief information about a recently added document
 type RecentDocInfo struct {
-	KnowledgeID string
-	Title       string
-	Description string
-	FileName    string
-	FileSize    int64
-	Type        string
-	CreatedAt   string // Formatted time string
+	KnowledgeID         string
+	Title               string
+	Description         string
+	FileName            string
+	FileSize            int64
+	Type                string
+	CreatedAt           string // Formatted time string
+	FAQStandardQuestion string
+	FAQSimilarQuestions []string
+	FAQAnswers          []string
 }
 
 // KnowledgeBaseInfo contains essential information about a knowledge base for agent prompt
 type KnowledgeBaseInfo struct {
 	ID          string
 	Name        string
+	Type        string // Knowledge base type: "document" or "faq"
 	Description string
 	DocCount    int
 	RecentDocs  []RecentDocInfo // Recently added documents (up to 10)
@@ -98,30 +102,67 @@ func formatKnowledgeBaseList(kbInfos []*KnowledgeBaseInfo) string {
 	var builder strings.Builder
 	builder.WriteString("\n")
 	for i, kb := range kbInfos {
+		// Display knowledge base name and ID
 		builder.WriteString(fmt.Sprintf("%d. **%s** (knowledge_base_id: `%s`)\n", i+1, kb.Name, kb.ID))
+
+		// Display knowledge base type
+		kbType := kb.Type
+		if kbType == "" {
+			kbType = "document" // Default type
+		}
+		builder.WriteString(fmt.Sprintf("   - Type: %s\n", kbType))
+
 		if kb.Description != "" {
 			builder.WriteString(fmt.Sprintf("   - Description: %s\n", kb.Description))
 		}
 		builder.WriteString(fmt.Sprintf("   - Document count: %d\n", kb.DocCount))
 
 		// Display recent documents if available
+		// For FAQ type knowledge bases, adjust the display format
 		if len(kb.RecentDocs) > 0 {
-			builder.WriteString("   - Recently added documents:\n\n")
-			builder.WriteString("     | # | Document Name | Type | Created At | Knowledge ID | File Size | Summary |\n")
-			builder.WriteString("     |---|---------------|------|------------|--------------|----------|---------|\n")
-			for j, doc := range kb.RecentDocs {
-				if j >= 10 { // Limit to 10 documents
-					break
+			if kbType == "faq" {
+				// FAQ knowledge base: show Q&A pairs in a more compact format
+				builder.WriteString("   - Recent FAQ entries:\n\n")
+				builder.WriteString("     | # | Standard Question | Similar Questions | Answers | Entry ID | Created At |\n")
+				builder.WriteString("     |---|-------------------|-------------------|---------|----------|------------|\n")
+				for j, doc := range kb.RecentDocs {
+					if j >= 10 { // Limit to 10 documents
+						break
+					}
+					question := doc.FAQStandardQuestion
+					if question == "" {
+						question = doc.FileName
+					}
+					similar := "-"
+					if len(doc.FAQSimilarQuestions) > 0 {
+						similar = strings.Join(doc.FAQSimilarQuestions, "; ")
+					}
+					answers := "-"
+					if len(doc.FAQAnswers) > 0 {
+						answers = strings.Join(doc.FAQAnswers, " | ")
+					}
+					builder.WriteString(fmt.Sprintf("     | %d | %s | %s | %s | `%s` | %s |\n",
+						j+1, question, similar, answers, doc.KnowledgeID, doc.CreatedAt))
 				}
-				docName := doc.Title
-				if docName == "" {
-					docName = doc.FileName
+			} else {
+				// Document knowledge base: show documents in standard format
+				builder.WriteString("   - Recently added documents:\n\n")
+				builder.WriteString("     | # | Document Name | Type | Created At | Knowledge ID | File Size | Summary |\n")
+				builder.WriteString("     |---|---------------|------|------------|--------------|----------|---------|\n")
+				for j, doc := range kb.RecentDocs {
+					if j >= 10 { // Limit to 10 documents
+						break
+					}
+					docName := doc.Title
+					if docName == "" {
+						docName = doc.FileName
+					}
+					// Format file size
+					fileSize := formatFileSize(doc.FileSize)
+					summary := formatDocSummary(doc.Description, 120)
+					builder.WriteString(fmt.Sprintf("     | %d | %s | %s | %s | `%s` | %s | %s |\n",
+						j+1, docName, doc.Type, doc.CreatedAt, doc.KnowledgeID, fileSize, summary))
 				}
-				// Format file size
-				fileSize := formatFileSize(doc.FileSize)
-				summary := formatDocSummary(doc.Description, 120)
-				builder.WriteString(fmt.Sprintf("     | %d | %s | %s | %s | `%s` | %s | %s |\n",
-					j+1, docName, doc.Type, doc.CreatedAt, doc.KnowledgeID, fileSize, summary))
 			}
 			builder.WriteString("\n")
 		}
