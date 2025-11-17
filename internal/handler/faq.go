@@ -31,7 +31,9 @@ func (h *FAQHandler) ListEntries(c *gin.Context) {
 		return
 	}
 
-	result, err := h.knowledgeService.ListFAQEntries(ctx, c.Param("id"), &page)
+	tagID := c.Query("tag_id")
+
+	result, err := h.knowledgeService.ListFAQEntries(ctx, c.Param("id"), &page, tagID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

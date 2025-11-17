@@ -47,8 +47,18 @@ export function createManualKnowledge(kbId: string, data: { title: string; conte
   return post(`/api/v1/knowledge-bases/${kbId}/knowledge/manual`, data);
 }
 
-export function listKnowledgeFiles(kbId: string, { page, page_size }: { page: number; page_size: number }) {
-  return get(`/api/v1/knowledge-bases/${kbId}/knowledge?page=${page}&page_size=${page_size}`);
+export function listKnowledgeFiles(
+  kbId: string,
+  params: { page: number; page_size: number; tag_id?: string },
+) {
+  const query = new URLSearchParams();
+  query.append('page', String(params.page));
+  query.append('page_size', String(params.page_size));
+  if (params.tag_id) {
+    query.append('tag_id', params.tag_id);
+  }
+  const qs = query.toString();
+  return get(`/api/v1/knowledge-bases/${kbId}/knowledge?${qs}`);
 }
 
 export function getKnowledgeDetails(id: string) {
@@ -91,7 +101,7 @@ const buildQuery = (params?: Record<string, any>) => {
   return queryString ? `?${queryString}` : '';
 };
 
-export function listFAQEntries(kbId: string, params?: { page?: number; page_size?: number }) {
+export function listFAQEntries(kbId: string, params?: { page?: number; page_size?: number; tag_id?: string }) {
   const query = buildQuery(params);
   return get(`/api/v1/knowledge-bases/${kbId}/faq/entries${query}`);
 }

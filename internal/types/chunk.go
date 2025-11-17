@@ -59,6 +59,8 @@ type Chunk struct {
 	KnowledgeID string `json:"knowledge_id"`
 	// ID of the knowledge base, for quick location
 	KnowledgeBaseID string `json:"knowledge_base_id"`
+	// Optional tag ID for categorization within a knowledge base (used for FAQ)
+	TagID string `json:"tag_id" gorm:"type:varchar(36);index"`
 	// Actual text content of the chunk
 	Content string `json:"content"`
 	// Index position of the chunk in the original document

@@ -100,11 +100,13 @@ func (h *ChunkHandler) ListKnowledgeChunks(c *gin.Context) {
 		return
 	}
 
+	chunkType := []types.ChunkType{types.ChunkTypeText}
+
 	logger.Infof(ctx, "Retrieving knowledge chunks list, knowledge ID: %s, page: %d, page size: %d",
 		knowledgeID, pagination.Page, pagination.PageSize)
 
 	// Use pagination for query
-	result, err := h.service.ListPagedChunksByKnowledgeID(ctx, knowledgeID, &pagination)
+	result, err := h.service.ListPagedChunksByKnowledgeID(ctx, knowledgeID, &pagination, chunkType)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))

@@ -67,6 +67,7 @@ type FAQEntry struct {
 	ChunkID           string       `json:"chunk_id"`
 	KnowledgeID       string       `json:"knowledge_id"`
 	KnowledgeBaseID   string       `json:"knowledge_base_id"`
+	TagID             string       `json:"tag_id"`
 	StandardQuestion  string       `json:"standard_question"`
 	SimilarQuestions  []string     `json:"similar_questions"`
 	NegativeQuestions []string     `json:"negative_questions"`
@@ -85,6 +86,7 @@ type FAQEntryPayload struct {
 	SimilarQuestions  []string `json:"similar_questions"`
 	NegativeQuestions []string `json:"negative_questions"`
 	Answers           []string `json:"answers" binding:"required"`
+	TagID             string   `json:"tag_id"`
 }
 
 const (

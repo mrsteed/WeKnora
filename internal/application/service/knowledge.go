@@ -553,10 +553,10 @@ func (s *knowledgeService) ListKnowledgeByKnowledgeBaseID(ctx context.Context,
 
 // ListPagedKnowledgeByKnowledgeBaseID returns paginated knowledge entries in a knowledge base
 func (s *knowledgeService) ListPagedKnowledgeByKnowledgeBaseID(ctx context.Context,
-	kbID string, page *types.Pagination,
+	kbID string, page *types.Pagination, tagID string,
 ) (*types.PageResult, error) {
 	knowledges, total, err := s.repo.ListPagedKnowledgeByKnowledgeBaseID(ctx,
-		ctx.Value(types.TenantIDContextKey).(uint), kbID, page)
+		ctx.Value(types.TenantIDContextKey).(uint), kbID, page, tagID)
 	if err != nil {
 		return nil, err
 	}
@@ -1949,6 +1949,7 @@ func (s *knowledgeService) CloneChunk(ctx context.Context, src, dst *types.Knowl
 				PageSize: chunkPageSize,
 			},
 			chunkType,
+			"",
 		)
 		chunkPage++
 		if err != nil {
@@ -2023,7 +2024,7 @@ func (s *knowledgeService) CloneChunk(ctx context.Context, src, dst *types.Knowl
 
 // ListFAQEntries lists FAQ entries under a FAQ knowledge base.
 func (s *knowledgeService) ListFAQEntries(ctx context.Context,
-	kbID string, page *types.Pagination,
+	kbID string, page *types.Pagination, tagID string,
 ) (*types.PageResult, error) {
 	if page == nil {
 		page = &types.Pagination{}
@@ -2042,7 +2043,7 @@ func (s *knowledgeService) ListFAQEntries(ctx context.Context,
 	}
 	chunkType := []types.ChunkType{types.ChunkTypeFAQ}
 	chunks, total, err := s.chunkRepo.ListPagedChunksByKnowledgeID(
-		ctx, tenantID, faqKnowledge.ID, page, chunkType,
+		ctx, tenantID, faqKnowledge.ID, page, chunkType, tagID,
 	)
 	if err != nil {
 		return nil, err
@@ -2098,6 +2099,7 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 			faqKnowledge.ID,
 			&types.Pagination{Page: 1, PageSize: 1},
 			[]types.ChunkType{types.ChunkTypeFAQ},
+			"",
 		)
 		if err != nil {
 			return err
@@ -2127,6 +2129,7 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 			ChunkIndex:      startIndex + idx + 1,
 			IsEnabled:       true,
 			ChunkType:       types.ChunkTypeFAQ,
+			TagID:           entry.TagID,
 		}
 		if err := chunk.SetFAQMetadata(meta); err != nil {
 			return err
@@ -2187,6 +2190,7 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 		indexMode = kb.FAQConfig.IndexMode
 	}
 	chunk.Content = buildFAQChunkContent(meta, indexMode)
+	chunk.TagID = payload.TagID
 	chunk.UpdatedAt = time.Now()
 	if err := s.chunkService.UpdateChunk(ctx, chunk); err != nil {
 		return err
@@ -2403,6 +2407,7 @@ func (s *knowledgeService) chunkToFAQEntry(chunk *types.Chunk, kb *types.Knowled
 		ChunkID:           chunk.ID,
 		KnowledgeID:       chunk.KnowledgeID,
 		KnowledgeBaseID:   chunk.KnowledgeBaseID,
+		TagID:             chunk.TagID,
 		StandardQuestion:  meta.StandardQuestion,
 		SimilarQuestions:  meta.SimilarQuestions,
 		NegativeQuestions: meta.NegativeQuestions,

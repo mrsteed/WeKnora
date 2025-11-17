@@ -16,13 +16,15 @@ type ChunkRepository interface {
 	ListChunksByID(ctx context.Context, tenantID uint, ids []string) ([]*types.Chunk, error)
 	// ListChunksByKnowledgeID lists chunks by knowledge id
 	ListChunksByKnowledgeID(ctx context.Context, tenantID uint, knowledgeID string) ([]*types.Chunk, error)
-	// ListPagedChunksByKnowledgeID lists paged chunks by knowledge id
+	// ListPagedChunksByKnowledgeID lists paged chunks by knowledge id.
+	// When tagID is non-empty, results are filtered by tag_id.
 	ListPagedChunksByKnowledgeID(
 		ctx context.Context,
 		tenantID uint,
 		knowledgeID string,
 		page *types.Pagination,
-		chunk_type []types.ChunkType,
+		chunkType []types.ChunkType,
+		tagID string,
 	) ([]*types.Chunk, int64, error)
 	ListChunkByParentID(ctx context.Context, tenantID uint, parentID string) ([]*types.Chunk, error)
 	// UpdateChunk updates a chunk
@@ -48,6 +50,7 @@ type ChunkService interface {
 		ctx context.Context,
 		knowledgeID string,
 		page *types.Pagination,
+		chunkType []types.ChunkType,
 	) (*types.PageResult, error)
 	// UpdateChunk updates a chunk
 	UpdateChunk(ctx context.Context, chunk *types.Chunk) error

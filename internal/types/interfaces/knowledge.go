@@ -33,10 +33,12 @@ type KnowledgeService interface {
 	// ListKnowledgeByKnowledgeBaseID lists all knowledge under a knowledge base.
 	ListKnowledgeByKnowledgeBaseID(ctx context.Context, kbID string) ([]*types.Knowledge, error)
 	// ListPagedKnowledgeByKnowledgeBaseID lists all knowledge under a knowledge base with pagination.
+	// When tagID is non-empty, results are filtered by tag_id.
 	ListPagedKnowledgeByKnowledgeBaseID(
 		ctx context.Context,
 		kbID string,
 		page *types.Pagination,
+		tagID string,
 	) (*types.PageResult, error)
 	// DeleteKnowledge deletes knowledge by ID.
 	DeleteKnowledge(ctx context.Context, id string) error
@@ -51,7 +53,8 @@ type KnowledgeService interface {
 	// UpdateImageInfo updates image information for a knowledge chunk.
 	UpdateImageInfo(ctx context.Context, knowledgeID string, chunkID string, imageInfo string) error
 	// ListFAQEntries lists FAQ entries under a FAQ knowledge base.
-	ListFAQEntries(ctx context.Context, kbID string, page *types.Pagination) (*types.PageResult, error)
+	// When tagID is non-empty, results are filtered by tag_id on FAQ chunks.
+	ListFAQEntries(ctx context.Context, kbID string, page *types.Pagination, tagID string) (*types.PageResult, error)
 	// UpsertFAQEntries imports or appends FAQ entries.
 	UpsertFAQEntries(ctx context.Context, kbID string, payload *types.FAQBatchUpsertPayload) error
 	// UpdateFAQEntry updates a single FAQ entry.
@@ -67,8 +70,10 @@ type KnowledgeRepository interface {
 	CreateKnowledge(ctx context.Context, knowledge *types.Knowledge) error
 	GetKnowledgeByID(ctx context.Context, tenantID uint, id string) (*types.Knowledge, error)
 	ListKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint, kbID string) ([]*types.Knowledge, error)
+	// ListPagedKnowledgeByKnowledgeBaseID lists all knowledge in a knowledge base with pagination.
+	// When tagID is non-empty, results are filtered by tag_id.
 	ListPagedKnowledgeByKnowledgeBaseID(ctx context.Context,
-		tenantID uint, kbID string, page *types.Pagination,
+		tenantID uint, kbID string, page *types.Pagination, tagID string,
 	) ([]*types.Knowledge, int64, error)
 	UpdateKnowledge(ctx context.Context, knowledge *types.Knowledge) error
 	DeleteKnowledge(ctx context.Context, tenantID uint, id string) error

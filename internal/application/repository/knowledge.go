@@ -57,20 +57,30 @@ func (r *knowledgeRepository) ListPagedKnowledgeByKnowledgeBaseID(
 	tenantID uint,
 	kbID string,
 	page *types.Pagination,
+	tagID string,
 ) ([]*types.Knowledge, int64, error) {
 	var knowledges []*types.Knowledge
 	var total int64
 
+	query := r.db.WithContext(ctx).Model(&types.Knowledge{}).
+		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID)
+	if tagID != "" {
+		query = query.Where("tag_id = ?", tagID)
+	}
+
 	// Query total count first
-	if err := r.db.WithContext(ctx).Model(&types.Knowledge{}).
-		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
-		Count(&total).Error; err != nil {
+	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	// Then query paginated data
-	if err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
+	dataQuery := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID)
+	if tagID != "" {
+		dataQuery = dataQuery.Where("tag_id = ?", tagID)
+	}
+
+	if err := dataQuery.
 		Order("created_at DESC").
 		Offset(page.Offset()).
 		Limit(page.Limit()).

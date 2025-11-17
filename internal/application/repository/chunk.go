@@ -70,22 +70,36 @@ func (r *chunkRepository) ListChunksByKnowledgeID(
 
 // ListPagedChunksByKnowledgeID lists chunks for a knowledge ID with pagination
 func (r *chunkRepository) ListPagedChunksByKnowledgeID(
-	ctx context.Context, tenantID uint, knowledgeID string, page *types.Pagination, chunk_type []types.ChunkType,
+	ctx context.Context,
+	tenantID uint,
+	knowledgeID string,
+	page *types.Pagination,
+	chunkType []types.ChunkType,
+	tagID string,
 ) ([]*types.Chunk, int64, error) {
 	var chunks []*types.Chunk
 	var total int64
 
+	query := r.db.WithContext(ctx).Model(&types.Chunk{}).
+		Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?)", tenantID, knowledgeID, chunkType)
+	if tagID != "" {
+		query = query.Where("tag_id = ?", tagID)
+	}
+
 	// First query the total count
-	if err := r.db.WithContext(ctx).Model(&types.Chunk{}).
-		Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?)", tenantID, knowledgeID, chunk_type).
-		Count(&total).Error; err != nil {
+	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	// Then query the paginated data
-	if err := r.db.WithContext(ctx).
-		Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info, metadata").
-		Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?)", tenantID, knowledgeID, chunk_type).
+	dataQuery := r.db.WithContext(ctx).
+		Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info, metadata")
+	dataQuery = dataQuery.Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?)", tenantID, knowledgeID, chunkType)
+	if tagID != "" {
+		dataQuery = dataQuery.Where("tag_id = ?", tagID)
+	}
+
+	if err := dataQuery.
 		Order("chunk_index ASC").
 		Offset(page.Offset()).
 		Limit(page.Limit()).

@@ -35,6 +35,7 @@ let knowledgeIndex = ref(-1)
 let knowledgeScroll = ref()
 let page = 1;
 let pageSize = 35;
+const selectedTagId = ref<string | null>(null);
 const getPageSize = () => {
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
   const itemHeight = 174;
@@ -47,7 +48,11 @@ const loadKnowledgeFiles = async (kbIdValue: string) => {
   if (!kbIdValue) return;
   
   try {
-    const result = await listKnowledgeFiles(kbIdValue, { page: 1, page_size: pageSize });
+    const result = await listKnowledgeFiles(kbIdValue, {
+      page: 1,
+      page_size: pageSize,
+      tag_id: selectedTagId.value || undefined,
+    });
     
     // 由于响应拦截器已经返回了 data，所以 result 就是响应的 data 部分
     // 按照 useKnowledgeBase hook 中的方式处理

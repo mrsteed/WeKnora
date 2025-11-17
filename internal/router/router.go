@@ -42,6 +42,7 @@ type RouterParams struct {
 	MCPServiceHandler     *handler.MCPServiceHandler
 	WebSearchHandler      *handler.WebSearchHandler
 	FAQHandler            *handler.FAQHandler
+	TagHandler            *handler.TagHandler
 }
 
 // NewRouter 创建新的路由
@@ -79,6 +80,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterAuthRoutes(v1, params.AuthHandler)
 		RegisterTenantRoutes(v1, params.TenantHandler)
 		RegisterKnowledgeBaseRoutes(v1, params.KBHandler)
+		RegisterKnowledgeTagRoutes(v1, params.TagHandler)
 		RegisterKnowledgeRoutes(v1, params.KnowledgeHandler)
 		RegisterFAQRoutes(v1, params.FAQHandler)
 		RegisterChunkRoutes(v1, params.ChunkHandler)
@@ -183,6 +185,20 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		kb.GET("/:id/hybrid-search", handler.HybridSearch)
 		// 拷贝知识库
 		kb.POST("/copy", handler.CopyKnowledgeBase)
+	}
+}
+
+// RegisterKnowledgeTagRoutes 注册知识库标签相关路由
+func RegisterKnowledgeTagRoutes(r *gin.RouterGroup, tagHandler *handler.TagHandler) {
+	if tagHandler == nil {
+		return
+	}
+	kbTags := r.Group("/knowledge-bases/:id/tags")
+	{
+		kbTags.GET("", tagHandler.ListTags)
+		kbTags.POST("", tagHandler.CreateTag)
+		kbTags.PUT("/:tag_id", tagHandler.UpdateTag)
+		kbTags.DELETE("/:tag_id", tagHandler.DeleteTag)
 	}
 }
 

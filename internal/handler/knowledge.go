@@ -285,11 +285,13 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving knowledge list under knowledge base, knowledge base ID: %s, page: %d, page size: %d",
-		kbID, pagination.Page, pagination.PageSize)
+	tagID := c.Query("tag_id")
+
+	logger.Infof(ctx, "Retrieving knowledge list under knowledge base, knowledge base ID: %s, tag_id: %s, page: %d, page size: %d",
+		kbID, tagID, pagination.Page, pagination.PageSize)
 
 	// Retrieve paginated knowledge entries
-	result, err := h.kgService.ListPagedKnowledgeByKnowledgeBaseID(ctx, kbID, &pagination)
+	result, err := h.kgService.ListPagedKnowledgeByKnowledgeBaseID(ctx, kbID, &pagination, tagID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))
