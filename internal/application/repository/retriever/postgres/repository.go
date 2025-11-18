@@ -159,6 +159,11 @@ func (g *pgRepository) KeywordsRetrieve(ctx context.Context,
 		SQL:  "id @@@ paradedb.match(field => 'content', value => ?, distance => 1)",
 		Vars: []interface{}{params.Query},
 	})
+	// Filter by is_enabled = true or NULL (NULL means enabled for historical data)
+	conds = append(conds, clause.Expr{
+		SQL:  "(is_enabled IS NULL OR is_enabled = ?)",
+		Vars: []interface{}{true},
+	})
 	conds = append(conds, clause.OrderBy{Columns: []clause.OrderByColumn{
 		{Column: clause.Column{Name: "score"}, Desc: true},
 	}})
@@ -227,6 +232,11 @@ func (g *pgRepository) VectorRetrieve(ctx context.Context,
 	// <#> Inner product operator
 	dimension := len(params.Embedding)
 	conds = append(conds, clause.Expr{SQL: "dimension = ?", Vars: []interface{}{dimension}})
+	// Filter by is_enabled = true or NULL (NULL means enabled for historical data)
+	conds = append(conds, clause.Expr{
+		SQL:  "(is_enabled IS NULL OR is_enabled = ?)",
+		Vars: []interface{}{true},
+	})
 	conds = append(conds, clause.Expr{
 		SQL:  fmt.Sprintf("embedding::halfvec(%d) <=> ?::halfvec < ?", dimension),
 		Vars: []interface{}{pgvector.NewHalfVector(params.Embedding), 1 - params.Threshold},
@@ -386,5 +396,54 @@ func (g *pgRepository) CopyIndices(ctx context.Context,
 	}
 
 	logger.GetLogger(ctx).Infof("[Postgres] Index copying completed, total copied: %d", totalCopied)
+	return nil
+}
+
+// BatchUpdateChunkEnabledStatus updates the enabled status of chunks in batch
+func (g *pgRepository) BatchUpdateChunkEnabledStatus(ctx context.Context, chunkStatusMap map[string]bool) error {
+	if len(chunkStatusMap) == 0 {
+		logger.GetLogger(ctx).Warnf("[Postgres] Chunk status map is empty, skipping update")
+		return nil
+	}
+
+	logger.GetLogger(ctx).Infof("[Postgres] Batch updating chunk enabled status, count: %d", len(chunkStatusMap))
+
+	// Group chunks by enabled status for batch updates
+	enabledChunkIDs := make([]string, 0)
+	disabledChunkIDs := make([]string, 0)
+
+	for chunkID, enabled := range chunkStatusMap {
+		if enabled {
+			enabledChunkIDs = append(enabledChunkIDs, chunkID)
+		} else {
+			disabledChunkIDs = append(disabledChunkIDs, chunkID)
+		}
+	}
+
+	// Batch update enabled chunks
+	if len(enabledChunkIDs) > 0 {
+		result := g.db.WithContext(ctx).Model(&pgVector{}).
+			Where("chunk_id IN ?", enabledChunkIDs).
+			Update("is_enabled", true)
+		if result.Error != nil {
+			logger.GetLogger(ctx).Errorf("[Postgres] Failed to update enabled chunks: %v", result.Error)
+			return result.Error
+		}
+		logger.GetLogger(ctx).Infof("[Postgres] Updated %d chunks to enabled, rows affected: %d", len(enabledChunkIDs), result.RowsAffected)
+	}
+
+	// Batch update disabled chunks
+	if len(disabledChunkIDs) > 0 {
+		result := g.db.WithContext(ctx).Model(&pgVector{}).
+			Where("chunk_id IN ?", disabledChunkIDs).
+			Update("is_enabled", false)
+		if result.Error != nil {
+			logger.GetLogger(ctx).Errorf("[Postgres] Failed to update disabled chunks: %v", result.Error)
+			return result.Error
+		}
+		logger.GetLogger(ctx).Infof("[Postgres] Updated %d chunks to disabled, rows affected: %d", len(disabledChunkIDs), result.RowsAffected)
+	}
+
+	logger.GetLogger(ctx).Infof("[Postgres] Successfully batch updated chunk enabled status")
 	return nil
 }

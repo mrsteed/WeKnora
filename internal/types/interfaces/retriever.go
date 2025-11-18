@@ -49,6 +49,10 @@ type RetrieveEngineRepository interface {
 	// DeleteByKnowledgeIDList deletes the index info by knowledge id list
 	DeleteByKnowledgeIDList(ctx context.Context, knowledgeIDList []string, dimension int) error
 
+	// BatchUpdateChunkEnabledStatus updates the enabled status of chunks in batch
+	// chunkStatusMap: map of chunk ID to enabled status (true = enabled, false = disabled)
+	BatchUpdateChunkEnabledStatus(ctx context.Context, chunkStatusMap map[string]bool) error
+
 	// RetrieveEngine retrieves the engine
 	RetrieveEngine
 }
@@ -103,6 +107,10 @@ type RetrieveEngineService interface {
 
 	// DeleteByKnowledgeIDList deletes the index info by knowledge id list
 	DeleteByKnowledgeIDList(ctx context.Context, knowledgeIDList []string, dimension int) error
+
+	// BatchUpdateChunkEnabledStatus updates the enabled status of chunks in batch
+	// chunkStatusMap: map of chunk ID to enabled status (true = enabled, false = disabled)
+	BatchUpdateChunkEnabledStatus(ctx context.Context, chunkStatusMap map[string]bool) error
 
 	// RetrieveEngine retrieves the engine
 	RetrieveEngine

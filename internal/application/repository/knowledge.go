@@ -97,6 +97,14 @@ func (r *knowledgeRepository) UpdateKnowledge(ctx context.Context, knowledge *ty
 	return err
 }
 
+// UpdateKnowledgeBatch updates knowledge items in batch
+func (r *knowledgeRepository) UpdateKnowledgeBatch(ctx context.Context, knowledgeList []*types.Knowledge) error {
+	if len(knowledgeList) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Save(knowledgeList).Error
+}
+
 // DeleteKnowledge deletes knowledge
 func (r *knowledgeRepository) DeleteKnowledge(ctx context.Context, tenantID uint, id string) error {
 	return r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).Delete(&types.Knowledge{}).Error

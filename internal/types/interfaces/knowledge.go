@@ -59,10 +59,16 @@ type KnowledgeService interface {
 	UpsertFAQEntries(ctx context.Context, kbID string, payload *types.FAQBatchUpsertPayload) error
 	// UpdateFAQEntry updates a single FAQ entry.
 	UpdateFAQEntry(ctx context.Context, kbID string, entryID string, payload *types.FAQEntryPayload) error
+	// UpdateFAQEntryStatusBatch updates enable status for FAQ entries in batch.
+	UpdateFAQEntryStatusBatch(ctx context.Context, kbID string, updates map[string]bool) error
 	// DeleteFAQEntries deletes FAQ entries in batch.
 	DeleteFAQEntries(ctx context.Context, kbID string, entryIDs []string) error
 	// SearchFAQEntries searches FAQ entries using hybrid search.
 	SearchFAQEntries(ctx context.Context, kbID string, req *types.FAQSearchRequest) ([]*types.FAQEntry, error)
+	// UpdateKnowledgeTagBatch updates tag for document knowledge items in batch.
+	UpdateKnowledgeTagBatch(ctx context.Context, updates map[string]*string) error
+	// UpdateFAQEntryTagBatch updates tag for FAQ entries in batch.
+	UpdateFAQEntryTagBatch(ctx context.Context, kbID string, updates map[string]*string) error
 }
 
 // KnowledgeRepository defines the interface for knowledge repositories.
@@ -76,6 +82,8 @@ type KnowledgeRepository interface {
 		tenantID uint, kbID string, page *types.Pagination, tagID string,
 	) ([]*types.Knowledge, int64, error)
 	UpdateKnowledge(ctx context.Context, knowledge *types.Knowledge) error
+	// UpdateKnowledgeBatch updates knowledge items in batch
+	UpdateKnowledgeBatch(ctx context.Context, knowledgeList []*types.Knowledge) error
 	DeleteKnowledge(ctx context.Context, tenantID uint, id string) error
 	DeleteKnowledgeList(ctx context.Context, tenantID uint, ids []string) error
 	GetKnowledgeBatch(ctx context.Context, tenantID uint, ids []string) ([]*types.Knowledge, error)

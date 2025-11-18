@@ -93,7 +93,7 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 
 	// Then query the paginated data
 	dataQuery := r.db.WithContext(ctx).
-		Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info, metadata")
+		Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info, metadata, tag_id")
 	dataQuery = dataQuery.Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?)", tenantID, knowledgeID, chunkType)
 	if tagID != "" {
 		dataQuery = dataQuery.Where("tag_id = ?", tagID)
@@ -123,6 +123,17 @@ func (r *chunkRepository) ListChunkByParentID(ctx context.Context, tenantID uint
 // UpdateChunk updates a chunk
 func (r *chunkRepository) UpdateChunk(ctx context.Context, chunk *types.Chunk) error {
 	return r.db.WithContext(ctx).Save(chunk).Error
+}
+
+// UpdateChunks updates chunks in batch
+func (r *chunkRepository) UpdateChunks(ctx context.Context, chunks []*types.Chunk) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	for _, chunk := range chunks {
+		chunk.Content = common.CleanInvalidUTF8(chunk.Content)
+	}
+	return r.db.WithContext(ctx).Save(chunks).Error
 }
 
 // DeleteChunk deletes a chunk by its ID

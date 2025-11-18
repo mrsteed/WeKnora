@@ -68,6 +68,7 @@ type FAQEntry struct {
 	KnowledgeID       string       `json:"knowledge_id"`
 	KnowledgeBaseID   string       `json:"knowledge_base_id"`
 	TagID             string       `json:"tag_id"`
+	IsEnabled         bool         `json:"is_enabled"`
 	StandardQuestion  string       `json:"standard_question"`
 	SimilarQuestions  []string     `json:"similar_questions"`
 	NegativeQuestions []string     `json:"negative_questions"`
@@ -87,6 +88,7 @@ type FAQEntryPayload struct {
 	NegativeQuestions []string `json:"negative_questions"`
 	Answers           []string `json:"answers" binding:"required"`
 	TagID             string   `json:"tag_id"`
+	IsEnabled         *bool    `json:"is_enabled,omitempty"`
 }
 
 const (

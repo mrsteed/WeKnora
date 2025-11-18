@@ -509,6 +509,29 @@ func (h *KnowledgeHandler) UpdateManualKnowledge(c *gin.Context) {
 	})
 }
 
+type knowledgeTagBatchRequest struct {
+	Updates map[string]*string `json:"updates" binding:"required,min=1"`
+}
+
+// UpdateKnowledgeTagBatch updates tags for knowledge items in batch.
+func (h *KnowledgeHandler) UpdateKnowledgeTagBatch(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req knowledgeTagBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to parse knowledge tag batch request", err)
+		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		return
+	}
+	if err := h.kgService.UpdateKnowledgeTagBatch(ctx, req.Updates); err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+	})
+}
+
 // UpdateImageInfo updates a chunk's properties
 func (h *KnowledgeHandler) UpdateImageInfo(c *gin.Context) {
 	ctx := c.Request.Context()

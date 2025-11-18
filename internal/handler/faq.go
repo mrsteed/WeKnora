@@ -88,8 +88,54 @@ func (h *FAQHandler) UpdateEntry(c *gin.Context) {
 	})
 }
 
+// UpdateEntryTagBatch updates tags for FAQ entries in batch.
+func (h *FAQHandler) UpdateEntryTagBatch(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req faqEntryTagBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to bind FAQ entry tag batch payload", err)
+		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		return
+	}
+	if err := h.knowledgeService.UpdateFAQEntryTagBatch(ctx, c.Param("id"), req.Updates); err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+	})
+}
+
+// UpdateEntryStatusBatch updates the enable status of FAQ entries in batch.
+func (h *FAQHandler) UpdateEntryStatusBatch(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req faqEntryStatusBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to bind FAQ entry status batch payload", err)
+		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		return
+	}
+	if err := h.knowledgeService.UpdateFAQEntryStatusBatch(ctx, c.Param("id"), req.Updates); err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+	})
+}
+
 type faqDeleteRequest struct {
 	IDs []string `json:"ids" binding:"required,min=1,dive,required"`
+}
+
+type faqEntryStatusBatchRequest struct {
+	Updates map[string]bool `json:"updates" binding:"required,min=1"`
+}
+
+type faqEntryTagBatchRequest struct {
+	Updates map[string]*string `json:"updates" binding:"required,min=1"`
 }
 
 // DeleteEntries deletes FAQ entries in batch.

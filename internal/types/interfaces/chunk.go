@@ -29,6 +29,8 @@ type ChunkRepository interface {
 	ListChunkByParentID(ctx context.Context, tenantID uint, parentID string) ([]*types.Chunk, error)
 	// UpdateChunk updates a chunk
 	UpdateChunk(ctx context.Context, chunk *types.Chunk) error
+	// UpdateChunks updates chunks in batch
+	UpdateChunks(ctx context.Context, chunks []*types.Chunk) error
 	// DeleteChunk deletes a chunk
 	DeleteChunk(ctx context.Context, tenantID uint, id string) error
 	// DeleteChunksByKnowledgeID deletes chunks by knowledge id

@@ -161,3 +161,8 @@ func (v *KeywordsVectorHybridRetrieveEngineService) CopyIndices(
 		ctx, sourceKnowledgeBaseID, sourceToTargetKBIDMap, sourceToTargetChunkIDMap, targetKnowledgeBaseID, dimension,
 	)
 }
+
+// BatchUpdateChunkEnabledStatus updates the enabled status of chunks in batch
+func (v *KeywordsVectorHybridRetrieveEngineService) BatchUpdateChunkEnabledStatus(ctx context.Context, chunkStatusMap map[string]bool) error {
+	return v.indexRepository.BatchUpdateChunkEnabledStatus(ctx, chunkStatusMap)
+}

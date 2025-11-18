@@ -16,6 +16,7 @@ type VectorEmbedding struct {
 	KnowledgeID     string    `json:"knowledge_id" gorm:"column:knowledge_id"`           // ID of the knowledge item
 	KnowledgeBaseID string    `json:"knowledge_base_id" gorm:"column:knowledge_base_id"` // ID of the knowledge base
 	Embedding       []float32 `json:"embedding" gorm:"column:embedding;not null"`        // Vector embedding of the content
+	IsEnabled       bool      `json:"is_enabled"`                                        // Whether the chunk is enabled
 }
 
 // VectorEmbeddingWithScore extends VectorEmbedding with similarity score
@@ -33,11 +34,20 @@ func ToDBVectorEmbedding(embedding *types.IndexInfo, additionalParams map[string
 		ChunkID:         embedding.ChunkID,
 		KnowledgeID:     embedding.KnowledgeID,
 		KnowledgeBaseID: embedding.KnowledgeBaseID,
+		IsEnabled:       true, // Default to enabled
 	}
 	// Add embedding data if available in additionalParams
 	if additionalParams != nil && slices.Contains(slices.Collect(maps.Keys(additionalParams)), "embedding") {
 		if embeddingMap, ok := additionalParams["embedding"].(map[string][]float32); ok {
 			vector.Embedding = embeddingMap[embedding.SourceID]
+		}
+	}
+	// Get is_enabled from additionalParams if available
+	if additionalParams != nil {
+		if chunkEnabledMap, ok := additionalParams["chunk_enabled"].(map[string]bool); ok {
+			if enabled, exists := chunkEnabledMap[embedding.ChunkID]; exists {
+				vector.IsEnabled = enabled
+			}
 		}
 	}
 	return vector

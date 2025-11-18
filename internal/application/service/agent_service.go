@@ -307,7 +307,7 @@ func (s *agentService) getKnowledgeBaseInfos(ctx context.Context, kbIDs []string
 			pageResult, err := s.knowledgeService.ListFAQEntries(ctx, kbID, &types.Pagination{
 				Page:     1,
 				PageSize: 10,
-			})
+			}, "")
 			if err == nil && pageResult != nil {
 				docCount = int(pageResult.Total)
 				if entries, ok := pageResult.Data.([]*types.FAQEntry); ok {
@@ -336,7 +336,7 @@ func (s *agentService) getKnowledgeBaseInfos(ctx context.Context, kbIDs []string
 			pageResult, err := s.knowledgeService.ListPagedKnowledgeByKnowledgeBaseID(ctx, kbID, &types.Pagination{
 				Page:     1,
 				PageSize: 10,
-			})
+			}, "")
 
 			if err == nil && pageResult != nil {
 				docCount = int(pageResult.Total)

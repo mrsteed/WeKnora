@@ -3,7 +3,6 @@ import { marked } from "marked";
 import { onMounted, ref, nextTick, onUnmounted, onUpdated, watch } from "vue";
 import { downKnowledgeDetails } from "@/api/knowledge-base/index";
 import { MessagePlugin } from "tdesign-vue-next";
-import picturePreview from '@/components/picture-preview.vue';
 import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL } from '@/utils/security';
 import { useI18n } from 'vue-i18n';
 
@@ -19,8 +18,6 @@ let doc = null;
 let down = ref()
 let mdContentWrap = ref()
 let url = ref('')
-let reviewUrl = ref('')
-let reviewImg = ref(false)
 onMounted(() => {
   nextTick(() => {
     doc = document.getElementsByClassName('t-drawer__body')[0]
@@ -61,10 +58,6 @@ watch(() => props.details.md, (newVal) => {
     const images = mdContentWrap.value.querySelectorAll('img.markdown-image');
     if (images) {
       images.forEach(async item => {
-        item.addEventListener('click', function (event) {
-          reviewUrl.value = event.target.src;
-          reviewImg.value = true
-        })
         const isValid = await checkImage(item.src);
         if (!isValid) {
           item.remove();
@@ -103,10 +96,6 @@ const processMarkdown = (markdownText) => {
   
   return sanitizedHTML;
 };
-const closePreImg = () => {
-  reviewImg.value = false
-  reviewUrl.value = '';
-}
 const handleClose = () => {
   emit("closeDoc", false);
   doc.scrollTop = 0;
@@ -179,7 +168,6 @@ const handleDetailsScroll = () => {
         <t-button theme="default" @click="handleClose">{{ $t('common.cancel') }}</t-button>
       </template>
     </t-drawer>
-    <picturePreview :reviewImg="reviewImg" :reviewUrl="reviewUrl" @closePreImg="closePreImg"></picturePreview>
   </div>
 </template>
 <style scoped lang="less">

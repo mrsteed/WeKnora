@@ -90,6 +90,38 @@ export function getChunkByIdOnly(chunkId: string) {
   return get(`/api/v1/chunks/by-id/${chunkId}`);
 }
 
+export function listKnowledgeTags(kbId: string) {
+  return get(`/api/v1/knowledge-bases/${kbId}/tags`);
+}
+
+export function createKnowledgeBaseTag(
+  kbId: string,
+  data: { name: string; color?: string; sort_order?: number },
+) {
+  return post(`/api/v1/knowledge-bases/${kbId}/tags`, data);
+}
+
+export function updateKnowledgeBaseTag(
+  kbId: string,
+  tagId: string,
+  data: { name?: string; color?: string; sort_order?: number },
+) {
+  return put(`/api/v1/knowledge-bases/${kbId}/tags/${tagId}`, data);
+}
+
+export function deleteKnowledgeBaseTag(kbId: string, tagId: string, params?: { force?: boolean }) {
+  const forceQuery = params?.force ? '?force=true' : '';
+  return del(`/api/v1/knowledge-bases/${kbId}/tags/${tagId}${forceQuery}`);
+}
+
+export function updateKnowledgeTagBatch(data: { updates: Record<string, string | null> }) {
+  return put(`/api/v1/knowledge/tags`, data);
+}
+
+export function updateFAQEntryTagBatch(kbId: string, data: { updates: Record<string, string | null> }) {
+  return put(`/api/v1/knowledge-bases/${kbId}/faq/entries/tags`, data);
+}
+
 const buildQuery = (params?: Record<string, any>) => {
   if (!params) return '';
   const query = new URLSearchParams();
@@ -112,6 +144,10 @@ export function upsertFAQEntries(kbId: string, data: { entries: any[]; mode: 'ap
 
 export function updateFAQEntry(kbId: string, entryId: string, data: any) {
   return put(`/api/v1/knowledge-bases/${kbId}/faq/entries/${entryId}`, data);
+}
+
+export function updateFAQEntryStatusBatch(kbId: string, data: { updates: Record<string, boolean> }) {
+  return put(`/api/v1/knowledge-bases/${kbId}/faq/entries/status`, data);
 }
 
 export function deleteFAQEntries(kbId: string, ids: string[]) {

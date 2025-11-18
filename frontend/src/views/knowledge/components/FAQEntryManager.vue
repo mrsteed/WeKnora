@@ -1,209 +1,416 @@
 <template>
   <div class="faq-manager">
-    <!-- Header -->
-    <div class="faq-header">
-      <div class="faq-header-title">
-        <h2>{{ $t('knowledgeEditor.faq.title') }}</h2>
-        <p class="faq-subtitle">{{ $t('knowledgeEditor.faq.subtitle') }}</p>
-      </div>
-      <div class="action-buttons">
-        <button class="create-btn ghost" @click="openEditor()">
-          <t-icon name="add" size="16px" class="btn-icon" />
-          <span>{{ $t('knowledgeEditor.faq.editorCreate') }}</span>
-        </button>
-        <t-dropdown
-          :options="toolbarActionOptions"
-          placement="bottom-left"
-          trigger="click"
-          @click="handleToolbarAction"
-        >
-          <div class="toolbar-action-trigger">
-            <t-icon name="more" />
-          </div>
-        </t-dropdown>
-      </div>
-    </div>
-
-    <!-- Card List Container with Scroll -->
-    <div ref="scrollContainer" class="faq-scroll-container" @scroll="handleScroll">
-      <t-loading :loading="loading && entries.length === 0" size="medium">
-        <!-- Card List -->
-        <div v-if="entries.length > 0" ref="cardListRef" class="faq-card-list">
-        <div
-          v-for="entry in entries"
-          :key="entry.id"
-          class="faq-card"
-          :class="{ 'selected': selectedRowKeys.includes(entry.id) }"
-          @click="handleCardSelect(entry.id, !selectedRowKeys.includes(entry.id))"
-        >
-          <!-- Card Header -->
-          <div class="faq-card-header">
-            <div class="faq-question" :title="entry.standard_question">
-              {{ entry.standard_question }}
+    <div class="faq-content">
+      <!-- Header -->
+      <div class="faq-header">
+        <div class="faq-header-title">
+          <h2>{{ $t('knowledgeEditor.faq.title') }}</h2>
+          <p class="faq-subtitle">{{ $t('knowledgeEditor.faq.subtitle') }}</p>
+        </div>
+        <div class="action-buttons">
+          <button class="create-btn ghost" @click="openEditor()">
+            <t-icon name="add" size="16px" class="btn-icon" />
+            <span>{{ $t('knowledgeEditor.faq.editorCreate') }}</span>
+          </button>
+          <t-dropdown
+            :options="toolbarActionOptions"
+            placement="bottom-left"
+            trigger="click"
+            @click="handleToolbarAction"
+          >
+            <div class="toolbar-action-trigger">
+              <t-icon name="more" />
             </div>
-            <t-popup
-              v-model="entry.showMore"
-              overlayClassName="faq-card-popup"
-              trigger="click"
-              destroy-on-close
-              placement="bottom-right"
-              @visible-change="(visible: boolean) => entry.showMore = visible"
+          </t-dropdown>
+        </div>
+      </div>
+
+      <div class="faq-main">
+        <aside class="faq-tag-panel">
+          <div class="sidebar-header">
+            <div class="sidebar-title">
+              <span>{{ $t('knowledgeBase.faqCategoryTitle') }}</span>
+              <span class="sidebar-count">({{ sidebarCategoryCount }})</span>
+            </div>
+            <div class="sidebar-actions">
+              <t-button
+                size="small"
+                variant="text"
+                class="create-tag-btn"
+                :aria-label="$t('knowledgeBase.tagCreateAction')"
+                :title="$t('knowledgeBase.tagCreateAction')"
+                @click="startCreateTag"
+              >
+                <span class="create-tag-plus" aria-hidden="true">+</span>
+              </t-button>
+            </div>
+          </div>
+          <div class="tag-search-bar">
+            <t-input
+              v-model.trim="tagSearchQuery"
+              size="small"
+              :placeholder="$t('knowledgeBase.tagSearchPlaceholder')"
+              clearable
             >
-              <div class="card-more-btn" @click.stop>
-                <img class="more-icon" src="@/assets/img/more.png" alt="" />
+              <template #prefix-icon>
+                <t-icon name="search" size="14px" />
+              </template>
+            </t-input>
+          </div>
+          <t-loading :loading="tagLoading" size="small">
+            <div class="faq-tag-list">
+              <div
+                class="faq-tag-item"
+                :class="{ active: selectedTagId === '' }"
+                @click="handleUntaggedClick"
+              >
+                <div class="faq-tag-left">
+                  <t-icon name="folder" size="18px" />
+                  <span>{{ $t('knowledgeBase.untagged') }}</span>
+                </div>
+                <span class="faq-tag-count">{{ untaggedFAQCount }}</span>
               </div>
-              <template #content>
-                <div class="card-menu" @click.stop>
-                  <div class="card-menu-item" @click.stop="handleMenuEdit(entry)">
-                    <t-icon class="menu-icon" name="edit" />
-                    <span>{{ $t('common.edit') }}</span>
+
+              <div v-if="creatingTag" class="faq-tag-item tag-editing" @click.stop>
+                <div class="faq-tag-left">
+                  <t-icon name="folder" size="18px" />
+                  <div class="tag-edit-input">
+                    <t-input
+                      ref="newTagInputRef"
+                      v-model="newTagName"
+                      size="small"
+                      :maxlength="40"
+                      :placeholder="$t('knowledgeBase.tagNamePlaceholder')"
+                      @keydown.enter.stop.prevent="submitCreateTag"
+                      @keydown.esc.stop.prevent="cancelCreateTag"
+                    />
                   </div>
-                  <div class="card-menu-item danger" @click.stop="handleMenuDelete(entry)">
-                    <t-icon class="menu-icon" name="delete" />
-                    <span>{{ $t('common.delete') }}</span>
+                </div>
+                <div class="tag-inline-actions">
+                  <t-button
+                    variant="text"
+                  theme="default"
+                    size="small"
+                  class="tag-action-btn confirm"
+                    :loading="creatingTagLoading"
+                    @click.stop="submitCreateTag"
+                  >
+                    <t-icon name="check" size="16px" />
+                  </t-button>
+                <t-button
+                  variant="text"
+                  theme="default"
+                  size="small"
+                  class="tag-action-btn cancel"
+                  @click.stop="cancelCreateTag"
+                >
+                    <t-icon name="close" size="16px" />
+                  </t-button>
+                </div>
+              </div>
+
+              <template v-if="filteredTags.length">
+                <div
+                  v-for="tag in filteredTags"
+                  :key="tag.id"
+                  class="faq-tag-item"
+                  :class="{ active: selectedTagId === tag.id, editing: editingTagId === tag.id }"
+                  @click="handleTagRowClick(tag.id)"
+                >
+                  <div class="faq-tag-left">
+                    <t-icon name="folder" size="18px" />
+                    <template v-if="editingTagId === tag.id">
+                      <div class="tag-edit-input" @click.stop>
+                        <t-input
+                          :ref="setEditingTagInputRefByTag(tag.id)"
+                          v-model="editingTagName"
+                          size="small"
+                          :maxlength="40"
+                          @keydown.enter.stop.prevent="submitEditTag"
+                          @keydown.esc.stop.prevent="cancelEditTag"
+                        />
+                      </div>
+                    </template>
+                    <template v-else>
+                      <span class="tag-name" :title="tag.name">{{ tag.name }}</span>
+                    </template>
+                  </div>
+                  <div class="faq-tag-right">
+                    <span class="faq-tag-count">{{ tag.chunk_count || 0 }}</span>
+                    <div v-if="editingTagId === tag.id" class="tag-inline-actions" @click.stop>
+                      <t-button
+                        variant="text"
+                        theme="default"
+                        size="small"
+                        class="tag-action-btn confirm"
+                        :loading="editingTagSubmitting"
+                        @click.stop="submitEditTag"
+                      >
+                        <t-icon name="check" size="16px" />
+                      </t-button>
+                      <t-button
+                        variant="text"
+                        theme="default"
+                        size="small"
+                        class="tag-action-btn cancel"
+                        @click.stop="cancelEditTag"
+                      >
+                        <t-icon name="close" size="16px" />
+                      </t-button>
+                    </div>
+                    <div v-else class="tag-more" @click.stop>
+                      <t-popup trigger="click" placement="top-right" overlayClassName="tag-more-popup">
+                        <div class="tag-more-btn">
+                          <t-icon name="more" size="14px" />
+                        </div>
+                        <template #content>
+                          <div class="tag-menu">
+                            <div class="tag-menu-item" @click="startEditTag(tag)">
+                              <t-icon class="menu-icon" name="edit" />
+                              <span>{{ $t('knowledgeBase.tagEditAction') }}</span>
+                            </div>
+                            <div class="tag-menu-item danger" @click="confirmDeleteTag(tag)">
+                              <t-icon class="menu-icon" name="delete" />
+                              <span>{{ $t('knowledgeBase.tagDeleteAction') }}</span>
+                            </div>
+                          </div>
+                        </template>
+                      </t-popup>
+                    </div>
                   </div>
                 </div>
               </template>
-            </t-popup>
+              <div v-else class="tag-empty-state">
+                {{ $t('knowledgeBase.tagEmptyResult') }}
+              </div>
+            </div>
+          </t-loading>
+        </aside>
+
+        <div class="faq-card-area">
+          <!-- Card List Container with Scroll -->
+          <div ref="scrollContainer" class="faq-scroll-container" @scroll="handleScroll">
+          <t-loading :loading="loading && entries.length === 0" size="medium">
+            <!-- Card List -->
+            <template v-if="entries.length > 0">
+              <div ref="cardListRef" class="faq-card-list">
+                <div
+                  v-for="entry in entries"
+                  :key="entry.id"
+                  class="faq-card"
+                  :class="{ 'selected': selectedRowKeys.includes(entry.id) }"
+                  @click="handleCardSelect(entry.id, !selectedRowKeys.includes(entry.id))"
+                >
+                  <!-- Card Header -->
+                  <div class="faq-card-header">
+                    <div class="faq-header-top">
+                      <div class="faq-question" :title="entry.standard_question">
+                        {{ entry.standard_question }}
+                      </div>
+                      <div class="faq-card-actions">
+                        <t-popup
+                          v-model="entry.showMore"
+                          overlayClassName="faq-card-popup"
+                          trigger="click"
+                          destroy-on-close
+                          placement="bottom-right"
+                          @visible-change="(visible: boolean) => (entry.showMore = visible)"
+                        >
+                          <div class="card-more-btn" @click.stop>
+                            <img class="more-icon" src="@/assets/img/more.png" alt="" />
+                          </div>
+                          <template #content>
+                            <div class="card-menu" @click.stop>
+                              <div class="card-menu-item" @click.stop="handleMenuEdit(entry)">
+                                <t-icon class="menu-icon" name="edit" />
+                                <span>{{ $t('common.edit') }}</span>
+                              </div>
+                              <div class="card-menu-item danger" @click.stop="handleMenuDelete(entry)">
+                                <t-icon class="menu-icon" name="delete" />
+                                <span>{{ $t('common.delete') }}</span>
+                              </div>
+                            </div>
+                          </template>
+                        </t-popup>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Card Body -->
+                  <div class="faq-card-body">
+                    <!-- Similar Questions Section -->
+                    <div v-if="entry.similar_questions?.length" class="faq-section similar">
+                      <div
+                        class="faq-section-label clickable"
+                        @click.stop="entry.similarCollapsed = !entry.similarCollapsed"
+                      >
+                        <span>{{ $t('knowledgeEditor.faq.similarQuestions') }}</span>
+                        <span class="section-count">
+                          ({{ entry.similar_questions.length }})
+                        </span>
+                        <t-icon
+                          :name="entry.similarCollapsed ? 'chevron-right' : 'chevron-down'"
+                          class="collapse-icon"
+                        />
+                      </div>
+                      <Transition name="slide-down">
+                        <div v-if="!entry.similarCollapsed" class="faq-tags">
+                          <FAQTagTooltip
+                            v-for="question in entry.similar_questions"
+                            :key="question"
+                            :content="question"
+                            type="similar"
+                            placement="top"
+                          >
+                            <t-tag
+                              size="small"
+                              variant="light-outline"
+                              class="question-tag"
+                            >
+                              {{ question }}
+                            </t-tag>
+                          </FAQTagTooltip>
+                        </div>
+                      </Transition>
+                    </div>
+
+                    <!-- Negative Questions Section -->
+                    <div v-if="entry.negative_questions?.length" class="faq-section negative">
+                      <div
+                        class="faq-section-label clickable"
+                        @click.stop="entry.negativeCollapsed = !entry.negativeCollapsed"
+                      >
+                        <span>{{ $t('knowledgeEditor.faq.negativeQuestions') }}</span>
+                        <span class="section-count">
+                          ({{ entry.negative_questions.length }})
+                        </span>
+                        <t-icon
+                          :name="entry.negativeCollapsed ? 'chevron-right' : 'chevron-down'"
+                          class="collapse-icon"
+                        />
+                      </div>
+                      <Transition name="slide-down">
+                        <div v-if="!entry.negativeCollapsed" class="faq-tags">
+                          <FAQTagTooltip
+                            v-for="question in entry.negative_questions"
+                            :key="question"
+                            :content="question"
+                            type="negative"
+                            placement="top"
+                          >
+                            <t-tag
+                              size="small"
+                              theme="warning"
+                              variant="light-outline"
+                              class="question-tag"
+                            >
+                              {{ question }}
+                            </t-tag>
+                          </FAQTagTooltip>
+                        </div>
+                      </Transition>
+                    </div>
+
+                    <!-- Answers Section -->
+                    <div class="faq-section answers">
+                      <div
+                        class="faq-section-label clickable"
+                        @click.stop="entry.answersCollapsed = !entry.answersCollapsed"
+                      >
+                        <span>{{ $t('knowledgeEditor.faq.answers') }}</span>
+                        <span v-if="entry.answers?.length" class="section-count">
+                          ({{ entry.answers.length }})
+                        </span>
+                        <t-icon
+                          :name="entry.answersCollapsed ? 'chevron-right' : 'chevron-down'"
+                          class="collapse-icon"
+                        />
+                      </div>
+                      <Transition name="slide-down">
+                        <div v-if="!entry.answersCollapsed" class="faq-tags">
+                          <FAQTagTooltip
+                            v-for="answer in entry.answers"
+                            :key="answer"
+                            :content="answer"
+                            type="answer"
+                            placement="top"
+                          >
+                            <t-tag
+                              size="small"
+                              theme="success"
+                              variant="light-outline"
+                              class="question-tag"
+                            >
+                              {{ answer }}
+                            </t-tag>
+                          </FAQTagTooltip>
+                        </div>
+                      </Transition>
+                    </div>
+                  </div>
+
+                  <!-- Card Footer -->
+                  <div class="faq-card-footer">
+                    <div class="faq-card-tag" @click.stop>
+                      <template v-if="tagList.length">
+                        <t-dropdown
+                          :options="tagDropdownOptions"
+                          trigger="click"
+                          @click="(data: any) => handleEntryTagChange(entry.id, data.value as string)"
+                        >
+                          <t-tag size="small" variant="light-outline" class="faq-tag-chip">
+                            <span class="tag-text">{{ getTagName(entry.tag_id) || $t('knowledgeBase.untagged') }}</span>
+                          </t-tag>
+                        </t-dropdown>
+                      </template>
+                      <template v-else>
+                        <t-tag size="small" variant="light-outline" class="faq-tag-chip">
+                          <span class="tag-text">{{ getTagName(entry.tag_id) || $t('knowledgeBase.untagged') }}</span>
+                        </t-tag>
+                      </template>
+                    </div>
+                    <div class="faq-card-status" @click.stop>
+                      <t-tooltip
+                        :content="entry.is_enabled ? $t('knowledgeEditor.faq.statusEnabled') : $t('knowledgeEditor.faq.statusDisabled')"
+                        placement="top"
+                      >
+                        <div class="status-item-compact">
+                          <t-switch
+                            :key="`${entry.id}-${entry.is_enabled}`"
+                            size="small"
+                            :value="entry.is_enabled"
+                            :loading="!!entryStatusLoading[entry.id]"
+                            :disabled="!!entryStatusLoading[entry.id]"
+                            @click.stop
+                            @change="(value: boolean) => handleEntryStatusChange(entry, value)"
+                          />
+                        </div>
+                      </t-tooltip>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <template v-else>
+              <div v-if="!loading" class="faq-empty-state">
+                <div class="empty-content">
+                  <t-icon name="file-add" size="48px" class="empty-icon" />
+                  <div class="empty-text">{{ $t('knowledgeEditor.faq.emptyTitle') }}</div>
+                  <div class="empty-desc">{{ $t('knowledgeEditor.faq.emptyDesc') }}</div>
+                </div>
+              </div>
+            </template>
+          </t-loading>
+          <div v-if="loadingMore" class="faq-load-more">
+            <t-loading size="small" :text="$t('common.loading')" />
           </div>
-
-          <!-- Card Body -->
-          <div class="faq-card-body">
-            <!-- Similar Questions Section -->
-            <div v-if="entry.similar_questions?.length" class="faq-section similar">
-              <div 
-                class="faq-section-label clickable"
-                @click.stop="entry.similarCollapsed = !entry.similarCollapsed"
-              >
-                <span>{{ $t('knowledgeEditor.faq.similarQuestions') }}</span>
-                <span class="section-count">
-                  ({{ entry.similar_questions.length }})
-                </span>
-                <t-icon 
-                  :name="entry.similarCollapsed ? 'chevron-right' : 'chevron-down'" 
-                  class="collapse-icon"
-                />
-              </div>
-              <Transition name="slide-down">
-                <div v-if="!entry.similarCollapsed" class="faq-tags">
-                  <FAQTagTooltip
-                    v-for="question in entry.similar_questions"
-                    :key="question"
-                    :content="question"
-                    type="similar"
-                    placement="top"
-                  >
-                    <t-tag
-                      size="small"
-                      variant="light-outline"
-                      class="question-tag"
-                    >
-                      {{ question }}
-                    </t-tag>
-                  </FAQTagTooltip>
-                </div>
-              </Transition>
-            </div>
-
-            <!-- Negative Questions Section -->
-            <div v-if="entry.negative_questions?.length" class="faq-section negative">
-              <div 
-                class="faq-section-label clickable"
-                @click.stop="entry.negativeCollapsed = !entry.negativeCollapsed"
-              >
-                <span>{{ $t('knowledgeEditor.faq.negativeQuestions') }}</span>
-                <span class="section-count">
-                  ({{ entry.negative_questions.length }})
-                </span>
-                <t-icon 
-                  :name="entry.negativeCollapsed ? 'chevron-right' : 'chevron-down'" 
-                  class="collapse-icon"
-                />
-              </div>
-              <Transition name="slide-down">
-                <div v-if="!entry.negativeCollapsed" class="faq-tags">
-                  <FAQTagTooltip
-                    v-for="question in entry.negative_questions"
-                    :key="question"
-                    :content="question"
-                    type="negative"
-                    placement="top"
-                  >
-                    <t-tag
-                      size="small"
-                      theme="warning"
-                      variant="light-outline"
-                      class="question-tag"
-                    >
-                      {{ question }}
-                    </t-tag>
-                  </FAQTagTooltip>
-                </div>
-              </Transition>
-            </div>
-
-            <!-- Answers Section -->
-            <div class="faq-section answers">
-              <div 
-                class="faq-section-label clickable"
-                @click.stop="entry.answersCollapsed = !entry.answersCollapsed"
-              >
-                <span>{{ $t('knowledgeEditor.faq.answers') }}</span>
-                <span v-if="entry.answers?.length" class="section-count">
-                  ({{ entry.answers.length }})
-                </span>
-                <t-icon 
-                  :name="entry.answersCollapsed ? 'chevron-right' : 'chevron-down'" 
-                  class="collapse-icon"
-                />
-              </div>
-              <Transition name="slide-down">
-                <div v-if="!entry.answersCollapsed" class="faq-tags">
-                  <FAQTagTooltip
-                    v-for="answer in entry.answers"
-                    :key="answer"
-                    :content="answer"
-                    type="answer"
-                    placement="top"
-                  >
-                    <t-tag
-                      size="small"
-                      variant="light-outline"
-                      class="question-tag"
-                    >
-                      {{ answer }}
-                    </t-tag>
-                  </FAQTagTooltip>
-                  <span v-if="!entry.answers?.length" class="empty-tip">
-                    {{ $t('knowledgeEditor.faq.noAnswer') }}
-                  </span>
-                </div>
-              </Transition>
-            </div>
+          <div v-if="hasMore === false && entries.length > 0" class="faq-no-more">
+            {{ $t('common.noMoreData') }}
           </div>
-
+          </div>
         </div>
-      </div>
-
-        <!-- Empty State -->
-        <div v-else-if="!loading" class="faq-empty-state">
-          <div class="empty-content">
-            <t-icon name="file-add" size="48px" class="empty-icon" />
-            <div class="empty-text">{{ $t('knowledgeEditor.faq.emptyTitle') }}</div>
-            <div class="empty-desc">{{ $t('knowledgeEditor.faq.emptyDesc') }}</div>
-          </div>
-        </div>
-      </t-loading>
-
-      <!-- Load More Indicator -->
-      <div v-if="loadingMore" class="faq-load-more">
-        <t-loading size="small" :text="$t('common.loading')" />
-      </div>
-      <div v-if="hasMore === false && entries.length > 0" class="faq-no-more">
-        {{ $t('common.noMoreData') }}
       </div>
     </div>
-
     <!-- Editor Drawer -->
     <t-drawer
       v-model:visible="editorVisible"
@@ -387,6 +594,22 @@
                 </div>
               </div>
             </div>
+
+            <div class="setting-row vertical">
+              <div class="setting-info">
+                <label>{{ $t('knowledgeBase.category') || '分类' }}</label>
+                <p class="desc">{{ $t('knowledgeEditor.faq.tagDesc') || '为 FAQ 条目选择分类' }}</p>
+              </div>
+              <div class="setting-control">
+                <t-select
+                  v-model="editorForm.tag_id"
+                  class="full-width-input"
+                  :options="tagSelectOptions"
+                  clearable
+                  :placeholder="$t('knowledgeEditor.faq.tagPlaceholder') || '选择分类'"
+                />
+              </div>
+            </div>
           </div>
         </t-form>
       </div>
@@ -519,6 +742,39 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Batch Tag Dialog -->
+    <t-dialog
+      v-model:visible="batchTagDialogVisible"
+      :header="$t('knowledgeEditor.faq.batchUpdateTag')"
+      width="480px"
+      :confirm-btn="{ content: $t('common.confirm'), theme: 'primary' }"
+      :cancel-btn="{ content: $t('common.cancel') }"
+      @confirm="handleBatchTag"
+    >
+      <div class="batch-tag-dialog-content">
+        <p class="batch-tag-dialog-tip">
+          {{ $t('knowledgeEditor.faq.batchUpdateTagTip', { count: selectedRowKeys.length }) }}
+        </p>
+        <t-form layout="vertical" class="batch-tag-form">
+          <t-form-item :label="$t('knowledgeBase.tagLabel')">
+            <t-select
+              v-model="batchTagValue"
+              :options="tagSelectOptions"
+              :placeholder="$t('knowledgeBase.tagPlaceholder')"
+              clearable
+              filterable
+            >
+              <template #empty>
+                <div class="tag-select-empty">
+                  {{ $t('knowledgeBase.noTags') }}
+                </div>
+              </template>
+            </t-select>
+          </t-form-item>
+        </t-form>
+      </div>
+    </t-dialog>
 
     <!-- Search Test Drawer -->
     <t-drawer
@@ -682,15 +938,22 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted, computed, nextTick, onUnmounted } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import type { ComponentPublicInstance } from 'vue'
+import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import type { FormRules, FormInstanceFunctions } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import {
   listFAQEntries,
   upsertFAQEntries,
   updateFAQEntry,
+  updateFAQEntryStatusBatch,
   deleteFAQEntries,
   searchFAQEntries,
+  listKnowledgeTags,
+  updateFAQEntryTagBatch,
+  createKnowledgeBaseTag,
+  updateKnowledgeBaseTag,
+  deleteKnowledgeBaseTag,
 } from '@/api/knowledge-base'
 import * as XLSX from 'xlsx'
 import FAQTagTooltip from '@/components/FAQTagTooltip.vue'
@@ -700,6 +963,8 @@ interface FAQEntry {
   chunk_id: string
   knowledge_id: string
   knowledge_base_id: string
+  tag_id?: string
+  is_enabled: boolean
   standard_question: string
   similar_questions: string[]
   negative_questions: string[]
@@ -719,6 +984,7 @@ interface FAQEntryPayload {
   similar_questions: string[]
   negative_questions: string[]
   answers: string[]
+  tag_id?: string
 }
 
 const props = defineProps<{
@@ -730,12 +996,67 @@ const { t } = useI18n()
 const loading = ref(false)
 const loadingMore = ref(false)
 const entries = ref<FAQEntry[]>([])
+const entryStatusLoading = reactive<Record<string, boolean>>({})
 const selectedRowKeys = ref<string[]>([])
 const scrollContainer = ref<HTMLElement | null>(null)
 const cardListRef = ref<HTMLElement | null>(null)
 const hasMore = ref(true)
 const pageSize = 20
 let currentPage = 1
+type TagInputInstance = ComponentPublicInstance<{ focus: () => void; select: () => void }>
+
+const tagList = ref<any[]>([])
+const tagLoading = ref(false)
+const selectedTagId = ref<string>('')
+const overallFAQTotal = ref(0)
+const tagSearchQuery = ref('')
+const editingTagInputRefs = new Map<string, TagInputInstance | null>()
+const setEditingTagInputRef = (el: TagInputInstance | null, tagId: string) => {
+  if (el) {
+    editingTagInputRefs.set(tagId, el)
+  } else {
+    editingTagInputRefs.delete(tagId)
+  }
+}
+const setEditingTagInputRefByTag = (tagId: string) => (el: TagInputInstance | null) => {
+  setEditingTagInputRef(el, tagId)
+}
+const newTagInputRef = ref<TagInputInstance | null>(null)
+const creatingTag = ref(false)
+const creatingTagLoading = ref(false)
+const newTagName = ref('')
+const editingTagId = ref<string | null>(null)
+const editingTagName = ref('')
+const editingTagSubmitting = ref(false)
+const tagDropdownOptions = computed(() => [
+  { content: t('knowledgeBase.untagged') || '未分类', value: '' },
+  ...tagList.value.map((tag: any) => ({ content: tag.name, value: tag.id })),
+])
+const tagMap = computed<Record<string, any>>(() => {
+  const map: Record<string, any> = {}
+  tagList.value.forEach((tag) => {
+    map[tag.id] = tag
+  })
+  return map
+})
+const tagSelectOptions = computed(() => [
+  { label: t('knowledgeBase.untagged') || '未分类', value: '' },
+  ...tagList.value.map((tag: any) => ({ label: tag.name, value: tag.id })),
+])
+const sidebarCategoryCount = computed(() => tagList.value.length + 1)
+const assignedFAQCount = computed(() =>
+  tagList.value.reduce((sum, tag) => sum + (tag.chunk_count || 0), 0),
+)
+const untaggedFAQCount = computed(() =>
+  Math.max(overallFAQTotal.value - assignedFAQCount.value, 0),
+)
+const filteredTags = computed(() => {
+  const query = tagSearchQuery.value.trim().toLowerCase()
+  if (!query) {
+    return tagList.value
+  }
+  return tagList.value.filter((tag) => (tag.name || '').toLowerCase().includes(query))
+})
 
 const editorVisible = ref(false)
 const editorMode = ref<'create' | 'edit'>('create')
@@ -745,6 +1066,7 @@ const editorForm = reactive<FAQEntryPayload>({
   similar_questions: [],
   negative_questions: [],
   answers: [],
+  tag_id: '',
 })
 const editorFormRef = ref<FormInstanceFunctions>()
 const savingEntry = ref(false)
@@ -781,13 +1103,30 @@ const toolbarActionOptions = computed(() => {
     { content: t('knowledgeEditor.faq.searchTest'), value: 'search', icon: 'search' },
   ]
   
-  // 如果有选中的条目，添加批量删除选项
+  // 如果有选中的条目，添加批量操作选项
   if (selectedRowKeys.value.length > 0) {
-    options.push({
-      content: `${t('knowledgeEditor.faqImport.deleteSelected')} (${selectedRowKeys.value.length})`,
-      value: 'delete',
-      icon: 'delete',
-    })
+    options.push(
+      {
+        content: `${t('knowledgeEditor.faq.batchUpdateTag')} (${selectedRowKeys.value.length})`,
+        value: 'batchTag',
+        icon: 'folder',
+      },
+      {
+        content: `${t('knowledgeEditor.faq.batchEnable')} (${selectedRowKeys.value.length})`,
+        value: 'batchEnable',
+        icon: 'check-circle',
+      },
+      {
+        content: `${t('knowledgeEditor.faq.batchDisable')} (${selectedRowKeys.value.length})`,
+        value: 'batchDisable',
+        icon: 'close-circle',
+      },
+      {
+        content: `${t('knowledgeEditor.faqImport.deleteSelected')} (${selectedRowKeys.value.length})`,
+        value: 'delete',
+        icon: 'delete',
+      }
+    )
   }
   
   return options
@@ -801,9 +1140,239 @@ const handleToolbarAction = (data: { value: string }) => {
     case 'search':
       searchDrawerVisible.value = true
       break
+    case 'batchTag':
+      openBatchTagDialog()
+      break
+    case 'batchEnable':
+      handleBatchStatusChange(true)
+      break
+    case 'batchDisable':
+      handleBatchStatusChange(false)
+      break
     case 'delete':
       handleBatchDelete()
       break
+  }
+}
+
+const loadTags = async () => {
+  if (!props.kbId) {
+    tagList.value = []
+    return
+  }
+  tagLoading.value = true
+  try {
+    const res: any = await listKnowledgeTags(props.kbId)
+    tagList.value = (res?.data || []).map((tag: any) => ({
+      ...tag,
+      id: String(tag.id),
+    }))
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('common.operationFailed'))
+  } finally {
+    tagLoading.value = false
+  }
+}
+
+const getTagName = (tagId?: string) => {
+  if (!tagId) return t('knowledgeBase.untagged') || '未分类'
+  return tagMap.value[tagId]?.name || (t('knowledgeBase.untagged') || '未分类')
+}
+
+const handleTagFilterChange = (value: string) => {
+  selectedTagId.value = value
+}
+
+const handleTagRowClick = (tagId: string) => {
+  const normalizedId = String(tagId)
+  if (editingTagId.value && editingTagId.value !== normalizedId) {
+    cancelEditTag()
+  }
+  if (creatingTag.value) {
+    cancelCreateTag()
+  }
+  if (selectedTagId.value === normalizedId) {
+    return
+  }
+  handleTagFilterChange(normalizedId)
+}
+
+const handleUntaggedClick = () => {
+  if (creatingTag.value) {
+    cancelCreateTag()
+  }
+  if (editingTagId.value) {
+    cancelEditTag()
+  }
+  if (selectedTagId.value === '') return
+  handleTagFilterChange('')
+}
+
+const startCreateTag = () => {
+  if (!props.kbId) {
+    MessagePlugin.warning(t('knowledgeEditor.messages.missingId'))
+    return
+  }
+  if (creatingTag.value) {
+    return
+  }
+  cancelEditTag()
+  creatingTag.value = true
+  nextTick(() => {
+    newTagInputRef.value?.focus?.()
+    newTagInputRef.value?.select?.()
+  })
+}
+
+const cancelCreateTag = () => {
+  creatingTag.value = false
+  newTagName.value = ''
+}
+
+const submitCreateTag = async () => {
+  if (!props.kbId) {
+    MessagePlugin.warning(t('knowledgeEditor.messages.missingId'))
+    return
+  }
+  const name = newTagName.value.trim()
+  if (!name) {
+    MessagePlugin.warning(t('knowledgeBase.tagNameRequired'))
+    return
+  }
+  creatingTagLoading.value = true
+  try {
+    await createKnowledgeBaseTag(props.kbId, { name })
+    MessagePlugin.success(t('knowledgeBase.tagCreateSuccess'))
+    cancelCreateTag()
+    await loadTags()
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('common.operationFailed'))
+  } finally {
+    creatingTagLoading.value = false
+  }
+}
+
+const startEditTag = (tag: any) => {
+  cancelCreateTag()
+  editingTagId.value = tag.id
+  editingTagName.value = tag.name
+  nextTick(() => {
+    const inputRef = editingTagInputRefs.get(tag.id)
+    inputRef?.focus?.()
+    inputRef?.select?.()
+  })
+}
+
+const cancelEditTag = () => {
+  editingTagId.value = null
+  editingTagName.value = ''
+}
+
+const submitEditTag = async () => {
+  if (!props.kbId || !editingTagId.value) {
+    return
+  }
+  const name = editingTagName.value.trim()
+  if (!name) {
+    MessagePlugin.warning(t('knowledgeBase.tagNameRequired'))
+    return
+  }
+  if (name === tagMap.value[editingTagId.value]?.name) {
+    cancelEditTag()
+    return
+  }
+  editingTagSubmitting.value = true
+  try {
+    await updateKnowledgeBaseTag(props.kbId, editingTagId.value, { name })
+    MessagePlugin.success(t('knowledgeBase.tagEditSuccess'))
+    cancelEditTag()
+    await loadTags()
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('common.operationFailed'))
+  } finally {
+    editingTagSubmitting.value = false
+  }
+}
+
+const confirmDeleteTag = (tag: any) => {
+  if (!props.kbId) {
+    MessagePlugin.warning(t('knowledgeEditor.messages.missingId'))
+    return
+  }
+  if (creatingTag.value) {
+    cancelCreateTag()
+  }
+  if (editingTagId.value) {
+    cancelEditTag()
+  }
+  const confirmDialog = DialogPlugin.confirm({
+    header: t('knowledgeBase.tagDeleteTitle'),
+    body: t('knowledgeBase.tagDeleteDesc', { name: tag.name }),
+    confirmBtn: { content: t('common.delete'), theme: 'danger' },
+    cancelBtn: t('common.cancel'),
+    onConfirm: async () => {
+      try {
+        await deleteKnowledgeBaseTag(props.kbId, tag.id)
+        MessagePlugin.success(t('knowledgeBase.tagDeleteSuccess'))
+        if (selectedTagId.value === tag.id) {
+          handleTagFilterChange('')
+        }
+        await loadTags()
+        confirmDialog.hide()
+      } catch (error: any) {
+        MessagePlugin.error(error?.message || t('common.operationFailed'))
+      }
+    },
+  })
+}
+
+const handleEntryTagChange = async (entryId: string, value?: string) => {
+  if (!props.kbId) return
+  const targetEntry = entries.value.find((item) => item.id === entryId)
+  const previousTagId = targetEntry ? targetEntry.tag_id : ''
+  const normalizedValue = value ?? ''
+  if (normalizedValue === previousTagId) {
+    return
+  }
+  try {
+    await updateFAQEntryTagBatch(props.kbId, { updates: { [entryId]: normalizedValue || null } })
+    MessagePlugin.success(t('knowledgeEditor.messages.updateSuccess'))
+    await loadEntries()
+    await loadTags()
+  } catch (error: any) {
+    if (targetEntry) {
+      targetEntry.tag_id = previousTagId
+    }
+    MessagePlugin.error(error?.message || t('common.operationFailed'))
+  }
+}
+
+const handleEntryStatusChange = async (entry: FAQEntry, value: boolean) => {
+  if (!props.kbId) {
+    return
+  }
+  const entryIndex = entries.value.findIndex(e => e.id === entry.id)
+  if (entryIndex === -1) {
+    return
+  }
+  // 从数组中获取实际的对象引用，确保使用最新的数据
+  const actualEntry = entries.value[entryIndex]
+  const previous = actualEntry.is_enabled
+  if (previous === value) {
+    return
+  }
+  // 直接更新属性，Vue 3 的响应式系统应该能够检测到
+  actualEntry.is_enabled = value
+  entryStatusLoading[entry.id] = true
+  try {
+    await updateFAQEntryStatusBatch(props.kbId, { updates: { [entry.id]: value } })
+    MessagePlugin.success(t(value ? 'knowledgeEditor.faq.statusEnableSuccess' : 'knowledgeEditor.faq.statusDisableSuccess'))
+  } catch (error: any) {
+    // 失败时回滚
+    actualEntry.is_enabled = previous
+    MessagePlugin.error(error?.message || t('knowledgeEditor.faq.statusUpdateFailed'))
+  } finally {
+    entryStatusLoading[entry.id] = false
   }
 }
 
@@ -828,12 +1397,16 @@ const loadEntries = async (append = false) => {
     currentPage = 1
     entries.value = []
     selectedRowKeys.value = []
+    Object.keys(entryStatusLoading).forEach((key) => {
+      delete entryStatusLoading[key]
+    })
   }
 
   try {
     const res = await listFAQEntries(props.kbId, {
       page: currentPage,
       page_size: pageSize,
+      tag_id: selectedTagId.value || undefined,
     })
     const pageData = (res.data || {}) as {
       data: FAQEntry[]
@@ -844,7 +1417,9 @@ const loadEntries = async (append = false) => {
       showMore: false,
       similarCollapsed: false, // 相似问默认展开
       negativeCollapsed: true,  // 反例默认折叠
-      answersCollapsed: true    // 答案默认折叠
+      answersCollapsed: true,   // 答案默认折叠
+      tag_id: entry.tag_id ? String(entry.tag_id) : '',
+      is_enabled: entry.is_enabled !== false,
     }))
     
     if (append) {
@@ -852,7 +1427,9 @@ const loadEntries = async (append = false) => {
     } else {
       entries.value = newEntries
     }
-
+    if (selectedTagId.value === '') {
+      overallFAQTotal.value = pageData.total || 0
+    }
     // 判断是否还有更多数据
     hasMore.value = entries.value.length < (pageData.total || 0)
     currentPage++
@@ -900,6 +1477,7 @@ const resetEditorForm = () => {
   editorForm.similar_questions = []
   editorForm.negative_questions = []
   editorForm.answers = []
+  editorForm.tag_id = ''
   answerInput.value = ''
   similarInput.value = ''
   negativeInput.value = ''
@@ -913,6 +1491,7 @@ const openEditor = (entry?: FAQEntry) => {
     editorForm.similar_questions = [...(entry.similar_questions || [])]
     editorForm.negative_questions = [...(entry.negative_questions || [])]
     editorForm.answers = [...(entry.answers || [])]
+    editorForm.tag_id = entry.tag_id || ''
   } else {
     editorMode.value = 'create'
     currentEntryId.value = null
@@ -982,14 +1561,21 @@ const handleSubmitEntry = async () => {
 
   savingEntry.value = true
   try {
+    const payload: FAQEntryPayload = {
+      standard_question: editorForm.standard_question,
+      similar_questions: [...editorForm.similar_questions],
+      negative_questions: [...editorForm.negative_questions],
+      answers: [...editorForm.answers],
+      tag_id: editorForm.tag_id || '',
+    }
     if (editorMode.value === 'create') {
       await upsertFAQEntries(props.kbId, {
-        entries: [editorForm],
+        entries: [payload],
         mode: 'append',
       })
       MessagePlugin.success(t('knowledgeEditor.messages.createSuccess'))
     } else if (currentEntryId.value) {
-      await updateFAQEntry(props.kbId, currentEntryId.value, editorForm)
+      await updateFAQEntry(props.kbId, currentEntryId.value, payload)
       MessagePlugin.success(t('knowledgeEditor.messages.updateSuccess'))
     }
     editorVisible.value = false
@@ -1006,6 +1592,51 @@ const handleBatchDelete = async () => {
   try {
     await deleteFAQEntries(props.kbId, selectedRowKeys.value)
     MessagePlugin.success(t('knowledgeEditor.faqImport.deleteSuccess'))
+    selectedRowKeys.value = []
+    await loadEntries()
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('common.operationFailed'))
+  }
+}
+
+// 批量状态更新对话框
+const batchTagDialogVisible = ref(false)
+const batchTagValue = ref<string>('')
+
+const openBatchTagDialog = () => {
+  if (!selectedRowKeys.value.length) return
+  batchTagValue.value = ''
+  batchTagDialogVisible.value = true
+}
+
+const handleBatchTag = async () => {
+  if (!selectedRowKeys.value.length || !props.kbId) return
+  try {
+    const updates: Record<string, string | null> = {}
+    selectedRowKeys.value.forEach(id => {
+      updates[id] = batchTagValue.value || null
+    })
+    await updateFAQEntryTagBatch(props.kbId, { updates })
+    MessagePlugin.success(t('knowledgeEditor.messages.updateSuccess'))
+    batchTagDialogVisible.value = false
+    selectedRowKeys.value = []
+    await loadEntries()
+    await loadTags()
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('common.operationFailed'))
+  }
+}
+
+const handleBatchStatusChange = async (isEnabled: boolean) => {
+  if (!selectedRowKeys.value.length || !props.kbId) return
+  try {
+    const updates: Record<string, boolean> = {}
+    selectedRowKeys.value.forEach(id => {
+      updates[id] = isEnabled
+    })
+    await updateFAQEntryStatusBatch(props.kbId, { updates })
+    MessagePlugin.success(t(isEnabled ? 'knowledgeEditor.faq.statusEnableSuccess' : 'knowledgeEditor.faq.statusDisableSuccess'))
+    selectedRowKeys.value = []
     await loadEntries()
   } catch (error: any) {
     MessagePlugin.error(error?.message || t('common.operationFailed'))
@@ -1169,6 +1800,7 @@ const normalizePayload = (payload: Partial<FAQEntryPayload>): FAQEntryPayload =>
   answers: payload.answers?.filter(Boolean) || [],
   similar_questions: payload.similar_questions?.filter(Boolean) || [],
   negative_questions: payload.negative_questions?.filter(Boolean) || [],
+  tag_id: payload.tag_id || '',
 })
 
 const handleImport = async () => {
@@ -1291,10 +1923,25 @@ watch(
   () => {
     currentPage = 1
     hasMore.value = true
+    selectedTagId.value = ''
+    cancelCreateTag()
+    cancelEditTag()
+    tagSearchQuery.value = ''
     loadEntries()
+    loadTags()
   },
   { immediate: true },
 )
+
+watch(selectedTagId, (newVal, oldVal) => {
+  if (oldVal === undefined) return
+  if (newVal !== oldVal) {
+    currentPage = 1
+    entries.value = []
+    selectedRowKeys.value = []
+    loadEntries()
+  }
+})
 
 const handleSearch = async () => {
   if (!searchForm.query.trim()) {
@@ -1508,6 +2155,17 @@ watch(() => entries.value.map(e => ({
 }, { deep: true })
 </script>
 
+<style lang="less">
+.tag-more-popup {
+  z-index: 99 !important;
+
+  .t-popup__content {
+    padding: 4px 0 !important;
+    margin-top: 4px !important;
+    min-width: 120px;
+  }
+}
+</style>
 <style scoped lang="less">
 .faq-manager {
   display: flex;
@@ -1515,7 +2173,391 @@ watch(() => entries.value.map(e => ({
   height: 100%;
 }
 
-// Header 样式
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.faq-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.faq-main {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.faq-tag-panel {
+  width: 230px;
+  background: #fff;
+  border: 1px solid #e7ebf0;
+  border-radius: 12px;
+  padding: 16px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+
+  .sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    color: #1d2129;
+
+    .sidebar-title {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      font-weight: 600;
+
+      .sidebar-count {
+        font-size: 12px;
+        color: #86909c;
+      }
+    }
+
+    .sidebar-actions {
+      display: flex;
+      gap: 8px;
+      color: #c9ced6;
+
+      .create-tag-btn {
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        font-weight: 600;
+        color: #00a870;
+        line-height: 1;
+        transition: background 0.2s ease, color 0.2s ease;
+
+        &:hover {
+          background: #f3f5f7;
+          color: #05a04f;
+        }
+      }
+
+      .create-tag-plus {
+        line-height: 1;
+      }
+
+      .sidebar-action-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: background 0.2s ease, color 0.2s ease;
+
+        &:hover {
+          background: #f3f5f7;
+          color: #00a870;
+        }
+      }
+    }
+  }
+
+  .tag-search-bar {
+    margin-bottom: 12px;
+
+    :deep(.t-input) {
+      font-size: 12px;
+      background-color: #f7f9fc;
+      border-color: #e5e9f2;
+    }
+  }
+
+  .faq-tag-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: auto;
+
+    .faq-tag-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-radius: 6px;
+      color: #4e5969;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 13px;
+
+      .faq-tag-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex: 1;
+
+        .t-icon {
+          flex-shrink: 0;
+          color: #86909c;
+          font-size: 16px;
+          transition: color 0.2s ease;
+        }
+      }
+
+      .tag-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 400;
+      }
+
+      .faq-tag-right {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: 8px;
+        min-width: 0;
+        flex-shrink: 0;
+      }
+
+      .faq-tag-count {
+        font-size: 12px;
+        color: #86909c;
+        font-weight: 500;
+        padding: 2px 6px;
+        border-radius: 10px;
+        background: #f7f9fc;
+        transition: all 0.2s ease;
+      }
+
+      &:hover {
+        background: #f7f9fc;
+        color: #1d2129;
+
+        .faq-tag-left .t-icon {
+          color: #4e5969;
+        }
+
+        .faq-tag-count {
+          background: #e5e9f2;
+          color: #4e5969;
+        }
+      }
+
+      &.active {
+        background: #e6f7ec;
+        color: #00a870;
+        font-weight: 500;
+
+        .faq-tag-left .t-icon {
+          color: #00a870;
+        }
+
+        .faq-tag-count {
+          background: #b8f0d3;
+          color: #00a870;
+          font-weight: 600;
+        }
+
+        &:hover {
+          background: #d4f4e3;
+        }
+      }
+
+      &.editing {
+        background: transparent;
+        border: none;
+      }
+
+      &.tag-editing {
+        cursor: default;
+        padding-right: 8px;
+        background: transparent;
+        border: none;
+
+        .tag-edit-input {
+          flex: 1;
+        }
+      }
+
+      &.tag-editing .tag-edit-input {
+        width: 100%;
+      }
+
+      .tag-inline-actions {
+        display: flex;
+        gap: 4px;
+        margin-left: auto;
+
+        :deep(.t-button) {
+          padding: 0 4px;
+          height: 24px;
+        }
+
+        :deep(.tag-action-btn) {
+          border-radius: 4px;
+          transition: all 0.2s ease;
+
+          .t-icon {
+            font-size: 14px;
+          }
+        }
+
+        :deep(.tag-action-btn.confirm) {
+          background: #eefcf5;
+          color: #059669;
+
+          &:hover {
+            background: #d9f7e9;
+            color: #047857;
+          }
+        }
+
+        :deep(.tag-action-btn.cancel) {
+          background: #f9fafb;
+          color: #6b7280;
+
+          &:hover {
+            background: #f3f4f6;
+            color: #4b5563;
+          }
+        }
+      }
+
+      .tag-edit-input {
+        flex: 1;
+        min-width: 0;
+        max-width: 100%;
+
+        :deep(.t-input) {
+          font-size: 12px;
+          background-color: transparent;
+          border: none;
+          border-bottom: 1px solid #d0d5dd;
+          border-radius: 0;
+          box-shadow: none;
+          padding-left: 0;
+          padding-right: 0;
+        }
+
+        :deep(.t-input__wrap) {
+          background-color: transparent;
+          border: none;
+          border-bottom: 1px solid #d0d5dd;
+          border-radius: 0;
+          box-shadow: none;
+        }
+
+        :deep(.t-input__inner) {
+          padding-left: 0;
+          padding-right: 0;
+          color: #1d2129;
+          caret-color: #1d2129;
+        }
+
+        :deep(.t-input:hover),
+        :deep(.t-input.t-is-focused),
+        :deep(.t-input__wrap:hover),
+        :deep(.t-input__wrap.t-is-focused) {
+          border-bottom-color: #00a870;
+        }
+      }
+
+      .tag-more-btn {
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        color: #86909c;
+        transition: all 0.2s ease;
+        opacity: 0.6;
+
+        &:hover {
+          background: #f3f5f7;
+          color: #4e5969;
+          opacity: 1;
+        }
+      }
+
+
+      .tag-more {
+        display: flex;
+        align-items: center;
+      }
+    }
+
+    .tag-empty-state {
+      text-align: center;
+      padding: 12px 8px;
+      color: #a1a7b3;
+      font-size: 12px;
+    }
+  }
+}
+
+.faq-card-area {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.tag-menu) {
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.tag-menu-item) {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #000000e6;
+  font-family: "PingFang SC";
+  font-size: 14px;
+  font-weight: 400;
+
+  .menu-icon {
+    margin-right: 8px;
+    font-size: 16px;
+  }
+
+  &:hover {
+    background: #f5f5f5;
+    color: #000000e6;
+  }
+
+  &.danger {
+    color: #000000e6;
+
+    &:hover {
+      background: #fff1f0;
+      color: #fa5151;
+
+      .menu-icon {
+        color: #fa5151;
+      }
+    }
+  }
+}
+
 .faq-header {
   display: flex;
   align-items: center;
@@ -1545,6 +2587,18 @@ watch(() => entries.value.map(e => ({
     font-size: 14px;
     font-weight: 400;
     line-height: 20px;
+  }
+}
+
+.tag-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+
+  .tag-filter-label {
+    color: #6B7280;
+    font-size: 14px;
   }
 }
 
@@ -1659,11 +2713,174 @@ watch(() => entries.value.map(e => ({
 
 .faq-card-header {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding-bottom: 8px;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 12px;
   border-bottom: 1px solid #F3F4F6;
   position: relative;
+}
+
+.faq-header-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.faq-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.faq-header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-top: 6px;
+  border-top: 1px dashed #F3F4F6;
+}
+
+.faq-meta-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #F9FAFB;
+  border: 1px solid #EEF2F7;
+
+  .meta-label {
+    font-size: 12px;
+    color: #6B7280;
+    font-weight: 500;
+  }
+
+  .meta-value {
+    font-size: 13px;
+    color: #111827;
+    font-weight: 600;
+  }
+}
+
+.faq-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #F3F4F6;
+  flex-wrap: wrap;
+}
+
+.faq-card-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #F9FAFB;
+  border: 1px solid #EEF2F7;
+  font-size: 12px;
+  color: #4B5563;
+  font-family: "PingFang SC";
+
+  .status-icon {
+    font-size: 14px;
+    color: #9CA3AF;
+
+    &.warning {
+      color: #F97316;
+    }
+
+    &.success {
+      color: #10B981;
+    }
+  }
+}
+
+.status-item-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #F9FAFB;
+  border: 1px solid #EEF2F7;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: #F3F4F6;
+    border-color: #D1D5DB;
+  }
+
+  .status-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+
+    &.warning {
+      color: #F97316;
+    }
+
+    &.success {
+      color: #10B981;
+    }
+  }
+
+  :deep(.t-switch) {
+    flex-shrink: 0;
+  }
+}
+
+.faq-card-tag {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+
+  :deep(.t-tag) {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    max-width: 170px;
+    border-radius: 999px;
+    border-color: #e5e7eb;
+    color: #374151;
+    padding: 0 12px;
+    background: #f9fafb;
+    transition: all 0.2s ease;
+
+    &:hover {
+      border-color: #07c05f;
+      color: #059669;
+      background: #ecfdf5;
+    }
+  }
+}
+
+.faq-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+
+  .tag-text {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
 }
 
 .card-more-btn {
@@ -1675,12 +2892,15 @@ watch(() => entries.value.map(e => ({
   border-radius: 6px;
   cursor: pointer;
   flex-shrink: 0;
-  margin-left: auto;
   opacity: 0.6;
 
   &:hover {
     background: #F3F4F6;
     opacity: 1;
+  }
+
+  &.mobile {
+    display: none;
   }
 
   .more-icon {
@@ -1692,39 +2912,41 @@ watch(() => entries.value.map(e => ({
 .card-menu {
   display: flex;
   flex-direction: column;
-  min-width: 140px;
-  padding: 4px;
-  border-radius: 8px;
 }
 
 .card-menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  padding: 8px 16px;
   cursor: pointer;
-  color: #111827;
+  transition: all 0.2s ease;
+  color: #000000e6;
   font-family: "PingFang SC";
   font-size: 14px;
-  border-radius: 6px;
+  font-weight: 400;
+
+  .menu-icon {
+    margin-right: 8px;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
 
   &:hover {
-    background: #F3F4F6;
-    color: #07C05F;
+    background: #f5f5f5;
+    color: #000000e6;
   }
 
   &.danger {
-    color: #EF4444;
+    color: #000000e6;
 
     &:hover {
-      background: #FEE2E2;
-      color: #DC2626;
-    }
-  }
+      background: #fff1f0;
+      color: #fa5151;
 
-  .menu-icon {
-    font-size: 16px;
-    flex-shrink: 0;
+      .menu-icon {
+        color: #fa5151;
+      }
+    }
   }
 }
 
@@ -3349,6 +4571,28 @@ watch(() => entries.value.map(e => ({
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.batch-tag-dialog-content {
+  padding: 8px 0;
+}
+
+.batch-tag-dialog-tip {
+  margin: 0 0 20px 0;
+  font-size: 14px;
+  color: #4e5969;
+  line-height: 1.5;
+}
+
+.batch-tag-form {
+  margin-top: 0;
+}
+
+.tag-select-empty {
+  padding: 8px 12px;
+  text-align: center;
+  color: #86909c;
+  font-size: 14px;
 }
 
 .section-label {

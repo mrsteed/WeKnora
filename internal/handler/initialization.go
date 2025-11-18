@@ -223,7 +223,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 			kbIdStr, &types.Pagination{
 				Page:     1,
 				PageSize: 1,
-			})
+			}, "")
 		if err == nil && knowledgeList != nil && knowledgeList.Total > 0 {
 			logger.Error(ctx, "Cannot change embedding model when files exist")
 			c.Error(errors.NewBadRequestError("知识库中已有文件，无法修改Embedding模型"))
@@ -1129,7 +1129,7 @@ func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 		kbIdStr, &types.Pagination{
 			Page:     1,
 			PageSize: 1,
-		})
+		}, "")
 	hasFiles := false
 	if err == nil && knowledgeList != nil && knowledgeList.Total > 0 {
 		hasFiles = true

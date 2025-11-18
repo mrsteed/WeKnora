@@ -61,6 +61,7 @@ type knowledgeService struct {
 	docReaderClient *client.Client
 	chunkService    interfaces.ChunkService
 	chunkRepo       interfaces.ChunkRepository
+	tagRepo         interfaces.KnowledgeTagRepository
 	fileSvc         interfaces.FileService
 	modelService    interfaces.ModelService
 	task            *asynq.Client
@@ -81,6 +82,7 @@ func NewKnowledgeService(
 	tenantRepo interfaces.TenantRepository,
 	chunkService interfaces.ChunkService,
 	chunkRepo interfaces.ChunkRepository,
+	tagRepo interfaces.KnowledgeTagRepository,
 	fileSvc interfaces.FileService,
 	modelService interfaces.ModelService,
 	task *asynq.Client,
@@ -95,6 +97,7 @@ func NewKnowledgeService(
 		docReaderClient: docReaderClient,
 		chunkService:    chunkService,
 		chunkRepo:       chunkRepo,
+		tagRepo:         tagRepo,
 		fileSvc:         fileSvc,
 		modelService:    modelService,
 		task:            task,
@@ -2120,6 +2123,10 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 		if err != nil {
 			return err
 		}
+		isEnabled := true
+		if entry.IsEnabled != nil {
+			isEnabled = *entry.IsEnabled
+		}
 		chunk := &types.Chunk{
 			ID:              uuid.New().String(),
 			TenantID:        tenantID,
@@ -2127,7 +2134,7 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 			KnowledgeBaseID: kb.ID,
 			Content:         buildFAQChunkContent(meta, indexMode),
 			ChunkIndex:      startIndex + idx + 1,
-			IsEnabled:       true,
+			IsEnabled:       isEnabled,
 			ChunkType:       types.ChunkTypeFAQ,
 			TagID:           entry.TagID,
 		}
@@ -2191,15 +2198,341 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 	}
 	chunk.Content = buildFAQChunkContent(meta, indexMode)
 	chunk.TagID = payload.TagID
+	isEnabledUpdated := false
+	if payload.IsEnabled != nil {
+		oldEnabled := chunk.IsEnabled
+		chunk.IsEnabled = *payload.IsEnabled
+		isEnabledUpdated = (oldEnabled != chunk.IsEnabled)
+	}
 	chunk.UpdatedAt = time.Now()
 	if err := s.chunkService.UpdateChunk(ctx, chunk); err != nil {
 		return err
 	}
+
+	// Sync is_enabled status to retriever engines if it was updated
+	if isEnabledUpdated {
+		chunkStatusMap := map[string]bool{chunk.ID: chunk.IsEnabled}
+		tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+		if err != nil {
+			return err
+		}
+		if err := retrieveEngine.BatchUpdateChunkEnabledStatus(ctx, chunkStatusMap); err != nil {
+			return err
+		}
+	}
+
 	faqKnowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, chunk.KnowledgeID)
 	if err != nil {
 		return err
 	}
 	return s.indexFAQChunks(ctx, kb, faqKnowledge, []*types.Chunk{chunk}, false)
+}
+
+// UpdateFAQEntryStatus updates enable status for a FAQ entry.
+func (s *knowledgeService) UpdateFAQEntryStatus(ctx context.Context,
+	kbID string, entryID string, isEnabled bool,
+) error {
+	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return err
+	}
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	chunk, err := s.chunkRepo.GetChunkByID(ctx, tenantID, entryID)
+	if err != nil {
+		return err
+	}
+	if chunk.KnowledgeBaseID != kb.ID || chunk.ChunkType != types.ChunkTypeFAQ {
+		return werrors.NewBadRequestError("仅支持更新 FAQ 条目")
+	}
+	if chunk.IsEnabled == isEnabled {
+		return nil
+	}
+	chunk.IsEnabled = isEnabled
+	chunk.UpdatedAt = time.Now()
+	if err := s.chunkService.UpdateChunk(ctx, chunk); err != nil {
+		return err
+	}
+
+	// Sync update to retriever engines
+	chunkStatusMap := map[string]bool{chunk.ID: isEnabled}
+	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+	if err != nil {
+		return err
+	}
+	if err := retrieveEngine.BatchUpdateChunkEnabledStatus(ctx, chunkStatusMap); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// UpdateFAQEntryStatusBatch updates enable status for FAQ entries in batch.
+func (s *knowledgeService) UpdateFAQEntryStatusBatch(ctx context.Context,
+	kbID string, updates map[string]bool,
+) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return err
+	}
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+
+	// Get all chunks in batch
+	entryIDs := make([]string, 0, len(updates))
+	for entryID := range updates {
+		entryIDs = append(entryIDs, entryID)
+	}
+	chunks, err := s.chunkRepo.ListChunksByID(ctx, tenantID, entryIDs)
+	if err != nil {
+		return err
+	}
+
+	// Group chunks by enabled status for batch update
+	chunkStatusMap := make(map[string]bool)
+	for _, chunk := range chunks {
+		if chunk.KnowledgeBaseID != kb.ID || chunk.ChunkType != types.ChunkTypeFAQ {
+			continue
+		}
+		isEnabled, exists := updates[chunk.ID]
+		if !exists {
+			continue
+		}
+		if chunk.IsEnabled == isEnabled {
+			continue
+		}
+		chunk.IsEnabled = isEnabled
+		chunk.UpdatedAt = time.Now()
+		if err := s.chunkService.UpdateChunk(ctx, chunk); err != nil {
+			return err
+		}
+		chunkStatusMap[chunk.ID] = isEnabled
+	}
+
+	// Sync update to retriever engines
+	if len(chunkStatusMap) > 0 {
+		tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+		if err != nil {
+			return err
+		}
+		if err := retrieveEngine.BatchUpdateChunkEnabledStatus(ctx, chunkStatusMap); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// UpdateKnowledgeTag updates the tag assigned to a knowledge document.
+func (s *knowledgeService) UpdateKnowledgeTag(ctx context.Context, knowledgeID string, tagID *string) error {
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
+	if err != nil {
+		return err
+	}
+
+	var resolvedTagID string
+	if tagID != nil && *tagID != "" {
+		tag, err := s.tagRepo.GetByID(ctx, tenantID, *tagID)
+		if err != nil {
+			return err
+		}
+		if tag.KnowledgeBaseID != knowledge.KnowledgeBaseID {
+			return werrors.NewBadRequestError("标签不属于当前知识库")
+		}
+		resolvedTagID = tag.ID
+	}
+
+	knowledge.TagID = resolvedTagID
+	return s.repo.UpdateKnowledge(ctx, knowledge)
+}
+
+// UpdateKnowledgeTagBatch updates tags for document knowledge items in batch.
+func (s *knowledgeService) UpdateKnowledgeTagBatch(ctx context.Context, updates map[string]*string) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+
+	// Get all knowledge items in batch
+	knowledgeIDs := make([]string, 0, len(updates))
+	for knowledgeID := range updates {
+		knowledgeIDs = append(knowledgeIDs, knowledgeID)
+	}
+	knowledgeList, err := s.repo.GetKnowledgeBatch(ctx, tenantID, knowledgeIDs)
+	if err != nil {
+		return err
+	}
+
+	// Build tag ID map for validation
+	tagIDSet := make(map[string]bool)
+	for _, tagID := range updates {
+		if tagID != nil && *tagID != "" {
+			tagIDSet[*tagID] = true
+		}
+	}
+
+	// Validate all tags in batch
+	tagMap := make(map[string]*types.KnowledgeTag)
+	if len(tagIDSet) > 0 {
+		tagIDs := make([]string, 0, len(tagIDSet))
+		for tagID := range tagIDSet {
+			tagIDs = append(tagIDs, tagID)
+		}
+		for _, tagID := range tagIDs {
+			tag, err := s.tagRepo.GetByID(ctx, tenantID, tagID)
+			if err != nil {
+				return err
+			}
+			tagMap[tagID] = tag
+		}
+	}
+
+	// Update knowledge items
+	knowledgeToUpdate := make([]*types.Knowledge, 0)
+	for _, knowledge := range knowledgeList {
+		tagID, exists := updates[knowledge.ID]
+		if !exists {
+			continue
+		}
+
+		var resolvedTagID string
+		if tagID != nil && *tagID != "" {
+			tag, ok := tagMap[*tagID]
+			if !ok {
+				return werrors.NewBadRequestError(fmt.Sprintf("标签 %s 不存在", *tagID))
+			}
+			if tag.KnowledgeBaseID != knowledge.KnowledgeBaseID {
+				return werrors.NewBadRequestError(fmt.Sprintf("标签 %s 不属于知识库 %s", *tagID, knowledge.KnowledgeBaseID))
+			}
+			resolvedTagID = tag.ID
+		}
+
+		knowledge.TagID = resolvedTagID
+		knowledgeToUpdate = append(knowledgeToUpdate, knowledge)
+	}
+
+	if len(knowledgeToUpdate) > 0 {
+		return s.repo.UpdateKnowledgeBatch(ctx, knowledgeToUpdate)
+	}
+
+	return nil
+}
+
+// UpdateFAQEntryTag updates the tag assigned to an FAQ entry.
+func (s *knowledgeService) UpdateFAQEntryTag(ctx context.Context, kbID string, entryID string, tagID *string) error {
+	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return err
+	}
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	chunk, err := s.chunkRepo.GetChunkByID(ctx, tenantID, entryID)
+	if err != nil {
+		return err
+	}
+	if chunk.KnowledgeBaseID != kb.ID || chunk.ChunkType != types.ChunkTypeFAQ {
+		return werrors.NewBadRequestError("仅支持更新 FAQ 条目标签")
+	}
+
+	var resolvedTagID string
+	if tagID != nil && *tagID != "" {
+		tag, err := s.tagRepo.GetByID(ctx, tenantID, *tagID)
+		if err != nil {
+			return err
+		}
+		if tag.KnowledgeBaseID != kb.ID {
+			return werrors.NewBadRequestError("标签不属于当前知识库")
+		}
+		resolvedTagID = tag.ID
+	}
+
+	chunk.TagID = resolvedTagID
+	chunk.UpdatedAt = time.Now()
+	return s.chunkRepo.UpdateChunk(ctx, chunk)
+}
+
+// UpdateFAQEntryTagBatch updates tags for FAQ entries in batch.
+func (s *knowledgeService) UpdateFAQEntryTagBatch(ctx context.Context, kbID string, updates map[string]*string) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return err
+	}
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+
+	// Get all chunks in batch
+	entryIDs := make([]string, 0, len(updates))
+	for entryID := range updates {
+		entryIDs = append(entryIDs, entryID)
+	}
+	chunks, err := s.chunkRepo.ListChunksByID(ctx, tenantID, entryIDs)
+	if err != nil {
+		return err
+	}
+
+	// Build tag ID map for validation
+	tagIDSet := make(map[string]bool)
+	for _, tagID := range updates {
+		if tagID != nil && *tagID != "" {
+			tagIDSet[*tagID] = true
+		}
+	}
+
+	// Validate all tags in batch
+	tagMap := make(map[string]*types.KnowledgeTag)
+	if len(tagIDSet) > 0 {
+		tagIDs := make([]string, 0, len(tagIDSet))
+		for tagID := range tagIDSet {
+			tagIDs = append(tagIDs, tagID)
+		}
+		for _, tagID := range tagIDs {
+			tag, err := s.tagRepo.GetByID(ctx, tenantID, tagID)
+			if err != nil {
+				return err
+			}
+			if tag.KnowledgeBaseID != kb.ID {
+				return werrors.NewBadRequestError(fmt.Sprintf("标签 %s 不属于当前知识库", tagID))
+			}
+			tagMap[tagID] = tag
+		}
+	}
+
+	// Update chunks
+	chunksToUpdate := make([]*types.Chunk, 0)
+	for _, chunk := range chunks {
+		if chunk.KnowledgeBaseID != kb.ID || chunk.ChunkType != types.ChunkTypeFAQ {
+			continue
+		}
+		tagID, exists := updates[chunk.ID]
+		if !exists {
+			continue
+		}
+
+		var resolvedTagID string
+		if tagID != nil && *tagID != "" {
+			tag, ok := tagMap[*tagID]
+			if !ok {
+				return werrors.NewBadRequestError(fmt.Sprintf("标签 %s 不存在", *tagID))
+			}
+			resolvedTagID = tag.ID
+		}
+
+		chunk.TagID = resolvedTagID
+		chunk.UpdatedAt = time.Now()
+		chunksToUpdate = append(chunksToUpdate, chunk)
+	}
+
+	if len(chunksToUpdate) > 0 {
+		return s.chunkRepo.UpdateChunks(ctx, chunksToUpdate)
+	}
+
+	return nil
 }
 
 // SearchFAQEntries searches FAQ entries using hybrid search.
@@ -2266,6 +2599,9 @@ func (s *knowledgeService) SearchFAQEntries(ctx context.Context,
 	for _, chunk := range chunks {
 		// Only process FAQ type chunks
 		if chunk.ChunkType != types.ChunkTypeFAQ {
+			continue
+		}
+		if !chunk.IsEnabled {
 			continue
 		}
 
@@ -2408,6 +2744,7 @@ func (s *knowledgeService) chunkToFAQEntry(chunk *types.Chunk, kb *types.Knowled
 		KnowledgeID:       chunk.KnowledgeID,
 		KnowledgeBaseID:   chunk.KnowledgeBaseID,
 		TagID:             chunk.TagID,
+		IsEnabled:         chunk.IsEnabled,
 		StandardQuestion:  meta.StandardQuestion,
 		SimilarQuestions:  meta.SimilarQuestions,
 		NegativeQuestions: meta.NegativeQuestions,

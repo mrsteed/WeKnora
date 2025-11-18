@@ -148,6 +148,8 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		k.GET("/:id/download", handler.DownloadKnowledgeFile)
 		// 更新图像分块信息
 		k.PUT("/image/:id/:chunk_id", handler.UpdateImageInfo)
+		// 批量更新知识标签
+		k.PUT("/tags", handler.UpdateKnowledgeTagBatch)
 	}
 }
 
@@ -161,6 +163,8 @@ func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler) {
 		faq.GET("/entries", handler.ListEntries)
 		faq.POST("/entries", handler.UpsertEntries)
 		faq.PUT("/entries/:entry_id", handler.UpdateEntry)
+		faq.PUT("/entries/status", handler.UpdateEntryStatusBatch)
+		faq.PUT("/entries/tags", handler.UpdateEntryTagBatch)
 		faq.DELETE("/entries", handler.DeleteEntries)
 		faq.POST("/search", handler.SearchFAQ)
 	}

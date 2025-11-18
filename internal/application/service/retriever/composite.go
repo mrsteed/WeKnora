@@ -93,6 +93,16 @@ func (c *CompositeRetrieveEngine) SupportRetriever(r types.RetrieverType) bool {
 	return false
 }
 
+// BatchUpdateChunkEnabledStatus updates the enabled status of chunks in batch
+func (c *CompositeRetrieveEngine) BatchUpdateChunkEnabledStatus(ctx context.Context, chunkStatusMap map[string]bool) error {
+	return c.concurrentExecWithError(ctx, func(ctx context.Context, engineInfo *engineInfo) error {
+		if err := engineInfo.retrieveEngine.BatchUpdateChunkEnabledStatus(ctx, chunkStatusMap); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 // concurrentRetrieve is a helper function for concurrent processing of retrieval parameters
 // and collecting results
 func concurrentRetrieve(
