@@ -102,7 +102,7 @@ func (r *knowledgeRepository) UpdateKnowledgeBatch(ctx context.Context, knowledg
 	if len(knowledgeList) == 0 {
 		return nil
 	}
-	return r.db.WithContext(ctx).Save(knowledgeList).Error
+	return r.db.Debug().WithContext(ctx).Save(knowledgeList).Error
 }
 
 // DeleteKnowledge deletes knowledge

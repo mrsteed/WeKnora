@@ -87,7 +87,9 @@ func (k *Knowledge) GetMetadata() map[string]string {
 
 // BeforeCreate hook generates a UUID for new Knowledge entities before they are created.
 func (k *Knowledge) BeforeCreate(tx *gorm.DB) (err error) {
-	k.ID = uuid.New().String()
+	if k.ID == "" {
+		k.ID = uuid.New().String()
+	}
 	return nil
 }
 
