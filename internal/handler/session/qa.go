@@ -443,6 +443,16 @@ func (h *Handler) handleKnowledgeQARequest(
 		if data.Done {
 			logger.Infof(asyncCtx, "Knowledge QA service completed for session: %s", sessionID)
 			h.completeAssistantMessage(asyncCtx, assistantMessage)
+			// Emit completion event when stream finishes
+			if err := eventBus.Emit(asyncCtx, event.Event{
+				Type:      event.EventAgentComplete,
+				SessionID: sessionID,
+				Data: event.AgentCompleteData{
+					FinalAnswer: assistantMessage.Content,
+				},
+			}); err != nil {
+				logger.Errorf(asyncCtx, "Failed to emit completion event: %v", err)
+			}
 			cancel() // Clean up context
 			return nil
 		}

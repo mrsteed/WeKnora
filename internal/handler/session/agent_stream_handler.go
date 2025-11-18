@@ -444,7 +444,7 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 			"total_duration_ms": data.TotalDurationMs,
 		},
 	}); err != nil {
-		logger.GetLogger(h.ctx).Error("Append complete event to stream failed", "error", err)
+		logger.GetLogger(h.ctx).Errorf("Append complete event to stream failed: %v", err)
 	}
 
 	return nil

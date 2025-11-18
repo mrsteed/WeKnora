@@ -185,10 +185,20 @@ func (h *Handler) createDefaultSummaryConfig(ctx context.Context) *types.Summary
 
 	// Override with tenant-level conversation config if available
 	if tenant != nil && tenant.ConversationConfig != nil {
-		if tenant.ConversationConfig.Prompt != "" {
+		useSystemPrompt := tenant.ConversationConfig.UseCustomSystemPrompt
+		if !useSystemPrompt && tenant.ConversationConfig.Prompt != "" {
+			// Backward compatibility: treat legacy configs without flag as custom
+			useSystemPrompt = true
+		}
+		if useSystemPrompt && tenant.ConversationConfig.Prompt != "" {
 			cfg.Prompt = tenant.ConversationConfig.Prompt
 		}
-		if tenant.ConversationConfig.ContextTemplate != "" {
+
+		useContextTemplate := tenant.ConversationConfig.UseCustomContextTemplate
+		if !useContextTemplate && tenant.ConversationConfig.ContextTemplate != "" {
+			useContextTemplate = true
+		}
+		if useContextTemplate && tenant.ConversationConfig.ContextTemplate != "" {
 			cfg.ContextTemplate = tenant.ConversationConfig.ContextTemplate
 		}
 		if tenant.ConversationConfig.Temperature > 0 {
@@ -214,9 +224,15 @@ func (h *Handler) fillSummaryConfigDefaults(ctx context.Context, config *types.S
 	var defaultMaxTokens int
 
 	if tenant != nil && tenant.ConversationConfig != nil {
-		// Use tenant-level config as defaults
-		defaultPrompt = tenant.ConversationConfig.Prompt
-		defaultContextTemplate = tenant.ConversationConfig.ContextTemplate
+		useSystemPrompt := tenant.ConversationConfig.UseCustomSystemPrompt
+		if useSystemPrompt && tenant.ConversationConfig.Prompt != "" {
+			defaultPrompt = tenant.ConversationConfig.Prompt
+		}
+
+		useContextTemplate := tenant.ConversationConfig.UseCustomContextTemplate
+		if useContextTemplate && tenant.ConversationConfig.ContextTemplate != "" {
+			defaultContextTemplate = tenant.ConversationConfig.ContextTemplate
+		}
 		defaultTemperature = tenant.ConversationConfig.Temperature
 		defaultMaxTokens = tenant.ConversationConfig.MaxTokens
 	}

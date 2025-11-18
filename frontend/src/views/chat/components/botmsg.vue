@@ -226,7 +226,7 @@ onMounted(async () => {
     color: #333333;
     line-height: 1.6;
     /* 确保换行符正确显示 */
-    white-space: pre-line;  /* 保留换行符，但合并多个空格 */
+    // white-space: pre-line;  /* 保留换行符，但合并多个空格 */
 }
 
 .markdown-content {

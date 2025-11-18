@@ -436,40 +436,100 @@ func (s *sessionService) KnowledgeQA(ctx context.Context, session *types.Session
 		return err
 	}
 
+	rewritePromptSystem := s.cfg.Conversation.RewritePromptSystem
+	rewritePromptUser := s.cfg.Conversation.RewritePromptUser
+	var tenantConv *types.ConversationConfig
+	if tc, err := getTenantConversationConfig(ctx); err == nil {
+		tenantConv = tc
+	} else {
+		logger.Warnf(ctx, "Failed to load tenant conversation config, tenant ID: %d, error: %v", session.TenantID, err)
+	}
+
+	vectorThreshold := session.VectorThreshold
+	keywordThreshold := session.KeywordThreshold
+	embeddingTopK := session.EmbeddingTopK
+	rerankModelID := session.RerankModelID
+	rerankTopK := session.RerankTopK
+	rerankThreshold := session.RerankThreshold
+	maxRounds := session.MaxRounds
+	fallbackResponse := session.FallbackResponse
+	enableRewrite := session.EnableRewrite
+
+	summaryParams := session.SummaryParameters
+	if summaryParams == nil {
+		summaryParams = &types.SummaryConfig{}
+	}
+	summaryConfig := types.SummaryConfig{
+		MaxTokens:           summaryParams.MaxTokens,
+		RepeatPenalty:       summaryParams.RepeatPenalty,
+		TopK:                summaryParams.TopK,
+		TopP:                summaryParams.TopP,
+		FrequencyPenalty:    summaryParams.FrequencyPenalty,
+		PresencePenalty:     summaryParams.PresencePenalty,
+		Prompt:              summaryParams.Prompt,
+		ContextTemplate:     summaryParams.ContextTemplate,
+		Temperature:         summaryParams.Temperature,
+		Seed:                summaryParams.Seed,
+		NoMatchPrefix:       summaryParams.NoMatchPrefix,
+		MaxCompletionTokens: summaryParams.MaxCompletionTokens,
+	}
+
+	if tenantConv != nil {
+		vectorThreshold = tenantConv.VectorThreshold
+		keywordThreshold = tenantConv.KeywordThreshold
+		embeddingTopK = tenantConv.EmbeddingTopK
+		rerankModelID = tenantConv.RerankModelID
+		rerankTopK = tenantConv.RerankTopK
+		rerankThreshold = tenantConv.RerankThreshold
+		maxRounds = tenantConv.MaxRounds
+		fallbackResponse = tenantConv.FallbackResponse
+		enableRewrite = tenantConv.EnableRewrite
+
+		if tenantConv.MaxTokens != 0 {
+			summaryConfig.MaxTokens = tenantConv.MaxTokens
+		}
+		if tenantConv.Prompt != "" {
+			summaryConfig.Prompt = tenantConv.Prompt
+		}
+		if tenantConv.ContextTemplate != "" {
+			summaryConfig.ContextTemplate = tenantConv.ContextTemplate
+		}
+		if tenantConv.Temperature != 0 {
+			summaryConfig.Temperature = tenantConv.Temperature
+		}
+		if tenantConv.RewritePromptSystem != "" {
+			rewritePromptSystem = tenantConv.RewritePromptSystem
+		}
+		if tenantConv.RewritePromptUser != "" {
+			rewritePromptUser = tenantConv.RewritePromptUser
+		}
+	}
+
 	// Create chat management object with session settings
 	logger.Infof(ctx, "Creating chat manage object, knowledge base IDs: %v, chat model ID: %s", knowledgeBaseIDs, chatModelID)
 	chatManage := &types.ChatManage{
-		Query:            query,
-		RewriteQuery:     query,
-		SessionID:        session.ID,
-		MessageID:        assistantMessageID,  // NEW: For event emission in pipeline
-		KnowledgeBaseID:  knowledgeBaseIDs[0], // For backward compatibility, use first KB ID
-		KnowledgeBaseIDs: knowledgeBaseIDs,    // Multi-KB support
-		VectorThreshold:  session.VectorThreshold,
-		KeywordThreshold: session.KeywordThreshold,
-		EmbeddingTopK:    session.EmbeddingTopK,
-		RerankModelID:    session.RerankModelID,
-		RerankTopK:       session.RerankTopK,
-		RerankThreshold:  session.RerankThreshold,
-		ChatModelID:      chatModelID,
-		SummaryConfig: types.SummaryConfig{
-			MaxTokens:           session.SummaryParameters.MaxTokens,
-			RepeatPenalty:       session.SummaryParameters.RepeatPenalty,
-			TopK:                session.SummaryParameters.TopK,
-			TopP:                session.SummaryParameters.TopP,
-			FrequencyPenalty:    session.SummaryParameters.FrequencyPenalty,
-			PresencePenalty:     session.SummaryParameters.PresencePenalty,
-			Prompt:              session.SummaryParameters.Prompt,
-			ContextTemplate:     session.SummaryParameters.ContextTemplate,
-			Temperature:         session.SummaryParameters.Temperature,
-			Seed:                session.SummaryParameters.Seed,
-			NoMatchPrefix:       session.SummaryParameters.NoMatchPrefix,
-			MaxCompletionTokens: session.SummaryParameters.MaxCompletionTokens,
-		},
-		FallbackResponse: session.FallbackResponse,
-		EventBus:         eventBus.AsEventBusInterface(), // NEW: For pipeline to emit events directly
-		WebSearchEnabled: webSearchEnabled,
-		TenantID:         session.TenantID,
+		Query:               query,
+		RewriteQuery:        query,
+		SessionID:           session.ID,
+		MessageID:           assistantMessageID,  // NEW: For event emission in pipeline
+		KnowledgeBaseID:     knowledgeBaseIDs[0], // For backward compatibility, use first KB ID
+		KnowledgeBaseIDs:    knowledgeBaseIDs,    // Multi-KB support
+		VectorThreshold:     vectorThreshold,
+		KeywordThreshold:    keywordThreshold,
+		EmbeddingTopK:       embeddingTopK,
+		RerankModelID:       rerankModelID,
+		RerankTopK:          rerankTopK,
+		RerankThreshold:     rerankThreshold,
+		MaxRounds:           maxRounds,
+		ChatModelID:         chatModelID,
+		SummaryConfig:       summaryConfig,
+		FallbackResponse:    fallbackResponse,
+		EventBus:            eventBus.AsEventBusInterface(), // NEW: For pipeline to emit events directly
+		WebSearchEnabled:    webSearchEnabled,
+		TenantID:            session.TenantID,
+		RewritePromptSystem: rewritePromptSystem,
+		RewritePromptUser:   rewritePromptUser,
+		EnableRewrite:       enableRewrite,
 	}
 
 	// Start knowledge QA event processing
@@ -676,6 +736,17 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 	return nil
 }
 
+func getTenantConversationConfig(ctx context.Context) (*types.ConversationConfig, error) {
+	tenant := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	if tenant == nil {
+		return nil, errors.New("tenant is empty")
+	}
+	if tenant.ConversationConfig == nil {
+		return nil, errors.New("tenant has no conversation config")
+	}
+	return tenant.ConversationConfig, nil
+}
+
 // SearchKnowledge performs knowledge base search without LLM summarization
 func (s *sessionService) SearchKnowledge(ctx context.Context,
 	knowledgeBaseID, query string,
@@ -685,14 +756,17 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 
 	// Create default retrieval parameters
 	chatManage := &types.ChatManage{
-		Query:            query,
-		RewriteQuery:     query,
-		KnowledgeBaseID:  knowledgeBaseID,
-		VectorThreshold:  s.cfg.Conversation.VectorThreshold,  // Use default configuration
-		KeywordThreshold: s.cfg.Conversation.KeywordThreshold, // Use default configuration
-		EmbeddingTopK:    s.cfg.Conversation.EmbeddingTopK,    // Use default configuration
-		RerankTopK:       s.cfg.Conversation.RerankTopK,       // Use default configuration
-		RerankThreshold:  s.cfg.Conversation.RerankThreshold,  // Use default configuration
+		Query:               query,
+		RewriteQuery:        query,
+		KnowledgeBaseID:     knowledgeBaseID,
+		VectorThreshold:     s.cfg.Conversation.VectorThreshold,  // Use default configuration
+		KeywordThreshold:    s.cfg.Conversation.KeywordThreshold, // Use default configuration
+		EmbeddingTopK:       s.cfg.Conversation.EmbeddingTopK,    // Use default configuration
+		RerankTopK:          s.cfg.Conversation.RerankTopK,       // Use default configuration
+		RerankThreshold:     s.cfg.Conversation.RerankThreshold,  // Use default configuration
+		MaxRounds:           s.cfg.Conversation.MaxRounds,
+		RewritePromptSystem: s.cfg.Conversation.RewritePromptSystem,
+		RewritePromptUser:   s.cfg.Conversation.RewritePromptUser,
 	}
 
 	// Get default models

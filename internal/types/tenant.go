@@ -74,14 +74,38 @@ func (c *RetrieverEngines) Scan(value interface{}) error {
 
 // ConversationConfig represents the conversation configuration for normal mode
 type ConversationConfig struct {
-	// Prompt is the system prompt
-	Prompt string `json:"prompt"`
+	// Prompt is the system prompt for normal mode
+	UseCustomSystemPrompt    bool   `json:"use_custom_system_prompt"`
+	Prompt                   string `json:"prompt"`
+	UseCustomContextTemplate bool   `json:"use_custom_context_template"`
 	// ContextTemplate is the prompt template for summarizing retrieval results
 	ContextTemplate string `json:"context_template"`
 	// Temperature controls the randomness of the model output
 	Temperature float64 `json:"temperature"`
 	// MaxTokens is the maximum number of tokens to generate
 	MaxTokens int `json:"max_tokens"`
+
+	// Retrieval & strategy parameters
+	MaxRounds        int     `json:"max_rounds"`
+	EmbeddingTopK    int     `json:"embedding_top_k"`
+	KeywordThreshold float64 `json:"keyword_threshold"`
+	VectorThreshold  float64 `json:"vector_threshold"`
+	RerankTopK       int     `json:"rerank_top_k"`
+	RerankThreshold  float64 `json:"rerank_threshold"`
+	EnableRewrite    bool    `json:"enable_rewrite"`
+
+	// Model configuration
+	SummaryModelID string `json:"summary_model_id"`
+	RerankModelID  string `json:"rerank_model_id"`
+
+	// Fallback strategy
+	FallbackStrategy string `json:"fallback_strategy"`
+	FallbackResponse string `json:"fallback_response"`
+	FallbackPrompt   string `json:"fallback_prompt"`
+
+	// Rewrite prompts
+	RewritePromptSystem string `json:"rewrite_prompt_system"`
+	RewritePromptUser   string `json:"rewrite_prompt_user"`
 }
 
 // Value implements the driver.Valuer interface, used to convert ConversationConfig to database value

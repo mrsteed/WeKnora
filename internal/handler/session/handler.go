@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/Tencent/WeKnora/internal/config"
@@ -103,18 +104,8 @@ func (h *Handler) CreateSession(c *gin.Context) {
 
 		logger.Debug(ctx, "Custom session strategy set")
 	} else {
-		// Use default configuration from global config
-		createdSession.MaxRounds = h.config.Conversation.MaxRounds
-		createdSession.EnableRewrite = h.config.Conversation.EnableRewrite
-		createdSession.FallbackStrategy = types.FallbackStrategy(h.config.Conversation.FallbackStrategy)
-		createdSession.FallbackResponse = h.config.Conversation.FallbackResponse
-		createdSession.EmbeddingTopK = h.config.Conversation.EmbeddingTopK
-		createdSession.KeywordThreshold = h.config.Conversation.KeywordThreshold
-		createdSession.VectorThreshold = h.config.Conversation.VectorThreshold
-		createdSession.RerankThreshold = h.config.Conversation.RerankThreshold
-		createdSession.RerankTopK = h.config.Conversation.RerankTopK
-		createdSession.SummaryParameters = h.createDefaultSummaryConfig(ctx)
-
+		tenantInfo, _ := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+		h.applyConversationDefaults(ctx, createdSession, tenantInfo)
 		logger.Debug(ctx, "Using default session strategy")
 	}
 
@@ -157,6 +148,45 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		"success": true,
 		"data":    createdSession,
 	})
+}
+
+func (h *Handler) applyConversationDefaults(ctx context.Context, session *types.Session, tenant *types.Tenant) {
+	session.MaxRounds = h.config.Conversation.MaxRounds
+	session.EnableRewrite = h.config.Conversation.EnableRewrite
+	session.FallbackStrategy = types.FallbackStrategy(h.config.Conversation.FallbackStrategy)
+	session.FallbackResponse = h.config.Conversation.FallbackResponse
+	session.EmbeddingTopK = h.config.Conversation.EmbeddingTopK
+	session.KeywordThreshold = h.config.Conversation.KeywordThreshold
+	session.VectorThreshold = h.config.Conversation.VectorThreshold
+	session.RerankThreshold = h.config.Conversation.RerankThreshold
+	session.RerankTopK = h.config.Conversation.RerankTopK
+	session.RerankModelID = ""
+	session.SummaryModelID = ""
+
+	if tenant != nil && tenant.ConversationConfig != nil {
+		tc := tenant.ConversationConfig
+		session.MaxRounds = tc.MaxRounds
+		session.EnableRewrite = tc.EnableRewrite
+		if tc.FallbackStrategy != "" {
+			session.FallbackStrategy = types.FallbackStrategy(tc.FallbackStrategy)
+		}
+		if tc.FallbackResponse != "" {
+			session.FallbackResponse = tc.FallbackResponse
+		}
+		session.EmbeddingTopK = tc.EmbeddingTopK
+		session.KeywordThreshold = tc.KeywordThreshold
+		session.VectorThreshold = tc.VectorThreshold
+		session.RerankThreshold = tc.RerankThreshold
+		session.RerankTopK = tc.RerankTopK
+		if tc.RerankModelID != "" {
+			session.RerankModelID = tc.RerankModelID
+		}
+		if tc.SummaryModelID != "" {
+			session.SummaryModelID = tc.SummaryModelID
+		}
+	}
+
+	session.SummaryParameters = h.createDefaultSummaryConfig(ctx)
 }
 
 // GetSession retrieves a session by its ID

@@ -43,6 +43,22 @@ export interface ConversationConfig {
   context_template: string
   temperature: number
   max_tokens: number
+  use_custom_system_prompt?: boolean
+  use_custom_context_template?: boolean
+  max_rounds: number
+  embedding_top_k: number
+  keyword_threshold: number
+  vector_threshold: number
+  rerank_top_k: number
+  rerank_threshold: number
+  enable_rewrite: boolean
+  fallback_strategy: string
+  fallback_response: string
+  fallback_prompt?: string
+  summary_model_id?: string
+  rerank_model_id?: string
+  rewrite_prompt_system?: string
+  rewrite_prompt_user?: string
 }
 
 export function getSystemInfo(): Promise<{ data: SystemInfo }> {

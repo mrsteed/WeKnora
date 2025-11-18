@@ -40,7 +40,12 @@ func (p *PluginChatCompletionStream) ActivationEvents() []types.EventType {
 func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 	eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
 ) *PluginError {
-	logger.Info(ctx, "Starting chat completion stream")
+	pipelineInfo(ctx, "Stream", "input", map[string]interface{}{
+		"session_id":     chatManage.SessionID,
+		"user_question":  chatManage.UserContent,
+		"history_rounds": len(chatManage.History),
+		"chat_model":     chatManage.ChatModelID,
+	})
 
 	// Prepare chat model and options
 	chatModel, opt, err := prepareChatModel(ctx, p.modelService, chatManage)
@@ -49,31 +54,49 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 	}
 
 	// Prepare base messages without history
-	logger.Info(ctx, "Preparing chat messages")
-	chatMessages := prepareMessagesWithHistory(chatManage)
 
+	chatMessages := prepareMessagesWithHistory(chatManage)
+	pipelineInfo(ctx, "Stream", "messages_ready", map[string]interface{}{
+		"message_count": len(chatMessages),
+		"system_prompt": chatMessages[0].Content,
+		"user_content":  chatMessages[len(chatMessages)-1].Content,
+	})
 	// EventBus is required for event-driven streaming
 	if chatManage.EventBus == nil {
-		logger.Error(ctx, "EventBus is required but not available")
+		pipelineError(ctx, "Stream", "eventbus_missing", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+		})
 		return ErrModelCall.WithError(errors.New("EventBus is required for streaming"))
 	}
 	eventBus := chatManage.EventBus
 
-	logger.Info(ctx, "EventBus detected, enabling event-driven streaming mode")
+	pipelineInfo(ctx, "Stream", "eventbus_ready", map[string]interface{}{
+		"session_id": chatManage.SessionID,
+	})
 
 	// Initiate streaming chat model call with independent context
-	logger.Info(ctx, "Calling chat stream model")
+	pipelineInfo(ctx, "Stream", "model_call", map[string]interface{}{
+		"chat_model": chatManage.ChatModelID,
+	})
 	responseChan, err := chatModel.ChatStream(ctx, chatMessages, opt)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to call chat stream model: %v", err)
+		pipelineError(ctx, "Stream", "model_call", map[string]interface{}{
+			"chat_model": chatManage.ChatModelID,
+			"error":      err.Error(),
+		})
 		return ErrModelCall.WithError(err)
 	}
 	if responseChan == nil {
-		logger.Error(ctx, "Chat stream returned nil channel")
+		pipelineError(ctx, "Stream", "model_call", map[string]interface{}{
+			"chat_model": chatManage.ChatModelID,
+			"error":      "nil_channel",
+		})
 		return ErrModelCall.WithError(errors.New("chat stream returned nil channel"))
 	}
 
-	logger.Info(ctx, "Chat stream initiated successfully")
+	pipelineInfo(ctx, "Stream", "model_started", map[string]interface{}{
+		"session_id": chatManage.SessionID,
+	})
 
 	// Start goroutine to consume channel and emit events directly
 	go func() {
@@ -98,24 +121,9 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 			}
 		}
 
-		logger.Info(ctx, "Chat stream completed, emitting completion event")
-
-		// Emit completion event when stream finishes
-		// This allows other components to detect stream completion
-		if err := eventBus.Emit(ctx, types.Event{
-			ID:        fmt.Sprintf("%s-complete", uuid.New().String()[:8]),
-			Type:      types.EventType(event.EventAgentComplete),
-			SessionID: chatManage.SessionID,
-			Data: event.AgentCompleteData{
-				SessionID:   chatManage.SessionID,
-				MessageID:   chatManage.MessageID,
-				FinalAnswer: finalContent,
-			},
-		}); err != nil {
-			logger.Errorf(ctx, "Failed to emit completion event: %v", err)
-		}
-
-		logger.Info(ctx, "Chat stream completed and completion event emitted")
+		pipelineInfo(ctx, "Stream", "channel_close", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+		})
 	}()
 
 	return next()

@@ -6,7 +6,8 @@ type ChatManage struct {
 	SessionID      string     `json:"session_id"`                // Unique identifier for the chat session
 	Query          string     `json:"query,omitempty"`           // Original user query
 	ProcessedQuery string     `json:"processed_query,omitempty"` // Query after preprocessing
-	RewriteQuery   string     `json:"rewrite_query,omitempty"`   // Query after rewriting for better retrieval
+    RewriteQuery   string     `json:"rewrite_query,omitempty"`   // Query after rewriting for better retrieval
+    QueryIntent    string     `json:"query_intent,omitempty"`    // Parsed intent: definition/howto/compare/qa/general
 	History        []*History `json:"history,omitempty"`         // Chat history for context
 
 	KnowledgeBaseID  string   `json:"knowledge_base_id"`  // ID of the knowledge base to search against (deprecated, use KnowledgeBaseIDs)
@@ -20,10 +21,16 @@ type ChatManage struct {
 	RerankTopK      int     `json:"rerank_top_k"`     // Number of top results after reranking
 	RerankThreshold float64 `json:"rerank_threshold"` // Minimum score threshold for reranked results
 
+	MaxRounds int `json:"max_rounds"` // Maximum history rounds used for rewrite/context
+
 	ChatModelID      string           `json:"chat_model_id"`     // ID of the chat model to use
 	SummaryConfig    SummaryConfig    `json:"summary_config"`    // Configuration for summary generation
 	FallbackStrategy FallbackStrategy `json:"fallback_strategy"` // Strategy when no relevant results are found
 	FallbackResponse string           `json:"fallback_response"` // Default response when fallback occurs
+
+	EnableRewrite       bool   `json:"enable_rewrite"`        // Whether to enable rewrite
+	RewritePromptSystem string `json:"rewrite_prompt_system"` // Custom system prompt for rewrite stage
+	RewritePromptUser   string `json:"rewrite_prompt_user"`   // Custom user prompt for rewrite stage
 
 	// Internal fields for pipeline data processing
 	SearchResult []*SearchResult `json:"-"` // Results from search phase
@@ -52,13 +59,15 @@ func (c *ChatManage) Clone() *ChatManage {
 	return &ChatManage{
 		Query:            c.Query,
 		ProcessedQuery:   c.ProcessedQuery,
-		RewriteQuery:     c.RewriteQuery,
+        RewriteQuery:     c.RewriteQuery,
+        QueryIntent:      c.QueryIntent,
 		SessionID:        c.SessionID,
 		KnowledgeBaseID:  c.KnowledgeBaseID,
 		KnowledgeBaseIDs: knowledgeBaseIDs,
 		VectorThreshold:  c.VectorThreshold,
 		KeywordThreshold: c.KeywordThreshold,
 		EmbeddingTopK:    c.EmbeddingTopK,
+		MaxRounds:        c.MaxRounds,
 		VectorDatabase:   c.VectorDatabase,
 		RerankModelID:    c.RerankModelID,
 		RerankTopK:       c.RerankTopK,
@@ -78,8 +87,11 @@ func (c *ChatManage) Clone() *ChatManage {
 			Seed:                c.SummaryConfig.Seed,
 			MaxCompletionTokens: c.SummaryConfig.MaxCompletionTokens,
 		},
-		FallbackStrategy: c.FallbackStrategy,
-		FallbackResponse: c.FallbackResponse,
+		FallbackStrategy:    c.FallbackStrategy,
+		FallbackResponse:    c.FallbackResponse,
+		RewritePromptSystem: c.RewritePromptSystem,
+		RewritePromptUser:   c.RewritePromptUser,
+		EnableRewrite:       c.EnableRewrite,
 	}
 }
 

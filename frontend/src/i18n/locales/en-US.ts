@@ -152,8 +152,10 @@ export default {
   settings: {
     title: 'Settings',
     modelConfig: 'Model Settings',
+    modelManagement: 'Model Management',
     agentConfig: 'Agent Settings',
     conversationConfig: 'Conversation Settings',
+    conversationStrategy: 'Conversation Strategy',
     webSearchConfig: 'Web Search',
     mcpService: 'MCP Service',
     systemSettings: 'System Settings',
@@ -833,8 +835,8 @@ export default {
       title: 'Model Configuration',
       description: 'Select appropriate AI models for the knowledge base',
       llmLabel: 'LLM Model',
-      llmDesc: 'Large language model used for conversations and Q&A',
-      llmPlaceholder: 'Select an LLM model',
+      llmDesc: 'Large language model used for summarization and abstract generation (optional)',
+      llmPlaceholder: 'Select an LLM model (optional)',
       embeddingLabel: 'Embedding Model',
       embeddingDesc: 'Embedding model used for text vectorization',
       embeddingPlaceholder: 'Select an embedding model',
@@ -1368,18 +1370,107 @@ export default {
     }
   },
   conversationSettings: {
-    description: 'Configure default behavior and parameters for conversation modes, including Prompt settings for Agent mode and normal mode',
+    description: 'Configure default behavior and parameters for conversation modes, including prompts for Agent and normal modes',
     agentMode: 'Agent Mode',
     normalMode: 'Normal Mode',
+    menus: {
+      modes: 'Mode Settings',
+      models: 'Model Mapping',
+      thresholds: 'Retrieval Thresholds',
+      advanced: 'Advanced Settings'
+    },
+    models: {
+      description: 'Manage thinking/chat models and re-rank models for both Agent and normal modes',
+      chatGroupLabel: 'Thinking / Chat Models',
+      chatGroupDesc: 'Includes Agent reasoning/planning model and the default chat/summary model for normal mode',
+      chatModel: {
+        label: 'Default chat model (normal mode)',
+        desc: 'Used when a conversation does not specify its own model',
+        placeholder: 'Select default chat model'
+      },
+      rerankModel: {
+        label: 'Default ReRank model (normal mode)',
+        desc: 'Used for re-ranking when a session does not override it',
+        placeholder: 'Select default rerank model'
+      },
+      rerankGroupLabel: 'ReRank Models',
+      rerankGroupDesc: 'Includes Agent rerank model and the default rerank model for normal mode'
+    },
+    thresholds: {
+      description: 'Tune retrieval and re-ranking thresholds to balance accuracy and performance'
+    },
+    maxRounds: {
+      label: 'History Rounds',
+      desc: 'Number of rounds kept for context and query rewrite'
+    },
+    embeddingTopK: {
+      label: 'Embedding TopK',
+      desc: 'Number of documents kept after vector retrieval'
+    },
+    keywordThreshold: {
+      label: 'Keyword Threshold',
+      desc: 'Minimum score for keyword retrieval'
+    },
+    vectorThreshold: {
+      label: 'Vector Threshold',
+      desc: 'Minimum similarity for vector retrieval'
+    },
+    rerankTopK: {
+      label: 'ReRank TopK',
+      desc: 'Documents kept after re-ranking'
+    },
+    rerankThreshold: {
+      label: 'ReRank Threshold',
+      desc: 'Minimum score required after re-ranking'
+    },
+    enableRewrite: {
+      label: 'Enable Query Rewrite',
+      desc: 'Automatically rewrite multi-turn queries for better recall'
+    },
+    fallbackStrategy: {
+      label: 'Fallback Strategy',
+      desc: 'How to respond when no relevant documents are found',
+      fixed: 'Fixed response',
+      model: 'Let the model continue answering'
+    },
+    fallbackResponse: {
+      label: 'Fixed fallback response',
+      desc: 'Text returned when using the fixed fallback strategy'
+    },
+    fallbackPrompt: {
+      label: 'Fallback Prompt',
+      desc: 'Prompt used when fallback strategy is “model”'
+    },
+    advanced: {
+      description: 'Configure query rewrite, fallback strategy and other advanced settings'
+    },
+    rewritePrompt: {
+      system: 'Rewrite System Prompt',
+      user: 'Rewrite User Prompt',
+      desc: 'System prompt used during query rewrite',
+      userDesc: 'User prompt used during query rewrite'
+    },
+    chatModel: {
+      label: 'LLM Model',
+      desc: 'Large language model used for summarization and abstract generation'
+    },
+    rerankModel: {
+      label: 'ReRank Model',
+      desc: 'Model for re-ranking search results (optional)'
+    },
     contextTemplate: {
       label: 'Retrieval Result Summary Prompt',
       desc: 'Prompt template for generating answers based on retrieval results in normal mode',
-      placeholder: 'Enter the prompt template for retrieval result summary...'
+      placeholder: 'Enter the prompt template for retrieval result summary...',
+      custom: 'Custom template',
+      disabledHint: 'Currently using the default summary prompt. Enable custom to edit below.'
     },
     systemPrompt: {
       label: 'System Prompt',
       desc: 'System-level prompt for normal mode conversations',
-      placeholder: 'Enter the system prompt...'
+      placeholder: 'Enter the system prompt...',
+      custom: 'Custom prompt',
+      disabledHint: 'Currently using the default prompt. Enable custom to edit below.'
     },
     temperature: {
       label: 'Temperature',
@@ -1389,11 +1480,39 @@ export default {
       label: 'Max Tokens',
       desc: 'Maximum number of tokens to generate in the response'
     },
+    resetSystemPrompt: {
+      header: 'Reset to Default System Prompt',
+      body: 'Are you sure you want to reset to the default system prompt?'
+    },
+    resetContextTemplate: {
+      header: 'Reset to Default Summary Prompt',
+      body: 'Are you sure you want to reset to the default summary prompt?'
+    },
     toasts: {
+      chatModelSaved: 'LLM model saved',
+      rerankModelSaved: 'ReRank model saved',
       contextTemplateSaved: 'Retrieval result summary prompt saved',
       systemPromptSaved: 'System prompt saved',
       temperatureSaved: 'Temperature saved',
-      maxTokensSaved: 'Max tokens saved'
+      maxTokensSaved: 'Max tokens saved',
+      maxRoundsSaved: 'History rounds saved',
+      embeddingSaved: 'Embedding TopK saved',
+      keywordThresholdSaved: 'Keyword threshold saved',
+      vectorThresholdSaved: 'Vector threshold saved',
+      rerankTopKSaved: 'ReRank TopK saved',
+      rerankThresholdSaved: 'ReRank threshold saved',
+      enableRewriteSaved: 'Query rewrite preference saved',
+      fallbackStrategySaved: 'Fallback strategy saved',
+      fallbackResponseSaved: 'Fallback response saved',
+      fallbackPromptSaved: 'Fallback prompt saved',
+      rewritePromptSystemSaved: 'Rewrite system prompt saved',
+      rewritePromptUserSaved: 'Rewrite user prompt saved',
+      customPromptEnabled: 'Custom prompt enabled',
+      defaultPromptEnabled: 'Using default prompt',
+      customContextTemplateEnabled: 'Custom summary prompt enabled',
+      defaultContextTemplateEnabled: 'Using default summary prompt',
+      resetSystemPromptSuccess: 'Reset to default system prompt',
+      resetContextTemplateSuccess: 'Reset to default summary prompt'
     }
   },
   // New: MCP Settings

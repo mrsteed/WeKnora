@@ -151,9 +151,12 @@ export default {
   settings: {
     title: 'Настройки',
     modelConfig: 'Настройки модели',
+    modelManagement: 'Управление моделями',
     agentConfig: 'Настройки агента',
     webSearchConfig: 'Сетевой поиск',
     mcpService: 'Сервис MCP',
+    conversationConfig: 'Настройки диалога',
+    conversationStrategy: 'Стратегия диалога',
     systemSettings: 'Настройки системы',
     tenantInfo: 'Информация о арендаторе',
     apiInfo: 'Информация API',

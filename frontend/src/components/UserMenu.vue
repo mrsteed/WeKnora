@@ -18,7 +18,7 @@
       <div v-if="menuVisible" class="user-dropdown" @click.stop>
         <div class="menu-item" @click="handleQuickNav('models')">
           <t-icon name="control-platform" class="menu-icon" />
-          <span>{{ $t('settings.modelConfig') }}</span>
+          <span>{{ $t('settings.modelManagement') }}</span>
         </div>
         <div class="menu-item" @click="handleQuickNav('ollama')">
           <t-icon name="server" class="menu-icon" />

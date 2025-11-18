@@ -372,6 +372,41 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 		return nil, err
 	}
 
+	// Normalize keyword retriever scores into [0,1] per-engine batch
+	for i := range retrieveResults {
+		rr := retrieveResults[i]
+		if rr.Error != nil || rr.RetrieverType != types.KeywordsRetrieverType || len(rr.Results) == 0 {
+			continue
+		}
+		minS := rr.Results[0].Score
+		maxS := rr.Results[0].Score
+		for _, r := range rr.Results {
+			if r.Score < minS {
+				minS = r.Score
+			}
+			if r.Score > maxS {
+				maxS = r.Score
+			}
+		}
+		if maxS > minS {
+			for _, r := range rr.Results {
+				ns := (r.Score - minS) / (maxS - minS)
+				if ns < 0 {
+					ns = 0
+				} else if ns > 1 {
+					ns = 1
+				}
+				r.Score = ns
+			}
+			logger.Infof(ctx, "Normalized keyword scores for engine %s: min=%f, max=%f", rr.RetrieverEngineType, minS, maxS)
+		} else {
+			for _, r := range rr.Results {
+				r.Score = 1.0
+			}
+			logger.Infof(ctx, "Keyword scores have no variance for engine %s, set to 1.0", rr.RetrieverEngineType)
+		}
+	}
+
 	// Collect all results from different retrievers and deduplicate by chunk ID
 	logger.Infof(ctx, "Processing retrieval results")
 	matchResults := []*types.IndexWithScore{}

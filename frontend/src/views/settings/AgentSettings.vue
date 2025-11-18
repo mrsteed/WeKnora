@@ -1,11 +1,12 @@
 <template>
   <div class="agent-settings">
-    <div class="section-header">
-      <h2>{{ $t('settings.conversationConfig') }}</h2>
-      <p class="section-description">{{ $t('conversationSettings.description') }}</p>
-    </div>
+    <div v-if="activeSection === 'modes'">
+      <div class="section-header">
+        <h2>{{ $t('settings.conversationStrategy') }}</h2>
+        <p class="section-description">{{ $t('conversationSettings.description') }}</p>
+      </div>
 
-    <t-tabs v-model="activeTab" class="conversation-tabs">
+      <t-tabs v-model="activeTab" class="conversation-tabs">
       <!-- Agent 模式设置 Tab -->
       <t-tab-panel value="agent" :label="$t('conversationSettings.agentMode')">
         <div class="tab-content">
@@ -61,92 +62,6 @@
           />
             <span class="value-display">{{ localMaxIterations }}</span>
           </div>
-        </div>
-      </div>
-
-      <!-- 思考模型 -->
-      <div class="setting-row">
-        <div class="setting-info">
-          <label>{{ $t('agentSettings.thinkingModel.label') }}</label>
-          <p class="desc">{{ $t('agentSettings.thinkingModel.desc') }}</p>
-          <p class="hint-tip">
-            <t-icon name="info-circle" class="tip-icon" />
-            {{ $t('agentSettings.thinkingModel.hint') }}
-          </p>
-        </div>
-        <div class="setting-control">
-        <t-select
-          v-model="localThinkingModelId"
-          :loading="loadingModels"
-          filterable
-          :placeholder="$t('agentSettings.model.placeholder')"
-          @change="handleThinkingModelChange"
-          @focus="loadAllModels"
-          style="width: 280px;"
-        >
-          <!-- 已有的对话模型 -->
-          <t-option
-            v-for="model in chatModels"
-            :key="model.id"
-            :value="model.id"
-            :label="model.name"
-          >
-            <div class="model-option">
-              <t-icon name="check-circle-filled" class="model-icon" />
-              <span class="model-name">{{ model.name }}</span>
-              <t-tag v-if="model.is_default" size="small" theme="success">{{ $t('common.default') }}</t-tag>
-            </div>
-          </t-option>
-          
-          <!-- 添加模型选项 -->
-          <t-option value="__add_model__" class="add-model-option">
-            <div class="model-option add">
-              <t-icon name="add" class="add-icon" />
-              <span class="model-name">{{ $t('agentSettings.model.addChat') }}</span>
-            </div>
-          </t-option>
-        </t-select>
-        </div>
-      </div>
-
-      <!-- Rerank 模型 -->
-      <div class="setting-row">
-        <div class="setting-info">
-          <label>{{ $t('agentSettings.rerankModel.label') }}</label>
-          <p class="desc">{{ $t('agentSettings.rerankModel.desc') }}</p>
-        </div>
-        <div class="setting-control">
-        <t-select
-          v-model="localRerankModelId"
-          :loading="loadingModels"
-          filterable
-          :placeholder="$t('agentSettings.model.placeholder')"
-          @change="handleRerankModelChange"
-          @focus="loadAllModels"
-          style="width: 280px;"
-        >
-          <!-- 已有的 Rerank 模型 -->
-          <t-option
-            v-for="model in rerankModels"
-            :key="model.id"
-            :value="model.id"
-            :label="model.name"
-          >
-            <div class="model-option">
-              <t-icon name="check-circle-filled" class="model-icon" />
-              <span class="model-name">{{ model.name }}</span>
-              <t-tag v-if="model.is_default" size="small" theme="success">{{ $t('common.default') }}</t-tag>
-            </div>
-          </t-option>
-          
-          <!-- 添加模型选项 -->
-          <t-option value="__add_model__" class="add-model-option">
-            <div class="model-option add">
-              <t-icon name="add" class="add-icon" />
-              <span class="model-name">{{ $t('agentSettings.model.addRerank') }}</span>
-            </div>
-          </t-option>
-        </t-select>
         </div>
       </div>
 
@@ -226,6 +141,7 @@
               />
             </div>
             <t-button
+              v-if="localUseCustomSystemPrompt"
               theme="default"
               variant="outline"
               size="small"
@@ -238,7 +154,7 @@
           <p v-if="!localUseCustomSystemPrompt" class="prompt-disabled-hint">
             {{ $t('agentSettings.systemPrompt.disabledHint') }}
           </p>
-          <div class="prompt-textarea-wrapper">
+          <div v-if="localUseCustomSystemPrompt" class="prompt-textarea-wrapper">
             <t-textarea
               ref="promptTextareaRef"
               v-model="localSystemPrompt"
@@ -254,7 +170,11 @@
           </div>
           <!-- 占位符提示下拉框 -->
           <teleport to="body">
-            <div v-if="showPlaceholderPopup && filteredPlaceholders.length > 0" class="placeholder-popup-wrapper" :style="popupStyle">
+            <div
+              v-if="localUseCustomSystemPrompt && showPlaceholderPopup && filteredPlaceholders.length > 0"
+              class="placeholder-popup-wrapper"
+              :style="popupStyle"
+            >
               <div class="placeholder-popup">
               <div
                 v-for="(placeholder, index) in filteredPlaceholders"
@@ -282,83 +202,395 @@
       <t-tab-panel value="normal" :label="$t('conversationSettings.normalMode')">
         <div class="tab-content">
           <div class="settings-group">
-              <!-- System Prompt -->
-              <div class="setting-row vertical">
+            <!-- System Prompt（普通模式，自定义开关） -->
+            <div class="setting-row vertical">
               <div class="setting-info">
                 <label>{{ $t('conversationSettings.systemPrompt.label') }}</label>
                 <p class="desc">{{ $t('conversationSettings.systemPrompt.desc') }}</p>
               </div>
               <div class="setting-control full-width">
-                <t-textarea
-                  v-model="localSystemPromptNormal"
-                  :autosize="{ minRows: 10, maxRows: 20 }"
-                  :placeholder="$t('conversationSettings.systemPrompt.placeholder')"
-                  @blur="handleSystemPromptNormalChange"
-                  style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
-                />
+                <div class="prompt-header">
+                  <div class="prompt-toggle">
+                    <span class="prompt-toggle-label">{{ $t('conversationSettings.systemPrompt.custom') }}</span>
+                    <t-switch
+                      v-model="localUseCustomSystemPromptNormal"
+                      :label="[$t('common.off'), $t('common.on')]"
+                      size="large"
+                      @change="handleUseCustomSystemPromptNormalToggle"
+                    />
+                  </div>
+                </div>
+                <p v-if="!localUseCustomSystemPromptNormal" class="prompt-disabled-hint">
+                  {{ $t('conversationSettings.systemPrompt.disabledHint') }}
+                </p>
+                <div v-if="localUseCustomSystemPromptNormal" class="prompt-textarea-wrapper">
+                  <t-textarea
+                    v-model="localSystemPromptNormal"
+                    :autosize="{ minRows: 10, maxRows: 20 }"
+                    :placeholder="$t('conversationSettings.systemPrompt.placeholder')"
+                    @blur="handleSystemPromptNormalChange"
+                    style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
+                  />
+                </div>
               </div>
             </div>
 
-            <!-- Context Template -->
+            <!-- Context Template（普通模式，自定义开关） -->
             <div class="setting-row vertical">
               <div class="setting-info">
                 <label>{{ $t('conversationSettings.contextTemplate.label') }}</label>
                 <p class="desc">{{ $t('conversationSettings.contextTemplate.desc') }}</p>
               </div>
               <div class="setting-control full-width">
-                <t-textarea
-                  v-model="localContextTemplate"
-                  :autosize="{ minRows: 15, maxRows: 30 }"
-                  :placeholder="$t('conversationSettings.contextTemplate.placeholder')"
-                  @blur="handleContextTemplateChange"
-                  style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
-                />
-              </div>
-            </div>
-
-            <!-- Temperature -->
-            <div class="setting-row">
-              <div class="setting-info">
-                <label>{{ $t('conversationSettings.temperature.label') }}</label>
-                <p class="desc">{{ $t('conversationSettings.temperature.desc') }}</p>
-              </div>
-              <div class="setting-control">
-                <div class="slider-with-value">
-                  <t-slider 
-                    v-model="localTemperatureNormal" 
-                    :min="0" 
-                    :max="1" 
-                    :step="0.1"
-                    :marks="{ 0: '0', 0.5: '0.5', 1: '1' }"
-                    @change="handleTemperatureNormalChange"
-                    style="width: 200px;"
-                  />
-                  <span class="value-display">{{ localTemperatureNormal.toFixed(1) }}</span>
+                <div class="prompt-header">
+                  <div class="prompt-toggle">
+                    <span class="prompt-toggle-label">{{ $t('conversationSettings.contextTemplate.custom') }}</span>
+                    <t-switch
+                      v-model="localUseCustomContextTemplate"
+                      :label="[$t('common.off'), $t('common.on')]"
+                      size="large"
+                      @change="handleUseCustomContextTemplateToggle"
+                    />
+                  </div>
                 </div>
-              </div>
-            </div>
-
-            <!-- Max Tokens -->
-            <div class="setting-row">
-              <div class="setting-info">
-                <label>{{ $t('conversationSettings.maxTokens.label') }}</label>
-                <p class="desc">{{ $t('conversationSettings.maxTokens.desc') }}</p>
-              </div>
-              <div class="setting-control">
-                <t-input-number
-                  v-model="localMaxTokens"
-                  :min="1"
-                  :max="100000"
-                  :step="100"
-                  @change="handleMaxTokensChange"
-                  style="width: 200px;"
-                />
+                <p v-if="!localUseCustomContextTemplate" class="prompt-disabled-hint">
+                  {{ $t('conversationSettings.contextTemplate.disabledHint') }}
+                </p>
+                <div v-if="localUseCustomContextTemplate" class="prompt-textarea-wrapper">
+                  <t-textarea
+                    v-model="localContextTemplate"
+                    :autosize="{ minRows: 15, maxRows: 30 }"
+                    :placeholder="$t('conversationSettings.contextTemplate.placeholder')"
+                    @blur="handleContextTemplateChange"
+                    style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
       </t-tab-panel>
     </t-tabs>
+    </div>
+
+    <div v-else-if="activeSection === 'models'" class="section-block">
+      <div class="section-header">
+        <h2>{{ $t('conversationSettings.menus.models') }}</h2>
+        <p class="section-description">{{ $t('conversationSettings.models.description') }}</p>
+      </div>
+
+      <div class="settings-group">
+        <!-- 默认大模型（对话/总结模型） -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.models.chatGroupLabel') }}</label>
+            <p class="desc">{{ $t('conversationSettings.models.chatGroupDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <t-select
+              v-model="localSummaryModelId"
+              :loading="loadingModels"
+              filterable
+              :placeholder="$t('conversationSettings.models.chatModel.placeholder')"
+              style="width: 320px;"
+              @focus="loadAllModels"
+              @change="handleConversationSummaryModelChange"
+            >
+              <t-option
+                v-for="model in chatModels"
+                :key="model.id"
+                :value="model.id"
+                :label="model.name"
+              />
+              <t-option value="__add_model__" class="add-model-option">
+                <div class="model-option add">
+                  <t-icon name="add" class="add-icon" />
+                  <span class="model-name">{{ $t('agentSettings.model.addChat') }}</span>
+                </div>
+              </t-option>
+            </t-select>
+          </div>
+        </div>
+
+        <!-- 默认 ReRank 模型 -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.models.rerankGroupLabel') }}</label>
+            <p class="desc">{{ $t('conversationSettings.models.rerankGroupDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <t-select
+              v-model="localConversationRerankModelId"
+              :loading="loadingModels"
+              filterable
+              :placeholder="$t('conversationSettings.models.rerankModel.placeholder')"
+              style="width: 320px;"
+              @focus="loadAllModels"
+              @change="handleConversationRerankModelChange"
+            >
+              <t-option
+                v-for="model in rerankModels"
+                :key="model.id"
+                :value="model.id"
+                :label="model.name"
+              />
+              <t-option value="__add_model__" class="add-model-option">
+                <div class="model-option add">
+                  <t-icon name="add" class="add-icon" />
+                  <span class="model-name">{{ $t('agentSettings.model.addRerank') }}</span>
+                </div>
+              </t-option>
+            </t-select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-else-if="activeSection === 'thresholds'" class="section-block">
+      <div class="section-header">
+        <h2>{{ $t('conversationSettings.menus.thresholds') }}</h2>
+        <p class="section-description">{{ $t('conversationSettings.thresholds.description') }}</p>
+      </div>
+
+      <div class="settings-group">
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.maxRounds.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.maxRounds.desc') }}</p>
+          </div>
+          <div class="setting-control">
+            <t-input-number
+              v-model="localMaxRounds"
+              :min="1"
+              :max="50"
+              @change="handleMaxRoundsChange"
+            />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.embeddingTopK.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.embeddingTopK.desc') }}</p>
+          </div>
+          <div class="setting-control">
+            <t-input-number
+              v-model="localEmbeddingTopK"
+              :min="1"
+              :max="50"
+              @change="handleEmbeddingTopKChange"
+            />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.keywordThreshold.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.keywordThreshold.desc') }}</p>
+          </div>
+          <div class="setting-control slider-with-value">
+            <t-slider
+              v-model="localKeywordThreshold"
+              :min="0"
+              :max="1"
+              :step="0.05"
+              style="width: 240px;"
+              @change="handleKeywordThresholdChange"
+            />
+            <span class="value-display">{{ localKeywordThreshold.toFixed(2) }}</span>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.vectorThreshold.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.vectorThreshold.desc') }}</p>
+          </div>
+          <div class="setting-control slider-with-value">
+            <t-slider
+              v-model="localVectorThreshold"
+              :min="0"
+              :max="1"
+              :step="0.05"
+              style="width: 240px;"
+              @change="handleVectorThresholdChange"
+            />
+            <span class="value-display">{{ localVectorThreshold.toFixed(2) }}</span>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.rerankTopK.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.rerankTopK.desc') }}</p>
+          </div>
+          <div class="setting-control">
+            <t-input-number
+              v-model="localRerankTopK"
+              :min="1"
+              :max="20"
+              @change="handleRerankTopKChange"
+            />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.rerankThreshold.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.rerankThreshold.desc') }}</p>
+          </div>
+          <div class="setting-control slider-with-value">
+            <t-slider
+              v-model="localRerankThreshold"
+              :min="0"
+              :max="1"
+              :step="0.05"
+              style="width: 240px;"
+              @change="handleRerankThresholdChange"
+            />
+            <span class="value-display">{{ localRerankThreshold.toFixed(2) }}</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div v-else-if="activeSection === 'advanced'" class="section-block">
+      <div class="section-header">
+        <h2>{{ $t('conversationSettings.menus.advanced') }}</h2>
+        <p class="section-description">{{ $t('conversationSettings.advanced.description') }}</p>
+      </div>
+
+      <div class="settings-group">
+        <!-- 开启问题改写 -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.enableRewrite.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.enableRewrite.desc') }}</p>
+          </div>
+          <div class="setting-control">
+            <t-switch
+              v-model="localEnableRewrite"
+              :label="[$t('common.off'), $t('common.on')]"
+              @change="handleEnableRewriteChange"
+            />
+          </div>
+        </div>
+
+        <!-- 改写 Prompt：仅在开启改写时展示 -->
+        <div v-if="localEnableRewrite" class="setting-row vertical">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.rewritePrompt.system') }}</label>
+            <p class="desc">{{ $t('conversationSettings.rewritePrompt.desc') }}</p>
+          </div>
+          <div class="setting-control full-width">
+            <t-textarea
+              v-model="localRewritePromptSystem"
+              :autosize="{ minRows: 8, maxRows: 16 }"
+              @blur="handleRewritePromptSystemChange"
+            />
+          </div>
+        </div>
+
+        <div v-if="localEnableRewrite" class="setting-row vertical">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.rewritePrompt.user') }}</label>
+            <p class="desc">{{ $t('conversationSettings.rewritePrompt.userDesc') }}</p>
+          </div>
+          <div class="setting-control full-width">
+            <t-textarea
+              v-model="localRewritePromptUser"
+              :autosize="{ minRows: 8, maxRows: 16 }"
+              @blur="handleRewritePromptUserChange"
+            />
+          </div>
+        </div>
+
+        <!-- 兜底策略 -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.fallbackStrategy.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.fallbackStrategy.desc') }}</p>
+          </div>
+          <div class="setting-control">
+            <t-radio-group v-model="localFallbackStrategy" @change="handleFallbackStrategyChange">
+              <t-radio value="fixed">{{ $t('conversationSettings.fallbackStrategy.fixed') }}</t-radio>
+              <t-radio value="model">{{ $t('conversationSettings.fallbackStrategy.model') }}</t-radio>
+            </t-radio-group>
+          </div>
+        </div>
+
+        <!-- 固定兜底回复：仅在选择固定回复时展示 -->
+        <div v-if="localFallbackStrategy === 'fixed'" class="setting-row vertical">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.fallbackResponse.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.fallbackResponse.desc') }}</p>
+          </div>
+          <div class="setting-control full-width">
+            <t-textarea
+              v-model="localFallbackResponse"
+              :autosize="{ minRows: 3, maxRows: 6 }"
+              @blur="handleFallbackResponseChange"
+            />
+          </div>
+        </div>
+
+        <!-- 兜底 Prompt：仅在选择“交给模型继续生成”时展示 -->
+        <div v-else-if="localFallbackStrategy === 'model'" class="setting-row vertical">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.fallbackPrompt.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.fallbackPrompt.desc') }}</p>
+          </div>
+          <div class="setting-control full-width">
+            <t-textarea
+              v-model="localFallbackPrompt"
+              :autosize="{ minRows: 8, maxRows: 16 }"
+              @blur="handleFallbackPromptChange"
+            />
+          </div>
+        </div>
+
+        <!-- 普通模式生成参数：Temperature -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.temperature.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.temperature.desc') }}</p>
+          </div>
+          <div class="setting-control">
+            <div class="slider-with-value">
+              <t-slider 
+                v-model="localTemperatureNormal" 
+                :min="0" 
+                :max="1" 
+                :step="0.1"
+                :marks="{ 0: '0', 0.5: '0.5', 1: '1' }"
+                @change="handleTemperatureNormalChange"
+                style="width: 200px;"
+              />
+              <span class="value-display">{{ localTemperatureNormal.toFixed(1) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 普通模式生成参数：Max Tokens -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.maxTokens.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.maxTokens.desc') }}</p>
+          </div>
+          <div class="setting-control">
+            <t-input-number
+              v-model="localMaxTokens"
+              :min="1"
+              :max="100000"
+              :step="100"
+              @change="handleMaxTokensChange"
+              style="width: 200px;"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -371,12 +603,52 @@ import { useI18n } from 'vue-i18n'
 import { listModels, type ModelConfig } from '@/api/model'
 import { getAgentConfig, updateAgentConfig, getConversationConfig, updateConversationConfig, type AgentConfig, type ConversationConfig, type ToolDefinition, type PlaceholderDefinition } from '@/api/system'
 
+const props = defineProps<{
+  // 来自外部设置弹窗的子菜单 key: 'modes' | 'models' | 'thresholds' | 'advanced'
+  activeSubSection?: string
+}>()
+
+// 当前子页面（模式、模型、阈值、高级）
+const activeSection = computed(() => props.activeSubSection || 'modes')
+
 const settingsStore = useSettingsStore()
 const router = useRouter()
 const { t } = useI18n()
 
 // Tab 状态
 const activeTab = ref('agent')
+
+const getDefaultConversationConfig = (): ConversationConfig => ({
+  prompt: '',
+  context_template: '',
+  temperature: 0.3,
+  max_tokens: 2048,
+  use_custom_system_prompt: true,
+  use_custom_context_template: true,
+  max_rounds: 5,
+  embedding_top_k: 10,
+  keyword_threshold: 0.3,
+  vector_threshold: 0.5,
+  rerank_top_k: 5,
+  rerank_threshold: 0.5,
+  enable_rewrite: true,
+  fallback_strategy: 'fixed',
+  fallback_response: '',
+  fallback_prompt: '',
+  summary_model_id: '',
+  rerank_model_id: '',
+  rewrite_prompt_system: '',
+  rewrite_prompt_user: '',
+})
+
+const normalizeConversationConfig = (config?: Partial<ConversationConfig>): ConversationConfig => ({
+  ...getDefaultConversationConfig(),
+  ...config,
+})
+
+const conversationConfig = ref<ConversationConfig>(getDefaultConversationConfig())
+const conversationConfigLoaded = ref(false)
+const conversationSaving = ref(false)
 
 // Agent 模式本地状态
 const localMaxIterations = ref(5)
@@ -392,11 +664,83 @@ const localContextTemplate = ref('')
 const localSystemPromptNormal = ref('')
 const localTemperatureNormal = ref(0.3)
 const localMaxTokens = ref(2048)
-const conversationConfigLoaded = ref(false)
 let savedContextTemplate = ''
 let savedSystemPromptNormal = ''
 let savedTemperatureNormal = 0.3
 let savedMaxTokens = 2048
+
+const localMaxRounds = ref(5)
+const localEmbeddingTopK = ref(10)
+const localKeywordThreshold = ref(0.3)
+const localVectorThreshold = ref(0.5)
+const localRerankTopK = ref(5)
+const localRerankThreshold = ref(0.5)
+const localEnableRewrite = ref(true)
+const localFallbackStrategy = ref<'fixed' | 'model'>('fixed')
+const localFallbackResponse = ref('')
+const localFallbackPrompt = ref('')
+const localRewritePromptSystem = ref('')
+const localRewritePromptUser = ref('')
+const localSummaryModelId = ref('')
+const localConversationRerankModelId = ref('')
+
+// 普通模式 Prompt 是否自定义（关闭时使用系统默认）
+const localUseCustomSystemPromptNormal = ref(true)
+const localUseCustomContextTemplate = ref(true)
+
+const syncConversationLocals = () => {
+  const cfg = conversationConfig.value
+  localContextTemplate.value = cfg.context_template ?? ''
+  savedContextTemplate = localContextTemplate.value
+  localSystemPromptNormal.value = cfg.prompt ?? ''
+  savedSystemPromptNormal = localSystemPromptNormal.value
+  localTemperatureNormal.value = cfg.temperature ?? 0.3
+  savedTemperatureNormal = localTemperatureNormal.value
+  localMaxTokens.value = cfg.max_tokens ?? 2048
+  savedMaxTokens = localMaxTokens.value
+
+  localMaxRounds.value = cfg.max_rounds ?? 5
+  localEmbeddingTopK.value = cfg.embedding_top_k ?? 10
+  localKeywordThreshold.value = cfg.keyword_threshold ?? 0.3
+  localVectorThreshold.value = cfg.vector_threshold ?? 0.5
+  localRerankTopK.value = cfg.rerank_top_k ?? 5
+  localRerankThreshold.value = cfg.rerank_threshold ?? 0.5
+  localEnableRewrite.value = cfg.enable_rewrite ?? true
+  localFallbackStrategy.value = (cfg.fallback_strategy as 'fixed' | 'model') || 'fixed'
+  localFallbackResponse.value = cfg.fallback_response ?? ''
+  localFallbackPrompt.value = cfg.fallback_prompt ?? ''
+  localRewritePromptSystem.value = cfg.rewrite_prompt_system ?? ''
+  localRewritePromptUser.value = cfg.rewrite_prompt_user ?? ''
+  localSummaryModelId.value = cfg.summary_model_id ?? ''
+  localConversationRerankModelId.value = cfg.rerank_model_id ?? ''
+  localUseCustomSystemPromptNormal.value = cfg.use_custom_system_prompt ?? true
+  localUseCustomContextTemplate.value = cfg.use_custom_context_template ?? true
+}
+
+const saveConversationConfig = async (partial: Partial<ConversationConfig>, toastMessage?: string) => {
+  if (!conversationConfigLoaded.value) return
+
+  const payload = normalizeConversationConfig({
+    ...conversationConfig.value,
+    ...partial,
+  })
+
+  try {
+    conversationSaving.value = true
+    const res = await updateConversationConfig(payload)
+    conversationConfig.value = normalizeConversationConfig(res.data ?? payload)
+    syncConversationLocals()
+    if (toastMessage) {
+      MessagePlugin.success(toastMessage)
+    }
+  } catch (error) {
+    console.error('保存对话配置失败:', error)
+    MessagePlugin.error(getErrorMessage(error))
+    throw error
+  } finally {
+    conversationSaving.value = false
+  }
+}
 
 // 计算 Agent 是否就绪
 const isAgentReady = computed(() => {
@@ -603,18 +947,9 @@ onMounted(async () => {
     if (!conversationConfigLoaded.value) {
       try {
         const convRes = await getConversationConfig()
-        const convConfig = convRes.data
-        
-        localContextTemplate.value = convConfig.context_template || ''
-        savedContextTemplate = convConfig.context_template || ''
-        localSystemPromptNormal.value = convConfig.prompt || ''
-        savedSystemPromptNormal = convConfig.prompt || ''
-        localTemperatureNormal.value = convConfig.temperature || 0.3
-        savedTemperatureNormal = convConfig.temperature || 0.3
-        localMaxTokens.value = convConfig.max_tokens || 2048
-        savedMaxTokens = convConfig.max_tokens || 2048
-        
+        conversationConfig.value = normalizeConversationConfig(convRes.data)
         conversationConfigLoaded.value = true
+        syncConversationLocals()
       } catch (error) {
         console.error('加载普通模式配置失败:', error)
         // 使用默认值
@@ -1280,19 +1615,83 @@ const handleContextTemplateChange = async () => {
   }
   
   try {
-    const config: ConversationConfig = {
-      prompt: localSystemPromptNormal.value,
-      context_template: localContextTemplate.value,
-      temperature: localTemperatureNormal.value,
-      max_tokens: localMaxTokens.value
-    }
-    
-    await updateConversationConfig(config)
+    await saveConversationConfig(
+      {
+        context_template: localContextTemplate.value,
+        use_custom_context_template: localUseCustomContextTemplate.value,
+      },
+      t('conversationSettings.toasts.contextTemplateSaved')
+    )
     savedContextTemplate = localContextTemplate.value
-    MessagePlugin.success(t('conversationSettings.toasts.contextTemplateSaved'))
   } catch (error) {
     console.error('保存Context Template失败:', error)
     MessagePlugin.error(getErrorMessage(error))
+  }
+}
+
+const reloadConversationConfig = async () => {
+  const convRes = await getConversationConfig()
+  conversationConfig.value = normalizeConversationConfig(convRes.data)
+  syncConversationLocals()
+}
+
+const handleUseCustomSystemPromptNormalToggle = async (value: boolean) => {
+  if (!conversationConfigLoaded.value) return
+
+  try {
+    if (!value) {
+      await saveConversationConfig(
+        {
+          prompt: '',
+          use_custom_system_prompt: false,
+        },
+        t('conversationSettings.toasts.defaultPromptEnabled')
+      )
+      await reloadConversationConfig()
+    } else {
+      await saveConversationConfig(
+        {
+          prompt: localSystemPromptNormal.value,
+          use_custom_system_prompt: true,
+        },
+        t('conversationSettings.toasts.customPromptEnabled')
+      )
+      savedSystemPromptNormal = localSystemPromptNormal.value
+    }
+  } catch (error) {
+    console.error('切换普通模式 System Prompt 自定义失败:', error)
+    MessagePlugin.error(getErrorMessage(error))
+    localUseCustomSystemPromptNormal.value = !value
+  }
+}
+
+const handleUseCustomContextTemplateToggle = async (value: boolean) => {
+  if (!conversationConfigLoaded.value) return
+
+  try {
+    if (!value) {
+      await saveConversationConfig(
+        {
+          context_template: '',
+          use_custom_context_template: false,
+        },
+        t('conversationSettings.toasts.defaultContextTemplateEnabled')
+      )
+      await reloadConversationConfig()
+    } else {
+      await saveConversationConfig(
+        {
+          context_template: localContextTemplate.value,
+          use_custom_context_template: true,
+        },
+        t('conversationSettings.toasts.customContextTemplateEnabled')
+      )
+      savedContextTemplate = localContextTemplate.value
+    }
+  } catch (error) {
+    console.error('切换普通模式 Context Template 自定义失败:', error)
+    MessagePlugin.error(getErrorMessage(error))
+    localUseCustomContextTemplate.value = !value
   }
 }
 
@@ -1304,16 +1703,14 @@ const handleSystemPromptNormalChange = async () => {
   }
   
   try {
-    const config: ConversationConfig = {
-      prompt: localSystemPromptNormal.value,
-      context_template: localContextTemplate.value,
-      temperature: localTemperatureNormal.value,
-      max_tokens: localMaxTokens.value
-    }
-    
-    await updateConversationConfig(config)
+    await saveConversationConfig(
+      {
+        prompt: localSystemPromptNormal.value,
+        use_custom_system_prompt: localUseCustomSystemPromptNormal.value,
+      },
+      t('conversationSettings.toasts.systemPromptSaved')
+    )
     savedSystemPromptNormal = localSystemPromptNormal.value
-    MessagePlugin.success(t('conversationSettings.toasts.systemPromptSaved'))
   } catch (error) {
     console.error('保存System Prompt失败:', error)
     MessagePlugin.error(getErrorMessage(error))
@@ -1324,16 +1721,11 @@ const handleTemperatureNormalChange = async (value: number) => {
   if (!conversationConfigLoaded.value) return
   
   try {
-    const config: ConversationConfig = {
-      prompt: localSystemPromptNormal.value,
-      context_template: localContextTemplate.value,
-      temperature: value,
-      max_tokens: localMaxTokens.value
-    }
-    
-    await updateConversationConfig(config)
+    await saveConversationConfig(
+      { temperature: value },
+      t('conversationSettings.toasts.temperatureSaved')
+    )
     savedTemperatureNormal = value
-    MessagePlugin.success(t('conversationSettings.toasts.temperatureSaved'))
   } catch (error) {
     console.error('保存Temperature失败:', error)
     MessagePlugin.error(getErrorMessage(error))
@@ -1344,19 +1736,175 @@ const handleMaxTokensChange = async (value: number) => {
   if (!conversationConfigLoaded.value) return
   
   try {
-    const config: ConversationConfig = {
-      prompt: localSystemPromptNormal.value,
-      context_template: localContextTemplate.value,
-      temperature: localTemperatureNormal.value,
-      max_tokens: value
-    }
-    
-    await updateConversationConfig(config)
+    await saveConversationConfig(
+      { max_tokens: value },
+      t('conversationSettings.toasts.maxTokensSaved')
+    )
     savedMaxTokens = value
-    MessagePlugin.success(t('conversationSettings.toasts.maxTokensSaved'))
   } catch (error) {
     console.error('保存Max Tokens失败:', error)
     MessagePlugin.error(getErrorMessage(error))
+  }
+}
+
+const handleMaxRoundsChange = async (value: number) => {
+  try {
+    await saveConversationConfig({ max_rounds: value }, t('conversationSettings.toasts.maxRoundsSaved'))
+  } catch (error) {
+    console.error('保存 max_rounds 失败:', error)
+    localMaxRounds.value = conversationConfig.value.max_rounds
+  }
+}
+
+const handleEmbeddingTopKChange = async (value: number) => {
+  try {
+    await saveConversationConfig({ embedding_top_k: value }, t('conversationSettings.toasts.embeddingSaved'))
+  } catch (error) {
+    console.error('保存 embedding_top_k 失败:', error)
+    localEmbeddingTopK.value = conversationConfig.value.embedding_top_k
+  }
+}
+
+const handleKeywordThresholdChange = async (value: number) => {
+  try {
+    await saveConversationConfig({ keyword_threshold: value }, t('conversationSettings.toasts.keywordThresholdSaved'))
+  } catch (error) {
+    console.error('保存 keyword_threshold 失败:', error)
+    localKeywordThreshold.value = conversationConfig.value.keyword_threshold
+  }
+}
+
+const handleVectorThresholdChange = async (value: number) => {
+  try {
+    await saveConversationConfig({ vector_threshold: value }, t('conversationSettings.toasts.vectorThresholdSaved'))
+  } catch (error) {
+    console.error('保存 vector_threshold 失败:', error)
+    localVectorThreshold.value = conversationConfig.value.vector_threshold
+  }
+}
+
+const handleRerankTopKChange = async (value: number) => {
+  try {
+    await saveConversationConfig({ rerank_top_k: value }, t('conversationSettings.toasts.rerankTopKSaved'))
+  } catch (error) {
+    console.error('保存 rerank_top_k 失败:', error)
+    localRerankTopK.value = conversationConfig.value.rerank_top_k
+  }
+}
+
+const handleRerankThresholdChange = async (value: number) => {
+  try {
+    await saveConversationConfig({ rerank_threshold: value }, t('conversationSettings.toasts.rerankThresholdSaved'))
+  } catch (error) {
+    console.error('保存 rerank_threshold 失败:', error)
+    localRerankThreshold.value = conversationConfig.value.rerank_threshold
+  }
+}
+
+const handleEnableRewriteChange = async (value: boolean) => {
+  try {
+    await saveConversationConfig({ enable_rewrite: value }, t('conversationSettings.toasts.enableRewriteSaved'))
+  } catch (error) {
+    console.error('保存 enable_rewrite 失败:', error)
+    localEnableRewrite.value = conversationConfig.value.enable_rewrite
+  }
+}
+
+const handleFallbackStrategyChange = async (value: 'fixed' | 'model') => {
+  try {
+    await saveConversationConfig({ fallback_strategy: value }, t('conversationSettings.toasts.fallbackStrategySaved'))
+  } catch (error) {
+    console.error('保存 fallback_strategy 失败:', error)
+    localFallbackStrategy.value = (conversationConfig.value.fallback_strategy as 'fixed' | 'model') || 'fixed'
+  }
+}
+
+const handleFallbackResponseChange = async () => {
+  if (localFallbackResponse.value === (conversationConfig.value.fallback_response ?? '')) return
+  try {
+    await saveConversationConfig({ fallback_response: localFallbackResponse.value }, t('conversationSettings.toasts.fallbackResponseSaved'))
+  } catch (error) {
+    console.error('保存 fallback_response 失败:', error)
+    localFallbackResponse.value = conversationConfig.value.fallback_response ?? ''
+  }
+}
+
+const handleRewritePromptSystemChange = async () => {
+  if (localRewritePromptSystem.value === (conversationConfig.value.rewrite_prompt_system ?? '')) return
+  try {
+    await saveConversationConfig({ rewrite_prompt_system: localRewritePromptSystem.value }, t('conversationSettings.toasts.rewritePromptSystemSaved'))
+  } catch (error) {
+    console.error('保存 rewrite_prompt_system 失败:', error)
+    localRewritePromptSystem.value = conversationConfig.value.rewrite_prompt_system ?? ''
+  }
+}
+
+const handleRewritePromptUserChange = async () => {
+  if (localRewritePromptUser.value === (conversationConfig.value.rewrite_prompt_user ?? '')) return
+  try {
+    await saveConversationConfig({ rewrite_prompt_user: localRewritePromptUser.value }, t('conversationSettings.toasts.rewritePromptUserSaved'))
+  } catch (error) {
+    console.error('保存 rewrite_prompt_user 失败:', error)
+    localRewritePromptUser.value = conversationConfig.value.rewrite_prompt_user ?? ''
+  }
+}
+
+const handleFallbackPromptChange = async () => {
+  if (localFallbackPrompt.value === (conversationConfig.value.fallback_prompt ?? '')) return
+  try {
+    await saveConversationConfig({ fallback_prompt: localFallbackPrompt.value }, t('conversationSettings.toasts.fallbackPromptSaved'))
+  } catch (error) {
+    console.error('保存 fallback_prompt 失败:', error)
+    localFallbackPrompt.value = conversationConfig.value.fallback_prompt ?? ''
+  }
+}
+
+const navigateToModelSettings = (subsection: 'chat' | 'rerank') => {
+  router.push('/platform/settings')
+
+  setTimeout(() => {
+    const event = new CustomEvent('settings-nav', {
+      detail: { section: 'models', subsection },
+    })
+    window.dispatchEvent(event)
+
+    setTimeout(() => {
+      const selector = subsection === 'rerank' ? '[data-model-type="rerank"]' : '[data-model-type="chat"]'
+      const element = document.querySelector(selector)
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }, 200)
+  }, 100)
+}
+
+const handleConversationSummaryModelChange = async (value: string) => {
+  if (value === '__add_model__') {
+    localSummaryModelId.value = conversationConfig.value.summary_model_id ?? ''
+    navigateToModelSettings('chat')
+    return
+  }
+
+  try {
+    await saveConversationConfig({ summary_model_id: value }, t('conversationSettings.toasts.chatModelSaved'))
+  } catch (error) {
+    console.error('保存 summary_model_id 失败:', error)
+    localSummaryModelId.value = conversationConfig.value.summary_model_id ?? ''
+  }
+}
+
+const handleConversationRerankModelChange = async (value: string) => {
+  if (value === '__add_model__') {
+    localConversationRerankModelId.value = conversationConfig.value.rerank_model_id ?? ''
+    navigateToModelSettings('rerank')
+    return
+  }
+
+  try {
+    await saveConversationConfig({ rerank_model_id: value }, t('conversationSettings.toasts.rerankModelSaved'))
+  } catch (error) {
+    console.error('保存 rerank_model_id 失败:', error)
+    localConversationRerankModelId.value = conversationConfig.value.rerank_model_id ?? ''
   }
 }
 </script>
@@ -1512,7 +2060,9 @@ const handleMaxTokensChange = async (value: number) => {
 
 .setting-info {
   flex: 1;
-  max-width: 65%;
+  max-width: 55%;
+  word-break: keep-all;
+  white-space: normal;
 
   label {
     font-size: 15px;
@@ -1547,6 +2097,30 @@ const handleMaxTokensChange = async (value: number) => {
   }
 }
 
+.model-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.model-column {
+  min-width: 260px;
+  flex: 1;
+}
+
+.model-column-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #555;
+  margin-bottom: 4px;
+}
+
+.model-column-desc {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: #888;
+}
+
 .setting-control {
   flex-shrink: 0;
   min-width: 280px;
@@ -1559,7 +2133,6 @@ const handleMaxTokensChange = async (value: number) => {
   display: flex;
   align-items: center;
   gap: 16px;
-  width: 100%;
   justify-content: flex-end;
 
   .value-display {

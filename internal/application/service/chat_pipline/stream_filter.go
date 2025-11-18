@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/event"
-	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 )
@@ -31,11 +30,17 @@ func (p *PluginStreamFilter) ActivationEvents() []types.EventType {
 func (p *PluginStreamFilter) OnEvent(ctx context.Context,
 	eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
 ) *PluginError {
-	logger.Info(ctx, "Starting stream filter")
+	pipelineInfo(ctx, "StreamFilter", "input", map[string]interface{}{
+		"session_id":      chatManage.SessionID,
+		"has_event_bus":   chatManage.EventBus != nil,
+		"no_match_prefix": chatManage.SummaryConfig.NoMatchPrefix,
+	})
 
 	// EventBus is required
 	if chatManage.EventBus == nil {
-		logger.Error(ctx, "EventBus is required but not available")
+		pipelineError(ctx, "StreamFilter", "eventbus_missing", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+		})
 		return ErrModelCall.WithError(errors.New("EventBus is required for stream filtering"))
 	}
 	eventBus := chatManage.EventBus
@@ -44,13 +49,17 @@ func (p *PluginStreamFilter) OnEvent(ctx context.Context,
 	matchNoMatchBuilderPrefix := chatManage.SummaryConfig.NoMatchPrefix != ""
 
 	if matchNoMatchBuilderPrefix {
-		logger.Infof(ctx, "Using no match prefix filter: %s", chatManage.SummaryConfig.NoMatchPrefix)
+		pipelineInfo(ctx, "StreamFilter", "enable_prefix_filter", map[string]interface{}{
+			"prefix": chatManage.SummaryConfig.NoMatchPrefix,
+		})
 		// Create an event interceptor for prefix filtering
 		return p.filterEventsWithPrefix(ctx, chatManage, eventBus, next)
 	}
 
 	// No filtering needed, just pass through
-	logger.Info(ctx, "No prefix filtering required, passing through")
+	pipelineInfo(ctx, "StreamFilter", "passthrough", map[string]interface{}{
+		"session_id": chatManage.SessionID,
+	})
 	return next()
 }
 
@@ -61,7 +70,9 @@ func (p *PluginStreamFilter) filterEventsWithPrefix(
 	originalEventBus types.EventBusInterface,
 	next func() *PluginError,
 ) *PluginError {
-	logger.Info(ctx, "Setting up event-based stream filtering with NoMatchPrefix")
+	pipelineInfo(ctx, "StreamFilter", "setup_temp_bus", map[string]interface{}{
+		"session_id": chatManage.SessionID,
+	})
 
 	// Create a temporary EventBus to intercept events
 	tempEventBus := event.NewEventBus()
@@ -81,7 +92,9 @@ func (p *PluginStreamFilter) filterEventsWithPrefix(
 
 		// Check if content does NOT match the no-match prefix (meaning it's valid content)
 		if !strings.HasPrefix(chatManage.SummaryConfig.NoMatchPrefix, responseBuilder.String()) {
-			logger.Infof(ctx, "Content does not match no-match prefix, emitting valid content: %s", responseBuilder.String())
+			pipelineInfo(ctx, "StreamFilter", "emit_valid_chunk", map[string]interface{}{
+				"chunk_len": len(responseBuilder.String()),
+			})
 
 			// Emit the accumulated content as valid answer
 			originalEventBus.Emit(ctx, types.Event{
@@ -104,7 +117,9 @@ func (p *PluginStreamFilter) filterEventsWithPrefix(
 
 	// After pipeline completes, check if we need fallback
 	if !matchFound && responseBuilder.Len() > 0 {
-		logger.Info(ctx, "Content matches no-match prefix, emitting fallback response")
+		pipelineInfo(ctx, "StreamFilter", "emit_fallback", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+		})
 		fallbackID := fmt.Sprintf("%s-fallback", uuid.New().String()[:8])
 		originalEventBus.Emit(ctx, types.Event{
 			ID:        fallbackID,

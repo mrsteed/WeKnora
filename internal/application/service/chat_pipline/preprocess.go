@@ -1,23 +1,26 @@
 package chatpipline
 
 import (
-	"context"
-	"regexp"
-	"strings"
-	"unicode"
+    "context"
+    "encoding/json"
+    "regexp"
+    "strings"
+    "unicode"
+    "unicode/utf8"
 
-	"github.com/Tencent/WeKnora/internal/config"
-	"github.com/Tencent/WeKnora/internal/logger"
-	"github.com/Tencent/WeKnora/internal/types"
-	"github.com/Tencent/WeKnora/internal/types/interfaces"
-	"github.com/yanyiwu/gojieba"
+    "github.com/Tencent/WeKnora/internal/config"
+    "github.com/Tencent/WeKnora/internal/models/chat"
+    "github.com/Tencent/WeKnora/internal/types"
+    "github.com/Tencent/WeKnora/internal/types/interfaces"
+    "github.com/yanyiwu/gojieba"
 )
 
 // PluginPreprocess Query preprocessing plugin
 type PluginPreprocess struct {
-	config    *config.Config
-	jieba     *gojieba.Jieba
-	stopwords map[string]struct{}
+    config    *config.Config
+    jieba     *gojieba.Jieba
+    stopwords map[string]struct{}
+    modelService interfaces.ModelService
 }
 
 // Regular expressions for text cleaning
@@ -28,11 +31,14 @@ var (
 	punctRegex      = regexp.MustCompile(`[^\p{L}\p{N}\s]`)                     // Punctuation marks
 )
 
+const maxProcessedTokens = 12
+
 // NewPluginPreprocess Creates a new query preprocessing plugin
 func NewPluginPreprocess(
-	eventManager *EventManager,
-	config *config.Config,
-	cleaner interfaces.ResourceCleaner,
+    eventManager *EventManager,
+    config *config.Config,
+    cleaner interfaces.ResourceCleaner,
+    modelService interfaces.ModelService,
 ) *PluginPreprocess {
 	// Use default dictionary for Jieba tokenizer
 	jieba := gojieba.NewJieba()
@@ -40,11 +46,12 @@ func NewPluginPreprocess(
 	// Load stopwords from built-in stopword library
 	stopwords := loadStopwords()
 
-	res := &PluginPreprocess{
-		config:    config,
-		jieba:     jieba,
-		stopwords: stopwords,
-	}
+    res := &PluginPreprocess{
+        config:    config,
+        jieba:     jieba,
+        stopwords: stopwords,
+        modelService: modelService,
+    }
 
 	// Register resource cleanup function
 	if cleaner != nil {
@@ -85,25 +92,66 @@ func (p *PluginPreprocess) ActivationEvents() []types.EventType {
 
 // OnEvent Process events
 func (p *PluginPreprocess) OnEvent(ctx context.Context, eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError) *PluginError {
-	if chatManage.RewriteQuery == "" {
-		return next()
+    rawQuery := strings.TrimSpace(chatManage.RewriteQuery)
+    if rawQuery == "" {
+        return next()
+    }
+
+	pipelineInfo(ctx, "Preprocess", "input", map[string]interface{}{
+		"session_id":    chatManage.SessionID,
+		"rewrite_query": rawQuery,
+	})
+
+	normalized := normalizeWhitespace(rawQuery)
+	sanitized := strings.TrimSpace(p.cleanText(normalized))
+	if sanitized == "" {
+		sanitized = normalized
 	}
 
-	logger.GetLogger(ctx).Infof("Starting query preprocessing, original query: %s", chatManage.RewriteQuery)
+    var (
+        processed    = sanitized
+        strategy     = "original"
+        tokenPreview string
+        tokenCount   int
+    )
 
-	// 1. Basic text cleaning
-	processed := p.cleanText(chatManage.RewriteQuery)
+	switch {
+	case containsChineseCharacters(sanitized):
+		segments := p.segmentText(sanitized)
+		tokens := p.selectMeaningfulTokens(segments)
+		tokenCount = len(tokens)
+		if len(tokens) >= 2 {
+			processed = strings.Join(tokens, " ")
+			strategy = "zh_tokens"
+			tokenPreview = strings.Join(tokens, ",")
+		} else {
+			strategy = "fallback_original"
+		}
+	case containsLatinLetters(sanitized):
+		processed = normalizeLatinQuery(sanitized)
+		if processed != sanitized {
+			strategy = "latin_normalize"
+		}
+	default:
+		strategy = "original"
+	}
 
-	// 2. Tokenization
-	segments := p.segmentText(processed)
+	if strings.TrimSpace(processed) == "" {
+		processed = rawQuery
+		strategy = "fallback_original"
+	}
 
-	// 3. Stopword filtering and reconstruction
-	filteredSegments := p.filterStopwords(segments)
+    chatManage.ProcessedQuery = processed
+    chatManage.QueryIntent = p.detectIntentLLM(ctx, chatManage, sanitized)
 
-	// Update preprocessed query
-	chatManage.ProcessedQuery = strings.Join(filteredSegments, " ")
-
-	logger.GetLogger(ctx).Infof("Query preprocessing complete, processed query: %s", chatManage.ProcessedQuery)
+    pipelineInfo(ctx, "Preprocess", "output", map[string]interface{}{
+        "session_id":      chatManage.SessionID,
+        "processed_query": processed,
+        "strategy":        strategy,
+        "token_count":     tokenCount,
+        "token_preview":   truncateForLog(tokenPreview),
+        "query_intent":    chatManage.QueryIntent,
+    })
 
 	return next()
 }
@@ -136,32 +184,137 @@ func (p *PluginPreprocess) segmentText(text string) []string {
 }
 
 // filterStopwords Filter stopwords
-func (p *PluginPreprocess) filterStopwords(segments []string) []string {
-	var filtered []string
+func (p *PluginPreprocess) selectMeaningfulTokens(segments []string) []string {
+	var tokens []string
+	seen := make(map[string]struct{})
 
 	for _, word := range segments {
-		// If not a stopword and not blank, keep it
-		if _, isStopword := p.stopwords[word]; !isStopword && !isBlank(word) {
-			filtered = append(filtered, word)
+		word = strings.TrimSpace(word)
+		if word == "" {
+			continue
+		}
+		if _, stop := p.stopwords[word]; stop {
+			continue
+		}
+		if _, exists := seen[word]; exists {
+			continue
+		}
+		if !isInformativeToken(word) {
+			continue
+		}
+
+		seen[word] = struct{}{}
+		tokens = append(tokens, word)
+		if len(tokens) >= maxProcessedTokens {
+			break
 		}
 	}
 
-	// If filtering results in empty list, return original tokenization results
-	if len(filtered) == 0 {
-		return segments
-	}
-
-	return filtered
+	return tokens
 }
 
 // isBlank Check if a string is blank
-func isBlank(str string) bool {
-	for _, r := range str {
-		if !unicode.IsSpace(r) {
-			return false
+func isInformativeToken(token string) bool {
+	if token == "" {
+		return false
+	}
+
+	runeCount := utf8.RuneCountInString(token)
+	if runeCount == 1 {
+		r, _ := utf8.DecodeRuneInString(token)
+		if unicode.IsDigit(r) {
+			return true
+		}
+		if r <= unicode.MaxASCII && unicode.IsLetter(r) {
+			return true
+		}
+		return false
+	}
+
+	return true
+}
+
+func containsChineseCharacters(text string) bool {
+	for _, r := range text {
+		if unicode.Is(unicode.Han, r) {
+			return true
 		}
 	}
-	return true
+	return false
+}
+
+func containsLatinLetters(text string) bool {
+	for _, r := range text {
+		if r <= unicode.MaxASCII && unicode.IsLetter(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeWhitespace(text string) string {
+	text = strings.TrimSpace(text)
+	return multiSpaceRegex.ReplaceAllString(text, " ")
+}
+
+func normalizeLatinQuery(text string) string {
+    text = strings.ToLower(text)
+    text = multiSpaceRegex.ReplaceAllString(text, " ")
+    return strings.TrimSpace(text)
+}
+
+type intentResp struct {
+    Intent     string  `json:"intent"`
+    Confidence float64 `json:"confidence"`
+}
+
+func (p *PluginPreprocess) detectIntentLLM(ctx context.Context, chatManage *types.ChatManage, text string) string {
+    if p.modelService == nil || chatManage.ChatModelID == "" {
+        pipelineWarn(ctx, "IntentDetect", "skip", map[string]interface{}{ "reason": "no_model", "session_id": chatManage.SessionID })
+        return "general"
+    }
+    chatModel, err := p.modelService.GetChatModel(ctx, chatManage.ChatModelID)
+    if err != nil {
+        pipelineWarn(ctx, "IntentDetect", "get_model_failed", map[string]interface{}{ "error": err.Error(), "model_id": chatManage.ChatModelID })
+        return "general"
+    }
+    pipelineInfo(ctx, "IntentDetect", "start", map[string]interface{}{ "session_id": chatManage.SessionID, "model_id": chatManage.ChatModelID })
+    sys := "You are a query intent classifier. Classify the user's query into one of: definition, howto, compare, qa, general. Respond ONLY with a JSON object {\"intent\": \"...\", \"confidence\": 0.0 } inside a markdown fenced block."
+    usr := text
+    think := false
+    resp, err := chatModel.Chat(ctx, []chat.Message{
+        {Role: "system", Content: sys},
+        {Role: "user", Content: usr},
+    }, &chat.ChatOptions{Temperature: 0.0, MaxCompletionTokens: 64, Thinking: &think})
+    if err != nil || resp.Content == "" {
+        pipelineWarn(ctx, "IntentDetect", "model_call_failed", map[string]interface{}{ "error": err })
+        return "general"
+    }
+    body := extractJSONBody(resp.Content)
+    var ir intentResp
+    if err := json.Unmarshal([]byte(body), &ir); err != nil {
+        pipelineWarn(ctx, "IntentDetect", "parse_failed", map[string]interface{}{ "body": truncateForLog(body), "error": err.Error() })
+        return "general"
+    }
+    pipelineInfo(ctx, "IntentDetect", "result", map[string]interface{}{ "intent": ir.Intent, "confidence": ir.Confidence })
+    switch strings.ToLower(strings.TrimSpace(ir.Intent)) {
+    case "definition", "howto", "compare", "qa", "general":
+        return strings.ToLower(ir.Intent)
+    default:
+        return "general"
+    }
+}
+
+func extractJSONBody(text string) string {
+    t := strings.TrimSpace(text)
+    // Try fenced block first
+    if i := strings.Index(t, "{"); i >= 0 {
+        j := strings.LastIndex(t, "}")
+        if j > i {
+            return t[i : j+1]
+        }
+    }
+    return "{}"
 }
 
 // Ensure resources are properly released

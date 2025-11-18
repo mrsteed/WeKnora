@@ -91,7 +91,7 @@
 
                 <!-- Agent 配置 -->
                 <div v-if="currentSection === 'agent'" class="section">
-                  <AgentSettings />
+                  <AgentSettings :active-sub-section="currentSubSection || 'modes'" />
                 </div>
 
                 <!-- 网络搜索配置 -->
@@ -156,7 +156,7 @@ const navItems = computed(() => [
   { 
     key: 'models', 
     icon: 'control-platform', 
-    label: t('settings.modelConfig'),
+    label: t('settings.modelManagement'),
     children: [
       { key: 'chat', label: t('model.llmModel') },
       { key: 'embedding', label: t('model.embeddingModel') },
@@ -165,9 +165,19 @@ const navItems = computed(() => [
     ]
   },
   { key: 'ollama', icon: 'server', label: 'Ollama' },
-  { key: 'agent', icon: 'chat', label: t('settings.conversationConfig') },
+  { 
+    key: 'agent', 
+    icon: 'chat', 
+    label: t('settings.conversationStrategy'),
+    children: [
+      { key: 'modes', label: t('conversationSettings.menus.modes') },
+      { key: 'models', label: t('conversationSettings.menus.models') },
+      { key: 'thresholds', label: t('conversationSettings.menus.thresholds') },
+      { key: 'advanced', label: t('conversationSettings.menus.advanced') },
+    ]
+  },
   { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig')  },
-{ key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
+  { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
   { key: 'system', icon: 'info-circle', label: t('settings.systemSettings') },
   { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
   { key: 'api', icon: 'secured', label: t('settings.apiInfo') }
@@ -183,11 +193,13 @@ const handleNavClick = (item: any) => {
     } else {
       expandedMenus.value.push(item.key)
     }
+    currentSubSection.value = item.children[0].key
+  } else {
+    currentSubSection.value = ''
   }
   
   // 切换到对应页面
   currentSection.value = item.key
-  currentSubSection.value = ''
 }
 
 // 子菜单点击处理
@@ -222,19 +234,22 @@ const handleClose = () => {
 watch(() => uiStore.settingsInitialSection, (section) => {
   if (section && visible.value) {
     currentSection.value = section
-    if (uiStore.settingsInitialSubSection) {
-      currentSubSection.value = uiStore.settingsInitialSubSection
-      // 展开对应的父菜单
+    const navItem = (navItems.value as any[]).find((item) => item.key === section)
+    if (navItem && navItem.children && navItem.children.length > 0) {
       if (!expandedMenus.value.includes(section)) {
         expandedMenus.value.push(section)
       }
-      // 滚动到对应区域
-      setTimeout(() => {
-        const element = document.querySelector(`[data-model-type="${uiStore.settingsInitialSubSection}"]`)
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
-      }, 300)
+      currentSubSection.value = uiStore.settingsInitialSubSection || navItem.children[0].key
+      if (uiStore.settingsInitialSubSection) {
+        setTimeout(() => {
+          const element = document.querySelector(`[data-model-type="${uiStore.settingsInitialSubSection}"]`)
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }
+        }, 300)
+      }
+    } else {
+      currentSubSection.value = ''
     }
   }
 }, { immediate: true })
@@ -252,15 +267,13 @@ const handleSettingsNav = (e: CustomEvent) => {
   if (section) {
     currentSection.value = section
     // 如果有子菜单，自动展开
-    const navItem = (navItems as any).find((item: any) => item.key === section)
+    const navItem = (navItems.value as any[]).find((item: any) => item.key === section)
     if (navItem && navItem.children && navItem.children.length > 0) {
       if (!expandedMenus.value.includes(section)) {
         expandedMenus.value.push(section)
       }
       // 如果有 subsection，选中对应的子菜单项
-      if (subsection) {
-        currentSubSection.value = subsection
-      }
+      currentSubSection.value = subsection || navItem.children[0].key
     }
   }
 }

@@ -510,6 +510,62 @@ func (h *TenantHandler) GetTenantWebSearchConfig(c *gin.Context) {
 	})
 }
 
+func (h *TenantHandler) buildDefaultConversationConfig() *types.ConversationConfig {
+	return &types.ConversationConfig{
+		Prompt:                   h.config.Conversation.Summary.Prompt,
+		ContextTemplate:          h.config.Conversation.Summary.ContextTemplate,
+		UseCustomContextTemplate: true,
+		UseCustomSystemPrompt:    true,
+		Temperature:              h.config.Conversation.Summary.Temperature,
+		MaxTokens:                h.config.Conversation.Summary.MaxTokens,
+		MaxRounds:                h.config.Conversation.MaxRounds,
+		EmbeddingTopK:            h.config.Conversation.EmbeddingTopK,
+		KeywordThreshold:         h.config.Conversation.KeywordThreshold,
+		VectorThreshold:          h.config.Conversation.VectorThreshold,
+		RerankTopK:               h.config.Conversation.RerankTopK,
+		RerankThreshold:          h.config.Conversation.RerankThreshold,
+		EnableRewrite:            h.config.Conversation.EnableRewrite,
+		FallbackStrategy:         h.config.Conversation.FallbackStrategy,
+		FallbackResponse:         h.config.Conversation.FallbackResponse,
+		FallbackPrompt:           h.config.Conversation.FallbackPrompt,
+		RewritePromptUser:        h.config.Conversation.RewritePromptUser,
+		RewritePromptSystem:      h.config.Conversation.RewritePromptSystem,
+	}
+}
+
+func validateConversationConfig(req *types.ConversationConfig) error {
+	if req.MaxRounds <= 0 {
+		return errors.NewBadRequestError("max_rounds must be greater than 0")
+	}
+	if req.EmbeddingTopK <= 0 {
+		return errors.NewBadRequestError("embedding_top_k must be greater than 0")
+	}
+	if req.KeywordThreshold < 0 || req.KeywordThreshold > 1 {
+		return errors.NewBadRequestError("keyword_threshold must be between 0 and 1")
+	}
+	if req.VectorThreshold < 0 || req.VectorThreshold > 1 {
+		return errors.NewBadRequestError("vector_threshold must be between 0 and 1")
+	}
+	if req.RerankTopK <= 0 {
+		return errors.NewBadRequestError("rerank_top_k must be greater than 0")
+	}
+	if req.RerankThreshold < 0 || req.RerankThreshold > 1 {
+		return errors.NewBadRequestError("rerank_threshold must be between 0 and 1")
+	}
+	if req.Temperature < 0 || req.Temperature > 2 {
+		return errors.NewBadRequestError("temperature must be between 0 and 2")
+	}
+	if req.MaxTokens <= 0 || req.MaxTokens > 100000 {
+		return errors.NewBadRequestError("max_tokens must be between 1 and 100000")
+	}
+	if req.FallbackStrategy != "" &&
+		req.FallbackStrategy != string(types.FallbackStrategyFixed) &&
+		req.FallbackStrategy != string(types.FallbackStrategyModel) {
+		return errors.NewBadRequestError("fallback_strategy is invalid")
+	}
+	return nil
+}
+
 // GetTenantConversationConfig retrieves the conversation configuration for a tenant
 // This is the global conversation configuration that applies to normal mode sessions by default
 func (h *TenantHandler) GetTenantConversationConfig(c *gin.Context) {
@@ -524,29 +580,94 @@ func (h *TenantHandler) GetTenantConversationConfig(c *gin.Context) {
 	}
 
 	// If tenant has no conversation config, return defaults from config.yaml
+	var response *types.ConversationConfig
 	if tenant.ConversationConfig == nil {
 		logger.Info(ctx, "Tenant has no conversation config, returning defaults")
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"data": gin.H{
-				"prompt":           h.config.Conversation.Summary.Prompt,
-				"context_template": h.config.Conversation.Summary.ContextTemplate,
-				"temperature":      h.config.Conversation.Summary.Temperature,
-				"max_tokens":       h.config.Conversation.Summary.MaxTokens,
-			},
-		})
-		return
+		response = h.buildDefaultConversationConfig()
+	} else {
+		logger.Infof(ctx, "Tenant has conversation config, merging with defaults, Tenant ID: %d", tenant.ID)
+		// Merge tenant config with defaults, so that newly added fields always have valid values
+		defaultCfg := h.buildDefaultConversationConfig()
+		tc := tenant.ConversationConfig
+
+		// Prompt related
+		defaultCfg.UseCustomSystemPrompt = tc.UseCustomSystemPrompt
+		if !defaultCfg.UseCustomSystemPrompt && tc.Prompt != "" {
+			// Legacy configs without explicit flag
+			defaultCfg.UseCustomSystemPrompt = true
+		}
+		defaultCfg.UseCustomContextTemplate = tc.UseCustomContextTemplate
+		if !defaultCfg.UseCustomContextTemplate && tc.ContextTemplate != "" {
+			defaultCfg.UseCustomContextTemplate = true
+		}
+		if tc.Prompt != "" {
+			defaultCfg.Prompt = tc.Prompt
+		}
+		if tc.ContextTemplate != "" {
+			defaultCfg.ContextTemplate = tc.ContextTemplate
+		}
+		if tc.Temperature > 0 {
+			defaultCfg.Temperature = tc.Temperature
+		}
+		if tc.MaxTokens > 0 {
+			defaultCfg.MaxTokens = tc.MaxTokens
+		}
+
+		// Retrieval parameters
+		if tc.MaxRounds > 0 {
+			defaultCfg.MaxRounds = tc.MaxRounds
+		}
+		if tc.EmbeddingTopK > 0 {
+			defaultCfg.EmbeddingTopK = tc.EmbeddingTopK
+		}
+		if tc.KeywordThreshold > 0 {
+			defaultCfg.KeywordThreshold = tc.KeywordThreshold
+		}
+		if tc.VectorThreshold > 0 {
+			defaultCfg.VectorThreshold = tc.VectorThreshold
+		}
+		if tc.RerankTopK > 0 {
+			defaultCfg.RerankTopK = tc.RerankTopK
+		}
+		if tc.RerankThreshold > 0 {
+			defaultCfg.RerankThreshold = tc.RerankThreshold
+		}
+		// EnableRewrite 需要允许显式关闭，因此直接覆盖
+		defaultCfg.EnableRewrite = tc.EnableRewrite
+
+		// Model IDs
+		if tc.SummaryModelID != "" {
+			defaultCfg.SummaryModelID = tc.SummaryModelID
+		}
+		if tc.RerankModelID != "" {
+			defaultCfg.RerankModelID = tc.RerankModelID
+		}
+
+		// Fallback settings
+		if tc.FallbackStrategy != "" {
+			defaultCfg.FallbackStrategy = tc.FallbackStrategy
+		}
+		if tc.FallbackResponse != "" {
+			defaultCfg.FallbackResponse = tc.FallbackResponse
+		}
+		if tc.FallbackPrompt != "" {
+			defaultCfg.FallbackPrompt = tc.FallbackPrompt
+		}
+
+		// Rewrite prompts
+		if tc.RewritePromptSystem != "" {
+			defaultCfg.RewritePromptSystem = tc.RewritePromptSystem
+		}
+		if tc.RewritePromptUser != "" {
+			defaultCfg.RewritePromptUser = tc.RewritePromptUser
+		}
+
+		response = defaultCfg
 	}
 
-	logger.Infof(ctx, "Retrieved tenant conversation config successfully, Tenant ID: %d", tenant.ID)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data": gin.H{
-			"prompt":           tenant.ConversationConfig.Prompt,
-			"context_template": tenant.ConversationConfig.ContextTemplate,
-			"temperature":      tenant.ConversationConfig.Temperature,
-			"max_tokens":       tenant.ConversationConfig.MaxTokens,
-		},
+		"data":    response,
 	})
 }
 
@@ -564,12 +685,8 @@ func (h *TenantHandler) updateTenantConversationConfigInternal(c *gin.Context) {
 	}
 
 	// Validate configuration
-	if req.Temperature < 0 || req.Temperature > 2 {
-		c.Error(errors.NewBadRequestError("temperature must be between 0 and 2"))
-		return
-	}
-	if req.MaxTokens <= 0 || req.MaxTokens > 100000 {
-		c.Error(errors.NewBadRequestError("max_tokens must be between 1 and 100000"))
+	if err := validateConversationConfig(&req); err != nil {
+		c.Error(err)
 		return
 	}
 
@@ -599,12 +716,7 @@ func (h *TenantHandler) updateTenantConversationConfigInternal(c *gin.Context) {
 	logger.Infof(ctx, "Tenant conversation config updated successfully, Tenant ID: %d", tenant.ID)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data": gin.H{
-			"prompt":           updatedTenant.ConversationConfig.Prompt,
-			"context_template": updatedTenant.ConversationConfig.ContextTemplate,
-			"temperature":      updatedTenant.ConversationConfig.Temperature,
-			"max_tokens":       updatedTenant.ConversationConfig.MaxTokens,
-		},
+		"data":    updatedTenant.ConversationConfig,
 		"message": "Conversation configuration updated successfully",
 	})
 }

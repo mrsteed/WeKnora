@@ -1,16 +1,17 @@
 package chatpipline
 
 import (
-	"context"
-	"fmt"
-	"strings"
-	"sync"
-	"time"
+    "context"
+    "encoding/json"
+    "fmt"
+    "strings"
+    "sync"
+    "time"
 
-	"github.com/Tencent/WeKnora/internal/config"
-	"github.com/Tencent/WeKnora/internal/logger"
-	"github.com/Tencent/WeKnora/internal/types"
-	"github.com/Tencent/WeKnora/internal/types/interfaces"
+    "github.com/Tencent/WeKnora/internal/config"
+    "github.com/Tencent/WeKnora/internal/models/chat"
+    "github.com/Tencent/WeKnora/internal/types"
+    "github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // PluginSearch implements search functionality for chat pipeline
@@ -53,23 +54,42 @@ func (p *PluginSearch) ActivationEvents() []types.EventType {
 
 // OnEvent handles search events in the chat pipeline
 func (p *PluginSearch) OnEvent(ctx context.Context,
-	eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
+    eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
 ) *PluginError {
 	// Get knowledge base IDs list
 	knowledgeBaseIDs := chatManage.KnowledgeBaseIDs
 	if len(knowledgeBaseIDs) == 0 && chatManage.KnowledgeBaseID != "" {
 		// Fall back to single knowledge base
 		knowledgeBaseIDs = []string{chatManage.KnowledgeBaseID}
-		logger.Infof(ctx, "No KnowledgeBaseIDs provided, falling back to single KB: %s", chatManage.KnowledgeBaseID)
+		pipelineInfo(ctx, "Search", "fallback_kb", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+			"kb_id":      chatManage.KnowledgeBaseID,
+		})
 	}
 
 	if len(knowledgeBaseIDs) == 0 {
-		logger.Errorf(ctx, "No knowledge base IDs available for search")
+		pipelineError(ctx, "Search", "kb_not_found", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+		})
 		return ErrSearch.WithError(nil)
 	}
 
+	pipelineInfo(ctx, "Search", "input", map[string]interface{}{
+		"session_id":      chatManage.SessionID,
+		"rewrite_query":   chatManage.RewriteQuery,
+		"processed_query": chatManage.ProcessedQuery,
+		"kb_ids":          strings.Join(knowledgeBaseIDs, ","),
+		"tenant_id":       chatManage.TenantID,
+		"web_enabled":     chatManage.WebSearchEnabled,
+	})
+
 	// Run KB search and web search concurrently
-	logger.Infof(ctx, "Searching across %d knowledge base(s): %v", len(knowledgeBaseIDs), knowledgeBaseIDs)
+	pipelineInfo(ctx, "Search", "plan", map[string]interface{}{
+		"kb_count":          len(knowledgeBaseIDs),
+		"embedding_top_k":   chatManage.EmbeddingTopK,
+		"vector_threshold":  chatManage.VectorThreshold,
+		"keyword_threshold": chatManage.KeywordThreshold,
+	})
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	allResults := make([]*types.SearchResult, 0)
@@ -97,30 +117,116 @@ func (p *PluginSearch) OnEvent(ctx context.Context,
 		}
 	}()
 
-	wg.Wait()
+    wg.Wait()
 
-	chatManage.SearchResult = allResults
+    chatManage.SearchResult = allResults
+
+    // If recall is low, attempt query expansion with keyword-focused search
+    if len(chatManage.SearchResult) < max(1, chatManage.EmbeddingTopK/2) {
+        pipelineInfo(ctx, "Search", "recall_low", map[string]interface{}{
+            "current": len(chatManage.SearchResult),
+            "threshold": chatManage.EmbeddingTopK / 2,
+        })
+        expansions := p.expandQueries(ctx, chatManage)
+        if len(expansions) > 0 {
+            pipelineInfo(ctx, "Search", "expansion_start", map[string]interface{}{
+                "variants": len(expansions),
+            })
+            expTopK := max(chatManage.EmbeddingTopK*2, chatManage.RerankTopK*2)
+            expKwTh := chatManage.KeywordThreshold * 0.8
+            // Concurrent expansion retrieval across queries and KBs
+            expResults := make([]*types.SearchResult, 0, expTopK*len(expansions))
+            var muExp sync.Mutex
+            var wgExp sync.WaitGroup
+            jobs := len(expansions) * len(knowledgeBaseIDs)
+            capSem := 16
+            if jobs < capSem {
+                capSem = jobs
+            }
+            if capSem <= 0 {
+                capSem = 1
+            }
+            sem := make(chan struct{}, capSem)
+            pipelineInfo(ctx, "Search", "expansion_concurrency", map[string]interface{}{
+                "jobs": jobs,
+                "cap":  capSem,
+            })
+            for _, q := range expansions {
+                for _, kbID := range knowledgeBaseIDs {
+                    wgExp.Add(1)
+                    go func(q string, kbID string) {
+                        defer wgExp.Done()
+                        sem <- struct{}{}
+                        defer func() { <-sem }()
+                        paramsExp := types.SearchParams{
+                            QueryText:            q,
+                            VectorThreshold:      chatManage.VectorThreshold,
+                            KeywordThreshold:     expKwTh,
+                            MatchCount:           expTopK,
+                            DisableVectorMatch:   true,
+                            DisableKeywordsMatch: false,
+                        }
+                        res, err := p.knowledgeBaseService.HybridSearch(ctx, kbID, paramsExp)
+                        if err != nil {
+                            pipelineWarn(ctx, "Search", "expansion_error", map[string]interface{}{
+                                "kb_id": kbID,
+                                "error": err.Error(),
+                            })
+                            return
+                        }
+                        if len(res) > 0 {
+                            pipelineInfo(ctx, "Search", "expansion_hits", map[string]interface{}{
+                                "kb_id": kbID,
+                                "query": truncateForLog(q),
+                                "hits":  len(res),
+                            })
+                            muExp.Lock()
+                            expResults = append(expResults, res...)
+                            muExp.Unlock()
+                        }
+                    }(q, kbID)
+                }
+            }
+            wgExp.Wait()
+            if len(expResults) > 0 {
+                pipelineInfo(ctx, "Search", "expansion_done", map[string]interface{}{
+                    "added": len(expResults),
+                })
+                chatManage.SearchResult = append(chatManage.SearchResult, expResults...)
+            }
+        }
+    }
 
 	// Add relevant results from chat history
 	historyResult := p.getSearchResultFromHistory(chatManage)
 	if historyResult != nil {
-		logger.Infof(ctx, "Add history result, result count: %d", len(historyResult))
+		pipelineInfo(ctx, "Search", "history_hits", map[string]interface{}{
+			"session_id":   chatManage.SessionID,
+			"history_hits": len(historyResult),
+		})
 		chatManage.SearchResult = append(chatManage.SearchResult, historyResult...)
 	}
 
-	// Remove duplicate results
-	chatManage.SearchResult = removeDuplicateResults(chatManage.SearchResult)
+    // Remove duplicate results
+    before := len(chatManage.SearchResult)
+    chatManage.SearchResult = removeDuplicateResults(chatManage.SearchResult)
+    pipelineInfo(ctx, "Search", "dedup_summary", map[string]interface{}{
+        "before": before,
+        "after":  len(chatManage.SearchResult),
+    })
 
 	// Return if we have results
 	if len(chatManage.SearchResult) != 0 {
-		logger.Infof(
-			ctx,
-			"Get search results, count: %d, session_id: %s",
-			len(chatManage.SearchResult), chatManage.SessionID,
-		)
+		pipelineInfo(ctx, "Search", "output", map[string]interface{}{
+			"session_id":   chatManage.SessionID,
+			"result_count": len(chatManage.SearchResult),
+		})
 		return next()
 	}
-	logger.Infof(ctx, "No search result, session_id: %s", chatManage.SessionID)
+	pipelineWarn(ctx, "Search", "output", map[string]interface{}{
+		"session_id":   chatManage.SessionID,
+		"result_count": 0,
+	})
 	return ErrSearchNothing
 }
 
@@ -143,15 +249,52 @@ func (p *PluginSearch) getSearchResultFromHistory(chatManage *types.ChatManage) 
 }
 
 func removeDuplicateResults(results []*types.SearchResult) []*types.SearchResult {
-	seen := make(map[string]bool)
-	var uniqueResults []*types.SearchResult
-	for _, result := range results {
-		if !seen[result.ID] {
-			seen[result.ID] = true
-			uniqueResults = append(uniqueResults, result)
-		}
-	}
-	return uniqueResults
+    seen := make(map[string]bool)
+    contentSig := make(map[string]bool)
+    var uniqueResults []*types.SearchResult
+    for _, r := range results {
+        keys := []string{r.ID}
+        if r.ParentChunkID != "" {
+            keys = append(keys, "parent:"+r.ParentChunkID)
+        }
+        if r.KnowledgeID != "" {
+            keys = append(keys, fmt.Sprintf("kb:%s#%d", r.KnowledgeID, r.ChunkIndex))
+        }
+        dup := false
+        for _, k := range keys {
+            if seen[k] {
+                dup = true
+                break
+            }
+        }
+        if dup {
+            continue
+        }
+        sig := buildContentSignature(r.Content)
+        if sig != "" {
+            if contentSig[sig] {
+                continue
+            }
+            contentSig[sig] = true
+        }
+        for _, k := range keys {
+            seen[k] = true
+        }
+        uniqueResults = append(uniqueResults, r)
+    }
+    return uniqueResults
+}
+
+func buildContentSignature(content string) string {
+    c := strings.ToLower(strings.TrimSpace(content))
+    if c == "" {
+        return ""
+    }
+    c = strings.Join(strings.Fields(c), " ")
+    if len(c) > 128 {
+        c = c[:128]
+    }
+    return c
 }
 
 // searchKnowledgeBases performs KB searches for rewrite and processed queries across KB IDs
@@ -175,10 +318,19 @@ func (p *PluginSearch) searchKnowledgeBases(ctx context.Context, knowledgeBaseID
 			defer wg.Done()
 			res, err := p.knowledgeBaseService.HybridSearch(ctx, knowledgeBaseID, baseParams)
 			if err != nil {
-				logger.Errorf(ctx, "Failed to search KB %s: %v", knowledgeBaseID, err)
+				pipelineWarn(ctx, "Search", "kb_search_error", map[string]interface{}{
+					"kb_id":    knowledgeBaseID,
+					"query":    baseParams.QueryText,
+					"error":    err.Error(),
+					"query_ty": "rewrite",
+				})
 				return
 			}
-			logger.Infof(ctx, "KB %s search results count: %d", knowledgeBaseID, len(res))
+			pipelineInfo(ctx, "Search", "kb_result", map[string]interface{}{
+				"kb_id":     knowledgeBaseID,
+				"query_ty":  "rewrite",
+				"hit_count": len(res),
+			})
 			mu.Lock()
 			results = append(results, res...)
 			mu.Unlock()
@@ -191,7 +343,9 @@ func (p *PluginSearch) searchKnowledgeBases(ctx context.Context, knowledgeBaseID
 	if chatManage.RewriteQuery != chatManage.ProcessedQuery {
 		paramsProcessed := baseParams
 		paramsProcessed.QueryText = strings.TrimSpace(chatManage.ProcessedQuery)
-		logger.Infof(ctx, "Searching with processed query: %s", paramsProcessed.QueryText)
+		pipelineInfo(ctx, "Search", "processed_query_search", map[string]interface{}{
+			"query": paramsProcessed.QueryText,
+		})
 
 		wg = sync.WaitGroup{}
 		for _, kbID := range knowledgeBaseIDs {
@@ -200,10 +354,19 @@ func (p *PluginSearch) searchKnowledgeBases(ctx context.Context, knowledgeBaseID
 				defer wg.Done()
 				res, err := p.knowledgeBaseService.HybridSearch(ctx, knowledgeBaseID, paramsProcessed)
 				if err != nil {
-					logger.Errorf(ctx, "Failed to search KB %s with processed query: %v", knowledgeBaseID, err)
+					pipelineWarn(ctx, "Search", "kb_search_error", map[string]interface{}{
+						"kb_id":    knowledgeBaseID,
+						"query":    paramsProcessed.QueryText,
+						"error":    err.Error(),
+						"query_ty": "processed",
+					})
 					return
 				}
-				logger.Infof(ctx, "KB %s processed query results count: %d", knowledgeBaseID, len(res))
+				pipelineInfo(ctx, "Search", "kb_result", map[string]interface{}{
+					"kb_id":     knowledgeBaseID,
+					"query_ty":  "processed",
+					"hit_count": len(res),
+				})
 				mu.Lock()
 				results = append(results, res...)
 				mu.Unlock()
@@ -212,7 +375,9 @@ func (p *PluginSearch) searchKnowledgeBases(ctx context.Context, knowledgeBaseID
 		wg.Wait()
 	}
 
-	logger.Infof(ctx, "Total KB results (rewrite + processed): %d", len(results))
+	pipelineInfo(ctx, "Search", "kb_result_summary", map[string]interface{}{
+		"total_hits": len(results),
+	})
 	return results
 }
 
@@ -223,14 +388,22 @@ func (p *PluginSearch) searchWebIfEnabled(ctx context.Context, chatManage *types
 	}
 	tenant := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	if tenant == nil || tenant.WebSearchConfig == nil || tenant.WebSearchConfig.Provider == "" {
-		logger.Warnf(ctx, "Web search enabled but no valid configuration found for tenant %d", chatManage.TenantID)
+		pipelineWarn(ctx, "Search", "web_config_missing", map[string]interface{}{
+			"tenant_id": chatManage.TenantID,
+		})
 		return nil
 	}
 
-	logger.Infof(ctx, "Performing web search with provider: %s", tenant.WebSearchConfig.Provider)
+	pipelineInfo(ctx, "Search", "web_request", map[string]interface{}{
+		"tenant_id": chatManage.TenantID,
+		"provider":  tenant.WebSearchConfig.Provider,
+	})
 	webResults, err := p.webSearchService.Search(ctx, tenant.WebSearchConfig, chatManage.RewriteQuery)
 	if err != nil {
-		logger.Warnf(ctx, "Web search failed: %v", err)
+		pipelineWarn(ctx, "Search", "web_search_error", map[string]interface{}{
+			"tenant_id": chatManage.TenantID,
+			"error":     err.Error(),
+		})
 		return nil
 	}
 	// Build questions (rewrite + processed if different)
@@ -245,14 +418,18 @@ func (p *PluginSearch) searchWebIfEnabled(ctx context.Context, chatManage *types
 		p.knowledgeBaseService, p.knowledgeService, seen, ids,
 	)
 	if err != nil {
-		logger.Warnf(ctx, "RAG compression failed, falling back to raw: %v", err)
+		pipelineWarn(ctx, "Search", "web_compress_error", map[string]interface{}{
+			"error": err.Error(),
+		})
 	} else {
 		webResults = compressed
 		// Persist temp KB state back into Redis using SessionService
 		p.sessionService.SaveWebSearchTempKBState(ctx, chatManage.SessionID, kbID, newSeen, newIDs)
 	}
 	res := convertWebSearchResults(webResults)
-	logger.Infof(ctx, "Web search returned %d results", len(res))
+	pipelineInfo(ctx, "Search", "web_hits", map[string]interface{}{
+		"hit_count": len(res),
+	})
 	return res
 }
 
@@ -322,4 +499,80 @@ func convertWebSearchResults(webResults []*types.WebSearchResult) []*types.Searc
 	}
 
 	return results
+}
+// expandQueries generates paraphrases and synonyms using chat model to improve keyword recall
+func (p *PluginSearch) expandQueries(ctx context.Context, chatManage *types.ChatManage) []string {
+    if p.modelService == nil || chatManage.ChatModelID == "" {
+        pipelineWarn(ctx, "Search", "expansion_skip", map[string]interface{}{
+            "reason": "no_model",
+        })
+        return nil
+    }
+    model, err := p.modelService.GetChatModel(ctx, chatManage.ChatModelID)
+    if err != nil {
+        pipelineWarn(ctx, "Search", "expansion_get_model_failed", map[string]interface{}{
+            "error": err.Error(),
+        })
+        return nil
+    }
+    sys := "Generate up to 5 diverse paraphrases or keyword variants for the user query to improve keyword-based search recall. Respond ONLY with a JSON array of strings inside a fenced code block."
+    usr := chatManage.RewriteQuery
+    think := false
+    resp, err := model.Chat(ctx, []chat.Message{{Role: "system", Content: sys}, {Role: "user", Content: usr}}, &chat.ChatOptions{Temperature: 0.2, MaxCompletionTokens: 80, Thinking: &think})
+    if err != nil || resp.Content == "" {
+        pipelineWarn(ctx, "Search", "expansion_model_call_failed", map[string]interface{}{
+            "error": err,
+        })
+        return nil
+    }
+    body := extractJSONBlock(resp.Content)
+    var arr []string
+    if err := json.Unmarshal([]byte(body), &arr); err != nil || len(arr) == 0 {
+        // Fallback: split lines
+        lines := strings.Split(resp.Content, "\n")
+        for _, l := range lines {
+            l = strings.TrimSpace(l)
+            if l != "" {
+                arr = append(arr, l)
+            }
+        }
+    }
+    uniq := make(map[string]struct{})
+    base := []string{chatManage.Query, chatManage.RewriteQuery, chatManage.ProcessedQuery}
+    for _, b := range base {
+        if s := strings.TrimSpace(b); s != "" {
+            uniq[strings.ToLower(s)] = struct{}{}
+        }
+    }
+    expansions := make([]string, 0, len(arr))
+    for _, a := range arr {
+        s := strings.TrimSpace(a)
+        if s == "" {
+            continue
+        }
+        key := strings.ToLower(s)
+        if _, ok := uniq[key]; ok {
+            continue
+        }
+        uniq[key] = struct{}{}
+        expansions = append(expansions, s)
+        if len(expansions) >= 5 {
+            break
+        }
+    }
+    pipelineInfo(ctx, "Search", "expansion_result", map[string]interface{}{
+        "variants": len(expansions),
+    })
+    return expansions
+}
+
+func extractJSONBlock(text string) string {
+    t := strings.TrimSpace(text)
+    if i := strings.Index(t, "["); i >= 0 {
+        j := strings.LastIndex(t, "]")
+        if j > i {
+            return t[i : j+1]
+        }
+    }
+    return "[]"
 }

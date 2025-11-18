@@ -2,12 +2,88 @@ package chatpipline
 
 import (
 	"context"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
+
+const (
+	logValueMaxRune     = 300
+	defaultStageName    = "PIPELINE"
+	defaultActionName   = "info"
+	pipelineLogPrefix   = "[PIPELINE]"
+	pipelineTruncateEll = "..."
+)
+
+func pipelineLog(stage, action string, fields map[string]interface{}) string {
+	if stage == "" {
+		stage = defaultStageName
+	}
+	if action == "" {
+		action = defaultActionName
+	}
+
+	builder := strings.Builder{}
+	builder.Grow(128)
+	builder.WriteString(pipelineLogPrefix)
+	builder.WriteString(" stage=")
+	builder.WriteString(stage)
+	builder.WriteString(" action=")
+	builder.WriteString(action)
+
+	if len(fields) > 0 {
+		keys := make([]string, 0, len(fields))
+		for k := range fields {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			builder.WriteString(" ")
+			builder.WriteString(key)
+			builder.WriteString("=")
+			builder.WriteString(formatLogValue(fields[key]))
+		}
+	}
+	return builder.String()
+}
+
+func pipelineInfo(ctx context.Context, stage, action string, fields map[string]interface{}) {
+	logger.GetLogger(ctx).Info(pipelineLog(stage, action, fields))
+}
+
+func pipelineWarn(ctx context.Context, stage, action string, fields map[string]interface{}) {
+	logger.GetLogger(ctx).Warn(pipelineLog(stage, action, fields))
+}
+
+func pipelineError(ctx context.Context, stage, action string, fields map[string]interface{}) {
+	logger.GetLogger(ctx).Error(pipelineLog(stage, action, fields))
+}
+
+func formatLogValue(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return strconv.Quote(truncateForLog(v))
+	case fmt.Stringer:
+		return strconv.Quote(truncateForLog(v.String()))
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func truncateForLog(content string) string {
+	content = strings.ReplaceAll(content, "\n", "\\n")
+	runes := []rune(content)
+	if len(runes) <= logValueMaxRune {
+		return content
+	}
+	return string(runes[:logValueMaxRune]) + pipelineTruncateEll
+}
 
 // prepareChatModel shared logic to prepare chat model and options
 func prepareChatModel(ctx context.Context, modelService interfaces.ModelService,
@@ -33,14 +109,6 @@ func prepareChatModel(ctx context.Context, modelService interfaces.ModelService,
 	}
 
 	return chatModel, opt, nil
-}
-
-// prepareBaseMessages prepare basic messages (system prompt and current user content)
-func prepareBaseMessages(chatManage *types.ChatManage) []chat.Message {
-	var chatMessages []chat.Message
-	chatMessages = append(chatMessages, chat.Message{Role: "system", Content: chatManage.SummaryConfig.Prompt})
-	chatMessages = append(chatMessages, chat.Message{Role: "user", Content: chatManage.UserContent})
-	return chatMessages
 }
 
 // prepareMessagesWithHistory prepare complete messages including history
