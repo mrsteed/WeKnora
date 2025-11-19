@@ -1336,8 +1336,9 @@ export default {
     },
     allowedTools: {
       label: "允许的工具",
-      desc: "选择 Agent 可以使用的工具，至少选择一个",
+      desc: "当前 Agent 可使用的工具列表",
       placeholder: "请选择工具...",
+      empty: "尚未配置任何工具",
     },
     systemPrompt: {
       label: "系统 Prompt",

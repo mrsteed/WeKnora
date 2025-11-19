@@ -88,29 +88,30 @@
       </div>
 
       <!-- 允许的工具 -->
-      <div class="setting-row">
+      <div class="setting-row vertical">
         <div class="setting-info">
           <label>{{ $t('agentSettings.allowedTools.label') }}</label>
           <p class="desc">{{ $t('agentSettings.allowedTools.desc') }}</p>
         </div>
-        <div class="setting-control">
-          <t-select
-            v-model="localAllowedTools"
-            multiple
-            :placeholder="$t('agentSettings.allowedTools.placeholder')"
-            @change="handleAllowedToolsChange"
-            style="width: 400px;"
-          >
-            <t-option
-              v-for="tool in availableTools"
+        <div class="setting-control full-width allowed-tools-display">
+          <div v-if="displayAllowedTools.length" class="allowed-tool-list">
+            <div
+              v-for="tool in displayAllowedTools"
               :key="tool.name"
-              :value="tool.name"
-              :label="tool.label"
-              :title="tool.description"
+              class="allowed-tool-chip"
             >
-              {{ tool.label }}
-            </t-option>
-          </t-select>
+              <span class="allowed-tool-label">{{ tool.label }}</span>
+              <span
+                v-if="tool.description"
+                class="allowed-tool-desc"
+              >
+                {{ tool.description }}
+              </span>
+            </div>
+          </div>
+          <p v-else class="allowed-tools-empty">
+            {{ $t('agentSettings.allowedTools.empty') }}
+          </p>
         </div>
       </div>
 
@@ -161,7 +162,6 @@
             <t-tabs
               v-model="activeSystemPromptTab"
               class="system-prompt-variant-tabs"
-              theme="normal"
             >
               <t-tab-panel value="web-enabled" :label="$t('agentSettings.systemPrompt.tabWebOn')">
                 <div v-if="activeSystemPromptTab === 'web-enabled'" class="prompt-textarea-wrapper">
@@ -838,6 +838,16 @@ const loadingModels = ref(false)
 const availableTools = ref<ToolDefinition[]>([])
 // 可用占位符列表
 const availablePlaceholders = ref<PlaceholderDefinition[]>([])
+const displayAllowedTools = computed(() => {
+  return localAllowedTools.value.map(name => {
+    const detail = availableTools.value.find(tool => tool.name === name)
+    return {
+      name,
+      label: detail?.label || name,
+      description: detail?.description || ''
+    }
+  })
+})
 
 // 配置加载状态
 const loadingConfig = ref(false)
@@ -1266,24 +1276,6 @@ const handleTemperatureChange = async (value: number) => {
   } catch (error) {
     console.error('保存失败:', error)
     MessagePlugin.error(getErrorMessage(error))
-  }
-}
-
-// 处理允许工具变化
-const handleAllowedToolsChange = async (value: string[]) => {
-  // 如果正在初始化，不触发保存
-  if (isInitializing.value) return
-  
-  try {
-    const config = buildAgentConfigPayload({ allowed_tools: value })
-    await updateAgentConfig(config)
-    settingsStore.updateAgentConfig({ allowedTools: value })
-    MessagePlugin.success(t('agentSettings.toasts.toolsUpdated'))
-  } catch (error) {
-    console.error('保存工具配置失败:', error)
-    MessagePlugin.error(getErrorMessage(error))
-    // 回滚
-    localAllowedTools.value = settingsStore.agentConfig.allowedTools
   }
 }
 
@@ -2220,27 +2212,43 @@ const handleConversationRerankModelChange = async (value: string) => {
   width: 100%;
 }
 
-.system-prompt-variant-tabs :deep(.t-tabs__nav-wrap) {
-  border-bottom: 1px solid #e5e7eb;
-  margin-bottom: 8px;
+.allowed-tools-display {
+  width: 100%;
 }
 
-.system-prompt-variant-tabs :deep(.t-tabs__nav-item) {
-  padding: 4px 12px 10px;
+.allowed-tool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.allowed-tool-chip {
+  background: #f5f7fa;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.allowed-tool-label {
   font-size: 13px;
-  color: #666;
-  border-bottom: 2px solid transparent;
-  transition: color 0.2s ease, border-color 0.2s ease;
-}
-
-.system-prompt-variant-tabs :deep(.t-tabs__nav-item.t-is-active) {
-  color: #1d2129;
-  border-bottom-color: #07C05F;
   font-weight: 600;
+  color: #1d2129;
 }
 
-.system-prompt-variant-tabs :deep(.t-tabs__bar) {
-  display: none;
+.allowed-tool-desc {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+}
+
+.allowed-tools-empty {
+  margin: 0;
+  font-size: 12px;
+  color: #999;
 }
 
 .prompt-textarea-readonly {

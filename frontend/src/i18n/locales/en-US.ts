@@ -1332,8 +1332,9 @@ export default {
     },
     allowedTools: {
       label: 'Allowed Tools',
-      desc: 'Select tools the Agent can use (at least one)',
-      placeholder: 'Select tools...'
+      desc: 'Tools currently enabled for the Agent',
+      placeholder: 'Select tools...',
+      empty: 'No tools configured'
     },
     systemPrompt: {
       label: 'System Prompt',
