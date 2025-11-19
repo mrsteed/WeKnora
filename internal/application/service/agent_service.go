@@ -64,6 +64,8 @@ func NewAgentService(
 func (s *agentService) CreateAgentEngine(
 	ctx context.Context,
 	config *types.AgentConfig,
+	chatModel chat.Chat,
+	rerankModel rerank.Reranker,
 	eventBus *event.EventBus,
 	contextManager interfaces.ContextManager,
 	sessionID string,
@@ -76,18 +78,8 @@ func (s *agentService) CreateAgentEngine(
 		return nil, fmt.Errorf("invalid agent config: %w", err)
 	}
 
-	chatModel, err := s.modelService.GetChatModel(ctx, config.ThinkingModelID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get thinking model: %w", err)
-	}
-
 	if chatModel == nil {
 		return nil, fmt.Errorf("chat model is nil after initialization")
-	}
-
-	rerankModel, err := s.modelService.GetRerankModel(ctx, config.RerankModelID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get rerank model: %w", err)
 	}
 
 	if rerankModel == nil {
@@ -262,10 +254,6 @@ func (s *agentService) ValidateConfig(config *types.AgentConfig) error {
 
 	if config.MaxIterations > MAX_ITERATIONS {
 		return fmt.Errorf("max iterations too high: %d (max %d)", config.MaxIterations, MAX_ITERATIONS)
-	}
-
-	if config.ThinkingModelID == "" {
-		return fmt.Errorf("ThinkingModelID is required but not set")
 	}
 
 	return nil

@@ -698,8 +698,6 @@ const conversationSaving = ref(false)
 // Agent 模式本地状态
 const localMaxIterations = ref(5)
 const localTemperature = ref(0.7)
-const localThinkingModelId = ref('')
-const localRerankModelId = ref('')
 const localAllowedTools = ref<string[]>([])
 
 type SystemPromptTab = 'web-enabled' | 'web-disabled'
@@ -776,6 +774,11 @@ const syncConversationLocals = () => {
   localConversationRerankModelId.value = cfg.rerank_model_id ?? ''
   localUseCustomSystemPromptNormal.value = cfg.use_custom_system_prompt ?? true
   localUseCustomContextTemplate.value = cfg.use_custom_context_template ?? true
+
+  settingsStore.updateConversationModels({
+    summaryModelId: localSummaryModelId.value || '',
+    rerankModelId: localConversationRerankModelId.value || '',
+  })
 }
 
 const saveConversationConfig = async (partial: Partial<ConversationConfig>, toastMessage?: string) => {
@@ -805,10 +808,7 @@ const saveConversationConfig = async (partial: Partial<ConversationConfig>, toas
 
 // 计算 Agent 是否就绪
 const isAgentReady = computed(() => {
-  // 必须有思考模型、Rerank 模型 且 至少选择一个工具
-  return localThinkingModelId.value !== '' && 
-         localRerankModelId.value !== '' && 
-         localAllowedTools.value.length > 0
+  return localAllowedTools.value.length > 0
 })
 
 const buildAgentConfigPayload = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
@@ -817,8 +817,6 @@ const buildAgentConfigPayload = (overrides: Partial<AgentConfig> = {}): AgentCon
   reflection_enabled: false,
   allowed_tools: localAllowedTools.value,
   temperature: localTemperature.value,
-  thinking_model_id: localThinkingModelId.value,
-  rerank_model_id: localRerankModelId.value,
   system_prompt_web_enabled: localSystemPromptWebEnabled.value,
   system_prompt_web_disabled: localSystemPromptWebDisabled.value,
   use_custom_system_prompt: localUseCustomSystemPrompt.value,
@@ -829,12 +827,6 @@ const buildAgentConfigPayload = (overrides: Partial<AgentConfig> = {}): AgentCon
 const agentStatusMessage = computed(() => {
   const missing: string[] = []
   
-  if (!localThinkingModelId.value) {
-    missing.push(t('agentSettings.status.missingThinkingModel'))
-  }
-  if (!localRerankModelId.value) {
-    missing.push(t('agentSettings.status.missingRerankModel'))
-  }
   if (localAllowedTools.value.length === 0) {
     missing.push(t('agentSettings.status.missingAllowedTools'))
   }
@@ -1003,8 +995,6 @@ onMounted(async () => {
     localMaxIterations.value = config.max_iterations
     lastSavedValue = config.max_iterations // 初始化时记录已保存的值
     localTemperature.value = config.temperature
-    localThinkingModelId.value = config.thinking_model_id
-    localRerankModelId.value = config.rerank_model_id
     localAllowedTools.value = config.allowed_tools || []
     const promptWebEnabled = config.system_prompt_web_enabled || ''
     const promptWebDisabled = config.system_prompt_web_disabled || ''
@@ -1022,9 +1012,7 @@ onMounted(async () => {
     console.log('加载的占位符列表:', availablePlaceholders.value)
     
     // 统一加载所有模型（只调用一次API）
-    if (config.thinking_model_id || config.rerank_model_id) {
       await loadAllModels()
-    }
     
     // 同步到store（只更新本地存储，不触发API保存）
     // 注意：不自动设置 isAgentEnabled，保持用户之前的选择
@@ -1032,8 +1020,6 @@ onMounted(async () => {
     settingsStore.updateAgentConfig({
       maxIterations: config.max_iterations,
       temperature: config.temperature,
-      thinkingModelId: config.thinking_model_id,
-      rerankModelId: config.rerank_model_id,
       allowedTools: config.allowed_tools || [],
       system_prompt_web_enabled: promptWebEnabled,
       system_prompt_web_disabled: promptWebDisabled,
@@ -1072,8 +1058,6 @@ onMounted(async () => {
     // 失败时从store加载
     localMaxIterations.value = settingsStore.agentConfig.maxIterations
     localTemperature.value = settingsStore.agentConfig.temperature
-    localThinkingModelId.value = settingsStore.agentConfig.thinkingModelId
-    localRerankModelId.value = settingsStore.agentConfig.rerankModelId
   } finally {
     loadingConfig.value = false
     isInitializing.value = false // 确保初始化完成，即使失败也要允许后续操作
@@ -1178,107 +1162,6 @@ const loadChatModels = async () => {
 const loadRerankModels = async () => {
   await loadAllModels()
 }
-
-// 处理思考模型变化
-const handleThinkingModelChange = async (value: string) => {
-  // 如果正在初始化，不触发保存
-  if (isInitializing.value) return
-  
-  // 如果选择添加新模型，跳转到模型配置页
-  if (value === '__add_model__') {
-    router.push('/settings?section=models')
-    return
-  }
-  
-  try {
-    const config = buildAgentConfigPayload({ thinking_model_id: value })
-    await updateAgentConfig(config)
-    // 更新 store，确保 isAgentReady 能正确计算
-    settingsStore.updateAgentConfig({ thinkingModelId: value })
-    MessagePlugin.success(t('agentSettings.toasts.thinkingModelSaved'))
-  } catch (error) {
-    console.error('保存失败:', error)
-    MessagePlugin.error(getErrorMessage(error))
-  }
-}
-
-// 监听模型选择，处理"添加模型"跳转
-// 处理 Rerank 模型变化
-const handleRerankModelChange = async (value: string) => {
-  // 如果正在初始化，不触发保存
-  if (isInitializing.value) return
-  
-  // 如果选择添加新模型，跳转到模型配置页
-  if (value === '__add_model__') {
-    router.push('/settings?section=models&subsection=rerank')
-    return
-  }
-  
-  try {
-    const config = buildAgentConfigPayload({ rerank_model_id: value })
-    await updateAgentConfig(config)
-    settingsStore.updateAgentConfig({ rerankModelId: value })
-    MessagePlugin.success(t('agentSettings.toasts.rerankModelSaved'))
-  } catch (error) {
-    console.error('保存失败:', error)
-    MessagePlugin.error(getErrorMessage(error))
-    // 回滚
-    localRerankModelId.value = settingsStore.agentConfig.rerankModelId
-  }
-}
-
-watch(() => localThinkingModelId.value, (newValue) => {
-  if (newValue === '__add_model__') {
-    // 重置选择
-    localThinkingModelId.value = ''
-    
-    // 跳转到模型配置页面的对话模型部分
-    router.push('/platform/settings')
-    
-    // 发送导航事件，定位到对话模型
-    setTimeout(() => {
-      const event = new CustomEvent('settings-nav', { 
-        detail: { section: 'models', subsection: 'chat' }
-      })
-      window.dispatchEvent(event)
-      
-      // 滚动到对话模型区域
-      setTimeout(() => {
-        const element = document.querySelector('[data-model-type="chat"]')
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
-      }, 200)
-    }, 100)
-  }
-})
-
-// 监听 Rerank 模型选择，处理"添加模型"跳转
-watch(() => localRerankModelId.value, (newValue) => {
-  if (newValue === '__add_model__') {
-    // 重置选择
-    localRerankModelId.value = ''
-    
-    // 跳转到模型配置页面的 Rerank 模型部分
-    router.push('/platform/settings')
-    
-    // 发送导航事件，定位到 Rerank 模型
-    setTimeout(() => {
-      const event = new CustomEvent('settings-nav', { 
-        detail: { section: 'models', subsection: 'rerank' }
-      })
-      window.dispatchEvent(event)
-      
-      // 滚动到 Rerank 模型区域
-      setTimeout(() => {
-        const element = document.querySelector('[data-model-type="rerank"]')
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
-      }, 200)
-    }, 100)
-  }
-})
 
 // 处理温度参数变化
 const handleTemperatureChange = async (value: number) => {

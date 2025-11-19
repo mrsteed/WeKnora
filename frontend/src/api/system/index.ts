@@ -29,8 +29,6 @@ export interface AgentConfig {
   reflection_enabled: boolean
   allowed_tools: string[]
   temperature: number
-  thinking_model_id: string
-  rerank_model_id: string
   knowledge_bases?: string[]
   system_prompt_web_enabled?: string  // Custom system prompt when web search is enabled
   system_prompt_web_disabled?: string // Custom system prompt when web search is disabled

@@ -55,7 +55,6 @@ type AgentConfig struct {
 	ReflectionEnabled bool     `json:"reflection_enabled"` // Whether to enable reflection
 	AllowedTools      []string `json:"allowed_tools"`      // List of allowed tool names
 	Temperature       float64  `json:"temperature"`        // LLM temperature for agent
-	ThinkingModelID   string   `json:"thinking_model_id"`  // Model ID for reasoning
 	KnowledgeBases    []string `json:"knowledge_bases"`    // Accessible knowledge base IDs
 }
 

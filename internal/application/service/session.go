@@ -878,8 +878,6 @@ func (s *sessionService) AgentQA(ctx context.Context, session *types.Session, qu
 		ReflectionEnabled: tenantInfo.AgentConfig.ReflectionEnabled,
 		AllowedTools:      tenantInfo.AgentConfig.AllowedTools,
 		Temperature:       tenantInfo.AgentConfig.Temperature,
-		ThinkingModelID:   tenantInfo.AgentConfig.ThinkingModelID,
-		RerankModelID:     tenantInfo.AgentConfig.RerankModelID,
 		KnowledgeBases:    session.AgentConfig.KnowledgeBases,   // Use session's knowledge bases
 		WebSearchEnabled:  session.AgentConfig.WebSearchEnabled, // Web search enabled from session config
 	}
@@ -931,17 +929,34 @@ func (s *sessionService) AgentQA(ctx context.Context, session *types.Session, qu
 		logger.Infof(ctx, "Agent configured with %d knowledge base(s): %v", len(agentConfig.KnowledgeBases), agentConfig.KnowledgeBases)
 	}
 
-	// Set ThinkingModelID from session's SummaryModelID if not already set in tenant config
-	if agentConfig.ThinkingModelID == "" && session.SummaryModelID != "" {
-		agentConfig.ThinkingModelID = session.SummaryModelID
-		logger.Infof(ctx, "Using session's SummaryModelID as ThinkingModelID: %s", session.SummaryModelID)
+	summaryModelID := session.SummaryModelID
+	if summaryModelID == "" && tenantInfo.ConversationConfig != nil {
+		summaryModelID = tenantInfo.ConversationConfig.SummaryModelID
+	}
+	if summaryModelID == "" {
+		logger.Warnf(ctx, "No summary model configured for tenant %d or session %s", tenantInfo.ID, session.ID)
+		return errors.New("summary model is not configured in conversation settings")
 	}
 
-	// Get chat model
-	summaryModel, err := s.modelService.GetChatModel(ctx, agentConfig.ThinkingModelID)
+	summaryModel, err := s.modelService.GetChatModel(ctx, summaryModelID)
 	if err != nil {
 		logger.Warnf(ctx, "Failed to get chat model: %v", err)
 		return fmt.Errorf("failed to get chat model: %w", err)
+	}
+
+	rerankModelID := session.RerankModelID
+	if rerankModelID == "" && tenantInfo.ConversationConfig != nil {
+		rerankModelID = tenantInfo.ConversationConfig.RerankModelID
+	}
+	if rerankModelID == "" {
+		logger.Warnf(ctx, "No rerank model configured for tenant %d or session %s", tenantInfo.ID, session.ID)
+		return errors.New("rerank model is not configured in conversation settings")
+	}
+
+	rerankModel, err := s.modelService.GetRerankModel(ctx, rerankModelID)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to get rerank model: %v", err)
+		return fmt.Errorf("failed to get rerank model: %w", err)
 	}
 
 	// Get or create contextManager for this session
@@ -956,7 +971,7 @@ func (s *sessionService) AgentQA(ctx context.Context, session *types.Session, qu
 
 	// Create agent engine with EventBus and ContextManager
 	logger.Info(ctx, "Creating agent engine")
-	engine, err := s.agentService.CreateAgentEngine(ctx, agentConfig, eventBus, contextManager, session.ID, s)
+	engine, err := s.agentService.CreateAgentEngine(ctx, agentConfig, summaryModel, rerankModel, eventBus, contextManager, session.ID, s)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to create agent engine: %v", err)
 		return err

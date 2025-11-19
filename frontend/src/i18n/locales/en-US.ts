@@ -632,6 +632,7 @@ export default {
     }
   },
   input: {
+    addModel: 'Add Model',
     placeholder: 'Ask questions based on the knowledge base',
     agentMode: 'Agent Mode',
     normalMode: 'Normal Mode',
@@ -742,7 +743,7 @@ export default {
     },
     document: {
       title: 'Document Management',
-      subtitle: 'Upload and manage documents, supporting parsing and chunking of multiple file formats',
+      subtitle: 'Click or drag-and-drop to upload documents; multiple formats are parsed automatically with intelligent chunking for a searchable knowledge base',
     },
     faq: {
       title: 'FAQ Configuration',

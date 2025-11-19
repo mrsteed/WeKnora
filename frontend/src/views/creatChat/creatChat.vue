@@ -44,7 +44,6 @@ async function createNewSession(value: string) {
         enabled: true,
         max_iterations: settingsStore.agentConfig.maxIterations,
         temperature: settingsStore.agentConfig.temperature,
-        thinking_model_id: settingsStore.agentConfig.thinkingModelId,
         knowledge_bases: selectedKbs,  // 所有选中的知识库
         allowed_tools: settingsStore.agentConfig.allowedTools
     };

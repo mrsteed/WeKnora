@@ -11,18 +11,22 @@ interface Settings {
   modelConfig: ModelConfig;  // 模型配置
   ollamaConfig: OllamaConfig;  // Ollama配置
   webSearchEnabled: boolean;  // 网络搜索是否启用
+  conversationModels: ConversationModels;
 }
 
 // Agent 配置接口
 interface AgentConfig {
   maxIterations: number;
   temperature: number;
-  thinkingModelId: string;
-  rerankModelId: string;
   allowedTools: string[];
   system_prompt_web_enabled?: string;
   system_prompt_web_disabled?: string;
   use_custom_system_prompt?: boolean;
+}
+
+interface ConversationModels {
+  summaryModelId: string;
+  rerankModelId: string;
 }
 
 // 单个模型项接口
@@ -61,8 +65,6 @@ const defaultSettings: Settings = {
   agentConfig: {
     maxIterations: 5,
     temperature: 0.7,
-    thinkingModelId: "",
-    rerankModelId: "",
     allowedTools: ["knowledge_search", "multi_kb_search", "list_knowledge_bases"],
     system_prompt_web_enabled: "",
     system_prompt_web_disabled: "",
@@ -79,7 +81,11 @@ const defaultSettings: Settings = {
     baseUrl: "http://localhost:11434",
     enabled: true
   },
-  webSearchEnabled: false  // 默认关闭网络搜索
+  webSearchEnabled: false,  // 默认关闭网络搜索
+  conversationModels: {
+    summaryModelId: "",
+    rerankModelId: "",
+  }
 };
 
 export const useSettingsStore = defineStore("settings", {
@@ -95,13 +101,16 @@ export const useSettingsStore = defineStore("settings", {
     // Agent 是否就绪（配置完整）
     isAgentReady: (state) => {
       const config = state.settings.agentConfig || defaultSettings.agentConfig
-      return config.thinkingModelId !== '' && 
-             config.rerankModelId !== '' && 
-             config.allowedTools.length > 0
+      const models = state.settings.conversationModels || defaultSettings.conversationModels
+      return config.allowedTools.length > 0 &&
+             models.summaryModelId !== '' &&
+             models.rerankModelId !== ''
     },
     
     // 获取 Agent 配置
     agentConfig: (state) => state.settings.agentConfig || defaultSettings.agentConfig,
+
+    conversationModels: (state) => state.settings.conversationModels || defaultSettings.conversationModels,
     
     // 获取模型配置
     modelConfig: (state) => state.settings.modelConfig || defaultSettings.modelConfig,
@@ -147,6 +156,12 @@ export const useSettingsStore = defineStore("settings", {
     // 更新 Agent 配置
     updateAgentConfig(config: Partial<AgentConfig>) {
       this.settings.agentConfig = { ...this.settings.agentConfig, ...config };
+      localStorage.setItem("WeKnora_settings", JSON.stringify(this.settings));
+    },
+
+    updateConversationModels(models: Partial<ConversationModels>) {
+      const current = this.settings.conversationModels || defaultSettings.conversationModels;
+      this.settings.conversationModels = { ...current, ...models };
       localStorage.setItem("WeKnora_settings", JSON.stringify(this.settings));
     },
     

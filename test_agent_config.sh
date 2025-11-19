@@ -71,7 +71,6 @@ TEST_DATA='{
     "enabled": true,
     "maxIterations": 8,
     "temperature": 0.8,
-    "thinkingModelId": "",
     "allowedTools": ["knowledge_search", "multi_kb_search", "list_knowledge_bases"]
   }
 }'

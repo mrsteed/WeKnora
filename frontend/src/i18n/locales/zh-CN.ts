@@ -1061,7 +1061,7 @@ export default {
     },
     document: {
       title: "文档",
-      subtitle: "上传各类文档，系统自动解析内容并智能分块，构建可检索的知识库",
+      subtitle: "支持点击或拖拽上传，多格式文档自动解析并智能分块，快速构建可检索的知识库",
     },
     faq: {
       title: "问答",
@@ -1255,6 +1255,7 @@ export default {
     },
   },
   input: {
+    addModel: "添加模型",
     placeholder: "基于知识库提问",
     agentMode: "Agent 模式",
     normalMode: "普通模式",

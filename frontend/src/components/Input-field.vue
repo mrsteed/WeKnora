@@ -5,11 +5,12 @@ import { onBeforeRouteUpdate } from 'vue-router';
 import { MessagePlugin } from "tdesign-vue-next";
 import { useSettingsStore } from '@/stores/settings';
 import { useUIStore } from '@/stores/ui';
-import { listKnowledgeBases, getKnowledgeBaseById } from '@/api/knowledge-base';
+import { listKnowledgeBases } from '@/api/knowledge-base';
 import { stopSession } from '@/api/chat';
 import KnowledgeBaseSelector from './KnowledgeBaseSelector.vue';
-import { getModel, type ModelConfig } from '@/api/model';
+import { listModels, type ModelConfig } from '@/api/model';
 import { getTenantWebSearchConfig } from '@/api/web-search';
+import { getConversationConfig, type ConversationConfig } from '@/api/system';
 import { useI18n } from 'vue-i18n';
 
 const route = useRoute();
@@ -52,7 +53,8 @@ const selectedKbs = computed(() => {
 // 模型相关状态
 const availableModels = ref<ModelConfig[]>([]);
 const selectedModelId = ref<string>('');
-const thinkingModelName = ref<string>('');
+const conversationConfig = ref<ConversationConfig | null>(null);
+const modelsLoading = ref(false);
 const showModelSelector = ref(false);
 const modelButtonRef = ref<HTMLElement>();
 const modelDropdownStyle = ref<Record<string, string>>({});
@@ -108,115 +110,126 @@ const loadWebSearchConfig = async () => {
   }
 };
 
-// 解析模型参数大小 (e.g., "7B", "13B", "70B" -> 7, 13, 70)
-const parseParameterSize = (paramSize: string | undefined): number => {
-  if (!paramSize) return 0;
-  const match = paramSize.match(/(\d+\.?\d*)/);
-  return match ? parseFloat(match[1]) : 0;
+const loadConversationConfig = async () => {
+  try {
+    const response = await getConversationConfig();
+    conversationConfig.value = response.data;
+    settingsStore.updateConversationModels({
+      summaryModelId: response.data?.summary_model_id || '',
+      rerankModelId: response.data?.rerank_model_id || '',
+    });
+    if (!selectedModelId.value) {
+      selectedModelId.value = response.data?.summary_model_id || '';
+    }
+    ensureModelSelection();
+  } catch (error) {
+    console.error('Failed to load conversation config:', error);
+  }
 };
 
-// 加载并选择模型
-const loadModelsFromKnowledgeBases = async () => {
-  if (selectedKbIds.value.length === 0) {
+const loadChatModels = async () => {
+  if (modelsLoading.value) return;
+  modelsLoading.value = true;
+  try {
+    const models = await listModels('KnowledgeQA');
+    availableModels.value = Array.isArray(models) ? models : [];
+    ensureModelSelection();
+  } catch (error) {
+    console.error('Failed to load chat models:', error);
     availableModels.value = [];
+  } finally {
+    modelsLoading.value = false;
+  }
+};
+
+const ensureModelSelection = () => {
+  if (selectedModelId.value) {
+    return;
+  }
+  if (conversationConfig.value?.summary_model_id) {
+    selectedModelId.value = conversationConfig.value.summary_model_id;
+    return;
+  }
+  if (availableModels.value.length > 0) {
+    selectedModelId.value = availableModels.value[0].id || '';
+  }
+};
+
+const handleGoToConversationModels = () => {
+  showModelSelector.value = false;
+  router.push('/platform/settings');
+  setTimeout(() => {
+    const event = new CustomEvent('settings-nav', {
+      detail: { section: 'models', subsection: 'chat' },
+    });
+    window.dispatchEvent(event);
+  }, 100);
+};
+
+const handleModelChange = (value: string | number | Array<string | number> | undefined) => {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  const val = normalized !== undefined && normalized !== null ? String(normalized) : '';
+
+  if (!val) {
     selectedModelId.value = '';
     return;
   }
-
-  try {
-    // 获取所有选中知识库的 summary_model_id
-    const modelIds = new Set<string>();
-    for (const kbId of selectedKbIds.value) {
-      try {
-        const kb: any = await getKnowledgeBaseById(kbId);
-        if (kb.data?.summary_model_id) {
-          modelIds.add(kb.data.summary_model_id);
-        }
-      } catch (error) {
-        console.error(`Failed to fetch KB ${kbId}:`, error);
-      }
-    }
-
-    // 获取所有模型的详细信息
-    const models: ModelConfig[] = [];
-    for (const modelId of Array.from(modelIds)) {
-      try {
-        const model = await getModel(modelId);
-        models.push(model);
-      } catch (error) {
-        console.error(`Failed to fetch model ${modelId}:`, error);
-      }
-    }
-
-    availableModels.value = models;
-
-    // 应用优先级选择算法
-    if (models.length > 0) {
-      selectModelByPriority(models);
-    } else {
-      selectedModelId.value = '';
-    }
-  } catch (error) {
-    console.error('Failed to load models from knowledge bases:', error);
-  }
-};
-
-// 根据优先级选择模型
-const selectModelByPriority = (models: ModelConfig[]) => {
-  // 1. 优先选择远程模型，按创建时间降序
-  const remoteModels = models
-    .filter(m => m.source === 'remote')
-    .sort((a, b) => {
-      const timeA = new Date(a.created_at || 0).getTime();
-      const timeB = new Date(b.created_at || 0).getTime();
-      return timeB - timeA;
-    });
-
-  if (remoteModels.length > 0) {
-    selectedModelId.value = remoteModels[0].id || '';
+  if (val === '__add_model__') {
+    selectedModelId.value = conversationConfig.value?.summary_model_id || '';
+    handleGoToConversationModels();
     return;
   }
-
-  // 2. 否则选择 Ollama 模型，按参数大小降序
-  const ollamaModels = models
-    .filter(m => m.source === 'local')
-    .sort((a, b) => {
-      const sizeA = parseParameterSize(a.parameters?.parameter_size);
-      const sizeB = parseParameterSize(b.parameters?.parameter_size);
-      return sizeB - sizeA;
-    });
-
-  if (ollamaModels.length > 0) {
-    selectedModelId.value = ollamaModels[0].id || '';
-    return;
-  }
-
-  // 3. 如果都没有，选择第一个
-  selectedModelId.value = models[0]?.id || '';
+  selectedModelId.value = val;
+  showModelSelector.value = false;
 };
 
-// 获取 Thinking 模型名称（Agent 模式）
-const loadThinkingModelName = async () => {
-  const thinkingModelId = settingsStore.agentConfig.thinkingModelId;
-  if (thinkingModelId) {
-    try {
-      const model = await getModel(thinkingModelId);
-      thinkingModelName.value = model.name || thinkingModelId;
-    } catch (error) {
-      console.error('Failed to fetch thinking model:', error);
-      thinkingModelName.value = thinkingModelId;
-    }
-  } else {
-    thinkingModelName.value = '';
-  }
-};
-
-// 计算当前选中的模型
 const selectedModel = computed(() => {
-  return availableModels.value.find(m => m.id === selectedModelId.value);
+  return availableModels.value.find(model => model.id === selectedModelId.value);
 });
 
-// 关闭模型选择器（点击外部）
+const updateModelDropdownPosition = () => {
+  const anchor = modelButtonRef.value;
+  if (!anchor) {
+    modelDropdownStyle.value = {
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+    };
+    return;
+  }
+  const rect = anchor.getBoundingClientRect();
+  const dropdownWidth = 280;
+  const offsetY = 8;
+  let top = rect.bottom + offsetY;
+  let left = rect.left;
+  if (left + dropdownWidth > window.innerWidth) {
+    left = window.innerWidth - dropdownWidth - 12;
+  }
+  const dropdownHeight = 360;
+  if (top + dropdownHeight > window.innerHeight) {
+    top = rect.top - dropdownHeight - offsetY;
+    if (top < 10) top = 10;
+  }
+  modelDropdownStyle.value = {
+    top: `${Math.round(top)}px`,
+    left: `${Math.round(left)}px`,
+    width: `${dropdownWidth}px`,
+  };
+};
+
+const toggleModelSelector = () => {
+  if (selectedKbIds.value.length === 0) return;
+  showModelSelector.value = !showModelSelector.value;
+  if (showModelSelector.value) {
+    if (!availableModels.value.length) {
+      loadChatModels();
+    }
+    nextTick(() => {
+      updateModelDropdownPosition();
+    });
+  }
+};
+
 const closeModelSelector = () => {
   showModelSelector.value = false;
 };
@@ -229,6 +242,8 @@ const closeAgentModeSelector = () => {
 onMounted(() => {
   loadKnowledgeBases();
   loadWebSearchConfig();
+  loadConversationConfig();
+  loadChatModels();
   
   // 如果从知识库内部进入，自动选中该知识库
   const kbId = (route.params as any)?.kbId as string;
@@ -236,16 +251,9 @@ onMounted(() => {
     settingsStore.addKnowledgeBase(kbId);
   }
 
-  // 加载模型
-  if (isAgentEnabled.value) {
-    loadThinkingModelName();
-  } else {
-    loadModelsFromKnowledgeBases();
-  }
-
   // 监听点击外部关闭下拉菜单
-  document.addEventListener('click', closeModelSelector);
   document.addEventListener('click', closeAgentModeSelector);
+  document.addEventListener('click', closeModelSelector);
   // 监听窗口大小变化，重新计算位置
   window.addEventListener('resize', () => {
     if (showModelSelector.value) {
@@ -258,8 +266,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  document.removeEventListener('click', closeModelSelector);
   document.removeEventListener('click', closeAgentModeSelector);
+  document.removeEventListener('click', closeModelSelector);
 });
 
 // 监听路由变化
@@ -275,28 +283,11 @@ watch(() => uiStore.showSettingsModal, (visible, prevVisible) => {
   }
 });
 
-// 监听知识库选择变化，重新加载模型
-watch(selectedKbIds, () => {
-  if (!isAgentEnabled.value) {
-    loadModelsFromKnowledgeBases();
+watch(selectedKbIds, (ids) => {
+  if (!ids.length) {
+    closeModelSelector();
   }
 }, { deep: true });
-
-// 监听 Agent 模式变化
-watch(isAgentEnabled, (newVal) => {
-  if (newVal) {
-    loadThinkingModelName();
-  } else {
-    loadModelsFromKnowledgeBases();
-  }
-});
-
-// 监听 Thinking 模型变化
-watch(() => settingsStore.agentConfig.thinkingModelId, () => {
-  if (isAgentEnabled.value) {
-    loadThinkingModelName();
-  }
-});
 
 const emit = defineEmits(['send-msg', 'stop-generation']);
 
@@ -317,51 +308,6 @@ const createSession = (val: string) => {
 }
 
 // 计算模型下拉菜单位置
-const updateModelDropdownPosition = () => {
-  const anchor = modelButtonRef.value;
-  
-  if (!anchor) {
-    modelDropdownStyle.value = {
-      position: 'fixed',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%)'
-    };
-    return;
-  }
-
-  const rect = anchor.getBoundingClientRect();
-  const dropdownWidth = 250;
-  const offsetY = 8;
-  
-  // 计算位置：默认在按钮下方
-  let top = rect.bottom + offsetY;
-  let left = rect.left;
-  
-  // 检查右侧边界
-  if (left + dropdownWidth > window.innerWidth) {
-    left = window.innerWidth - dropdownWidth - 10;
-  }
-  
-  // 检查下方空间
-  const dropdownMaxHeight = 400;
-  if (top + dropdownMaxHeight > window.innerHeight) {
-    // 如果下方空间不足，显示在按钮上方
-    top = rect.top - dropdownMaxHeight - offsetY;
-    if (top < 10) {
-      // 如果上方也不够，显示在屏幕中间
-      top = 10;
-    }
-  }
-  
-  modelDropdownStyle.value = {
-    position: 'fixed',
-    top: `${Math.round(top)}px`,
-    left: `${Math.round(left)}px`,
-    width: `${dropdownWidth}px`
-  };
-};
-
 // 计算 Agent 模式下拉菜单位置
 const updateAgentModeDropdownPosition = () => {
   const anchor = agentModeButtonRef.value;
@@ -406,15 +352,6 @@ const updateAgentModeDropdownPosition = () => {
     width: `${dropdownWidth}px`
   };
 };
-
-const toggleModelSelector = () => {
-  showModelSelector.value = !showModelSelector.value;
-  if (showModelSelector.value) {
-    nextTick(() => {
-      updateModelDropdownPosition();
-    });
-  }
-}
 
 const toggleAgentModeSelector = () => {
   // 如果 Agent 未就绪，显示提示
@@ -778,72 +715,56 @@ onBeforeRouteUpdate((to, from, next) => {
         </div>
 
         <!-- 模型显示 -->
-        <div v-if="selectedKbIds.length > 0" class="model-display">
-          <!-- Agent 模式：只读显示 Thinking 模型 -->
-          <div v-if="isAgentEnabled" class="model-badge">
-            <span class="model-label">{{ $t('input.thinkingLabel') }}</span>
-            <span class="model-name">{{ thinkingModelName || $t('input.notConfigured') }}</span>
-          </div>
-
-          <!-- 非 Agent 模式：可选择的模型下拉 -->
-          <div 
-            v-else
-            ref="modelButtonRef" 
-            class="control-btn model-btn"
-            :class="{ 'active': selectedModel }"
+        <div class="model-display">
+          <div
+            ref="modelButtonRef"
+            class="model-selector-trigger"
+            :class="{ disabled: selectedKbIds.length === 0 }"
             @click.stop="toggleModelSelector"
           >
-            <span class="model-btn-text">
-              {{ selectedModel ? selectedModel.name : $t('input.model') }}
+            <span class="model-selector-name">
+              {{ selectedModel?.name || $t('input.notConfigured') }}
             </span>
-            <svg 
-              width="12" 
-              height="12" 
-              viewBox="0 0 12 12" 
-              fill="currentColor"
-              class="dropdown-arrow"
-              :class="{ 'rotate': showModelSelector }"
-            >
-              <path d="M2.5 4.5L6 8L9.5 4.5H2.5Z"/>
-            </svg>
           </div>
-
-          <!-- 模型选择下拉菜单 -->
-          <Teleport to="body">
-            <div v-if="showModelSelector && !isAgentEnabled" class="model-selector-overlay">
-              <div 
-                class="model-selector-dropdown"
-                :style="modelDropdownStyle"
-                @click.stop
-              >
-                <div class="model-selector-content">
-                  <div 
-                    v-for="model in availableModels" 
-                    :key="model.id"
-                    class="model-option"
-                    :class="{ 'selected': model.id === selectedModelId }"
-                    @click="selectedModelId = model.id || ''; showModelSelector = false"
-                  >
-                    <div class="model-option-main">
-                      <span class="model-option-name">{{ model.name }}</span>
-                      <span v-if="model.source === 'remote'" class="model-badge-remote">{{ $t('input.remote') }}</span>
-                      <span v-else-if="model.parameters?.parameter_size" class="model-badge-local">
-                        {{ model.parameters.parameter_size }}
-                      </span>
-                    </div>
-                    <div v-if="model.description" class="model-option-desc">
-                      {{ model.description }}
-                    </div>
-                  </div>
-                  <div v-if="availableModels.length === 0" class="model-option empty">
-                    {{ $t('input.noModel') }}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Teleport>
         </div>
       </div>
+
+      <Teleport to="body">
+        <div v-if="showModelSelector" class="model-selector-overlay" @click="closeModelSelector">
+            <div class="model-selector-dropdown" :style="modelDropdownStyle" @click.stop>
+            <div class="model-selector-header">
+              <span>{{ $t('conversationSettings.models.chatGroupLabel') }}</span>
+              <button class="model-selector-add" type="button" @click="handleModelChange('__add_model__')">
+                <span class="add-icon">+</span>
+                  <span class="add-text">{{ $t('input.addModel') }}</span>
+              </button>
+            </div>
+            <div class="model-selector-content">
+              <div
+                v-for="model in availableModels"
+                :key="model.id"
+                class="model-option"
+                :class="{ selected: model.id === selectedModelId }"
+                @click="handleModelChange(model.id || '')"
+              >
+                <div class="model-option-main">
+                  <span class="model-option-name">{{ model.name }}</span>
+                  <span v-if="model.source === 'remote'" class="model-badge-remote">{{ $t('input.remote') }}</span>
+                  <span v-else-if="model.parameters?.parameter_size" class="model-badge-local">
+                    {{ model.parameters.parameter_size }}
+                  </span>
+                </div>
+                <div v-if="model.description" class="model-option-desc">
+                  {{ model.description }}
+                </div>
+              </div>
+              <div v-if="availableModels.length === 0" class="model-option empty">
+                {{ $t('input.noModel') }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </Teleport>
 
       <!-- 右侧控制按钮组 -->
       <div class="control-right">
@@ -1339,90 +1260,130 @@ const getImgSrc = (url: string) => {
 .model-display {
   display: flex;
   align-items: center;
-  margin-left: 8px;
+  margin-left: 0;
   flex-shrink: 0;
 }
 
-.model-badge {
+.model-selector-trigger {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  background: rgba(7, 192, 95, 0.08);
+  gap: 6px;
+  padding: 2px 8px;
+  min-width: 100px;
+  height: 22px;
   border-radius: 6px;
+  border: 1px solid rgba(7, 192, 95, 0.3);
+  background: rgba(7, 192, 95, 0.1);
+  box-shadow: none;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  cursor: pointer;
+}
+
+.model-selector-trigger:hover {
+  background: rgba(7, 192, 95, 0.15);
+  border-color: rgba(7, 192, 95, 0.45);
+}
+
+.model-selector-trigger.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-selector-trigger.disabled:hover {
+  background: rgba(7, 192, 95, 0.1);
+  border-color: rgba(7, 192, 95, 0.3);
+}
+
+.model-selector-name {
+  flex: 1;
   font-size: 12px;
-  white-space: nowrap;
-}
-
-.model-label {
-  color: #666;
-  font-weight: 500;
-}
-
-.model-name {
-  color: #07C05F;
   font-weight: 600;
-}
-
-.model-btn {
-  height: 28px;
-  padding: 0 10px;
-  min-width: auto;
-  
-  &.active {
-    background: rgba(7, 192, 95, 0.1);
-    color: #07C05F;
-    
-    &:hover {
-      background: rgba(7, 192, 95, 0.15);
-    }
-  }
-}
-
-.model-btn-text {
-  font-size: 13px;
-  color: #666;
-  font-weight: 500;
-  white-space: nowrap;
-  max-width: 150px;
+  color: #0f172a;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.model-btn.active .model-btn-text {
-  color: #07C05F;
+.model-selector-trigger::after {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #07C05F;
+  margin-left: 4px;
+  transition: transform 0.2s ease;
 }
 
-/* 模型选择下拉菜单 */
+.model-selector-trigger.disabled::after {
+  border-top-color: rgba(7, 192, 95, 0.4);
+}
+
 .model-selector-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 9998;
+  background: transparent;
 }
 
 .model-selector-dropdown {
+  position: fixed;
   z-index: 9999;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  max-width: 350px;
-  max-height: 400px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 25px 45px rgba(15, 23, 42, 0.15);
+  border: 1px solid #e2e8f0;
   overflow: hidden;
+  max-height: 360px;
+}
+
+.model-selector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
 }
 
 .model-selector-content {
-  max-height: 400px;
+  max-height: 300px;
   overflow-y: auto;
+}
+
+.model-selector-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(7, 192, 95, 0.4);
+  background: rgba(7, 192, 95, 0.08);
+  color: #057647;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.model-selector-add .add-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.model-selector-add:hover {
+  background: rgba(7, 192, 95, 0.18);
+  border-color: rgba(7, 192, 95, 0.6);
 }
 
 .model-option {
   padding: 12px 16px;
   cursor: pointer;
   transition: background 0.2s;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #f1f5f9;
   
   &:last-child {
     border-bottom: none;

@@ -15,8 +15,6 @@ type AgentConfig struct {
 	ReflectionEnabled       bool     `json:"reflection_enabled"`                   // Whether to enable reflection
 	AllowedTools            []string `json:"allowed_tools"`                        // List of allowed tool names
 	Temperature             float64  `json:"temperature"`                          // LLM temperature for agent
-	ThinkingModelID         string   `json:"thinking_model_id"`                    // Model ID for reasoning
-	RerankModelID           string   `json:"rerank_model_id"`                      // Model ID for reranking search results
 	KnowledgeBases          []string `json:"knowledge_bases"`                      // Accessible knowledge base IDs
 	SystemPromptWebEnabled  string   `json:"system_prompt_web_enabled,omitempty"`  // Custom prompt when web search is enabled
 	SystemPromptWebDisabled string   `json:"system_prompt_web_disabled,omitempty"` // Custom prompt when web search is disabled

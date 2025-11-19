@@ -20,16 +20,21 @@ import {
   createKnowledgeBaseTag,
   updateKnowledgeBaseTag,
   deleteKnowledgeBaseTag,
+  uploadKnowledgeFile,
+  listKnowledgeBases,
 } from "@/api/knowledge-base/index";
 import FAQEntryManager from './components/FAQEntryManager.vue';
 import { useI18n } from 'vue-i18n';
-import { formatStringDate } from '@/utils';
+import { formatStringDate, kbFileTypeVerification } from '@/utils';
 const route = useRoute();
 const { t } = useI18n();
 const kbId = computed(() => (route.params as any).kbId as string || '');
 const kbInfo = ref<any>(null);
+const uploadInputRef = ref<HTMLInputElement | null>(null);
+const uploading = ref(false);
 const kbLoading = ref(false);
 const isFAQ = computed(() => (kbInfo.value?.type || '') === 'faq');
+const knowledgeList = ref<Array<{ id: string; name: string }>>([]);
 let { cardList, total, moreIndex, details, getKnowled, delKnowledge, openMore, onVisibleChange, getCardDetails, getfDetails } = useKnowledgeBase(kbId.value)
 let isCardDetails = ref(false);
 let timeout: ReturnType<typeof setInterval> | null = null;
@@ -334,6 +339,18 @@ const loadKnowledgeBaseInfo = async (targetKbId: string) => {
   }
 };
 
+const loadKnowledgeList = async () => {
+  try {
+    const res: any = await listKnowledgeBases();
+    knowledgeList.value = (res?.data || []).map((item: any) => ({
+      id: String(item.id),
+      name: item.name,
+    }));
+  } catch (error) {
+    console.error('Failed to load knowledge list:', error);
+  }
+};
+
 // 监听路由参数变化，重新获取知识库内容
 watch(() => kbId.value, (newKbId, oldKbId) => {
   if (newKbId && newKbId !== oldKbId) {
@@ -368,6 +385,7 @@ const handleFileUploaded = (event: CustomEvent) => {
 
 onMounted(() => {
   loadKnowledgeBaseInfo(kbId.value);
+  loadKnowledgeList();
   
   // 监听文件上传事件
   window.addEventListener('knowledgeFileUploaded', handleFileUploaded as EventListener);
@@ -451,6 +469,126 @@ const manualEditorSuccess = ({ kbId: savedKbId }: { kbId: string; knowledgeId: s
   }
 };
 
+const documentTitle = computed(() => {
+  if (kbInfo.value?.name) {
+    return `${kbInfo.value.name} · ${t('knowledgeEditor.document.title')}`;
+  }
+  return t('knowledgeEditor.document.title');
+});
+
+const ensureDocumentKbReady = () => {
+  if (isFAQ.value) {
+    MessagePlugin.warning('当前知识库类型不支持该操作');
+    return false;
+  }
+  if (!kbId.value) {
+    MessagePlugin.warning(t('knowledgeEditor.messages.missingId'));
+    return false;
+  }
+  if (!kbInfo.value || !kbInfo.value.embedding_model_id || !kbInfo.value.summary_model_id) {
+    MessagePlugin.warning(t('knowledgeBase.notInitialized'));
+    return false;
+  }
+  return true;
+};
+
+const handleDocumentUploadClick = () => {
+  if (!ensureDocumentKbReady()) return;
+  uploadInputRef.value?.click();
+};
+
+const resetUploadInput = () => {
+  if (uploadInputRef.value) {
+    uploadInputRef.value.value = '';
+  }
+};
+
+const handleDocumentUpload = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input?.files?.[0];
+  if (!file) return;
+  if (kbFileTypeVerification(file)) {
+    resetUploadInput();
+    return;
+  }
+  if (!kbId.value) {
+    MessagePlugin.error("缺少知识库ID");
+    resetUploadInput();
+    return;
+  }
+  uploading.value = true;
+  try {
+    const responseData: any = await uploadKnowledgeFile(kbId.value, { file });
+    window.dispatchEvent(new CustomEvent('knowledgeFileUploaded', {
+      detail: { kbId: kbId.value }
+    }));
+    const isSuccess = responseData?.success || responseData?.code === 200 || responseData?.status === 'success' || (!responseData?.error && responseData);
+    if (isSuccess) {
+      MessagePlugin.info("上传成功！");
+    } else {
+      let errorMessage = "上传失败！";
+      if (responseData?.error?.message) {
+        errorMessage = responseData.error.message;
+      } else if (responseData?.message) {
+        errorMessage = responseData.message;
+      }
+      if (responseData?.code === 'duplicate_file' || responseData?.error?.code === 'duplicate_file') {
+        errorMessage = "文件已存在";
+      }
+      MessagePlugin.error(errorMessage);
+    }
+  } catch (error: any) {
+    let errorMessage = error?.error?.message || error?.message || "上传失败！";
+    if (error?.code === 'duplicate_file') {
+      errorMessage = "文件已存在";
+    }
+    MessagePlugin.error(errorMessage);
+  } finally {
+    uploading.value = false;
+    resetUploadInput();
+  }
+};
+
+const handleManualCreate = () => {
+  if (!ensureDocumentKbReady()) return;
+  uiStore.openManualEditor({
+    mode: 'create',
+    kbId: kbId.value,
+    status: 'draft',
+    onSuccess: manualEditorSuccess,
+  });
+};
+
+const handleOpenKBSettings = () => {
+  if (!kbId.value) {
+    MessagePlugin.warning(t('knowledgeEditor.messages.missingId'));
+    return;
+  }
+  uiStore.openKBSettings(kbId.value);
+};
+
+const handleNavigateToKbList = () => {
+  router.push('/platform/knowledge-bases');
+};
+
+const handleNavigateToCurrentKB = () => {
+  if (!kbId.value) return;
+  router.push(`/platform/knowledge-bases/${kbId.value}`);
+};
+
+const knowledgeDropdownOptions = computed(() =>
+  knowledgeList.value.map((item) => ({
+    content: item.name,
+    value: item.id,
+  }))
+);
+
+const handleKnowledgeDropdownSelect = (data: { value: string }) => {
+  if (!data?.value) return;
+  if (data.value === kbId.value) return;
+  router.push(`/platform/knowledge-bases/${data.value}`);
+};
+
 const handleManualEdit = (index: number, item: KnowledgeCard) => {
   if (isFAQ.value) return;
   if (cardList.value[index]) {
@@ -532,10 +670,86 @@ async function createNewSession(value: string): Promise<void> {
     <div class="knowledge-layout">
       <div class="document-header">
         <div class="document-header-title">
-          <h2>{{ $t('knowledgeEditor.document.title') }}</h2>
+          <div class="document-title-row">
+            <h2 class="document-breadcrumb">
+              <button type="button" class="breadcrumb-link" @click="handleNavigateToKbList">
+                {{ $t('menu.knowledgeBase') }}
+              </button>
+              <t-icon name="chevron-right" class="breadcrumb-separator" />
+              <t-dropdown
+                v-if="knowledgeDropdownOptions.length"
+                :options="knowledgeDropdownOptions"
+                trigger="click"
+                placement="bottom-left"
+                @click="handleKnowledgeDropdownSelect"
+              >
+                <button
+                  type="button"
+                  class="breadcrumb-link dropdown"
+                  :disabled="!kbId"
+                  @click.stop="handleNavigateToCurrentKB"
+                >
+                  <span>{{ kbInfo?.name || '--' }}</span>
+                  <t-icon name="chevron-down" />
+                </button>
+              </t-dropdown>
+              <button
+                v-else
+                type="button"
+                class="breadcrumb-link"
+                :disabled="!kbId"
+                @click="handleNavigateToCurrentKB"
+              >
+                {{ kbInfo?.name || '--' }}
+              </button>
+              <t-icon name="chevron-right" class="breadcrumb-separator" />
+              <span class="breadcrumb-current">{{ $t('knowledgeEditor.document.title') }}</span>
+            </h2>
+            <t-tooltip :content="$t('knowledgeBase.settings')" placement="top">
+              <button
+                type="button"
+                class="kb-settings-button"
+                :disabled="!kbId"
+                @click="handleOpenKBSettings"
+              >
+                <t-icon name="setting" size="16px" />
+              </button>
+            </t-tooltip>
+          </div>
           <p class="document-subtitle">{{ $t('knowledgeEditor.document.subtitle') }}</p>
         </div>
+        <div class="document-header-actions">
+          <t-button
+            class="document-action-btn primary"
+            size="medium"
+            :loading="uploading"
+            :disabled="uploading"
+            @click="handleDocumentUploadClick"
+          >
+            <template #icon>
+              <t-icon name="upload" />
+            </template>
+            {{ $t('upload.uploadDocument') }}
+          </t-button>
+          <t-button
+            class="document-action-btn secondary"
+            size="medium"
+            @click="handleManualCreate"
+          >
+            <template #icon>
+              <t-icon name="edit" />
+            </template>
+            {{ $t('upload.onlineEdit') }}
+          </t-button>
+        </div>
       </div>
+      <input
+        ref="uploadInputRef"
+        type="file"
+        class="document-upload-input"
+        accept=".pdf,.docx,.doc,.txt,.md,.jpg,.jpeg,.png"
+        @change="handleDocumentUpload"
+      />
       <div class="knowledge-main">
         <aside class="tag-sidebar">
           <div class="sidebar-header">
@@ -960,28 +1174,32 @@ async function createNewSession(value: string): Promise<void> {
   .tag-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
     overflow: auto;
 
     .tag-list-item {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 10px 12px;
-      border-radius: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
       color: #4e5969;
       cursor: pointer;
       transition: all 0.2s ease;
+      font-size: 13px;
 
       .tag-list-left {
         display: flex;
         align-items: center;
         gap: 8px;
         min-width: 0;
+        flex: 1;
 
         .t-icon {
           flex-shrink: 0;
-          color: #4e5969;
+          color: #86909c;
+          font-size: 16px;
+          transition: color 0.2s ease;
         }
       }
 
@@ -996,7 +1214,7 @@ async function createNewSession(value: string): Promise<void> {
       .tag-list-right {
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 6px;
         margin-left: 8px;
         min-width: 0;
       }
@@ -1004,18 +1222,40 @@ async function createNewSession(value: string): Promise<void> {
       .tag-count {
         font-size: 12px;
         color: #86909c;
+        font-weight: 500;
+        padding: 2px 6px;
+        border-radius: 10px;
+        background: #f7f9fc;
+        transition: all 0.2s ease;
       }
 
       &:hover {
-        background: #f3f5f7;
+        background: #f7f9fc;
+        color: #1d2129;
+
+        .tag-list-left .t-icon {
+          color: #4e5969;
+        }
+
+        .tag-count {
+          background: #e5e9f2;
+          color: #4e5969;
+        }
       }
 
       &.active {
         background: #e6f7ec;
         color: #00a870;
+        font-weight: 500;
+
+        .tag-list-left .t-icon {
+          color: #00a870;
+        }
 
         .tag-count {
+          background: #b8f0d3;
           color: #00a870;
+          font-weight: 600;
         }
       }
 
@@ -1118,6 +1358,11 @@ async function createNewSession(value: string): Promise<void> {
         }
       }
 
+      .tag-more {
+        display: flex;
+        align-items: center;
+      }
+
       .tag-more-btn {
         width: 24px;
         height: 24px;
@@ -1125,18 +1370,15 @@ async function createNewSession(value: string): Promise<void> {
         align-items: center;
         justify-content: center;
         border-radius: 4px;
-        color: #6b7280;
-        transition: background 0.2s ease, color 0.2s ease;
+        color: #86909c;
+        transition: all 0.2s ease;
+        opacity: 0.6;
 
         &:hover {
-          background: #e6f0ff;
-          color: #0052d9;
+          background: #f3f5f7;
+          color: #4e5969;
+          opacity: 1;
         }
-      }
-
-      .tag-more {
-        display: flex;
-        align-items: center;
       }
     }
 
@@ -1223,14 +1465,65 @@ async function createNewSession(value: string): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0;
-  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 0 0 16px;
   flex-shrink: 0;
+  border-bottom: 1px solid #e7ebf0;
 
   .document-header-title {
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+
+  .document-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .document-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #1d2129;
+  }
+
+  .breadcrumb-link {
+    border: none;
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    color: #4e5969;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: color 0.2s ease;
+
+    &:hover:not(:disabled) {
+      color: #07c05f;
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      color: #c9ced6;
+    }
+  }
+
+  .breadcrumb-separator {
+    font-size: 14px;
+    color: #c9ced6;
+  }
+
+  .breadcrumb-current {
+    color: #1d2129;
+    font-weight: 600;
   }
 
   h2 {
@@ -1249,6 +1542,99 @@ async function createNewSession(value: string): Promise<void> {
     font-size: 14px;
     font-weight: 400;
     line-height: 20px;
+  }
+
+  .document-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+}
+
+.document-action-btn {
+  min-width: 148px;
+  height: 38px;
+  border-radius: 8px;
+  font-family: "PingFang SC";
+  font-size: 14px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 18px;
+  border-width: 1px;
+  border-style: solid;
+  transition: all 0.2s ease;
+
+  :deep(.t-icon) {
+    font-size: 16px;
+  }
+
+  &.primary {
+    background: linear-gradient(90deg, #07c05f, #05a04f);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 6px 14px rgba(7, 192, 95, 0.2);
+
+    &:hover {
+      background: linear-gradient(90deg, #08d067, #05a04f);
+      box-shadow: 0 8px 16px rgba(7, 192, 95, 0.25);
+    }
+
+    &:disabled {
+      opacity: 0.7;
+      box-shadow: none;
+      cursor: not-allowed;
+    }
+  }
+
+  &.secondary {
+    background: #ffffff;
+    border-color: #07c05f;
+    color: #07c05f;
+
+    &:hover {
+      background: #f3fdf7;
+      border-color: #05a04f;
+      color: #059669;
+    }
+  }
+}
+
+.document-upload-input {
+  display: none;
+}
+
+.kb-settings-button {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: #f5f6f8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+
+  &:hover:not(:disabled) {
+    background: #e6f7ec;
+    color: #07c05f;
+    box-shadow: none;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+  }
+
+  :deep(.t-icon) {
+    font-size: 18px;
   }
 }
 

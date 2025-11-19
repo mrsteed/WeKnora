@@ -4,23 +4,74 @@
       <!-- Header -->
       <div class="faq-header">
         <div class="faq-header-title">
-          <h2>{{ $t('knowledgeEditor.faq.title') }}</h2>
+          <div class="faq-title-row">
+            <h2 class="faq-breadcrumb">
+              <button type="button" class="breadcrumb-link" @click="handleNavigateToKbList">
+                {{ $t('menu.knowledgeBase') }}
+              </button>
+              <t-icon name="chevron-right" class="breadcrumb-separator" />
+              <t-dropdown
+                v-if="knowledgeDropdownOptions.length"
+                :options="knowledgeDropdownOptions"
+                trigger="click"
+                placement="bottom-left"
+                @click="handleKnowledgeDropdownSelect"
+              >
+                <button
+                  type="button"
+                  class="breadcrumb-link dropdown"
+                  :disabled="!props.kbId"
+                  @click.stop="handleNavigateToCurrentKB"
+                >
+                  <span>{{ kbInfo?.name || '--' }}</span>
+                  <t-icon name="chevron-down" />
+                </button>
+              </t-dropdown>
+              <button
+                v-else
+                type="button"
+                class="breadcrumb-link"
+                :disabled="!props.kbId"
+                @click="handleNavigateToCurrentKB"
+              >
+                {{ kbInfo?.name || '--' }}
+              </button>
+              <t-icon name="chevron-right" class="breadcrumb-separator" />
+              <span class="breadcrumb-current">{{ $t('knowledgeEditor.faq.title') }}</span>
+            </h2>
+            <t-tooltip :content="$t('knowledgeBase.settings')" placement="top">
+              <button
+                type="button"
+                class="kb-settings-button"
+                :disabled="!props.kbId"
+                @click="handleOpenKBSettings"
+              >
+                <t-icon name="setting" size="16px" />
+              </button>
+            </t-tooltip>
+          </div>
           <p class="faq-subtitle">{{ $t('knowledgeEditor.faq.subtitle') }}</p>
         </div>
-        <div class="action-buttons">
-          <button class="create-btn ghost" @click="openEditor()">
-            <t-icon name="add" size="16px" class="btn-icon" />
-            <span>{{ $t('knowledgeEditor.faq.editorCreate') }}</span>
-          </button>
+        <div class="faq-header-actions">
+          <t-button
+            class="faq-action-btn primary"
+            size="medium"
+            @click="openEditor()"
+          >
+            <template #icon>
+              <t-icon name="add" />
+            </template>
+            {{ $t('knowledgeEditor.faq.editorCreate') }}
+          </t-button>
           <t-dropdown
             :options="toolbarActionOptions"
             placement="bottom-left"
             trigger="click"
             @click="handleToolbarAction"
           >
-            <div class="toolbar-action-trigger">
+            <t-button class="faq-action-btn secondary icon-only" size="medium">
               <t-icon name="more" />
-            </div>
+            </t-button>
           </t-dropdown>
         </div>
       </div>
@@ -942,6 +993,7 @@ import type { ComponentPublicInstance } from 'vue'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import type { FormRules, FormInstanceFunctions } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import {
   listFAQEntries,
   upsertFAQEntries,
@@ -954,9 +1006,12 @@ import {
   createKnowledgeBaseTag,
   updateKnowledgeBaseTag,
   deleteKnowledgeBaseTag,
+  getKnowledgeBaseById,
+  listKnowledgeBases,
 } from '@/api/knowledge-base'
 import * as XLSX from 'xlsx'
 import FAQTagTooltip from '@/components/FAQTagTooltip.vue'
+import { useUIStore } from '@/stores/ui'
 
 interface FAQEntry {
   id: string
@@ -992,6 +1047,8 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const router = useRouter()
+const uiStore = useUIStore()
 
 const loading = ref(false)
 const loadingMore = ref(false)
@@ -1057,6 +1114,45 @@ const filteredTags = computed(() => {
   }
   return tagList.value.filter((tag) => (tag.name || '').toLowerCase().includes(query))
 })
+
+const kbInfo = ref<any>(null)
+const knowledgeList = ref<Array<{ id: string; name: string; type?: string }>>([])
+const knowledgeDropdownOptions = computed(() =>
+  knowledgeList.value
+    .map((item) => ({
+      content: item.name,
+      value: item.id,
+    })),
+)
+
+const loadKnowledgeInfo = async (kbId: string) => {
+  if (!kbId) {
+    kbInfo.value = null
+    return
+  }
+  try {
+    const res: any = await getKnowledgeBaseById(kbId)
+    kbInfo.value = res?.data || null
+    return kbInfo.value
+  } catch (error) {
+    console.error('Failed to load knowledge base info:', error)
+    kbInfo.value = null
+    return null
+  }
+}
+
+const loadKnowledgeList = async () => {
+  try {
+    const res: any = await listKnowledgeBases()
+    knowledgeList.value = (res?.data || []).map((item: any) => ({
+      id: String(item.id),
+      name: item.name,
+      type: item.type,
+    }))
+  } catch (error) {
+    console.error('Failed to load knowledge bases:', error)
+  }
+}
 
 const editorVisible = ref(false)
 const editorMode = ref<'create' | 'edit'>('create')
@@ -1345,6 +1441,29 @@ const handleEntryTagChange = async (entryId: string, value?: string) => {
     }
     MessagePlugin.error(error?.message || t('common.operationFailed'))
   }
+}
+
+const handleNavigateToKbList = () => {
+  router.push('/platform/knowledge-bases')
+}
+
+const handleNavigateToCurrentKB = () => {
+  if (!props.kbId) return
+  router.push(`/platform/knowledge-bases/${props.kbId}`)
+}
+
+const handleOpenKBSettings = () => {
+  if (!props.kbId) {
+    MessagePlugin.warning(t('knowledgeEditor.messages.missingId'))
+    return
+  }
+  uiStore.openKBSettings(props.kbId)
+}
+
+const handleKnowledgeDropdownSelect = (data: { value: string }) => {
+  if (!data?.value || data.value === props.kbId) return
+  const target = knowledgeList.value.find((item) => item.id === data.value)
+  router.push(`/platform/knowledge-bases/${data.value}`)
 }
 
 const handleEntryStatusChange = async (entry: FAQEntry, value: boolean) => {
@@ -1920,13 +2039,24 @@ const downloadExcelExample = () => {
 
 watch(
   () => props.kbId,
-  () => {
+  async (newKbId) => {
     currentPage = 1
     hasMore.value = true
     selectedTagId.value = ''
     cancelCreateTag()
     cancelEditTag()
     tagSearchQuery.value = ''
+
+    if (!newKbId) {
+      kbInfo.value = null
+      return
+    }
+
+    const info = await loadKnowledgeInfo(newKbId)
+    if (!info || info.type !== 'faq') {
+      return
+    }
+
     loadEntries()
     loadTags()
   },
@@ -2113,6 +2243,7 @@ onMounted(() => {
   if (props.kbId) {
     loadEntries()
   }
+  loadKnowledgeList()
   window.addEventListener('resize', handleResize)
 })
 
@@ -2562,7 +2693,11 @@ watch(() => entries.value.map(e => ({
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 0 0 16px;
   margin-bottom: 20px;
+  border-bottom: 1px solid #e7ebf0;
   flex-shrink: 0;
 
   .faq-header-title {
@@ -2571,9 +2706,58 @@ watch(() => entries.value.map(e => ({
     gap: 4px;
   }
 
+  .faq-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .faq-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #1d2129;
+  }
+
+  .breadcrumb-link {
+    border: none;
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    color: #4e5969;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: color 0.2s ease;
+
+    &:hover:not(:disabled) {
+      color: #07c05f;
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      color: #c9ced6;
+    }
+  }
+
+  .breadcrumb-separator {
+    font-size: 14px;
+    color: #c9ced6;
+  }
+
+  .breadcrumb-current {
+    color: #1d2129;
+    font-weight: 600;
+  }
+
   h2 {
     margin: 0;
-    color: #000000e6;
+    color: #1d2129;
     font-family: "PingFang SC";
     font-size: 24px;
     font-weight: 600;
@@ -2587,6 +2771,14 @@ watch(() => entries.value.map(e => ({
     font-size: 14px;
     font-weight: 400;
     line-height: 20px;
+  }
+
+  .faq-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
   }
 }
 
@@ -2602,67 +2794,83 @@ watch(() => entries.value.map(e => ({
   }
 }
 
-.action-buttons {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.create-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 20px;
-  height: 36px;
-  border: 1px solid transparent;
+.faq-action-btn {
+  min-width: 148px;
+  height: 38px;
   border-radius: 8px;
   font-family: "PingFang SC";
   font-size: 14px;
   font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: transparent;
-
-  .btn-icon {
-    flex-shrink: 0;
-  }
-}
-
-.create-btn.ghost {
-  background: transparent;
-  color: #07c05f;
-  border-color: #07c05f;
-
-  &:hover {
-    background: #07c05f1a;
-  }
-
-  &:active {
-    background: #07c05f33;
-  }
-}
-
-.toolbar-action-trigger {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid #d9d9d9;
-  border-radius: 8px;
-  background: #ffffff;
-  cursor: pointer;
+  gap: 6px;
+  padding: 0 18px;
+  border-width: 1px;
+  border-style: solid;
   transition: all 0.2s ease;
-  color: #00000099;
-
-  &:hover {
-    background-color: #f5f5f5;
-    border-color: #07c05f;
-    color: #07c05f;
-  }
 
   :deep(.t-icon) {
     font-size: 16px;
+  }
+
+  &.primary {
+    background: linear-gradient(90deg, #07c05f, #05a04f);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 6px 14px rgba(7, 192, 95, 0.2);
+
+    &:hover {
+      background: linear-gradient(90deg, #08d067, #05a04f);
+      box-shadow: 0 8px 16px rgba(7, 192, 95, 0.25);
+    }
+  }
+
+  &.secondary {
+    background: #ffffff;
+    border-color: #07c05f;
+    color: #07c05f;
+
+    &:hover {
+      background: #f3fdf7;
+      border-color: #05a04f;
+      color: #059669;
+    }
+  }
+
+  &.icon-only {
+    min-width: auto;
+    width: 38px;
+    padding: 0;
+  }
+}
+
+.kb-settings-button {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: #f5f6f8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+
+  &:hover:not(:disabled) {
+    background: #e6f7ec;
+    color: #07c05f;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+  }
+
+  :deep(.t-icon) {
+    font-size: 18px;
   }
 }
 

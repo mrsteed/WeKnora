@@ -12,7 +12,7 @@
                      :class="['menu_item', item.childrenPath && item.childrenPath == currentpath ? 'menu_item_c_active' : isMenuItemActive(item.path) ? 'menu_item_active' : '']">
                     <div class="menu_item-box">
                         <div class="menu_icon">
-                            <img class="icon" :src="getImgSrc(item.icon == 'zhishiku' ? knowledgeIcon :  item.icon == 'logout' ? logoutIcon : item.icon == 'tenant' ? tenantIcon : prefixIcon)" alt="">
+                            <img class="icon" :src="getImgSrc(item.icon == 'zhishiku' ? knowledgeIcon : item.icon == 'logout' ? logoutIcon : item.icon == 'setting' ? settingIcon : prefixIcon)" alt="">
                         </div>
                         <span class="menu_title" :title="item.path === 'knowledge-bases' && kbMenuItem ? kbMenuItem.title : item.title">{{ item.path === 'knowledge-bases' && kbMenuItem ? kbMenuItem.title : item.title }}</span>
                         <!-- 知识库切换下拉箭头 -->
@@ -39,19 +39,6 @@
                             {{ kb.name }}
                         </div>
                     </div>
-                    <t-dropdown
-                        v-if="item.path === 'knowledge-bases' && $route.name === 'knowledgeBaseDetail'"
-                        trigger="hover"
-                        :options="uploadActionOptions"
-                        placement="right"
-                        @click="handleUploadAction"
-                        class="upload-action-dropdown-trigger"
-                    >
-                        <div class="upload-file-wrap" variant="outline">
-                            <img class="upload-file-icon" :class="[item.path == currentpath ? 'active-upload' : '']"
-                                :src="getImgSrc(fileAddIcon)" alt="">
-                        </div>
-                    </t-dropdown>
                 </div>
                 <div ref="submenuscrollContainer" @scroll="handleScroll" class="submenu" v-if="item.children">
                     <template v-for="(group, groupIndex) in groupedSessions" :key="groupIndex">
@@ -66,7 +53,7 @@
                                 </span>
                                 <t-dropdown 
                                     :options="[{ content: t('upload.deleteRecord'), value: 'delete' }]"
-                                    @click="(data) => data.value === 'delete' && delCard(subitem.originalIndex, subitem)"
+                                    @click="handleSessionMenuClick($event, subitem.originalIndex, subitem)"
                                     placement="bottom-right"
                                     trigger="click">
                                     <div @click.stop class="menu-more-wrap">
@@ -85,20 +72,16 @@
         <div class="menu_bottom">
             <UserMenu />
         </div>
-        
-        <input type="file" @change="upload" style="display: none" ref="uploadInput"
-            accept=".pdf,.docx,.doc,.txt,.md,.jpg,.jpeg,.png" />
     </div>
 </template>
 
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
-import { onMounted, watch, computed, ref, reactive, nextTick, h } from 'vue';
+import { onMounted, watch, computed, ref, reactive, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getSessionsList, delSession } from "@/api/chat/index";
-import { getKnowledgeBaseById, listKnowledgeBases, uploadKnowledgeFile } from '@/api/knowledge-base';
+import { getKnowledgeBaseById, listKnowledgeBases } from '@/api/knowledge-base';
 import { logout as logoutApi } from '@/api/auth';
-import { kbFileTypeVerification } from '@/utils/index';
 import { useMenuStore } from '@/stores/menu';
 import { useAuthStore } from '@/stores/auth';
 import { useUIStore } from '@/stores/ui';
@@ -107,7 +90,6 @@ import UserMenu from '@/components/UserMenu.vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
-let uploadInput = ref();
 const usemenuStore = useMenuStore();
 const authStore = useAuthStore();
 const uiStore = useUIStore();
@@ -270,158 +252,18 @@ const kbMenuItem = computed(() => {
 })
 
 const loading = ref(false)
-const uploadActionOptions = computed(() => [
-    { content: t('upload.uploadDocument'), value: 'upload' },
-    { content: t('upload.onlineEdit'), value: 'manual' },
-])
-const uploadFile = async () => {
-    // 获取当前知识库ID
-    const currentKbId = await getCurrentKbId();
-    
-    // 检查当前知识库的初始化状态
-    if (currentKbId) {
-        try {
-            const kbResponse = await getKnowledgeBaseById(currentKbId);
-            const kb = kbResponse.data;
-            
-            // 检查知识库是否已初始化（有 EmbeddingModelID 和 SummaryModelID）
-            if (!kb.embedding_model_id || kb.embedding_model_id === '' || 
-                !kb.summary_model_id || kb.summary_model_id === '') {
-                MessagePlugin.warning(t('knowledgeBase.notInitialized'));
-                return;
-            }
-        } catch (error) {
-            console.error('获取知识库信息失败:', error);
-            MessagePlugin.error(t('knowledgeBase.getInfoFailed'));
-            return;
-        }
-    }
-    
-    uploadInput.value.click()
-}
-const openManualEditor = async () => {
-    const currentKbId = await getCurrentKbId();
-    if (!currentKbId) {
-        MessagePlugin.warning("请选择知识库");
-        return;
-    }
-    uiStore.openManualEditor({
-        mode: 'create',
-        kbId: currentKbId,
-        status: 'draft',
-        onSuccess: ({ kbId }) => {
-            if (kbId) {
-                window.dispatchEvent(new CustomEvent('knowledgeFileUploaded', {
-                    detail: { kbId }
-                }));
-            }
-        },
-    });
-}
-const handleUploadAction = async (data: { value: string }) => {
-    if (data.value === 'upload') {
-        uploadFile();
-        return;
-    }
-    if (data.value === 'manual') {
-        openManualEditor();
-    }
-}
-const upload = async (e: any) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    // 文件类型验证
-    if (kbFileTypeVerification(file)) {
-        return;
-    }
-    
-    // 获取当前知识库ID
-    const currentKbId = (route.params as any)?.kbId as string;
-    if (!currentKbId) {
-        MessagePlugin.error("缺少知识库ID");
-        return;
-    }
-    
-    try {
-        const result = await uploadKnowledgeFile(currentKbId, { file });
-        const responseData = result as any;
-        console.log('上传API返回结果:', responseData);
-        
-        // 如果没有抛出异常，就认为上传成功，先触发刷新事件
-        console.log('文件上传完成，发送事件通知页面刷新，知识库ID:', currentKbId);
-        window.dispatchEvent(new CustomEvent('knowledgeFileUploaded', { 
-            detail: { kbId: currentKbId } 
-        }));
-        
-        // 然后处理UI消息
-        // 判断上传是否成功 - 检查多种可能的成功标识
-        const isSuccess = responseData.success || responseData.code === 200 || responseData.status === 'success' || (!responseData.error && responseData);
-        
-        if (isSuccess) {
-            MessagePlugin.info("上传成功！");
-        } else {
-            // 改进错误信息提取逻辑
-            let errorMessage = "上传失败！";
-            if (responseData.error && responseData.error.message) {
-                errorMessage = responseData.error.message;
-            } else if (responseData.message) {
-                errorMessage = responseData.message;
-            }
-            if (responseData.code === 'duplicate_file' || (responseData.error && responseData.error.code === 'duplicate_file')) {
-                errorMessage = "文件已存在";
-            }
-            MessagePlugin.error(errorMessage);
-        }
-    } catch (err: any) {
-        let errorMessage = "上传失败！";
-        if (err.code === 'duplicate_file') {
-            errorMessage = "文件已存在";
-        } else if (err.error && err.error.message) {
-            errorMessage = err.error.message;
-        } else if (err.message) {
-            errorMessage = err.message;
-        }
-        
-        // 如果是 VLM 配置错误，添加跳转链接
-        if (errorMessage.includes('VLM配置') || errorMessage.includes('多模态') || errorMessage.includes('对象存储')) {
-            const messageContent = h('div', { style: 'display: flex; align-items: center; gap: 8px; flex-wrap: wrap;' }, [
-                h('span', { style: 'flex: 1; min-width: 0;' }, errorMessage),
-                h('a', {
-                    href: '#',
-                    onClick: (e: Event) => {
-                        e.preventDefault();
-                        // 打开知识库设置弹框，并导航到高级设置部分
-                        console.log('Opening KB editor for:', currentKbId, 'section: advanced');
-                        uiStore.openEditKB(currentKbId, 'advanced');
-                    },
-                    style: 'color: #07C05F; text-decoration: none; font-weight: 500; cursor: pointer; white-space: nowrap; flex-shrink: 0;',
-                    onMouseenter: (e: Event) => {
-                        (e.target as HTMLElement).style.textDecoration = 'underline';
-                    },
-                    onMouseleave: (e: Event) => {
-                        (e.target as HTMLElement).style.textDecoration = 'none';
-                    }
-                }, '去设置 →')
-            ]);
-            
-            MessagePlugin.error({
-                content: messageContent,
-                duration: 5000
-            });
-        } else {
-            MessagePlugin.error(errorMessage);
-        }
-    } finally {
-        uploadInput.value.value = "";
-    }
-}
 const mouseenteBotDownr = (val: string) => {
     activeSubmenu.value = val;
 }
 const mouseleaveBotDown = () => {
     activeSubmenu.value = '';
 }
+
+const handleSessionMenuClick = (data: { value: string }, index: number, item: any) => {
+    if (data?.value === 'delete') {
+        delCard(index, item);
+    }
+};
 
 const delCard = (index: number, item: any) => {
     delSession(item.id).then((res: any) => {
@@ -583,7 +425,6 @@ watch([() => route.name, () => route.params], (newvalue, oldvalue) => {
         }
     }
 });
-let fileAddIcon = ref('file-add-green.svg');
 let knowledgeIcon = ref('zhishiku-green.svg');
 let prefixIcon = ref('prefixIcon.svg');
 let logoutIcon = ref('logout.svg');
@@ -594,9 +435,6 @@ let pathPrefix = ref(route.name)
       const kbActiveState = getIconActiveState('knowledge-bases');
       const creatChatActiveState = getIconActiveState('creatChat');
       const settingsActiveState = getIconActiveState('settings');
-      
-      // 上传图标：只在知识库相关页面显示绿色
-      fileAddIcon.value = kbActiveState.isKbActive ? 'file-add-green.svg' : 'file-add.svg';
       
       // 知识库图标：只在知识库页面显示绿色
       knowledgeIcon.value = kbActiveState.isKbActive ? 'zhishiku-green.svg' : 'zhishiku.svg';

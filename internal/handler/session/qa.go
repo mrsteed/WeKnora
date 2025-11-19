@@ -226,7 +226,10 @@ func (h *Handler) AgentQA(c *gin.Context) {
 	}
 	summaryModelID := request.SummaryModelID
 	if summaryModelID == "" {
-		summaryModelID = tenantInfo.AgentConfig.ThinkingModelID
+		summaryModelID = session.SummaryModelID
+	}
+	if summaryModelID == "" && tenantInfo.ConversationConfig != nil {
+		summaryModelID = tenantInfo.ConversationConfig.SummaryModelID
 	}
 	if summaryModelID != session.SummaryModelID {
 		configChanged = true

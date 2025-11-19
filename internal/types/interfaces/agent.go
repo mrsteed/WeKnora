@@ -5,6 +5,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/models/rerank"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -26,7 +27,7 @@ type AgentEngine interface {
 // AgentService defines the interface for agent-related operations
 type AgentService interface {
 	// CreateAgentEngine creates an agent engine with the given configuration, EventBus, and ContextManager
-	CreateAgentEngine(ctx context.Context, config *types.AgentConfig, eventBus *event.EventBus, contextManager ContextManager, sessionID string, sessionService SessionService) (AgentEngine, error)
+	CreateAgentEngine(ctx context.Context, config *types.AgentConfig, chatModel chat.Chat, rerankModel rerank.Reranker, eventBus *event.EventBus, contextManager ContextManager, sessionID string, sessionService SessionService) (AgentEngine, error)
 
 	// ValidateConfig validates an agent configuration
 	ValidateConfig(config *types.AgentConfig) error

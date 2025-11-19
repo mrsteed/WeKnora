@@ -238,8 +238,6 @@ type AgentConfigRequest struct {
 	ReflectionEnabled       bool     `json:"reflection_enabled"`
 	AllowedTools            []string `json:"allowed_tools"`
 	Temperature             float64  `json:"temperature"`
-	ThinkingModelID         string   `json:"thinking_model_id"`
-	RerankModelID           string   `json:"rerank_model_id"`
 	SystemPromptWebEnabled  string   `json:"system_prompt_web_enabled,omitempty"`
 	SystemPromptWebDisabled string   `json:"system_prompt_web_disabled,omitempty"`
 	UseCustomPrompt         *bool    `json:"use_custom_system_prompt"`
@@ -287,8 +285,6 @@ func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 				"reflection_enabled":         agent.DefaultAgentReflectionEnabled,
 				"allowed_tools":              agenttools.DefaultAllowedTools(),
 				"temperature":                agent.DefaultAgentTemperature,
-				"thinking_model_id":          "",
-				"rerank_model_id":            "",
 				"system_prompt_web_enabled":  agent.ProgressiveRAGSystemPromptWithWeb,
 				"system_prompt_web_disabled": agent.ProgressiveRAGSystemPromptWithoutWeb,
 				"use_custom_system_prompt":   false,
@@ -320,8 +316,6 @@ func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 			"reflection_enabled":         tenant.AgentConfig.ReflectionEnabled,
 			"allowed_tools":              tenant.AgentConfig.AllowedTools,
 			"temperature":                tenant.AgentConfig.Temperature,
-			"thinking_model_id":          tenant.AgentConfig.ThinkingModelID,
-			"rerank_model_id":            tenant.AgentConfig.RerankModelID,
 			"system_prompt_web_enabled":  systemPromptWithWeb,
 			"system_prompt_web_disabled": systemPromptWithoutWeb,
 			"use_custom_system_prompt":   useCustomPrompt,
@@ -353,8 +347,6 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 			c.Error(errors.NewAgentInvalidTemperatureError())
 			return
 		}
-		// thinking_model_id 不再强制要求，允许先启用 Agent 再设置模型
-		// 实际使用时会在 AgentQA 中进行验证
 		if len(req.AllowedTools) == 0 {
 			c.Error(errors.NewAgentMissingAllowedToolsError())
 			return
@@ -378,8 +370,6 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 		ReflectionEnabled:       req.ReflectionEnabled,
 		AllowedTools:            req.AllowedTools,
 		Temperature:             req.Temperature,
-		ThinkingModelID:         req.ThinkingModelID,
-		RerankModelID:           req.RerankModelID,
 		SystemPromptWebEnabled:  req.SystemPromptWebEnabled,
 		SystemPromptWebDisabled: req.SystemPromptWebDisabled,
 		UseCustomSystemPrompt:   useCustomPrompt,

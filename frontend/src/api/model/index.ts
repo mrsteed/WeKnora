@@ -47,10 +47,13 @@ export function createModel(data: ModelConfig): Promise<ModelConfig> {
 // 获取模型列表
 export function listModels(type?: string): Promise<ModelConfig[]> {
   return new Promise((resolve, reject) => {
-    const url = type ? `/api/v1/models?type=${type}` : '/api/v1/models';
+    const url = `/api/v1/models`;
     get(url)
       .then((response: any) => {
         if (response.success && response.data) {
+          if (type) {
+            response.data = response.data.filter((item: ModelConfig) => item.type === type);
+          }
           resolve(response.data);
         } else {
           resolve([]);
