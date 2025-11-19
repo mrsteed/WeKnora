@@ -213,7 +213,7 @@ const TOOL_NAME_I18N: Record<string, string> = {
   web_search: '网络搜索',
   web_fetch: '网页抓取',
   get_document_info: '获取文档信息',
-  get_related_chunks: '查找相关片段',
+  list_knowledge_chunks: '查看知识分块',
   get_related_documents: '查找相关文档',
   get_document_content: '获取文档内容',
   todo_write: '计划管理',
@@ -511,7 +511,7 @@ const intermediateStepsSummary = computed(() => {
   if (toolCalls.length > 0) {
     const toolNames = toolCalls.map(name => {
       if (name === 'get_document_info') return '获取文档';
-      if (name === 'get_related_chunks') return '获取相关片段';
+      if (name === 'list_knowledge_chunks') return '查看知识分块';
       return name;
     });
     if (toolNames.length === 1) {
@@ -1080,9 +1080,10 @@ const getToolSummary = (event: any): string => {
     if (toolData?.title) {
       return `获取文档：${toolData.title}`;
     }
-  } else if (toolName === 'get_related_chunks') {
-    if (toolData?.count !== undefined) {
-      return `找到 ${toolData.count} 个相关片段`;
+  } else if (toolName === 'list_knowledge_chunks') {
+    if (toolData?.fetched_chunks !== undefined) {
+      const title = toolData?.knowledge_title || toolData?.knowledge_id || '文档';
+      return `查看 ${title} 的 ${toolData.fetched_chunks}/${toolData.total_chunks ?? '?'} 个分块`;
     }
   } else if (toolName === 'todo_write') {
     // Extract steps from tool data
@@ -1183,7 +1184,7 @@ const getToolIcon = (toolName: string): string => {
     return knowledgeIcon;
   } else if (toolName === 'web_search') {
     return webSearchGlobeGreenIcon;
-  } else if (toolName === 'get_document_info' || toolName === 'get_related_chunks') {
+  } else if (toolName === 'get_document_info' || toolName === 'list_knowledge_chunks') {
     return documentIcon;
   } else if (toolName === 'todo_write') {
     return fileAddIcon;

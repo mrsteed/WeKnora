@@ -64,4 +64,6 @@ type ChunkService interface {
 	DeleteByKnowledgeList(ctx context.Context, ids []string) error
 	// ListChunkByParentID lists chunks by parent id
 	ListChunkByParentID(ctx context.Context, tenantID uint, parentID string) ([]*types.Chunk, error)
+	// GetRepository gets the chunk repository
+	GetRepository() ChunkRepository
 }

@@ -32,7 +32,8 @@ export interface AgentConfig {
   thinking_model_id: string
   rerank_model_id: string
   knowledge_bases?: string[]
-  system_prompt?: string  // System prompt template with placeholders (optional)
+  system_prompt_web_enabled?: string  // Custom system prompt when web search is enabled
+  system_prompt_web_disabled?: string // Custom system prompt when web search is disabled
   use_custom_system_prompt?: boolean
   available_tools?: ToolDefinition[]  // GET 响应中包含，POST/PUT 不需要
   available_placeholders?: PlaceholderDefinition[]  // GET 响应中包含，POST/PUT 不需要
@@ -42,7 +43,7 @@ export interface ConversationConfig {
   prompt: string
   context_template: string
   temperature: number
-  max_tokens: number
+  max_completion_tokens: number
   use_custom_system_prompt?: boolean
   use_custom_context_template?: boolean
   max_rounds: number

@@ -23,14 +23,14 @@ const MAX_ITERATIONS = 30 // Max iterations for agent execution
 type agentService struct {
 	cfg                  *config.Config
 	modelService         interfaces.ModelService
-	knowledgeBaseService interfaces.KnowledgeBaseService
-	knowledgeService     interfaces.KnowledgeService
-	chunkService         interfaces.ChunkService
 	mcpServiceService    interfaces.MCPServiceService
 	mcpManager           *mcp.MCPManager
 	eventBus             *event.EventBus
 	db                   *gorm.DB
 	webSearchService     interfaces.WebSearchService
+	knowledgeBaseService interfaces.KnowledgeBaseService
+	knowledgeService     interfaces.KnowledgeService
+	chunkService         interfaces.ChunkService
 }
 
 // NewAgentService creates a new agent service
@@ -95,7 +95,7 @@ func (s *agentService) CreateAgentEngine(
 	}
 
 	// Create tool registry
-	toolRegistry := tools.NewToolRegistry(s.knowledgeBaseService, s.knowledgeService, s.chunkService, s.db)
+	toolRegistry := tools.NewToolRegistry(s.knowledgeService, s.chunkService, s.db)
 
 	// Register tools
 	if err := s.registerTools(ctx, toolRegistry, config, rerankModel, chatModel, sessionID, sessionService); err != nil {
@@ -148,9 +148,9 @@ func (s *agentService) CreateAgentEngine(
 		}
 	}
 
-	systemPromptTemplate := agent.DefaultSystemPromptTemplate
-	if config.UseCustomSystemPrompt && config.SystemPrompt != "" {
-		systemPromptTemplate = config.SystemPrompt
+	systemPromptTemplate := ""
+	if config.UseCustomSystemPrompt {
+		systemPromptTemplate = config.ResolveSystemPrompt(config.WebSearchEnabled)
 	}
 
 	// Create engine with provided EventBus and contextManager
@@ -158,7 +158,6 @@ func (s *agentService) CreateAgentEngine(
 		config,
 		chatModel,
 		toolRegistry,
-		s.knowledgeBaseService,
 		eventBus,
 		kbInfos,
 		contextManager,
@@ -182,10 +181,7 @@ func (s *agentService) registerTools(
 	// If no specific tools allowed, register default tools
 	allowedTools := config.AllowedTools
 	if len(allowedTools) == 0 {
-		// Register default tools from config
-		if s.cfg.Agent != nil && len(s.cfg.Agent.DefaultTools) > 0 {
-			allowedTools = s.cfg.Agent.DefaultTools
-		}
+		allowedTools = tools.DefaultAllowedTools()
 	}
 	// If web search is enabled, add web_search to allowedTools
 	if config.WebSearchEnabled {
@@ -216,13 +212,14 @@ func (s *agentService) registerTools(
 					config.KnowledgeBases,
 					rerankModel,
 					chatModel,
+					s.cfg,
 				))
-		case "get_related_chunks":
-			registry.RegisterTool(tools.NewGetRelatedChunksTool(s.chunkService, s.knowledgeBaseService))
+		case "list_knowledge_chunks":
+			registry.RegisterTool(tools.NewListKnowledgeChunksTool(tenantID, s.knowledgeService, s.chunkService))
 		case "query_knowledge_graph":
 			registry.RegisterTool(tools.NewQueryKnowledgeGraphTool(s.knowledgeBaseService))
 		case "get_document_info":
-			registry.RegisterTool(tools.NewGetDocumentInfoTool(s.knowledgeService, s.chunkService))
+			registry.RegisterTool(tools.NewGetDocumentInfoTool(tenantID, s.knowledgeService, s.chunkService))
 		case "database_query":
 			registry.RegisterTool(tools.NewDatabaseQueryTool(s.db, tenantID))
 		case "web_search":

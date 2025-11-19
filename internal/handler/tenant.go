@@ -233,15 +233,16 @@ func (h *TenantHandler) ListTenants(c *gin.Context) {
 
 // AgentConfigRequest represents the request body for updating agent configuration
 type AgentConfigRequest struct {
-	Enabled           bool     `json:"enabled"`
-	MaxIterations     int      `json:"max_iterations"`
-	ReflectionEnabled bool     `json:"reflection_enabled"`
-	AllowedTools      []string `json:"allowed_tools"`
-	Temperature       float64  `json:"temperature"`
-	ThinkingModelID   string   `json:"thinking_model_id"`
-	RerankModelID     string   `json:"rerank_model_id"`
-	SystemPrompt      string   `json:"system_prompt,omitempty"` // System prompt template with placeholders (optional)
-	UseCustomPrompt   *bool    `json:"use_custom_system_prompt"`
+	Enabled                 bool     `json:"enabled"`
+	MaxIterations           int      `json:"max_iterations"`
+	ReflectionEnabled       bool     `json:"reflection_enabled"`
+	AllowedTools            []string `json:"allowed_tools"`
+	Temperature             float64  `json:"temperature"`
+	ThinkingModelID         string   `json:"thinking_model_id"`
+	RerankModelID           string   `json:"rerank_model_id"`
+	SystemPromptWebEnabled  string   `json:"system_prompt_web_enabled,omitempty"`
+	SystemPromptWebDisabled string   `json:"system_prompt_web_disabled,omitempty"`
+	UseCustomPrompt         *bool    `json:"use_custom_system_prompt"`
 }
 
 // GetTenantAgentConfig retrieves the agent configuration for a tenant
@@ -282,46 +283,50 @@ func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data": gin.H{
-				"max_iterations":           agent.DefaultAgentMaxIterations,
-				"reflection_enabled":       agent.DefaultAgentReflectionEnabled,
-				"allowed_tools":            agenttools.DefaultAllowedTools(),
-				"temperature":              agent.DefaultAgentTemperature,
-				"thinking_model_id":        "",
-				"rerank_model_id":          "",
-				"system_prompt":            agent.DefaultSystemPromptTemplate,
-				"use_custom_system_prompt": false,
-				"available_tools":          availableTools,
-				"available_placeholders":   availablePlaceholders,
+				"max_iterations":             agent.DefaultAgentMaxIterations,
+				"reflection_enabled":         agent.DefaultAgentReflectionEnabled,
+				"allowed_tools":              agenttools.DefaultAllowedTools(),
+				"temperature":                agent.DefaultAgentTemperature,
+				"thinking_model_id":          "",
+				"rerank_model_id":            "",
+				"system_prompt_web_enabled":  agent.ProgressiveRAGSystemPromptWithWeb,
+				"system_prompt_web_disabled": agent.ProgressiveRAGSystemPromptWithoutWeb,
+				"use_custom_system_prompt":   false,
+				"available_tools":            availableTools,
+				"available_placeholders":     availablePlaceholders,
 			},
 		})
 		return
 	}
 
-	// Get system prompt, use default if empty
-	systemPrompt := tenant.AgentConfig.SystemPrompt
+	// Get system prompts for both web search states, use defaults if empty
+	systemPromptWithWeb := tenant.AgentConfig.ResolveSystemPrompt(true)
+	if systemPromptWithWeb == "" {
+		systemPromptWithWeb = agent.ProgressiveRAGSystemPromptWithWeb
+	}
+	systemPromptWithoutWeb := tenant.AgentConfig.ResolveSystemPrompt(false)
+	if systemPromptWithoutWeb == "" {
+		systemPromptWithoutWeb = agent.ProgressiveRAGSystemPromptWithoutWeb
+	}
+
 	useCustomPrompt := tenant.AgentConfig.UseCustomSystemPrompt
-	if !useCustomPrompt && systemPrompt != "" && systemPrompt != agent.DefaultSystemPromptTemplate {
-		useCustomPrompt = true
-	}
-	if systemPrompt == "" {
-		systemPrompt = agent.DefaultSystemPromptTemplate
-	}
 
 	logger.Infof(ctx, "Retrieved tenant agent config successfully, Tenant ID: %d", tenant.ID)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"enabled":                  tenant.AgentConfig.Enabled,
-			"max_iterations":           tenant.AgentConfig.MaxIterations,
-			"reflection_enabled":       tenant.AgentConfig.ReflectionEnabled,
-			"allowed_tools":            tenant.AgentConfig.AllowedTools,
-			"temperature":              tenant.AgentConfig.Temperature,
-			"thinking_model_id":        tenant.AgentConfig.ThinkingModelID,
-			"rerank_model_id":          tenant.AgentConfig.RerankModelID,
-			"system_prompt":            systemPrompt,
-			"use_custom_system_prompt": useCustomPrompt,
-			"available_tools":          availableTools,
-			"available_placeholders":   availablePlaceholders,
+			"enabled":                    tenant.AgentConfig.Enabled,
+			"max_iterations":             tenant.AgentConfig.MaxIterations,
+			"reflection_enabled":         tenant.AgentConfig.ReflectionEnabled,
+			"allowed_tools":              tenant.AgentConfig.AllowedTools,
+			"temperature":                tenant.AgentConfig.Temperature,
+			"thinking_model_id":          tenant.AgentConfig.ThinkingModelID,
+			"rerank_model_id":            tenant.AgentConfig.RerankModelID,
+			"system_prompt_web_enabled":  systemPromptWithWeb,
+			"system_prompt_web_disabled": systemPromptWithoutWeb,
+			"use_custom_system_prompt":   useCustomPrompt,
+			"available_tools":            availableTools,
+			"available_placeholders":     availablePlaceholders,
 		},
 	})
 }
@@ -368,15 +373,16 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 	}
 
 	tenant.AgentConfig = &types.AgentConfig{
-		Enabled:               req.Enabled,
-		MaxIterations:         req.MaxIterations,
-		ReflectionEnabled:     req.ReflectionEnabled,
-		AllowedTools:          req.AllowedTools,
-		Temperature:           req.Temperature,
-		ThinkingModelID:       req.ThinkingModelID,
-		RerankModelID:         req.RerankModelID,
-		SystemPrompt:          req.SystemPrompt,
-		UseCustomSystemPrompt: useCustomPrompt,
+		Enabled:                 req.Enabled,
+		MaxIterations:           req.MaxIterations,
+		ReflectionEnabled:       req.ReflectionEnabled,
+		AllowedTools:            req.AllowedTools,
+		Temperature:             req.Temperature,
+		ThinkingModelID:         req.ThinkingModelID,
+		RerankModelID:           req.RerankModelID,
+		SystemPromptWebEnabled:  req.SystemPromptWebEnabled,
+		SystemPromptWebDisabled: req.SystemPromptWebDisabled,
+		UseCustomSystemPrompt:   useCustomPrompt,
 	}
 
 	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
@@ -517,7 +523,7 @@ func (h *TenantHandler) buildDefaultConversationConfig() *types.ConversationConf
 		UseCustomContextTemplate: true,
 		UseCustomSystemPrompt:    true,
 		Temperature:              h.config.Conversation.Summary.Temperature,
-		MaxTokens:                h.config.Conversation.Summary.MaxTokens,
+		MaxCompletionTokens:      h.config.Conversation.Summary.MaxCompletionTokens,
 		MaxRounds:                h.config.Conversation.MaxRounds,
 		EmbeddingTopK:            h.config.Conversation.EmbeddingTopK,
 		KeywordThreshold:         h.config.Conversation.KeywordThreshold,
@@ -555,8 +561,8 @@ func validateConversationConfig(req *types.ConversationConfig) error {
 	if req.Temperature < 0 || req.Temperature > 2 {
 		return errors.NewBadRequestError("temperature must be between 0 and 2")
 	}
-	if req.MaxTokens <= 0 || req.MaxTokens > 100000 {
-		return errors.NewBadRequestError("max_tokens must be between 1 and 100000")
+	if req.MaxCompletionTokens <= 0 || req.MaxCompletionTokens > 100000 {
+		return errors.NewBadRequestError("max_completion_tokens must be between 1 and 100000")
 	}
 	if req.FallbackStrategy != "" &&
 		req.FallbackStrategy != string(types.FallbackStrategyFixed) &&
@@ -609,8 +615,8 @@ func (h *TenantHandler) GetTenantConversationConfig(c *gin.Context) {
 		if tc.Temperature > 0 {
 			defaultCfg.Temperature = tc.Temperature
 		}
-		if tc.MaxTokens > 0 {
-			defaultCfg.MaxTokens = tc.MaxTokens
+		if tc.MaxCompletionTokens > 0 {
+			defaultCfg.MaxCompletionTokens = tc.MaxCompletionTokens
 		}
 
 		// Retrieval parameters

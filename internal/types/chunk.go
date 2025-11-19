@@ -26,6 +26,8 @@ const (
 	ChunkTypeRelationship ChunkType = "relationship"
 	// ChunkTypeFAQ 表示 FAQ 条目 Chunk
 	ChunkTypeFAQ ChunkType = "faq"
+	// ChunkTypeWebSearch 表示 Web 搜索结果的 Chunk
+	ChunkTypeWebSearch ChunkType = "web_search"
 )
 
 // ImageInfo 表示与 Chunk 关联的图片信息

@@ -79,7 +79,7 @@ services:
       - WeKnora-network-dev
 
   docreader:
-    image: wechatopenai/weknora-docreader:latest
+    image: wechatopenai/weknora-docreader:main
     container_name: WeKnora-docreader-dev
     ports:
       - "${DOCREADER_PORT:-50051}:50051"

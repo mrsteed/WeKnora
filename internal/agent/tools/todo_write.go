@@ -171,7 +171,7 @@ func (t *TodoWriteTool) Parameters() map[string]interface{} {
 						},
 						"tools_to_use": map[string]interface{}{
 							"type":        "array",
-							"description": "Suggested tools for this step (e.g., ['knowledge_search', 'get_related_chunks'])",
+							"description": "Suggested tools for this step (e.g., ['knowledge_search', 'list_knowledge_chunks'])",
 							"items": map[string]interface{}{
 								"type": "string",
 							},
@@ -268,8 +268,8 @@ func generatePlanOutput(task string, steps []PlanStep) string {
 		output += "注意：未提供具体步骤。建议创建3-7个结构化步骤以系统化研究。\n\n"
 		output += "建议的通用流程：\n"
 		output += "1. 使用 knowledge_search 进行初步信息收集\n"
-		output += "2. 使用 get_related_chunks 获取关键信息详情\n"
-		output += "3. 使用 get_related_chunks 扩展上下文理解\n"
+		output += "2. 使用 list_knowledge_chunks 获取关键信息详情\n"
+		output += "3. 使用 list_knowledge_chunks 扩展上下文理解\n"
 		output += "4. 使用 think 工具评估结果并综合答案\n"
 		return output
 	}

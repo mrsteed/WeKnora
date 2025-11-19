@@ -152,7 +152,9 @@ func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 		logger.GetLogger(ctx).Errorf("OpenAIEmbedder EmbedBatch send request error: %v", err)
 		return nil, fmt.Errorf("send request: %w", err)
 	}
-	defer resp.Body.Close()
+	if resp.Body != nil {
+		defer resp.Body.Close()
+	}
 
 	// Read response
 	body, err := io.ReadAll(resp.Body)

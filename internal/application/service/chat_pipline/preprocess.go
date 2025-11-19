@@ -1,26 +1,26 @@
 package chatpipline
 
 import (
-    "context"
-    "encoding/json"
-    "regexp"
-    "strings"
-    "unicode"
-    "unicode/utf8"
+	"context"
+	"encoding/json"
+	"regexp"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
-    "github.com/Tencent/WeKnora/internal/config"
-    "github.com/Tencent/WeKnora/internal/models/chat"
-    "github.com/Tencent/WeKnora/internal/types"
-    "github.com/Tencent/WeKnora/internal/types/interfaces"
-    "github.com/yanyiwu/gojieba"
+	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/yanyiwu/gojieba"
 )
 
 // PluginPreprocess Query preprocessing plugin
 type PluginPreprocess struct {
-    config    *config.Config
-    jieba     *gojieba.Jieba
-    stopwords map[string]struct{}
-    modelService interfaces.ModelService
+	config       *config.Config
+	jieba        *gojieba.Jieba
+	stopwords    map[string]struct{}
+	modelService interfaces.ModelService
 }
 
 // Regular expressions for text cleaning
@@ -35,10 +35,10 @@ const maxProcessedTokens = 12
 
 // NewPluginPreprocess Creates a new query preprocessing plugin
 func NewPluginPreprocess(
-    eventManager *EventManager,
-    config *config.Config,
-    cleaner interfaces.ResourceCleaner,
-    modelService interfaces.ModelService,
+	eventManager *EventManager,
+	config *config.Config,
+	cleaner interfaces.ResourceCleaner,
+	modelService interfaces.ModelService,
 ) *PluginPreprocess {
 	// Use default dictionary for Jieba tokenizer
 	jieba := gojieba.NewJieba()
@@ -46,12 +46,12 @@ func NewPluginPreprocess(
 	// Load stopwords from built-in stopword library
 	stopwords := loadStopwords()
 
-    res := &PluginPreprocess{
-        config:    config,
-        jieba:     jieba,
-        stopwords: stopwords,
-        modelService: modelService,
-    }
+	res := &PluginPreprocess{
+		config:       config,
+		jieba:        jieba,
+		stopwords:    stopwords,
+		modelService: modelService,
+	}
 
 	// Register resource cleanup function
 	if cleaner != nil {
@@ -92,10 +92,10 @@ func (p *PluginPreprocess) ActivationEvents() []types.EventType {
 
 // OnEvent Process events
 func (p *PluginPreprocess) OnEvent(ctx context.Context, eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError) *PluginError {
-    rawQuery := strings.TrimSpace(chatManage.RewriteQuery)
-    if rawQuery == "" {
-        return next()
-    }
+	rawQuery := strings.TrimSpace(chatManage.RewriteQuery)
+	if rawQuery == "" {
+		return next()
+	}
 
 	pipelineInfo(ctx, "Preprocess", "input", map[string]interface{}{
 		"session_id":    chatManage.SessionID,
@@ -108,12 +108,12 @@ func (p *PluginPreprocess) OnEvent(ctx context.Context, eventType types.EventTyp
 		sanitized = normalized
 	}
 
-    var (
-        processed    = sanitized
-        strategy     = "original"
-        tokenPreview string
-        tokenCount   int
-    )
+	var (
+		processed    = sanitized
+		strategy     = "original"
+		tokenPreview string
+		tokenCount   int
+	)
 
 	switch {
 	case containsChineseCharacters(sanitized):
@@ -141,17 +141,17 @@ func (p *PluginPreprocess) OnEvent(ctx context.Context, eventType types.EventTyp
 		strategy = "fallback_original"
 	}
 
-    chatManage.ProcessedQuery = processed
-    chatManage.QueryIntent = p.detectIntentLLM(ctx, chatManage, sanitized)
+	chatManage.ProcessedQuery = processed
+	chatManage.QueryIntent = p.detectIntentLLM(ctx, chatManage, sanitized)
 
-    pipelineInfo(ctx, "Preprocess", "output", map[string]interface{}{
-        "session_id":      chatManage.SessionID,
-        "processed_query": processed,
-        "strategy":        strategy,
-        "token_count":     tokenCount,
-        "token_preview":   truncateForLog(tokenPreview),
-        "query_intent":    chatManage.QueryIntent,
-    })
+	pipelineInfo(ctx, "Preprocess", "output", map[string]interface{}{
+		"session_id":      chatManage.SessionID,
+		"processed_query": processed,
+		"strategy":        strategy,
+		"token_count":     tokenCount,
+		"token_preview":   tokenPreview,
+		"query_intent":    chatManage.QueryIntent,
+	})
 
 	return next()
 }
@@ -258,63 +258,63 @@ func normalizeWhitespace(text string) string {
 }
 
 func normalizeLatinQuery(text string) string {
-    text = strings.ToLower(text)
-    text = multiSpaceRegex.ReplaceAllString(text, " ")
-    return strings.TrimSpace(text)
+	text = strings.ToLower(text)
+	text = multiSpaceRegex.ReplaceAllString(text, " ")
+	return strings.TrimSpace(text)
 }
 
 type intentResp struct {
-    Intent     string  `json:"intent"`
-    Confidence float64 `json:"confidence"`
+	Intent     string  `json:"intent"`
+	Confidence float64 `json:"confidence"`
 }
 
 func (p *PluginPreprocess) detectIntentLLM(ctx context.Context, chatManage *types.ChatManage, text string) string {
-    if p.modelService == nil || chatManage.ChatModelID == "" {
-        pipelineWarn(ctx, "IntentDetect", "skip", map[string]interface{}{ "reason": "no_model", "session_id": chatManage.SessionID })
-        return "general"
-    }
-    chatModel, err := p.modelService.GetChatModel(ctx, chatManage.ChatModelID)
-    if err != nil {
-        pipelineWarn(ctx, "IntentDetect", "get_model_failed", map[string]interface{}{ "error": err.Error(), "model_id": chatManage.ChatModelID })
-        return "general"
-    }
-    pipelineInfo(ctx, "IntentDetect", "start", map[string]interface{}{ "session_id": chatManage.SessionID, "model_id": chatManage.ChatModelID })
-    sys := "You are a query intent classifier. Classify the user's query into one of: definition, howto, compare, qa, general. Respond ONLY with a JSON object {\"intent\": \"...\", \"confidence\": 0.0 } inside a markdown fenced block."
-    usr := text
-    think := false
-    resp, err := chatModel.Chat(ctx, []chat.Message{
-        {Role: "system", Content: sys},
-        {Role: "user", Content: usr},
-    }, &chat.ChatOptions{Temperature: 0.0, MaxCompletionTokens: 64, Thinking: &think})
-    if err != nil || resp.Content == "" {
-        pipelineWarn(ctx, "IntentDetect", "model_call_failed", map[string]interface{}{ "error": err })
-        return "general"
-    }
-    body := extractJSONBody(resp.Content)
-    var ir intentResp
-    if err := json.Unmarshal([]byte(body), &ir); err != nil {
-        pipelineWarn(ctx, "IntentDetect", "parse_failed", map[string]interface{}{ "body": truncateForLog(body), "error": err.Error() })
-        return "general"
-    }
-    pipelineInfo(ctx, "IntentDetect", "result", map[string]interface{}{ "intent": ir.Intent, "confidence": ir.Confidence })
-    switch strings.ToLower(strings.TrimSpace(ir.Intent)) {
-    case "definition", "howto", "compare", "qa", "general":
-        return strings.ToLower(ir.Intent)
-    default:
-        return "general"
-    }
+	if p.modelService == nil || chatManage.ChatModelID == "" {
+		pipelineWarn(ctx, "IntentDetect", "skip", map[string]interface{}{"reason": "no_model", "session_id": chatManage.SessionID})
+		return "general"
+	}
+	chatModel, err := p.modelService.GetChatModel(ctx, chatManage.ChatModelID)
+	if err != nil {
+		pipelineWarn(ctx, "IntentDetect", "get_model_failed", map[string]interface{}{"error": err.Error(), "model_id": chatManage.ChatModelID})
+		return "general"
+	}
+	pipelineInfo(ctx, "IntentDetect", "start", map[string]interface{}{"session_id": chatManage.SessionID, "model_id": chatManage.ChatModelID})
+	sys := "You are a query intent classifier. Classify the user's query into one of: definition, howto, compare, qa, general. Respond ONLY with a JSON object {\"intent\": \"...\", \"confidence\": 0.0 } inside a markdown fenced block."
+	usr := text
+	think := false
+	resp, err := chatModel.Chat(ctx, []chat.Message{
+		{Role: "system", Content: sys},
+		{Role: "user", Content: usr},
+	}, &chat.ChatOptions{Temperature: 0.0, MaxCompletionTokens: 64, Thinking: &think})
+	if err != nil || resp.Content == "" {
+		pipelineWarn(ctx, "IntentDetect", "model_call_failed", map[string]interface{}{"error": err})
+		return "general"
+	}
+	body := extractJSONBody(resp.Content)
+	var ir intentResp
+	if err := json.Unmarshal([]byte(body), &ir); err != nil {
+		pipelineWarn(ctx, "IntentDetect", "parse_failed", map[string]interface{}{"body": body, "error": err.Error()})
+		return "general"
+	}
+	pipelineInfo(ctx, "IntentDetect", "result", map[string]interface{}{"intent": ir.Intent, "confidence": ir.Confidence})
+	switch strings.ToLower(strings.TrimSpace(ir.Intent)) {
+	case "definition", "howto", "compare", "qa", "general":
+		return strings.ToLower(ir.Intent)
+	default:
+		return "general"
+	}
 }
 
 func extractJSONBody(text string) string {
-    t := strings.TrimSpace(text)
-    // Try fenced block first
-    if i := strings.Index(t, "{"); i >= 0 {
-        j := strings.LastIndex(t, "}")
-        if j > i {
-            return t[i : j+1]
-        }
-    }
-    return "{}"
+	t := strings.TrimSpace(text)
+	// Try fenced block first
+	if i := strings.Index(t, "{"); i >= 0 {
+		j := strings.LastIndex(t, "}")
+		if j > i {
+			return t[i : j+1]
+		}
+	}
+	return "{}"
 }
 
 // Ensure resources are properly released

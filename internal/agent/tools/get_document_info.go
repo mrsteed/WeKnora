@@ -12,12 +12,14 @@ import (
 // GetDocumentInfoTool retrieves detailed information about a document/knowledge
 type GetDocumentInfoTool struct {
 	BaseTool
+	tenantID         uint
 	knowledgeService interfaces.KnowledgeService
 	chunkService     interfaces.ChunkService
 }
 
 // NewGetDocumentInfoTool creates a new get document info tool
 func NewGetDocumentInfoTool(
+	tenantID uint,
 	knowledgeService interfaces.KnowledgeService,
 	chunkService interfaces.ChunkService,
 ) *GetDocumentInfoTool {
@@ -52,6 +54,7 @@ Do not use when:
 
 	return &GetDocumentInfoTool{
 		BaseTool:         NewBaseTool("get_document_info", description),
+		tenantID:         tenantID,
 		knowledgeService: knowledgeService,
 		chunkService:     chunkService,
 	}
@@ -119,7 +122,7 @@ func (t *GetDocumentInfoTool) Execute(ctx context.Context, args map[string]inter
 			defer wg.Done()
 
 			// Get knowledge metadata
-			knowledge, err := t.knowledgeService.GetKnowledgeByID(ctx, id)
+			knowledge, err := t.knowledgeService.GetRepository().GetKnowledgeByID(ctx, t.tenantID, id)
 			if err != nil {
 				mu.Lock()
 				results[id] = &docInfo{
@@ -130,7 +133,7 @@ func (t *GetDocumentInfoTool) Execute(ctx context.Context, args map[string]inter
 			}
 
 			// Get chunk count
-			chunks, err := t.chunkService.ListChunksByKnowledgeID(ctx, id)
+			chunks, err := t.chunkService.GetRepository().ListChunksByKnowledgeID(ctx, t.tenantID, id)
 			chunkCount := 0
 			if err == nil {
 				chunkCount = len(chunks)
@@ -217,24 +220,24 @@ func (t *GetDocumentInfoTool) Execute(ctx context.Context, args map[string]inter
 		output += "\n"
 
 		formattedDocs = append(formattedDocs, map[string]interface{}{
-			"knowledge_id": k.ID,
-			"title":        k.Title,
-			"description":  k.Description,
-			"type":         k.Type,
-			"source":       k.Source,
-			"file_name":    k.FileName,
-			"file_type":    k.FileType,
-			"file_size":    k.FileSize,
-			"parse_status": k.ParseStatus,
-			"chunk_count":  doc.chunkCount,
-			"metadata":     k.GetMetadata(),
-			"type_icon":    typeIcon,
+			"knowledge_id":    k.ID,
+			"title":           k.Title,
+			"description":     k.Description,
+			"type":            k.Type,
+			"source":          k.Source,
+			"file_name":       k.FileName,
+			"file_type":       k.FileType,
+			"file_size":       k.FileSize,
+			"parse_status":    k.ParseStatus,
+			"chunk_count_min": doc.chunkCount,
+			"metadata":        k.GetMetadata(),
+			"type_icon":       typeIcon,
 		})
 	}
 
 	output += "=== Usage Tips ===\n"
 	output += "- Use knowledge_search to search document content\n"
-	output += "- Use get_related_chunks to view context and related chunks\n"
+	output += "- Use list_knowledge_chunks to view context and related chunks\n"
 	output += "- Search results already contain full chunk content\n"
 
 	// Extract first document title for summary

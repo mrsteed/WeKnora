@@ -66,7 +66,7 @@ func (p *PluginChatCompletion) OnEvent(
 	}
 
 	pipelineInfo(ctx, "Completion", "output", map[string]interface{}{
-		"answer_preview":    truncateForLog(chatResponse.Content),
+		"answer_preview":    chatResponse.Content,
 		"finish_reason":     chatResponse.FinishReason,
 		"completion_tokens": chatResponse.Usage.CompletionTokens,
 		"prompt_tokens":     chatResponse.Usage.PromptTokens,

@@ -1343,7 +1343,10 @@ export default {
       hintSuffix: 'will show available placeholders automatically',
       custom: 'Custom Prompt',
       disabledHint: 'Currently using the default prompt. Enable custom to apply the content below.',
-      placeholder: 'Enter the system prompt, or leave blank to use the default...'
+      placeholder: 'Enter the system prompt, or leave blank to use the default...',
+      tabHint: 'Configure separate prompts for sessions with web search on or off.',
+      tabWebOn: 'Web search enabled',
+      tabWebOff: 'Web search disabled'
     },
     reset: {
       header: 'Reset to Default Prompt',

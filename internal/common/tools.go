@@ -1,12 +1,18 @@
 package common
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"regexp"
 	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/Tencent/WeKnora/internal/logger"
 )
 
 // ToInterfaceSlice converts a slice of strings to a slice of empty interfaces.
@@ -131,4 +137,84 @@ func CleanInvalidUTF8(s string) string {
 	}
 
 	return b.String()
+}
+
+const (
+	pipelineLogValueMaxRune = 300
+	defaultPipelineStage    = "PIPELINE"
+	defaultPipelineAction   = "info"
+	pipelineLogPrefix       = "[PIPELINE]"
+	pipelineTruncateEll     = "..."
+)
+
+// PipelineLog builds a structured pipeline log string.
+func PipelineLog(stage, action string, fields map[string]interface{}) string {
+	if stage == "" {
+		stage = defaultPipelineStage
+	}
+	if action == "" {
+		action = defaultPipelineAction
+	}
+
+	builder := strings.Builder{}
+	builder.Grow(128)
+	builder.WriteString(pipelineLogPrefix)
+	builder.WriteString(" stage=")
+	builder.WriteString(stage)
+	builder.WriteString(" action=")
+	builder.WriteString(action)
+
+	if len(fields) > 0 {
+		keys := make([]string, 0, len(fields))
+		for k := range fields {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			builder.WriteString(" ")
+			builder.WriteString(key)
+			builder.WriteString("=")
+			builder.WriteString(formatPipelineLogValue(fields[key]))
+		}
+	}
+	return builder.String()
+}
+
+// PipelineInfo logs pipeline info level entries.
+func PipelineInfo(ctx context.Context, stage, action string, fields map[string]interface{}) {
+	logger.GetLogger(ctx).Info(PipelineLog(stage, action, fields))
+}
+
+// PipelineWarn logs pipeline warning level entries.
+func PipelineWarn(ctx context.Context, stage, action string, fields map[string]interface{}) {
+	logger.GetLogger(ctx).Warn(PipelineLog(stage, action, fields))
+}
+
+// PipelineError logs pipeline error level entries.
+func PipelineError(ctx context.Context, stage, action string, fields map[string]interface{}) {
+	logger.GetLogger(ctx).Error(PipelineLog(stage, action, fields))
+}
+
+func formatPipelineLogValue(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return strconv.Quote(truncatePipelineValue(v))
+	case fmt.Stringer:
+		return strconv.Quote(truncatePipelineValue(v.String()))
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func truncatePipelineValue(content string) string {
+	content = strings.ReplaceAll(content, "\n", "\\n")
+	runes := []rune(content)
+	if len(runes) <= pipelineLogValueMaxRune {
+		return content
+	}
+	return string(runes[:pipelineLogValueMaxRune]) + pipelineTruncateEll
+}
+
+func TruncateForLog(content string) string {
+	return truncatePipelineValue(content)
 }

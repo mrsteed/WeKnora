@@ -121,7 +121,7 @@ func (t *SequentialThinkingTool) Parameters() map[string]interface{} {
 			"totalThoughts": map[string]interface{}{
 				"type":        "integer",
 				"description": "Estimated total thoughts needed (numeric value, e.g., 5, 10)",
-				"minimum":     1,
+				"minimum":     5,
 			},
 			"isRevision": map[string]interface{}{
 				"type":        "boolean",
@@ -188,6 +188,8 @@ func (t *SequentialThinkingTool) Execute(ctx context.Context, args map[string]in
 		branchKeys = append(branchKeys, k)
 	}
 
+	incomplete := thoughtData.NextThoughtNeeded || thoughtData.NeedsMoreThoughts || thoughtData.ThoughtNumber < thoughtData.TotalThoughts
+
 	responseData := map[string]interface{}{
 		"thought_number":         thoughtData.ThoughtNumber,
 		"total_thoughts":         thoughtData.TotalThoughts,
@@ -196,13 +198,19 @@ func (t *SequentialThinkingTool) Execute(ctx context.Context, args map[string]in
 		"thought_history_length": len(t.thoughtHistory),
 		"display_type":           "thinking",
 		"thought":                thoughtData.Thought,
+		"incomplete_steps":       incomplete,
 	}
 
 	logger.Infof(ctx, "[Tool][SequentialThinking] Execute completed - Thought %d/%d", thoughtData.ThoughtNumber, thoughtData.TotalThoughts)
 
+	outputMsg := "Thought process recorded"
+	if incomplete {
+		outputMsg = "Thought process recorded - unfinished steps remain, continue exploring and calling tools"
+	}
+
 	return &types.ToolResult{
 		Success: true,
-		Output:  "Thought process recorded",
+		Output:  outputMsg,
 		Data:    responseData,
 	}, nil
 }

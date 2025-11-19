@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
@@ -26,7 +27,6 @@ type AgentEngine struct {
 	config               *types.AgentConfig
 	toolRegistry         *tools.ToolRegistry
 	chatModel            chat.Chat
-	knowledgeService     interfaces.KnowledgeBaseService
 	eventBus             *event.EventBus
 	knowledgeBasesInfo   []*KnowledgeBaseInfo      // Detailed knowledge base information for prompt
 	contextManager       interfaces.ContextManager // Context manager for writing agent conversation to LLM context
@@ -48,7 +48,6 @@ func NewAgentEngine(
 	config *types.AgentConfig,
 	chatModel chat.Chat,
 	toolRegistry *tools.ToolRegistry,
-	knowledgeService interfaces.KnowledgeBaseService,
 	eventBus *event.EventBus,
 	knowledgeBasesInfo []*KnowledgeBaseInfo,
 	contextManager interfaces.ContextManager,
@@ -62,7 +61,6 @@ func NewAgentEngine(
 		config:               config,
 		toolRegistry:         toolRegistry,
 		chatModel:            chatModel,
-		knowledgeService:     knowledgeService,
 		eventBus:             eventBus,
 		knowledgeBasesInfo:   knowledgeBasesInfo,
 		contextManager:       contextManager,
@@ -78,6 +76,12 @@ func (e *AgentEngine) Execute(ctx context.Context, sessionID, messageID, query s
 	logger.Infof(ctx, "[Agent] SessionID: %s, MessageID: %s", sessionID, messageID)
 	logger.Infof(ctx, "[Agent] User Query: %s", query)
 	logger.Infof(ctx, "[Agent] LLM Context Messages: %d", len(llmContext))
+	common.PipelineInfo(ctx, "Agent", "execute_start", map[string]interface{}{
+		"session_id":   sessionID,
+		"message_id":   messageID,
+		"query":        query,
+		"context_msgs": len(llmContext),
+	})
 
 	// Initialize state
 	state := &types.AgentState{
@@ -87,8 +91,8 @@ func (e *AgentEngine) Execute(ctx context.Context, sessionID, messageID, query s
 		CurrentRound:  0,
 	}
 
-	// Build system prompt
-	systemPrompt := BuildReActSystemPromptWithStatus(e.knowledgeBasesInfo, e.config.WebSearchEnabled, e.systemPromptTemplate)
+	// Build system prompt using progressive RAG prompt
+	systemPrompt := BuildProgressiveRAGSystemPrompt(e.knowledgeBasesInfo, e.config.WebSearchEnabled, e.systemPromptTemplate)
 	logger.Debugf(ctx, "[Agent] SystemPrompt Length: %d characters", len(systemPrompt))
 	logger.Debugf(ctx, "[Agent] SystemPrompt (stream)\n----\n%s\n----", systemPrompt)
 
@@ -99,7 +103,13 @@ func (e *AgentEngine) Execute(ctx context.Context, sessionID, messageID, query s
 
 	// Get tool definitions for function calling
 	tools := e.buildToolsForLLM()
-	logger.Infof(ctx, "[Agent] Tools enabled (%d): %s", len(tools), strings.Join(listToolNames(tools), ", "))
+	toolListStr := strings.Join(listToolNames(tools), ", ")
+	logger.Infof(ctx, "[Agent] Tools enabled (%d): %s", len(tools), toolListStr)
+	common.PipelineInfo(ctx, "Agent", "tools_ready", map[string]interface{}{
+		"session_id": sessionID,
+		"tool_count": len(tools),
+		"tools":      toolListStr,
+	})
 
 	_, err := e.executeLoop(ctx, state, query, messages, tools, sessionID, messageID)
 	if err != nil {
@@ -120,6 +130,12 @@ func (e *AgentEngine) Execute(ctx context.Context, sessionID, messageID, query s
 	logger.Infof(ctx, "========== Agent Execution Completed Successfully ==========")
 	logger.Infof(ctx, "[Agent] Total rounds: %d, Round steps: %d, Is complete: %v",
 		state.CurrentRound, len(state.RoundSteps), state.IsComplete)
+	common.PipelineInfo(ctx, "Agent", "execute_complete", map[string]interface{}{
+		"session_id": sessionID,
+		"rounds":     state.CurrentRound,
+		"steps":      len(state.RoundSteps),
+		"complete":   state.IsComplete,
+	})
 	return state, nil
 }
 
@@ -135,18 +151,44 @@ func (e *AgentEngine) executeLoop(
 	messageID string,
 ) (*types.AgentState, error) {
 	startTime := time.Now()
+	common.PipelineInfo(ctx, "Agent", "loop_start", map[string]interface{}{
+		"max_iterations": e.config.MaxIterations,
+	})
 	for state.CurrentRound < e.config.MaxIterations {
 		roundStart := time.Now()
 		logger.Infof(ctx, "========== Round %d/%d Started ==========", state.CurrentRound+1, e.config.MaxIterations)
 		logger.Infof(ctx, "[Agent][Round-%d] Message history size: %d messages", state.CurrentRound+1, len(messages))
+		common.PipelineInfo(ctx, "Agent", "round_start", map[string]interface{}{
+			"iteration":      state.CurrentRound,
+			"round":          state.CurrentRound + 1,
+			"message_count":  len(messages),
+			"pending_tools":  len(tools),
+			"max_iterations": e.config.MaxIterations,
+		})
 
 		// 1. Think: Call LLM with function calling and stream thinking through EventBus
 		logger.Infof(ctx, "[Agent][Round-%d] Calling LLM with %d tools available...", state.CurrentRound+1, len(tools))
+		common.PipelineInfo(ctx, "Agent", "think_start", map[string]interface{}{
+			"iteration": state.CurrentRound,
+			"round":     state.CurrentRound + 1,
+			"tool_cnt":  len(tools),
+		})
 		response, err := e.streamThinkingToEventBus(ctx, messages, tools, state.CurrentRound, sessionID)
 		if err != nil {
 			logger.Errorf(ctx, "[Agent][Round-%d] LLM call failed: %v", state.CurrentRound+1, err)
+			common.PipelineError(ctx, "Agent", "think_failed", map[string]interface{}{
+				"iteration": state.CurrentRound,
+				"error":     err.Error(),
+			})
 			return state, fmt.Errorf("LLM call failed: %w", err)
 		}
+
+		common.PipelineInfo(ctx, "Agent", "think_result", map[string]interface{}{
+			"iteration":     state.CurrentRound,
+			"finish_reason": response.FinishReason,
+			"tool_calls":    len(response.ToolCalls),
+			"content_len":   len(response.Content),
+		})
 
 		// Debug: log finish reason and tool call count from LLM
 		logger.Infof(ctx, "[Agent][Round-%d] LLM response received: finish_reason=%s, tool_calls=%d, content_length=%d",
@@ -168,6 +210,11 @@ func (e *AgentEngine) executeLoop(
 		if response.FinishReason == "stop" && len(response.ToolCalls) == 0 {
 			logger.Infof(ctx, "[Agent][Round-%d] Agent finished - no more tool calls needed", state.CurrentRound+1)
 			logger.Infof(ctx, "[Agent] Final answer length: %d characters", len(response.Content))
+			common.PipelineInfo(ctx, "Agent", "round_final_answer", map[string]interface{}{
+				"iteration":  state.CurrentRound,
+				"round":      state.CurrentRound + 1,
+				"answer_len": len(response.Content),
+			})
 			state.FinalAnswer = response.Content
 			state.IsComplete = true
 			state.RoundSteps = append(state.RoundSteps, step)
@@ -223,6 +270,13 @@ func (e *AgentEngine) executeLoop(
 				// Execute tool
 				logger.Infof(ctx, "[Agent][Round-%d][Tool-%d/%d] Executing tool: %s...",
 					state.CurrentRound+1, i+1, len(response.ToolCalls), tc.Function.Name)
+				common.PipelineInfo(ctx, "Agent", "tool_call_start", map[string]interface{}{
+					"iteration":    state.CurrentRound,
+					"round":        state.CurrentRound + 1,
+					"tool":         tc.Function.Name,
+					"tool_call_id": tc.ID,
+					"tool_index":   fmt.Sprintf("%d/%d", i+1, len(response.ToolCalls)),
+				})
 				result, err := e.toolRegistry.ExecuteTool(ctx, tc.Function.Name, args)
 				duration := time.Since(toolCallStartTime).Milliseconds()
 				logger.Infof(ctx, "[Agent][Round-%d][Tool-%d/%d] Tool execution completed in %dms",
@@ -243,6 +297,26 @@ func (e *AgentEngine) executeLoop(
 						Success: false,
 						Error:   err.Error(),
 					}
+				}
+
+				toolSuccess := toolCall.Result != nil && toolCall.Result.Success
+				pipelineFields := map[string]interface{}{
+					"iteration":    state.CurrentRound,
+					"round":        state.CurrentRound + 1,
+					"tool":         tc.Function.Name,
+					"tool_call_id": tc.ID,
+					"duration_ms":  duration,
+					"success":      toolSuccess,
+				}
+				if toolCall.Result != nil && toolCall.Result.Error != "" {
+					pipelineFields["error"] = toolCall.Result.Error
+				}
+				if err != nil {
+					common.PipelineError(ctx, "Agent", "tool_call_result", pipelineFields)
+				} else if toolSuccess {
+					common.PipelineInfo(ctx, "Agent", "tool_call_result", pipelineFields)
+				} else {
+					common.PipelineWarn(ctx, "Agent", "tool_call_result", pipelineFields)
 				}
 
 				if toolCall.Result != nil {
@@ -335,6 +409,12 @@ func (e *AgentEngine) executeLoop(
 		state.RoundSteps = append(state.RoundSteps, step)
 		// 4. Observe: Add tool results to messages and write to context
 		messages = e.appendToolResults(ctx, messages, step)
+		common.PipelineInfo(ctx, "Agent", "round_end", map[string]interface{}{
+			"iteration":   state.CurrentRound,
+			"round":       state.CurrentRound + 1,
+			"tool_calls":  len(step.ToolCalls),
+			"thought_len": len(step.Thought),
+		})
 		// 5. Check if we should continue
 		state.CurrentRound++
 	}
@@ -342,10 +422,17 @@ func (e *AgentEngine) executeLoop(
 	// If loop finished without final answer, generate one
 	if !state.IsComplete {
 		logger.Info(ctx, "Reached max iterations, generating final answer")
+		common.PipelineWarn(ctx, "Agent", "max_iterations_reached", map[string]interface{}{
+			"iterations": state.CurrentRound,
+			"max":        e.config.MaxIterations,
+		})
 
 		// Stream final answer generation through EventBus
 		if err := e.streamFinalAnswerToEventBus(ctx, query, state, sessionID); err != nil {
 			logger.Errorf(ctx, "Failed to synthesize final answer: %v", err)
+			common.PipelineError(ctx, "Agent", "final_answer_failed", map[string]interface{}{
+				"error": err.Error(),
+			})
 			state.FinalAnswer = "抱歉，我无法生成完整的答案。"
 		}
 		state.IsComplete = true
@@ -648,8 +735,15 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	sessionID string,
 ) error {
 	logger.Infof(ctx, "[Agent][FinalAnswer] Starting final answer generation")
+	totalToolCalls := countTotalToolCalls(state.RoundSteps)
 	logger.Infof(ctx, "[Agent][FinalAnswer] Context: %d steps with total %d tool calls",
-		len(state.RoundSteps), countTotalToolCalls(state.RoundSteps))
+		len(state.RoundSteps), totalToolCalls)
+	common.PipelineInfo(ctx, "Agent", "final_answer_start", map[string]interface{}{
+		"session_id":   sessionID,
+		"query":        query,
+		"steps":        len(state.RoundSteps),
+		"tool_results": totalToolCalls,
+	})
 
 	// Build messages with all context
 	systemPrompt := BuildReActSystemPromptWithStatus(e.knowledgeBasesInfo, e.config.WebSearchEnabled, e.systemPromptTemplate)
@@ -720,10 +814,18 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 
 	if err != nil {
 		logger.Errorf(ctx, "[Agent][FinalAnswer] Final answer generation failed: %v", err)
+		common.PipelineError(ctx, "Agent", "final_answer_stream_failed", map[string]interface{}{
+			"session_id": sessionID,
+			"error":      err.Error(),
+		})
 		return err
 	}
 
 	logger.Infof(ctx, "[Agent][FinalAnswer] Final answer generated: %d characters", len(fullAnswer))
+	common.PipelineInfo(ctx, "Agent", "final_answer_done", map[string]interface{}{
+		"session_id": sessionID,
+		"answer_len": len(fullAnswer),
+	})
 	state.FinalAnswer = fullAnswer
 	return nil
 }

@@ -1,17 +1,18 @@
 package chatpipline
 
 import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "strings"
-    "sync"
-    "time"
+	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+	"sync"
+	"time"
 
-    "github.com/Tencent/WeKnora/internal/config"
-    "github.com/Tencent/WeKnora/internal/models/chat"
-    "github.com/Tencent/WeKnora/internal/types"
-    "github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // PluginSearch implements search functionality for chat pipeline
@@ -54,7 +55,7 @@ func (p *PluginSearch) ActivationEvents() []types.EventType {
 
 // OnEvent handles search events in the chat pipeline
 func (p *PluginSearch) OnEvent(ctx context.Context,
-    eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
+	eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
 ) *PluginError {
 	// Get knowledge base IDs list
 	knowledgeBaseIDs := chatManage.KnowledgeBaseIDs
@@ -117,85 +118,85 @@ func (p *PluginSearch) OnEvent(ctx context.Context,
 		}
 	}()
 
-    wg.Wait()
+	wg.Wait()
 
-    chatManage.SearchResult = allResults
+	chatManage.SearchResult = allResults
 
-    // If recall is low, attempt query expansion with keyword-focused search
-    if len(chatManage.SearchResult) < max(1, chatManage.EmbeddingTopK/2) {
-        pipelineInfo(ctx, "Search", "recall_low", map[string]interface{}{
-            "current": len(chatManage.SearchResult),
-            "threshold": chatManage.EmbeddingTopK / 2,
-        })
-        expansions := p.expandQueries(ctx, chatManage)
-        if len(expansions) > 0 {
-            pipelineInfo(ctx, "Search", "expansion_start", map[string]interface{}{
-                "variants": len(expansions),
-            })
-            expTopK := max(chatManage.EmbeddingTopK*2, chatManage.RerankTopK*2)
-            expKwTh := chatManage.KeywordThreshold * 0.8
-            // Concurrent expansion retrieval across queries and KBs
-            expResults := make([]*types.SearchResult, 0, expTopK*len(expansions))
-            var muExp sync.Mutex
-            var wgExp sync.WaitGroup
-            jobs := len(expansions) * len(knowledgeBaseIDs)
-            capSem := 16
-            if jobs < capSem {
-                capSem = jobs
-            }
-            if capSem <= 0 {
-                capSem = 1
-            }
-            sem := make(chan struct{}, capSem)
-            pipelineInfo(ctx, "Search", "expansion_concurrency", map[string]interface{}{
-                "jobs": jobs,
-                "cap":  capSem,
-            })
-            for _, q := range expansions {
-                for _, kbID := range knowledgeBaseIDs {
-                    wgExp.Add(1)
-                    go func(q string, kbID string) {
-                        defer wgExp.Done()
-                        sem <- struct{}{}
-                        defer func() { <-sem }()
-                        paramsExp := types.SearchParams{
-                            QueryText:            q,
-                            VectorThreshold:      chatManage.VectorThreshold,
-                            KeywordThreshold:     expKwTh,
-                            MatchCount:           expTopK,
-                            DisableVectorMatch:   true,
-                            DisableKeywordsMatch: false,
-                        }
-                        res, err := p.knowledgeBaseService.HybridSearch(ctx, kbID, paramsExp)
-                        if err != nil {
-                            pipelineWarn(ctx, "Search", "expansion_error", map[string]interface{}{
-                                "kb_id": kbID,
-                                "error": err.Error(),
-                            })
-                            return
-                        }
-                        if len(res) > 0 {
-                            pipelineInfo(ctx, "Search", "expansion_hits", map[string]interface{}{
-                                "kb_id": kbID,
-                                "query": truncateForLog(q),
-                                "hits":  len(res),
-                            })
-                            muExp.Lock()
-                            expResults = append(expResults, res...)
-                            muExp.Unlock()
-                        }
-                    }(q, kbID)
-                }
-            }
-            wgExp.Wait()
-            if len(expResults) > 0 {
-                pipelineInfo(ctx, "Search", "expansion_done", map[string]interface{}{
-                    "added": len(expResults),
-                })
-                chatManage.SearchResult = append(chatManage.SearchResult, expResults...)
-            }
-        }
-    }
+	// If recall is low, attempt query expansion with keyword-focused search
+	if len(chatManage.SearchResult) < max(1, chatManage.EmbeddingTopK/2) {
+		pipelineInfo(ctx, "Search", "recall_low", map[string]interface{}{
+			"current":   len(chatManage.SearchResult),
+			"threshold": chatManage.EmbeddingTopK / 2,
+		})
+		expansions := p.expandQueries(ctx, chatManage)
+		if len(expansions) > 0 {
+			pipelineInfo(ctx, "Search", "expansion_start", map[string]interface{}{
+				"variants": len(expansions),
+			})
+			expTopK := max(chatManage.EmbeddingTopK*2, chatManage.RerankTopK*2)
+			expKwTh := chatManage.KeywordThreshold * 0.8
+			// Concurrent expansion retrieval across queries and KBs
+			expResults := make([]*types.SearchResult, 0, expTopK*len(expansions))
+			var muExp sync.Mutex
+			var wgExp sync.WaitGroup
+			jobs := len(expansions) * len(knowledgeBaseIDs)
+			capSem := 16
+			if jobs < capSem {
+				capSem = jobs
+			}
+			if capSem <= 0 {
+				capSem = 1
+			}
+			sem := make(chan struct{}, capSem)
+			pipelineInfo(ctx, "Search", "expansion_concurrency", map[string]interface{}{
+				"jobs": jobs,
+				"cap":  capSem,
+			})
+			for _, q := range expansions {
+				for _, kbID := range knowledgeBaseIDs {
+					wgExp.Add(1)
+					go func(q string, kbID string) {
+						defer wgExp.Done()
+						sem <- struct{}{}
+						defer func() { <-sem }()
+						paramsExp := types.SearchParams{
+							QueryText:            q,
+							VectorThreshold:      chatManage.VectorThreshold,
+							KeywordThreshold:     expKwTh,
+							MatchCount:           expTopK,
+							DisableVectorMatch:   true,
+							DisableKeywordsMatch: false,
+						}
+						res, err := p.knowledgeBaseService.HybridSearch(ctx, kbID, paramsExp)
+						if err != nil {
+							pipelineWarn(ctx, "Search", "expansion_error", map[string]interface{}{
+								"kb_id": kbID,
+								"error": err.Error(),
+							})
+							return
+						}
+						if len(res) > 0 {
+							pipelineInfo(ctx, "Search", "expansion_hits", map[string]interface{}{
+								"kb_id": kbID,
+								"query": q,
+								"hits":  len(res),
+							})
+							muExp.Lock()
+							expResults = append(expResults, res...)
+							muExp.Unlock()
+						}
+					}(q, kbID)
+				}
+			}
+			wgExp.Wait()
+			if len(expResults) > 0 {
+				pipelineInfo(ctx, "Search", "expansion_done", map[string]interface{}{
+					"added": len(expResults),
+				})
+				chatManage.SearchResult = append(chatManage.SearchResult, expResults...)
+			}
+		}
+	}
 
 	// Add relevant results from chat history
 	historyResult := p.getSearchResultFromHistory(chatManage)
@@ -207,13 +208,13 @@ func (p *PluginSearch) OnEvent(ctx context.Context,
 		chatManage.SearchResult = append(chatManage.SearchResult, historyResult...)
 	}
 
-    // Remove duplicate results
-    before := len(chatManage.SearchResult)
-    chatManage.SearchResult = removeDuplicateResults(chatManage.SearchResult)
-    pipelineInfo(ctx, "Search", "dedup_summary", map[string]interface{}{
-        "before": before,
-        "after":  len(chatManage.SearchResult),
-    })
+	// Remove duplicate results
+	before := len(chatManage.SearchResult)
+	chatManage.SearchResult = removeDuplicateResults(chatManage.SearchResult)
+	pipelineInfo(ctx, "Search", "dedup_summary", map[string]interface{}{
+		"before": before,
+		"after":  len(chatManage.SearchResult),
+	})
 
 	// Return if we have results
 	if len(chatManage.SearchResult) != 0 {
@@ -249,52 +250,52 @@ func (p *PluginSearch) getSearchResultFromHistory(chatManage *types.ChatManage) 
 }
 
 func removeDuplicateResults(results []*types.SearchResult) []*types.SearchResult {
-    seen := make(map[string]bool)
-    contentSig := make(map[string]bool)
-    var uniqueResults []*types.SearchResult
-    for _, r := range results {
-        keys := []string{r.ID}
-        if r.ParentChunkID != "" {
-            keys = append(keys, "parent:"+r.ParentChunkID)
-        }
-        if r.KnowledgeID != "" {
-            keys = append(keys, fmt.Sprintf("kb:%s#%d", r.KnowledgeID, r.ChunkIndex))
-        }
-        dup := false
-        for _, k := range keys {
-            if seen[k] {
-                dup = true
-                break
-            }
-        }
-        if dup {
-            continue
-        }
-        sig := buildContentSignature(r.Content)
-        if sig != "" {
-            if contentSig[sig] {
-                continue
-            }
-            contentSig[sig] = true
-        }
-        for _, k := range keys {
-            seen[k] = true
-        }
-        uniqueResults = append(uniqueResults, r)
-    }
-    return uniqueResults
+	seen := make(map[string]bool)
+	contentSig := make(map[string]bool)
+	var uniqueResults []*types.SearchResult
+	for _, r := range results {
+		keys := []string{r.ID}
+		if r.ParentChunkID != "" {
+			keys = append(keys, "parent:"+r.ParentChunkID)
+		}
+		if r.KnowledgeID != "" {
+			keys = append(keys, fmt.Sprintf("kb:%s#%d", r.KnowledgeID, r.ChunkIndex))
+		}
+		dup := false
+		for _, k := range keys {
+			if seen[k] {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		sig := buildContentSignature(r.Content)
+		if sig != "" {
+			if contentSig[sig] {
+				continue
+			}
+			contentSig[sig] = true
+		}
+		for _, k := range keys {
+			seen[k] = true
+		}
+		uniqueResults = append(uniqueResults, r)
+	}
+	return uniqueResults
 }
 
 func buildContentSignature(content string) string {
-    c := strings.ToLower(strings.TrimSpace(content))
-    if c == "" {
-        return ""
-    }
-    c = strings.Join(strings.Fields(c), " ")
-    if len(c) > 128 {
-        c = c[:128]
-    }
-    return c
+	c := strings.ToLower(strings.TrimSpace(content))
+	if c == "" {
+		return ""
+	}
+	c = strings.Join(strings.Fields(c), " ")
+	if len(c) > 128 {
+		c = c[:128]
+	}
+	return c
 }
 
 // searchKnowledgeBases performs KB searches for rewrite and processed queries across KB IDs
@@ -374,6 +375,9 @@ func (p *PluginSearch) searchKnowledgeBases(ctx context.Context, knowledgeBaseID
 		}
 		wg.Wait()
 	}
+
+	// Normalize keyword retriever scores after collecting all results from multiple knowledge bases
+	normalizeKeywordSearchResults(ctx, results)
 
 	pipelineInfo(ctx, "Search", "kb_result_summary", map[string]interface{}{
 		"total_hits": len(results),
@@ -472,8 +476,8 @@ func convertWebSearchResults(webResults []*types.WebSearchResult) []*types.Searc
 			ChunkIndex:     0,
 			KnowledgeTitle: webResult.Title,
 			StartAt:        0,
-			EndAt:          len(content),
-			Seq:            i,
+			EndAt:          runeLen(content),
+			Seq:            1,
 			Score:          score,
 			MatchType:      types.MatchTypeWebSearch,
 			SubChunkID:     []string{},
@@ -483,7 +487,7 @@ func convertWebSearchResults(webResults []*types.WebSearchResult) []*types.Searc
 				"title":   webResult.Title,
 				"snippet": webResult.Snippet,
 			},
-			ChunkType:         "web_search",
+			ChunkType:         string(types.ChunkTypeWebSearch),
 			ParentChunkID:     "",
 			ImageInfo:         "",
 			KnowledgeFilename: "",
@@ -500,79 +504,193 @@ func convertWebSearchResults(webResults []*types.WebSearchResult) []*types.Searc
 
 	return results
 }
+
 // expandQueries generates paraphrases and synonyms using chat model to improve keyword recall
 func (p *PluginSearch) expandQueries(ctx context.Context, chatManage *types.ChatManage) []string {
-    if p.modelService == nil || chatManage.ChatModelID == "" {
-        pipelineWarn(ctx, "Search", "expansion_skip", map[string]interface{}{
-            "reason": "no_model",
-        })
-        return nil
-    }
-    model, err := p.modelService.GetChatModel(ctx, chatManage.ChatModelID)
-    if err != nil {
-        pipelineWarn(ctx, "Search", "expansion_get_model_failed", map[string]interface{}{
-            "error": err.Error(),
-        })
-        return nil
-    }
-    sys := "Generate up to 5 diverse paraphrases or keyword variants for the user query to improve keyword-based search recall. Respond ONLY with a JSON array of strings inside a fenced code block."
-    usr := chatManage.RewriteQuery
-    think := false
-    resp, err := model.Chat(ctx, []chat.Message{{Role: "system", Content: sys}, {Role: "user", Content: usr}}, &chat.ChatOptions{Temperature: 0.2, MaxCompletionTokens: 80, Thinking: &think})
-    if err != nil || resp.Content == "" {
-        pipelineWarn(ctx, "Search", "expansion_model_call_failed", map[string]interface{}{
-            "error": err,
-        })
-        return nil
-    }
-    body := extractJSONBlock(resp.Content)
-    var arr []string
-    if err := json.Unmarshal([]byte(body), &arr); err != nil || len(arr) == 0 {
-        // Fallback: split lines
-        lines := strings.Split(resp.Content, "\n")
-        for _, l := range lines {
-            l = strings.TrimSpace(l)
-            if l != "" {
-                arr = append(arr, l)
-            }
-        }
-    }
-    uniq := make(map[string]struct{})
-    base := []string{chatManage.Query, chatManage.RewriteQuery, chatManage.ProcessedQuery}
-    for _, b := range base {
-        if s := strings.TrimSpace(b); s != "" {
-            uniq[strings.ToLower(s)] = struct{}{}
-        }
-    }
-    expansions := make([]string, 0, len(arr))
-    for _, a := range arr {
-        s := strings.TrimSpace(a)
-        if s == "" {
-            continue
-        }
-        key := strings.ToLower(s)
-        if _, ok := uniq[key]; ok {
-            continue
-        }
-        uniq[key] = struct{}{}
-        expansions = append(expansions, s)
-        if len(expansions) >= 5 {
-            break
-        }
-    }
-    pipelineInfo(ctx, "Search", "expansion_result", map[string]interface{}{
-        "variants": len(expansions),
-    })
-    return expansions
+	if p.modelService == nil || chatManage.ChatModelID == "" {
+		pipelineWarn(ctx, "Search", "expansion_skip", map[string]interface{}{
+			"reason": "no_model",
+		})
+		return nil
+	}
+	model, err := p.modelService.GetChatModel(ctx, chatManage.ChatModelID)
+	if err != nil {
+		pipelineWarn(ctx, "Search", "expansion_get_model_failed", map[string]interface{}{
+			"error": err.Error(),
+		})
+		return nil
+	}
+	sys := "Generate up to 5 diverse paraphrases or keyword variants for the user query to improve keyword-based search recall. Respond ONLY with a JSON array of strings inside a fenced code block."
+	usr := chatManage.RewriteQuery
+	think := false
+	resp, err := model.Chat(ctx, []chat.Message{
+		{Role: "system", Content: sys},
+		{Role: "user", Content: usr},
+	}, &chat.ChatOptions{Temperature: 0.2, MaxCompletionTokens: 200, Thinking: &think})
+	if err != nil || resp.Content == "" {
+		pipelineWarn(ctx, "Search", "expansion_model_call_failed", map[string]interface{}{
+			"error": err,
+		})
+		return nil
+	}
+	body := extractJSONBlock(resp.Content)
+	var arr []string
+	if err := json.Unmarshal([]byte(body), &arr); err != nil || len(arr) == 0 {
+		// Fallback: split lines
+		lines := strings.Split(resp.Content, "\n")
+		for _, l := range lines {
+			l = strings.TrimSpace(l)
+			if l != "" {
+				arr = append(arr, l)
+			}
+		}
+	}
+	uniq := make(map[string]struct{})
+	base := []string{chatManage.Query, chatManage.RewriteQuery, chatManage.ProcessedQuery}
+	for _, b := range base {
+		if s := strings.TrimSpace(b); s != "" {
+			uniq[strings.ToLower(s)] = struct{}{}
+		}
+	}
+	expansions := make([]string, 0, len(arr))
+	for _, a := range arr {
+		s := strings.TrimSpace(a)
+		if s == "" {
+			continue
+		}
+		key := strings.ToLower(s)
+		if _, ok := uniq[key]; ok {
+			continue
+		}
+		uniq[key] = struct{}{}
+		expansions = append(expansions, s)
+		if len(expansions) >= 5 {
+			break
+		}
+	}
+	pipelineInfo(ctx, "Search", "expansion_result", map[string]interface{}{
+		"variants": len(expansions),
+	})
+	return expansions
 }
 
 func extractJSONBlock(text string) string {
-    t := strings.TrimSpace(text)
-    if i := strings.Index(t, "["); i >= 0 {
-        j := strings.LastIndex(t, "]")
-        if j > i {
-            return t[i : j+1]
-        }
-    }
-    return "[]"
+	t := strings.TrimSpace(text)
+	if i := strings.Index(t, "["); i >= 0 {
+		j := strings.LastIndex(t, "]")
+		if j > i {
+			return t[i : j+1]
+		}
+	}
+	return "[]"
+}
+
+// normalizeKeywordSearchResults normalizes keyword search result scores into [0,1] globally across all knowledge bases
+// Improvements:
+// 1. Uses robust normalization with percentile-based bounds to handle outliers
+// 2. Handles edge cases: single result, no variance, negative scores
+// 3. Global normalization ensures fair comparison across different knowledge bases
+func normalizeKeywordSearchResults(ctx context.Context, results []*types.SearchResult) {
+	// Filter keyword match results
+	keywordResults := make([]*types.SearchResult, 0)
+	for _, result := range results {
+		if result.MatchType == types.MatchTypeKeywords {
+			keywordResults = append(keywordResults, result)
+		}
+	}
+
+	if len(keywordResults) == 0 {
+		return
+	}
+
+	// Single result: set to 1.0
+	if len(keywordResults) == 1 {
+		keywordResults[0].Score = 1.0
+		return
+	}
+
+	// Find min and max scores globally
+	minS := keywordResults[0].Score
+	maxS := keywordResults[0].Score
+	for _, r := range keywordResults {
+		if r.Score < minS {
+			minS = r.Score
+		}
+		if r.Score > maxS {
+			maxS = r.Score
+		}
+	}
+
+	// No variance: all scores are the same
+	if maxS <= minS {
+		for _, r := range keywordResults {
+			r.Score = 1.0
+		}
+		pipelineInfo(ctx, "Search", "keyword_scores_no_variance", map[string]interface{}{
+			"count": len(keywordResults),
+			"score": minS,
+		})
+		return
+	}
+
+	// Robust normalization: use percentile-based bounds to reduce outlier impact
+	// For small groups, use min/max; for larger groups, use 5th and 95th percentiles
+	normalizeMin := minS
+	normalizeMax := maxS
+
+	if len(keywordResults) >= 10 {
+		// For larger groups, use percentile-based bounds to handle outliers
+		// Sort scores to find percentiles
+		scores := make([]float64, len(keywordResults))
+		for i, r := range keywordResults {
+			scores[i] = r.Score
+		}
+		sort.Float64s(scores)
+
+		// Use 5th and 95th percentiles to reduce outlier impact
+		p5Idx := len(scores) * 5 / 100
+		p95Idx := len(scores) * 95 / 100
+		if p5Idx < len(scores) {
+			normalizeMin = scores[p5Idx]
+		}
+		if p95Idx < len(scores) {
+			normalizeMax = scores[p95Idx]
+		}
+	}
+
+	// Normalize scores with bounds checking
+	rangeSize := normalizeMax - normalizeMin
+	if rangeSize > 0 {
+		for _, r := range keywordResults {
+			// Clamp to [normalizeMin, normalizeMax] before normalization
+			clampedScore := r.Score
+			if clampedScore < normalizeMin {
+				clampedScore = normalizeMin
+			} else if clampedScore > normalizeMax {
+				clampedScore = normalizeMax
+			}
+
+			// Normalize to [0, 1]
+			ns := (clampedScore - normalizeMin) / rangeSize
+			if ns < 0 {
+				ns = 0
+			} else if ns > 1 {
+				ns = 1
+			}
+			r.Score = ns
+		}
+
+		pipelineInfo(ctx, "Search", "normalize_keyword_scores", map[string]interface{}{
+			"count":         len(keywordResults),
+			"raw_min":       minS,
+			"raw_max":       maxS,
+			"normalize_min": normalizeMin,
+			"normalize_max": normalizeMax,
+		})
+	} else {
+		// Fallback: all scores are the same after percentile filtering
+		for _, r := range keywordResults {
+			r.Score = 1.0
+		}
+	}
 }

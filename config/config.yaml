@@ -590,19 +590,6 @@ extract:
       请随机生成一段文本，要求内容与 %s 等相关，字数在 [50-200] 之间，并且尽量包含一些与这些标签相关的专业术语或典型元素，使文本更具针对性和相关性。
     with_no_tag: |
       请随机生成一段文本，内容请自由发挥，字数在 [50-200] 之间。 
-# Agent 配置
-agent:
-  enabled: true
-  default_max_iterations: 5
-  default_temperature: 0.7
-  reflection_enabled: false
-  default_tools:
-    - knowledge_search
-    - multi_kb_search
-    - list_knowledge_bases
-    - get_related_chunks
-    - query_knowledge_graph
-    - get_document_info
 
 # WebSearch 配置
 web_search:

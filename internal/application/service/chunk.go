@@ -39,6 +39,16 @@ func NewChunkService(
 	}
 }
 
+// GetRepository gets the chunk repository
+// Parameters:
+//   - ctx: Context with authentication and request information
+//
+// Returns:
+//   - interfaces.ChunkRepository: Chunk repository
+func (s *chunkService) GetRepository() interfaces.ChunkRepository {
+	return s.chunkRepository
+}
+
 // CreateChunks creates multiple chunks
 // This method persists a batch of document chunks to the repository
 // Parameters:

@@ -16,14 +16,6 @@
         </div>
       </div>
 
-      <div class="status-section">
-        <div class="status-title">{{ $t('chat.statusDescription') }}</div>
-        <div class="status-list">
-          <div class="status-item">✓ {{ $t('chat.statusIndexed') }}</div>
-          <div class="status-item">✓ {{ $t('chat.statusSearchable') }}</div>
-          <div class="status-item">✓ {{ $t('chat.statusChunkDetailAvailable') }}</div>
-        </div>
-      </div>
     </div>
   </div>
 </template>

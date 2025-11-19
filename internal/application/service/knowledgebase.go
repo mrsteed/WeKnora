@@ -45,6 +45,16 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 	}
 }
 
+// GetRepository gets the knowledge base repository
+// Parameters:
+//   - ctx: Context with authentication and request information
+//
+// Returns:
+//   - interfaces.KnowledgeBaseRepository: Knowledge base repository
+func (s *knowledgeBaseService) GetRepository() interfaces.KnowledgeBaseRepository {
+	return s.repo
+}
+
 // CreateKnowledgeBase creates a new knowledge base
 func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 	kb *types.KnowledgeBase,
@@ -303,17 +313,17 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 	var embeddingModel embedding.Embedder
 	var kb *types.KnowledgeBase
 
+	kb, err = s.repo.GetKnowledgeBaseByID(ctx, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"knowledge_base_id": id,
+		})
+		return nil, err
+	}
+
 	// Add vector retrieval params if supported
 	if retrieveEngine.SupportRetriever(types.VectorRetrieverType) && !params.DisableVectorMatch {
 		logger.Info(ctx, "Vector retrieval supported, preparing vector retrieval parameters")
-
-		kb, err = s.repo.GetKnowledgeBaseByID(ctx, id)
-		if err != nil {
-			logger.ErrorWithFields(ctx, err, map[string]interface{}{
-				"knowledge_base_id": id,
-			})
-			return nil, err
-		}
 
 		logger.Infof(ctx, "Getting embedding model, model ID: %s", kb.EmbeddingModelID)
 		embeddingModel, err = s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
@@ -343,8 +353,8 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 		logger.Info(ctx, "Vector retrieval parameters setup completed")
 	}
 
-	// Add keyword retrieval params if supported
-	if retrieveEngine.SupportRetriever(types.KeywordsRetrieverType) && !params.DisableKeywordsMatch {
+	// Add keyword retrieval params if supported and not FAQ
+	if retrieveEngine.SupportRetriever(types.KeywordsRetrieverType) && !params.DisableKeywordsMatch && kb.Type != types.KnowledgeBaseTypeFAQ {
 		logger.Info(ctx, "Keyword retrieval supported, preparing keyword retrieval parameters")
 		retrieveParams = append(retrieveParams, types.RetrieveParams{
 			Query:            params.QueryText,
@@ -370,41 +380,6 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 			"query_text":        params.QueryText,
 		})
 		return nil, err
-	}
-
-	// Normalize keyword retriever scores into [0,1] per-engine batch
-	for i := range retrieveResults {
-		rr := retrieveResults[i]
-		if rr.Error != nil || rr.RetrieverType != types.KeywordsRetrieverType || len(rr.Results) == 0 {
-			continue
-		}
-		minS := rr.Results[0].Score
-		maxS := rr.Results[0].Score
-		for _, r := range rr.Results {
-			if r.Score < minS {
-				minS = r.Score
-			}
-			if r.Score > maxS {
-				maxS = r.Score
-			}
-		}
-		if maxS > minS {
-			for _, r := range rr.Results {
-				ns := (r.Score - minS) / (maxS - minS)
-				if ns < 0 {
-					ns = 0
-				} else if ns > 1 {
-					ns = 1
-				}
-				r.Score = ns
-			}
-			logger.Infof(ctx, "Normalized keyword scores for engine %s: min=%f, max=%f", rr.RetrieverEngineType, minS, maxS)
-		} else {
-			for _, r := range rr.Results {
-				r.Score = 1.0
-			}
-			logger.Infof(ctx, "Keyword scores have no variance for engine %s, set to 1.0", rr.RetrieverEngineType)
-		}
 	}
 
 	// Collect all results from different retrievers and deduplicate by chunk ID

@@ -106,6 +106,16 @@ func NewKnowledgeService(
 	}, nil
 }
 
+// GetRepository gets the knowledge repository
+// Parameters:
+//   - ctx: Context with authentication and request information
+//
+// Returns:
+//   - interfaces.KnowledgeRepository: Knowledge repository
+func (s *knowledgeService) GetRepository() interfaces.KnowledgeRepository {
+	return s.repo
+}
+
 // CreateKnowledgeFromFile creates a knowledge entry from an uploaded file
 func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	kbID string, file *multipart.FileHeader, metadata map[string]string, enableMultimodel *bool,
@@ -413,7 +423,7 @@ func (s *knowledgeService) CreateKnowledgeFromManual(ctx context.Context,
 	now := time.Now()
 	title := safeTitle
 	if title == "" {
-		title = fmt.Sprintf("手工知识-%s", now.Format("20060102-150405"))
+		title = fmt.Sprintf("Knowledge-%s", now.Format("20060102-150405"))
 	}
 
 	fileName := ensureManualFileName(title)
@@ -844,7 +854,8 @@ func (s *knowledgeService) processDocument(ctx context.Context,
 	}
 
 	// Split file into chunks using document reader service
-	span.AddEvent("start split file")
+	logger.GetLogger(ctx).Infof("processDocument split file content size: %d, file name: %s, file type: %s, separators: %v, enable multimodal: %v",
+		len(contentBytes), knowledge.FileName, knowledge.FileType, kb.ChunkingConfig.Separators, enableMultimodel)
 	resp, err := s.docReaderClient.ReadFromFile(ctx, &proto.ReadFromFileRequest{
 		FileContent: contentBytes,
 		FileName:    knowledge.FileName,
@@ -3040,41 +3051,70 @@ func ensureManualFileName(title string) string {
 	return trimmed + manualFileExtension
 }
 
-func splitManualContent(content string) []string {
-	clean := strings.TrimSpace(content)
-	if clean == "" {
-		return []string{}
-	}
-	normalized := strings.ReplaceAll(clean, "\r\n", "\n")
-	segments := strings.Split(normalized, "\n\n")
-	results := make([]string, 0, len(segments))
-	for _, seg := range segments {
-		part := strings.TrimSpace(seg)
-		if part != "" {
-			results = append(results, part)
-		}
-	}
-	if len(results) == 0 {
-		results = append(results, clean)
-	}
-	return results
-}
-
 func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 	kb *types.KnowledgeBase, knowledge *types.Knowledge, content string, sync bool,
 ) {
-	passages := splitManualContent(content)
-	if len(passages) == 0 {
-		passages = []string{content}
+	clean := strings.TrimSpace(content)
+	if clean == "" {
+		return
+	}
+
+	// 使用 docreader 按照 MD 格式处理，并使用知识库配置的分隔符
+	contentBytes := []byte(clean)
+	fileName := ensureManualFileName(knowledge.Title)
+	fileType := "md"
+
+	// 检查是否需要启用多模态（对于手动内容通常不需要，但保持一致性）
+	enableMultimodel := kb.ChunkingConfig.EnableMultimodal && kb.StorageConfig.Provider != ""
+
+	logger.GetLogger(ctx).Infof("triggerManualProcessing split manual content size: %d, file name: %s, file type: %s, separators: %v, enable multimodal: %v",
+		len(contentBytes), fileName, fileType, kb.ChunkingConfig.Separators, enableMultimodel)
+
+	// 调用 docreader 解析 markdown 内容
+	resp, err := s.docReaderClient.ReadFromFile(ctx, &proto.ReadFromFileRequest{
+		FileContent: contentBytes,
+		FileName:    fileName,
+		FileType:    fileType,
+		ReadConfig: &proto.ReadConfig{
+			ChunkSize:        int32(kb.ChunkingConfig.ChunkSize),
+			ChunkOverlap:     int32(kb.ChunkingConfig.ChunkOverlap),
+			Separators:       kb.ChunkingConfig.Separators,
+			EnableMultimodal: enableMultimodel,
+			StorageConfig: &proto.StorageConfig{
+				Provider:        proto.StorageProvider(proto.StorageProvider_value[strings.ToUpper(kb.StorageConfig.Provider)]),
+				Region:          kb.StorageConfig.Region,
+				BucketName:      kb.StorageConfig.BucketName,
+				AccessKeyId:     kb.StorageConfig.SecretID,
+				SecretAccessKey: kb.StorageConfig.SecretKey,
+				AppId:           kb.StorageConfig.AppID,
+				PathPrefix:      kb.StorageConfig.PathPrefix,
+			},
+			VlmConfig: &proto.VLMConfig{
+				ModelName:     kb.VLMConfig.ModelName,
+				BaseUrl:       kb.VLMConfig.BaseURL,
+				ApiKey:        kb.VLMConfig.APIKey,
+				InterfaceType: kb.VLMConfig.InterfaceType,
+			},
+		},
+		RequestId: ctx.Value(types.RequestIDContextKey).(string),
+	})
+	if err != nil {
+		logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
+			WithField("error", err).Errorf("triggerManualProcessing read file failed")
+		knowledge.ParseStatus = "failed"
+		knowledge.ErrorMessage = err.Error()
+		knowledge.UpdatedAt = time.Now()
+		s.repo.UpdateKnowledge(ctx, knowledge)
+		return
 	}
 
 	if sync {
-		s.processDocumentFromPassage(ctx, kb, knowledge, passages)
+		s.processChunks(ctx, kb, knowledge, resp.Chunks)
 		return
 	}
 
 	newCtx := logger.CloneContext(ctx)
-	go s.processDocumentFromPassage(newCtx, kb, knowledge, passages)
+	go s.processChunks(newCtx, kb, knowledge, resp.Chunks)
 }
 
 func (s *knowledgeService) cleanupKnowledgeResources(ctx context.Context, knowledge *types.Knowledge) error {

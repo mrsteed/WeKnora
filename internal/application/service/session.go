@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Tencent/WeKnora/internal/agent"
 	chatpipline "github.com/Tencent/WeKnora/internal/application/service/chat_pipline"
 	llmcontext "github.com/Tencent/WeKnora/internal/application/service/llmcontext"
 	"github.com/Tencent/WeKnora/internal/config"
@@ -485,8 +484,8 @@ func (s *sessionService) KnowledgeQA(ctx context.Context, session *types.Session
 		fallbackResponse = tenantConv.FallbackResponse
 		enableRewrite = tenantConv.EnableRewrite
 
-		if tenantConv.MaxTokens != 0 {
-			summaryConfig.MaxTokens = tenantConv.MaxTokens
+		if tenantConv.MaxCompletionTokens != 0 {
+			summaryConfig.MaxCompletionTokens = tenantConv.MaxCompletionTokens
 		}
 		if tenantConv.Prompt != "" {
 			summaryConfig.Prompt = tenantConv.Prompt
@@ -882,10 +881,10 @@ func (s *sessionService) AgentQA(ctx context.Context, session *types.Session, qu
 		WebSearchEnabled:  session.AgentConfig.WebSearchEnabled, // Web search enabled from session config
 	}
 
-	if tenantInfo.AgentConfig.UseCustomSystemPrompt {
-		agentConfig.SystemPrompt = tenantInfo.AgentConfig.SystemPrompt
-	} else {
-		agentConfig.SystemPrompt = agent.DefaultSystemPromptTemplate
+	agentConfig.UseCustomSystemPrompt = tenantInfo.AgentConfig.UseCustomSystemPrompt
+	if agentConfig.UseCustomSystemPrompt {
+		agentConfig.SystemPromptWebEnabled = tenantInfo.AgentConfig.ResolveSystemPrompt(true)
+		agentConfig.SystemPromptWebDisabled = tenantInfo.AgentConfig.ResolveSystemPrompt(false)
 	}
 
 	// Set web search max results from tenant config (default: 5)

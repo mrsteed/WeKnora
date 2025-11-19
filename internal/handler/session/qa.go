@@ -463,7 +463,9 @@ func (h *Handler) handleKnowledgeQARequest(
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.ErrorWithFields(asyncCtx, errors.NewInternalServerError("Knowledge QA service panicked"), nil)
+				buf := make([]byte, 10240)
+				runtime.Stack(buf, true)
+				logger.ErrorWithFields(asyncCtx, errors.NewInternalServerError(fmt.Sprintf("Knowledge QA service panicked: %v\n%s", r, string(buf))), nil)
 			}
 		}()
 		err := h.sessionService.KnowledgeQA(asyncCtx, session, query, knowledgeBaseIDs, assistantMessage.ID, summaryModelID, webSearchEnabled, eventBus)

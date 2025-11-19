@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/models/rerank"
@@ -28,48 +29,39 @@ type searchResultWithMeta struct {
 // KnowledgeSearchTool searches knowledge bases with flexible query modes
 type KnowledgeSearchTool struct {
 	BaseTool
-	knowledgeService interfaces.KnowledgeBaseService
-	chunkService     interfaces.ChunkService
-	tenantID         uint
-	allowedKBs       []string
-	rerankModel      rerank.Reranker
-	chatModel        chat.Chat // Optional chat model for LLM-based reranking
+	knowledgeBaseService interfaces.KnowledgeBaseService
+	chunkService         interfaces.ChunkService
+	tenantID             uint
+	allowedKBs           []string
+	rerankModel          rerank.Reranker
+	chatModel            chat.Chat      // Optional chat model for LLM-based reranking
+	config               *config.Config // Global config for fallback values
 }
 
 // NewKnowledgeSearchTool creates a new knowledge search tool
 func NewKnowledgeSearchTool(
-	knowledgeService interfaces.KnowledgeBaseService,
+	knowledgeBaseService interfaces.KnowledgeBaseService,
 	chunkService interfaces.ChunkService,
 	tenantID uint,
 	allowedKBs []string,
 	rerankModel rerank.Reranker,
 	chatModel chat.Chat,
+	cfg *config.Config,
 ) *KnowledgeSearchTool {
-	description := `Search within knowledge bases with flexible query modes. Unified tool that supports both targeted and broad searches.
+	description := `Search within knowledge bases. Unified tool that supports both targeted and broad searches.
 
 ## Features
 - Multi-KB search: Search across multiple knowledge bases concurrently
-- Flexible queries: Support vector, keyword, or hybrid search modes
-- Quality filtering: Automatically filters low-quality chunks
 
 ## Usage
 
 **Use when**:
 - You know which knowledge bases to target (specify knowledge_base_ids)
 - You're unsure which KB contains the info (omit knowledge_base_ids to search all allowed KBs)
-- Want to search specific KBs with same query
-- Need semantic (vector) or exact keyword searches
-- Want to search only specific documents within KBs
+- Want to search with multiple queries to get comprehensive results
+- Want to filter results from specific documents (use knowledge_ids)
 
-
-**Search Modes**:
-- Simple: Provide single query parameter (hybrid search)
-- Vector only: Provide vector_queries only
-- Keyword only: Provide keyword_queries only
-- Hybrid: Provide both vector_queries and keyword_queries
-- At least one query parameter must be provided
-
-**Returns**: Merged and deduplicated search results from all KBs
+**Returns**: Merged and deduplicated search results from KBs 
 
 ## Examples
 
@@ -77,48 +69,37 @@ func NewKnowledgeSearchTool(
 # Simple search in specific KBs
 {
   "knowledge_base_ids": ["kb1", "kb2"],
-  "query": "什么是向量数据库"
+  "queries": ["什么是向量数据库"]
 }
 
-# Search all allowed KBs with vector queries
+# Search all allowed KBs with multiple queries
 {
-  "vector_queries": ["什么是向量数据库", "向量数据库的定义"]
-}
-
-# Multiple query types with thresholds
-{
-  "knowledge_base_ids": ["kb1"],
-  "vector_queries": ["向量数据库应用"],
-  "keyword_queries": ["Docker", "部署"],
-  "vector_threshold": 0.7,
-  "keyword_threshold": 0.6
+  "queries": ["什么是向量数据库", "向量数据库的应用场景"]
 }
 
 # Search specific documents
 {
   "knowledge_base_ids": ["kb1"],
-  "query": "彗星的起源",
+  "queries": ["彗星的起源"],
   "knowledge_ids": ["doc1", "doc2"]
 }
 ` + "`" + `
 
 ## Tips
 
-- Concurrent search across multiple KBs and queries
+- Concurrent search across multiple KBs
 - Results are automatically reranked to unify scores from different sources
-- Reranked scores are in 0-1 range and directly comparable
-- Results are merged, deduplicated and sorted by relevance
-- Use vector_queries for semantic/conceptual searches
-- Use keyword_queries for exact term matching`
+- Results are merged, deduplicated and sorted by relevance`
 
 	return &KnowledgeSearchTool{
-		BaseTool:         NewBaseTool("knowledge_search", description),
-		knowledgeService: knowledgeService,
-		chunkService:     chunkService,
-		tenantID:         tenantID,
-		allowedKBs:       allowedKBs,
-		rerankModel:      rerankModel,
-		chatModel:        chatModel,
+		BaseTool:             NewBaseTool("knowledge_search", description),
+		knowledgeBaseService: knowledgeBaseService,
+		chunkService:         chunkService,
+		tenantID:             tenantID,
+		allowedKBs:           allowedKBs,
+		rerankModel:          rerankModel,
+		chatModel:            chatModel,
+		config:               cfg,
 	}
 }
 
@@ -127,57 +108,23 @@ func (t *KnowledgeSearchTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
+			"queries": map[string]interface{}{
+				"type":        "array",
+				"description": "Array of search queries",
+				"items": map[string]interface{}{
+					"type": "string",
+				},
+				"minItems": 1,
+				"maxItems": 5,
+			},
 			"knowledge_base_ids": map[string]interface{}{
 				"type":        "array",
 				"description": "Array of knowledge base IDs to search in (optional, if omitted searches all allowed KBs)",
 				"items": map[string]interface{}{
 					"type": "string",
 				},
-				"minItems": 1,
+				"minItems": 0,
 				"maxItems": 10,
-			},
-			"query": map[string]interface{}{
-				"type":        "string",
-				"description": "Single search query for simple hybrid search",
-			},
-			"vector_queries": map[string]interface{}{
-				"type":        "array",
-				"description": "Array of semantic queries for vector search (1-5 queries)",
-				"items": map[string]interface{}{
-					"type": "string",
-				},
-				"minItems": 1,
-				"maxItems": 5,
-			},
-			"keyword_queries": map[string]interface{}{
-				"type":        "array",
-				"description": "Array of keyword queries for keyword search (1-5 queries)",
-				"items": map[string]interface{}{
-					"type": "string",
-				},
-				"minItems": 1,
-				"maxItems": 5,
-			},
-			"top_k": map[string]interface{}{
-				"type":        "integer",
-				"description": "Number of results per knowledge base per query (default: 5)",
-				"default":     5,
-				"minimum":     1,
-				"maximum":     20,
-			},
-			"vector_threshold": map[string]interface{}{
-				"type":        "number",
-				"description": "Minimum score for vector results (default: 0.6)",
-				"default":     0.6,
-				"minimum":     0.0,
-				"maximum":     1.0,
-			},
-			"keyword_threshold": map[string]interface{}{
-				"type":        "number",
-				"description": "Minimum score for keyword results (default: 0.5)",
-				"default":     0.5,
-				"minimum":     0.0,
-				"maximum":     1.0,
 			},
 			"knowledge_ids": map[string]interface{}{
 				"type":        "array",
@@ -185,22 +132,15 @@ func (t *KnowledgeSearchTool) Parameters() map[string]interface{} {
 				"items": map[string]interface{}{
 					"type": "string",
 				},
-				"minItems": 1,
+				"minItems": 0,
 				"maxItems": 50,
 			},
-			"min_score": map[string]interface{}{
-				"type":        "number",
-				"description": "Absolute minimum score threshold for filtering very low quality results (default: 0.3)",
-				"default":     0.3,
-				"minimum":     0.0,
-				"maximum":     1.0,
-			},
 		},
-		"required": []string{},
+		"required": []string{"queries"},
 	}
 }
 
-// Execute executes the knowledge search tool with flexible query modes
+// Execute executes the knowledge search tool
 func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]interface{}) (*types.ToolResult, error) {
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Execute started")
 
@@ -232,88 +172,72 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 		logger.Infof(ctx, "[Tool][KnowledgeSearch] Using all allowed KBs (%d): %v", len(kbIDs), kbIDs)
 	}
 
-	// Parse query parameters
-	var singleQuery string
-	var vectorQueries, keywordQueries []string
-
-	// Parse single query
-	if q, ok := args["query"].(string); ok && q != "" {
-		singleQuery = q
-	}
-
-	// Parse vector_queries
-	if vq, ok := args["vector_queries"].([]interface{}); ok {
-		for _, q := range vq {
-			if queryStr, ok := q.(string); ok && queryStr != "" {
-				vectorQueries = append(vectorQueries, queryStr)
+	// Parse query parameter
+	var queries []string
+	if queriesRaw, ok := args["queries"].([]interface{}); ok && len(queriesRaw) > 0 {
+		for _, q := range queriesRaw {
+			if qStr, ok := q.(string); ok && qStr != "" {
+				queries = append(queries, qStr)
 			}
 		}
 	}
 
-	// Parse keyword_queries
-	if kq, ok := args["keyword_queries"].([]interface{}); ok {
-		for _, q := range kq {
-			if queryStr, ok := q.(string); ok && queryStr != "" {
-				keywordQueries = append(keywordQueries, queryStr)
-			}
-		}
-	}
-
-	// If single query provided, treat it as both vector and keyword query
-	if singleQuery != "" {
-		if len(vectorQueries) == 0 && len(keywordQueries) == 0 {
-			vectorQueries = []string{singleQuery}
-			keywordQueries = []string{singleQuery}
-		}
-	}
-
-	// Validate: at least one query must be provided
-	if len(vectorQueries) == 0 && len(keywordQueries) == 0 {
-		logger.Errorf(ctx, "[Tool][KnowledgeSearch] No query provided")
+	// Validate: query must be provided
+	if len(queries) == 0 {
+		logger.Errorf(ctx, "[Tool][KnowledgeSearch] No queries provided")
 		return &types.ToolResult{
 			Success: false,
-			Error:   "at least one of query, vector_queries, or keyword_queries must be provided",
-		}, fmt.Errorf("no query provided")
+			Error:   "queries parameter is required",
+		}, fmt.Errorf("no queries provided")
 	}
 
-	logger.Infof(ctx, "[Tool][KnowledgeSearch] Query mode: single=%v, vector_queries=%d, keyword_queries=%d",
-		singleQuery != "", len(vectorQueries), len(keywordQueries))
-	if singleQuery != "" {
-		logger.Debugf(ctx, "[Tool][KnowledgeSearch] Single query: %s", singleQuery)
-	}
-	if len(vectorQueries) > 0 {
-		logger.Debugf(ctx, "[Tool][KnowledgeSearch] Vector queries: %v", vectorQueries)
-	}
-	if len(keywordQueries) > 0 {
-		logger.Debugf(ctx, "[Tool][KnowledgeSearch] Keyword queries: %v", keywordQueries)
-	}
+	logger.Infof(ctx, "[Tool][KnowledgeSearch] Queries: %v", queries)
 
-	// Parse thresholds
-	vectorThreshold := 0.6
-	if vt, ok := args["vector_threshold"].(float64); ok {
-		vectorThreshold = vt
-	}
+	// Get search parameters from tenant conversation config, fallback to global config
+	var topK int
+	var vectorThreshold, keywordThreshold, minScore float64
 
-	keywordThreshold := 0.5
-	if kt, ok := args["keyword_threshold"].(float64); ok {
-		keywordThreshold = kt
-	}
-
-	// Parse min_score for absolute filtering
-	minScore := 0.3
-	if ms, ok := args["min_score"].(float64); ok {
-		minScore = ms
-	}
-
-	// Parse top_k
-	topK := 5
-	if topKVal, ok := args["top_k"]; ok {
-		switch v := topKVal.(type) {
-		case float64:
-			topK = int(v)
-		case int:
-			topK = v
+	// Try to get from tenant conversation config
+	if tenantVal := ctx.Value(types.TenantInfoContextKey); tenantVal != nil {
+		if tenant, ok := tenantVal.(*types.Tenant); ok && tenant != nil && tenant.ConversationConfig != nil {
+			cc := tenant.ConversationConfig
+			if cc.EmbeddingTopK > 0 {
+				topK = cc.EmbeddingTopK
+			}
+			if cc.VectorThreshold > 0 {
+				vectorThreshold = cc.VectorThreshold
+			}
+			if cc.KeywordThreshold > 0 {
+				keywordThreshold = cc.KeywordThreshold
+			}
+			// minScore is not in ConversationConfig, use default or config
+			minScore = 0.3
 		}
+	}
+
+	// Fallback to global config if not set
+	if topK == 0 && t.config != nil {
+		topK = t.config.Conversation.EmbeddingTopK
+	}
+	if vectorThreshold == 0 && t.config != nil {
+		vectorThreshold = t.config.Conversation.VectorThreshold
+	}
+	if keywordThreshold == 0 && t.config != nil {
+		keywordThreshold = t.config.Conversation.KeywordThreshold
+	}
+
+	// Final fallback to hardcoded defaults if config is not available
+	if topK == 0 {
+		topK = 5
+	}
+	if vectorThreshold == 0 {
+		vectorThreshold = 0.6
+	}
+	if keywordThreshold == 0 {
+		keywordThreshold = 0.5
+	}
+	if minScore == 0 {
+		minScore = 0.3
 	}
 
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Search params: top_k=%d, vector_threshold=%.2f, keyword_threshold=%.2f, min_score=%.2f",
@@ -330,11 +254,11 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 		}
 	}
 
-	// Execute concurrent search
+	// Execute concurrent search (hybrid search handles both vector and keyword)
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Starting concurrent search across %d KBs", len(kbIDs))
 	kbTypeMap := t.getKnowledgeBaseTypes(ctx, kbIDs)
 
-	allResults := t.concurrentSearch(ctx, vectorQueries, keywordQueries, kbIDs,
+	allResults := t.concurrentSearch(ctx, queries, kbIDs,
 		topK, vectorThreshold, keywordThreshold, kbTypeMap)
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Concurrent search completed: %d raw results", len(allResults))
 
@@ -353,55 +277,54 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 	}
 
 	// Filter by threshold first
-	logger.Infof(ctx, "[Tool][KnowledgeSearch] Applying threshold filter...")
 	filteredResults := t.filterByThreshold(allResults, vectorThreshold, keywordThreshold)
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] After threshold filter: %d results (from %d)",
 		len(filteredResults), len(allResults))
 
+	// Deduplicate before reranking to reduce processing overhead
+	deduplicatedBeforeRerank := t.deduplicateResults(filteredResults)
+	logger.Infof(ctx, "[Tool][KnowledgeSearch] After deduplication before rerank: %d results (from %d)",
+		len(deduplicatedBeforeRerank), len(filteredResults))
+
 	// Apply ReRank if model is configured
 	// Prefer chatModel (LLM-based reranking) over rerankModel if both are available
-	if t.chatModel != nil && len(filteredResults) > 0 {
-		logger.Infof(ctx, "[Tool][KnowledgeSearch] Applying LLM-based rerank with model: %s, input: %d results",
-			t.chatModel.GetModelName(), len(filteredResults))
-		rerankQuery := singleQuery
-		if rerankQuery == "" && len(vectorQueries) > 0 {
-			rerankQuery = vectorQueries[0] // Use first vector query as rerank query
-		} else if rerankQuery == "" && len(keywordQueries) > 0 {
-			rerankQuery = keywordQueries[0] // Use first keyword query as fallback
+	// Use first query for reranking (or combine all queries if needed)
+	rerankQuery := ""
+	if len(queries) > 0 {
+		rerankQuery = queries[0]
+		if len(queries) > 1 {
+			// Combine multiple queries for reranking
+			rerankQuery = strings.Join(queries, " ")
 		}
+	}
 
-		if rerankQuery != "" {
-			logger.Debugf(ctx, "[Tool][KnowledgeSearch] Rerank query: %s", rerankQuery)
-			rerankedResults, err := t.rerankResults(ctx, rerankQuery, filteredResults)
-			if err != nil {
-				logger.Warnf(ctx, "[Tool][KnowledgeSearch] LLM rerank failed, using original results: %v", err)
-			} else {
-				filteredResults = rerankedResults
-				logger.Infof(ctx, "[Tool][KnowledgeSearch] LLM rerank completed successfully: %d results",
-					len(filteredResults))
-			}
+	if t.chatModel != nil && len(deduplicatedBeforeRerank) > 0 && rerankQuery != "" {
+		logger.Infof(ctx, "[Tool][KnowledgeSearch] Applying LLM-based rerank with model: %s, input: %d results, queries: %v",
+			t.chatModel.GetModelName(), len(deduplicatedBeforeRerank), queries)
+		rerankedResults, err := t.rerankResults(ctx, rerankQuery, deduplicatedBeforeRerank)
+		if err != nil {
+			logger.Warnf(ctx, "[Tool][KnowledgeSearch] LLM rerank failed, using original results: %v", err)
+			filteredResults = deduplicatedBeforeRerank
+		} else {
+			filteredResults = rerankedResults
+			logger.Infof(ctx, "[Tool][KnowledgeSearch] LLM rerank completed successfully: %d results",
+				len(filteredResults))
 		}
-	} else if t.rerankModel != nil && len(filteredResults) > 0 {
-		logger.Infof(ctx, "[Tool][KnowledgeSearch] Applying rerank with model: %s, input: %d results",
-			t.rerankModel.GetModelName(), len(filteredResults))
-		rerankQuery := singleQuery
-		if rerankQuery == "" && len(vectorQueries) > 0 {
-			rerankQuery = vectorQueries[0] // Use first vector query as rerank query
-		} else if rerankQuery == "" && len(keywordQueries) > 0 {
-			rerankQuery = keywordQueries[0] // Use first keyword query as fallback
+	} else if t.rerankModel != nil && len(deduplicatedBeforeRerank) > 0 && rerankQuery != "" {
+		logger.Infof(ctx, "[Tool][KnowledgeSearch] Applying rerank with model: %s, input: %d results, queries: %v",
+			t.rerankModel.GetModelName(), len(deduplicatedBeforeRerank), queries)
+		rerankedResults, err := t.rerankResults(ctx, rerankQuery, deduplicatedBeforeRerank)
+		if err != nil {
+			logger.Warnf(ctx, "[Tool][KnowledgeSearch] Rerank failed, using original results: %v", err)
+			filteredResults = deduplicatedBeforeRerank
+		} else {
+			filteredResults = rerankedResults
+			logger.Infof(ctx, "[Tool][KnowledgeSearch] Rerank completed successfully: %d results",
+				len(filteredResults))
 		}
-
-		if rerankQuery != "" {
-			logger.Debugf(ctx, "[Tool][KnowledgeSearch] Rerank query: %s", rerankQuery)
-			rerankedResults, err := t.rerankResults(ctx, rerankQuery, filteredResults)
-			if err != nil {
-				logger.Warnf(ctx, "[Tool][KnowledgeSearch] Rerank failed, using original results: %v", err)
-			} else {
-				filteredResults = rerankedResults
-				logger.Infof(ctx, "[Tool][KnowledgeSearch] Rerank completed successfully: %d results",
-					len(filteredResults))
-			}
-		}
+	} else {
+		// No reranking, use deduplicated results
+		filteredResults = deduplicatedBeforeRerank
 	}
 
 	// Apply absolute minimum score filter to remove very low quality chunks
@@ -409,44 +332,37 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 	filteredResults = t.filterByMinScore(filteredResults, minScore)
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] After min_score filter: %d results", len(filteredResults))
 
-	logger.Debugf(ctx, "[Tool][KnowledgeSearch] Deduplicating results...")
+	// Final deduplication after rerank (in case rerank changed scores/order but duplicates remain)
+	logger.Debugf(ctx, "[Tool][KnowledgeSearch] Final deduplication after rerank...")
 	deduplicatedResults := t.deduplicateResults(filteredResults)
-	logger.Infof(ctx, "[Tool][KnowledgeSearch] After deduplication: %d results (from %d)",
+	logger.Infof(ctx, "[Tool][KnowledgeSearch] After final deduplication: %d results (from %d)",
 		len(deduplicatedResults), len(filteredResults))
 
 	// Sort results by score (descending)
-	logger.Debugf(ctx, "[Tool][KnowledgeSearch] Sorting results by score...")
 	sort.Slice(deduplicatedResults, func(i, j int) bool {
 		if deduplicatedResults[i].Score != deduplicatedResults[j].Score {
 			return deduplicatedResults[i].Score > deduplicatedResults[j].Score
 		}
-		// If scores are equal, prefer vector matches
-		if deduplicatedResults[i].QueryType != deduplicatedResults[j].QueryType {
-			return deduplicatedResults[i].QueryType == "vector"
-		}
+		// If scores are equal, sort by knowledge ID for consistency
 		return deduplicatedResults[i].KnowledgeID < deduplicatedResults[j].KnowledgeID
 	})
 
 	// Log top results
 	if len(deduplicatedResults) > 0 {
-		logger.Infof(ctx, "[Tool][KnowledgeSearch] Top 5 results by score:")
 		for i := 0; i < len(deduplicatedResults) && i < 5; i++ {
 			r := deduplicatedResults[i]
-			logger.Infof(ctx, "[Tool][KnowledgeSearch]   #%d: score=%.3f, type=%s, kb=%s, chunk_id=%s",
+			logger.Infof(ctx, "[Tool][KnowledgeSearch][Top %d] score=%.3f, type=%s, kb=%s, chunk_id=%s",
 				i+1, r.Score, r.QueryType, r.KnowledgeID, r.ID)
 		}
 	}
 
 	// Build output
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Formatting output with %d final results", len(deduplicatedResults))
-	result, err := t.formatOutput(ctx, deduplicatedResults, vectorQueries, keywordQueries,
-		kbIDs, len(allResults), vectorThreshold, keywordThreshold, knowledgeIDsFilter, singleQuery)
+	result, err := t.formatOutput(ctx, deduplicatedResults, kbIDs, len(allResults), knowledgeIDsFilter, queries)
 	if err != nil {
 		logger.Errorf(ctx, "[Tool][KnowledgeSearch] Failed to format output: %v", err)
 		return result, err
 	}
-
-	logger.Infof(ctx, "[Tool][KnowledgeSearch] Execute completed successfully")
 	return result, nil
 }
 
@@ -462,7 +378,7 @@ func (t *KnowledgeSearchTool) getKnowledgeBaseTypes(ctx context.Context, kbIDs [
 			continue
 		}
 
-		kb, err := t.knowledgeService.GetKnowledgeBaseByID(ctx, kbID)
+		kb, err := t.knowledgeBaseService.GetKnowledgeBaseByID(ctx, kbID)
 		if err != nil {
 			logger.Warnf(ctx, "[Tool][KnowledgeSearch] Failed to fetch knowledge base %s info: %v", kbID, err)
 			continue
@@ -474,57 +390,13 @@ func (t *KnowledgeSearchTool) getKnowledgeBaseTypes(ctx context.Context, kbIDs [
 	return kbTypeMap
 }
 
-// concurrentSearch executes vector and keyword searches concurrently
+// concurrentSearch executes hybrid search across multiple KBs concurrently
 func (t *KnowledgeSearchTool) concurrentSearch(
-	ctx context.Context,
-	vectorQueries, keywordQueries []string,
-	kbsToSearch []string,
-	topK int,
-	vectorThreshold, keywordThreshold float64,
-	kbTypeMap map[string]string,
-) []*searchResultWithMeta {
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	allResults := make([]*searchResultWithMeta, 0)
-
-	// Launch vector searches
-	if len(vectorQueries) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			results := t.searchWithQueries(ctx, vectorQueries, kbsToSearch, topK,
-				vectorThreshold, 1.0, "vector", kbTypeMap)
-			mu.Lock()
-			allResults = append(allResults, results...)
-			mu.Unlock()
-		}()
-	}
-
-	// Launch keyword searches
-	if len(keywordQueries) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			results := t.searchWithQueries(ctx, keywordQueries, kbsToSearch, topK,
-				1.0, keywordThreshold, "keyword", kbTypeMap)
-			mu.Lock()
-			allResults = append(allResults, results...)
-			mu.Unlock()
-		}()
-	}
-
-	wg.Wait()
-	return allResults
-}
-
-// searchWithQueries executes multiple queries concurrently
-func (t *KnowledgeSearchTool) searchWithQueries(
 	ctx context.Context,
 	queries []string,
 	kbsToSearch []string,
 	topK int,
 	vectorThreshold, keywordThreshold float64,
-	queryType string,
 	kbTypeMap map[string]string,
 ) []*searchResultWithMeta {
 	var wg sync.WaitGroup
@@ -532,70 +404,44 @@ func (t *KnowledgeSearchTool) searchWithQueries(
 	allResults := make([]*searchResultWithMeta, 0)
 
 	for _, query := range queries {
-		wg.Add(1)
-		go func(q string) {
-			defer wg.Done()
-			results := t.searchSingleQuery(ctx, q, kbsToSearch, topK,
-				vectorThreshold, keywordThreshold, queryType, kbTypeMap)
-			mu.Lock()
-			allResults = append(allResults, results...)
-			mu.Unlock()
-		}(query)
-	}
+		// Capture query in local variable to avoid closure issues
+		q := query
+		for _, kbID := range kbsToSearch {
+			// Capture kbID in local variable to avoid closure issues
+			kb := kbID
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				searchParams := types.SearchParams{
+					QueryText:        q,
+					MatchCount:       topK,
+					VectorThreshold:  vectorThreshold,
+					KeywordThreshold: keywordThreshold,
+				}
+				kbResults, err := t.knowledgeBaseService.HybridSearch(ctx, kb, searchParams)
+				if err != nil {
+					// Log error but continue with other KBs
+					logger.Warnf(ctx, "[Tool][KnowledgeSearch] Failed to search knowledge base %s: %v", kb, err)
+					return
+				}
 
+				// Wrap results with metadata
+				mu.Lock()
+				for _, r := range kbResults {
+					allResults = append(allResults, &searchResultWithMeta{
+						SearchResult:      r,
+						SourceQuery:       q,
+						QueryType:         "hybrid", // Hybrid search combines both vector and keyword
+						KnowledgeBaseID:   kb,
+						KnowledgeBaseType: kbTypeMap[kb],
+					})
+				}
+				mu.Unlock()
+			}()
+		}
+	}
 	wg.Wait()
 	return allResults
-}
-
-// searchSingleQuery searches a single query across multiple KBs concurrently
-func (t *KnowledgeSearchTool) searchSingleQuery(
-	ctx context.Context,
-	query string,
-	kbsToSearch []string,
-	topK int,
-	vectorThreshold, keywordThreshold float64,
-	queryType string,
-	kbTypeMap map[string]string,
-) []*searchResultWithMeta {
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	results := make([]*searchResultWithMeta, 0)
-
-	searchParams := types.SearchParams{
-		QueryText:        query,
-		MatchCount:       topK,
-		VectorThreshold:  vectorThreshold,
-		KeywordThreshold: keywordThreshold,
-	}
-
-	for _, kbID := range kbsToSearch {
-		wg.Add(1)
-		go func(kb string) {
-			defer wg.Done()
-
-			kbResults, err := t.knowledgeService.HybridSearch(ctx, kb, searchParams)
-			if err != nil {
-				// Log error but continue with other KBs
-				return
-			}
-
-			// Wrap results with metadata
-			mu.Lock()
-			for _, r := range kbResults {
-				results = append(results, &searchResultWithMeta{
-					SearchResult:      r,
-					SourceQuery:       query,
-					QueryType:         queryType,
-					KnowledgeBaseID:   kb,
-					KnowledgeBaseType: kbTypeMap[kb],
-				})
-			}
-			mu.Unlock()
-		}(kbID)
-	}
-
-	wg.Wait()
-	return results
 }
 
 // filterByThreshold filters results based on match type and threshold
@@ -1011,12 +857,10 @@ func (t *KnowledgeSearchTool) deduplicateResults(results []*searchResultWithMeta
 func (t *KnowledgeSearchTool) formatOutput(
 	ctx context.Context,
 	results []*searchResultWithMeta,
-	vectorQueries, keywordQueries []string,
 	kbsToSearch []string,
 	totalBeforeFilter int,
-	vectorThreshold, keywordThreshold float64,
 	knowledgeIDsFilter map[string]bool,
-	singleQuery string,
+	queries []string,
 ) (*types.ToolResult, error) {
 	if len(results) == 0 {
 		data := map[string]interface{}{
@@ -1031,22 +875,14 @@ func (t *KnowledgeSearchTool) formatOutput(
 			}
 			data["knowledge_ids"] = filterList
 		}
-		if singleQuery != "" {
-			data["query"] = singleQuery
+		if len(queries) > 0 {
+			data["queries"] = queries
 		}
 		return &types.ToolResult{
 			Success: true,
 			Output:  fmt.Sprintf("No relevant content found in %d knowledge base(s).", len(kbsToSearch)),
 			Data:    data,
 		}, nil
-	}
-
-	// Determine search mode
-	searchMode := "Hybrid (Vector + Keyword)"
-	if len(vectorQueries) > 0 && len(keywordQueries) == 0 {
-		searchMode = "Vector"
-	} else if len(vectorQueries) == 0 && len(keywordQueries) > 0 {
-		searchMode = "Keyword"
 	}
 
 	// Build output header
@@ -1059,22 +895,13 @@ func (t *KnowledgeSearchTool) formatOutput(
 		}
 		output += fmt.Sprintf("Document Filter: %v\n", filterList)
 	}
-	output += fmt.Sprintf("Search Mode: %s\n", searchMode)
-
-	if singleQuery != "" {
-		output += fmt.Sprintf("Query: %s\n", singleQuery)
-	} else {
-		if len(vectorQueries) > 0 {
-			output += fmt.Sprintf("Vector Queries: %v\n", vectorQueries)
-			output += fmt.Sprintf("Vector Threshold: %.2f\n", vectorThreshold)
-		}
-		if len(keywordQueries) > 0 {
-			output += fmt.Sprintf("Keyword Queries: %v\n", keywordQueries)
-			output += fmt.Sprintf("Keyword Threshold: %.2f\n", keywordThreshold)
-		}
+	if len(queries) == 1 {
+		output += fmt.Sprintf("Query: %s\n", queries[0])
+	} else if len(queries) > 1 {
+		output += fmt.Sprintf("Queries (%d): %v\n", len(queries), queries)
 	}
 
-	output += fmt.Sprintf("Found %d relevant results (deduplicated)", len(results))
+	output += fmt.Sprintf("Found %d relevant results", len(results))
 	if totalBeforeFilter > len(results) {
 		output += fmt.Sprintf(" (filtered from %d)", totalBeforeFilter)
 	}
@@ -1118,16 +945,9 @@ func (t *KnowledgeSearchTool) formatOutput(
 			output += fmt.Sprintf("[Source Document: %s]\n", result.KnowledgeTitle)
 		}
 
-		relevanceLevel := GetRelevanceLevel(result.Score)
+		// relevanceLevel := GetRelevanceLevel(result.Score)
 		output += fmt.Sprintf("\nResult #%d:\n", i+1)
-		output += fmt.Sprintf("  Relevance: %.2f (%s)\n", result.Score, relevanceLevel)
-		output += fmt.Sprintf("  Match Type: %s", FormatMatchType(result.MatchType))
-		if result.SourceQuery != "" && result.SourceQuery != singleQuery {
-			output += fmt.Sprintf(" (Query: \"%s\")", result.SourceQuery)
-		}
-		output += "\n"
-		output += fmt.Sprintf("  Content: %s\n", result.Content)
-		output += fmt.Sprintf("  [chunk_id: %s - full content included above]\n", result.ID)
+		output += fmt.Sprintf("  [chunk_id: %s][chunk_index: %d]\nContent: %s\n", result.ID, result.ChunkIndex, result.Content)
 
 		if faqMeta != nil {
 			if faqMeta.StandardQuestion != "" {
@@ -1139,17 +959,17 @@ func (t *KnowledgeSearchTool) formatOutput(
 			if len(faqMeta.Answers) > 0 {
 				output += "  FAQ Answers:\n"
 				for _, ans := range faqMeta.Answers {
-					output += fmt.Sprintf("    - %s\n", ans)
+					output += fmt.Sprintf("    Answer Choice %d: %s\n", i+1, ans)
 				}
 			}
 		}
 
 		formattedResults = append(formattedResults, map[string]interface{}{
-			"result_index":        i + 1,
-			"chunk_id":            result.ID,
-			"content":             result.Content,
-			"score":               result.Score,
-			"relevance_level":     relevanceLevel,
+			"result_index": i + 1,
+			"chunk_id":     result.ID,
+			"content":      result.Content,
+			// "score":        result.Score,
+			// "relevance_level":     relevanceLevel,
 			"knowledge_id":        result.KnowledgeID,
 			"knowledge_title":     result.KnowledgeTitle,
 			"match_type":          result.MatchType,
@@ -1182,14 +1002,13 @@ func (t *KnowledgeSearchTool) formatOutput(
 	// }
 	// output += "- Full content is already included in search results above\n"
 	// output += "- Results are deduplicated across knowledge bases and sorted by relevance\n"
-	// output += "- Use get_related_chunks to expand context if needed\n"
+	// output += "- Use list_knowledge_chunks to expand context if needed\n"
 
 	data := map[string]interface{}{
 		"knowledge_base_ids": kbsToSearch,
 		"results":            formattedResults,
 		"count":              len(results),
 		"kb_counts":          kbCounts,
-		"search_mode":        searchMode,
 		"display_type":       "search_results",
 	}
 	if len(knowledgeIDsFilter) > 0 {
@@ -1199,14 +1018,8 @@ func (t *KnowledgeSearchTool) formatOutput(
 		}
 		data["knowledge_ids"] = filterList
 	}
-	if singleQuery != "" {
-		data["query"] = singleQuery
-	}
-	if len(vectorQueries) > 0 {
-		data["vector_queries"] = vectorQueries
-	}
-	if len(keywordQueries) > 0 {
-		data["keyword_queries"] = keywordQueries
+	if len(queries) > 0 {
+		data["queries"] = queries
 	}
 	if totalBeforeFilter > len(results) {
 		data["total_before_filter"] = totalBeforeFilter

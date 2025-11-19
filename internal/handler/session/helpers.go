@@ -204,8 +204,8 @@ func (h *Handler) createDefaultSummaryConfig(ctx context.Context) *types.Summary
 		if tenant.ConversationConfig.Temperature > 0 {
 			cfg.Temperature = tenant.ConversationConfig.Temperature
 		}
-		if tenant.ConversationConfig.MaxTokens > 0 {
-			cfg.MaxTokens = tenant.ConversationConfig.MaxTokens
+		if tenant.ConversationConfig.MaxCompletionTokens > 0 {
+			cfg.MaxCompletionTokens = tenant.ConversationConfig.MaxCompletionTokens
 		}
 	}
 
@@ -221,7 +221,7 @@ func (h *Handler) fillSummaryConfigDefaults(ctx context.Context, config *types.S
 	// Determine default values: tenant config first, then config.yaml
 	var defaultPrompt, defaultContextTemplate, defaultNoMatchPrefix string
 	var defaultTemperature float64
-	var defaultMaxTokens int
+	var defaultMaxCompletionTokens int
 
 	if tenant != nil && tenant.ConversationConfig != nil {
 		useSystemPrompt := tenant.ConversationConfig.UseCustomSystemPrompt
@@ -234,7 +234,7 @@ func (h *Handler) fillSummaryConfigDefaults(ctx context.Context, config *types.S
 			defaultContextTemplate = tenant.ConversationConfig.ContextTemplate
 		}
 		defaultTemperature = tenant.ConversationConfig.Temperature
-		defaultMaxTokens = tenant.ConversationConfig.MaxTokens
+		defaultMaxCompletionTokens = tenant.ConversationConfig.MaxCompletionTokens
 	}
 
 	// Fall back to config.yaml if tenant config is empty
@@ -247,8 +247,8 @@ func (h *Handler) fillSummaryConfigDefaults(ctx context.Context, config *types.S
 	if defaultTemperature == 0 {
 		defaultTemperature = h.config.Conversation.Summary.Temperature
 	}
-	if defaultMaxTokens == 0 {
-		defaultMaxTokens = h.config.Conversation.Summary.MaxTokens
+	if defaultMaxCompletionTokens == 0 {
+		defaultMaxCompletionTokens = h.config.Conversation.Summary.MaxCompletionTokens
 	}
 	defaultNoMatchPrefix = h.config.Conversation.Summary.NoMatchPrefix
 
@@ -262,8 +262,8 @@ func (h *Handler) fillSummaryConfigDefaults(ctx context.Context, config *types.S
 	if config.Temperature == 0 {
 		config.Temperature = defaultTemperature
 	}
-	if config.MaxTokens == 0 {
-		config.MaxTokens = defaultMaxTokens
+	if config.MaxCompletionTokens == 0 {
+		config.MaxCompletionTokens = defaultMaxCompletionTokens
 	}
 	if config.NoMatchPrefix == "" {
 		config.NoMatchPrefix = defaultNoMatchPrefix

@@ -1348,6 +1348,9 @@ export default {
       custom: "自定义 Prompt",
       disabledHint: "当前使用系统默认 Prompt，开启自定义后才会应用下方内容。",
       placeholder: "请输入系统 Prompt，或留空使用默认 Prompt...",
+      tabHint: "根据是否启用网络搜索分别配置系统 Prompt。",
+      tabWebOn: "网络搜索已启用",
+      tabWebOff: "网络搜索未启用",
     },
     reset: {
       header: "恢复默认 Prompt",

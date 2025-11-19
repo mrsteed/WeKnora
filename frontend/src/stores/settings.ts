@@ -20,6 +20,9 @@ interface AgentConfig {
   thinkingModelId: string;
   rerankModelId: string;
   allowedTools: string[];
+  system_prompt_web_enabled?: string;
+  system_prompt_web_disabled?: string;
+  use_custom_system_prompt?: boolean;
 }
 
 // 单个模型项接口
@@ -60,7 +63,10 @@ const defaultSettings: Settings = {
     temperature: 0.7,
     thinkingModelId: "",
     rerankModelId: "",
-    allowedTools: ["knowledge_search", "multi_kb_search", "list_knowledge_bases"]
+    allowedTools: ["knowledge_search", "multi_kb_search", "list_knowledge_bases"],
+    system_prompt_web_enabled: "",
+    system_prompt_web_disabled: "",
+    use_custom_system_prompt: false
   },
   selectedKnowledgeBases: [],  // 默认为空数组
   modelConfig: {

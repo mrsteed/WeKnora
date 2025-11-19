@@ -23,7 +23,6 @@ type Config struct {
 	DocReader      *DocReaderConfig      `yaml:"docreader" json:"docreader"`
 	StreamManager  *StreamManagerConfig  `yaml:"stream_manager" json:"stream_manager"`
 	ExtractManager *ExtractManagerConfig `yaml:"extract" json:"extract"`
-	Agent          *AgentGlobalConfig    `yaml:"agent" json:"agent"`
 	WebSearch      *WebSearchConfig      `yaml:"web_search" json:"web_search"`
 }
 
@@ -189,15 +188,6 @@ func LoadConfig() (*Config, error) {
 	}
 	fmt.Printf("Using configuration file: %s\n", viper.ConfigFileUsed())
 	return &cfg, nil
-}
-
-// AgentGlobalConfig represents the global agent configuration
-type AgentGlobalConfig struct {
-	Enabled              bool     `yaml:"enabled" json:"enabled"`
-	DefaultMaxIterations int      `yaml:"default_max_iterations" json:"default_max_iterations"`
-	DefaultTemperature   float64  `yaml:"default_temperature" json:"default_temperature"`
-	ReflectionEnabled    bool     `yaml:"reflection_enabled" json:"reflection_enabled"`
-	DefaultTools         []string `yaml:"default_tools" json:"default_tools"`
 }
 
 // WebSearchConfig represents the web search configuration

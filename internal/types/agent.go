@@ -10,18 +10,19 @@ import (
 // AgentConfig represents the full agent configuration (used at tenant level and runtime)
 // This includes all configuration parameters for agent execution
 type AgentConfig struct {
-	Enabled               bool     `json:"enabled"`                  // Whether agent mode is enabled
-	MaxIterations         int      `json:"max_iterations"`           // Maximum number of ReAct iterations
-	ReflectionEnabled     bool     `json:"reflection_enabled"`       // Whether to enable reflection
-	AllowedTools          []string `json:"allowed_tools"`            // List of allowed tool names
-	Temperature           float64  `json:"temperature"`              // LLM temperature for agent
-	ThinkingModelID       string   `json:"thinking_model_id"`        // Model ID for reasoning
-	RerankModelID         string   `json:"rerank_model_id"`          // Model ID for reranking search results
-	KnowledgeBases        []string `json:"knowledge_bases"`          // Accessible knowledge base IDs
-	SystemPrompt          string   `json:"system_prompt,omitempty"`  // System prompt template with placeholders (optional)
-	UseCustomSystemPrompt bool     `json:"use_custom_system_prompt"` // Whether to use custom system prompt instead of default
-	WebSearchEnabled      bool     `json:"web_search_enabled"`       // Whether web search tool is enabled
-	WebSearchMaxResults   int      `json:"web_search_max_results"`   // Maximum number of web search results (default: 5)
+	Enabled                 bool     `json:"enabled"`                              // Whether agent mode is enabled
+	MaxIterations           int      `json:"max_iterations"`                       // Maximum number of ReAct iterations
+	ReflectionEnabled       bool     `json:"reflection_enabled"`                   // Whether to enable reflection
+	AllowedTools            []string `json:"allowed_tools"`                        // List of allowed tool names
+	Temperature             float64  `json:"temperature"`                          // LLM temperature for agent
+	ThinkingModelID         string   `json:"thinking_model_id"`                    // Model ID for reasoning
+	RerankModelID           string   `json:"rerank_model_id"`                      // Model ID for reranking search results
+	KnowledgeBases          []string `json:"knowledge_bases"`                      // Accessible knowledge base IDs
+	SystemPromptWebEnabled  string   `json:"system_prompt_web_enabled,omitempty"`  // Custom prompt when web search is enabled
+	SystemPromptWebDisabled string   `json:"system_prompt_web_disabled,omitempty"` // Custom prompt when web search is disabled
+	UseCustomSystemPrompt   bool     `json:"use_custom_system_prompt"`             // Whether to use custom system prompt instead of default
+	WebSearchEnabled        bool     `json:"web_search_enabled"`                   // Whether web search tool is enabled
+	WebSearchMaxResults     int      `json:"web_search_max_results"`               // Maximum number of web search results (default: 5)
 }
 
 // SessionAgentConfig represents session-level agent configuration
@@ -64,6 +65,25 @@ func (c *SessionAgentConfig) Scan(value interface{}) error {
 		return nil
 	}
 	return json.Unmarshal(b, c)
+}
+
+// ResolveSystemPrompt returns the prompt template for the given web search state.
+func (c *AgentConfig) ResolveSystemPrompt(webSearchEnabled bool) string {
+	if c == nil {
+		return ""
+	}
+
+	if webSearchEnabled {
+		if c.SystemPromptWebEnabled != "" {
+			return c.SystemPromptWebEnabled
+		}
+	} else {
+		if c.SystemPromptWebDisabled != "" {
+			return c.SystemPromptWebDisabled
+		}
+	}
+
+	return ""
 }
 
 // Tool defines the interface that all agent tools must implement

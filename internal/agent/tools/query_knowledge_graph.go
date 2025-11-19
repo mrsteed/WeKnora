@@ -56,7 +56,7 @@ func NewQueryKnowledgeGraphTool(knowledgeService interfaces.KnowledgeBaseService
 ## 配合使用
 
 1. **关系探索**: query_knowledge_graph → get_chunk_detail（查看详细内容）
-2. **网络分析**: query_knowledge_graph → get_related_chunks（扩展上下文）
+2. **网络分析**: query_knowledge_graph → list_knowledge_chunks（扩展上下文）
 3. **主题研究**: knowledge_search → query_knowledge_graph（深入实体关系）
 
 ## 当前状态
@@ -360,7 +360,7 @@ func (t *QueryKnowledgeGraphTool) Execute(ctx context.Context, args map[string]i
 	output += "=== 💡 使用提示 ===\n"
 	output += "- ✓ 结果已跨知识库去重并按相关度排序\n"
 	output += "- ✓ 使用 get_chunk_detail 获取完整内容\n"
-	output += "- ✓ 使用 get_related_chunks 探索上下文\n"
+	output += "- ✓ 使用 list_knowledge_chunks 探索上下文\n"
 	if !hasGraphConfig {
 		output += "- ⚠️ 配置图谱抽取以获得更精准的实体关系结果\n"
 	}

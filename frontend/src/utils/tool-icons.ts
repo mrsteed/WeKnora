@@ -8,8 +8,8 @@ export const toolIcons: Record<string, string> = {
     multi_kb_search: '🔍',
     knowledge_search: '📚',
     get_chunk_detail: '📄',
-    get_related_chunks: '🔗',
     list_knowledge_bases: '📂',
+    list_knowledge_chunks: '🧩',
     get_document_info: 'ℹ️',
     query_knowledge_graph: '🕸️',
     think: '💭',
@@ -43,11 +43,11 @@ export function getToolDisplayName(toolName: string): string {
         multi_kb_search: '跨库搜索',
         knowledge_search: '知识库搜索',
         get_chunk_detail: '获取片段详情',
-        get_related_chunks: '获取相关片段',
+        list_knowledge_chunks: '查看知识分块',
         list_knowledge_bases: '列出知识库',
         get_document_info: '获取文档信息',
         query_knowledge_graph: '查询知识图谱',
-        think: '思考',
+        think: '深度思考',
         todo_write: '制定计划',
     };
     return displayNames[toolName] || toolName;

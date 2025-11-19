@@ -151,22 +151,51 @@
               {{ $t('common.resetToDefault') }}
             </t-button>
           </div>
+          <p class="prompt-tab-hint">
+            {{ $t('agentSettings.systemPrompt.tabHint') }}
+          </p>
           <p v-if="!localUseCustomSystemPrompt" class="prompt-disabled-hint">
             {{ $t('agentSettings.systemPrompt.disabledHint') }}
           </p>
-          <div v-if="localUseCustomSystemPrompt" class="prompt-textarea-wrapper">
-            <t-textarea
-              ref="promptTextareaRef"
-              v-model="localSystemPrompt"
-              :autosize="{ minRows: 15, maxRows: 30 }"
-              :placeholder="$t('agentSettings.systemPrompt.placeholder')"
-              @blur="handleSystemPromptChange"
-              @input="handlePromptInput"
-              @keydown="handlePromptKeydown"
-              :readonly="!localUseCustomSystemPrompt"
-              :class="{ 'prompt-textarea-readonly': !localUseCustomSystemPrompt }"
-              style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
-            />
+          <div v-if="localUseCustomSystemPrompt" class="system-prompt-tabs">
+            <t-tabs
+              v-model="activeSystemPromptTab"
+              class="system-prompt-variant-tabs"
+              theme="normal"
+            >
+              <t-tab-panel value="web-enabled" :label="$t('agentSettings.systemPrompt.tabWebOn')">
+                <div v-if="activeSystemPromptTab === 'web-enabled'" class="prompt-textarea-wrapper">
+                  <t-textarea
+                    ref="promptTextareaRef"
+                    v-model="localSystemPromptWebEnabled"
+                    :autosize="{ minRows: 15, maxRows: 30 }"
+                    :placeholder="$t('agentSettings.systemPrompt.placeholder')"
+                    @blur="handleSystemPromptChange('web-enabled', $event)"
+                    @input="handlePromptInput"
+                    @keydown="handlePromptKeydown"
+                    :readonly="!localUseCustomSystemPrompt"
+                    :class="{ 'prompt-textarea-readonly': !localUseCustomSystemPrompt }"
+                    style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
+                  />
+                </div>
+              </t-tab-panel>
+              <t-tab-panel value="web-disabled" :label="$t('agentSettings.systemPrompt.tabWebOff')">
+                <div v-if="activeSystemPromptTab === 'web-disabled'" class="prompt-textarea-wrapper">
+                  <t-textarea
+                    ref="promptTextareaRef"
+                    v-model="localSystemPromptWebDisabled"
+                    :autosize="{ minRows: 15, maxRows: 30 }"
+                    :placeholder="$t('agentSettings.systemPrompt.placeholder')"
+                    @blur="handleSystemPromptChange('web-disabled', $event)"
+                    @input="handlePromptInput"
+                    @keydown="handlePromptKeydown"
+                    :readonly="!localUseCustomSystemPrompt"
+                    :class="{ 'prompt-textarea-readonly': !localUseCustomSystemPrompt }"
+                    style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
+                  />
+                </div>
+              </t-tab-panel>
+            </t-tabs>
           </div>
           <!-- 占位符提示下拉框 -->
           <teleport to="body">
@@ -580,11 +609,11 @@
           </div>
           <div class="setting-control">
             <t-input-number
-              v-model="localMaxTokens"
+              v-model="localMaxCompletionTokens"
               :min="1"
               :max="100000"
               :step="100"
-              @change="handleMaxTokensChange"
+              @change="handleMaxCompletionTokensChange"
               style="width: 200px;"
             />
           </div>
@@ -596,6 +625,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch, computed, nextTick } from 'vue'
+import type { Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
@@ -622,7 +652,7 @@ const getDefaultConversationConfig = (): ConversationConfig => ({
   prompt: '',
   context_template: '',
   temperature: 0.3,
-  max_tokens: 2048,
+  max_completion_tokens: 2048,
   use_custom_system_prompt: true,
   use_custom_context_template: true,
   max_rounds: 5,
@@ -656,18 +686,32 @@ const localTemperature = ref(0.7)
 const localThinkingModelId = ref('')
 const localRerankModelId = ref('')
 const localAllowedTools = ref<string[]>([])
-const localSystemPrompt = ref('')
+
+type SystemPromptTab = 'web-enabled' | 'web-disabled'
+const activeSystemPromptTab = ref<SystemPromptTab>('web-enabled')
+const localSystemPromptWebEnabled = ref('')
+const localSystemPromptWebDisabled = ref('')
+const systemPromptRefs: Record<SystemPromptTab, Ref<string>> = {
+  'web-enabled': localSystemPromptWebEnabled,
+  'web-disabled': localSystemPromptWebDisabled,
+}
+const savedSystemPromptMap: Record<SystemPromptTab, string> = {
+  'web-enabled': '',
+  'web-disabled': '',
+}
+const getPromptRefByTab = (tab: SystemPromptTab) => systemPromptRefs[tab]
+const getActivePromptRef = () => getPromptRefByTab(activeSystemPromptTab.value)
 const localUseCustomSystemPrompt = ref(false)
 
 // 普通模式本地状态
 const localContextTemplate = ref('')
 const localSystemPromptNormal = ref('')
 const localTemperatureNormal = ref(0.3)
-const localMaxTokens = ref(2048)
+const localMaxCompletionTokens = ref(2048)
 let savedContextTemplate = ''
 let savedSystemPromptNormal = ''
 let savedTemperatureNormal = 0.3
-let savedMaxTokens = 2048
+let savedMaxCompletionTokens = 2048
 
 const localMaxRounds = ref(5)
 const localEmbeddingTopK = ref(10)
@@ -696,8 +740,8 @@ const syncConversationLocals = () => {
   savedSystemPromptNormal = localSystemPromptNormal.value
   localTemperatureNormal.value = cfg.temperature ?? 0.3
   savedTemperatureNormal = localTemperatureNormal.value
-  localMaxTokens.value = cfg.max_tokens ?? 2048
-  savedMaxTokens = localMaxTokens.value
+  localMaxCompletionTokens.value = cfg.max_completion_tokens ?? 2048
+  savedMaxCompletionTokens = localMaxCompletionTokens.value
 
   localMaxRounds.value = cfg.max_rounds ?? 5
   localEmbeddingTopK.value = cfg.embedding_top_k ?? 10
@@ -750,6 +794,20 @@ const isAgentReady = computed(() => {
          localAllowedTools.value.length > 0
 })
 
+const buildAgentConfigPayload = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
+  enabled: isAgentReady.value,
+  max_iterations: localMaxIterations.value,
+  reflection_enabled: false,
+  allowed_tools: localAllowedTools.value,
+  temperature: localTemperature.value,
+  thinking_model_id: localThinkingModelId.value,
+  rerank_model_id: localRerankModelId.value,
+  system_prompt_web_enabled: localSystemPromptWebEnabled.value,
+  system_prompt_web_disabled: localSystemPromptWebDisabled.value,
+  use_custom_system_prompt: localUseCustomSystemPrompt.value,
+  ...overrides,
+})
+
 // Agent 状态提示消息
 const agentStatusMessage = computed(() => {
   const missing: string[] = []
@@ -787,7 +845,6 @@ const configLoaded = ref(false) // 防止重复加载
 const isInitializing = ref(true) // 标记是否正在初始化，防止初始化时触发保存
 
 // 保存的 Prompt 值，用于比较是否变化
-let savedSystemPrompt = ''
 let savedUseCustomSystemPrompt = false
 
 // 恢复默认 Prompt 的加载状态
@@ -800,6 +857,12 @@ const selectedPlaceholderIndex = ref(0)
 let placeholderPopupTimer: any = null
 const placeholderPrefix = ref('') // 当前输入的前缀，用于过滤
 const popupStyle = ref({ top: '0px', left: '0px' }) // 提示框位置
+
+watch(activeSystemPromptTab, () => {
+  showPlaceholderPopup.value = false
+  placeholderPrefix.value = ''
+  selectedPlaceholderIndex.value = 0
+})
 
 // 设置 textarea 原生事件监听器
 const setupTextareaEventListeners = () => {
@@ -916,8 +979,12 @@ onMounted(async () => {
     localThinkingModelId.value = config.thinking_model_id
     localRerankModelId.value = config.rerank_model_id
     localAllowedTools.value = config.allowed_tools || []
-    localSystemPrompt.value = config.system_prompt || ''
-    savedSystemPrompt = config.system_prompt || '' // 记录已保存的值
+    const promptWebEnabled = config.system_prompt_web_enabled || ''
+    const promptWebDisabled = config.system_prompt_web_disabled || ''
+    localSystemPromptWebEnabled.value = promptWebEnabled
+    localSystemPromptWebDisabled.value = promptWebDisabled
+    savedSystemPromptMap['web-enabled'] = promptWebEnabled
+    savedSystemPromptMap['web-disabled'] = promptWebDisabled
     const useCustomPrompt = config.use_custom_system_prompt ?? false
     localUseCustomSystemPrompt.value = useCustomPrompt
     savedUseCustomSystemPrompt = useCustomPrompt
@@ -940,7 +1007,10 @@ onMounted(async () => {
       temperature: config.temperature,
       thinkingModelId: config.thinking_model_id,
       rerankModelId: config.rerank_model_id,
-      allowedTools: config.allowed_tools || []
+      allowedTools: config.allowed_tools || [],
+      system_prompt_web_enabled: promptWebEnabled,
+      system_prompt_web_disabled: promptWebDisabled,
+      use_custom_system_prompt: useCustomPrompt
     })
 
     // 加载普通模式配置
@@ -1040,18 +1110,7 @@ const handleMaxIterationsChangeDebounced = (value: number) => {
     }
   
   try {
-    const config: AgentConfig = {
-      enabled: isAgentReady.value, // 自动根据配置状态设置
-      max_iterations: numValue, // 确保是数字类型
-      reflection_enabled: false,
-      allowed_tools: localAllowedTools.value,
-      temperature: localTemperature.value,
-      thinking_model_id: localThinkingModelId.value,
-      rerank_model_id: localRerankModelId.value,
-      system_prompt: localSystemPrompt.value,
-      use_custom_system_prompt: localUseCustomSystemPrompt.value
-    }
-    
+    const config = buildAgentConfigPayload({ max_iterations: numValue })
     await updateAgentConfig(config)
       settingsStore.updateAgentConfig({ maxIterations: numValue })
       lastSavedValue = numValue // 记录已保存的值
@@ -1105,18 +1164,7 @@ const handleThinkingModelChange = async (value: string) => {
   }
   
   try {
-    const config: AgentConfig = {
-      enabled: isAgentReady.value, // 自动根据配置状态设置
-      max_iterations: localMaxIterations.value,
-      reflection_enabled: false,
-      allowed_tools: localAllowedTools.value,
-      temperature: localTemperature.value,
-      thinking_model_id: value,
-      rerank_model_id: localRerankModelId.value,
-      system_prompt: localSystemPrompt.value,
-      use_custom_system_prompt: localUseCustomSystemPrompt.value
-    }
-    
+    const config = buildAgentConfigPayload({ thinking_model_id: value })
     await updateAgentConfig(config)
     // 更新 store，确保 isAgentReady 能正确计算
     settingsStore.updateAgentConfig({ thinkingModelId: value })
@@ -1140,18 +1188,7 @@ const handleRerankModelChange = async (value: string) => {
   }
   
   try {
-    const config: AgentConfig = {
-      enabled: isAgentReady.value, // 自动根据配置状态设置
-      max_iterations: localMaxIterations.value,
-      reflection_enabled: false,
-      allowed_tools: localAllowedTools.value,
-      temperature: localTemperature.value,
-      thinking_model_id: localThinkingModelId.value,
-      rerank_model_id: value,
-      system_prompt: localSystemPrompt.value,
-      use_custom_system_prompt: localUseCustomSystemPrompt.value
-    }
-    
+    const config = buildAgentConfigPayload({ rerank_model_id: value })
     await updateAgentConfig(config)
     settingsStore.updateAgentConfig({ rerankModelId: value })
     MessagePlugin.success(t('agentSettings.toasts.rerankModelSaved'))
@@ -1222,18 +1259,7 @@ const handleTemperatureChange = async (value: number) => {
   if (isInitializing.value) return
   
   try {
-    const config: AgentConfig = {
-      enabled: isAgentReady.value, // 自动根据配置状态设置
-      max_iterations: localMaxIterations.value,
-      reflection_enabled: false,
-      allowed_tools: localAllowedTools.value,
-      temperature: value,
-      thinking_model_id: localThinkingModelId.value,
-      rerank_model_id: localRerankModelId.value,
-      system_prompt: localSystemPrompt.value,
-      use_custom_system_prompt: localUseCustomSystemPrompt.value
-    }
-    
+    const config = buildAgentConfigPayload({ temperature: value })
     await updateAgentConfig(config)
     settingsStore.updateAgentConfig({ temperature: value })
     MessagePlugin.success(t('agentSettings.toasts.temperatureSaved'))
@@ -1249,18 +1275,7 @@ const handleAllowedToolsChange = async (value: string[]) => {
   if (isInitializing.value) return
   
   try {
-    const config: AgentConfig = {
-      enabled: isAgentReady.value, // 自动根据配置状态设置
-      max_iterations: localMaxIterations.value,
-      reflection_enabled: false,
-      allowed_tools: value,
-      temperature: localTemperature.value,
-      thinking_model_id: localThinkingModelId.value,
-      rerank_model_id: localRerankModelId.value,
-      system_prompt: localSystemPrompt.value,
-      use_custom_system_prompt: localUseCustomSystemPrompt.value
-    }
-    
+    const config = buildAgentConfigPayload({ allowed_tools: value })
     await updateAgentConfig(config)
     settingsStore.updateAgentConfig({ allowedTools: value })
     MessagePlugin.success(t('agentSettings.toasts.toolsUpdated'))
@@ -1278,18 +1293,7 @@ const handleUseCustomPromptToggle = async (value: boolean) => {
   if (value === savedUseCustomSystemPrompt) return
 
   try {
-    const config: AgentConfig = {
-      enabled: isAgentReady.value,
-      max_iterations: localMaxIterations.value,
-      reflection_enabled: false,
-      allowed_tools: localAllowedTools.value,
-      temperature: localTemperature.value,
-      thinking_model_id: localThinkingModelId.value,
-      rerank_model_id: localRerankModelId.value,
-      system_prompt: localSystemPrompt.value,
-      use_custom_system_prompt: value
-    }
-
+    const config = buildAgentConfigPayload({ use_custom_system_prompt: value })
     await updateAgentConfig(config)
     savedUseCustomSystemPrompt = value
 
@@ -1331,7 +1335,8 @@ const filteredPlaceholders = computed(() => {
 // 计算光标在 textarea 中的像素位置
 const calculateCursorPosition = (textarea: HTMLTextAreaElement) => {
   const cursorPos = textarea.selectionStart
-  const textBeforeCursor = localSystemPrompt.value.substring(0, cursorPos)
+  const activePromptValue = getActivePromptRef().value
+  const textBeforeCursor = activePromptValue.substring(0, cursorPos)
   
   // 获取 textarea 的样式和位置
   const style = window.getComputedStyle(textarea)
@@ -1383,7 +1388,7 @@ const checkAndShowPlaceholderPopup = () => {
   }
   
   const cursorPos = textarea.selectionStart
-  const textBeforeCursor = localSystemPrompt.value.substring(0, cursorPos)
+  const textBeforeCursor = getActivePromptRef().value.substring(0, cursorPos)
   
   // 检查是否输入了 {{（从光标位置向前查找最近的 {{）
   // 需要找到光标前最近的 {{，且中间没有 }}
@@ -1463,15 +1468,17 @@ const insertPlaceholder = (placeholderName: string) => {
   // 延迟执行，确保提示框已关闭
   nextTick(() => {
     const cursorPos = textarea.selectionStart
-    const textBeforeCursor = localSystemPrompt.value.substring(0, cursorPos)
-    const textAfterCursor = localSystemPrompt.value.substring(cursorPos)
+    const promptRef = getActivePromptRef()
+    const currentValue = promptRef.value
+    const textBeforeCursor = currentValue.substring(0, cursorPos)
+    const textAfterCursor = currentValue.substring(cursorPos)
     
     // 找到最后一个 {{ 的位置
     const lastOpenPos = textBeforeCursor.lastIndexOf('{{')
     if (lastOpenPos === -1) {
       // 如果没有找到 {{，直接插入完整的占位符
       const placeholder = `{{${placeholderName}}}`
-      localSystemPrompt.value = textBeforeCursor + placeholder + textAfterCursor
+      promptRef.value = textBeforeCursor + placeholder + textAfterCursor
       // 设置光标位置
       nextTick(() => {
         const newPos = cursorPos + placeholder.length
@@ -1482,7 +1489,7 @@ const insertPlaceholder = (placeholderName: string) => {
       // 替换 {{ 到光标位置的内容为完整的占位符
       const beforePlaceholder = textBeforeCursor.substring(0, lastOpenPos)
       const placeholder = `{{${placeholderName}}}`
-      localSystemPrompt.value = beforePlaceholder + placeholder + textAfterCursor
+      promptRef.value = beforePlaceholder + placeholder + textAfterCursor
       // 设置光标位置
       nextTick(() => {
         const newPos = lastOpenPos + placeholder.length
@@ -1504,30 +1511,27 @@ const handleResetToDefault = async () => {
       try {
         isResettingPrompt.value = true
         
-        // 通过设置 system_prompt 为空字符串来获取默认值
-        // 后端在 system_prompt 为空时会返回默认值
-        const tempConfig: AgentConfig = {
-          enabled: isAgentReady.value,
-          max_iterations: localMaxIterations.value,
-          reflection_enabled: false,
-          allowed_tools: localAllowedTools.value,
-          temperature: localTemperature.value,
-          thinking_model_id: localThinkingModelId.value,
-          rerank_model_id: localRerankModelId.value,
-          system_prompt: '', // 空字符串表示使用默认
-          use_custom_system_prompt: false
-        }
+        // 通过设置 system_prompt_web_* 为空字符串来获取默认值
+        // 后端在字段为空时会返回默认值
+        const tempConfig = buildAgentConfigPayload({
+          system_prompt_web_enabled: '',
+          system_prompt_web_disabled: '',
+          use_custom_system_prompt: false,
+        })
         
         await updateAgentConfig(tempConfig)
         
         // 重新加载配置以获取默认 Prompt 的完整内容
         const res = await getAgentConfig()
-        const defaultPrompt = res.data.system_prompt || ''
+        const defaultPromptWebEnabled = res.data.system_prompt_web_enabled || ''
+        const defaultPromptWebDisabled = res.data.system_prompt_web_disabled || ''
         const useCustom = res.data.use_custom_system_prompt ?? false
         
         // 设置为默认 Prompt 的内容
-        localSystemPrompt.value = defaultPrompt
-        savedSystemPrompt = defaultPrompt
+        localSystemPromptWebEnabled.value = defaultPromptWebEnabled
+        localSystemPromptWebDisabled.value = defaultPromptWebDisabled
+        savedSystemPromptMap['web-enabled'] = defaultPromptWebEnabled
+        savedSystemPromptMap['web-disabled'] = defaultPromptWebDisabled
         localUseCustomSystemPrompt.value = useCustom
         savedUseCustomSystemPrompt = useCustom
         
@@ -1544,7 +1548,7 @@ const handleResetToDefault = async () => {
 }
 
 // 处理系统 Prompt 变化
-const handleSystemPromptChange = async (e?: FocusEvent) => {
+const handleSystemPromptChange = async (tab: SystemPromptTab, e?: FocusEvent) => {
   // 如果点击的是占位符提示框，不触发保存
   if (e?.relatedTarget) {
     const target = e.relatedTarget as HTMLElement
@@ -1567,26 +1571,18 @@ const handleSystemPromptChange = async (e?: FocusEvent) => {
   // 如果正在初始化，不触发保存
   if (isInitializing.value) return
   
+  const promptRef = getPromptRefByTab(tab)
+  const savedValue = savedSystemPromptMap[tab]
+
   // 检查内容是否变化
-  if (localSystemPrompt.value === savedSystemPrompt) {
+  if (promptRef.value === savedValue) {
     return // 内容没变，不调用接口
   }
   
   try {
-    const config: AgentConfig = {
-      enabled: isAgentReady.value,
-      max_iterations: localMaxIterations.value,
-      reflection_enabled: false,
-      allowed_tools: localAllowedTools.value,
-      temperature: localTemperature.value,
-      thinking_model_id: localThinkingModelId.value,
-      rerank_model_id: localRerankModelId.value,
-      system_prompt: localSystemPrompt.value,
-      use_custom_system_prompt: localUseCustomSystemPrompt.value
-    }
-    
+    const config = buildAgentConfigPayload()
     await updateAgentConfig(config)
-    savedSystemPrompt = localSystemPrompt.value // 更新已保存的值
+    savedSystemPromptMap[tab] = promptRef.value // 更新已保存的值
     MessagePlugin.success(t('agentSettings.toasts.systemPromptSaved'))
   } catch (error) {
     console.error('保存系统 Prompt 失败:', error)
@@ -1732,15 +1728,15 @@ const handleTemperatureNormalChange = async (value: number) => {
   }
 }
 
-const handleMaxTokensChange = async (value: number) => {
+const handleMaxCompletionTokensChange = async (value: number) => {
   if (!conversationConfigLoaded.value) return
   
   try {
     await saveConversationConfig(
-      { max_tokens: value },
+      { max_completion_tokens: value },
       t('conversationSettings.toasts.maxTokensSaved')
     )
-    savedMaxTokens = value
+    savedMaxCompletionTokens = value
   } catch (error) {
     console.error('保存Max Tokens失败:', error)
     MessagePlugin.error(getErrorMessage(error))
@@ -2212,6 +2208,39 @@ const handleConversationRerankModelChange = async (value: string) => {
   margin: 0 0 8px;
   color: #666;
   font-size: 12px;
+}
+
+.prompt-tab-hint {
+  margin: 0 0 12px;
+  color: #666;
+  font-size: 12px;
+}
+
+.system-prompt-tabs {
+  width: 100%;
+}
+
+.system-prompt-variant-tabs :deep(.t-tabs__nav-wrap) {
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 8px;
+}
+
+.system-prompt-variant-tabs :deep(.t-tabs__nav-item) {
+  padding: 4px 12px 10px;
+  font-size: 13px;
+  color: #666;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.system-prompt-variant-tabs :deep(.t-tabs__nav-item.t-is-active) {
+  color: #1d2129;
+  border-bottom-color: #07C05F;
+  font-weight: 600;
+}
+
+.system-prompt-variant-tabs :deep(.t-tabs__bar) {
+  display: none;
 }
 
 .prompt-textarea-readonly {

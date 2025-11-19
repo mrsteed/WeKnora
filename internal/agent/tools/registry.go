@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
@@ -11,26 +12,23 @@ import (
 
 // ToolRegistry manages the registration and retrieval of tools
 type ToolRegistry struct {
-	tools                map[string]types.Tool
-	knowledgeBaseService interfaces.KnowledgeBaseService
-	knowledgeService     interfaces.KnowledgeService
-	chunkService         interfaces.ChunkService
-	db                   *gorm.DB // gorm.DB interface for database query tool
+	tools            map[string]types.Tool
+	knowledgeService interfaces.KnowledgeService
+	chunkService     interfaces.ChunkService
+	db               *gorm.DB
 }
 
 // NewToolRegistry creates a new tool registry
 func NewToolRegistry(
-	knowledgeBaseService interfaces.KnowledgeBaseService,
 	knowledgeService interfaces.KnowledgeService,
 	chunkService interfaces.ChunkService,
 	db *gorm.DB, // gorm.DB for database operations
 ) *ToolRegistry {
 	return &ToolRegistry{
-		tools:                make(map[string]types.Tool),
-		knowledgeBaseService: knowledgeBaseService,
-		knowledgeService:     knowledgeService,
-		chunkService:         chunkService,
-		db:                   db,
+		tools:            make(map[string]types.Tool),
+		knowledgeService: knowledgeService,
+		chunkService:     chunkService,
+		db:               db,
 	}
 }
 
@@ -72,13 +70,41 @@ func (r *ToolRegistry) GetFunctionDefinitions() []types.FunctionDefinition {
 
 // ExecuteTool executes a tool by name with the given arguments
 func (r *ToolRegistry) ExecuteTool(ctx context.Context, name string, args map[string]interface{}) (*types.ToolResult, error) {
+	common.PipelineInfo(ctx, "AgentTool", "execute_start", map[string]interface{}{
+		"tool": name,
+		"args": args,
+	})
 	tool, err := r.GetTool(name)
 	if err != nil {
+		common.PipelineError(ctx, "AgentTool", "execute_failed", map[string]interface{}{
+			"tool":  name,
+			"error": err.Error(),
+		})
 		return &types.ToolResult{
 			Success: false,
 			Error:   err.Error(),
 		}, err
 	}
 
-	return tool.Execute(ctx, args)
+	result, execErr := tool.Execute(ctx, args)
+	fields := map[string]interface{}{
+		"tool": name,
+		"args": args,
+	}
+	if result != nil {
+		fields["success"] = result.Success
+		if result.Error != "" {
+			fields["error"] = result.Error
+		}
+	}
+	if execErr != nil {
+		fields["error"] = execErr.Error()
+		common.PipelineError(ctx, "AgentTool", "execute_done", fields)
+	} else if result != nil && !result.Success {
+		common.PipelineWarn(ctx, "AgentTool", "execute_done", fields)
+	} else {
+		common.PipelineInfo(ctx, "AgentTool", "execute_done", fields)
+	}
+
+	return result, execErr
 }

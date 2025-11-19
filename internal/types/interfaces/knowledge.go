@@ -69,6 +69,8 @@ type KnowledgeService interface {
 	UpdateKnowledgeTagBatch(ctx context.Context, updates map[string]*string) error
 	// UpdateFAQEntryTagBatch updates tag for FAQ entries in batch.
 	UpdateFAQEntryTagBatch(ctx context.Context, kbID string, updates map[string]*string) error
+	// GetRepository gets the knowledge repository
+	GetRepository() KnowledgeRepository
 }
 
 // KnowledgeRepository defines the interface for knowledge repositories.

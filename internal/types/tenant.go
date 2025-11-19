@@ -83,7 +83,7 @@ type ConversationConfig struct {
 	// Temperature controls the randomness of the model output
 	Temperature float64 `json:"temperature"`
 	// MaxTokens is the maximum number of tokens to generate
-	MaxTokens int `json:"max_tokens"`
+	MaxCompletionTokens int `json:"max_completion_tokens"`
 
 	// Retrieval & strategy parameters
 	MaxRounds        int     `json:"max_rounds"`
