@@ -12,7 +12,6 @@ export function createKnowledgeBase(data: {
   chunking_config?: any;
   embedding_model_id?: string;
   summary_model_id?: string;
-  rerank_model_id?: string;
   vlm_model_id?: string;
   vlm_config?: any;
   cos_config?: any;

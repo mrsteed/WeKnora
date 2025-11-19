@@ -87,8 +87,7 @@ func NewInitializationHandler(
 type KBModelConfigRequest struct {
 	LLMModelID       string `json:"llmModelId" binding:"required"`
 	EmbeddingModelID string `json:"embeddingModelId" binding:"required"`
-	RerankModelID    string `json:"rerankModelId"` // 可选
-	VLLMModelID      string `json:"vllmModelId"`   // 可选
+	VLLMModelID      string `json:"vllmModelId"` // 可选
 
 	// 文档分块配置
 	DocumentSplitting struct {
@@ -249,18 +248,6 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 	// 更新知识库的模型ID
 	kb.SummaryModelID = req.LLMModelID
 	kb.EmbeddingModelID = req.EmbeddingModelID
-
-	// 处理可选的Rerank模型
-	if req.RerankModelID != "" {
-		rerankModel, err := h.modelService.GetModelByID(ctx, req.RerankModelID)
-		if err != nil || rerankModel == nil {
-			logger.Warn(ctx, "Rerank model not found", "modelId", req.RerankModelID)
-		} else {
-			kb.RerankModelID = req.RerankModelID
-		}
-	} else {
-		kb.RerankModelID = ""
-	}
 
 	// 处理可选的VLLM模型
 	if req.VLLMModelID != "" {
@@ -541,8 +528,6 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 			existingModelID = kb.EmbeddingModelID
 		case types.ModelTypeKnowledgeQA:
 			existingModelID = kb.SummaryModelID
-		case types.ModelTypeRerank:
-			existingModelID = kb.RerankModelID
 		case types.ModelTypeVLLM:
 			existingModelID = kb.VLMModelID
 		}
@@ -592,16 +577,13 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 	}
 
 	// 找到模型ID
-	var embeddingModelID, llmModelID, rerankModelID, vlmModelID string
+	var embeddingModelID, llmModelID, vlmModelID string
 	for _, model := range processedModels {
 		if model.Type == types.ModelTypeEmbedding {
 			embeddingModelID = model.ID
 		}
 		if model.Type == types.ModelTypeKnowledgeQA {
 			llmModelID = model.ID
-		}
-		if model.Type == types.ModelTypeRerank {
-			rerankModelID = model.ID
 		}
 		if model.Type == types.ModelTypeVLLM {
 			vlmModelID = model.ID
@@ -611,11 +593,6 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 	// 更新知识库配置
 	kb.SummaryModelID = llmModelID
 	kb.EmbeddingModelID = embeddingModelID
-	if req.Rerank.Enabled {
-		kb.RerankModelID = rerankModelID
-	} else {
-		kb.RerankModelID = ""
-	}
 
 	// 更新文档分割配置
 	kb.ChunkingConfig = types.ChunkingConfig{
@@ -1106,7 +1083,6 @@ func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 	modelIDs := []string{
 		kb.EmbeddingModelID,
 		kb.SummaryModelID,
-		kb.RerankModelID,
 		kb.VLMModelID,
 	}
 

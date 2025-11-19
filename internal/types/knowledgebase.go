@@ -59,8 +59,6 @@ type KnowledgeBase struct {
 	EmbeddingModelID string `yaml:"embedding_model_id" json:"embedding_model_id"`
 	// Summary model ID
 	SummaryModelID string `yaml:"summary_model_id" json:"summary_model_id"`
-	// Rerank model ID
-	RerankModelID string `yaml:"rerank_model_id" json:"rerank_model_id"`
 	// VLM model ID
 	VLMModelID string `yaml:"vlm_model_id" json:"vlm_model_id"`
 	// VLM config

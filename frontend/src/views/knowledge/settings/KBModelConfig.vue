@@ -51,25 +51,6 @@
         </div>
       </div>
 
-      <!-- ReRank 重排序模型 -->
-      <div class="setting-row">
-        <div class="setting-info">
-          <label>{{ $t('knowledgeEditor.models.rerankLabel') }}</label>
-          <p class="desc">{{ $t('knowledgeEditor.models.rerankDesc') }}</p>
-        </div>
-        <div class="setting-control">
-          <ModelSelector
-            ref="rerankSelectorRef"
-            model-type="Rerank"
-            :selected-model-id="config.rerankModelId"
-            :all-models="allModels"
-            @update:selected-model-id="handleRerankChange"
-            @add-model="handleAddModel('rerank')"
-            :placeholder="$t('knowledgeEditor.models.rerankPlaceholder')"
-          />
-        </div>
-      </div>
-
     </div>
   </div>
 </template>
@@ -83,7 +64,6 @@ import { useI18n } from 'vue-i18n'
 interface ModelConfig {
   llmModelId?: string
   embeddingModelId?: string
-  rerankModelId?: string
   vllmModelId?: string
 }
 
@@ -105,7 +85,6 @@ const { t } = useI18n()
 // 引用各个模型选择器
 const llmSelectorRef = ref<InstanceType<typeof ModelSelector>>()
 const embeddingSelectorRef = ref<InstanceType<typeof ModelSelector>>()
-const rerankSelectorRef = ref<InstanceType<typeof ModelSelector>>()
 
 // 处理LLM模型变化
 const handleLLMChange = (modelId: string) => {
@@ -120,14 +99,6 @@ const handleEmbeddingChange = (modelId: string) => {
   emit('update:config', {
     ...props.config,
     embeddingModelId: modelId
-  })
-}
-
-// 处理ReRank模型变化
-const handleRerankChange = (modelId: string) => {
-  emit('update:config', {
-    ...props.config,
-    rerankModelId: modelId
   })
 }
 

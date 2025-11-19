@@ -119,16 +119,13 @@ func (h *Handler) CreateSession(c *gin.Context) {
 			return
 		}
 
-		// Use knowledge base's models if session doesn't specify them
-		if createdSession.RerankModelID == "" {
-			createdSession.RerankModelID = kb.RerankModelID
-		}
+		// Use knowledge base's summary model if session doesn't specify it
 		if createdSession.SummaryModelID == "" {
 			createdSession.SummaryModelID = kb.SummaryModelID
 		}
 
-		logger.Debugf(ctx, "Knowledge base fetched: %s, rerank model: %s, summary model: %s",
-			kb.ID, kb.RerankModelID, kb.SummaryModelID)
+		logger.Debugf(ctx, "Knowledge base fetched: %s, summary model: %s",
+			kb.ID, kb.SummaryModelID)
 	} else {
 		logger.Debug(ctx, "No knowledge base ID provided, models will use session strategy or be determined at query time")
 	}

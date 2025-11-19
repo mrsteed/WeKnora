@@ -74,7 +74,6 @@ export interface DownloadTask {
 export interface KBModelConfigRequest {
     llmModelId: string
     embeddingModelId: string
-    rerankModelId?: string
     vllmModelId?: string
     documentSplitting: {
         chunkSize: number

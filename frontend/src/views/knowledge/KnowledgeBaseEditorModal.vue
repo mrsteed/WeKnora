@@ -247,8 +247,7 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
     },
     modelConfig: {
       llmModelId: '',
-      embeddingModelId: '',
-      rerankModelId: ''
+      embeddingModelId: ''
     },
     chunkingConfig: {
       chunkSize: 512,
@@ -324,8 +323,7 @@ const loadKBData = async () => {
       },
       modelConfig: {
         llmModelId: kb.summary_model_id || '',
-        embeddingModelId: kb.embedding_model_id || '',
-        rerankModelId: kb.rerank_model_id || ''
+        embeddingModelId: kb.embedding_model_id || ''
       },
       chunkingConfig: {
         chunkSize: kb.chunking_config?.chunk_size || 512,
@@ -451,11 +449,6 @@ const buildSubmitData = () => {
     summary_model_id: formData.value.modelConfig.llmModelId
   }
 
-  // 可选的 Rerank 模型
-  if (formData.value.modelConfig.rerankModelId) {
-    data.rerank_model_id = formData.value.modelConfig.rerankModelId
-  }
-
   // 添加多模态配置
   if (formData.value.multimodalConfig.enabled) {
     if (formData.value.multimodalConfig.vllmModelId) {
@@ -547,7 +540,6 @@ const handleSubmit = async () => {
       const config: KBModelConfigRequest = {
         llmModelId: data.summary_model_id,
         embeddingModelId: data.embedding_model_id,
-        rerankModelId: data.rerank_model_id || '',
         vllmModelId: data.vlm_model_id || '',
         documentSplitting: {
           chunkSize: data.chunking_config.chunk_size,

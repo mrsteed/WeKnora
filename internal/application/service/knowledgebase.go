@@ -272,18 +272,17 @@ func (s *knowledgeBaseService) CopyKnowledgeBase(ctx context.Context,
 		targetKB = &types.KnowledgeBase{
 			ID:                    uuid.New().String(),
 			Name:                  sourceKB.Name,
-			Type:                  sourceKB.Type,
-			Description:           sourceKB.Description,
-			TenantID:              tenantID,
-			ChunkingConfig:        sourceKB.ChunkingConfig,
-			ImageProcessingConfig: sourceKB.ImageProcessingConfig,
-			EmbeddingModelID:      sourceKB.EmbeddingModelID,
-			SummaryModelID:        sourceKB.SummaryModelID,
-			RerankModelID:         sourceKB.RerankModelID,
-			VLMModelID:            sourceKB.VLMModelID,
-			StorageConfig:         sourceKB.StorageConfig,
-			FAQConfig:             faqConfig,
-		}
+		Type:                  sourceKB.Type,
+		Description:           sourceKB.Description,
+		TenantID:              tenantID,
+		ChunkingConfig:        sourceKB.ChunkingConfig,
+		ImageProcessingConfig: sourceKB.ImageProcessingConfig,
+		EmbeddingModelID:      sourceKB.EmbeddingModelID,
+		SummaryModelID:        sourceKB.SummaryModelID,
+		VLMModelID:            sourceKB.VLMModelID,
+		StorageConfig:         sourceKB.StorageConfig,
+		FAQConfig:             faqConfig,
+	}
 		targetKB.EnsureDefaults()
 		if err := s.repo.CreateKnowledgeBase(ctx, targetKB); err != nil {
 			return nil, nil, err
