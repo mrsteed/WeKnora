@@ -1724,6 +1724,7 @@ const handleSystemPromptNormalChange = async () => {
 
 const handleTemperatureNormalChange = async (value: number) => {
   if (!conversationConfigLoaded.value) return
+  if (value === savedTemperatureNormal) return
   
   try {
     await saveConversationConfig(

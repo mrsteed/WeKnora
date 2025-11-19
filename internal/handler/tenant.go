@@ -353,6 +353,8 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 			c.Error(errors.NewAgentInvalidTemperatureError())
 			return
 		}
+		// thinking_model_id 不再强制要求，允许先启用 Agent 再设置模型
+		// 实际使用时会在 AgentQA 中进行验证
 		if len(req.AllowedTools) == 0 {
 			c.Error(errors.NewAgentMissingAllowedToolsError())
 			return
