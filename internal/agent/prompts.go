@@ -239,19 +239,6 @@ func BuildProgressiveRAGSystemPrompt(knowledgeBases []*KnowledgeBaseInfo, webSea
 	return BuildProgressiveRAGSystemPromptWithoutWeb(knowledgeBases, systemPromptTemplate...)
 }
 
-// BuildReActSystemPromptWithStatus builds the system prompt, allowing caller to pass tool status
-// Deprecated: Use BuildProgressiveRAGSystemPrompt instead for better tool calling capabilities
-func BuildReActSystemPromptWithStatus(knowledgeBases []*KnowledgeBaseInfo, webSearchEnabled bool, systemPromptTemplate ...string) string {
-	var template string
-	if len(systemPromptTemplate) > 0 && systemPromptTemplate[0] != "" {
-		template = systemPromptTemplate[0]
-	} else {
-		template = DefaultSystemPromptTemplate
-	}
-	currentTime := time.Now().Format(time.RFC3339)
-	return renderPromptPlaceholdersWithStatus(template, knowledgeBases, webSearchEnabled, currentTime)
-}
-
 // ProgressiveRAGSystemPromptWithWeb is the progressive RAG system prompt template with web search enabled
 // This version emphasizes hybrid retrieval strategy: KB-first with web supplementation
 var ProgressiveRAGSystemPromptWithWeb = `# Role & Mission

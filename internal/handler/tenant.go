@@ -353,8 +353,6 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 			c.Error(errors.NewAgentInvalidTemperatureError())
 			return
 		}
-		// thinking_model_id 不再强制要求，允许先启用 Agent 再设置模型
-		// 实际使用时会在 AgentQA 中进行验证
 		if len(req.AllowedTools) == 0 {
 			c.Error(errors.NewAgentMissingAllowedToolsError())
 			return
@@ -531,6 +529,7 @@ func (h *TenantHandler) buildDefaultConversationConfig() *types.ConversationConf
 		RerankTopK:               h.config.Conversation.RerankTopK,
 		RerankThreshold:          h.config.Conversation.RerankThreshold,
 		EnableRewrite:            h.config.Conversation.EnableRewrite,
+		EnableQueryExpansion:     h.config.Conversation.EnableQueryExpansion,
 		FallbackStrategy:         h.config.Conversation.FallbackStrategy,
 		FallbackResponse:         h.config.Conversation.FallbackResponse,
 		FallbackPrompt:           h.config.Conversation.FallbackPrompt,
@@ -640,6 +639,9 @@ func (h *TenantHandler) GetTenantConversationConfig(c *gin.Context) {
 		}
 		// EnableRewrite 需要允许显式关闭，因此直接覆盖
 		defaultCfg.EnableRewrite = tc.EnableRewrite
+
+		// Query expansion toggle
+		defaultCfg.EnableQueryExpansion = tc.EnableQueryExpansion
 
 		// Model IDs
 		if tc.SummaryModelID != "" {

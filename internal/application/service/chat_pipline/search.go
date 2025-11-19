@@ -123,7 +123,7 @@ func (p *PluginSearch) OnEvent(ctx context.Context,
 	chatManage.SearchResult = allResults
 
 	// If recall is low, attempt query expansion with keyword-focused search
-	if len(chatManage.SearchResult) < max(1, chatManage.EmbeddingTopK/2) {
+	if chatManage.EnableQueryExpansion && len(chatManage.SearchResult) < max(1, chatManage.EmbeddingTopK/2) {
 		pipelineInfo(ctx, "Search", "recall_low", map[string]interface{}{
 			"current":   len(chatManage.SearchResult),
 			"threshold": chatManage.EmbeddingTopK / 2,

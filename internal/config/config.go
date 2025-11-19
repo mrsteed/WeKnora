@@ -46,6 +46,7 @@ type ConversationConfig struct {
 	FallbackResponse           string         `yaml:"fallback_response" json:"fallback_response"`
 	FallbackPrompt             string         `yaml:"fallback_prompt" json:"fallback_prompt"`
 	EnableRewrite              bool           `yaml:"enable_rewrite" json:"enable_rewrite"`
+	EnableQueryExpansion       bool           `yaml:"enable_query_expansion" json:"enable_query_expansion"`
 	EnableRerank               bool           `yaml:"enable_rerank" json:"enable_rerank"`
 	Summary                    *SummaryConfig `yaml:"summary" json:"summary"`
 	GenerateSessionTitlePrompt string         `yaml:"generate_session_title_prompt" json:"generate_session_title_prompt"`

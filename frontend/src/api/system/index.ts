@@ -60,6 +60,7 @@ export interface ConversationConfig {
   rerank_model_id?: string
   rewrite_prompt_system?: string
   rewrite_prompt_user?: string
+  enable_query_expansion?: boolean
 }
 
 export function getSystemInfo(): Promise<{ data: SystemInfo }> {

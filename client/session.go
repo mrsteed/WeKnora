@@ -51,8 +51,6 @@ type SummaryConfig struct {
 
 // AgentConfig defines agent configuration for agent mode
 type AgentConfig struct {
-	Enabled           bool     `json:"enabled"`            // Whether agent mode is enabled
-	EnablePlanning    bool     `json:"enable_planning"`    // Whether to plan before executing
 	MaxIterations     int      `json:"max_iterations"`     // Maximum number of ReAct iterations
 	ReflectionEnabled bool     `json:"reflection_enabled"` // Whether to enable reflection
 	AllowedTools      []string `json:"allowed_tools"`      // List of allowed tool names

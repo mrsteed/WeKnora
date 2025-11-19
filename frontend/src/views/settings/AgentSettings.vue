@@ -506,6 +506,20 @@
           </div>
         </div>
 
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.enableQueryExpansion.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.enableQueryExpansion.desc') }}</p>
+          </div>
+          <div class="setting-control">
+            <t-switch
+              v-model="localEnableQueryExpansion"
+              :label="[$t('common.off'), $t('common.on')]"
+              @change="handleEnableQueryExpansionChange"
+            />
+          </div>
+        </div>
+
         <!-- 改写 Prompt：仅在开启改写时展示 -->
         <div v-if="localEnableRewrite" class="setting-row vertical">
           <div class="setting-info">
@@ -662,6 +676,7 @@ const getDefaultConversationConfig = (): ConversationConfig => ({
   rerank_top_k: 5,
   rerank_threshold: 0.5,
   enable_rewrite: true,
+  enable_query_expansion: true,
   fallback_strategy: 'fixed',
   fallback_response: '',
   fallback_prompt: '',
@@ -720,6 +735,7 @@ const localVectorThreshold = ref(0.5)
 const localRerankTopK = ref(5)
 const localRerankThreshold = ref(0.5)
 const localEnableRewrite = ref(true)
+const localEnableQueryExpansion = ref(true)
 const localFallbackStrategy = ref<'fixed' | 'model'>('fixed')
 const localFallbackResponse = ref('')
 const localFallbackPrompt = ref('')
@@ -750,6 +766,7 @@ const syncConversationLocals = () => {
   localRerankTopK.value = cfg.rerank_top_k ?? 5
   localRerankThreshold.value = cfg.rerank_threshold ?? 0.5
   localEnableRewrite.value = cfg.enable_rewrite ?? true
+  localEnableQueryExpansion.value = cfg.enable_query_expansion ?? true
   localFallbackStrategy.value = (cfg.fallback_strategy as 'fixed' | 'model') || 'fixed'
   localFallbackResponse.value = cfg.fallback_response ?? ''
   localFallbackPrompt.value = cfg.fallback_prompt ?? ''
@@ -1795,6 +1812,18 @@ const handleEnableRewriteChange = async (value: boolean) => {
   } catch (error) {
     console.error('保存 enable_rewrite 失败:', error)
     localEnableRewrite.value = conversationConfig.value.enable_rewrite
+  }
+}
+
+const handleEnableQueryExpansionChange = async (value: boolean) => {
+  try {
+    await saveConversationConfig(
+      { enable_query_expansion: value },
+      t('conversationSettings.toasts.enableQueryExpansionSaved')
+    )
+  } catch (error) {
+    console.error('保存 enable_query_expansion 失败:', error)
+    localEnableQueryExpansion.value = conversationConfig.value.enable_query_expansion ?? true
   }
 }
 

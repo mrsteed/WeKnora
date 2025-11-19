@@ -37,6 +37,7 @@ conversation:
     ## 用户当前的问题是:
     {{.Query}}
   enable_rewrite: true
+  enable_query_expansion: true
   enable_rerank: true
   rewrite_prompt_system: |
     你是一个专注于指代消解和省略补全的智能助手，你的任务是根据历史对话上下文，清晰识别用户问题中的代词并替换为明确的主语，同时补全省略的关键信息。

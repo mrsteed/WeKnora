@@ -453,6 +453,7 @@ func (s *sessionService) KnowledgeQA(ctx context.Context, session *types.Session
 	maxRounds := session.MaxRounds
 	fallbackResponse := session.FallbackResponse
 	enableRewrite := session.EnableRewrite
+	enableQueryExpansion := true
 
 	summaryParams := session.SummaryParameters
 	if summaryParams == nil {
@@ -483,6 +484,7 @@ func (s *sessionService) KnowledgeQA(ctx context.Context, session *types.Session
 		maxRounds = tenantConv.MaxRounds
 		fallbackResponse = tenantConv.FallbackResponse
 		enableRewrite = tenantConv.EnableRewrite
+		enableQueryExpansion = tenantConv.EnableQueryExpansion
 
 		if tenantConv.MaxCompletionTokens != 0 {
 			summaryConfig.MaxCompletionTokens = tenantConv.MaxCompletionTokens
@@ -507,28 +509,29 @@ func (s *sessionService) KnowledgeQA(ctx context.Context, session *types.Session
 	// Create chat management object with session settings
 	logger.Infof(ctx, "Creating chat manage object, knowledge base IDs: %v, chat model ID: %s", knowledgeBaseIDs, chatModelID)
 	chatManage := &types.ChatManage{
-		Query:               query,
-		RewriteQuery:        query,
-		SessionID:           session.ID,
-		MessageID:           assistantMessageID,  // NEW: For event emission in pipeline
-		KnowledgeBaseID:     knowledgeBaseIDs[0], // For backward compatibility, use first KB ID
-		KnowledgeBaseIDs:    knowledgeBaseIDs,    // Multi-KB support
-		VectorThreshold:     vectorThreshold,
-		KeywordThreshold:    keywordThreshold,
-		EmbeddingTopK:       embeddingTopK,
-		RerankModelID:       rerankModelID,
-		RerankTopK:          rerankTopK,
-		RerankThreshold:     rerankThreshold,
-		MaxRounds:           maxRounds,
-		ChatModelID:         chatModelID,
-		SummaryConfig:       summaryConfig,
-		FallbackResponse:    fallbackResponse,
-		EventBus:            eventBus.AsEventBusInterface(), // NEW: For pipeline to emit events directly
-		WebSearchEnabled:    webSearchEnabled,
-		TenantID:            session.TenantID,
-		RewritePromptSystem: rewritePromptSystem,
-		RewritePromptUser:   rewritePromptUser,
-		EnableRewrite:       enableRewrite,
+		Query:                query,
+		RewriteQuery:         query,
+		SessionID:            session.ID,
+		MessageID:            assistantMessageID,  // NEW: For event emission in pipeline
+		KnowledgeBaseID:      knowledgeBaseIDs[0], // For backward compatibility, use first KB ID
+		KnowledgeBaseIDs:     knowledgeBaseIDs,    // Multi-KB support
+		VectorThreshold:      vectorThreshold,
+		KeywordThreshold:     keywordThreshold,
+		EmbeddingTopK:        embeddingTopK,
+		RerankModelID:        rerankModelID,
+		RerankTopK:           rerankTopK,
+		RerankThreshold:      rerankThreshold,
+		MaxRounds:            maxRounds,
+		ChatModelID:          chatModelID,
+		SummaryConfig:        summaryConfig,
+		FallbackResponse:     fallbackResponse,
+		EventBus:             eventBus.AsEventBusInterface(), // NEW: For pipeline to emit events directly
+		WebSearchEnabled:     webSearchEnabled,
+		TenantID:             session.TenantID,
+		RewritePromptSystem:  rewritePromptSystem,
+		RewritePromptUser:    rewritePromptUser,
+		EnableRewrite:        enableRewrite,
+		EnableQueryExpansion: enableQueryExpansion,
 	}
 
 	// Start knowledge QA event processing

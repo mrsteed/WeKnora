@@ -1435,6 +1435,10 @@ export default {
       label: "开启问题改写",
       desc: "多轮对话自动改写问题以获得更优召回",
     },
+    enableQueryExpansion: {
+      label: "启用查询扩展",
+      desc: "召回不足时调用大模型生成扩展查询（增加时延与成本）",
+    },
     fallbackStrategy: {
       label: "兜底策略",
       desc: "检索无结果时采用的处理方式",
@@ -1510,6 +1514,7 @@ export default {
       rerankTopKSaved: "ReRank TopK 已保存",
       rerankThresholdSaved: "ReRank 阈值已保存",
       enableRewriteSaved: "问题改写开关已保存",
+      enableQueryExpansionSaved: "查询扩展策略已保存",
       fallbackStrategySaved: "兜底策略已保存",
       fallbackResponseSaved: "兜底回复已保存",
       fallbackPromptSaved: "兜底 Prompt 已保存",

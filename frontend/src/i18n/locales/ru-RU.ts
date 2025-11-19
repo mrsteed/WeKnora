@@ -1237,6 +1237,15 @@ export default {
       autoDisabled: 'Конфигурация Agent неполная. Режим Agent автоматически выключен'
     }
   },
+  conversationSettings: {
+    enableQueryExpansion: {
+      label: 'Включить расширение запросов',
+      desc: 'При низкой выдаче обращаться к LLM для генерации дополнительных запросов (дороже и медленнее)'
+    },
+    toasts: {
+      enableQueryExpansionSaved: 'Настройка расширения запросов сохранена'
+    }
+  },
   mcpSettings: {
     title: 'Сервисы MCP',
     description: 'Управление внешними сервисами MCP (Model Context Protocol) для использования инструментов и ресурсов в режиме Agent',

@@ -1431,6 +1431,10 @@ export default {
       label: 'Enable Query Rewrite',
       desc: 'Automatically rewrite multi-turn queries for better recall'
     },
+    enableQueryExpansion: {
+      label: 'Enable LLM Query Expansion',
+      desc: 'When recall is low, call a reasoning model to generate expansion queries (adds latency & cost)'
+    },
     fallbackStrategy: {
       label: 'Fallback Strategy',
       desc: 'How to respond when no relevant documents are found',
@@ -1506,6 +1510,7 @@ export default {
       rerankTopKSaved: 'ReRank TopK saved',
       rerankThresholdSaved: 'ReRank threshold saved',
       enableRewriteSaved: 'Query rewrite preference saved',
+      enableQueryExpansionSaved: 'Query expansion preference saved',
       fallbackStrategySaved: 'Fallback strategy saved',
       fallbackResponseSaved: 'Fallback response saved',
       fallbackPromptSaved: 'Fallback prompt saved',

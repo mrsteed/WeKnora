@@ -746,7 +746,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	})
 
 	// Build messages with all context
-	systemPrompt := BuildReActSystemPromptWithStatus(e.knowledgeBasesInfo, e.config.WebSearchEnabled, e.systemPromptTemplate)
+	systemPrompt := BuildProgressiveRAGSystemPrompt(e.knowledgeBasesInfo, e.config.WebSearchEnabled, e.systemPromptTemplate)
 
 	messages := []chat.Message{
 		{Role: "system", Content: systemPrompt},

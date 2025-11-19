@@ -86,13 +86,14 @@ type ConversationConfig struct {
 	MaxCompletionTokens int `json:"max_completion_tokens"`
 
 	// Retrieval & strategy parameters
-	MaxRounds        int     `json:"max_rounds"`
-	EmbeddingTopK    int     `json:"embedding_top_k"`
-	KeywordThreshold float64 `json:"keyword_threshold"`
-	VectorThreshold  float64 `json:"vector_threshold"`
-	RerankTopK       int     `json:"rerank_top_k"`
-	RerankThreshold  float64 `json:"rerank_threshold"`
-	EnableRewrite    bool    `json:"enable_rewrite"`
+	MaxRounds            int     `json:"max_rounds"`
+	EmbeddingTopK        int     `json:"embedding_top_k"`
+	KeywordThreshold     float64 `json:"keyword_threshold"`
+	VectorThreshold      float64 `json:"vector_threshold"`
+	RerankTopK           int     `json:"rerank_top_k"`
+	RerankThreshold      float64 `json:"rerank_threshold"`
+	EnableRewrite        bool    `json:"enable_rewrite"`
+	EnableQueryExpansion bool    `json:"enable_query_expansion"`
 
 	// Model configuration
 	SummaryModelID string `json:"summary_model_id"`
