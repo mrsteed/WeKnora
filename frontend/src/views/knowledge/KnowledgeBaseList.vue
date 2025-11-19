@@ -74,6 +74,7 @@
         <!-- 卡片底部 -->
         <div class="card-bottom">
           <div class="type-badge" :class="{ 'document': (kb.type || 'document') === 'document', 'faq': kb.type === 'faq' }">
+            <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'file'" size="14px" />
             <span>{{ kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument') }}</span>
           </div>
           <span class="card-time">{{ kb.updated_at }}</span>
@@ -294,10 +295,9 @@ const handleKBEditorSuccess = (kbId: string) => {
 .create-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 20px;
-  height: 36px;
-  border: 1px solid transparent;
+  gap: 8px;
+  padding: 10px 24px;
+  height: 40px;
   border-radius: 8px;
   font-family: "PingFang SC";
   font-size: 14px;
@@ -307,36 +307,50 @@ const handleKBEditorSuccess = (kbId: string) => {
 
   .btn-icon {
     flex-shrink: 0;
+    font-size: 16px;
   }
 }
 
 .create-btn.primary {
   background: #07c05f;
   color: #fff;
-  border-color: #07c05f;
+  border: none;
+  box-shadow: 0 2px 6px 0 rgba(7, 192, 95, 0.2);
 
   &:hover {
-    background: #05a04f;
-    border-color: #05a04f;
+    background: #05a855;
+    box-shadow: 0 3px 8px 0 rgba(7, 192, 95, 0.28);
   }
 
   &:active {
     background: #048f45;
-    border-color: #048f45;
   }
 }
 
 .create-btn.ghost {
-  background: transparent;
+  background: #ffffff;
   color: #07c05f;
-  border-color: #07c05f;
+  border: 1.5px solid #d4edde;
+  box-shadow: none;
+
+  .btn-icon {
+    color: #07c05f;
+    font-weight: 600;
+  }
 
   &:hover {
-    background: #07c05f1a;
+    background: #f6fdf9;
+    border-color: #07c05f;
+    color: #059669;
+
+    .btn-icon {
+      color: #059669;
+    }
   }
 
   &:active {
-    background: #07c05f33;
+    background: #ecfdf5;
+    border-color: #05a855;
   }
 }
 
@@ -388,41 +402,57 @@ const handleKBEditorSuccess = (kbId: string) => {
     opacity: 0.9;
   }
 
-  // 文档类型背景图案
-  &.kb-type-document::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 100%;
-    height: 100%;
-    background-image: url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z' stroke='%2307C05F' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M14 2V8H20' stroke='%2307C05F' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    background-repeat: repeat;
-    background-size: 32px 32px;
-    background-position: top right;
-    opacity: 0.06;
-    pointer-events: none;
-    z-index: 0;
+  // 文档类型样式
+  &.kb-type-document {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fcfa 100%);
+    border-color: #e8f5ed;
+    
+    &:hover {
+      border-color: #07c05f;
+      background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
+    }
+    
+    // 右上角装饰
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, rgba(7, 192, 95, 0.08) 0%, transparent 100%);
+      border-radius: 0 6px 0 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
   }
 
-  // 问答类型背景图案
-  &.kb-type-faq::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 100%;
-    height: 100%;
-    background-image: url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z' stroke='%231890FF' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M9.09 9C9.3251 8.33167 9.78915 7.76811 10.4 7.40913C11.0108 7.05016 11.7289 6.91894 12.4272 7.03871C13.1255 7.15849 13.7588 7.52152 14.2151 8.06353C14.6713 8.60553 14.9211 9.29152 14.92 10C14.92 12 11.92 13 11.92 13' stroke='%231890FF' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M12 17H12.01' stroke='%231890FF' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    background-repeat: repeat;
-    background-size: 32px 32px;
-    background-position: top right;
-    opacity: 0.06;
-    pointer-events: none;
-    z-index: 0;
+  // 问答类型样式
+  &.kb-type-faq {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+    border-color: #e6f0ff;
+    
+    &:hover {
+      border-color: #0052d9;
+      background: linear-gradient(135deg, #ffffff 0%, #eff6ff 100%);
+    }
+    
+    // 右上角装饰
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, rgba(0, 82, 217, 0.08) 0%, transparent 100%);
+      border-radius: 0 6px 0 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
   }
 
-  // 确保内容在背景图案之上
+  // 确保内容在装饰之上
   .card-header,
   .card-content,
   .card-bottom {
@@ -453,25 +483,29 @@ const handleKBEditorSuccess = (kbId: string) => {
 
 .more-wrap {
   display: flex;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   justify-content: center;
   align-items: center;
-  border-radius: 3px;
+  border-radius: 6px;
   cursor: pointer;
   flex-shrink: 0;
+  transition: all 0.2s ease;
+  opacity: 0.7;
 
   &:hover {
-    background: #e7e7e7;
+    background: rgba(0, 0, 0, 0.06);
+    opacity: 1;
   }
 
   &.active-more {
-    background: #e7e7e7;
+    background: rgba(0, 0, 0, 0.08);
+    opacity: 1;
   }
 
   .more-icon {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
   }
 }
 
@@ -504,23 +538,26 @@ const handleKBEditorSuccess = (kbId: string) => {
 }
 
 .type-badge {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
-  border-radius: 3px;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 4px;
   font-family: "PingFang SC";
   font-size: 12px;
   font-weight: 500;
+  line-height: 18px;
 
   &.document {
-    background: #07c05f1a;
-    color: #07c05f;
+    background: rgba(7, 192, 95, 0.1);
+    color: #059669;
+    border: 1px solid rgba(7, 192, 95, 0.2);
   }
 
   &.faq {
-    background: #1890ff1a;
-    color: #1890ff;
+    background: rgba(0, 82, 217, 0.1);
+    color: #0052d9;
+    border: 1px solid rgba(0, 82, 217, 0.2);
   }
 }
 
@@ -674,9 +711,12 @@ const handleKBEditorSuccess = (kbId: string) => {
   z-index: 99 !important;
 
   .t-popup__content {
-    padding: 4px 0 !important;
-    margin-top: 4px !important;
-    min-width: 120px;
+    padding: 6px 0 !important;
+    margin-top: 6px !important;
+    min-width: 140px;
+    border-radius: 6px !important;
+    box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1) !important;
+    border: 1px solid #e7ebf0 !important;
   }
 }
 
@@ -688,21 +728,29 @@ const handleKBEditorSuccess = (kbId: string) => {
 .popup-menu-item {
   display: flex;
   align-items: center;
-  padding: 8px 16px;
+  gap: 10px;
+  padding: 10px 16px;
   cursor: pointer;
   transition: all 0.2s ease;
   color: #000000e6;
   font-family: "PingFang SC";
   font-size: 14px;
   font-weight: 400;
+  line-height: 20px;
 
   .menu-icon {
-    margin-right: 8px;
     font-size: 16px;
+    flex-shrink: 0;
+    color: #00000099;
+    transition: color 0.2s ease;
   }
 
   &:hover {
-    background: #f5f5f5;
+    background: #f7f9fc;
+    
+    .menu-icon {
+      color: #000000e6;
+    }
   }
 
   &.delete {
@@ -710,13 +758,13 @@ const handleKBEditorSuccess = (kbId: string) => {
     
     &:hover {
       background: #fff1f0;
-      color: #FA5151;
+      color: #fa5151;
 
       .menu-icon {
-        color: #FA5151;
+        color: #fa5151;
+      }
     }
   }
-}
 }
 
 // 创建对话框样式优化

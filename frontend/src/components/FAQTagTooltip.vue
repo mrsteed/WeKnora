@@ -163,16 +163,17 @@ watch(showTooltip, (newVal) => {
 .faq-tag-tooltip {
   position: fixed;
   z-index: 9999;
-  max-width: 360px;
-  min-width: 120px;
-  padding: 12px 16px;
+  max-width: 320px;
+  min-width: 100px;
+  padding: 10px 14px;
   background: #FFFFFF;
-  color: #111827;
-  border: 1px solid #E7E7E7;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  color: #000000e6;
+  border: 1px solid #e7ebf0;
+  border-radius: 6px;
+  box-shadow: 0 0 8px 0 rgba(0, 0, 0, 0.08);
   font-family: "PingFang SC";
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 400;
   line-height: 1.6;
   word-break: break-word;
   pointer-events: none;
@@ -182,206 +183,100 @@ watch(showTooltip, (newVal) => {
     position: absolute;
     width: 0;
     height: 0;
-    border: 6px solid transparent;
+    border: 5px solid transparent;
   }
 
   &.placement-top::before {
-    bottom: -12px;
+    bottom: -10px;
     left: 50%;
     transform: translateX(-50%);
-    border-top-color: #E7E7E7;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.08));
+    border-top-color: #e7ebf0;
   }
 
   &.placement-top::after {
     content: '';
     position: absolute;
-    bottom: -11px;
+    bottom: -9px;
     left: 50%;
     transform: translateX(-50%);
     width: 0;
     height: 0;
-    border: 6px solid transparent;
+    border: 5px solid transparent;
     border-top-color: #FFFFFF;
   }
 
   &.placement-bottom::before {
-    top: -12px;
+    top: -10px;
     left: 50%;
     transform: translateX(-50%);
-    border-bottom-color: #E7E7E7;
-    filter: drop-shadow(0 -2px 4px rgba(0, 0, 0, 0.08));
+    border-bottom-color: #e7ebf0;
   }
 
   &.placement-bottom::after {
     content: '';
     position: absolute;
-    top: -11px;
+    top: -9px;
     left: 50%;
     transform: translateX(-50%);
     width: 0;
     height: 0;
-    border: 6px solid transparent;
+    border: 5px solid transparent;
     border-bottom-color: #FFFFFF;
   }
 
   &.placement-left::before {
-    right: -12px;
+    right: -10px;
     top: 50%;
     transform: translateY(-50%);
-    border-left-color: #E7E7E7;
-    filter: drop-shadow(2px 0 4px rgba(0, 0, 0, 0.08));
+    border-left-color: #e7ebf0;
   }
 
   &.placement-left::after {
     content: '';
     position: absolute;
-    right: -11px;
+    right: -9px;
     top: 50%;
     transform: translateY(-50%);
     width: 0;
     height: 0;
-    border: 6px solid transparent;
+    border: 5px solid transparent;
     border-left-color: #FFFFFF;
   }
 
   &.placement-right::before {
-    left: -12px;
+    left: -10px;
     top: 50%;
     transform: translateY(-50%);
-    border-right-color: #E7E7E7;
-    filter: drop-shadow(-2px 0 4px rgba(0, 0, 0, 0.08));
+    border-right-color: #e7ebf0;
   }
 
   &.placement-right::after {
     content: '';
     position: absolute;
-    left: -11px;
+    left: -9px;
     top: 50%;
     transform: translateY(-50%);
     width: 0;
     height: 0;
-    border: 6px solid transparent;
+    border: 5px solid transparent;
     border-right-color: #FFFFFF;
   }
 
-  &.tooltip-answer {
-    border-color: #07C05F;
-    background: #FFFFFF;
-    box-shadow: 0 4px 16px rgba(7, 192, 95, 0.15);
-
-    &::before {
-      border-top-color: #07C05F;
-    }
-
-    &.placement-bottom::before {
-      border-bottom-color: #07C05F;
-    }
-
-    &.placement-left::before {
-      border-left-color: #07C05F;
-    }
-
-    &.placement-right::before {
-      border-right-color: #07C05F;
-    }
-
-    &::after {
-      border-top-color: #FFFFFF;
-    }
-
-    &.placement-bottom::after {
-      border-bottom-color: #FFFFFF;
-    }
-
-    &.placement-left::after {
-      border-left-color: #FFFFFF;
-    }
-
-    &.placement-right::after {
-      border-right-color: #FFFFFF;
-    }
-  }
-
-  &.tooltip-similar {
-    border-color: #07C05F;
-    background: #FFFFFF;
-    box-shadow: 0 4px 16px rgba(7, 192, 95, 0.15);
-
-    &::before {
-      border-top-color: #07C05F;
-    }
-
-    &.placement-bottom::before {
-      border-bottom-color: #07C05F;
-    }
-
-    &.placement-left::before {
-      border-left-color: #07C05F;
-    }
-
-    &.placement-right::before {
-      border-right-color: #07C05F;
-    }
-
-    &::after {
-      border-top-color: #FFFFFF;
-    }
-
-    &.placement-bottom::after {
-      border-bottom-color: #FFFFFF;
-    }
-
-    &.placement-left::after {
-      border-left-color: #FFFFFF;
-    }
-
-    &.placement-right::after {
-      border-right-color: #FFFFFF;
-    }
-  }
-
+  // 所有类型使用统一的常规边框颜色
+  &.tooltip-answer,
+  &.tooltip-similar,
   &.tooltip-negative {
-    border-color: #07C05F;
-    background: #FFFFFF;
-    box-shadow: 0 4px 16px rgba(7, 192, 95, 0.15);
-
-    &::before {
-      border-top-color: #07C05F;
-    }
-
-    &.placement-bottom::before {
-      border-bottom-color: #07C05F;
-    }
-
-    &.placement-left::before {
-      border-left-color: #07C05F;
-    }
-
-    &.placement-right::before {
-      border-right-color: #07C05F;
-    }
-
-    &::after {
-      border-top-color: #FFFFFF;
-    }
-
-    &.placement-bottom::after {
-      border-bottom-color: #FFFFFF;
-    }
-
-    &.placement-left::after {
-      border-left-color: #FFFFFF;
-    }
-
-    &.placement-right::after {
-      border-right-color: #FFFFFF;
-    }
+    // 边框和箭头颜色已在主样式中定义为 #e7ebf0
+    // 无需额外覆盖
   }
 }
 
 .tooltip-content {
-  color: #111827;
+  color: #000000e6;
+  font-family: "PingFang SC";
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
 }

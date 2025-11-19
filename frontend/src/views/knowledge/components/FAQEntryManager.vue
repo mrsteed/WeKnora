@@ -2769,18 +2769,20 @@ watch(() => entries.value.map(e => ({
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #F3F4F6;
-  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  margin: 0 -16px -12px;
+  background: rgba(48, 50, 54, 0.02);
+  border-top: 1px solid #f5f5f5;
+  flex-wrap: nowrap;
 }
 
 .faq-card-status {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .status-item {
@@ -2813,16 +2815,15 @@ watch(() => entries.value.map(e => ({
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: #F9FAFB;
-  border: 1px solid #EEF2F7;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
   cursor: pointer;
   transition: all 0.2s ease;
 
   &:hover {
-    background: #F3F4F6;
-    border-color: #D1D5DB;
+    background: rgba(0, 0, 0, 0.04);
   }
 
   .status-icon {
@@ -2846,19 +2847,24 @@ watch(() => entries.value.map(e => ({
 .faq-card-tag {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  flex-shrink: 0;
+  justify-content: flex-start;
+  flex: 1;
+  min-width: 0;
 
   :deep(.t-tag) {
     display: inline-flex;
     align-items: center;
     cursor: pointer;
-    max-width: 170px;
-    border-radius: 999px;
+    max-width: 140px;
+    height: 22px;
+    border-radius: 4px;
     border-color: #e5e7eb;
-    color: #374151;
-    padding: 0 12px;
-    background: #f9fafb;
+    color: #00000066;
+    padding: 0 8px;
+    background: #3032360f;
+    font-size: 12px;
+    font-weight: 400;
+    font-family: "PingFang SC";
     transition: all 0.2s ease;
 
     &:hover {
@@ -2875,11 +2881,13 @@ watch(() => entries.value.map(e => ({
   cursor: pointer;
 
   .tag-text {
-    max-width: 160px;
+    max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 12px;
+    font-weight: 400;
+    color: #00000066;
   }
 }
 
