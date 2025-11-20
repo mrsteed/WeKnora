@@ -7,17 +7,20 @@ import (
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/gin-gonic/gin"
+	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 )
 
 // SystemHandler handles system-related requests
 type SystemHandler struct {
-	cfg *config.Config
+	cfg         *config.Config
+	neo4jDriver neo4j.Driver
 }
 
 // NewSystemHandler creates a new system handler
-func NewSystemHandler(cfg *config.Config) *SystemHandler {
+func NewSystemHandler(cfg *config.Config, neo4jDriver neo4j.Driver) *SystemHandler {
 	return &SystemHandler{
-		cfg: cfg,
+		cfg:         cfg,
+		neo4jDriver: neo4jDriver,
 	}
 }
 
@@ -130,11 +133,10 @@ func (h *SystemHandler) getVectorStoreEngine() string {
 
 // getGraphDatabaseEngine returns the graph database engine name
 func (h *SystemHandler) getGraphDatabaseEngine() string {
-	neo4jEnable := strings.ToLower(os.Getenv("NEO4J_ENABLE"))
-	if neo4jEnable == "true" {
-		return "Neo4j"
+	if h.neo4jDriver == nil {
+		return "未启用"
 	}
-	return "未启用"
+	return "Neo4j"
 }
 
 // isMinioEnabled checks if MinIO is enabled
