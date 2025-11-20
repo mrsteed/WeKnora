@@ -1004,6 +1004,7 @@ export default {
   knowledgeList: {
     create: "新建知识库",
     createFAQ: "新建 FAQ 知识库",
+    subtitle: "管理和组织您的知识库，支持文档型和问答型知识库",
     uninitializedBanner:
       "部分知识库尚未初始化，需要先在设置中配置模型信息才能添加知识文档",
     empty: {

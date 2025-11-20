@@ -2,14 +2,12 @@
   <div class="kb-list-container">
     <!-- 头部 -->
     <div class="header">
-      <h2>{{ $t('knowledgeBase.title') }}</h2>
-      <div class="action-buttons">
-        <button class="create-btn ghost" @click="openCreateModal">
-          <t-icon name="add" size="16px" class="btn-icon" />
-          <span>{{ $t('knowledgeList.create') }}</span>
-        </button>
+      <div class="header-title">
+        <h2>{{ $t('knowledgeBase.title') }}</h2>
+        <p class="header-subtitle">{{ $t('knowledgeList.subtitle') }}</p>
       </div>
     </div>
+    <div class="header-divider"></div>
     
     <!-- 未初始化知识库提示 -->
     <div v-if="hasUninitializedKbs" class="warning-banner">
@@ -177,11 +175,6 @@ onMounted(() => {
   fetchList()
 })
 
-// 打开创建知识库弹窗
-const openCreateModal = () => {
-  uiStore.openCreateKB()
-}
-
 const openMore = (index: number) => {
   // 只记录当前打开的索引，用于显示激活样式
   // 弹窗的开关由 v-model 自动管理
@@ -274,7 +267,13 @@ const handleKBEditorSuccess = (kbId: string) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+
+  .header-title {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
 
   h2 {
     margin: 0;
@@ -286,72 +285,19 @@ const handleKBEditorSuccess = (kbId: string) => {
   }
 }
 
-.action-buttons {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.create-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 24px;
-  height: 40px;
-  border-radius: 8px;
+.header-subtitle {
+  margin: 0;
+  color: #00000099;
   font-family: "PingFang SC";
   font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-
-  .btn-icon {
-    flex-shrink: 0;
-    font-size: 16px;
-  }
+  font-weight: 400;
+  line-height: 20px;
 }
 
-.create-btn.primary {
-  background: #07c05f;
-  color: #fff;
-  border: none;
-  box-shadow: 0 2px 6px 0 rgba(7, 192, 95, 0.2);
-
-  &:hover {
-    background: #05a855;
-    box-shadow: 0 3px 8px 0 rgba(7, 192, 95, 0.28);
-  }
-
-  &:active {
-    background: #048f45;
-  }
-}
-
-.create-btn.ghost {
-  background: #ffffff;
-  color: #07c05f;
-  border: 1.5px solid #d4edde;
-  box-shadow: none;
-
-  .btn-icon {
-    color: #07c05f;
-    font-weight: 600;
-  }
-
-  &:hover {
-    background: #f6fdf9;
-    border-color: #07c05f;
-    color: #059669;
-
-    .btn-icon {
-      color: #059669;
-    }
-  }
-
-  &:active {
-    background: #ecfdf5;
-    border-color: #05a855;
-  }
+.header-divider {
+  height: 1px;
+  background: #e7ebf0;
+  margin-bottom: 20px;
 }
 
 .warning-banner {

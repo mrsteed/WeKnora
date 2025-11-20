@@ -52,28 +52,6 @@
           </div>
           <p class="faq-subtitle">{{ $t('knowledgeEditor.faq.subtitle') }}</p>
         </div>
-        <div class="faq-header-actions">
-          <t-button
-            class="faq-action-btn primary"
-            size="medium"
-            @click="openEditor()"
-          >
-            <template #icon>
-              <t-icon name="add" />
-            </template>
-            {{ $t('knowledgeEditor.faq.editorCreate') }}
-          </t-button>
-          <t-dropdown
-            :options="toolbarActionOptions"
-            placement="bottom-left"
-            trigger="click"
-            @click="handleToolbarAction"
-          >
-            <t-button class="faq-action-btn secondary icon-only" size="medium">
-              <t-icon name="more" />
-            </t-button>
-          </t-dropdown>
-        </div>
       </div>
 
       <div class="faq-main">
@@ -988,9 +966,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted, computed, nextTick, onUnmounted } from 'vue'
+import { ref, reactive, watch, onMounted, computed, nextTick, onUnmounted, h } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
-import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
+import { MessagePlugin, DialogPlugin, Icon as TIcon } from 'tdesign-vue-next'
 import type { FormRules, FormInstanceFunctions } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -1122,6 +1100,7 @@ const knowledgeDropdownOptions = computed(() =>
     .map((item) => ({
       content: item.name,
       value: item.id,
+      prefixIcon: () => h(TIcon, { name: item.type === 'faq' ? 'help-circle' : 'file', size: '16px' }),
     })),
 )
 
@@ -2781,13 +2760,6 @@ watch(() => entries.value.map(e => ({
     line-height: 20px;
   }
 
-  .faq-header-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
 }
 
 .tag-filter-bar {
@@ -2802,56 +2774,6 @@ watch(() => entries.value.map(e => ({
   }
 }
 
-.faq-action-btn {
-  min-width: 148px;
-  height: 38px;
-  border-radius: 8px;
-  font-family: "PingFang SC";
-  font-size: 14px;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 18px;
-  border-width: 1px;
-  border-style: solid;
-  transition: all 0.2s ease;
-
-  :deep(.t-icon) {
-    font-size: 16px;
-  }
-
-  &.primary {
-    background: linear-gradient(90deg, #07c05f, #05a04f);
-    border-color: transparent;
-    color: #fff;
-    box-shadow: 0 6px 14px rgba(7, 192, 95, 0.2);
-
-    &:hover {
-      background: linear-gradient(90deg, #08d067, #05a04f);
-      box-shadow: 0 8px 16px rgba(7, 192, 95, 0.25);
-    }
-  }
-
-  &.secondary {
-    background: #ffffff;
-    border-color: #07c05f;
-    color: #07c05f;
-
-    &:hover {
-      background: #f3fdf7;
-      border-color: #05a04f;
-      color: #059669;
-    }
-  }
-
-  &.icon-only {
-    min-width: auto;
-    width: 38px;
-    padding: 0;
-  }
-}
 
 .kb-settings-button {
   width: 30px;

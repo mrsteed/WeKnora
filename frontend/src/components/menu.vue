@@ -9,7 +9,17 @@
             <div v-if="showKbActions" class="kb-action-wrapper">
                 <div class="kb-action-label">{{ t('knowledgeBase.quickActions') }}</div>
                 <div class="kb-action-menu">
-                    <template v-if="showDocActions">
+                    <template v-if="showCreateKbAction">
+                        <div class="menu_item kb-action-item" @click.stop="handleCreateKnowledgeBase">
+                            <div class="menu_item-box">
+                                <div class="menu_icon">
+                                    <t-icon name="add" />
+                                </div>
+                                <span class="menu_title">{{ t('knowledgeList.create') }}</span>
+                            </div>
+                        </div>
+                    </template>
+                    <template v-else-if="showDocActions">
                         <div class="menu_item kb-action-item" @click.stop="handleDocUploadClick">
                             <div class="menu_item-box">
                                 <div class="menu_icon">
@@ -56,6 +66,7 @@
                             <img class="icon" :src="getImgSrc(item.icon == 'zhishiku' ? knowledgeIcon : item.icon == 'logout' ? logoutIcon : item.icon == 'setting' ? settingIcon : prefixIcon)" alt="">
                         </div>
                         <span class="menu_title" :title="item.title">{{ item.title }}</span>
+                        <t-icon v-if="item.path === 'creatChat'" name="add" class="menu-create-hint" />
                     </div>
                 </div>
                 <div ref="submenuscrollContainer" @scroll="handleScroll" class="submenu" v-if="item.children">
@@ -142,6 +153,11 @@ const isInKnowledgeBase = computed<boolean>(() => {
            route.name === 'knowledgeBaseSettings';
 });
 
+// 是否在知识库列表页面
+const isInKnowledgeBaseList = computed<boolean>(() => {
+    return route.name === 'knowledgeBaseList';
+});
+
 // 统一的菜单项激活状态判断
 const isMenuItemActive = (itemPath: string): boolean => {
     const currentRoute = route.name;
@@ -198,10 +214,11 @@ const currentKbInfo = ref<any>(null)
 const docUploadInput = ref<HTMLInputElement | null>(null)
 const pendingUploadKbId = ref<string | null>(null)
 
-const showKbActions = computed(() => isInKnowledgeBase.value && !!currentKbInfo.value)
+const showKbActions = computed(() => (isInKnowledgeBase.value && !!currentKbInfo.value) || isInKnowledgeBaseList.value)
 const currentKbType = computed(() => currentKbInfo.value?.type || 'document')
-const showDocActions = computed(() => showKbActions.value && currentKbType.value !== 'faq')
-const showFaqActions = computed(() => showKbActions.value && currentKbType.value === 'faq')
+const showDocActions = computed(() => showKbActions.value && isInKnowledgeBase.value && currentKbType.value !== 'faq')
+const showFaqActions = computed(() => showKbActions.value && isInKnowledgeBase.value && currentKbType.value === 'faq')
+const showCreateKbAction = computed(() => showKbActions.value && isInKnowledgeBaseList.value)
 
 // 时间分组函数
 const getTimeCategory = (dateStr: string): string => {
@@ -633,6 +650,10 @@ const handleFaqImportFromMenu = async () => {
     dispatchFaqMenuAction('import', kbId)
 }
 
+const handleCreateKnowledgeBase = () => {
+    uiStore.openCreateKB()
+}
+
 </script>
 <style lang="less" scoped>
 .aside_box {
@@ -774,6 +795,11 @@ const handleFaqImportFromMenu = async () => {
         .menu_icon,
         .menu_title {
             color: #07c05f !important;
+        }
+
+        .menu-create-hint {
+            color: #07c05f !important;
+            opacity: 1;
         }
     }
 
@@ -1031,6 +1057,20 @@ const handleFaqImportFromMenu = async () => {
     align-items: center;
     width: 100%;
     position: relative;
+}
+
+.menu-create-hint {
+    margin-left: auto;
+    margin-right: 8px;
+    font-size: 16px;
+    color: #07c05f;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+    flex-shrink: 0;
+}
+
+.menu_item:hover .menu-create-hint {
+    opacity: 1;
 }
 
 .menu_box {

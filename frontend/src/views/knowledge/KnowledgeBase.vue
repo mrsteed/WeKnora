@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, reactive, computed, nextTick, type ComponentPublicInstance } from "vue";
-import { MessagePlugin } from "tdesign-vue-next";
+import { ref, onMounted, onUnmounted, watch, reactive, computed, nextTick, h, type ComponentPublicInstance } from "vue";
+import { MessagePlugin, Icon as TIcon } from "tdesign-vue-next";
 import DocContent from "@/components/doc-content.vue";
 import useKnowledgeBase from '@/hooks/useKnowledgeBase';
 import { useRoute, useRouter } from 'vue-router';
@@ -34,7 +34,7 @@ const uploadInputRef = ref<HTMLInputElement | null>(null);
 const uploading = ref(false);
 const kbLoading = ref(false);
 const isFAQ = computed(() => (kbInfo.value?.type || '') === 'faq');
-const knowledgeList = ref<Array<{ id: string; name: string }>>([]);
+const knowledgeList = ref<Array<{ id: string; name: string; type?: string }>>([]);
 let { cardList, total, moreIndex, details, getKnowled, delKnowledge, openMore, onVisibleChange, getCardDetails, getfDetails } = useKnowledgeBase(kbId.value)
 let isCardDetails = ref(false);
 let timeout: ReturnType<typeof setInterval> | null = null;
@@ -345,6 +345,7 @@ const loadKnowledgeList = async () => {
     knowledgeList.value = (res?.data || []).map((item: any) => ({
       id: String(item.id),
       name: item.name,
+      type: item.type || 'document',
     }));
   } catch (error) {
     console.error('Failed to load knowledge list:', error);
@@ -580,6 +581,7 @@ const knowledgeDropdownOptions = computed(() =>
   knowledgeList.value.map((item) => ({
     content: item.name,
     value: item.id,
+    prefixIcon: () => h(TIcon, { name: item.type === 'faq' ? 'help-circle' : 'folder', size: '16px' }),
   }))
 );
 
@@ -717,30 +719,6 @@ async function createNewSession(value: string): Promise<void> {
             </t-tooltip>
           </div>
           <p class="document-subtitle">{{ $t('knowledgeEditor.document.subtitle') }}</p>
-        </div>
-        <div class="document-header-actions">
-          <t-button
-            class="document-action-btn primary"
-            size="medium"
-            :loading="uploading"
-            :disabled="uploading"
-            @click="handleDocumentUploadClick"
-          >
-            <template #icon>
-              <t-icon name="upload" />
-            </template>
-            {{ $t('upload.uploadDocument') }}
-          </t-button>
-          <t-button
-            class="document-action-btn secondary"
-            size="medium"
-            @click="handleManualCreate"
-          >
-            <template #icon>
-              <t-icon name="edit" />
-            </template>
-            {{ $t('upload.onlineEdit') }}
-          </t-button>
         </div>
       </div>
       <input
@@ -1544,64 +1522,6 @@ async function createNewSession(value: string): Promise<void> {
     line-height: 20px;
   }
 
-  .document-header-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-}
-
-.document-action-btn {
-  min-width: 148px;
-  height: 38px;
-  border-radius: 8px;
-  font-family: "PingFang SC";
-  font-size: 14px;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 18px;
-  border-width: 1px;
-  border-style: solid;
-  transition: all 0.2s ease;
-
-  :deep(.t-icon) {
-    font-size: 16px;
-  }
-
-  &.primary {
-    background: linear-gradient(90deg, #07c05f, #05a04f);
-    border-color: transparent;
-    color: #fff;
-    box-shadow: 0 6px 14px rgba(7, 192, 95, 0.2);
-
-    &:hover {
-      background: linear-gradient(90deg, #08d067, #05a04f);
-      box-shadow: 0 8px 16px rgba(7, 192, 95, 0.25);
-    }
-
-    &:disabled {
-      opacity: 0.7;
-      box-shadow: none;
-      cursor: not-allowed;
-    }
-  }
-
-  &.secondary {
-    background: #ffffff;
-    border-color: #07c05f;
-    color: #07c05f;
-
-    &:hover {
-      background: #f3fdf7;
-      border-color: #05a04f;
-      color: #059669;
-    }
-  }
 }
 
 .document-upload-input {

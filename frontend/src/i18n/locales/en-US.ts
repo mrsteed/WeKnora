@@ -687,6 +687,7 @@ export default {
   knowledgeList: {
     create: 'Create Knowledge Base',
     createFAQ: 'Create FAQ Knowledge Base',
+    subtitle: 'Manage and organize your knowledge bases, supporting document-based and FAQ-based knowledge bases',
     uninitializedBanner: 'Some knowledge bases are not initialized. Configure model information in settings before adding documents.',
     empty: {
       title: 'No knowledge bases yet',
