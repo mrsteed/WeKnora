@@ -1057,6 +1057,63 @@ async function createNewSession(value: string): Promise<void> {
     min-width: 120px;
   }
 }
+
+/* 面包屑下拉菜单优化 */
+.t-popup__content {
+  .t-dropdown__menu {
+    background: #ffffff;
+    border: 1px solid #e7e9eb;
+    border-radius: 10px;
+    box-shadow: 0 6px 28px rgba(15, 23, 42, 0.08);
+    padding: 6px;
+    min-width: 200px;
+    max-width: 240px;
+  }
+
+  .t-dropdown__item {
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin: 2px 0;
+    transition: all 0.12s ease;
+    font-size: 13px;
+    color: #0f172a;
+    cursor: pointer;
+    min-width: auto !important;
+    max-width: 100% !important;
+    display: flex !important;
+    align-items: center;
+    width: 100%;
+
+    &:hover {
+      background: #f6f8f7;
+      color: #10b981;
+    }
+
+    .t-dropdown__item-icon {
+      flex-shrink: 0;
+      margin-right: 8px;
+      color: inherit;
+      display: flex;
+      align-items: center;
+      
+      .t-icon {
+        font-size: 16px;
+      }
+    }
+
+    .t-dropdown__item-text {
+      color: inherit !important;
+      font-size: 13px !important;
+      line-height: 1.5 !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      flex: 1;
+      min-width: 0;
+      display: block;
+    }
+  }
+}
 </style>
 <style scoped lang="less">
 .knowledge-layout {
@@ -1475,22 +1532,40 @@ async function createNewSession(value: string): Promise<void> {
   .breadcrumb-link {
     border: none;
     background: transparent;
-    padding: 0;
+    padding: 4px 8px;
+    margin: -4px -8px;
     font: inherit;
     color: #4e5969;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    transition: color 0.2s ease;
+    border-radius: 6px;
+    transition: all 0.12s ease;
 
     &:hover:not(:disabled) {
-      color: #07c05f;
+      color: #10b981;
+      background: #f6f8f7;
     }
 
     &:disabled {
       cursor: not-allowed;
       color: #c9ced6;
+    }
+
+    &.dropdown {
+      padding-right: 6px;
+      
+      :deep(.t-icon) {
+        font-size: 14px;
+        transition: transform 0.12s ease;
+      }
+
+      &:hover:not(:disabled) {
+        :deep(.t-icon) {
+          transform: translateY(1px);
+        }
+      }
     }
   }
 

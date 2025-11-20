@@ -72,7 +72,7 @@
         <!-- 卡片底部 -->
         <div class="card-bottom">
           <div class="type-badge" :class="{ 'document': (kb.type || 'document') === 'document', 'faq': kb.type === 'faq' }">
-            <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'file'" size="14px" />
+            <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
             <span>{{ kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument') }}</span>
           </div>
           <span class="card-time">{{ kb.updated_at }}</span>

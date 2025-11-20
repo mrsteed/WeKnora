@@ -191,30 +191,108 @@ const updateModelDropdownPosition = () => {
   const anchor = modelButtonRef.value;
   if (!anchor) {
     modelDropdownStyle.value = {
+      position: 'fixed',
       top: '50%',
       left: '50%',
       transform: 'translate(-50%, -50%)',
     };
     return;
   }
+  
+  // 获取按钮相对于视口的位置
   const rect = anchor.getBoundingClientRect();
+  console.log('[Model Dropdown] Button rect:', {
+    top: rect.top,
+    bottom: rect.bottom,
+    left: rect.left,
+    right: rect.right,
+    width: rect.width,
+    height: rect.height
+  });
+  
   const dropdownWidth = 280;
   const offsetY = 8;
-  let top = rect.bottom + offsetY;
-  let left = rect.left;
-  if (left + dropdownWidth > window.innerWidth) {
-    left = window.innerWidth - dropdownWidth - 12;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  
+  // 左对齐到触发元素的左边缘
+  // 使用 Math.floor 而不是 Math.round，避免像素对齐问题
+  let left = Math.floor(rect.left);
+  
+  // 边界处理：不超出视口左右（留 16px margin）
+  const minLeft = 16;
+  const maxLeft = Math.max(16, vw - dropdownWidth - 16);
+  left = Math.max(minLeft, Math.min(maxLeft, left));
+
+  // 垂直定位：紧贴按钮，使用合理的高度避免空白
+  const preferredDropdownHeight = 280; // 优选高度（紧凑且够用）
+  const maxDropdownHeight = 360; // 最大高度
+  const minDropdownHeight = 200; // 最小高度
+  const topMargin = 20; // 顶部留白
+  const spaceBelow = vh - rect.bottom; // 下方剩余空间
+  const spaceAbove = rect.top; // 上方剩余空间
+  
+  console.log('[Model Dropdown] Space check:', {
+    spaceBelow,
+    spaceAbove,
+    windowHeight: vh
+  });
+  
+  let actualHeight: number;
+  let shouldOpenBelow: boolean;
+  
+  // 优先考虑下方空间
+  if (spaceBelow >= minDropdownHeight + offsetY) {
+    // 下方有足够空间，向下弹出
+    actualHeight = Math.min(preferredDropdownHeight, spaceBelow - offsetY - 16);
+    shouldOpenBelow = true;
+    console.log('[Model Dropdown] Position: below button', { actualHeight });
+  } else {
+    // 向上弹出，优先使用 preferredHeight，必要时才扩展到 maxHeight
+    const availableHeight = spaceAbove - offsetY - topMargin;
+    if (availableHeight >= preferredDropdownHeight) {
+      // 有足够空间显示优选高度
+      actualHeight = preferredDropdownHeight;
+    } else {
+      // 空间不够，使用可用空间（但不小于最小高度）
+      actualHeight = Math.max(minDropdownHeight, availableHeight);
+    }
+    shouldOpenBelow = false;
+    console.log('[Model Dropdown] Position: above button', { actualHeight });
   }
-  const dropdownHeight = 360;
-  if (top + dropdownHeight > window.innerHeight) {
-    top = rect.top - dropdownHeight - offsetY;
-    if (top < 10) top = 10;
+  
+  // 根据弹出方向使用不同的定位方式
+  if (shouldOpenBelow) {
+    // 向下弹出：使用 top 定位，左对齐
+    const top = Math.floor(rect.bottom + offsetY);
+    console.log('[Model Dropdown] Opening below, top:', top);
+    modelDropdownStyle.value = {
+      position: 'fixed !important',
+      width: `${dropdownWidth}px`,
+      left: `${left}px`,
+      top: `${top}px`,
+      maxHeight: `${actualHeight}px`,
+      transform: 'none !important',
+      margin: '0 !important',
+      padding: '0 !important'
+    };
+  } else {
+    // 向上弹出：使用 bottom 定位，左对齐
+    const bottom = vh - rect.top + offsetY;
+    console.log('[Model Dropdown] Opening above, bottom:', bottom);
+    modelDropdownStyle.value = {
+      position: 'fixed !important',
+      width: `${dropdownWidth}px`,
+      left: `${left}px`,
+      bottom: `${bottom}px`,
+      maxHeight: `${actualHeight}px`,
+      transform: 'none !important',
+      margin: '0 !important',
+      padding: '0 !important'
+    };
   }
-  modelDropdownStyle.value = {
-    top: `${Math.round(top)}px`,
-    left: `${Math.round(left)}px`,
-    width: `${dropdownWidth}px`,
-  };
+  
+  console.log('[Model Dropdown] Applied style:', modelDropdownStyle.value);
 };
 
 const toggleModelSelector = () => {
@@ -224,8 +302,15 @@ const toggleModelSelector = () => {
     if (!availableModels.value.length) {
       loadChatModels();
     }
+    // 多次更新位置确保准确
     nextTick(() => {
       updateModelDropdownPosition();
+      requestAnimationFrame(() => {
+        updateModelDropdownPosition();
+        setTimeout(() => {
+          updateModelDropdownPosition();
+        }, 50);
+      });
     });
   }
 };
@@ -238,6 +323,10 @@ const closeModelSelector = () => {
 const closeAgentModeSelector = () => {
   showAgentModeSelector.value = false;
 };
+
+// 窗口事件处理器
+let resizeHandler: (() => void) | null = null;
+let scrollHandler: (() => void) | null = null;
 
 onMounted(() => {
   loadKnowledgeBases();
@@ -254,20 +343,38 @@ onMounted(() => {
   // 监听点击外部关闭下拉菜单
   document.addEventListener('click', closeAgentModeSelector);
   document.addEventListener('click', closeModelSelector);
-  // 监听窗口大小变化，重新计算位置
-  window.addEventListener('resize', () => {
+  
+  // 监听窗口大小变化和滚动，重新计算位置
+  resizeHandler = () => {
     if (showModelSelector.value) {
       updateModelDropdownPosition();
     }
     if (showAgentModeSelector.value) {
       updateAgentModeDropdownPosition();
     }
-  });
+  };
+  scrollHandler = () => {
+    if (showModelSelector.value) {
+      updateModelDropdownPosition();
+    }
+    if (showAgentModeSelector.value) {
+      updateAgentModeDropdownPosition();
+    }
+  };
+  
+  window.addEventListener('resize', resizeHandler, { passive: true });
+  window.addEventListener('scroll', scrollHandler, { passive: true, capture: true });
 });
 
 onUnmounted(() => {
   document.removeEventListener('click', closeAgentModeSelector);
   document.removeEventListener('click', closeModelSelector);
+  if (resizeHandler) {
+    window.removeEventListener('resize', resizeHandler);
+  }
+  if (scrollHandler) {
+    window.removeEventListener('scroll', scrollHandler, { capture: true });
+  }
 });
 
 // 监听路由变化
@@ -307,8 +414,6 @@ const createSession = (val: string) => {
   clearvalue();
 }
 
-// 计算模型下拉菜单位置
-// 计算 Agent 模式下拉菜单位置
 const updateAgentModeDropdownPosition = () => {
   const anchor = agentModeButtonRef.value;
   
@@ -325,32 +430,71 @@ const updateAgentModeDropdownPosition = () => {
   const rect = anchor.getBoundingClientRect();
   const dropdownWidth = 200;
   const offsetY = 8;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
   
-  // 计算位置：默认在按钮下方
-  let top = rect.bottom + offsetY;
-  let left = rect.left;
+  // 水平位置：左对齐
+  let left = Math.floor(rect.left);
+  const minLeft = 16;
+  const maxLeft = Math.max(16, vw - dropdownWidth - 16);
+  left = Math.max(minLeft, Math.min(maxLeft, left));
   
-  // 检查右侧边界
-  if (left + dropdownWidth > window.innerWidth) {
-    left = window.innerWidth - dropdownWidth - 10;
-  }
+  // 垂直位置：紧贴按钮，使用合理的高度避免空白
+  const preferredDropdownHeight = 140; // Agent 模式选择器内容较少，用更小的优选高度
+  const maxDropdownHeight = 150;
+  const minDropdownHeight = 100;
+  const topMargin = 20;
+  const spaceBelow = vh - rect.bottom;
+  const spaceAbove = rect.top;
   
-  // 检查下方空间
-  const dropdownMaxHeight = 150;
-  if (top + dropdownMaxHeight > window.innerHeight) {
-    // 如果下方空间不足，显示在按钮上方
-    top = rect.top - dropdownMaxHeight - offsetY;
-    if (top < 10) {
-      top = 10;
+  console.log('[Agent Dropdown] Space check:', {
+    spaceBelow,
+    spaceAbove,
+    windowHeight: vh
+  });
+  
+  let actualHeight: number;
+  
+  // 优先考虑下方空间
+  if (spaceBelow >= minDropdownHeight + offsetY) {
+    // 下方有足够空间，向下弹出
+    actualHeight = Math.min(preferredDropdownHeight, spaceBelow - offsetY - 16);
+    const top = Math.floor(rect.bottom + offsetY);
+    
+    agentModeDropdownStyle.value = {
+      position: 'fixed !important',
+      width: `${dropdownWidth}px`,
+      left: `${left}px`,
+      top: `${top}px`,
+      maxHeight: `${actualHeight}px`,
+      transform: 'none !important',
+      margin: '0 !important',
+      padding: '0 !important',
+    };
+    console.log('[Agent Dropdown] Position: below button', { actualHeight });
+  } else {
+    // 向上弹出，使用 bottom 定位确保紧贴按钮
+    const availableHeight = spaceAbove - offsetY - topMargin;
+    if (availableHeight >= preferredDropdownHeight) {
+      actualHeight = preferredDropdownHeight;
+    } else {
+      actualHeight = Math.max(minDropdownHeight, availableHeight);
     }
+    
+    const bottom = vh - rect.top + offsetY;
+    
+    agentModeDropdownStyle.value = {
+      position: 'fixed !important',
+      width: `${dropdownWidth}px`,
+      left: `${left}px`,
+      bottom: `${bottom}px`, // 使用 bottom 定位，确保紧贴按钮
+      maxHeight: `${actualHeight}px`,
+      transform: 'none !important',
+      margin: '0 !important',
+      padding: '0 !important',
+    };
+    console.log('[Agent Dropdown] Position: above button', { actualHeight, bottom });
   }
-  
-  agentModeDropdownStyle.value = {
-    position: 'fixed',
-    top: `${Math.round(top)}px`,
-    left: `${Math.round(left)}px`,
-    width: `${dropdownWidth}px`
-  };
 };
 
 const toggleAgentModeSelector = () => {
@@ -362,8 +506,15 @@ const toggleAgentModeSelector = () => {
   
   showAgentModeSelector.value = !showAgentModeSelector.value;
   if (showAgentModeSelector.value) {
+    // 多次更新位置确保准确
     nextTick(() => {
       updateAgentModeDropdownPosition();
+      requestAnimationFrame(() => {
+        updateAgentModeDropdownPosition();
+        setTimeout(() => {
+          updateAgentModeDropdownPosition();
+        }, 50);
+      });
     });
   }
 }
@@ -880,17 +1031,12 @@ const getImgSrc = (url: string) => {
   border-radius: 6px;
   background: #f5f5f5;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.12s;
   user-select: none;
   flex-shrink: 0;
 
   &:hover {
     background: #e6e6e6;
-    transform: scale(1.02);
-  }
-
-  &:active {
-    transform: scale(0.98);
   }
 
   &.disabled {
@@ -899,7 +1045,6 @@ const getImgSrc = (url: string) => {
     
     &:hover {
       background: #f5f5f5;
-      transform: none;
     }
   }
 }
@@ -910,17 +1055,17 @@ const getImgSrc = (url: string) => {
   min-width: auto;
   font-weight: 500;
   border: 1.5px solid transparent;
-  transition: all 0.2s ease;
+  transition: background 0.12s, border-color 0.12s;
   position: relative;
   
   &.active,
   &.agent-active {
-    background: linear-gradient(135deg, rgba(7, 192, 95, 0.15) 0%, rgba(7, 192, 95, 0.1) 100%);
-    border-color: rgba(7, 192, 95, 0.4);
-    box-shadow: 0 2px 6px rgba(7, 192, 95, 0.12);
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.1) 100%);
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.12);
     
     .agent-mode-text {
-      color: #07C05F;
+      color: #10b981;
       font-weight: 600;
     }
     
@@ -929,14 +1074,12 @@ const getImgSrc = (url: string) => {
     }
     
     .dropdown-arrow {
-      color: #07C05F;
+      color: #10b981;
     }
     
     &:hover {
-      background: linear-gradient(135deg, rgba(7, 192, 95, 0.2) 0%, rgba(7, 192, 95, 0.15) 100%);
-      border-color: rgba(7, 192, 95, 0.6);
-      box-shadow: 0 3px 10px rgba(7, 192, 95, 0.2);
-      transform: translateY(-1px);
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.15) 100%);
+      border-color: rgba(16, 185, 129, 0.6);
     }
   }
   
@@ -955,7 +1098,6 @@ const getImgSrc = (url: string) => {
     &:hover {
       background: rgba(255, 255, 255, 1);
       border-color: #b0b0b0;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
     }
   }
 }
@@ -977,7 +1119,6 @@ const getImgSrc = (url: string) => {
 .control-icon {
   width: 18px;
   height: 18px;
-  transition: all 0.2s ease;
 }
 
 .kb-btn {
@@ -986,11 +1127,11 @@ const getImgSrc = (url: string) => {
   min-width: auto;
   
   &.active {
-    background: rgba(7, 192, 95, 0.1);
-    color: #07C05F;
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
     
     &:hover {
-      background: rgba(7, 192, 95, 0.15);
+      background: rgba(16, 185, 129, 0.15);
     }
   }
 }
@@ -1003,7 +1144,7 @@ const getImgSrc = (url: string) => {
 }
 
 .kb-btn.active .kb-btn-text {
-  color: #07C05F;
+  color: #10b981;
 }
 
 .websearch-btn {
@@ -1016,14 +1157,14 @@ const getImgSrc = (url: string) => {
   justify-content: center;
   
   &.active {
-    background: rgba(7, 192, 95, 0.1);
+    background: rgba(16, 185, 129, 0.1);
     
     .websearch-icon {
-      color: #07C05F;
+      color: #10b981;
     }
     
     &:hover {
-      background: rgba(7, 192, 95, 0.15);
+      background: rgba(16, 185, 129, 0.15);
     }
   }
   
@@ -1064,14 +1205,13 @@ const getImgSrc = (url: string) => {
 .websearch-icon {
   width: 18px;
   height: 18px;
-  transition: all 0.2s ease;
 }
 
 .dropdown-arrow {
-  transition: transform 0.2s ease;
   width: 10px;
   height: 10px;
   margin-left: 2px;
+  transition: transform 0.12s;
   
   &.rotate {
     transform: rotate(180deg);
@@ -1096,16 +1236,16 @@ const getImgSrc = (url: string) => {
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: rgba(7, 192, 95, 0.1);
-  border: 1px solid rgba(7, 192, 95, 0.3);
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
   border-radius: 4px;
   font-size: 12px;
-  color: #07C05F;
+  color: #10b981;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: background 0.12s;
   
   &:hover {
-    background: rgba(7, 192, 95, 0.15);
+    background: rgba(16, 185, 129, 0.15);
   }
 }
 
@@ -1147,27 +1287,21 @@ const getImgSrc = (url: string) => {
   width: 28px;
   height: 28px;
   padding: 0;
-  background: rgba(7, 192, 95, 0.08);
-  color: #07C05F;
-  border: 1.5px solid rgba(7, 192, 95, 0.2);
+  background: rgba(16, 185, 129, 0.08);
+  color: #10b981;
+  border: 1.5px solid rgba(16, 185, 129, 0.2);
   position: relative;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: stopBtnPulse 2s ease-in-out infinite;
   
   &:hover {
-    background: rgba(7, 192, 95, 0.12);
-    border-color: #07C05F;
-    transform: scale(1.05);
-    box-shadow: 0 2px 4px rgba(7, 192, 95, 0.2);
-    animation: none;
+    background: rgba(16, 185, 129, 0.12);
+    border-color: #10b981;
   }
   
   &:active {
-    transform: scale(0.95);
-    background: rgba(7, 192, 95, 0.15);
+    background: rgba(16, 185, 129, 0.15);
   }
   
   svg {
@@ -1178,60 +1312,9 @@ const getImgSrc = (url: string) => {
     content: '';
     width: 12px;
     height: 12px;
-    background: #07C05F;
+    background: #10b981;
     border-radius: 50%;
     display: block;
-    animation: stopDotPulse 2s ease-in-out infinite;
-  }
-  
-  &:hover::before {
-    animation: none;
-  }
-  
-  &::after {
-    content: '';
-    position: absolute;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: 2px solid #07C05F;
-    animation: stopRipple 2s ease-out infinite;
-  }
-  
-  &:hover::after {
-    animation: none;
-    opacity: 0;
-  }
-}
-
-@keyframes stopBtnPulse {
-  0%, 100% {
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  }
-  50% {
-    box-shadow: 0 2px 4px rgba(7, 192, 95, 0.1);
-  }
-}
-
-@keyframes stopDotPulse {
-  0%, 100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(0.92);
-    opacity: 0.9;
-  }
-}
-
-@keyframes stopRipple {
-  0% {
-    transform: scale(0.9);
-    opacity: 0.4;
-  }
-  100% {
-    transform: scale(2);
-    opacity: 0;
   }
 }
 
@@ -1239,11 +1322,10 @@ const getImgSrc = (url: string) => {
   width: 28px;
   height: 28px;
   padding: 0;
-  background-color: #07C05F;
+  background-color: #10b981;
   
   &:hover:not(.disabled) {
-    background-color: #00a651;
-    transform: scale(1.05);
+    background-color: #059669;
   }
   
   &.disabled {
@@ -1260,7 +1342,7 @@ const getImgSrc = (url: string) => {
 .model-display {
   display: flex;
   align-items: center;
-  margin-left: 0;
+  margin-left: auto;  /* 推到最右边，但仍在 control-left 内 */
   flex-shrink: 0;
 }
 
@@ -1272,16 +1354,15 @@ const getImgSrc = (url: string) => {
   min-width: 100px;
   height: 22px;
   border-radius: 6px;
-  border: 1px solid rgba(7, 192, 95, 0.3);
-  background: rgba(7, 192, 95, 0.1);
-  box-shadow: none;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.1);
+  transition: background 0.12s, border-color 0.12s;
   cursor: pointer;
 }
 
 .model-selector-trigger:hover {
-  background: rgba(7, 192, 95, 0.15);
-  border-color: rgba(7, 192, 95, 0.45);
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.45);
 }
 
 .model-selector-trigger.disabled {
@@ -1290,8 +1371,8 @@ const getImgSrc = (url: string) => {
 }
 
 .model-selector-trigger.disabled:hover {
-  background: rgba(7, 192, 95, 0.1);
-  border-color: rgba(7, 192, 95, 0.3);
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
 }
 
 .model-selector-name {
@@ -1310,13 +1391,12 @@ const getImgSrc = (url: string) => {
   height: 0;
   border-left: 4px solid transparent;
   border-right: 4px solid transparent;
-  border-top: 5px solid #07C05F;
+  border-top: 5px solid #10b981;
   margin-left: 4px;
-  transition: transform 0.2s ease;
 }
 
 .model-selector-trigger.disabled::after {
-  border-top-color: rgba(7, 192, 95, 0.4);
+  border-top-color: rgba(16, 185, 129, 0.4);
 }
 
 .model-selector-overlay {
@@ -1324,91 +1404,103 @@ const getImgSrc = (url: string) => {
   inset: 0;
   z-index: 9998;
   background: transparent;
+  touch-action: none;
 }
 
 .model-selector-dropdown {
-  position: fixed;
+  position: fixed !important;
   z-index: 9999;
   background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 25px 45px rgba(15, 23, 42, 0.15);
-  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 6px 28px rgba(15, 23, 42, 0.08);
+  border: 1px solid #e7e9eb;
   overflow: hidden;
-  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
 }
 
 .model-selector-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid #f1f5f9;
-  background: #f8fafc;
-  font-size: 13px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #f2f4f5;
+  background: #fafcfc;
+  font-size: 12px;
   font-weight: 600;
-  color: #0f172a;
+  color: #222;
 }
 
 .model-selector-content {
-  max-height: 300px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px 8px;
 }
 
 .model-selector-add {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(7, 192, 95, 0.4);
-  background: rgba(7, 192, 95, 0.08);
-  color: #057647;
-  font-size: 12px;
-  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #e1e5e6;
+  background: #fff;
+  color: #52575a;
+  font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  transition: all 0.12s;
 }
 
 .model-selector-add .add-icon {
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1;
 }
 
 .model-selector-add:hover {
-  background: rgba(7, 192, 95, 0.18);
-  border-color: rgba(7, 192, 95, 0.6);
+  border-color: #10b981;
+  color: #10b981;
+  background: #f0fdf6;
 }
 
 .model-option {
-  padding: 12px 16px;
+  padding: 6px 8px;
   cursor: pointer;
-  transition: background 0.2s;
-  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.12s;
+  border-radius: 6px;
+  margin-bottom: 4px;
   
   &:last-child {
-    border-bottom: none;
+    margin-bottom: 0;
   }
   
   &:hover {
-    background: #f5f5f5;
+    background: #f6f8f7;
   }
   
   &.selected {
-    background: rgba(7, 192, 95, 0.08);
+    background: #eefdf5;
     
     .model-option-name {
-      color: #07C05F;
+      color: #10b981;
       font-weight: 600;
     }
   }
   
   &.empty {
-    color: #999;
+    color: #9aa0a6;
     cursor: default;
     text-align: center;
+    padding: 20px 8px;
     
     &:hover {
-      background: white;
+      background: transparent;
     }
   }
 }
@@ -1416,86 +1508,88 @@ const getImgSrc = (url: string) => {
 .model-option-main {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: 6px;
+  margin-bottom: 1px;
 }
 
 .model-option-name {
-  font-size: 14px;
-  color: #333;
+  font-size: 12px;
+  color: #222;
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.4;
 }
 
 .model-option-desc {
-  font-size: 12px;
-  color: #999;
+  font-size: 11px;
+  color: #8b9196;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  margin-top: 1px;
 }
 
 .model-badge-remote,
 .model-badge-local {
   display: inline-block;
-  padding: 2px 6px;
-  font-size: 11px;
+  padding: 1px 5px;
+  font-size: 10px;
   border-radius: 3px;
   font-weight: 500;
   flex-shrink: 0;
 }
 
 .model-badge-remote {
-  background: rgba(7, 192, 95, 0.1);
-  color: #07C05F;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
 }
 
 .model-badge-local {
-  background: rgba(82, 196, 26, 0.1);
-  color: #52c41a;
+  background: rgba(139, 145, 150, 0.1);
+  color: #52575a;
 }
 
 /* Agent 模式选择下拉菜单 */
 .agent-mode-selector-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 9998;
+  background: transparent;
+  touch-action: none;
 }
 
 .agent-mode-selector-dropdown {
+  position: fixed !important;
   z-index: 9999;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(7, 192, 95, 0.08);
-  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 6px 28px rgba(15, 23, 42, 0.08);
+  border: 1px solid #e7e9eb;
   overflow: hidden;
-  padding: 4px;
+  padding: 6px 8px;
   min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
 }
 
 .agent-mode-option {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px;
+  padding: 8px 10px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.12s;
   border-radius: 6px;
   position: relative;
-  margin: 2px 0;
+  margin: 4px 6px;
   
   &:hover:not(.disabled) {
-    background: rgba(7, 192, 95, 0.1);
-    transform: translateX(2px);
-  }
-  
-  &:active:not(.disabled) {
-    transform: translateX(1px);
+    background: #f6f8f7;
   }
   
   &.disabled {
@@ -1504,16 +1598,14 @@ const getImgSrc = (url: string) => {
     
     &:hover {
       background: transparent;
-      transform: none;
     }
   }
   
-  // 选中状态的选项有更明显的背景
   &.selected {
-    background: rgba(7, 192, 95, 0.06);
+    background: #eefdf5;
     
     .agent-mode-option-name {
-      color: #07C05F;
+      color: #10b981;
       font-weight: 700;
     }
   }
@@ -1522,62 +1614,63 @@ const getImgSrc = (url: string) => {
 .agent-mode-option-main {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   flex: 1;
   min-width: 0;
 }
 
 .agent-mode-option-name {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
-  color: #333;
+  color: #222;
   line-height: 1.4;
-  transition: color 0.2s ease;
+  transition: color 0.12s;
 }
 
 .agent-mode-option-desc {
-  font-size: 12px;
-  color: #999;
+  font-size: 11px;
+  color: #8b9196;
   line-height: 1.3;
 }
 
 .check-icon {
-  width: 16px;
-  height: 16px;
-  color: #07C05F;
+  width: 14px;
+  height: 14px;
+  color: #10b981;
   flex-shrink: 0;
-  margin-left: 8px;
+  margin-left: 6px;
 }
 
 .agent-mode-warning {
   display: flex;
   align-items: center;
-  margin-left: 8px;
+  margin-left: 6px;
   
   .warning-icon {
     color: #ff9800;
-    font-size: 16px;
+    font-size: 14px;
   }
 }
 
 .agent-mode-footer {
-  padding: 8px 12px;
-  border-top: 1px solid #f0f0f0;
-  margin-top: 4px;
+  padding: 6px 10px;
+  border-top: 1px solid #f2f4f5;
+  margin-top: 2px;
+  background: #fafcfc;
 }
 
 .agent-mode-link {
-  color: #07C05F;
+  color: #10b981;
   text-decoration: none;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  transition: all 0.2s ease;
+  gap: 3px;
+  transition: all 0.12s;
   
   &:hover {
-    color: #00a651;
+    color: #059669;
     text-decoration: underline;
   }
 }

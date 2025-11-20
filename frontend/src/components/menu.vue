@@ -11,47 +11,57 @@
                 <div class="kb-action-menu">
                     <template v-if="showCreateKbAction">
                         <div class="menu_item kb-action-item" @click.stop="handleCreateKnowledgeBase">
-                            <div class="menu_item-box">
-                                <div class="menu_icon">
-                                    <t-icon name="add" />
-                                </div>
-                                <span class="menu_title">{{ t('knowledgeList.create') }}</span>
+                            <div class="kb-action-icon-wrapper">
+                                <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
+                                    <path d="M9 3.75V14.25M3.75 9H14.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <div class="kb-action-content">
+                                <span class="kb-action-title">{{ t('knowledgeList.create') }}</span>
                             </div>
                         </div>
                     </template>
                     <template v-else-if="showDocActions">
                         <div class="menu_item kb-action-item" @click.stop="handleDocUploadClick">
-                            <div class="menu_item-box">
-                                <div class="menu_icon">
-                                    <t-icon name="upload" />
-                                </div>
-                                <span class="menu_title">{{ t('upload.uploadDocument') }}</span>
+                            <div class="kb-action-icon-wrapper">
+                                <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
+                                    <path d="M15.75 11.25V14.25C15.75 14.6478 15.592 15.0294 15.3107 15.3107C15.0294 15.592 14.6478 15.75 14.25 15.75H3.75C3.35218 15.75 2.97064 15.592 2.68934 15.3107C2.40804 15.0294 2.25 14.6478 2.25 14.25V11.25M12.75 6L9 2.25M9 2.25L5.25 6M9 2.25V11.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <div class="kb-action-content">
+                                <span class="kb-action-title">{{ t('upload.uploadDocument') }}</span>
                             </div>
                         </div>
                         <div class="menu_item kb-action-item" @click.stop="handleDocManualCreate">
-                            <div class="menu_item-box">
-                                <div class="menu_icon">
-                                    <t-icon name="edit-1" />
-                                </div>
-                                <span class="menu_title">{{ t('upload.onlineEdit') }}</span>
+                            <div class="kb-action-icon-wrapper">
+                                <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
+                                    <path d="M8.25 2.25H3.75C3.35218 2.25 2.97064 2.40804 2.68934 2.68934C2.40804 2.97064 2.25 3.35218 2.25 3.75V14.25C2.25 14.6478 2.40804 15.0294 2.68934 15.3107C2.97064 15.592 3.35218 15.75 3.75 15.75H14.25C14.6478 15.75 15.0294 15.592 15.3107 15.3107C15.592 15.0294 15.75 14.6478 15.75 14.25V9.75M13.875 3.375L5.625 11.625L5.25 12.75L6.375 12.375L14.625 4.125C14.7745 3.97554 14.8571 3.77516 14.8571 3.5625C14.8571 3.34984 14.7745 3.14946 14.625 3L15 2.625L14.625 3C14.4755 2.85054 14.2752 2.76786 14.0625 2.76786C13.8498 2.76786 13.6495 2.85054 13.5 3L13.875 3.375Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <div class="kb-action-content">
+                                <span class="kb-action-title">{{ t('upload.onlineEdit') }}</span>
                             </div>
                         </div>
                     </template>
                     <template v-else-if="showFaqActions">
                         <div class="menu_item kb-action-item" @click.stop="handleFaqCreateFromMenu">
-                            <div class="menu_item-box">
-                                <div class="menu_icon">
-                                    <t-icon name="add" />
-                                </div>
-                                <span class="menu_title">{{ t('knowledgeEditor.faq.editorCreate') }}</span>
+                            <div class="kb-action-icon-wrapper">
+                                <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
+                                    <path d="M9 3.75V14.25M3.75 9H14.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <div class="kb-action-content">
+                                <span class="kb-action-title">{{ t('knowledgeEditor.faq.editorCreate') }}</span>
                             </div>
                         </div>
                         <div class="menu_item kb-action-item" @click.stop="handleFaqImportFromMenu">
-                            <div class="menu_item-box">
-                                <div class="menu_icon">
-                                    <t-icon name="import" />
-                                </div>
-                                <span class="menu_title">{{ t('knowledgeEditor.faqImport.importButton') }}</span>
+                            <div class="kb-action-icon-wrapper">
+                                <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
+                                    <path d="M15.75 11.25V14.25C15.75 14.6478 15.592 15.0294 15.3107 15.3107C15.0294 15.592 14.6478 15.75 14.25 15.75H3.75C3.35218 15.75 2.97064 15.592 2.68934 15.3107C2.40804 15.0294 2.25 14.6478 2.25 14.25V11.25M5.25 7.5L9 11.25M9 11.25L12.75 7.5M9 11.25V2.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <div class="kb-action-content">
+                                <span class="kb-action-title">{{ t('knowledgeEditor.faqImport.importButton') }}</span>
                             </div>
                         </div>
                     </template>
@@ -709,48 +719,98 @@ const handleCreateKnowledgeBase = () => {
     }
 
     .kb-action-wrapper {
-        border: 1px dashed #e5e7eb;
-        border-radius: 8px;
-        padding: 12px 8px;
+        border: 1px solid #e7e9eb;
+        border-radius: 10px;
+        padding: 10px;
         margin-bottom: 12px;
-        background: #fcfefe;
+        background: #fafcfc;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
     }
 
     .kb-action-label {
-        font-size: 12px;
-        color: #98a2b3;
-        margin-bottom: 6px;
-        padding: 0 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #8b9196;
+        margin-bottom: 8px;
+        padding: 0 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
     }
 
     .kb-action-menu {
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: 4px;
     }
 
     .kb-action-item {
-        background: #f7f8fa;
+        background: #fff;
         border-radius: 6px;
-        border: 1px solid transparent;
+        border: 1px solid #eef1f2;
+        transition: all 0.12s ease;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        cursor: pointer;
 
-        .menu_icon {
-            color: #07c05f;
+        &:hover {
+            background: #f0fdf6;
+            border-color: #10b981;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(16, 185, 129, 0.08);
 
-            :deep(.t-icon) {
-                font-size: 16px;
+            .kb-action-icon {
+                color: #059669;
+                transform: scale(1.05);
+            }
+
+            .kb-action-title {
+                color: #10b981;
             }
         }
 
-        .menu_title {
-            font-size: 13px;
-            color: #1d2129;
+        &:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 3px rgba(16, 185, 129, 0.1);
         }
+    }
 
-        &:hover {
-            background: #ecfdf5;
-            border-color: #07c05f;
-        }
+    .kb-action-icon-wrapper {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        background: #f0fdf6;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        transition: all 0.12s ease;
+    }
+
+    .kb-action-icon {
+        color: #10b981;
+        transition: all 0.12s ease;
+    }
+
+    .kb-action-item:hover .kb-action-icon-wrapper {
+        background: #d1fae5;
+    }
+
+    .kb-action-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .kb-action-title {
+        font-size: 13px;
+        font-weight: 500;
+        color: #0f172a;
+        transition: color 0.12s ease;
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .menu_box {

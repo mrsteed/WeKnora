@@ -164,15 +164,18 @@ const updateDropdownPosition = () => {
   
   // fallback 函数
   const applyFallback = () => {
-    const vw = window.innerWidth
-    const topFallback = Math.max(80, window.innerHeight / 2 - 160)
+    const vw = window.innerWidth;
+    const topFallback = Math.max(80, window.innerHeight / 2 - 160);
     dropdownStyle.value = {
       position: 'fixed',
       width: `${dropdownWidth}px`,
       left: `${Math.round((vw - dropdownWidth) / 2)}px`,
-      top: `${Math.round(topFallback)}px`
-    }
-  }
+      top: `${Math.round(topFallback)}px`,
+      transform: 'none',
+      margin: '0',
+      padding: '0',
+    };
+  };
   
   if (!anchor) {
     applyFallback()
@@ -183,8 +186,15 @@ const updateDropdownPosition = () => {
   let rect: DOMRect | null = null
   try {
     if (typeof anchor.getBoundingClientRect === 'function') {
-      // 强制重新计算布局，确保获取最新位置
       rect = anchor.getBoundingClientRect()
+      console.log('[KB Selector] Button rect:', {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+        height: rect.height
+      })
     } else if (anchor.width !== undefined && anchor.left !== undefined) {
       // 已经是 DOMRect
       rect = anchor as DOMRect
@@ -210,45 +220,72 @@ const updateDropdownPosition = () => {
   const maxLeft = Math.max(16, vw - dropdownWidth - 16)
   left = Math.max(minLeft, Math.min(maxLeft, left))
 
-  // 垂直定位：智能判断向上还是向下
-  const dropdownHeight = 360 // 弹窗高度估算
+  // 垂直定位：紧贴按钮，使用合理的高度避免空白
+  const preferredDropdownHeight = 280 // 优选高度（紧凑且够用）
+  const maxDropdownHeight = 360 // 最大高度
+  const minDropdownHeight = 200 // 最小高度
+  const topMargin = 20 // 顶部留白
   const spaceBelow = vh - rect.bottom // 下方剩余空间
   const spaceAbove = rect.top // 上方剩余空间
   
-  let top: number
+  console.log('[KB Selector] Space check:', {
+    spaceBelow,
+    spaceAbove,
+    windowHeight: vh
+  })
   
-  // 判断应该向上还是向下弹出
-  if (spaceBelow >= dropdownHeight + offsetY + 16) {
-    // 下方空间充足，向下弹出
-    top = Math.floor(rect.bottom + offsetY)
-  } else if (spaceAbove >= dropdownHeight + offsetY + 16) {
-    // 下方不够但上方充足，向上弹出
-    top = Math.floor(rect.top - dropdownHeight - offsetY)
+  let actualHeight: number
+  let shouldOpenBelow: boolean
+  
+  // 优先考虑下方空间
+  if (spaceBelow >= minDropdownHeight + offsetY) {
+    // 下方有足够空间，向下弹出
+    actualHeight = Math.min(preferredDropdownHeight, spaceBelow - offsetY - 16)
+    shouldOpenBelow = true
+    console.log('[KB Selector] Position: below button', { actualHeight })
   } else {
-    // 上下都不够，选择空间较大的一侧
-    if (spaceAbove > spaceBelow) {
-      // 上方空间更大，贴着顶部
-      top = Math.max(16, Math.floor(rect.top - dropdownHeight - offsetY))
+    // 向上弹出，优先使用 preferredHeight，必要时才扩展到 maxHeight
+    const availableHeight = spaceAbove - offsetY - topMargin
+    if (availableHeight >= preferredDropdownHeight) {
+      // 有足够空间显示优选高度
+      actualHeight = preferredDropdownHeight
     } else {
-      // 下方空间更大，贴着底部或按钮下方
-      top = Math.floor(rect.bottom + offsetY)
-      // 确保不超出视口底部
-      if (top + dropdownHeight > vh - 16) {
-        top = Math.max(16, Math.floor(vh - dropdownHeight - 16))
-      }
+      // 空间不够，使用可用空间（但不小于最小高度）
+      actualHeight = Math.max(minDropdownHeight, availableHeight)
     }
+    shouldOpenBelow = false
+    console.log('[KB Selector] Position: above button', { actualHeight })
   }
-
-  // 使用 fixed 定位，确保没有 transform 或其他样式影响
-  dropdownStyle.value = {
-    position: 'fixed',
-    width: `${dropdownWidth}px`,
-    left: `${left}px`,
-    top: `${top}px`,
-    maxHeight: `${Math.min(dropdownHeight, vh - 32)}px`, // 添加最大高度限制
-    transform: 'none', // 确保没有 transform 影响定位
-    margin: '0', // 确保没有 margin 影响定位
-    padding: '0' // 确保没有 padding 影响定位
+  
+  // 根据弹出方向使用不同的定位方式
+  if (shouldOpenBelow) {
+    // 向下弹出：使用 top 定位
+    const top = Math.floor(rect.bottom + offsetY)
+    console.log('[KB Selector] Opening below, top:', top)
+    dropdownStyle.value = {
+      position: 'fixed',
+      width: `${dropdownWidth}px`,
+      left: `${left}px`,
+      top: `${top}px`,
+      maxHeight: `${actualHeight}px`,
+      transform: 'none',
+      margin: '0',
+      padding: '0'
+    }
+  } else {
+    // 向上弹出：使用 bottom 定位
+    const bottom = vh - rect.top + offsetY
+    console.log('[KB Selector] Opening above, bottom:', bottom)
+    dropdownStyle.value = {
+      position: 'fixed',
+      width: `${dropdownWidth}px`,
+      left: `${left}px`,
+      bottom: `${bottom}px`,
+      maxHeight: `${actualHeight}px`,
+      transform: 'none',
+      margin: '0',
+      padding: '0'
+    }
   }
 }
 
@@ -259,42 +296,40 @@ let scrollHandler: (() => void) | null = null
 // 当 visible 变化时处理
 watch(() => props.visible, async (v) => {
   if (v) {
-    await loadKnowledgeBases()
-    // 等 DOM 渲染完再计算位置，防止 rect 读取到不准值
-    await nextTick()
-    // 延迟一帧再计算位置，确保所有样式都已应用
+    await loadKnowledgeBases();
+    // 等 DOM 渲染完再计算位置
+    await nextTick();
+    // 多次更新位置确保准确
     requestAnimationFrame(() => {
-      updateDropdownPosition()
-      // 再次确保位置正确（应对动画或其他延迟渲染）
+      updateDropdownPosition();
       requestAnimationFrame(() => {
-        updateDropdownPosition()
-        // 最后一次确保位置正确
+        updateDropdownPosition();
         setTimeout(() => {
-          updateDropdownPosition()
-        }, 100)
-      })
-    })
+          updateDropdownPosition();
+        }, 50);
+      });
+    });
     // 确保 focus
-    nextTick(() => searchInput.value?.focus())
+    nextTick(() => searchInput.value?.focus());
     // 监听 resize/scroll 做微调（使用 passive 提高性能）
-    resizeHandler = () => updateDropdownPosition()
-    scrollHandler = () => updateDropdownPosition()
-    window.addEventListener('resize', resizeHandler, { passive: true })
-    window.addEventListener('scroll', scrollHandler, { passive: true, capture: true })
+    resizeHandler = () => updateDropdownPosition();
+    scrollHandler = () => updateDropdownPosition();
+    window.addEventListener('resize', resizeHandler, { passive: true });
+    window.addEventListener('scroll', scrollHandler, { passive: true, capture: true });
   } else {
-    searchQuery.value = ''
-    highlightedIndex.value = 0
+    searchQuery.value = '';
+    highlightedIndex.value = 0;
     // 清理事件监听器
     if (resizeHandler) {
-      window.removeEventListener('resize', resizeHandler)
-      resizeHandler = null
+      window.removeEventListener('resize', resizeHandler);
+      resizeHandler = null;
     }
     if (scrollHandler) {
-      window.removeEventListener('scroll', scrollHandler, { capture: true })
-      scrollHandler = null
+      window.removeEventListener('scroll', scrollHandler, { capture: true });
+      scrollHandler = null;
     }
   }
-})
+});
 </script>
 
 <style scoped lang="less">
@@ -334,15 +369,15 @@ watch(() => props.visible, async (v) => {
 
 /* 宽度由 JS 控制（dropdownWidth），这里只做内部样式 */
 .kb-search {
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid #f1f3f4;
 }
 .kb-search-input {
   width: 100%;
-  padding: 8px 12px;
-  font-size: 13px;
+  padding: 6px 10px;
+  font-size: 12px;
   border: 1px solid #eef1f2;
-  border-radius: 8px;
+  border-radius: 6px;
   background: #fbfdfc;
   outline: none;
   transition: border 0.12s;
@@ -357,7 +392,7 @@ watch(() => props.visible, async (v) => {
   min-height: 0; /* 允许 flex 子元素缩小 */
   max-height: 260px;
   overflow-y: auto;
-  padding: 8px;
+  padding: 6px 8px;
   /* 确保滚动限制在此容器内 */
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -366,11 +401,11 @@ watch(() => props.visible, async (v) => {
 .kb-item {
   display: flex;
   align-items: center;
-  padding: 8px;
-  border-radius: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: background 0.12s;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 .kb-item:last-child { margin-bottom: 0; }
 
@@ -382,42 +417,47 @@ watch(() => props.visible, async (v) => {
 .kb-item-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
 }
 
 .checkbox {
-  width: 18px; height: 18px;
-  border-radius: 4px;
+  width: 16px; height: 16px;
+  border-radius: 3px;
   border: 1.5px solid #d7dadd;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 .checkbox.checked {
   background: #10b981;
   border-color: #10b981;
 }
+.checkbox.checked svg {
+  width: 10px;
+  height: 10px;
+}
 .kb-name-wrap { display:flex; flex-direction: column; min-width: 0; }
-.kb-name { font-size: 13px; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kb-docs { font-size: 11px; color: #8b9196; margin-top: 2px; }
+.kb-name { font-size: 12px; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+.kb-docs { font-size: 11px; color: #8b9196; margin-top: 1px; }
 
-.kb-empty { padding: 28px 8px; text-align: center; color: #9aa0a6; font-size: 13px; }
+.kb-empty { padding: 20px 8px; text-align: center; color: #9aa0a6; font-size: 12px; }
 
 .kb-actions {
   display: flex;
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px 10px;
   border-top: 1px solid #f2f4f5;
   background: #fafcfc;
 }
 .kb-btn {
   flex: 1;
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
   border: 1px solid #e1e5e6;
   background: #fff;
-  font-size: 13px;
+  font-size: 12px;
   color: #52575a;
   cursor: pointer;
   transition: all 0.12s;
