@@ -977,6 +977,7 @@ export default {
       titlePlaceholder: "请输入标题",
       contentPlaceholder: "支持 Markdown 语法，可使用 # 标题、列表、代码块等",
     },
+    noDocumentKnowledgeBases: "暂无可用的文档型知识库，请先创建一个文档型知识库",
     status: {
       draftTag: "当前状态：草稿",
       publishedTag: "当前状态：已发布",

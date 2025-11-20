@@ -405,9 +405,21 @@ const loadKnowledgeBases = async () => {
   kbLoading.value = true
   try {
     const res: any = await listKnowledgeBases()
-    const list: KnowledgeBaseOption[] = Array.isArray(res?.data)
-      ? res.data.map((item: any) => ({ label: item.name, value: item.id }))
-      : []
+    console.log('[ManualEditor] Raw knowledge bases response:', res?.data)
+    
+    const allKbs = Array.isArray(res?.data) ? res.data : []
+    console.log('[ManualEditor] All knowledge bases:', allKbs)
+    console.log('[ManualEditor] KB types:', allKbs.map((kb: any) => ({ name: kb.name, type: kb.type })))
+    
+    const list: KnowledgeBaseOption[] = allKbs
+      .filter((item: any) => {
+        const isDocument = !item.type || item.type === 'document'
+        console.log(`[ManualEditor] KB "${item.name}" (type: ${item.type}): ${isDocument ? 'INCLUDED' : 'FILTERED OUT'}`)
+        return isDocument
+      })
+      .map((item: any) => ({ label: item.name, value: item.id }))
+    
+    console.log('[ManualEditor] Filtered knowledge bases:', list)
     kbOptions.value = list
 
     if (mode.value === 'create') {
@@ -425,6 +437,9 @@ const loadKnowledgeBases = async () => {
         form.kbId = list[0]?.value ?? ''
       }
     }
+    
+    console.log('[ManualEditor] Final kbOptions:', kbOptions.value)
+    console.log('[ManualEditor] Selected kbId:', form.kbId)
   } catch (error) {
     console.error('[ManualEditor] Failed to load knowledge base list:', error)
     kbOptions.value = []
@@ -659,8 +674,19 @@ onBeforeUnmount(() => {
           :loading="kbLoading"
           :options="kbOptions"
           :placeholder="$t('manualEditor.form.knowledgeBasePlaceholder')"
-          :popup-props="{ overlayStyle: { zIndex: 2200 } }"
-        />
+          :popup-props="{ 
+            attach: 'body',
+            overlayStyle: { zIndex: 3000 },
+            onVisibleChange: (visible) => console.log('[ManualEditor] Select dropdown visible:', visible)
+          }"
+          @focus="() => console.log('[ManualEditor] Select focused, options:', kbOptions)"
+        >
+          <template #empty>
+            <div style="padding: 20px; text-align: center; color: #999;">
+              {{ $t('manualEditor.noDocumentKnowledgeBases') || '暂无可用的文档型知识库，请先创建一个文档型知识库' }}
+            </div>
+          </template>
+        </t-select>
       </div>
 
       <div class="form-row">
@@ -1021,3 +1047,21 @@ onBeforeUnmount(() => {
 }
 </style>
 
+<!-- 全局样式：确保在dialog中的select下拉列表能够正常显示 -->
+<style lang="less">
+// TDesign Select 下拉框在 Dialog 中的 z-index 修复
+.t-select__dropdown {
+  z-index: 3000 !important;
+}
+
+// 确保挂载到 body 的 select popup 能正常显示
+body > .t-popup {
+  z-index: 3000 !important;
+}
+
+// 针对 manual-knowledge-editor 中的 select
+.manual-knowledge-editor + .t-select__dropdown,
+.manual-knowledge-editor ~ .t-select__dropdown {
+  z-index: 3000 !important;
+}
+</style>

@@ -1488,6 +1488,7 @@ export default {
       titlePlaceholder: 'Введите заголовок',
       contentPlaceholder: 'Поддерживается Markdown. Используйте # заголовки, списки, блоки кода и т.д.'
     },
+    noDocumentKnowledgeBases: 'Нет доступных баз знаний типа "документ". Пожалуйста, создайте одну сначала',
     status: {
       draftTag: 'Статус: Черновик',
       publishedTag: 'Статус: Опубликовано',

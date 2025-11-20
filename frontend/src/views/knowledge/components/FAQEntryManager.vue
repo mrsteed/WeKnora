@@ -1097,10 +1097,11 @@ const kbInfo = ref<any>(null)
 const knowledgeList = ref<Array<{ id: string; name: string; type?: string }>>([])
 const knowledgeDropdownOptions = computed(() =>
   knowledgeList.value
+    .filter((item) => !item.type || item.type === 'document')
     .map((item) => ({
       content: item.name,
       value: item.id,
-      prefixIcon: () => h(TIcon, { name: item.type === 'faq' ? 'help-circle' : 'file', size: '16px' }),
+      prefixIcon: () => h(TIcon, { name: 'file', size: '16px' }),
     })),
 )
 

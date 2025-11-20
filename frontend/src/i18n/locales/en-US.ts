@@ -618,6 +618,7 @@ export default {
       titlePlaceholder: 'Enter title',
       contentPlaceholder: 'Supports Markdown. Use # headings, lists, code blocks, etc.'
     },
+    noDocumentKnowledgeBases: 'No document-type knowledge bases available. Please create one first',
     status: {
       draftTag: 'Status: Draft',
       publishedTag: 'Status: Published',
