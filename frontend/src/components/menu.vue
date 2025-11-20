@@ -32,6 +32,16 @@
                                 <span class="kb-action-title">{{ t('upload.uploadDocument') }}</span>
                             </div>
                         </div>
+                        <div class="menu_item kb-action-item" @click.stop="handleDocURLImport">
+                            <div class="kb-action-icon-wrapper">
+                                <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
+                                    <path d="M7.5 10.5L10.5 7.5M7.875 5.625L6.9375 4.6875C6.15326 3.90326 5.09511 3.46585 3.99 3.46585C2.88489 3.46585 1.82674 3.90326 1.0425 4.6875C0.258257 5.47174 -0.179153 6.52989 -0.179153 7.635C-0.179153 8.74011 0.258257 9.79826 1.0425 10.5825L2.25 11.7975M10.125 12.375L11.0625 13.3125C11.8467 14.0967 12.9049 14.5341 14.01 14.5341C15.1151 14.5341 16.1733 14.0967 16.9575 13.3125C17.7417 12.5283 18.1791 11.4701 18.1791 10.365C18.1791 9.25989 17.7417 8.20174 16.9575 7.4175L15.75 6.2025M5.625 12.375L12.375 5.625" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <div class="kb-action-content">
+                                <span class="kb-action-title">{{ t('knowledgeBase.importURL') }}</span>
+                            </div>
+                        </div>
                         <div class="menu_item kb-action-item" @click.stop="handleDocManualCreate">
                             <div class="kb-action-icon-wrapper">
                                 <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -127,7 +137,7 @@ import { storeToRefs } from 'pinia';
 import { onMounted, watch, computed, ref, reactive } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getSessionsList, delSession } from "@/api/chat/index";
-import { getKnowledgeBaseById, uploadKnowledgeFile } from '@/api/knowledge-base';
+import { getKnowledgeBaseById, uploadKnowledgeFile, createKnowledgeFromURL } from '@/api/knowledge-base';
 import { logout as logoutApi } from '@/api/auth';
 import { useMenuStore } from '@/stores/menu';
 import { useAuthStore } from '@/stores/auth';
@@ -634,6 +644,15 @@ const handleDocManualCreate = async () => {
             }
         },
     })
+}
+
+const handleDocURLImport = async () => {
+    const kbId = await ensureDocKnowledgeBaseReady()
+    if (!kbId) return
+    
+    window.dispatchEvent(new CustomEvent('openURLImportDialog', {
+        detail: { kbId }
+    }))
 }
 
 const dispatchFaqMenuAction = (action: 'create' | 'import', kbId: string) => {
