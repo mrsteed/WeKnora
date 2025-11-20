@@ -22,22 +22,28 @@ export function formatStringDate(date: any) {
     year + "-" + month + "-" + day + " " + hour + ":" + minute + ":" + second
   );
 }
-export function kbFileTypeVerification(file: any) {
+export function kbFileTypeVerification(file: any, silent = false) {
   let validTypes = ["pdf", "txt", "md", "docx", "doc", "jpg", "jpeg", "png", "csv", "xlsx", "xls"];
   let type = file.name.substring(file.name.lastIndexOf(".") + 1);
   if (!validTypes.includes(type)) {
-    MessagePlugin.error("文件类型错误！");
+    if (!silent) {
+      MessagePlugin.error("文件类型错误！");
+    }
     return true;
   }
   if (
     (type == "pdf" || type == "docx" || type == "doc") &&
     file.size > 31457280
   ) {
-    MessagePlugin.error("pdf/doc文件不能超过30M！");
+    if (!silent) {
+      MessagePlugin.error("pdf/doc文件不能超过30M！");
+    }
     return true;
   }
   if ((type == "txt" || type == "md") && file.size > 31457280) {
-    MessagePlugin.error("txt/md文件不能超过30M！");
+    if (!silent) {
+      MessagePlugin.error("txt/md文件不能超过30M！");
+    }
     return true;
   }
   return false
