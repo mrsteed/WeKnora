@@ -52,7 +52,6 @@ func (s *WebSearchService) CompressWithRAG(
 			Description:      "Ephemeral search compression KB",
 			IsTemporary:      true,
 			EmbeddingModelID: cfg.EmbeddingModelID,
-			RerankModelID:    cfg.RerankModelID,
 		}
 		createdKB, err = kbSvc.CreateKnowledgeBase(ctx, kb)
 		if err != nil {
