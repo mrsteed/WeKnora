@@ -362,12 +362,9 @@ curl --location 'http://localhost:8080/api/v1/knowledge-bases' \
     "embedding_model_id": "dff7bc94-7885-4dd1-bfd5-bd96e4df2fc3",
     "summary_model_id": "8aea788c-bb30-4898-809e-e40c14ffb48c",
     "rerank_model_id": "b30171a1-787b-426e-a293-735cd5ac16c0",
-    "vlm_model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e",
     "vlm_config": {
-        "model_name": "qwen2.5vl:3b",
-        "interface_type": "ollama",
-        "base_url": "",
-        "api_key": ""
+        "enabled": true,
+        "model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e"
     },
     "cos_config": {
         "secret_id": "",
@@ -403,12 +400,9 @@ curl --location 'http://localhost:8080/api/v1/knowledge-bases' \
         "embedding_model_id": "dff7bc94-7885-4dd1-bfd5-bd96e4df2fc3",
         "summary_model_id": "8aea788c-bb30-4898-809e-e40c14ffb48c",
         "rerank_model_id": "b30171a1-787b-426e-a293-735cd5ac16c0",
-        "vlm_model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e",
         "vlm_config": {
-            "model_name": "qwen2.5vl:3b",
-            "base_url": "",
-            "api_key": "",
-            "interface_type": "ollama"
+            "enabled": true,
+            "model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e"
         },
         "cos_config": {
             "secret_id": "",
@@ -466,12 +460,9 @@ curl --location 'http://localhost:8080/api/v1/knowledge-bases' \
             "embedding_model_id": "dff7bc94-7885-4dd1-bfd5-bd96e4df2fc3",
             "summary_model_id": "8aea788c-bb30-4898-809e-e40c14ffb48c",
             "rerank_model_id": "b30171a1-787b-426e-a293-735cd5ac16c0",
-            "vlm_model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e",
             "vlm_config": {
-                "model_name": "qwen2.5vl:3b",
-                "base_url": "http://host.docker.internal:11435/v1",
-                "api_key": "",
-                "interface_type": "ollama"
+                "enabled": true,
+                "model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e"
             },
             "cos_config": {
                 "secret_id": "",
@@ -529,12 +520,9 @@ curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001' \
         "embedding_model_id": "dff7bc94-7885-4dd1-bfd5-bd96e4df2fc3",
         "summary_model_id": "8aea788c-bb30-4898-809e-e40c14ffb48c",
         "rerank_model_id": "b30171a1-787b-426e-a293-735cd5ac16c0",
-        "vlm_model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e",
         "vlm_config": {
-            "model_name": "qwen2.5vl:3b",
-            "base_url": "http://host.docker.internal:11435/v1",
-            "api_key": "",
-            "interface_type": "ollama"
+            "enabled": true,
+            "model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e"
         },
         "cos_config": {
             "secret_id": "",
@@ -614,12 +602,9 @@ curl --location --request PUT 'http://localhost:8080/api/v1/knowledge-bases/b582
         "embedding_model_id": "dff7bc94-7885-4dd1-bfd5-bd96e4df2fc3",
         "summary_model_id": "8aea788c-bb30-4898-809e-e40c14ffb48c",
         "rerank_model_id": "b30171a1-787b-426e-a293-735cd5ac16c0",
-        "vlm_model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e",
         "vlm_config": {
-            "model_name": "qwen2.5vl:3b",
-            "base_url": "",
-            "api_key": "",
-            "interface_type": "ollama"
+            "enabled": true,
+            "model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e"
         },
         "cos_config": {
             "secret_id": "",

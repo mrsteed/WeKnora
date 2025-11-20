@@ -49,7 +49,6 @@ CREATE TABLE knowledge_bases (
     embedding_model_id VARCHAR(64) NOT NULL,
     summary_model_id VARCHAR(64) NOT NULL,
     rerank_model_id VARCHAR(64) NOT NULL,
-    vlm_model_id VARCHAR(64) NOT NULL,
     cos_config JSON NOT NULL,
     vlm_config JSON NOT NULL,
     extract_config JSON NULL,

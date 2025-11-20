@@ -9,10 +9,6 @@ import (
 )
 
 const (
-	InitDefaultKnowledgeBaseID = "kb-00000001"
-)
-
-const (
 	KnowledgeBaseTypeDocument = "document"
 	KnowledgeBaseTypeFAQ      = "faq"
 )
@@ -59,8 +55,6 @@ type KnowledgeBase struct {
 	EmbeddingModelID string `yaml:"embedding_model_id" json:"embedding_model_id"`
 	// Summary model ID
 	SummaryModelID string `yaml:"summary_model_id" json:"summary_model_id"`
-	// VLM model ID
-	VLMModelID string `yaml:"vlm_model_id" json:"vlm_model_id"`
 	// VLM config
 	VLMConfig VLMConfig `yaml:"vlm_config" json:"vlm_config" gorm:"type:json"`
 	// Storage config
@@ -95,8 +89,6 @@ type ChunkingConfig struct {
 	ChunkOverlap int `yaml:"chunk_overlap" json:"chunk_overlap"`
 	// Separators
 	Separators []string `yaml:"separators" json:"separators"`
-	// Enable multimodal
-	EnableMultimodal bool `yaml:"enable_multimodal" json:"enable_multimodal"`
 }
 
 // COSConfig represents the COS configuration
@@ -174,14 +166,8 @@ func (c *ImageProcessingConfig) Scan(value interface{}) error {
 
 // VLMConfig represents the VLM configuration
 type VLMConfig struct {
-	// Model Name
-	ModelName string `yaml:"model_name" json:"model_name"`
-	// Base URL
-	BaseURL string `yaml:"base_url" json:"base_url"`
-	// API Key
-	APIKey string `yaml:"api_key" json:"api_key"`
-	// Interface Type: "ollama" or "openai"
-	InterfaceType string `yaml:"interface_type" json:"interface_type"`
+	Enabled bool   `yaml:"enabled" json:"enabled"`
+	ModelID string `yaml:"model_id" json:"model_id"`
 }
 
 // Value implements the driver.Valuer interface, used to convert VLMConfig to database value

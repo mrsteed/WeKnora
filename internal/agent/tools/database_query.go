@@ -36,7 +36,8 @@ func NewDatabaseQueryTool(db *gorm.DB, tenantID uint) *DatabaseQueryTool {
 - name (VARCHAR): Knowledge base name
 - description (TEXT): Description
 - tenant_id (INTEGER): Owner tenant ID
-- embedding_model_id, summary_model_id, rerank_model_id, vlm_model_id (VARCHAR): Model IDs
+- embedding_model_id, summary_model_id, rerank_model_id (VARCHAR): Model IDs
+- vlm_config (JSON): Includes VLM settings such as enabled flag and model_id
 - created_at, updated_at (TIMESTAMP)
 
 ### knowledges (documents)

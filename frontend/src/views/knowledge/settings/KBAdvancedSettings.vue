@@ -219,11 +219,11 @@
           <t-alert
             v-if="!isGraphDatabaseEnabled"
             theme="warning"
-            :message="$t('knowledgeEditor.advanced.graph.disabledWarning')"
             style="margin-top: 8px;"
           >
-            <template #operation>
-              <t-link theme="primary" @click="handleOpenSystemInfo">
+            <template #message>
+              <div>{{ $t('knowledgeEditor.advanced.graph.disabledWarning') }}</div>
+              <t-link class="graph-guide-link" theme="primary" @click="handleOpenGraphGuide">
                 {{ $t('knowledgeEditor.advanced.graph.howToEnable') }}
               </t-link>
             </template>
@@ -275,6 +275,132 @@
             />
           </div>
         </div>
+
+        <!-- Nodes Configuration -->
+        <div class="subsection-header">
+          <h4>{{ $t('knowledgeEditor.advanced.graph.nodesLabel') }}</h4>
+          <p class="subsection-desc">{{ $t('knowledgeEditor.advanced.graph.nodesDescription') }}</p>
+        </div>
+
+        <div v-for="(node, index) in localNodeExtract.nodes" :key="index" class="config-item">
+          <div class="config-item-header">
+            <span class="config-item-title">节点 #{{ index + 1 }}</span>
+            <t-button
+              theme="danger"
+              variant="text"
+              size="small"
+              @click="removeNode(index)"
+            >
+              {{ $t('knowledgeEditor.advanced.graph.deleteNode') }}
+            </t-button>
+          </div>
+          
+          <div class="config-item-body">
+            <div class="config-field">
+              <label>{{ $t('knowledgeEditor.advanced.graph.nodeNameLabel') }}</label>
+              <t-input
+                v-model="node.name"
+                :placeholder="$t('knowledgeEditor.advanced.graph.nodeNamePlaceholder')"
+                @change="handleConfigChange"
+              />
+            </div>
+            
+            <div class="config-field">
+              <label>{{ $t('knowledgeEditor.advanced.graph.nodeChunksLabel') }}</label>
+              <t-tag-input
+                v-model="node.chunks"
+                :placeholder="$t('knowledgeEditor.advanced.graph.nodeChunksPlaceholder')"
+                @change="handleConfigChange"
+              />
+            </div>
+            
+            <div class="config-field">
+              <label>{{ $t('knowledgeEditor.advanced.graph.nodeAttributesLabel') }}</label>
+              <t-tag-input
+                v-model="node.attributes"
+                :placeholder="$t('knowledgeEditor.advanced.graph.nodeAttributesPlaceholder')"
+                @change="handleConfigChange"
+              />
+            </div>
+          </div>
+        </div>
+
+        <t-button
+          theme="primary"
+          variant="outline"
+          @click="addNode"
+          style="margin-top: 12px;"
+        >
+          <template #icon>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 2a1 1 0 011 1v4h4a1 1 0 110 2H9v4a1 1 0 11-2 0V9H3a1 1 0 110-2h4V3a1 1 0 011-1z"/>
+            </svg>
+          </template>
+          {{ $t('knowledgeEditor.advanced.graph.addNode') }}
+        </t-button>
+
+        <!-- Relations Configuration -->
+        <div class="subsection-header" style="margin-top: 24px;">
+          <h4>{{ $t('knowledgeEditor.advanced.graph.relationsLabel') }}</h4>
+          <p class="subsection-desc">{{ $t('knowledgeEditor.advanced.graph.relationsDescription') }}</p>
+        </div>
+
+        <div v-for="(relation, index) in localNodeExtract.relations" :key="index" class="config-item">
+          <div class="config-item-header">
+            <span class="config-item-title">关系 #{{ index + 1 }}</span>
+            <t-button
+              theme="danger"
+              variant="text"
+              size="small"
+              @click="removeRelation(index)"
+            >
+              {{ $t('knowledgeEditor.advanced.graph.deleteRelation') }}
+            </t-button>
+          </div>
+          
+          <div class="config-item-body">
+            <div class="config-field">
+              <label>{{ $t('knowledgeEditor.advanced.graph.relationNode1Label') }}</label>
+              <t-input
+                v-model="relation.node1"
+                :placeholder="$t('knowledgeEditor.advanced.graph.relationNode1Placeholder')"
+                @change="handleConfigChange"
+              />
+            </div>
+            
+            <div class="config-field">
+              <label>{{ $t('knowledgeEditor.advanced.graph.relationNode2Label') }}</label>
+              <t-input
+                v-model="relation.node2"
+                :placeholder="$t('knowledgeEditor.advanced.graph.relationNode2Placeholder')"
+                @change="handleConfigChange"
+              />
+            </div>
+            
+            <div class="config-field">
+              <label>{{ $t('knowledgeEditor.advanced.graph.relationTypeLabel') }}</label>
+              <t-input
+                v-model="relation.type"
+                :placeholder="$t('knowledgeEditor.advanced.graph.relationTypePlaceholder')"
+                @change="handleConfigChange"
+              />
+            </div>
+          </div>
+        </div>
+
+        <t-button
+          theme="primary"
+          variant="outline"
+          @click="addRelation"
+          style="margin-top: 12px;"
+        >
+          <template #icon>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 2a1 1 0 011 1v4h4a1 1 0 110 2H9v4a1 1 0 11-2 0V9H3a1 1 0 110-2h4V3a1 1 0 011-1z"/>
+            </svg>
+          </template>
+          {{ $t('knowledgeEditor.advanced.graph.addRelation') }}
+        </t-button>
       </div>
     </div>
   </div>
@@ -311,6 +437,16 @@ interface NodeExtractConfig {
   enabled: boolean
   text: string
   tags: string[]
+  nodes: Array<{
+    name: string
+    chunks: string[]
+    attributes: string[]
+  }>
+  relations: Array<{
+    node1: string
+    node2: string
+    type: string
+  }>
 }
 
 interface Props {
@@ -327,7 +463,11 @@ const emit = defineEmits<{
 }>()
 
 const localMultimodal = ref<MultimodalConfig>({ ...props.multimodal })
-const localNodeExtract = ref<NodeExtractConfig>({ ...props.nodeExtract })
+const localNodeExtract = ref<NodeExtractConfig>({ 
+  ...props.nodeExtract,
+  nodes: props.nodeExtract.nodes || [],
+  relations: props.nodeExtract.relations || []
+})
 
 const vllmSelectorRef = ref()
 const isGraphDatabaseEnabled = ref(false)
@@ -391,7 +531,11 @@ watch(() => props.multimodal, (newVal) => {
 }, { deep: true })
 
 watch(() => props.nodeExtract, (newVal) => {
-  localNodeExtract.value = { ...newVal }
+  localNodeExtract.value = { 
+    ...newVal,
+    nodes: newVal.nodes || [],
+    relations: newVal.relations || []
+  }
 }, { deep: true })
 
 // Handle multimodal toggle
@@ -436,6 +580,10 @@ const handleAddModel = (subSection: string) => {
   uiStore.openSettings('models', subSection)
 }
 
+const graphGuideUrl =
+  import.meta.env.VITE_KG_GUIDE_URL ||
+  'https://github.com/Tencent/WeKnora/blob/main/docs/%E5%BC%80%E5%90%AF%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%E5%8A%9F%E8%83%BD.md'
+
 // Handle knowledge graph toggle
 const handleNodeExtractToggle = () => {
   // Prevent enabling if graph database is not enabled
@@ -446,15 +594,53 @@ const handleNodeExtractToggle = () => {
   emit('update:nodeExtract', localNodeExtract.value)
 }
 
-// Open system info page to show how to enable graph database
-const handleOpenSystemInfo = () => {
-  uiStore.openSettings('system')
+// Open guide documentation to show how to enable graph database
+const handleOpenGraphGuide = () => {
+  window.open(graphGuideUrl, '_blank', 'noopener')
 }
 
 // Handle configuration change
 const handleConfigChange = () => {
   emit('update:multimodal', localMultimodal.value)
   emit('update:nodeExtract', localNodeExtract.value)
+}
+
+// Add a new node
+const addNode = () => {
+  if (!localNodeExtract.value.nodes) {
+    localNodeExtract.value.nodes = []
+  }
+  localNodeExtract.value.nodes.push({
+    name: '',
+    chunks: [],
+    attributes: []
+  })
+  handleConfigChange()
+}
+
+// Remove a node
+const removeNode = (index: number) => {
+  localNodeExtract.value.nodes.splice(index, 1)
+  handleConfigChange()
+}
+
+// Add a new relation
+const addRelation = () => {
+  if (!localNodeExtract.value.relations) {
+    localNodeExtract.value.relations = []
+  }
+  localNodeExtract.value.relations.push({
+    node1: '',
+    node2: '',
+    type: ''
+  })
+  handleConfigChange()
+}
+
+// Remove a relation
+const removeRelation = (index: number) => {
+  localNodeExtract.value.relations.splice(index, 1)
+  handleConfigChange()
 }
 
 // The allModels prop keeps model options in sync
@@ -530,6 +716,11 @@ const handleConfigChange = () => {
   align-items: center;
 }
 
+.graph-guide-link {
+  display: inline-block;
+  margin-top: 8px;
+}
+
 .subsection {
   padding: 16px 20px;
   margin: 12px 0 0 0;
@@ -570,5 +761,54 @@ const handleConfigChange = () => {
 .storage-config {
   margin-top: 8px;
 }
+
+.config-item {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.config-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.config-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333333;
+}
+
+.config-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #555555;
+  }
+}
+
+.subsection-desc {
+  font-size: 13px;
+  color: #666666;
+  margin: 4px 0 8px 8px;
+  line-height: 1.5;
+}
+
 </style>
 

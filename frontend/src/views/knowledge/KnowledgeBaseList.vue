@@ -71,9 +71,23 @@
 
         <!-- 卡片底部 -->
         <div class="card-bottom">
-          <div class="type-badge" :class="{ 'document': (kb.type || 'document') === 'document', 'faq': kb.type === 'faq' }">
-            <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
-            <span>{{ kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument') }}</span>
+          <div class="bottom-left">
+            <div class="type-badge" :class="{ 'document': (kb.type || 'document') === 'document', 'faq': kb.type === 'faq' }">
+              <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
+              <span>{{ kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument') }}</span>
+            </div>
+            <div class="feature-badges">
+              <t-tooltip v-if="kb.extract_config?.enabled" :content="$t('knowledgeList.features.knowledgeGraph')" placement="top">
+                <div class="feature-badge kg">
+                  <t-icon name="relation" size="14px" />
+                </div>
+              </t-tooltip>
+              <t-tooltip v-if="kb.vlm_config?.enabled || (kb.cos_config?.provider && kb.cos_config?.bucket_name)" :content="$t('knowledgeList.features.multimodal')" placement="top">
+                <div class="feature-badge multimodal">
+                  <t-icon name="image" size="14px" />
+                </div>
+              </t-tooltip>
+            </div>
           </div>
           <span class="card-time">{{ kb.updated_at }}</span>
         </div>
@@ -150,6 +164,9 @@ interface KB {
   summary_model_id?: string;
   type?: 'document' | 'faq';
   showMore?: boolean;
+  vlm_config?: { enabled?: boolean; model_id?: string };
+  extract_config?: { enabled?: boolean };
+  cos_config?: { provider?: string; bucket_name?: string };
 }
 
 const kbs = ref<KB[]>([])
@@ -483,6 +500,12 @@ const handleKBEditorSuccess = (kbId: string) => {
   margin-top: auto;
 }
 
+.bottom-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .type-badge {
   display: inline-flex;
   align-items: center;
@@ -504,6 +527,42 @@ const handleKBEditorSuccess = (kbId: string) => {
     background: rgba(0, 82, 217, 0.1);
     color: #0052d9;
     border: 1px solid rgba(0, 82, 217, 0.2);
+  }
+}
+
+.feature-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.feature-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+
+  &.kg {
+    background: rgba(124, 77, 255, 0.1);
+    color: #7c4dff;
+    border: 1px solid rgba(124, 77, 255, 0.2);
+
+    &:hover {
+      background: rgba(124, 77, 255, 0.15);
+    }
+  }
+
+  &.multimodal {
+    background: rgba(255, 152, 0, 0.1);
+    color: #ff9800;
+    border: 1px solid rgba(255, 152, 0, 0.2);
+
+    &:hover {
+      background: rgba(255, 152, 0, 0.15);
+    }
   }
 }
 

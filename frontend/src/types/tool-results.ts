@@ -92,11 +92,28 @@ export interface KnowledgeBaseListData {
 }
 
 // Document info data
-export interface DocumentInfoData {
-    display_type: 'document_info';
+export interface DocumentInfoDocument {
     knowledge_id: string;
     title: string;
-    chunk_count_min: number;
+    description?: string;
+    type?: string;
+    source?: string;
+    file_name?: string;
+    file_type?: string;
+    file_size?: number;
+    parse_status?: string;
+    chunk_count?: number;
+    metadata?: Record<string, any>;
+    type_icon?: string;
+}
+
+export interface DocumentInfoData {
+    display_type: 'document_info';
+    documents?: DocumentInfoDocument[];
+    total_docs: number;
+    requested: number;
+    errors?: string[];
+    title?: string;
 }
 
 // Graph query results data

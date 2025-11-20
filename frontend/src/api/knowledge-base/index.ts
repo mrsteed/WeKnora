@@ -12,8 +12,10 @@ export function createKnowledgeBase(data: {
   chunking_config?: any;
   embedding_model_id?: string;
   summary_model_id?: string;
-  vlm_model_id?: string;
-  vlm_config?: any;
+  vlm_config?: {
+    enabled: boolean;
+    model_id?: string;
+  };
   cos_config?: any;
   extract_config?: any;
   faq_config?: { index_mode: string; question_index_mode?: string };

@@ -156,9 +156,9 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 		}
 
 		// 检查VLM配置
-		if kb.VLMConfig.ModelName == "" || kb.VLMConfig.BaseURL == "" {
-			logger.Error(ctx, "VLM configuration incomplete for image multimodal processing")
-			return nil, werrors.NewBadRequestError("上传图片文件需要完整的VLM配置信息, 请前往系统设置页面进行补全")
+		if !kb.VLMConfig.Enabled || kb.VLMConfig.ModelID == "" {
+			logger.Error(ctx, "VLM model is not configured")
+			return nil, werrors.NewBadRequestError("上传图片文件需要设置VLM模型")
 		}
 
 		logger.Info(ctx, "Image multimodal configuration validation passed")
@@ -270,10 +270,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	// Process document asynchronously
 	logger.Info(ctx, "Starting asynchronous document processing")
 	newCtx := logger.CloneContext(ctx)
-	if enableMultimodel == nil {
-		enableMultimodel = &kb.ChunkingConfig.EnableMultimodal
-	}
-	go s.processDocument(newCtx, kb, knowledge, file, *enableMultimodel)
+	go s.processDocument(newCtx, kb, knowledge, file, kb.VLMConfig.Enabled)
 
 	logger.Infof(ctx, "Knowledge from file created successfully, ID: %s", knowledge.ID)
 	return knowledge, nil
@@ -358,11 +355,8 @@ func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
 
 	// Process URL asynchronously
 	logger.Info(ctx, "Starting asynchronous URL processing")
-	if enableMultimodel == nil {
-		enableMultimodel = &kb.ChunkingConfig.EnableMultimodal
-	}
 	newCtx := logger.CloneContext(ctx)
-	go s.processDocumentFromURL(newCtx, kb, knowledge, url, *enableMultimodel)
+	go s.processDocumentFromURL(newCtx, kb, knowledge, url, kb.VLMConfig.Enabled)
 
 	logger.Infof(ctx, "Knowledge from URL created successfully, ID: %s", knowledge.ID)
 	return knowledge, nil
@@ -856,6 +850,31 @@ func (s *knowledgeService) processDocument(ctx context.Context,
 	// Split file into chunks using document reader service
 	logger.GetLogger(ctx).Infof("processDocument split file content size: %d, file name: %s, file type: %s, separators: %v, enable multimodal: %v",
 		len(contentBytes), knowledge.FileName, knowledge.FileType, kb.ChunkingConfig.Separators, enableMultimodel)
+	var vlmConfig *proto.VLMConfig
+	if enableMultimodel {
+		vlmConfig, err = s.getVLMProtoConfig(ctx, kb)
+		if err != nil {
+			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
+				WithField("error", err).Errorf("processDocument build VLM config failed")
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = err.Error()
+			knowledge.UpdatedAt = time.Now()
+			s.repo.UpdateKnowledge(ctx, knowledge)
+			span.RecordError(err)
+			return
+		}
+		if vlmConfig == nil {
+			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
+				Error("processDocument enable multimodal but VLM config missing")
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = "VLM 配置缺失"
+			knowledge.UpdatedAt = time.Now()
+			s.repo.UpdateKnowledge(ctx, knowledge)
+			span.RecordError(errors.New("vlm config missing"))
+			return
+		}
+	}
+
 	resp, err := s.docReaderClient.ReadFromFile(ctx, &proto.ReadFromFileRequest{
 		FileContent: contentBytes,
 		FileName:    knowledge.FileName,
@@ -874,12 +893,7 @@ func (s *knowledgeService) processDocument(ctx context.Context,
 				AppId:           kb.StorageConfig.AppID,
 				PathPrefix:      kb.StorageConfig.PathPrefix,
 			},
-			VlmConfig: &proto.VLMConfig{
-				ModelName:     kb.VLMConfig.ModelName,
-				BaseUrl:       kb.VLMConfig.BaseURL,
-				ApiKey:        kb.VLMConfig.APIKey,
-				InterfaceType: kb.VLMConfig.InterfaceType,
-			},
+			VlmConfig: vlmConfig,
 		},
 		RequestId: ctx.Value(types.RequestIDContextKey).(string),
 	})
@@ -912,6 +926,30 @@ func (s *knowledgeService) processDocumentFromURL(ctx context.Context,
 	logger.GetLogger(ctx).Infof("processDocumentFromURL enableMultimodel: %v", enableMultimodel)
 
 	// Fetch and chunk content from URL
+	var vlmConfig *proto.VLMConfig
+	if enableMultimodel {
+		cfg, cfgErr := s.getVLMProtoConfig(ctx, kb)
+		if cfgErr != nil {
+			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
+				WithField("error", cfgErr).Errorf("processDocumentFromURL build VLM config failed")
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = cfgErr.Error()
+			knowledge.UpdatedAt = time.Now()
+			s.repo.UpdateKnowledge(ctx, knowledge)
+			return
+		}
+		if cfg == nil {
+			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
+				Error("processDocumentFromURL enable multimodal but VLM config missing")
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = "VLM 配置缺失"
+			knowledge.UpdatedAt = time.Now()
+			s.repo.UpdateKnowledge(ctx, knowledge)
+			return
+		}
+		vlmConfig = cfg
+	}
+
 	resp, err := s.docReaderClient.ReadFromURL(ctx, &proto.ReadFromURLRequest{
 		Url:   url,
 		Title: knowledge.Title,
@@ -929,12 +967,7 @@ func (s *knowledgeService) processDocumentFromURL(ctx context.Context,
 				AppId:           kb.StorageConfig.AppID,
 				PathPrefix:      kb.StorageConfig.PathPrefix,
 			},
-			VlmConfig: &proto.VLMConfig{
-				ModelName:     kb.VLMConfig.ModelName,
-				BaseUrl:       kb.VLMConfig.BaseURL,
-				ApiKey:        kb.VLMConfig.APIKey,
-				InterfaceType: kb.VLMConfig.InterfaceType,
-			},
+			VlmConfig: vlmConfig,
 		},
 		RequestId: ctx.Value(types.RequestIDContextKey).(string),
 	})
@@ -3065,10 +3098,34 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 	fileType := "md"
 
 	// 检查是否需要启用多模态（对于手动内容通常不需要，但保持一致性）
-	enableMultimodel := kb.ChunkingConfig.EnableMultimodal && kb.StorageConfig.Provider != ""
+	enableMultimodel := kb.VLMConfig.Enabled && kb.StorageConfig.Provider != ""
 
 	logger.GetLogger(ctx).Infof("triggerManualProcessing split manual content size: %d, file name: %s, file type: %s, separators: %v, enable multimodal: %v",
 		len(contentBytes), fileName, fileType, kb.ChunkingConfig.Separators, enableMultimodel)
+
+	var vlmConfig *proto.VLMConfig
+	if enableMultimodel {
+		cfg, cfgErr := s.getVLMProtoConfig(ctx, kb)
+		if cfgErr != nil {
+			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
+				WithField("error", cfgErr).Errorf("triggerManualProcessing build VLM config failed")
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = cfgErr.Error()
+			knowledge.UpdatedAt = time.Now()
+			s.repo.UpdateKnowledge(ctx, knowledge)
+			return
+		}
+		if cfg == nil {
+			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
+				Error("triggerManualProcessing enable multimodal but VLM config missing")
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = "VLM 配置缺失"
+			knowledge.UpdatedAt = time.Now()
+			s.repo.UpdateKnowledge(ctx, knowledge)
+			return
+		}
+		vlmConfig = cfg
+	}
 
 	// 调用 docreader 解析 markdown 内容
 	resp, err := s.docReaderClient.ReadFromFile(ctx, &proto.ReadFromFileRequest{
@@ -3089,12 +3146,7 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 				AppId:           kb.StorageConfig.AppID,
 				PathPrefix:      kb.StorageConfig.PathPrefix,
 			},
-			VlmConfig: &proto.VLMConfig{
-				ModelName:     kb.VLMConfig.ModelName,
-				BaseUrl:       kb.VLMConfig.BaseURL,
-				ApiKey:        kb.VLMConfig.APIKey,
-				InterfaceType: kb.VLMConfig.InterfaceType,
-			},
+			VlmConfig: vlmConfig,
 		},
 		RequestId: ctx.Value(types.RequestIDContextKey).(string),
 	})
@@ -3171,6 +3223,29 @@ func (s *knowledgeService) cleanupKnowledgeResources(ctx context.Context, knowle
 	}
 
 	return cleanupErr
+}
+
+func (s *knowledgeService) getVLMProtoConfig(ctx context.Context, kb *types.KnowledgeBase) (*proto.VLMConfig, error) {
+	if kb == nil || !kb.VLMConfig.Enabled || kb.VLMConfig.ModelID == "" {
+		return nil, nil
+	}
+
+	model, err := s.modelService.GetModelByID(ctx, kb.VLMConfig.ModelID)
+	if err != nil {
+		return nil, err
+	}
+
+	interfaceType := model.Parameters.InterfaceType
+	if interfaceType == "" {
+		interfaceType = "openai"
+	}
+
+	return &proto.VLMConfig{
+		ModelName:     model.Name,
+		BaseUrl:       model.Parameters.BaseURL,
+		ApiKey:        model.Parameters.APIKey,
+		InterfaceType: interfaceType,
+	}, nil
 }
 
 func IsImageType(fileType string) bool {

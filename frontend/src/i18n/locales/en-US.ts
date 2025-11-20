@@ -698,16 +698,20 @@ export default {
     uninitializedBanner: 'Some knowledge bases are not initialized. Configure model information in settings before adding documents.',
     empty: {
       title: 'No knowledge bases yet',
-      description: 'Click “Create Knowledge Base” in the top-right corner to add your first one.'
+      description: 'Click "Create Knowledge Base" in the top-right corner to add your first one.'
     },
     delete: {
       confirmTitle: 'Delete Confirmation',
-      confirmMessage: 'Are you sure you want to delete the knowledge base “{name}”? This action cannot be undone.',
+      confirmMessage: 'Are you sure you want to delete the knowledge base "{name}"? This action cannot be undone.',
       confirmButton: 'Delete'
     },
     messages: {
       deleted: 'Knowledge base deleted',
       deleteFailed: 'Failed to delete knowledge base'
+    },
+    features: {
+      knowledgeGraph: 'Knowledge Graph Enabled',
+      multimodal: 'Multimodal Enabled'
     }
   },
   knowledgeEditor: {
@@ -868,8 +872,11 @@ export default {
       separatorsDescription: 'Separators used when chunking documents',
       separatorsPlaceholder: 'Select separators',
       separators: {
-        doubleNewline: 'Double newline (\\n\\n)',
-        singleNewline: 'Single newline (\\n)',
+        doubleNewline: 'Double newline (\
+\
+)',
+        singleNewline: 'Single newline (\
+)',
         periodCn: 'Chinese period (。)',
         exclamationCn: 'Exclamation mark (！)',
         questionCn: 'Question mark (？)',
@@ -936,8 +943,29 @@ export default {
         tagsLabel: 'Tags',
         tagsDescription: 'Predefined entity tags (separate multiple tags with commas)',
         tagsPlaceholder: 'Enter a tag and press Enter',
-        disabledWarning: 'Graph database is not enabled. Please enable the graph database first to use this feature.',
-        howToEnable: 'How to enable'
+        nodesLabel: 'Node Configuration',
+        nodesDescription: 'Define entity node types and attributes to extract',
+        addNode: 'Add Node',
+        nodeNameLabel: 'Node Name',
+        nodeNamePlaceholder: 'e.g., Person, Organization',
+        nodeChunksLabel: 'Associated Chunks',
+        nodeChunksPlaceholder: 'Enter chunk ID and press Enter',
+        nodeAttributesLabel: 'Node Attributes',
+        nodeAttributesPlaceholder: 'Enter attribute name and press Enter',
+        relationsLabel: 'Relation Configuration',
+        relationsDescription: 'Define relationship types between nodes',
+        addRelation: 'Add Relation',
+        relationNode1Label: 'Source Node',
+        relationNode1Placeholder: 'e.g., Person',
+        relationNode2Label: 'Target Node',
+        relationNode2Placeholder: 'e.g., Organization',
+        relationTypeLabel: 'Relation Type',
+        relationTypePlaceholder: 'e.g., WORKS_FOR, BELONGS_TO',
+        deleteNode: 'Delete Node',
+        deleteRelation: 'Delete Relation',
+        disabledWarning:
+          'Graph database is not enabled. Please follow the "Enable Knowledge Graph" guide before using this feature.',
+        howToEnable: 'View guide'
       }
     }
   },
@@ -1014,7 +1042,16 @@ export default {
     nullValuePlaceholder: '<NULL>',
     documentTitleLabel: 'Document title:',
     chunkCountLabel: 'Chunk count:',
-    chunkCountValue: 'At least {count}',
+    chunkCountValue: '{count} chunks',
+    documentDescriptionLabel: 'Description:',
+    documentStatusLabel: 'Status:',
+    documentSourceLabel: 'Source:',
+    documentFileLabel: 'File:',
+    documentMetadataLabel: 'Metadata',
+    documentInfoSummaryLabel: 'Document info',
+    documentInfoCount: '{count} of {requested} documents retrieved',
+    documentInfoErrors: 'Errors',
+    documentInfoEmpty: 'No document information available',
     statusDescription: 'Status notes',
     statusIndexed: 'Document is indexed and searchable',
     statusSearchable: 'Search tools can locate document content',
@@ -1232,7 +1269,7 @@ export default {
       dimensionDetected: 'Detection succeeded. Vector dimension: {value}',
       dimensionFailed: 'Detection failed, please enter the dimension manually',
       remoteDimensionDetected: 'Detected vector dimension: {value}',
-      dimensionHint: 'Model selected. Click “Detect Dimension” to fetch the vector dimension automatically.',
+      dimensionHint: 'Model selected. Click "Detect Dimension" to fetch the vector dimension automatically.',
       setAsDefault: 'Set as default model',
       loadModelListFailed: 'Failed to load model list',
       listRefreshed: 'List refreshed',
@@ -1459,7 +1496,7 @@ export default {
     },
     fallbackPrompt: {
       label: 'Fallback Prompt',
-      desc: 'Prompt used when fallback strategy is “model”'
+      desc: 'Prompt used when fallback strategy is "model"'
     },
     advanced: {
       description: 'Configure query rewrite, fallback strategy and other advanced settings'
@@ -1559,7 +1596,7 @@ export default {
       deleted: 'MCP service deleted',
       deleteFailed: 'Failed to delete MCP service'
     },
-    deleteConfirmBody: 'Delete MCP service “{name}”? This action cannot be undone.',
+    deleteConfirmBody: 'Delete MCP service "{name}"? This action cannot be undone.',
     unnamed: 'Unnamed'
   },
   // New: Model Settings
@@ -1616,7 +1653,7 @@ export default {
     description: 'Manage local Ollama service and view/download models',
     status: {
       label: 'Ollama Service Status',
-      desc: 'Automatically detect local Ollama service availability. If the service is down or the URL is incorrect, status will be “Unavailable”.',
+      desc: 'Automatically detect local Ollama service availability. If the service is down or the URL is incorrect, status will be "Unavailable".',
       testing: 'Testing',
       available: 'Available',
       unavailable: 'Unavailable',

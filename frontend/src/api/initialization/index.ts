@@ -74,7 +74,10 @@ export interface DownloadTask {
 export interface KBModelConfigRequest {
     llmModelId: string
     embeddingModelId: string
-    vllmModelId?: string
+    vlm_config?: {
+        enabled: boolean
+        model_id?: string
+    }
     documentSplitting: {
         chunkSize: number
         chunkOverlap: number

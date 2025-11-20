@@ -275,7 +275,17 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
     nodeExtractConfig: {
       enabled: false,
       text: '',
-      tags: [] as string[]
+      tags: [] as string[],
+      nodes: [] as Array<{
+        name: string
+        chunks: string[]
+        attributes: string[]
+      }>,
+      relations: [] as Array<{
+        node1: string
+        node2: string
+        type: string
+      }>
     }
   }
 }
@@ -331,9 +341,9 @@ const loadKBData = async () => {
         separators: kb.chunking_config?.separators || ['\n\n', '\n', '。', '！', '？', ';', '；']
       },
       multimodalConfig: {
-        enabled: !!(kb.vlm_model_id || (kb.cos_config?.provider && kb.cos_config?.bucket_name)),
+        enabled: !!(kb.vlm_config?.enabled || (kb.cos_config?.provider && kb.cos_config?.bucket_name)),
         storageType: (kb.cos_config?.provider || 'minio') as 'minio' | 'cos',
-        vllmModelId: kb.vlm_model_id || '',
+        vllmModelId: kb.vlm_config?.model_id || '',
         minio: {
           bucketName: kb.cos_config?.bucket_name || '',
           useSSL: kb.cos_config?.use_ssl || false,
@@ -351,7 +361,9 @@ const loadKBData = async () => {
       nodeExtractConfig: {
         enabled: kb.extract_config?.enabled || false,
         text: kb.extract_config?.text || '',
-        tags: kb.extract_config?.tags || []
+        tags: kb.extract_config?.tags || [],
+        nodes: kb.extract_config?.nodes || [],
+        relations: kb.extract_config?.relations || []
       }
     }
   } catch (error) {
@@ -450,11 +462,14 @@ const buildSubmitData = () => {
   }
 
   // 添加多模态配置
+  data.vlm_config = {
+    enabled: formData.value.multimodalConfig.enabled,
+    model_id: formData.value.multimodalConfig.enabled
+      ? (formData.value.multimodalConfig.vllmModelId || '')
+      : ''
+  }
+
   if (formData.value.multimodalConfig.enabled) {
-    if (formData.value.multimodalConfig.vllmModelId) {
-      data.vlm_model_id = formData.value.multimodalConfig.vllmModelId
-    }
-    
     const storageType = formData.value.multimodalConfig.storageType
     if (storageType === 'minio') {
       data.cos_config = {
@@ -481,7 +496,9 @@ const buildSubmitData = () => {
     data.extract_config = {
       enabled: true,
       text: formData.value.nodeExtractConfig.text,
-      tags: formData.value.nodeExtractConfig.tags
+      tags: formData.value.nodeExtractConfig.tags,
+      nodes: formData.value.nodeExtractConfig.nodes,
+      relations: formData.value.nodeExtractConfig.relations
     }
   }
 
@@ -540,14 +557,14 @@ const handleSubmit = async () => {
       const config: KBModelConfigRequest = {
         llmModelId: data.summary_model_id,
         embeddingModelId: data.embedding_model_id,
-        vllmModelId: data.vlm_model_id || '',
+        vlm_config: data.vlm_config,
         documentSplitting: {
           chunkSize: data.chunking_config.chunk_size,
           chunkOverlap: data.chunking_config.chunk_overlap,
           separators: data.chunking_config.separators
         },
         multimodal: {
-          enabled: !!data.cos_config,
+          enabled: !!data.cos_config || !!data.vlm_config?.enabled,
           storageType: data.cos_config?.provider || 'minio',
           cos: data.cos_config?.provider === 'cos' ? {
             secretId: data.cos_config.secret_id,

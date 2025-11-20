@@ -5,7 +5,7 @@
 -- ============================================================================
 
 -- This script removes models from the models table that meet ALL of these conditions:
--- 1. Not referenced by any knowledge_bases (embedding_model_id, summary_model_id, rerank_model_id, vlm_model_id)
+-- 1. Not referenced by any knowledge_bases (embedding_model_id, summary_model_id, rerank_model_id, vlm_config.model_id)
 -- 2. Not referenced by any knowledges (embedding_model_id)
 -- 3. Not a default model (is_default = false)
 -- 4. Not a system model (tenant_id != 0)
@@ -38,7 +38,11 @@ WHERE m.deleted_at IS NULL
       UNION
       SELECT DISTINCT rerank_model_id FROM knowledge_bases WHERE deleted_at IS NULL AND rerank_model_id != ''
       UNION
-      SELECT DISTINCT vlm_model_id FROM knowledge_bases WHERE deleted_at IS NULL AND vlm_model_id != ''
+      SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(vlm_config, '$.model_id')) AS vlm_model_id
+      FROM knowledge_bases
+      WHERE deleted_at IS NULL
+        AND JSON_EXTRACT(vlm_config, '$.model_id') IS NOT NULL
+        AND JSON_UNQUOTE(JSON_EXTRACT(vlm_config, '$.model_id')) != ''
       UNION
       -- Models referenced by knowledges
       SELECT DISTINCT embedding_model_id FROM knowledges WHERE deleted_at IS NULL AND embedding_model_id IS NOT NULL AND embedding_model_id != ''
@@ -61,7 +65,11 @@ ORDER BY m.created_at DESC;
 --       UNION
 --       SELECT DISTINCT rerank_model_id FROM knowledge_bases WHERE deleted_at IS NULL AND rerank_model_id != ''
 --       UNION
---       SELECT DISTINCT vlm_model_id FROM knowledge_bases WHERE deleted_at IS NULL AND vlm_model_id != ''
+--       SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(vlm_config, '$.model_id')) AS vlm_model_id
+--       FROM knowledge_bases
+--       WHERE deleted_at IS NULL
+--         AND JSON_EXTRACT(vlm_config, '$.model_id') IS NOT NULL
+--         AND JSON_UNQUOTE(JSON_EXTRACT(vlm_config, '$.model_id')) != ''
 --       UNION
 --       SELECT DISTINCT embedding_model_id FROM knowledges WHERE deleted_at IS NULL AND embedding_model_id IS NOT NULL AND embedding_model_id != ''
 --   );
@@ -83,7 +91,11 @@ ORDER BY m.created_at DESC;
 --       UNION
 --       SELECT DISTINCT rerank_model_id FROM knowledge_bases WHERE deleted_at IS NULL AND rerank_model_id != ''
 --       UNION
---       SELECT DISTINCT vlm_model_id FROM knowledge_bases WHERE deleted_at IS NULL AND vlm_model_id != ''
+--       SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(vlm_config, '$.model_id')) AS vlm_model_id
+--       FROM knowledge_bases
+--       WHERE deleted_at IS NULL
+--         AND JSON_EXTRACT(vlm_config, '$.model_id') IS NOT NULL
+--         AND JSON_UNQUOTE(JSON_EXTRACT(vlm_config, '$.model_id')) != ''
 --       UNION
 --       SELECT DISTINCT embedding_model_id FROM knowledges WHERE deleted_at IS NULL AND embedding_model_id IS NOT NULL AND embedding_model_id != ''
 --   );
@@ -122,9 +134,11 @@ WHERE deleted_at IS NULL AND rerank_model_id != ''
 UNION ALL
 SELECT 
     'vlm_model' as model_type,
-    COUNT(DISTINCT vlm_model_id) as referenced_count
+    COUNT(DISTINCT JSON_UNQUOTE(JSON_EXTRACT(vlm_config, '$.model_id'))) as referenced_count
 FROM knowledge_bases
-WHERE deleted_at IS NULL AND vlm_model_id != '';
+WHERE deleted_at IS NULL
+  AND JSON_EXTRACT(vlm_config, '$.model_id') IS NOT NULL
+  AND JSON_UNQUOTE(JSON_EXTRACT(vlm_config, '$.model_id')) != '';
 
 -- ============================================================================
 -- Rollback Strategy

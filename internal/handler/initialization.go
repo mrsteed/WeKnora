@@ -85,9 +85,9 @@ func NewInitializationHandler(
 
 // KBModelConfigRequest 知识库模型配置请求（简化版，只传模型ID）
 type KBModelConfigRequest struct {
-	LLMModelID       string `json:"llmModelId" binding:"required"`
-	EmbeddingModelID string `json:"embeddingModelId" binding:"required"`
-	VLLMModelID      string `json:"vllmModelId"` // 可选
+	LLMModelID       string           `json:"llmModelId" binding:"required"`
+	EmbeddingModelID string           `json:"embeddingModelId" binding:"required"`
+	VLMConfig        *types.VLMConfig `json:"vlm_config"`
 
 	// 文档分块配置
 	DocumentSplitting struct {
@@ -249,17 +249,19 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 	kb.SummaryModelID = req.LLMModelID
 	kb.EmbeddingModelID = req.EmbeddingModelID
 
-	// 处理可选的VLLM模型
-	if req.VLLMModelID != "" {
-		vllmModel, err := h.modelService.GetModelByID(ctx, req.VLLMModelID)
+	// 处理多模态模型配置
+	kb.VLMConfig = types.VLMConfig{}
+	if req.VLMConfig != nil && req.Multimodal.Enabled && req.VLMConfig.ModelID != "" {
+		vllmModel, err := h.modelService.GetModelByID(ctx, req.VLMConfig.ModelID)
 		if err != nil || vllmModel == nil {
-			logger.Warn(ctx, "VLLM model not found", "modelId", req.VLLMModelID)
+			logger.Warn(ctx, "VLM model not found", "modelId", req.VLMConfig.ModelID)
 		} else {
-			// 只存储模型ID
-			kb.VLMModelID = req.VLLMModelID
+			kb.VLMConfig.Enabled = req.VLMConfig.Enabled
+			kb.VLMConfig.ModelID = req.VLMConfig.ModelID
 		}
-	} else {
-		kb.VLMModelID = ""
+	}
+	if !kb.VLMConfig.Enabled {
+		kb.VLMConfig.ModelID = ""
 	}
 
 	// 更新文档分块配置
@@ -432,13 +434,14 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 
 	// 处理模型创建/更新
 	modelsToProcess := []struct {
-		modelType   types.ModelType
-		name        string
-		source      types.ModelSource
-		description string
-		baseURL     string
-		apiKey      string
-		dimension   int
+		modelType     types.ModelType
+		name          string
+		source        types.ModelSource
+		description   string
+		baseURL       string
+		apiKey        string
+		dimension     int
+		interfaceType string
 	}{
 		{
 			modelType:   types.ModelTypeKnowledgeQA,
@@ -462,13 +465,14 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 	// 如果启用Rerank，添加Rerank模型
 	if req.Rerank.Enabled {
 		modelsToProcess = append(modelsToProcess, struct {
-			modelType   types.ModelType
-			name        string
-			source      types.ModelSource
-			description string
-			baseURL     string
-			apiKey      string
-			dimension   int
+			modelType     types.ModelType
+			name          string
+			source        types.ModelSource
+			description   string
+			baseURL       string
+			apiKey        string
+			dimension     int
+			interfaceType string
 		}{
 			modelType:   types.ModelTypeRerank,
 			name:        req.Rerank.ModelName,
@@ -482,20 +486,22 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 	// 如果启用多模态，添加VLM模型
 	if req.Multimodal.Enabled && req.Multimodal.VLM != nil {
 		modelsToProcess = append(modelsToProcess, struct {
-			modelType   types.ModelType
-			name        string
-			source      types.ModelSource
-			description string
-			baseURL     string
-			apiKey      string
-			dimension   int
+			modelType     types.ModelType
+			name          string
+			source        types.ModelSource
+			description   string
+			baseURL       string
+			apiKey        string
+			dimension     int
+			interfaceType string
 		}{
-			modelType:   types.ModelTypeVLLM,
-			name:        req.Multimodal.VLM.ModelName,
-			source:      types.ModelSourceRemote,
-			description: "VLM Model",
-			baseURL:     req.Multimodal.VLM.BaseURL,
-			apiKey:      req.Multimodal.VLM.APIKey,
+			modelType:     types.ModelTypeVLLM,
+			name:          req.Multimodal.VLM.ModelName,
+			source:        types.ModelSourceRemote,
+			description:   "VLM Model",
+			baseURL:       req.Multimodal.VLM.BaseURL,
+			apiKey:        req.Multimodal.VLM.APIKey,
+			interfaceType: req.Multimodal.VLM.InterfaceType,
 		})
 	}
 
@@ -508,8 +514,9 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 			Source:      modelInfo.source,
 			Description: modelInfo.description,
 			Parameters: types.ModelParameters{
-				BaseURL: modelInfo.baseURL,
-				APIKey:  modelInfo.apiKey,
+				BaseURL:       modelInfo.baseURL,
+				APIKey:        modelInfo.apiKey,
+				InterfaceType: modelInfo.interfaceType,
 			},
 			IsDefault: false,
 			Status:    types.ModelStatusActive,
@@ -529,7 +536,7 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 		case types.ModelTypeKnowledgeQA:
 			existingModelID = kb.SummaryModelID
 		case types.ModelTypeVLLM:
-			existingModelID = kb.VLMModelID
+			existingModelID = kb.VLMConfig.ModelID
 		}
 
 		// 如果知识库中已经有对应类型的模型ID，尝试获取并更新
@@ -603,13 +610,9 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 
 	// 更新多模态配置
 	if req.Multimodal.Enabled {
-		kb.ChunkingConfig.EnableMultimodal = true
-		kb.VLMModelID = vlmModelID
 		kb.VLMConfig = types.VLMConfig{
-			ModelName:     req.Multimodal.VLM.ModelName,
-			BaseURL:       req.Multimodal.VLM.BaseURL,
-			APIKey:        req.Multimodal.VLM.APIKey,
-			InterfaceType: req.Multimodal.VLM.InterfaceType,
+			Enabled: req.Multimodal.Enabled,
+			ModelID: vlmModelID,
 		}
 		switch req.Multimodal.StorageType {
 		case "cos":
@@ -636,7 +639,6 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 			}
 		}
 	} else {
-		kb.VLMModelID = ""
 		kb.VLMConfig = types.VLMConfig{}
 		kb.StorageConfig = types.StorageConfig{}
 	}
@@ -1083,7 +1085,7 @@ func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 	modelIDs := []string{
 		kb.EmbeddingModelID,
 		kb.SummaryModelID,
-		kb.VLMModelID,
+		kb.VLMConfig.ModelID,
 	}
 
 	for _, modelID := range modelIDs {
@@ -1170,15 +1172,18 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 			}
 			multimodal := config["multimodal"].(map[string]interface{})
 			multimodal["vlm"] = map[string]interface{}{
-				"modelName": model.Name,
-				"baseUrl":   baseURL,
-				"apiKey":    apiKey,
+				"modelName":     model.Name,
+				"baseUrl":       baseURL,
+				"apiKey":        apiKey,
+				"interfaceType": model.Parameters.InterfaceType,
+				"modelId":       model.ID,
 			}
 		}
 	}
 
 	// 判断多模态是否启用：有VLM模型ID或有存储配置
-	hasMultimodal := (kb.VLMModelID != "" || kb.StorageConfig.SecretID != "" || kb.StorageConfig.BucketName != "")
+	hasMultimodal := ((kb.VLMConfig.Enabled && kb.VLMConfig.ModelID != "") ||
+		kb.StorageConfig.SecretID != "" || kb.StorageConfig.BucketName != "")
 	if config["multimodal"] == nil {
 		config["multimodal"] = map[string]interface{}{
 			"enabled": hasMultimodal,

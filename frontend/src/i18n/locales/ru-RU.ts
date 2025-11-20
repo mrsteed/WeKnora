@@ -795,6 +795,10 @@ export default {
     messages: {
       deleted: 'База знаний удалена',
       deleteFailed: 'Не удалось удалить базу знаний'
+    },
+    features: {
+      knowledgeGraph: 'Граф знаний включен',
+      multimodal: 'Мультимодальность включена'
     }
   },
   knowledgeEditor: {
@@ -1099,7 +1103,16 @@ export default {
     nullValuePlaceholder: '<NULL>',
     documentTitleLabel: 'Название документа:',
     chunkCountLabel: 'Количество фрагментов:',
-    chunkCountValue: 'Не менее {count}',
+    chunkCountValue: '{count} фрагментов',
+    documentDescriptionLabel: 'Описание:',
+    documentStatusLabel: 'Статус:',
+    documentSourceLabel: 'Источник:',
+    documentFileLabel: 'Файл:',
+    documentMetadataLabel: 'Метаданные',
+    documentInfoSummaryLabel: 'Информация о документах',
+    documentInfoCount: '{count} из {requested} документов получено',
+    documentInfoErrors: 'Ошибки',
+    documentInfoEmpty: 'Нет данных о документах',
     statusDescription: 'Информация о статусе',
     statusIndexed: 'Документ проиндексирован и доступен для поиска',
     statusSearchable: 'Можно искать содержимое документа с помощью инструментов',

@@ -133,11 +133,19 @@ func (t *GetDocumentInfoTool) Execute(ctx context.Context, args map[string]inter
 			}
 
 			// Get chunk count
-			chunks, err := t.chunkService.GetRepository().ListChunksByKnowledgeID(ctx, t.tenantID, id)
-			chunkCount := 0
-			if err == nil {
-				chunkCount = len(chunks)
+			_, total, err := t.chunkService.GetRepository().ListPagedChunksByKnowledgeID(ctx, t.tenantID, id, &types.Pagination{
+				Page:     1,
+				PageSize: 1000,
+			}, []types.ChunkType{"text"}, "")
+			if err != nil {
+				mu.Lock()
+				results[id] = &docInfo{
+					err: fmt.Errorf("无法获取文档信息: %v", err),
+				}
+				mu.Unlock()
+				return
 			}
+			chunkCount := int(total)
 
 			mu.Lock()
 			results[id] = &docInfo{
@@ -220,25 +228,20 @@ func (t *GetDocumentInfoTool) Execute(ctx context.Context, args map[string]inter
 		output += "\n"
 
 		formattedDocs = append(formattedDocs, map[string]interface{}{
-			"knowledge_id":    k.ID,
-			"title":           k.Title,
-			"description":     k.Description,
-			"type":            k.Type,
-			"source":          k.Source,
-			"file_name":       k.FileName,
-			"file_type":       k.FileType,
-			"file_size":       k.FileSize,
-			"parse_status":    k.ParseStatus,
-			"chunk_count_min": doc.chunkCount,
-			"metadata":        k.GetMetadata(),
-			"type_icon":       typeIcon,
+			"knowledge_id": k.ID,
+			"title":        k.Title,
+			"description":  k.Description,
+			"type":         k.Type,
+			"source":       k.Source,
+			"file_name":    k.FileName,
+			"file_type":    k.FileType,
+			"file_size":    k.FileSize,
+			"parse_status": k.ParseStatus,
+			"chunk_count":  doc.chunkCount,
+			"metadata":     k.GetMetadata(),
+			"type_icon":    typeIcon,
 		})
 	}
-
-	output += "=== Usage Tips ===\n"
-	output += "- Use knowledge_search to search document content\n"
-	output += "- Use list_knowledge_chunks to view context and related chunks\n"
-	output += "- Search results already contain full chunk content\n"
 
 	// Extract first document title for summary
 	var firstTitle string
