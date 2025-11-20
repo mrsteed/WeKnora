@@ -65,7 +65,7 @@ const defaultSettings: Settings = {
   agentConfig: {
     maxIterations: 5,
     temperature: 0.7,
-    allowedTools: ["knowledge_search", "multi_kb_search", "list_knowledge_bases"],
+    allowedTools: [],  // 默认为空，需要通过 API 从后端加载
     system_prompt_web_enabled: "",
     system_prompt_web_disabled: "",
     use_custom_system_prompt: false
@@ -99,12 +99,15 @@ export const useSettingsStore = defineStore("settings", {
     isAgentEnabled: (state) => state.settings.isAgentEnabled || false,
     
     // Agent 是否就绪（配置完整）
+    // 需要满足：1) 配置了允许的工具 2) 设置了对话模型 3) 设置了重排模型
     isAgentReady: (state) => {
       const config = state.settings.agentConfig || defaultSettings.agentConfig
       const models = state.settings.conversationModels || defaultSettings.conversationModels
-      return config.allowedTools.length > 0 &&
-             models.summaryModelId !== '' &&
-             models.rerankModelId !== ''
+      return Boolean(
+        config.allowedTools && config.allowedTools.length > 0 &&
+        models.summaryModelId && models.summaryModelId.trim() !== '' &&
+        models.rerankModelId && models.rerankModelId.trim() !== ''
+      )
     },
     
     // 获取 Agent 配置

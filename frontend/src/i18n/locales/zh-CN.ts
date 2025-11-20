@@ -1010,7 +1010,7 @@ export default {
       "部分知识库尚未初始化，需要先在设置中配置模型信息才能添加知识文档",
     empty: {
       title: "暂无知识库",
-      description: "点击右上角“新建知识库”按钮创建第一个知识库",
+      description: "点击左侧快捷操作“新建知识库”按钮创建第一个知识库",
     },
     delete: {
       confirmTitle: "删除确认",
@@ -1162,7 +1162,7 @@ export default {
       title: "模型配置",
       description: "为知识库选择合适的 AI 模型",
       llmLabel: "LLM 大语言模型",
-      llmDesc: "用于总结和摘要的大语言模型（可选）",
+      llmDesc: "用于总结和摘要的大语言模型",
       llmPlaceholder: "请选择 LLM 模型（可选）",
       embeddingLabel: "Embedding 嵌入模型",
       embeddingDesc: "用于文本向量化的嵌入模型",
@@ -1267,7 +1267,10 @@ export default {
     agentModeDesc: "ReAct 推理框架，多步思考",
     agentNotReadyTooltip: "Agent 未就绪，请先在设置中完成配置",
     agentNotReadyDetail:
-      "Agent 未就绪，请先在设置中完成 Agent 配置（思考模型、Rerank 模型和允许的工具）",
+      "Agent 未就绪，需要配置以下内容：{reasons}",
+    agentMissingAllowedTools: "允许的工具",
+    agentMissingSummaryModel: "对话模型（Summary Model）",
+    agentMissingRerankModel: "重排模型（Rerank Model）",
     goToSettings: "前往设置 →",
     webSearch: {
       toggleOn: "开启网络搜索",
@@ -1292,7 +1295,7 @@ export default {
       agentEnabled: "Agent 模式已启用",
       agentDisabled: "Agent 模式已禁用",
       agentNotReadyDetail:
-        "Agent 未就绪，请先在设置中完成 Agent 配置（思考模型、Rerank 模型和允许的工具）",
+        "Agent 未就绪，需要配置以下内容：{reasons}",
       webSearchNotConfigured:
         "未配置网络搜索引擎，请先在设置中完成搜索引擎选择与接口配置。",
       webSearchEnabled: "网络搜索已开启",
@@ -1313,9 +1316,12 @@ export default {
       notReady: "未就绪",
       hint: "配置完成后，Agent 状态将自动变为“可用”，此时可在对话界面开启 Agent 模式",
       missingThinkingModel: "思考模型",
+      missingSummaryModel: "对话模型（Summary Model）",
       missingRerankModel: "Rerank 模型",
       missingAllowedTools: "允许的工具",
       pleaseConfigure: "请配置{items}",
+      goToConfig: "前往配置对话模型",
+      goConfigureModels: "前往配置模型 →",
     },
     maxIterations: {
       label: "最大迭代次数",

@@ -591,6 +591,25 @@ const handleGoToAgentSettings = () => {
   }
 }
 
+// 获取 Agent 不就绪的原因
+const getAgentNotReadyReasons = (): string[] => {
+  const reasons: string[] = []
+  const config = settingsStore.agentConfig || { allowedTools: [] }
+  const models = settingsStore.conversationModels || { summaryModelId: '', rerankModelId: '' }
+  
+  if (!config.allowedTools || config.allowedTools.length === 0) {
+    reasons.push(t('input.agentMissingAllowedTools'))
+  }
+  if (!models.summaryModelId || models.summaryModelId.trim() === '') {
+    reasons.push(t('input.agentMissingSummaryModel'))
+  }
+  if (!models.rerankModelId || models.rerankModelId.trim() === '') {
+    reasons.push(t('input.agentMissingRerankModel'))
+  }
+  
+  return reasons
+}
+
 const toggleAgentMode = () => {
   // 如果要启用 Agent，先检查是否就绪
   // 注意：isAgentReady 是从 store 中计算的，需要确保 store 中的配置是最新的
@@ -598,16 +617,19 @@ const toggleAgentMode = () => {
     // 尝试启用 Agent，先检查是否就绪
     const agentReady = settingsStore.isAgentReady
     if (!agentReady) {
+      const reasons = getAgentNotReadyReasons()
+      const reasonsText = reasons.join('、')
+      
       // 创建带跳转链接的自定义消息
-      const messageContent = h('div', { style: 'display: flex; align-items: center; gap: 8px; flex-wrap: wrap;' }, [
-        h('span', { style: 'flex: 1; min-width: 0;' }, t('input.messages.agentNotReadyDetail')),
+      const messageContent = h('div', { style: 'display: flex; flex-direction: column; gap: 8px; max-width: 320px;' }, [
+        h('span', { style: 'color: #333; line-height: 1.5;' }, t('input.messages.agentNotReadyDetail', { reasons: reasonsText })),
         h('a', {
           href: '#',
           onClick: (e: Event) => {
             e.preventDefault();
             handleGoToAgentSettings();
           },
-          style: 'color: #07C05F; text-decoration: none; font-weight: 500; cursor: pointer; white-space: nowrap; flex-shrink: 0;',
+          style: 'color: #07C05F; text-decoration: none; font-weight: 500; cursor: pointer; align-self: flex-start;',
           onMouseenter: (e: Event) => {
             (e.target as HTMLElement).style.textDecoration = 'underline';
           },

@@ -785,7 +785,7 @@ export default {
     uninitializedBanner: 'Некоторые базы знаний не инициализированы. Сначала настройте модели в разделе настроек, чтобы добавлять документы.',
     empty: {
       title: 'Базы знаний отсутствуют',
-      description: 'Нажмите «Создать базу знаний» в правом верхнем углу, чтобы добавить первую базу.'
+      description: 'Нажмите «Создать базу знаний» в левом быстром действии, чтобы добавить первую базу.'
     },
     delete: {
       confirmTitle: 'Подтверждение удаления',
@@ -1177,7 +1177,8 @@ export default {
       missingThinkingModel: 'модель мышления',
       missingRerankModel: 'модель ранжирования',
       missingAllowedTools: 'разрешённые инструменты',
-      pleaseConfigure: 'Пожалуйста, настройте: {items}'
+      pleaseConfigure: 'Пожалуйста, настройте: {items}',
+      goConfigureModels: 'Перейти к настройке моделей →'
     },
     maxIterations: {
       label: 'Макс. число итераций',
@@ -1512,7 +1513,10 @@ export default {
     normalModeDesc: 'RAG-вопросы и ответы по базе знаний',
     agentModeDesc: 'Шаблон рассуждений ReAct, многошаговое мышление',
     agentNotReadyTooltip: 'Agent не готов. Пожалуйста, завершите настройку.',
-    agentNotReadyDetail: 'Agent не готов. Сначала завершите настройку агента в параметрах (модель мышления, модель rerank и разрешённые инструменты).',
+    agentNotReadyDetail: 'Agent не готов. Пожалуйста, настройте следующее: {reasons}',
+    agentMissingAllowedTools: 'Разрешённые инструменты',
+    agentMissingSummaryModel: 'Модель беседы (Summary Model)',
+    agentMissingRerankModel: 'Модель переранжирования (Rerank Model)',
     goToSettings: 'Перейти к настройкам →',
     webSearch: {
       toggleOn: 'Включить веб-поиск',
@@ -1536,7 +1540,10 @@ export default {
       agentSwitchedOff: 'Переключено в обычный режим',
       agentEnabled: 'Agent режим включён',
       agentDisabled: 'Agent режим отключён',
-      agentNotReadyDetail: 'Agent не готов. Сначала завершите настройку агента в параметрах (модель мышления, модель rerank и разрешённые инструменты).',
+      agentNotReadyDetail: 'Agent не готов. Пожалуйста, настройте следующее: {reasons}',
+      agentMissingAllowedTools: 'Разрешённые инструменты',
+      agentMissingSummaryModel: 'Модель беседы (Summary Model)',
+      agentMissingRerankModel: 'Модель переранжирования (Rerank Model)',
       webSearchNotConfigured: 'Веб-поиск не настроен. Сначала выберите провайдера и настройте ключи в разделе настроек.',
       webSearchEnabled: 'Веб-поиск включён',
       webSearchDisabled: 'Веб-поиск выключен',

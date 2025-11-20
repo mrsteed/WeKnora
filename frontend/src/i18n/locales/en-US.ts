@@ -642,7 +642,10 @@ export default {
     normalModeDesc: 'Knowledge base RAG Q&A',
     agentModeDesc: 'ReAct reasoning framework with multi-step thinking',
     agentNotReadyTooltip: 'Agent is not ready. Please finish configuration first.',
-    agentNotReadyDetail: 'Agent is not ready. Please complete the agent configuration in settings (thinking model, rerank model, and allowed tools).',
+    agentNotReadyDetail: 'Agent is not ready. Please configure the following: {reasons}',
+    agentMissingAllowedTools: 'Allowed tools',
+    agentMissingSummaryModel: 'Chat Model (Summary Model)',
+    agentMissingRerankModel: 'Rerank Model',
     goToSettings: 'Go to settings →',
     webSearch: {
       toggleOn: 'Enable Web Search',
@@ -666,7 +669,10 @@ export default {
       agentSwitchedOff: 'Switched to Normal Mode',
       agentEnabled: 'Agent Mode enabled',
       agentDisabled: 'Agent Mode disabled',
-      agentNotReadyDetail: 'Agent is not ready. Please complete the agent configuration in settings (thinking model, rerank model, and allowed tools).',
+      agentNotReadyDetail: 'Agent is not ready. Please configure the following: {reasons}',
+      agentMissingAllowedTools: 'Allowed tools',
+      agentMissingSummaryModel: 'Chat Model (Summary Model)',
+      agentMissingRerankModel: 'Rerank Model',
       webSearchNotConfigured: 'Web search engine is not configured. Please configure a provider and credentials in settings.',
       webSearchEnabled: 'Web search enabled',
       webSearchDisabled: 'Web search disabled',
@@ -1311,7 +1317,8 @@ export default {
       missingThinkingModel: 'Thinking model',
       missingRerankModel: 'Rerank model',
       missingAllowedTools: 'Allowed tools',
-      pleaseConfigure: 'Please configure {items}'
+      pleaseConfigure: 'Please configure {items}',
+      goConfigureModels: 'Configure models →'
     },
     maxIterations: {
       label: 'Max Iterations',

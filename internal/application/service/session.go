@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/agent"
+	"github.com/Tencent/WeKnora/internal/agent/tools"
 	chatpipline "github.com/Tencent/WeKnora/internal/application/service/chat_pipline"
 	llmcontext "github.com/Tencent/WeKnora/internal/application/service/llmcontext"
 	"github.com/Tencent/WeKnora/internal/config"
@@ -858,15 +860,22 @@ func (s *sessionService) AgentQA(ctx context.Context, session *types.Session, qu
 	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 
 	// Check if agent is enabled at session level
-	if session.AgentConfig == nil || !session.AgentConfig.AgentModeEnabled {
-		logger.Warnf(ctx, "Agent not enabled for session: %s", sessionID)
-		return errors.New("agent not enabled for this session")
+	if session.AgentConfig == nil {
+		logger.Warnf(ctx, "Agent config not found for session: %s", sessionID)
+		return errors.New("agent config not found for session")
 	}
 
 	// Check if tenant has agent configuration
 	if tenantInfo.AgentConfig == nil {
-		logger.Warnf(ctx, "Tenant %d has no agent configuration", tenantInfo.ID)
-		return errors.New("tenant has no agent configuration")
+		tenantInfo.AgentConfig = &types.AgentConfig{
+			MaxIterations:           agent.DefaultAgentMaxIterations,
+			ReflectionEnabled:       agent.DefaultAgentReflectionEnabled,
+			AllowedTools:            tools.DefaultAllowedTools(),
+			Temperature:             agent.DefaultAgentTemperature,
+			SystemPromptWebEnabled:  agent.ProgressiveRAGSystemPromptWithWeb,
+			SystemPromptWebDisabled: agent.ProgressiveRAGSystemPromptWithoutWeb,
+			UseCustomSystemPrompt:   agent.DefaultUseCustomSystemPrompt,
+		}
 	}
 
 	// Create runtime AgentConfig by merging session and tenant configs

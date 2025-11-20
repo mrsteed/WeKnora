@@ -33,6 +33,9 @@
           </div>
           <span v-if="!isAgentReady" class="status-hint">
             {{ agentStatusMessage }}
+            <t-link v-if="needsModelConfig" @click="handleGoToModelSettings" theme="primary">
+              {{ $t('agentSettings.status.goConfigureModels') }}
+            </t-link>
           </span>
           <p v-if="!isAgentReady" class="status-tip">
             <t-icon name="info-circle" class="tip-icon" />
@@ -302,7 +305,7 @@
     </t-tabs>
     </div>
 
-    <div v-else-if="activeSection === 'models'" class="section-block">
+    <div v-else-if="activeSection === 'models'" class="section-block" data-conversation-section="models">
       <div class="section-header">
         <h2>{{ $t('conversationSettings.menus.models') }}</h2>
         <p class="section-description">{{ $t('conversationSettings.models.description') }}</p>
@@ -808,7 +811,13 @@ const saveConversationConfig = async (partial: Partial<ConversationConfig>, toas
 
 // 计算 Agent 是否就绪
 const isAgentReady = computed(() => {
-  return localAllowedTools.value.length > 0
+  return (
+    localAllowedTools.value.length > 0 &&
+    localSummaryModelId.value &&
+    localSummaryModelId.value.trim() !== '' &&
+    localConversationRerankModelId.value &&
+    localConversationRerankModelId.value.trim() !== ''
+  )
 })
 
 const buildAgentConfigPayload = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
@@ -823,6 +832,14 @@ const buildAgentConfigPayload = (overrides: Partial<AgentConfig> = {}): AgentCon
   ...overrides,
 })
 
+// 是否缺少模型配置
+const needsModelConfig = computed(() => {
+  return (
+    (!localSummaryModelId.value || localSummaryModelId.value.trim() === '') ||
+    (!localConversationRerankModelId.value || localConversationRerankModelId.value.trim() === '')
+  )
+})
+
 // Agent 状态提示消息
 const agentStatusMessage = computed(() => {
   const missing: string[] = []
@@ -831,12 +848,39 @@ const agentStatusMessage = computed(() => {
     missing.push(t('agentSettings.status.missingAllowedTools'))
   }
   
+  if (!localSummaryModelId.value || localSummaryModelId.value.trim() === '') {
+    missing.push(t('agentSettings.status.missingSummaryModel'))
+  }
+  
+  if (!localConversationRerankModelId.value || localConversationRerankModelId.value.trim() === '') {
+    missing.push(t('agentSettings.status.missingRerankModel'))
+  }
+  
   if (missing.length === 0) {
     return ''
   }
   
   return t('agentSettings.status.pleaseConfigure', { items: missing.join('、') })
 })
+
+// 跳转到模型配置
+const handleGoToModelSettings = () => {
+  router.push('/platform/settings')
+
+  setTimeout(() => {
+    const event = new CustomEvent('settings-nav', {
+      detail: { section: 'agent', subsection: 'models' }
+    })
+    window.dispatchEvent(event)
+
+    setTimeout(() => {
+      const sectionEl = document.querySelector('[data-conversation-section="models"]')
+      if (sectionEl) {
+        sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }, 150)
+  }, 100)
+}
 
 // 模型列表状态
 const chatModels = ref<ModelConfig[]>([])
