@@ -102,4 +102,6 @@ type KnowledgeRepository interface {
 	// AminusB returns the difference set of A and B.
 	AminusB(ctx context.Context, Atenant uint, A string, Btenant uint, B string) ([]string, error)
 	UpdateKnowledgeColumn(ctx context.Context, id string, column string, value interface{}) error
+	// CountKnowledgeByKnowledgeBaseID counts the number of knowledge items in a knowledge base.
+	CountKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint, kbID string) (int64, error)
 }

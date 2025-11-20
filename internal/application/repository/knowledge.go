@@ -220,3 +220,12 @@ func (r *knowledgeRepository) UpdateKnowledgeColumn(ctx context.Context, id stri
 	err := r.db.WithContext(ctx).Model(&types.Knowledge{}).Where("id = ?", id).Update(column, value).Error
 	return err
 }
+
+// CountKnowledgeByKnowledgeBaseID counts the number of knowledge items in a knowledge base
+func (r *knowledgeRepository) CountKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint, kbID string) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&types.Knowledge{}).
+		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
+		Count(&count).Error
+	return count, err
+}

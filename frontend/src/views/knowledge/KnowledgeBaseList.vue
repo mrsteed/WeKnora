@@ -74,7 +74,10 @@
           <div class="bottom-left">
             <div class="type-badge" :class="{ 'document': (kb.type || 'document') === 'document', 'faq': kb.type === 'faq' }">
               <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
-              <span>{{ kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument') }}</span>
+              <span>
+                {{ kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument') }}
+                ({{ kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0) }})
+              </span>
             </div>
             <div class="feature-badges">
               <t-tooltip v-if="kb.extract_config?.enabled" :content="$t('knowledgeList.features.knowledgeGraph')" placement="top">
@@ -167,6 +170,8 @@ interface KB {
   vlm_config?: { enabled?: boolean; model_id?: string };
   extract_config?: { enabled?: boolean };
   cos_config?: { provider?: string; bucket_name?: string };
+  knowledge_count?: number;
+  chunk_count?: number;
 }
 
 const kbs = ref<KB[]>([])

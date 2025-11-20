@@ -839,6 +839,11 @@ export default {
     features: {
       knowledgeGraph: 'Граф знаний включен',
       multimodal: 'Мультимодальность включена'
+    },
+    stats: {
+      documents: 'Количество документов',
+      faqEntries: 'FAQ записи',
+      chunks: 'Количество фрагментов'
     }
   },
   knowledgeEditor: {

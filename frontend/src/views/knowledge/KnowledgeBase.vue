@@ -678,7 +678,7 @@ const knowledgeDropdownOptions = computed(() =>
   knowledgeList.value.map((item) => ({
     content: item.name,
     value: item.id,
-    prefixIcon: () => h(TIcon, { name: item.type === 'faq' ? 'help-circle' : 'folder', size: '16px' }),
+    prefixIcon: () => h(TIcon, { name: item.type === 'faq' ? 'chat-bubble-help' : 'folder', size: '16px' }),
   }))
 );
 

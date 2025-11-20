@@ -750,6 +750,11 @@ export default {
     features: {
       knowledgeGraph: 'Knowledge Graph Enabled',
       multimodal: 'Multimodal Enabled'
+    },
+    stats: {
+      documents: 'Document Count',
+      faqEntries: 'FAQ Entries',
+      chunks: 'Chunk Count'
     }
   },
   knowledgeEditor: {

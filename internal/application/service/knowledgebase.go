@@ -122,6 +122,29 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 		return nil, err
 	}
 
+	// Query knowledge count and chunk count for each knowledge base
+	for _, kb := range kbs {
+		kb.EnsureDefaults()
+		
+		// Get knowledge count
+		if kb.Type == types.KnowledgeBaseTypeDocument {
+			knowledgeCount, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, tenantID, kb.ID)
+			if err != nil {
+				logger.Warnf(ctx, "Failed to get knowledge count for knowledge base %s: %v", kb.ID, err)
+			} else {
+				kb.KnowledgeCount = knowledgeCount
+			}
+		} else if kb.Type == types.KnowledgeBaseTypeFAQ {
+			// Get chunk count
+			chunkCount, err := s.chunkRepo.CountChunksByKnowledgeBaseID(ctx, tenantID, kb.ID)
+			if err != nil {
+				logger.Warnf(ctx, "Failed to get chunk count for knowledge base %s: %v", kb.ID, err)
+			} else {
+				kb.ChunkCount = chunkCount
+			}
+		}
+	}
+
 	logger.Infof(
 		ctx,
 		"Knowledge base list retrieved successfully, tenant ID: %d, knowledge base count: %d",

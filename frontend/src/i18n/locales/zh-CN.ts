@@ -1075,6 +1075,11 @@ export default {
       knowledgeGraph: "已启用知识图谱",
       multimodal: "已启用多模态",
     },
+    stats: {
+      documents: "文档数量",
+      faqEntries: "问答条目",
+      chunks: "分块数量",
+    },
   },
   knowledgeEditor: {
     titleCreate: "新建知识库",
