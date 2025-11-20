@@ -10,7 +10,7 @@ import { stopSession } from '@/api/chat';
 import KnowledgeBaseSelector from './KnowledgeBaseSelector.vue';
 import { listModels, type ModelConfig } from '@/api/model';
 import { getTenantWebSearchConfig } from '@/api/web-search';
-import { getConversationConfig, type ConversationConfig } from '@/api/system';
+import { getConversationConfig, updateConversationConfig, type ConversationConfig } from '@/api/system';
 import { useI18n } from 'vue-i18n';
 
 const route = useRoute();
@@ -166,7 +166,7 @@ const handleGoToConversationModels = () => {
   }, 100);
 };
 
-const handleModelChange = (value: string | number | Array<string | number> | undefined) => {
+const handleModelChange = async (value: string | number | Array<string | number> | undefined) => {
   const normalized = Array.isArray(value) ? value[0] : value;
   const val = normalized !== undefined && normalized !== null ? String(normalized) : '';
 
@@ -179,8 +179,35 @@ const handleModelChange = (value: string | number | Array<string | number> | und
     handleGoToConversationModels();
     return;
   }
-  selectedModelId.value = val;
-  showModelSelector.value = false;
+  
+  // 保存到后端
+  try {
+    if (conversationConfig.value) {
+      const updatedConfig = {
+        ...conversationConfig.value,
+        summary_model_id: val
+      };
+      const response = await updateConversationConfig(updatedConfig);
+      
+      // 更新本地状态
+      conversationConfig.value = response.data;
+      selectedModelId.value = val;
+      showModelSelector.value = false;
+      
+      // 同步到 store
+      settingsStore.updateConversationModels({
+        summaryModelId: val,
+        rerankModelId: conversationConfig.value?.rerank_model_id || '',
+      });
+      
+      MessagePlugin.success(t('conversationSettings.toasts.chatModelSaved'));
+    }
+  } catch (error) {
+    console.error('保存模型配置失败:', error);
+    MessagePlugin.error(t('conversationSettings.toasts.saveFailed'));
+    // 恢复到之前的值
+    selectedModelId.value = conversationConfig.value?.summary_model_id || '';
+  }
 };
 
 const selectedModel = computed(() => {
@@ -876,6 +903,16 @@ onBeforeRouteUpdate((to, from, next) => {
             <span class="model-selector-name">
               {{ selectedModel?.name || $t('input.notConfigured') }}
             </span>
+            <svg 
+              width="12" 
+              height="12" 
+              viewBox="0 0 12 12" 
+              fill="currentColor"
+              class="model-dropdown-arrow"
+              :class="{ 'rotate': showModelSelector }"
+            >
+              <path d="M2.5 4.5L6 8L9.5 4.5H2.5Z"/>
+            </svg>
           </div>
         </div>
       </div>
@@ -982,7 +1019,7 @@ const getImgSrc = (url: string) => {
   font-weight: 400;
   line-height: 24px;
   font-family: "PingFang SC";
-  padding: 16px 12px 52px 16px;  /* 增加底部padding为控制栏腾出空间 */
+  padding: 16px 12px 72px 16px;  /* 增加底部padding为控制栏腾出更多空间（原52px -> 72px） */
   border-radius: 12px;
   border: 1px solid #E7E7E7;
   box-sizing: border-box;
@@ -1012,6 +1049,12 @@ const getImgSrc = (url: string) => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;  /* 允许换行，避免内容过多时挤压 */
+  max-height: 56px;  /* 限制最大高度为两行 */
+  z-index: 10;  /* 提高z-index，确保在textarea滚动内容之上 */
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0.95) 40%, rgba(255, 255, 255, 1) 60%);  /* 更强的渐变背景，从半透明逐渐变为完全不透明 */
+  pointer-events: auto;  /* 确保可以点击 */
+  padding-top: 8px;  /* 增加上边距，给渐变更多空间 */
 }
 
 .control-left {
@@ -1020,6 +1063,8 @@ const getImgSrc = (url: string) => {
   gap: 8px;
   flex: 1;
   overflow: hidden;
+  flex-wrap: wrap;  /* 允许内部元素换行 */
+  min-width: 0;  /* 允许缩小 */
 }
 
 .control-btn {
@@ -1379,24 +1424,26 @@ const getImgSrc = (url: string) => {
   flex: 1;
   font-size: 12px;
   font-weight: 600;
-  color: #0f172a;
+  color: #10b981;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.model-selector-trigger::after {
-  content: '';
-  width: 0;
-  height: 0;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 5px solid #10b981;
-  margin-left: 4px;
+.model-dropdown-arrow {
+  width: 10px;
+  height: 10px;
+  color: #10b981;
+  flex-shrink: 0;
+  transition: transform 0.12s;
+  
+  &.rotate {
+    transform: rotate(180deg);
+  }
 }
 
-.model-selector-trigger.disabled::after {
-  border-top-color: rgba(16, 185, 129, 0.4);
+.model-selector-trigger.disabled .model-dropdown-arrow {
+  color: rgba(16, 185, 129, 0.4);
 }
 
 .model-selector-overlay {

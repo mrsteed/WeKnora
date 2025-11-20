@@ -24,6 +24,31 @@
           <t-icon name="server" class="menu-icon" />
           <span>Ollama</span>
         </div>
+        <div class="menu-item" @click="handleQuickNav('agent')">
+          <t-icon name="chat" class="menu-icon" />
+          <span>{{ $t('settings.conversationStrategy') }}</span>
+        </div>
+        <div class="menu-item" @click="handleQuickNav('websearch')">
+          <svg 
+            width="16" 
+            height="16" 
+            viewBox="0 0 18 18" 
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            class="menu-icon svg-icon"
+          >
+            <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <path d="M 9 2 A 3.5 7 0 0 0 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <path d="M 9 2 A 3.5 7 0 0 1 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <line x1="2.94" y1="5.5" x2="15.06" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="2.94" y1="12.5" x2="15.06" y2="12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+          <span>{{ $t('settings.webSearchConfig') }}</span>
+        </div>
+        <div class="menu-item" @click="handleQuickNav('mcp')">
+          <t-icon name="tools" class="menu-icon" />
+          <span>{{ $t('settings.mcpService') }}</span>
+        </div>
         <div class="menu-divider"></div>
         <div class="menu-item" @click="handleSettings">
           <t-icon name="setting" class="menu-icon" />
@@ -330,6 +355,12 @@ onUnmounted(() => {
   .menu-icon {
     font-size: 16px;
     color: #666666;
+    
+    &.svg-icon {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
   }
 
   .menu-text-with-icon {
