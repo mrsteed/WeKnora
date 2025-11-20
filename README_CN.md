@@ -119,23 +119,56 @@ cp .env.example .env
 # 所有变量说明详见 .env.example 注释
 ```
 
-#### ③ 启动服务
+#### ③ 启动服务 (含 Ollama)
+
+检查 .env 文件中需要启动的镜像。
 
 ```bash
-# 启动全部服务（含 Ollama 与后端容器）
 ./scripts/start_all.sh
-# 或
+```
+
+或者
+
+```bash
 make start-all
 ```
 
-#### ③ 启动服务备选
+#### ③.0 启动Ollama (可选)
 
 ```bash
-# 启动 ollama 服务 (可选)
 ollama serve > /dev/null 2>&1 &
+```
 
-# 启动服务
+#### ③.1 激活不同组合的功能
+
+- 启动最小功能
+```bash
 docker compose up -d
+```
+
+- 启动全部功能
+```bash
+docker-compose --profile full up -d
+```
+
+- 需要 tracing 日志
+```bash
+docker-compose --profile jaeger up -d
+```
+
+- 需要 neo4j 知识图谱
+```bash
+docker-compose --profile neo4j up -d
+```
+
+- 需要 minio 文件存储服务
+```bash
+docker-compose --profile minio up -d
+```
+
+- 多选项组合
+```bash
+docker-compose --profile neo4j --profile minio up -d
 ```
 
 #### ④ 停止服务
@@ -161,12 +194,17 @@ WeKnora 作为[微信对话开放平台](https://chatbot.weixin.qq.com)的核心
 - **零代码部署**：只需上传知识，即可在微信生态中快速部署智能问答服务，实现"即问即答"的体验
 - **高效问题管理**：支持高频问题的独立分类管理，提供丰富的数据工具，确保回答精准可靠且易于维护
 - **微信生态覆盖**：通过微信对话开放平台，WeKnora 的智能问答能力可无缝集成到公众号、小程序等微信场景中，提升用户交互体验
-### 🔗MCP服务器访问已经部署好的WEKnora
+
+### 🔗 MCP 服务器访问已经部署好的 WeKnora
+
 #### 1️⃣克隆储存库
+
 ```
 git clone https://github.com/Tencent/WeKnora
 ```
+
 #### 2️⃣配置MCP服务器
+
 > 推荐直接参考 [MCP配置说明](./mcp-server/MCP_CONFIG.md) 进行配置。
 
 mcp客户端配置服务器
@@ -186,6 +224,7 @@ mcp客户端配置服务器
   }
 }
 ```
+
 使用stdio命令直接运行
 ```
 pip install weknora-mcp-server
@@ -219,10 +258,7 @@ make clean-db
 
 http://localhost
 
-首次访问会自动跳转到初始化配置页面，配置完成后会自动跳转到知识库页面。请按照页面提示信息完成模型的配置。
-
-![配置页面](./docs/images/config.png)
-
+首次访问会自动跳转到注册登录页面，完成注册后，请创建一个新的知识库，并在该知识库的设置页面完成相关设置。
 
 ## 📱 功能展示
 
@@ -242,17 +278,13 @@ http://localhost
 
 ### 文档知识图谱
 
-<table>
-  <tr>
-    <td><img src="./docs/images/graph2.png" alt="知识图谱展示1"></td>
-    <td><img src="./docs/images/graph1.png" alt="知识图谱展示2"></td>
-  </tr>
-</table>
-
 WeKnora 支持将文档转化为知识图谱，展示文档中不同段落之间的关联关系。开启知识图谱功能后，系统会分析并构建文档内部的语义关联网络，不仅帮助用户理解文档内容，还为索引和检索提供结构化支撑，提升检索结果的相关性和广度。
-### 配套MCP服务器调用效果
-<img width="950" height="2063" alt="118d078426f42f3d4983c13386085d7f" src="https://github.com/user-attachments/assets/09111ec8-0489-415c-969d-aa3835778e14" />
 
+具体配置请参考 [知识图谱配置说明](./docs/KnowledgeGraph.md) 进行相关配置。
+
+### 配套MCP服务器
+
+请参考 [MCP配置说明](./mcp-server/MCP_CONFIG.md) 进行相关配置。
 
 ## 📘 文档
 
@@ -293,32 +325,17 @@ make dev-frontend   # 启动前端（新终端）
 
 ```
 WeKnora/
+├── client/      # go客户端
 ├── cmd/         # 应用入口
-├── internal/    # 核心业务逻辑
 ├── config/      # 配置文件
-├── migrations/  # 数据库迁移脚本
-├── scripts/     # 启动与工具脚本
-├── services/    # 各子服务实现
+├── docker/      # docker 镜像文件
+├── docreader/   # 文档解析项目
+├── docs/        # 项目文档
 ├── frontend/    # 前端项目
-└── docs/        # 项目文档
-```
-
-### 🔧 常用命令
-
-```bash
-# 开发模式
-make dev-start      # 启动开发环境基础设施
-make dev-stop       # 停止开发环境
-make dev-app        # 启动后端应用（本地）
-make dev-frontend   # 启动前端（本地）
-
-# 生产部署
-make build-images   # 构建所有镜像
-make start-all      # 启动所有服务
-make stop-all       # 停止所有服务
-
-# 数据库
-make clean-db       # 清空数据库（慎用！）
+├── internal/    # 核心业务逻辑
+├── mcp-server/  # MCP服务器
+├── migrations/  # 数据库迁移脚本
+└── scripts/     # 启动与工具脚本
 ```
 
 ## 🤝 贡献指南
