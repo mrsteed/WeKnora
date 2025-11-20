@@ -1462,8 +1462,17 @@ const handleOpenKBSettings = () => {
 
 const handleKnowledgeDropdownSelect = (data: { value: string }) => {
   if (!data?.value || data.value === props.kbId) return
-  const target = knowledgeList.value.find((item) => item.id === data.value)
   router.push(`/platform/knowledge-bases/${data.value}`)
+}
+
+const handleFaqMenuAction = (event: Event) => {
+  const detail = (event as CustomEvent<{ action: string; kbId: string }>).detail
+  if (!detail || detail.kbId !== props.kbId) return
+  if (detail.action === 'create') {
+    openEditor()
+  } else if (detail.action === 'import') {
+    openImportDialog()
+  }
 }
 
 const handleEntryStatusChange = async (entry: FAQEntry, value: boolean) => {
@@ -2240,15 +2249,14 @@ const handleResize = () => {
 }
 
 onMounted(() => {
-  if (props.kbId) {
-    loadEntries()
-  }
   loadKnowledgeList()
   window.addEventListener('resize', handleResize)
+  window.addEventListener('faqMenuAction', handleFaqMenuAction as EventListener)
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  window.removeEventListener('faqMenuAction', handleFaqMenuAction as EventListener)
   if (arrangeCardsTimer) {
     clearTimeout(arrangeCardsTimer)
   }

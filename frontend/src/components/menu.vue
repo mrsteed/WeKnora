@@ -6,6 +6,47 @@
         
         <!-- 上半部分：知识库和对话 -->
         <div class="menu_top">
+            <div v-if="showKbActions" class="kb-action-wrapper">
+                <div class="kb-action-label">{{ t('knowledgeBase.quickActions') }}</div>
+                <div class="kb-action-menu">
+                    <template v-if="showDocActions">
+                        <div class="menu_item kb-action-item" @click.stop="handleDocUploadClick">
+                            <div class="menu_item-box">
+                                <div class="menu_icon">
+                                    <t-icon name="upload" />
+                                </div>
+                                <span class="menu_title">{{ t('upload.uploadDocument') }}</span>
+                            </div>
+                        </div>
+                        <div class="menu_item kb-action-item" @click.stop="handleDocManualCreate">
+                            <div class="menu_item-box">
+                                <div class="menu_icon">
+                                    <t-icon name="edit-1" />
+                                </div>
+                                <span class="menu_title">{{ t('upload.onlineEdit') }}</span>
+                            </div>
+                        </div>
+                    </template>
+                    <template v-else-if="showFaqActions">
+                        <div class="menu_item kb-action-item" @click.stop="handleFaqCreateFromMenu">
+                            <div class="menu_item-box">
+                                <div class="menu_icon">
+                                    <t-icon name="add" />
+                                </div>
+                                <span class="menu_title">{{ t('knowledgeEditor.faq.editorCreate') }}</span>
+                            </div>
+                        </div>
+                        <div class="menu_item kb-action-item" @click.stop="handleFaqImportFromMenu">
+                            <div class="menu_item-box">
+                                <div class="menu_icon">
+                                    <t-icon name="import" />
+                                </div>
+                                <span class="menu_title">{{ t('knowledgeEditor.faqImport.importButton') }}</span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
             <div class="menu_box" :class="{ 'has-submenu': item.children }" v-for="(item, index) in topMenuItems" :key="index">
                 <div @click="handleMenuClick(item.path)"
                     @mouseenter="mouseenteMenu(item.path)" @mouseleave="mouseleaveMenu(item.path)"
@@ -14,30 +55,7 @@
                         <div class="menu_icon">
                             <img class="icon" :src="getImgSrc(item.icon == 'zhishiku' ? knowledgeIcon : item.icon == 'logout' ? logoutIcon : item.icon == 'setting' ? settingIcon : prefixIcon)" alt="">
                         </div>
-                        <span class="menu_title" :title="item.path === 'knowledge-bases' && kbMenuItem ? kbMenuItem.title : item.title">{{ item.path === 'knowledge-bases' && kbMenuItem ? kbMenuItem.title : item.title }}</span>
-                        <!-- 知识库切换下拉箭头 -->
-                        <div v-if="item.path === 'knowledge-bases' && isInKnowledgeBase" 
-                             class="kb-dropdown-icon" 
-                             :class="{ 
-                                 'rotate-180': showKbDropdown,
-                                 'active': isMenuItemActive(item.path)
-                             }"
-                             @click.stop="toggleKbDropdown">
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                                <path d="M2.5 4.5L6 8L9.5 4.5H2.5Z"/>
-                            </svg>
-                        </div>
-                    </div>
-                    <!-- 知识库切换下拉菜单 -->
-                    <div v-if="item.path === 'knowledge-bases' && showKbDropdown && isInKnowledgeBase" 
-                         class="kb-dropdown-menu">
-                        <div v-for="kb in initializedKnowledgeBases" 
-                             :key="kb.id" 
-                             class="kb-dropdown-item"
-                             :class="{ 'active': kb.name === currentKbName }"
-                             @click.stop="switchKnowledgeBase(kb.id)">
-                            {{ kb.name }}
-                        </div>
+                        <span class="menu_title" :title="item.title">{{ item.title }}</span>
                     </div>
                 </div>
                 <div ref="submenuscrollContainer" @scroll="handleScroll" class="submenu" v-if="item.children">
@@ -72,15 +90,23 @@
         <div class="menu_bottom">
             <UserMenu />
         </div>
+        
+        <input
+            ref="docUploadInput"
+            type="file"
+            class="kb-upload-input"
+            accept=".pdf,.docx,.doc,.txt,.md,.jpg,.jpeg,.png"
+            @change="handleDocFileChange"
+        />
     </div>
 </template>
 
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
-import { onMounted, watch, computed, ref, reactive, nextTick } from 'vue';
+import { onMounted, watch, computed, ref, reactive } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getSessionsList, delSession } from "@/api/chat/index";
-import { getKnowledgeBaseById, listKnowledgeBases } from '@/api/knowledge-base';
+import { getKnowledgeBaseById, uploadKnowledgeFile } from '@/api/knowledge-base';
 import { logout as logoutApi } from '@/api/auth';
 import { useMenuStore } from '@/stores/menu';
 import { useAuthStore } from '@/stores/auth';
@@ -88,6 +114,7 @@ import { useUIStore } from '@/stores/ui';
 import { MessagePlugin } from "tdesign-vue-next";
 import UserMenu from '@/components/UserMenu.vue';
 import { useI18n } from 'vue-i18n';
+import { kbFileTypeVerification } from '@/utils';
 
 const { t } = useI18n();
 const usemenuStore = useMenuStore();
@@ -152,7 +179,7 @@ const getIconActiveState = (itemPath: string) => {
 // 分离上下两部分菜单
 const topMenuItems = computed<MenuItem[]>(() => {
     return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => 
-        item.path === 'knowledge-bases' || item.path === 'creatChat'
+        item.path === 'creatChat'
     );
 });
 
@@ -165,18 +192,16 @@ const bottomMenuItems = computed<MenuItem[]>(() => {
     });
 });
 
-// 当前知识库名称和列表
+// 当前知识库信息
 const currentKbName = ref<string>('')
-const allKnowledgeBases = ref<Array<{ id: string; name: string; embedding_model_id?: string; summary_model_id?: string }>>([])
-const showKbDropdown = ref<boolean>(false)
+const currentKbInfo = ref<any>(null)
+const docUploadInput = ref<HTMLInputElement | null>(null)
+const pendingUploadKbId = ref<string | null>(null)
 
-// 过滤已初始化的知识库
-const initializedKnowledgeBases = computed(() => {
-    return allKnowledgeBases.value.filter(kb => 
-        kb.embedding_model_id && kb.embedding_model_id !== '' && 
-        kb.summary_model_id && kb.summary_model_id !== ''
-    )
-})
+const showKbActions = computed(() => isInKnowledgeBase.value && !!currentKbInfo.value)
+const currentKbType = computed(() => currentKbInfo.value?.type || 'document')
+const showDocActions = computed(() => showKbActions.value && currentKbType.value !== 'faq')
+const showFaqActions = computed(() => showKbActions.value && currentKbType.value === 'faq')
 
 // 时间分组函数
 const getTimeCategory = (dateStr: string): string => {
@@ -241,15 +266,6 @@ const groupedSessions = computed(() => {
             items: groups[label]
         }));
 });
-
-// 动态更新知识库菜单项标题
-const kbMenuItem = computed(() => {
-    const kbItem = topMenuItems.value.find(item => item.path === 'knowledge-bases')
-    if (kbItem && isInKnowledgeBase.value && currentKbName.value) {
-        return { ...kbItem, title: currentKbName.value }
-    }
-    return kbItem
-})
 
 const loading = ref(false)
 const mouseenteBotDownr = (val: string) => {
@@ -352,32 +368,19 @@ onMounted(async () => {
     const kbId = (route.params as any)?.kbId as string
     if (kbId && isInKnowledgeBase.value) {
         try {
-            const [kbRes, allKbRes]: any[] = await Promise.all([
-                getKnowledgeBaseById(kbId),
-                listKnowledgeBases()
-            ])
-            if (kbRes?.data?.name) {
-                currentKbName.value = kbRes.data.name
-            }
-            if (allKbRes?.data) {
-                allKnowledgeBases.value = allKbRes.data
+            const kbRes: any = await getKnowledgeBaseById(kbId)
+            if (kbRes?.data) {
+                currentKbName.value = kbRes.data.name || ''
+                currentKbInfo.value = kbRes.data
             }
         } catch {}
-    } else if (route.name !== 'knowledgeBaseList') {
-        // 不在知识库内部时，尝试加载所有知识库列表（避免与页面组件重复调用）
-        try {
-            const allKbRes: any = await listKnowledgeBases()
-            if (allKbRes?.data) {
-                allKnowledgeBases.value = allKbRes.data
-            }
-        } catch {}
+    } else {
+        currentKbName.value = ''
+        currentKbInfo.value = null
     }
     
     // 加载对话列表
     getMessageList();
-    
-    // 注册点击外部关闭下拉菜单的事件
-    document.addEventListener('click', handleClickOutside)
 });
 
 watch([() => route.name, () => route.params], (newvalue, oldvalue) => {
@@ -410,18 +413,16 @@ watch([() => route.name, () => route.params], (newvalue, oldvalue) => {
         const kbId = (newvalue[1] as any)?.kbId as string;
         if (kbId && isInKnowledgeBase.value) {
             getKnowledgeBaseById(kbId).then((kbRes: any) => {
-                if (kbRes?.data?.name) {
-                    currentKbName.value = kbRes.data.name;
+                if (kbRes?.data) {
+                    currentKbName.value = kbRes.data.name || '';
+                    currentKbInfo.value = kbRes.data;
                 }
-            }).catch(() => {});
-            
-            listKnowledgeBases().then((allKbRes: any) => {
-                if (allKbRes?.data) {
-                    allKnowledgeBases.value = allKbRes.data;
-                }
-            }).catch(() => {});
-        } else if (!isInKnowledgeBase.value) {
+            }).catch(() => {
+                currentKbInfo.value = null;
+            });
+        } else {
             currentKbName.value = '';
+            currentKbInfo.value = null;
         }
     }
 });
@@ -475,10 +476,8 @@ const handleLogout = () => {
 }
 
 const getCurrentKbId = async (): Promise<string | null> => {
-    // Session 不再和知识库绑定，从当前路由获取知识库ID（仅用于知识库详情页）
-    let kbId = (route.params as any)?.kbId as string
-    // 如果当前在知识库详情页，返回知识库ID
-    if (route.name === 'knowledgeBaseDetail' && kbId) {
+    const kbId = (route.params as any)?.kbId as string
+    if (isInKnowledgeBase.value && kbId) {
         return kbId
     }
     return null
@@ -534,49 +533,105 @@ const mouseleaveMenu = (path: string) => {
     }
 }
 
-// 知识库下拉相关方法
-const toggleKbDropdown = (event?: Event) => {
-    if (event) {
-        event.stopPropagation()
+const ensureDocKnowledgeBaseReady = async (): Promise<string | null> => {
+    const kbId = await getCurrentKbId()
+    if (!kbId) {
+        MessagePlugin.warning(t('knowledgeEditor.messages.missingId'))
+        return null
     }
-    showKbDropdown.value = !showKbDropdown.value
+    if (currentKbType.value === 'faq') {
+        MessagePlugin.warning(t('knowledgeBase.docActionUnsupported'))
+        return null
+    }
+    if (!currentKbInfo.value || !currentKbInfo.value.embedding_model_id || !currentKbInfo.value.summary_model_id) {
+        MessagePlugin.warning(t('knowledgeBase.notInitialized'))
+        return null
+    }
+    return kbId
 }
 
-const switchKnowledgeBase = (kbId: string, event?: Event) => {
-    if (event) {
-        event.stopPropagation()
+const handleDocUploadClick = async () => {
+    const kbId = await ensureDocKnowledgeBaseReady()
+    if (!kbId) return
+    pendingUploadKbId.value = kbId
+    docUploadInput.value?.click()
+}
+
+const handleDocFileChange = async (event: Event) => {
+    const input = event.target as HTMLInputElement
+    const file = input?.files?.[0]
+    if (!file) {
+        pendingUploadKbId.value = null
+        return
     }
-    showKbDropdown.value = false
-    const currentRoute = route.name
-    
-    // 路由跳转
-    if (currentRoute === 'knowledgeBaseDetail') {
-        router.push(`/platform/knowledge-bases/${kbId}`)
-    } else if (currentRoute === 'kbCreatChat') {
-        router.push(`/platform/knowledge-bases/${kbId}/creatChat`)
-    } else if (currentRoute === 'knowledgeBaseSettings') {
-        router.push(`/platform/knowledge-bases/${kbId}/settings`)
-    } else {
-        router.push(`/platform/knowledge-bases/${kbId}`)
+    if (kbFileTypeVerification(file)) {
+        input.value = ''
+        pendingUploadKbId.value = null
+        return
     }
-    
-    // 刷新右侧内容 - 通过触发页面重新加载或发送事件
-    nextTick(() => {
-        // 发送全局事件通知页面刷新知识库内容
-        window.dispatchEvent(new CustomEvent('knowledgeBaseChanged', { 
-            detail: { kbId } 
+    const kbId = pendingUploadKbId.value || (await ensureDocKnowledgeBaseReady())
+    pendingUploadKbId.value = null
+    if (!kbId) {
+        input.value = ''
+        return
+    }
+    try {
+        await uploadKnowledgeFile(kbId, { file })
+        window.dispatchEvent(new CustomEvent('knowledgeFileUploaded', {
+            detail: { kbId }
         }))
+        MessagePlugin.success(t('knowledgeBase.uploadSuccess'))
+    } catch (error: any) {
+        let errorMessage = error?.error?.message || error?.message || t('knowledgeBase.uploadFailed')
+        if (error?.code === 'duplicate_file' || error?.error?.code === 'duplicate_file') {
+            errorMessage = t('knowledgeBase.fileExists')
+        }
+        MessagePlugin.error(errorMessage)
+    } finally {
+        if (input) {
+            input.value = ''
+        }
+    }
+}
+
+const handleDocManualCreate = async () => {
+    const kbId = await ensureDocKnowledgeBaseReady()
+    if (!kbId) return
+    uiStore.openManualEditor({
+        mode: 'create',
+        kbId,
+        status: 'draft',
+        onSuccess: ({ kbId: savedKbId }) => {
+            if (savedKbId) {
+                window.dispatchEvent(new CustomEvent('knowledgeFileUploaded', { detail: { kbId: savedKbId } }))
+            }
+        },
     })
 }
 
-// 点击外部关闭下拉菜单
-const handleClickOutside = () => {
-    showKbDropdown.value = false
+const dispatchFaqMenuAction = (action: 'create' | 'import', kbId: string) => {
+    window.dispatchEvent(new CustomEvent('faqMenuAction', {
+        detail: { action, kbId }
+    }))
 }
 
-watch(() => route.params.kbId, () => {
-    showKbDropdown.value = false
-})
+const handleFaqCreateFromMenu = async () => {
+    const kbId = await getCurrentKbId()
+    if (!kbId) {
+        MessagePlugin.warning(t('knowledgeEditor.messages.missingId'))
+        return
+    }
+    dispatchFaqMenuAction('create', kbId)
+}
+
+const handleFaqImportFromMenu = async () => {
+    const kbId = await getCurrentKbId()
+    if (!kbId) {
+        MessagePlugin.warning(t('knowledgeEditor.messages.missingId'))
+        return
+    }
+    dispatchFaqMenuAction('import', kbId)
+}
 
 </script>
 <style lang="less" scoped>
@@ -630,6 +685,51 @@ watch(() => route.params.kbId, () => {
         flex-shrink: 0;
         display: flex;
         flex-direction: column;
+    }
+
+    .kb-action-wrapper {
+        border: 1px dashed #e5e7eb;
+        border-radius: 8px;
+        padding: 12px 8px;
+        margin-bottom: 12px;
+        background: #fcfefe;
+    }
+
+    .kb-action-label {
+        font-size: 12px;
+        color: #98a2b3;
+        margin-bottom: 6px;
+        padding: 0 8px;
+    }
+
+    .kb-action-menu {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .kb-action-item {
+        background: #f7f8fa;
+        border-radius: 6px;
+        border: 1px solid transparent;
+
+        .menu_icon {
+            color: #07c05f;
+
+            :deep(.t-icon) {
+                font-size: 16px;
+            }
+        }
+
+        .menu_title {
+            font-size: 13px;
+            color: #1d2129;
+        }
+
+        &:hover {
+            background: #ecfdf5;
+            border-color: #07c05f;
+        }
     }
 
     .menu_box {
@@ -935,6 +1035,10 @@ watch(() => route.params.kbId, () => {
 
 .menu_box {
     position: relative;
+}
+
+.kb-upload-input {
+    display: none;
 }
 </style>
 <style lang="less">

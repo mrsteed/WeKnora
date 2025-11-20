@@ -49,11 +49,13 @@ export default {
     uploadSuccess: "文件上传成功！",
     uploadFailed: "文件上传失败！",
     fileExists: "文件已存在",
+    docActionUnsupported: "当前知识库类型不支持该操作",
     notInitialized:
       "该知识库尚未完成初始化配置，请先前往设置页面配置模型信息后再上传文件",
     getInfoFailed: "获取知识库信息失败，无法上传文件",
     missingId: "缺少知识库ID",
     deleteFailed: "删除失败，请稍后再试！",
+    quickActions: "快捷操作",
     createKnowledgeBase: "创建知识库",
     knowledgeBaseName: "知识库名称",
     enterName: "输入知识库名称",
