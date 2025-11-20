@@ -12,8 +12,12 @@
                     </div>
                 </div>
                 <div v-if="loading"
-                    style="height: 41px;display: flex;align-items: center;background: #fff;width: 58px;">
-                    <img class="botanswer_laoding_gif" src="@/assets/img/botanswer_loading.gif" :alt="$t('chat.waitingForAnswer')">
+                    style="height: 41px;display: flex;align-items: center;padding-left: 4px;">
+                    <div class="loading-typing">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -871,6 +875,41 @@ onBeforeRouteUpdate((to, from, next) => {
         width: 24px;
         height: 18px;
         margin-left: 16px;
+    }
+    
+    .loading-typing {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        
+        span {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #07c05f;
+            animation: typingBounce 1.4s ease-in-out infinite;
+            
+            &:nth-child(1) {
+                animation-delay: 0s;
+            }
+            
+            &:nth-child(2) {
+                animation-delay: 0.2s;
+            }
+            
+            &:nth-child(3) {
+                animation-delay: 0.4s;
+            }
+        }
+    }
+}
+
+@keyframes typingBounce {
+    0%, 60%, 100% {
+        transform: translateY(0);
+    }
+    30% {
+        transform: translateY(-8px);
     }
 }
 </style>

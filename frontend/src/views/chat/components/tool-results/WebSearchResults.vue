@@ -150,20 +150,20 @@ const formatDate = (dateStr: string): string => {
 .web-search-results {
   display: flex;
   flex-direction: column;
-  padding: 8px 8px 0 8px;
-  gap: 8px;
+  padding: 0 0 0 12px;
+  gap: 4px;
 }
 
 .results-groups {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
 .results-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .group-header {
@@ -199,14 +199,13 @@ const formatDate = (dateStr: string): string => {
 .results-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .result-item {
-  // padding: 6px 8px;
   background: #ffffff;
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
   transition: none;
 }
 
@@ -215,30 +214,30 @@ const formatDate = (dateStr: string): string => {
   align-items: center;
   gap: 6px;
   margin-bottom: 0;
-  /* Ensure links inside header remain clickable despite shared styles */
+  padding: 2px 0;
+  
   :deep(a) {
     pointer-events: auto;
   }
 }
 
 .result-index {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: #8b8b8b;
+  color: #9ca3af;
   flex-shrink: 0;
-  padding-top: 1px;
-  min-width: 28px;
+  min-width: 24px;
   text-align: right;
 }
 
 .result-title-link {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
   text-decoration: none;
-  color: #1f2937;
-  transition: color 0.2s ease;
+  color: #374151;
+  transition: color 0.15s ease;
   
   &:hover {
     color: #07c05f;
@@ -250,10 +249,10 @@ const formatDate = (dateStr: string): string => {
 }
 
 .result-title {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.2;
-  color: #1f2937;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: inherit;
   flex: 1;
   word-break: break-word;
   overflow: hidden;
@@ -267,47 +266,25 @@ const formatDate = (dateStr: string): string => {
   white-space: nowrap;
 }
 
-.result-domain {
-  font-size: 12px;
-  color: #6b7280;
-  flex-shrink: 0;
-}
-
-.external-link-icon {
-  font-size: 11px;
-  color: #9ca3af;
-  flex-shrink: 0;
-  transition: color 0.2s ease;
-}
-
-.result-title-link:hover .external-link-icon {
-  color: #07c05f;
-}
-
 .result-title-text {
   display: flex;
   align-items: baseline;
   flex: 1;
-}
-
-.result-title-text .result-title {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.3;
-  color: #1f2937;
-  flex: 1;
-  word-break: break-word;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  
+  .result-title {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
+    color: #374151;
+  }
 }
 
 .result-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 6px;
-  padding-top: 6px;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 4px;
   border-top: 1px solid #f3f4f6;
   font-size: 10px;
   color: #9ca3af;
@@ -315,7 +292,7 @@ const formatDate = (dateStr: string): string => {
   .meta-item {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
   }
   
   .meta-icon {
@@ -324,13 +301,14 @@ const formatDate = (dateStr: string): string => {
 }
 
 .empty-state {
-  padding: 20px;
+  padding: 16px;
   text-align: center;
   color: #9ca3af;
+  font-size: 12px;
   font-style: italic;
   background: #f9fafb;
   border-radius: 6px;
-  border: 1px solid #e5e7eb;
+  border: 1px dashed #e5e7eb;
 }
 </style>
 

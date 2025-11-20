@@ -10,49 +10,50 @@
 @relevance-weak: #bdbdbd;
 
 // Card colors
-@card-bg: #f8f9fa;
-@card-border: #e7e7e7;
+@card-bg: #ffffff;
+@card-border: #e5e7eb;
 @card-hover-border: #07c05f;
-@card-radius: 8px;
-@card-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-@card-shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.1);
+@card-radius: 6px;
+@card-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+@card-shadow-hover: 0 2px 6px rgba(7, 192, 95, 0.08);
 
 // Animation timing
-@transition-time: 0.3s;
+@transition-time: 0.2s;
 
 // Tool result container
 .tool-result-container {
-  margin: 8px 0;
+  margin: 12px 0;
 }
 
 // Relevance badge styles
 .relevance-badge {
   display: inline-flex;
   align-items: center;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
   font-weight: 600;
-  gap: 4px;
+  gap: 3px;
+  line-height: 1.4;
 
   &.high {
-    background-color: @relevance-high;
-    color: white;
+    background-color: rgba(0, 168, 112, 0.12);
+    color: @relevance-high;
   }
 
   &.medium {
-    background-color: @relevance-medium;
-    color: white;
+    background-color: rgba(255, 152, 0, 0.12);
+    color: #d67700;
   }
 
   &.low {
-    background-color: @relevance-low;
-    color: white;
+    background-color: rgba(117, 117, 117, 0.12);
+    color: @relevance-low;
   }
 
   &.weak {
-    background-color: @relevance-weak;
-    color: #333;
+    background-color: rgba(189, 189, 189, 0.12);
+    color: #666;
   }
 }
 
@@ -62,25 +63,26 @@
   align-items: center;
   padding: 2px 6px;
   border-radius: 3px;
-  font-size: 11px;
-  background-color: #e7e7e7;
-  color: #666;
+  font-size: 10px;
+  background-color: #f3f4f6;
+  color: #6b7280;
   gap: 2px;
+  line-height: 1.4;
 }
 
 // Result card
 .result-card {
-  background: #ffffff;
+  background: @card-bg;
   border: 1px solid @card-border;
   border-radius: @card-radius;
   margin-bottom: 0;
   overflow: hidden;
-  transition: all @transition-time ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: border-color @transition-time ease, box-shadow @transition-time ease;
+  box-shadow: @card-shadow;
 
   &:hover {
     border-color: @card-hover-border;
-    box-shadow: 0 2px 8px rgba(7, 192, 95, 0.12);
+    box-shadow: @card-shadow-hover;
   }
 }
 
@@ -94,9 +96,10 @@
   gap: 8px;
   position: relative;
   z-index: 1;
+  transition: background-color 0.15s ease;
 
   &:hover {
-    background: rgba(7, 192, 95, 0.05);
+    background: rgba(7, 192, 95, 0.04);
   }
   
   * {
@@ -107,22 +110,24 @@
 .result-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
+  line-height: 1.4;
 }
 
 .result-meta {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: #8b8b8b;
+  font-size: 11px;
+  color: #6b7280;
+  flex-shrink: 0;
 }
 
 .result-content {
-  padding: 0 12px 12px 12px;
+  padding: 0;
   border-top: 1px solid @card-border;
   background: white;
   max-height: 0;
@@ -139,11 +144,11 @@
 
 .expand-icon {
   font-size: 12px;
-  color: #8b8b8b;
-  transition: transform 0.2s ease;
+  color: #9ca3af;
+  transition: transform 0.15s ease, color 0.15s ease;
 
   &.expanded {
-    transform: rotate(90deg);
+    transform: rotate(180deg);
   }
 }
 
@@ -157,44 +162,48 @@
 }
 
 .info-section-title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: #666;
+  color: #6b7280;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .info-field {
   display: flex;
   gap: 8px;
-  margin-bottom: 4px;
-  font-size: 13px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 1.5;
 
   .field-label {
-    color: #8b8b8b;
+    color: #6b7280;
     min-width: 80px;
+    flex-shrink: 0;
+    font-weight: 500;
   }
 
   .field-value {
-    color: #333;
+    color: #374151;
     flex: 1;
+    word-break: break-word;
   }
 }
 
 // Statistics card (for KB counts, etc.)
 .stats-card {
-  background: #f0f7ff;
-  border: 1px solid #d6e4ff;
-  border-radius: 6px;
+  background: rgba(7, 192, 95, 0.04);
+  border: 1px solid rgba(7, 192, 95, 0.15);
+  border-radius: @card-radius;
   padding: 10px 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .stats-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  color: #333;
+  color: #374151;
   margin-bottom: 6px;
 }
 
@@ -205,17 +214,18 @@
 }
 
 .stats-item {
-  font-size: 12px;
-  color: #666;
+  font-size: 11px;
+  color: #6b7280;
   display: flex;
   justify-content: space-between;
+  line-height: 1.5;
 }
 
 // Grid layout for cards
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  gap: 10px;
   margin-top: 8px;
 }
 
@@ -224,8 +234,8 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 8px 0;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 6px 0;
+  border-bottom: 1px solid #f3f4f6;
 
   &:last-child {
     border-bottom: none;
@@ -234,9 +244,9 @@
 
 // Content preview (truncated)
 .content-preview {
-  font-size: 13px;
-  color: #333;
-  line-height: 1.5;
+  font-size: 12px;
+  color: #374151;
+  line-height: 1.6;
   max-height: 60px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -247,13 +257,13 @@
 
 // Full content
 .full-content {
-  font-size: 13px;
-  color: #333;
+  font-size: 12px;
+  color: #374151;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-  padding: 8px;
-  background: #f5f5f5;
+  padding: 10px;
+  background: #f9fafb;
   border-radius: 4px;
   border: 1px solid @card-border;
 }
@@ -261,36 +271,43 @@
 // Action buttons
 .action-button {
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: 11px;
   border-radius: 4px;
   border: 1px solid @card-border;
   background: white;
-  color: #666;
+  color: #6b7280;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  font-weight: 500;
 
   &:hover {
     border-color: @card-hover-border;
     color: @card-hover-border;
+    background: rgba(7, 192, 95, 0.04);
   }
 }
 
 // Empty state
 .empty-state {
-  padding: 24px;
+  padding: 20px;
   text-align: center;
-  color: #8b8b8b;
-  font-size: 14px;
+  color: #9ca3af;
+  font-size: 12px;
+  font-style: italic;
+  background: #f9fafb;
+  border-radius: @card-radius;
+  border: 1px dashed @card-border;
 }
 
 // Code block
 .code-block {
-  font-family: 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
-  background: #f5f5f5;
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-size: 11px;
+  background: #f9fafb;
   padding: 8px;
   border-radius: 4px;
   border: 1px solid @card-border;
   overflow-x: auto;
+  line-height: 1.5;
 }
 

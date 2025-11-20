@@ -16,7 +16,7 @@
     
     <!-- Event Stream -->
     <template v-for="(event, index) in displayEvents" :key="getEventKey(event, index)">
-      <div v-if="event && event.type" class="event-item" :data-event-index="index">
+      <div v-if="event && event.type" class="event-item" :data-event-index="index" :class="{ 'event-last': index === displayEvents.length - 1 }">
         
         <!-- Plan Task Change Event -->
         <div v-if="event.type === 'plan_task_change'" class="plan-task-change-event">
@@ -163,7 +163,20 @@
     
     <!-- Loading Indicator -->
     <div v-if="!isConversationDone && eventStream.length > 0" class="loading-indicator">
-      <img class="botanswer_loading_gif" src="@/assets/img/botanswer_loading.gif" alt="Processing...">
+      <!-- 方案1: 三个跳动的圆点 -->
+      <!-- <div class="loading-dots">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div> -->
+      
+      <!-- 方案4: 打字机效果（注释掉，可替换使用） -->
+      <div class="loading-typing">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      
     </div>
   </div>
   <!-- 全局浮层：统一承载 Web/KB 的 hover 内容 -->
@@ -1465,32 +1478,130 @@ const handleAddToKnowledge = (answerEvent: any) => {
 .agent-stream-display {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
+  margin-bottom: 10px;
+  position: relative;
+}
+
+// 时间轴连线容器
+.event-item {
+  position: relative;
+  padding-left: 28px;
   margin-bottom: 12px;
+  
+  // 时间轴垂直线
+  &::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: -12px;
+    width: 2px;
+    background: linear-gradient(to bottom, #e5e7eb 0%, #e5e7eb 100%);
+    z-index: 0;
+  }
+  
+  // 第一个事件的连线从节点开始
+  &:first-child::before {
+    top: 12px;
+  }
+  
+  // 最后一个事件不显示底部连线
+  &.event-last::before {
+    bottom: auto;
+    height: 20px;
+  }
+  
+  // 时间轴节点（圆点）
+  &::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 12px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid #e5e7eb;
+    z-index: 1;
+    transition: all 0.2s ease;
+  }
+  
+  // 不同事件类型的节点颜色
+  &:has(.thinking-event)::after {
+    border-color: #9ca3af;
+    background: #f9fafb;
+  }
+  
+  &:has(.answer-event)::after {
+    border-color: #07c05f;
+    background: #07c05f;
+    box-shadow: 0 0 0 3px rgba(7, 192, 95, 0.15);
+  }
+  
+  &:has(.tool-event)::after {
+    border-color: #07c05f;
+    background: #ffffff;
+  }
+  
+  &:has(.tool-event .action-pending)::after {
+    border-color: #07c05f;
+    background: rgba(7, 192, 95, 0.2);
+    animation: pulseNode 2s ease-in-out infinite;
+  }
+  
+  &:has(.tool-event .action-error)::after {
+    border-color: #e34d59;
+    background: #e34d59;
+  }
+  
+  &:has(.plan-task-change-event)::after {
+    border-color: #07c05f;
+    background: #07c05f;
+    transform: rotate(45deg);
+    border-radius: 2px;
+  }
 }
 
 .intermediate-steps-collapsed {
   display: flex;
   flex-direction: column;
-  font-size: 14px;
+  font-size: 13px;
   width: 100%;
-  border-radius: 8px;
+  border-radius: 6px;
   background-color: #ffffff;
-  border-left: 3px solid #07c05f;
-  box-shadow: 0 2px 4px rgba(7, 192, 95, 0.08);
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(7, 192, 95, 0.06);
   overflow: hidden;
   box-sizing: border-box;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  margin-bottom: 8px;
+  transition: all 0.2s ease;
+  margin-bottom: 16px;
+  position: relative;
+  
+  // 添加时间轴起点标记
+  &::before {
+    content: '';
+    position: absolute;
+    left: -20px;
+    top: 12px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #07c05f;
+    border: 2px solid #ffffff;
+    box-shadow: 0 0 0 2px #07c05f, 0 0 0 4px rgba(7, 192, 95, 0.1);
+    z-index: 2;
+  }
   
   .intermediate-steps-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 14px;
-    color: #333333;
+    padding: 8px 12px;
+    color: #374151;
     font-weight: 500;
     cursor: pointer;
+    background: linear-gradient(to right, rgba(7, 192, 95, 0.03), transparent);
   }
   
   .intermediate-steps-title {
@@ -1498,14 +1609,14 @@ const handleAddToKnowledge = (answerEvent: any) => {
     align-items: center;
     
     img {
-      width: 16px;
-      height: 16px;
-      margin-right: 8px;
+      width: 14px;
+      height: 14px;
+      margin-right: 7px;
     }
     
     span {
       white-space: nowrap;
-      font-size: 14px;
+      font-size: 13px;
       
       :deep(strong) {
         color: #07c05f;
@@ -1515,72 +1626,70 @@ const handleAddToKnowledge = (answerEvent: any) => {
   }
   
   .intermediate-steps-show-icon {
-    font-size: 14px;
+    font-size: 13px;
     padding: 0 2px 1px 2px;
     color: #07c05f;
   }
   
   .intermediate-steps-header:hover {
-    background-color: rgba(7, 192, 95, 0.04);
+    background: linear-gradient(to right, rgba(7, 192, 95, 0.05), rgba(7, 192, 95, 0.01));
   }
-}
-
-.event-item {
-  margin-bottom: 0;
 }
 
 // Thinking Event
 .thinking-event {
-  animation: fadeInUp 0.3s ease-out;
+  animation: fadeInUp 0.25s ease-out;
+  min-height: 20px;
   
   .thinking-phase {
     background: #ffffff;
-    border-radius: 8px;
-    padding: 1px 14px;
-    // 默认不显示 border-left
-    border-left: 3px solid transparent;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 6px;
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    transition: all 0.2s ease;
     
-    // 只有最后一个 thinking 显示绿色 border-left
     &.thinking-last {
-      border-left-color: #07c05f;
-      box-shadow: 0 2px 4px rgba(7, 192, 95, 0.08);
+      border-color: #07c05f;
+      box-shadow: 0 1px 3px rgba(7, 192, 95, 0.06);
+      
+      // 最后一个 Thinking 作为最终答案时，字体应该更大
+      .thinking-content {
+        font-size: 14px;
+      }
     }
     
-    // 进行中的 thinking（实时对话）显示绿色 border-left 和动画
     &.thinking-active {
-      border-left-color: #07c05f;
-      box-shadow: 0 2px 4px rgba(7, 192, 95, 0.08);
-      animation: pulseBorder 2s ease-in-out infinite;
+      border-color: #07c05f;
+      box-shadow: 0 1px 3px rgba(7, 192, 95, 0.06);
     }
   }
   
   .thinking-content {
-    font-size: 14px;
-    color: #333333;
+    font-size: 13px;
+    color: #374151;
     line-height: 1.6;
     
     &.markdown-content {
       :deep(p) {
-        margin: 8px 0;
+        margin: 6px 0;
         line-height: 1.6;
       }
       
       :deep(code) {
-        background: #f0f0f0;
-        padding: 2px 6px;
+        background: #f3f4f6;
+        padding: 2px 5px;
         border-radius: 3px;
-        font-family: 'Monaco', 'Courier New', monospace;
-        font-size: 12px;
+        font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+        font-size: 11px;
       }
       
       :deep(pre) {
-        background: #f5f5f5;
-        padding: 12px;
+        background: #f9fafb;
+        padding: 10px;
         border-radius: 4px;
         overflow-x: auto;
-        margin: 8px 0;
+        margin: 6px 0;
         
         code {
           background: none;
@@ -1589,25 +1698,25 @@ const handleAddToKnowledge = (answerEvent: any) => {
       }
       
       :deep(ul), :deep(ol) {
-        margin: 8px 0;
-        padding-left: 24px;
+        margin: 6px 0;
+        padding-left: 20px;
       }
       
       :deep(li) {
-        margin: 4px 0;
+        margin: 3px 0;
       }
       
       :deep(blockquote) {
-        border-left: 3px solid #07c05f;
-        padding-left: 12px;
-        margin: 8px 0;
-        color: #666;
+        border-left: 2px solid #07c05f;
+        padding-left: 10px;
+        margin: 6px 0;
+        color: #6b7280;
       }
       
       :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
-        margin: 12px 0 8px 0;
+        margin: 10px 0 6px 0;
         font-weight: 600;
-        color: #333;
+        color: #374151;
       }
       
       :deep(a) {
@@ -1621,16 +1730,16 @@ const handleAddToKnowledge = (answerEvent: any) => {
       
       :deep(table) {
         border-collapse: collapse;
-        margin: 8px 0;
-        font-size: 12px;
+        margin: 6px 0;
+        font-size: 11px;
         
         th, td {
           border: 1px solid #e5e7eb;
-          padding: 6px 10px;
+          padding: 5px 8px;
         }
         
         th {
-          background: #f5f5f5;
+          background: #f9fafb;
           font-weight: 600;
         }
       }
@@ -1640,30 +1749,29 @@ const handleAddToKnowledge = (answerEvent: any) => {
 
 // Answer Event - 类似 thinking 但有独特样式
 .answer-event {
-  animation: fadeInUp 0.3s ease-out;
+  animation: fadeInUp 0.25s ease-out;
+  min-height: 20px;
   
   .answer-content-wrapper {
     background: #ffffff;
-    border-radius: 8px;
-    padding: 1px 14px;
-    border-left: 3px solid #07c05f;
-    box-shadow: 0 2px 4px rgba(7, 192, 95, 0.08);
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 6px;
+    padding: 8px 12px;
+    border: 1px solid #07c05f;
+    box-shadow: 0 1px 3px rgba(7, 192, 95, 0.06);
+    transition: all 0.2s ease;
     
-    // 进行中的 answer 显示动画
     &.answer-active {
-      animation: pulseBorder 2s ease-in-out infinite;
+      background: linear-gradient(to right, rgba(7, 192, 95, 0.02), #ffffff);
     }
     
-    // 完成的 answer 保持绿色边框
     &.answer-done {
-      border-left-color: #07c05f;
+      border-color: #07c05f;
     }
   }
   
   .answer-content {
-    font-size: 14px;
-    color: #333333;
+    font-size: 13px;
+    color: #374151;
     line-height: 1.6;
     
     &.markdown-content {
@@ -1678,24 +1786,24 @@ const handleAddToKnowledge = (answerEvent: any) => {
       /* KB citation styles are defined globally, no need to override here */
       
       :deep(p) {
-        margin: 8px 0;
+        margin: 6px 0;
         line-height: 1.6;
       }
       
       :deep(code) {
-        background: #f0f0f0;
-        padding: 2px 6px;
+        background: #f3f4f6;
+        padding: 2px 5px;
         border-radius: 3px;
-        font-family: 'Monaco', 'Courier New', monospace;
-        font-size: 12px;
+        font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+        font-size: 11px;
       }
       
       :deep(pre) {
-        background: #f5f5f5;
-        padding: 12px;
+        background: #f9fafb;
+        padding: 10px;
         border-radius: 4px;
         overflow-x: auto;
-        margin: 8px 0;
+        margin: 6px 0;
         
         code {
           background: none;
@@ -1704,25 +1812,25 @@ const handleAddToKnowledge = (answerEvent: any) => {
       }
       
       :deep(ul), :deep(ol) {
-        margin: 8px 0;
-        padding-left: 24px;
+        margin: 6px 0;
+        padding-left: 20px;
       }
       
       :deep(li) {
-        margin: 4px 0;
+        margin: 3px 0;
       }
       
       :deep(blockquote) {
-        border-left: 3px solid #07c05f;
-        padding-left: 12px;
-        margin: 8px 0;
-        color: #666;
+        border-left: 2px solid #07c05f;
+        padding-left: 10px;
+        margin: 6px 0;
+        color: #6b7280;
       }
       
       :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
-        margin: 12px 0 8px 0;
+        margin: 10px 0 6px 0;
         font-weight: 600;
-        color: #333;
+        color: #374151;
       }
       
       :deep(a) {
@@ -1736,16 +1844,16 @@ const handleAddToKnowledge = (answerEvent: any) => {
       
       :deep(table) {
         border-collapse: collapse;
-        margin: 8px 0;
-        font-size: 12px;
+        margin: 6px 0;
+        font-size: 11px;
         
         th, td {
           border: 1px solid #e5e7eb;
-          padding: 6px 10px;
+          padding: 5px 8px;
         }
         
         th {
-          background: #f5f5f5;
+          background: #f9fafb;
           font-weight: 600;
         }
       }
@@ -1755,8 +1863,9 @@ const handleAddToKnowledge = (answerEvent: any) => {
   .answer-toolbar {
     display: flex;
     justify-content: flex-start;
-    gap: 8px;
-    margin-top: 5px;
+    gap: 6px;
+    margin-top: 4px;
+    min-height: 32px;
 
     :deep(.t-button) {
       display: inline-flex;
@@ -1835,16 +1944,16 @@ const handleAddToKnowledge = (answerEvent: any) => {
 
 // Tool Event
 .tool-event {
-  animation: fadeInUp 0.3s ease-out;
+  animation: fadeInUp 0.25s ease-out;
   
   .action-card {
     background: #ffffff;
-    border-radius: 8px;
+    border-radius: 6px;
     border: 1px solid #e5e7eb;
     overflow: hidden;
     position: relative;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 
     > * {
       position: relative;
@@ -1853,19 +1962,18 @@ const handleAddToKnowledge = (answerEvent: any) => {
 
     &:hover {
       border-color: #07c05f;
-      box-shadow: 0 2px 8px rgba(7, 192, 95, 0.12);
-      // transform: translateY(-1px);
+      box-shadow: 0 1px 4px rgba(7, 192, 95, 0.08);
     }
 
     &.action-error {
-      border-left: 3px solid #e34d59;
+      border-left: 2px solid #e34d59;
       animation: shakeError 0.4s ease-out;
     }
     
     &.action-pending {
       opacity: 1;
       box-shadow: none;
-      border-color: rgba(7, 192, 95, 0.18);
+      border-color: rgba(7, 192, 95, 0.15);
       background: linear-gradient(120deg, rgba(7, 192, 95, 0.01), rgba(255, 255, 255, 0.98));
 
       &::after {
@@ -1876,7 +1984,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
           120deg,
           rgba(255, 255, 255, 0) 0%,
           rgba(255, 255, 255, 0.3) 40%,
-          rgba(7, 192, 95, 0.06) 55%,
+          rgba(7, 192, 95, 0.05) 55%,
           rgba(255, 255, 255, 0) 85%
         );
         transform: translateX(-100%);
@@ -1888,42 +1996,42 @@ const handleAddToKnowledge = (answerEvent: any) => {
   }
   
   .tool-summary {
-    padding: 8px 14px;
-    font-size: 13px;
-    color: #333333;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #374151;
     background: #ffffff;
-    border-top: 1px solid #f0f0f0;
+    border-top: 1px solid #f3f4f6;
     line-height: 1.6;
     font-weight: 500;
-    animation: slideIn 0.25s ease-out;
+    animation: slideIn 0.2s ease-out;
     
     .tool-summary-markdown {
       font-weight: 400;
       line-height: 1.6;
-      color: #333333;
+      color: #374151;
       
       :deep(p) {
-        margin: 4px 0;
-        color: #333333;
+        margin: 3px 0;
+        color: #374151;
       }
       
       :deep(ul), :deep(ol) {
-        margin: 4px 0;
-        padding-left: 20px;
+        margin: 3px 0;
+        padding-left: 18px;
       }
       
       :deep(code) {
-        background: #f5f5f5;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 12px;
+        background: #f9fafb;
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-size: 11px;
         color: #07c05f;
         font-weight: 500;
       }
       
       :deep(strong) {
         font-weight: 600;
-        color: #333333;
+        color: #374151;
       }
     }
   }
@@ -1933,42 +2041,40 @@ const handleAddToKnowledge = (answerEvent: any) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 14px;
-  color: #333333;
+  padding: 8px 12px;
+  color: #374151;
   font-weight: 500;
   cursor: pointer;
   user-select: none;
-  transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.15s ease;
 
   &:hover {
-    background-color: rgba(7, 192, 95, 0.04);
+    background-color: rgba(7, 192, 95, 0.03);
   }
 }
 
 .action-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   flex: 1;
-  min-width: 0; // Allow flex item to shrink below content size
+  min-width: 0;
   
   .action-title-icon {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     color: #07c05f;
     fill: currentColor;
     flex-shrink: 0;
     
-    // For t-icon component
     :deep(svg) {
-      width: 16px;
-      height: 16px;
+      width: 14px;
+      height: 14px;
       color: #07c05f;
       fill: currentColor;
     }
   }
   
-  // Tooltip wrapper should also allow shrinking
   :deep(.t-tooltip) {
     flex: 1;
     min-width: 0;
@@ -1976,7 +2082,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
   
   .action-name {
     white-space: nowrap;
-    font-size: 14px;
+    font-size: 13px;
   }
 }
 
@@ -1984,7 +2090,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
 @keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -1995,7 +2101,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
 @keyframes slideInDown {
   from {
     opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-8px);
   }
   to {
     opacity: 1;
@@ -2006,7 +2112,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
 @keyframes slideIn {
   from {
     opacity: 0;
-    transform: translateX(-8px);
+    transform: translateX(-6px);
   }
   to {
     opacity: 1;
@@ -2014,14 +2120,75 @@ const handleAddToKnowledge = (answerEvent: any) => {
   }
 }
 
+@keyframes pulseNode {
+  0%, 100% {
+    border-color: #07c05f;
+    box-shadow: 0 0 0 0 rgba(7, 192, 95, 0.4);
+  }
+  50% {
+    border-color: #0ae06f;
+    box-shadow: 0 0 0 4px rgba(7, 192, 95, 0.1);
+  }
+}
+
+// Loading 动画关键帧
+@keyframes dotBounce {
+  0%, 80%, 100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  40% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0.3;
+  }
+}
+
+@keyframes typingBounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes wave {
+  0%, 40%, 100% {
+    transform: scaleY(0.4);
+  }
+  20% {
+    transform: scaleY(1);
+  }
+}
+
 @keyframes pulseBorder {
   0%, 100% {
     border-left-color: #07c05f;
-    box-shadow: 0 2px 4px rgba(7, 192, 95, 0.08);
+    box-shadow: 0 1px 3px rgba(7, 192, 95, 0.06);
   }
   50% {
     border-left-color: #0ae06f;
-    box-shadow: 0 2px 6px rgba(7, 192, 95, 0.15);
+    box-shadow: 0 1px 4px rgba(7, 192, 95, 0.12);
   }
 }
 
@@ -2030,10 +2197,10 @@ const handleAddToKnowledge = (answerEvent: any) => {
     transform: translateX(0);
   }
   10%, 30%, 50%, 70%, 90% {
-    transform: translateX(-3px);
+    transform: translateX(-2px);
   }
   20%, 40%, 60%, 80% {
-    transform: translateX(3px);
+    transform: translateX(2px);
   }
 }
 
@@ -2050,9 +2217,9 @@ const handleAddToKnowledge = (answerEvent: any) => {
 }
 
 .action-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  color: #333;
+  color: #374151;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2062,14 +2229,14 @@ const handleAddToKnowledge = (answerEvent: any) => {
 }
 
 .action-show-icon {
-  font-size: 14px;
+  font-size: 13px;
   padding: 0 2px 1px 2px;
   color: #07c05f;
 }
 
 .action-details {
   padding: 0;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid #f3f4f6;
   background: #ffffff;
   display: flex;
   flex-direction: column;
@@ -2080,17 +2247,16 @@ const handleAddToKnowledge = (answerEvent: any) => {
 }
 
 .search-results-summary-fixed {
-  padding: 8px 12px;
-  background: #f8f9fa;
-  border-top: 1px solid #e7e7e7;
+  padding: 6px 10px;
+  background: #f9fafb;
+  border-top: 1px solid #e5e7eb;
   
   .results-summary-text {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
-    color: #333;
+    color: #374151;
     line-height: 1.5;
     
-    // Use :deep() to apply styles to v-html content
     :deep(strong) {
       color: #07c05f;
       font-weight: 600;
@@ -2099,14 +2265,14 @@ const handleAddToKnowledge = (answerEvent: any) => {
 }
 
 .plan-status-summary-fixed {
-  padding: 8px 12px;
-  background: #f8f9fa;
-  border-top: 1px solid #e7e7e7;
+  padding: 6px 10px;
+  background: #f9fafb;
+  border-top: 1px solid #e5e7eb;
   
   .plan-status-text {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
-    color: #333;
+    color: #374151;
     line-height: 1.5;
     display: flex;
     align-items: center;
@@ -2153,39 +2319,39 @@ const handleAddToKnowledge = (answerEvent: any) => {
 }
 
 .plan-task-change-event {
-  margin-bottom: 8px;
+  min-height: 20px;
   
   .plan-task-change-card {
     padding: 8px 12px;
-    background: #f8f9fa;
-    border-radius: 4px;
-    border-left: 3px solid #07C05F;
-    font-size: 13px;
-    color: #333;
+    background: linear-gradient(135deg, rgba(7, 192, 95, 0.05), rgba(7, 192, 95, 0.02));
+    border-radius: 6px;
+    border: 1px solid rgba(7, 192, 95, 0.2);
+    font-size: 12px;
+    color: #374151;
     
     .plan-task-change-content {
       strong {
-        color: #333;
+        color: #07c05f;
         font-weight: 600;
-        margin-right: 4px;
+        margin-right: 3px;
       }
     }
   }
 }
 
 .tool-output-wrapper {
-  margin: 12px 0;
-  padding: 0 10px;
+  margin: 10px 0;
+  padding: 0 8px;
   
   .fallback-header {
     display: flex;
     align-items: center;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
     padding: 0 4px;
     
     .fallback-label {
-      font-size: 12px;
-      color: #666;
+      font-size: 11px;
+      color: #6b7280;
       font-weight: 500;
       line-height: 1.5;
     }
@@ -2193,7 +2359,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
   
   .detail-output-wrapper {
     position: relative;
-    background: #fafafa;
+    background: #f9fafb;
     border: 1px solid #e5e7eb;
     border-radius: 6px;
     overflow: hidden;
@@ -2202,9 +2368,9 @@ const handleAddToKnowledge = (answerEvent: any) => {
     
     .detail-output {
       font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'Courier New', monospace;
-      font-size: 12px;
-      color: #333;
-      padding: 16px;
+      font-size: 11px;
+      color: #374151;
+      padding: 12px;
       margin: 0;
       white-space: pre-wrap;
       word-break: break-word;
@@ -2215,20 +2381,19 @@ const handleAddToKnowledge = (answerEvent: any) => {
       background: #ffffff;
       display: block;
       
-      // 滚动条样式
       &::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
       }
       
       &::-webkit-scrollbar-track {
-        background: #f5f5f5;
-        border-radius: 4px;
+        background: #f9fafb;
+        border-radius: 3px;
       }
       
       &::-webkit-scrollbar-thumb {
         background: #d1d5db;
-        border-radius: 4px;
+        border-radius: 3px;
         
         &:hover {
           background: #9ca3af;
@@ -2239,18 +2404,18 @@ const handleAddToKnowledge = (answerEvent: any) => {
 }
 
 .thinking-thought-content {
-  padding: 8px 12px;
+  padding: 6px 10px;
   
   .thinking-thought-markdown {
-    font-size: 14px;
-    color: #333333;
+    font-size: 13px;
+    color: #374151;
     line-height: 1.6;
     
     :deep(p) {
-      margin: 6px 0;
+      margin: 5px 0;
       line-height: 1.6;
-      font-size: 14px;
-      color: #333333;
+      font-size: 13px;
+      color: #374151;
       
       &:first-child {
         margin-top: 0;
@@ -2262,20 +2427,20 @@ const handleAddToKnowledge = (answerEvent: any) => {
     }
     
     :deep(code) {
-      background: #f0f0f0;
-      padding: 2px 6px;
+      background: #f3f4f6;
+      padding: 2px 5px;
       border-radius: 3px;
-      font-family: 'Monaco', 'Courier New', monospace;
-      font-size: 12px;
-      color: #333;
+      font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+      font-size: 11px;
+      color: #374151;
     }
     
     :deep(pre) {
-      background: #f5f5f5;
+      background: #f9fafb;
       padding: 8px;
       border-radius: 4px;
       overflow-x: auto;
-      margin: 6px 0;
+      margin: 5px 0;
       
       code {
         background: none;
@@ -2529,9 +2694,100 @@ const handleAddToKnowledge = (answerEvent: any) => {
 .loading-indicator {
   display: flex;
   align-items: center;
-  padding: 8px 0;
-  margin-top: 8px;
+  padding: 12px 0;
+  margin-top: 0;
+  padding-left: 28px;
+  position: relative;
   animation: fadeInUp 0.3s ease-out;
+  
+  // 方案1: 三个跳动的圆点
+  .loading-dots {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    
+    span {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #07c05f;
+      animation: dotBounce 1.4s ease-in-out infinite;
+      
+      &:nth-child(1) {
+        animation-delay: -0.32s;
+      }
+      
+      &:nth-child(2) {
+        animation-delay: -0.16s;
+      }
+      
+      &:nth-child(3) {
+        animation-delay: 0s;
+      }
+    }
+  }
+  
+  // 打字机效果
+  .loading-typing {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    
+    span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #07c05f;
+      animation: typingBounce 1.4s ease-in-out infinite;
+      
+      &:nth-child(1) {
+        animation-delay: 0s;
+      }
+      
+      &:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+      
+      &:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+    }
+  }
+  
+  // 方案5: 波浪线
+  .loading-wave {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    
+    span {
+      width: 3px;
+      height: 16px;
+      background: #07c05f;
+      border-radius: 2px;
+      animation: wave 1.2s ease-in-out infinite;
+      
+      &:nth-child(1) {
+        animation-delay: 0s;
+      }
+      
+      &:nth-child(2) {
+        animation-delay: 0.1s;
+      }
+      
+      &:nth-child(3) {
+        animation-delay: 0.2s;
+      }
+      
+      &:nth-child(4) {
+        animation-delay: 0.3s;
+      }
+      
+      &:nth-child(5) {
+        animation-delay: 0.4s;
+      }
+    }
+  }
   
   .botanswer_loading_gif {
     width: 24px;

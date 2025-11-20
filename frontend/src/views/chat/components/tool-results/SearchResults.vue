@@ -127,90 +127,13 @@ const getRelevanceLabel = (level: RelevanceLevel): string => {
   display: flex;
   flex-direction: column;
   padding: 0 0 0 12px;
-  gap: 4px;
-}
-
-.search-params {
-  padding: 10px 12px;
-  background: #f8f9fa;
-  border: 1px solid #e7e7e7;
-  border-radius: 6px;
-  font-size: 13px;
-  line-height: 1.5;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  
-  .params-main {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  
-  .param-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    
-    .param-label {
-      font-weight: 600;
-      color: #666;
-      min-width: 75px;
-      flex-shrink: 0;
-      font-size: 12px;
-    }
-    
-    .param-value {
-      color: #333;
-      flex: 1;
-      word-break: break-word;
-      line-height: 1.5;
-      font-size: 13px;
-    }
-  }
-  
-  .params-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding-top: 6px;
-    border-top: 1px solid #e7e7e7;
-    
-    .param-meta-item {
-      font-size: 11px;
-      color: #666;
-      background: #ffffff;
-      padding: 3px 8px;
-      border-radius: 4px;
-      border: 1px solid #e7e7e7;
-      white-space: nowrap;
-    }
-  }
-}
-
-.stats-card {
-  padding: 8px 12px;
-  background: #f8f9fa;
-  border: 1px solid #e7e7e7;
-  border-radius: 6px;
-  font-size: 13px;
-  line-height: 1.6;
-  
-  .stats-label {
-    font-weight: 600;
-    color: #666;
-    margin-right: 6px;
-  }
-  
-  .stats-item-inline {
-    color: #333;
-  }
+  gap: 3px;
 }
 
 .results-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 3px;
 }
 
 .result-item {
@@ -221,14 +144,14 @@ const getRelevanceLabel = (level: RelevanceLevel): string => {
 }
 
 .result-header {
-  padding: 4px 0;
+  padding: 2px 0;
   cursor: pointer;
   user-select: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  transition: color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  gap: 6px;
+  transition: color 0.15s ease;
   
   &:hover {
     color: #07c05f;
@@ -242,24 +165,26 @@ const getRelevanceLabel = (level: RelevanceLevel): string => {
   flex: 1;
   min-width: 0;
   font-size: 12px;
+  line-height: 1.4;
 }
 
 .result-index {
   font-size: 11px;
-  color: #8b8b8b;
+  color: #9ca3af;
   font-weight: 600;
   flex-shrink: 0;
 }
 
 .relevance-badge {
   flex-shrink: 0;
-  font-size: 11px;
-  padding: 2px 6px;
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 3px;
 }
 
 .knowledge-title {
   font-size: 12px;
-  color: #333;
+  color: #374151;
   flex: 1;
   font-weight: 500;
   overflow: hidden;
@@ -267,7 +192,6 @@ const getRelevanceLabel = (level: RelevanceLevel): string => {
   white-space: nowrap;
   min-width: 0;
 }
-
 
 // Popup overlay styles
 :deep([class*="result-popup-"]) {
@@ -278,14 +202,14 @@ const getRelevanceLabel = (level: RelevanceLevel): string => {
     overflow-x: hidden;
     padding: 0;
     border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
     word-wrap: break-word;
     word-break: break-word;
   }
 }
 
 .info-section {
-  margin-top: 8px;
+  margin-top: 6px;
   
   &:first-child {
     margin-top: 0;
@@ -293,32 +217,32 @@ const getRelevanceLabel = (level: RelevanceLevel): string => {
 }
 
 .full-content {
-  font-size: 13px;
-  color: #333;
-  line-height: 1.8;
-  padding: 12px;
+  font-size: 12px;
+  color: #374151;
+  line-height: 1.6;
+  padding: 10px;
   background: #ffffff;
   border-radius: 4px;
-  border: 1px solid #e7e7e7;
+  border: 1px solid #e5e7eb;
   white-space: pre-wrap;
   word-break: break-word;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .info-field {
   font-size: 11px;
-  margin-bottom: 3px;
+  margin-bottom: 4px;
   
   .field-label {
     min-width: 60px;
-    font-size: 11px;
+    font-size: 10px;
   }
 }
 
 code {
-  font-family: 'Monaco', 'Courier New', monospace;
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
   font-size: 10px;
-  background: #f0f0f0;
+  background: #f3f4f6;
   padding: 1px 4px;
   border-radius: 2px;
 }

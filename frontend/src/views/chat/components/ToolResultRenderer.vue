@@ -125,7 +125,7 @@ const toolArguments = computed(() => props.arguments || {});
 
 <style lang="less" scoped>
 .tool-result-renderer {
-  margin: 8px 0;
+  margin: 0;
 }
 
 .fallback-output {
