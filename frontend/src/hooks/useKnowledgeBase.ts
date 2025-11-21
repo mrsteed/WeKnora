@@ -22,7 +22,10 @@ export default function (knowledgeBaseId?: string) {
     time: "",
     md: [] as any[],
     id: "",
-    total: 0
+    total: 0,
+    type: "",
+    source: "",
+    file_type: ""
   });
   const getKnowled = (
     query: { page: number; page_size: number; tag_id?: string } = { page: 1, page_size: 35 },
@@ -130,15 +133,21 @@ export default function (knowledgeBaseId?: string) {
       time: "",
       md: [],
       id: "",
+      type: "",
+      source: "",
+      file_type: ""
     });
     getKnowledgeDetails(item.id)
       .then((result: any) => {
         if (result.success && result.data) {
           const { data } = result;
           Object.assign(details, {
-            title: data.file_name,
+            title: data.file_name || data.title || data.source || '未命名文档',
             time: formatStringDate(new Date(data.updated_at)),
             id: data.id,
+            type: data.type || 'file',
+            source: data.source || '',
+            file_type: data.file_type || ''
           });
         }
       })

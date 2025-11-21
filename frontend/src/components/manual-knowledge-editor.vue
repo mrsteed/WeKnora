@@ -664,6 +664,7 @@ onBeforeUnmount(() => {
     width="880px"
     top="5%"
     class="manual-knowledge-editor"
+    destroy-on-close
   >
     <div class="editor-body" v-if="initialLoaded">
       <div class="form-row">
@@ -674,12 +675,7 @@ onBeforeUnmount(() => {
           :loading="kbLoading"
           :options="kbOptions"
           :placeholder="$t('manualEditor.form.knowledgeBasePlaceholder')"
-          :popup-props="{ 
-            attach: 'body',
-            overlayStyle: { zIndex: 3000 },
-            onVisibleChange: (visible) => console.log('[ManualEditor] Select dropdown visible:', visible)
-          }"
-          @focus="() => console.log('[ManualEditor] Select focused, options:', kbOptions)"
+          :popup-props="{ attach: 'body' }"
         >
           <template #empty>
             <div style="padding: 20px; text-align: center; color: #999;">
@@ -1047,21 +1043,11 @@ onBeforeUnmount(() => {
 }
 </style>
 
-<!-- 全局样式：确保在dialog中的select下拉列表能够正常显示 -->
 <style lang="less">
-// TDesign Select 下拉框在 Dialog 中的 z-index 修复
-.t-select__dropdown {
-  z-index: 3000 !important;
-}
-
-// 确保挂载到 body 的 select popup 能正常显示
-body > .t-popup {
-  z-index: 3000 !important;
-}
-
-// 针对 manual-knowledge-editor 中的 select
-.manual-knowledge-editor + .t-select__dropdown,
-.manual-knowledge-editor ~ .t-select__dropdown {
-  z-index: 3000 !important;
+// 全局样式：确保 select 下拉列表在 dialog 之上
+.t-popup {
+  z-index: 2600 !important;
 }
 </style>
+
+

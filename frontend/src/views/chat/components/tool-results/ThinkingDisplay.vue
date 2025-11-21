@@ -23,30 +23,32 @@ useI18n(); // ensure component reacts to locale changes if needed
 @import './tool-results.less';
 
 .thinking-display {
-  padding: 8px 0;
+  padding: 0;
 }
 
 .thinking-content {
   display: flex;
-  gap: 8px;
-  padding: 10px 12px;
-  background: #f3f3f3;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #f9fafb;
   border-radius: 6px;
-  border-left: 3px solid #8b8b8b;
+  border-left: 3px solid #9ca3af;
 }
 
 .thinking-icon {
   font-size: 16px;
   flex-shrink: 0;
+  line-height: 1.5;
 }
 
 .thinking-text {
-  font-size: 13px;
-  color: #333;
-  line-height: 1.6;
+  font-size: 15px;
+  color: #1f2937;
+  line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
   flex: 1;
+  font-weight: 400;
 }
 </style>
 

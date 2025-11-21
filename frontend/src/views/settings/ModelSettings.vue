@@ -564,20 +564,20 @@ onMounted(() => {
   .section-description {
     font-size: 14px;
     color: #666666;
-    margin: 0;
+    margin: 0 0 20px 0;
     line-height: 1.5;
   }
 }
 
 .model-category-section {
-  margin-bottom: 24px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 24px;
-  background: #ffffff;
+  margin-bottom: 32px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid #e5e7eb;
 
   &:last-child {
     margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
   }
 }
 
@@ -585,20 +585,20 @@ onMounted(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 
   .header-info {
     flex: 1;
 
     h3 {
-      font-size: 16px;
-      font-weight: 600;
+      font-size: 15px;
+      font-weight: 500;
       color: #333333;
       margin: 0 0 4px 0;
     }
 
     p {
-      font-size: 14px;
+      font-size: 13px;
       color: #666666;
       margin: 0;
       line-height: 1.5;
@@ -612,71 +612,64 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   font-weight: 500;
-  
+  height: 32px;
+  padding: 0 16px;
+  font-size: 14px;
+  flex-shrink: 0;
+
   .add-icon {
-    font-size: 16px;
-    width: 16px;
-    height: 16px;
+    font-size: 14px;
+    width: 14px;
+    height: 14px;
   }
 }
 
 .model-list-container {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-
-  @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-  }
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .model-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 12px 16px;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   background: #fafafa;
-  transition: all 0.2s;
+  transition: all 0.15s ease;
   position: relative;
   overflow: visible;
 
   &:hover {
     border-color: #07C05F;
-    background: #ffffff;
+    background: #f9fdfb;
+    box-shadow: 0 1px 4px rgba(7, 192, 95, 0.08);
   }
 
-  // 内置模型置灰样式
+  // 内置模型样式
   &.builtin-model {
-    opacity: 0.7;
-    background: #f5f5f5;
+    background: #f8f9fa;
     border-color: #d9d9d9;
-    cursor: not-allowed;
 
     &:hover {
-      border-color: #d9d9d9;
-      background: #f5f5f5;
-      opacity: 0.8;
+      border-color: #c0c0c0;
+      background: #f5f6f7;
+      box-shadow: none;
     }
 
     .model-info {
       .model-name {
-        color: #999999;
+        color: #666666;
       }
 
       .model-meta {
-        color: #999999;
-
         .source-tag {
           background: #e5e5e5;
           color: #999999;
         }
       }
-    }
-
-    .model-actions {
-      opacity: 0.6;
     }
   }
 }
@@ -689,7 +682,7 @@ onMounted(() => {
     font-size: 14px;
     font-weight: 500;
     color: #333333;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -698,15 +691,16 @@ onMounted(() => {
   .model-meta {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     font-size: 12px;
     color: #666666;
 
     .source-tag {
-      padding: 1px 6px;
+      padding: 2px 8px;
       background: #e5e7eb;
       border-radius: 3px;
       font-size: 11px;
+      font-weight: 500;
     }
 
     .model-id {
@@ -726,14 +720,14 @@ onMounted(() => {
   gap: 4px;
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.15s ease;
   position: relative;
-  z-index: 1001; // 确保高于设置窗口的z-index (9999)
+  z-index: 1001;
 
   .more-btn {
-    color: #666666;
+    color: #999999;
     padding: 4px;
-    
+
     &:hover {
       background: #f5f7fa;
       color: #333333;
@@ -746,25 +740,25 @@ onMounted(() => {
 }
 
 .empty-state {
-  padding: 80px 0;
+  padding: 48px 0;
   text-align: center;
 
   .empty-text {
-    font-size: 14px;
+    font-size: 13px;
     color: #999999;
     margin: 0 0 16px 0;
   }
 }
 
 .builtin-models-info {
-  margin-top: 20px;
+  margin-top: 16px;
 
   .info-box {
-    background: #f8f9fa;
-    border: 1px solid #e5e7eb;
+    background: #f0fdf6;
+    border: 1px solid #d1fae5;
     border-left: 3px solid #07C05F;
-    border-radius: 4px;
-    padding: 12px 16px;
+    border-radius: 6px;
+    padding: 16px;
   }
 
   .info-header {
@@ -776,45 +770,158 @@ onMounted(() => {
     .info-icon {
       font-size: 16px;
       color: #07C05F;
+      flex-shrink: 0;
     }
 
     .info-title {
       font-size: 14px;
       font-weight: 500;
-      color: #333333;
+      color: #059669;
     }
   }
 
   .info-content {
     font-size: 13px;
     line-height: 1.6;
-    color: #666666;
+    color: #065f46;
 
     p {
-      margin: 0 0 8px 0;
+      margin: 0 0 6px 0;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
 
       &.doc-link {
-        margin-top: 8px;
+        margin-top: 10px;
         display: flex;
         align-items: center;
         gap: 6px;
 
         .link-icon {
-          font-size: 14px;
+          font-size: 13px;
           color: #07C05F;
+          flex-shrink: 0;
         }
 
         a {
           color: #07C05F;
           text-decoration: none;
           font-weight: 500;
-          transition: color 0.2s;
+          transition: color 0.15s;
 
           &:hover {
-            color: #06b04d;
+            color: #059669;
             text-decoration: underline;
           }
         }
+      }
+    }
+  }
+}
+
+// TDesign 组件样式覆盖
+:deep(.t-button) {
+  &.add-model-btn {
+    border-radius: 6px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+
+    &:hover {
+      background: #06b04d;
+      border-color: #06b04d;
+    }
+
+    &:active {
+      background: #059642;
+      border-color: #059642;
+    }
+  }
+
+  &.t-size-s {
+    height: 32px;
+    padding: 0 12px;
+    font-size: 13px;
+    border-radius: 6px;
+
+    &.t-button--variant-outline {
+      color: #666666;
+      border-color: #d9d9d9;
+
+      &:hover {
+        color: #07C05F;
+        border-color: #07C05F;
+        background: rgba(7, 192, 95, 0.04);
+      }
+    }
+  }
+}
+
+// Tag 样式优化
+:deep(.t-tag) {
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border: none;
+
+  &.t-tag--theme-primary {
+    background: #e0f2fe;
+    color: #0369a1;
+  }
+
+  &.t-tag--theme-success {
+    background: #dcfce7;
+    color: #059669;
+  }
+
+  &.t-size-s {
+    height: 20px;
+    line-height: 16px;
+  }
+}
+
+// Dropdown 菜单样式优化
+:deep(.t-popup__content) {
+  .t-dropdown__menu {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    padding: 4px;
+    min-width: 140px;
+  }
+
+  .t-dropdown__item {
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin: 2px 0;
+    font-size: 13px;
+    color: #333333;
+    transition: all 0.15s ease;
+    cursor: pointer;
+
+    &:hover {
+      background: #f5f7fa;
+      color: #07C05F;
+    }
+
+    &:active {
+      background: #e8f5ed;
+    }
+
+    // 删除按钮特殊样式 - 覆盖默认 hover 样式
+    &.t-dropdown__item--theme-error {
+      color: #f56c6c;
+
+      &:hover {
+        background: #fef0f0;
+        color: #e53e3e !important; // 使用 !important 确保覆盖默认样式
+      }
+
+      &:active {
+        background: #fde2e2;
+        color: #c53030;
       }
     }
   }

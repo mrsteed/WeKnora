@@ -7,9 +7,14 @@
         </div>
         <!-- 非 Agent 模式下才显示传统的 markdown 渲染 -->
         <div ref="parentMd" v-if="!session.hideContent && !session.isAgentMode">
-            <!-- 消息正在总结中则渲染加载gif  -->
-            <img v-if="session.thinking" class="botanswer_laoding_gif" src="@/assets/img/botanswer_loading.gif"
-                :alt="$t('chat.summaryInProgress')">
+            <!-- 消息正在总结中则渲染加载动画  -->
+            <div v-if="session.thinking" class="thinking-loading">
+                <div class="loading-typing">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
             <!-- 直接渲染完整内容，避免切分导致的问题，样式与 thinking 一致 -->
             <div class="content-wrapper">
                 <div class="ai-markdown-template markdown-content" v-html="processMarkdown(content || session.content)"></div>
@@ -337,6 +342,46 @@ onMounted(async () => {
     width: 24px;
     height: 18px;
     margin-left: 16px;
+}
+
+.thinking-loading {
+    margin-left: 16px;
+    margin-bottom: 8px;
+}
+
+.loading-typing {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    
+    span {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #07c05f;
+        animation: typingBounce 1.4s ease-in-out infinite;
+        
+        &:nth-child(1) {
+            animation-delay: 0s;
+        }
+        
+        &:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        &:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+    }
+}
+
+@keyframes typingBounce {
+    0%, 60%, 100% {
+        transform: translateY(0);
+    }
+    30% {
+        transform: translateY(-8px);
+    }
 }
 
 .img_loading {

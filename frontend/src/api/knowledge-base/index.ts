@@ -44,6 +44,10 @@ export function uploadKnowledgeFile(kbId: string, data = {}) {
   return postUpload(`/api/v1/knowledge-bases/${kbId}/knowledge/file`, data);
 }
 
+export function createKnowledgeFromURL(kbId: string, data: { url: string; enable_multimodel?: boolean }) {
+  return post(`/api/v1/knowledge-bases/${kbId}/knowledge/url`, data);
+}
+
 export function createManualKnowledge(kbId: string, data: { title: string; content: string; status: string }) {
   return post(`/api/v1/knowledge-bases/${kbId}/knowledge/manual`, data);
 }

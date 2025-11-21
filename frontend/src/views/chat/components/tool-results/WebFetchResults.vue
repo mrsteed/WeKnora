@@ -181,30 +181,31 @@ const indexKey = (index: number, item: WebFetchResultItem): string => {
 .web-fetch-results {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px 8px 0 8px;
+  gap: 6px;
+  padding: 6px 6px 0 6px;
 }
 
 .results-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .result-index {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: #8b8b8b;
+  color: #9ca3af;
 }
 
 .result-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #1f2937;
-  font-size: 13px;
+  color: #374151;
+  font-size: 12px;
   font-weight: 500;
   text-decoration: none;
+  transition: color 0.15s ease;
 
   &:hover {
     color: #07c05f;
@@ -213,29 +214,30 @@ const indexKey = (index: number, item: WebFetchResultItem): string => {
 }
 
 .result-domain {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  color: #1f2937;
+  color: #374151;
 }
 
 .meta-pill {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 2px 6px;
   border-radius: 999px;
-  background: #e8f8f0;
+  background: rgba(7, 192, 95, 0.08);
   color: #0f7a49;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
+  line-height: 1.4;
 }
 
 .meta-text {
-  font-size: 12px;
+  font-size: 11px;
   color: #6b7280;
 }
 
 .result-content.expanded {
-  padding-top: 12px;
+  padding-top: 10px;
 }
 
 .info-field .field-value a {
@@ -248,13 +250,14 @@ const indexKey = (index: number, item: WebFetchResultItem): string => {
 }
 
 .raw-length {
-  font-size: 12px;
-  color: #8b8b8b;
+  font-size: 11px;
+  color: #9ca3af;
   margin-left: 4px;
+  font-weight: normal;
 }
 
 .action-button {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .info-section-title.error {

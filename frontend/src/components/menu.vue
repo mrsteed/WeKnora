@@ -32,6 +32,27 @@
                                 <span class="kb-action-title">{{ t('upload.uploadDocument') }}</span>
                             </div>
                         </div>
+                        <div class="menu_item kb-action-item" @click.stop="handleDocFolderUploadClick">
+                            <div class="kb-action-icon-wrapper">
+                                <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                    <path d="M22 19C22 19.5304 21.7893 20.0391 21.4142 20.4142C21.0391 20.7893 20.5304 21 20 21H4C3.46957 21 2.96086 20.7893 2.58579 20.4142C2.21071 20.0391 2 19.5304 2 19V5C2 4.46957 2.21071 3.96086 2.58579 3.58579C2.96086 3.21071 3.46957 3 4 3H9L11 6H20C20.5304 6 21.0391 6.21071 21.4142 6.58579C21.7893 6.96086 22 7.46957 22 8V19Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M12 11V17M9 14H15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <div class="kb-action-content">
+                                <span class="kb-action-title">{{ t('upload.uploadFolder') }}</span>
+                            </div>
+                        </div>
+                        <div class="menu_item kb-action-item" @click.stop="handleDocURLImport">
+                            <div class="kb-action-icon-wrapper">
+                                <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                    <path d="M10 13C10.4295 13.5741 10.9774 14.0491 11.6066 14.3929C12.2357 14.7367 12.9315 14.9411 13.6467 14.9923C14.3618 15.0435 15.0796 14.9403 15.7513 14.6897C16.4231 14.4392 17.0331 14.047 17.54 13.54L20.54 10.54C21.4508 9.59695 21.9548 8.33394 21.9434 7.02296C21.932 5.71198 21.4061 4.45791 20.4791 3.53087C19.5521 2.60383 18.298 2.07799 16.987 2.0666C15.676 2.0552 14.413 2.55918 13.47 3.46997L11.75 5.17997M14 11C13.5705 10.4258 13.0226 9.95078 12.3934 9.60703C11.7642 9.26327 11.0685 9.05885 10.3533 9.00763C9.63819 8.95641 8.92037 9.0596 8.24861 9.31018C7.57685 9.56077 6.96685 9.9529 6.45996 10.46L3.45996 13.46C2.54917 14.403 2.04519 15.666 2.05659 16.977C2.06798 18.288 2.59382 19.542 3.52086 20.4691C4.44791 21.3961 5.70197 21.9219 7.01295 21.9333C8.32393 21.9447 9.58694 21.4408 10.53 20.53L12.24 18.82" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <div class="kb-action-content">
+                                <span class="kb-action-title">{{ t('knowledgeBase.importURL') }}</span>
+                            </div>
+                        </div>
                         <div class="menu_item kb-action-item" @click.stop="handleDocManualCreate">
                             <div class="kb-action-icon-wrapper">
                                 <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -117,7 +138,15 @@
             type="file"
             class="kb-upload-input"
             accept=".pdf,.docx,.doc,.txt,.md,.jpg,.jpeg,.png"
+            multiple
             @change="handleDocFileChange"
+        />
+        <input
+            ref="docFolderInput"
+            type="file"
+            class="kb-upload-input"
+            webkitdirectory
+            @change="handleDocFolderChange"
         />
     </div>
 </template>
@@ -127,7 +156,7 @@ import { storeToRefs } from 'pinia';
 import { onMounted, watch, computed, ref, reactive } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getSessionsList, delSession } from "@/api/chat/index";
-import { getKnowledgeBaseById, uploadKnowledgeFile } from '@/api/knowledge-base';
+import { getKnowledgeBaseById, uploadKnowledgeFile, createKnowledgeFromURL } from '@/api/knowledge-base';
 import { logout as logoutApi } from '@/api/auth';
 import { useMenuStore } from '@/stores/menu';
 import { useAuthStore } from '@/stores/auth';
@@ -222,6 +251,7 @@ const bottomMenuItems = computed<MenuItem[]>(() => {
 const currentKbName = ref<string>('')
 const currentKbInfo = ref<any>(null)
 const docUploadInput = ref<HTMLInputElement | null>(null)
+const docFolderInput = ref<HTMLInputElement | null>(null)
 const pendingUploadKbId = ref<string | null>(null)
 
 const showKbActions = computed(() => (isInKnowledgeBase.value && !!currentKbInfo.value) || isInKnowledgeBaseList.value)
@@ -586,39 +616,236 @@ const handleDocUploadClick = async () => {
 
 const handleDocFileChange = async (event: Event) => {
     const input = event.target as HTMLInputElement
-    const file = input?.files?.[0]
-    if (!file) {
+    const files = input?.files
+    if (!files || files.length === 0) {
         pendingUploadKbId.value = null
         return
     }
-    if (kbFileTypeVerification(file)) {
-        input.value = ''
-        pendingUploadKbId.value = null
-        return
-    }
+
     const kbId = pendingUploadKbId.value || (await ensureDocKnowledgeBaseReady())
     pendingUploadKbId.value = null
     if (!kbId) {
         input.value = ''
         return
     }
-    try {
-        await uploadKnowledgeFile(kbId, { file })
+
+    // 过滤有效文件
+    const validFiles: File[] = []
+    let invalidCount = 0
+    const isSingleFile = files.length === 1
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        // 单文件时显示错误，多文件时静默过滤
+        if (kbFileTypeVerification(file, !isSingleFile)) {
+            invalidCount++
+        } else {
+            validFiles.push(file)
+        }
+    }
+
+    // 如果没有有效文件，多文件时显示汇总提示
+    if (validFiles.length === 0) {
+        if (!isSingleFile && invalidCount > 0) {
+            MessagePlugin.error(t('knowledgeBase.noValidFilesSelected'))
+        }
+        // 单文件的错误已经在 kbFileTypeVerification 中显示了
+        input.value = ''
+        return
+    }
+
+    // 批量上传
+    let successCount = 0
+    let failCount = 0
+    const totalCount = validFiles.length
+    const failedFiles: Array<{ name: string; reason: string }> = []
+
+    // 显示上传提示
+    if (totalCount > 1) {
+        if (invalidCount > 0) {
+            MessagePlugin.info(t('knowledgeBase.uploadingValidFiles', {
+                valid: totalCount,
+                total: files.length
+            }))
+        } else {
+            MessagePlugin.info(t('knowledgeBase.uploadingMultiple', { total: totalCount }))
+        }
+    }
+
+    for (const file of validFiles) {
+        try {
+            await uploadKnowledgeFile(kbId, { file })
+            successCount++
+        } catch (error: any) {
+            failCount++
+            let errorReason = error?.error?.message || error?.message || t('knowledgeBase.uploadFailed')
+            if (error?.code === 'duplicate_file' || error?.error?.code === 'duplicate_file') {
+                errorReason = t('knowledgeBase.fileExists')
+            }
+
+            // 只在单文件上传时显示详细错误
+            if (totalCount === 1) {
+                MessagePlugin.error(errorReason)
+            } else {
+                // 多文件上传时记录失败信息
+                failedFiles.push({ name: file.name, reason: errorReason })
+            }
+        }
+    }
+
+    // 显示上传结果
+    if (successCount > 0) {
         window.dispatchEvent(new CustomEvent('knowledgeFileUploaded', {
             detail: { kbId }
         }))
-        MessagePlugin.success(t('knowledgeBase.uploadSuccess'))
-    } catch (error: any) {
-        let errorMessage = error?.error?.message || error?.message || t('knowledgeBase.uploadFailed')
-        if (error?.code === 'duplicate_file' || error?.error?.code === 'duplicate_file') {
-            errorMessage = t('knowledgeBase.fileExists')
+    }
+
+    if (totalCount === 1) {
+        if (successCount === 1) {
+            MessagePlugin.success(t('knowledgeBase.uploadSuccess'))
         }
-        MessagePlugin.error(errorMessage)
-    } finally {
-        if (input) {
-            input.value = ''
+        // 单文件失败时已经在上面显示了详细错误
+    } else {
+        if (failCount === 0) {
+            MessagePlugin.success(t('knowledgeBase.uploadAllSuccess', { count: successCount }))
+        } else if (successCount > 0) {
+            // 部分成功，显示详细失败信息
+            const failedList = failedFiles.map(f => `• ${f.name}: ${f.reason}`).join('\n')
+            MessagePlugin.warning({
+                content: t('knowledgeBase.uploadPartialSuccess', {
+                    success: successCount,
+                    fail: failCount
+                }) + '\n\n' + t('knowledgeBase.failedFilesList') + '\n' + failedList,
+                duration: 8000,
+                closeBtn: true
+            })
+        } else {
+            // 全部失败，显示详细失败信息
+            const failedList = failedFiles.slice(0, 5).map(f => `• ${f.name}: ${f.reason}`).join('\n')
+            const moreCount = failedFiles.length > 5 ? failedFiles.length - 5 : 0
+            MessagePlugin.error({
+                content: t('knowledgeBase.uploadAllFailed') + '\n\n' +
+                    t('knowledgeBase.failedFilesList') + '\n' + failedList +
+                    (moreCount > 0 ? `\n${t('knowledgeBase.andMoreFiles', { count: moreCount })}` : ''),
+                duration: 8000,
+                closeBtn: true
+            })
         }
     }
+
+    input.value = ''
+}
+
+const handleDocFolderUploadClick = async () => {
+    const kbId = await ensureDocKnowledgeBaseReady()
+    if (!kbId) return
+    pendingUploadKbId.value = kbId
+    docFolderInput.value?.click()
+}
+
+const handleDocFolderChange = async (event: Event) => {
+    const input = event.target as HTMLInputElement
+    const files = input?.files
+    if (!files || files.length === 0) {
+        pendingUploadKbId.value = null
+        return
+    }
+
+    const kbId = pendingUploadKbId.value || (await ensureDocKnowledgeBaseReady())
+    pendingUploadKbId.value = null
+    if (!kbId) {
+        input.value = ''
+        return
+    }
+
+    // 过滤有效文件（文件夹上传始终使用静默模式）
+    const validFiles: File[] = []
+    let invalidCount = 0
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        // 文件夹上传时始终静默过滤
+        if (kbFileTypeVerification(file, true)) {
+            invalidCount++
+        } else {
+            validFiles.push(file)
+        }
+    }
+
+    // 如果没有有效文件，直接返回
+    if (validFiles.length === 0) {
+        if (invalidCount > 0) {
+            MessagePlugin.error(t('knowledgeBase.noValidFilesInFolder', { total: files.length }))
+        } else {
+            MessagePlugin.error(t('knowledgeBase.noValidFiles'))
+        }
+        input.value = ''
+        return
+    }
+
+    // 显示过滤后的上传提示
+    const totalCount = validFiles.length
+    if (invalidCount > 0) {
+        MessagePlugin.info(t('knowledgeBase.uploadingValidFiles', {
+            valid: totalCount,
+            total: files.length
+        }))
+    } else {
+        MessagePlugin.info(t('knowledgeBase.uploadingFolder', { total: totalCount }))
+    }
+
+    // 批量上传文件夹内容
+    let successCount = 0
+    let failCount = 0
+    const failedFiles: Array<{ name: string; reason: string }> = []
+
+    for (const file of validFiles) {
+        try {
+            await uploadKnowledgeFile(kbId, { file })
+            successCount++
+        } catch (error: any) {
+            failCount++
+            let errorReason = error?.error?.message || error?.message || t('knowledgeBase.uploadFailed')
+            if (error?.code === 'duplicate_file' || error?.error?.code === 'duplicate_file') {
+                errorReason = t('knowledgeBase.fileExists')
+            }
+            failedFiles.push({ name: file.name, reason: errorReason })
+        }
+    }
+
+    if (successCount > 0) {
+        window.dispatchEvent(new CustomEvent('knowledgeFileUploaded', {
+            detail: { kbId }
+        }))
+    }
+
+    if (failCount === 0) {
+        MessagePlugin.success(t('knowledgeBase.uploadAllSuccess', { count: successCount }))
+    } else if (successCount > 0) {
+        // 部分成功，显示详细失败信息
+        const failedList = failedFiles.map(f => `• ${f.name}: ${f.reason}`).join('\n')
+        MessagePlugin.warning({
+            content: t('knowledgeBase.uploadPartialSuccess', {
+                success: successCount,
+                fail: failCount
+            }) + '\n\n' + t('knowledgeBase.failedFilesList') + '\n' + failedList,
+            duration: 8000,
+            closeBtn: true
+        })
+    } else {
+        // 全部失败，显示详细失败信息
+        const failedList = failedFiles.slice(0, 5).map(f => `• ${f.name}: ${f.reason}`).join('\n')
+        const moreCount = failedFiles.length > 5 ? failedFiles.length - 5 : 0
+        MessagePlugin.error({
+            content: t('knowledgeBase.uploadAllFailed') + '\n\n' +
+                t('knowledgeBase.failedFilesList') + '\n' + failedList +
+                (moreCount > 0 ? `\n${t('knowledgeBase.andMoreFiles', { count: moreCount })}` : ''),
+            duration: 8000,
+            closeBtn: true
+        })
+    }
+
+    input.value = ''
 }
 
 const handleDocManualCreate = async () => {
@@ -634,6 +861,15 @@ const handleDocManualCreate = async () => {
             }
         },
     })
+}
+
+const handleDocURLImport = async () => {
+    const kbId = await ensureDocKnowledgeBaseReady()
+    if (!kbId) return
+    
+    window.dispatchEvent(new CustomEvent('openURLImportDialog', {
+        detail: { kbId }
+    }))
 }
 
 const dispatchFaqMenuAction = (action: 'create' | 'import', kbId: string) => {
@@ -720,19 +956,18 @@ const handleCreateKnowledgeBase = () => {
 
     .kb-action-wrapper {
         border: 1px solid #e7e9eb;
-        border-radius: 10px;
-        padding: 10px;
+        border-radius: 8px;
+        padding: 8px;
         margin-bottom: 12px;
         background: #fafcfc;
-        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
     }
 
     .kb-action-label {
         font-size: 11px;
         font-weight: 600;
         color: #8b9196;
-        margin-bottom: 8px;
-        padding: 0 6px;
+        margin-bottom: 6px;
+        padding: 0 4px;
         text-transform: uppercase;
         letter-spacing: 0.3px;
     }
@@ -740,29 +975,26 @@ const handleCreateKnowledgeBase = () => {
     .kb-action-menu {
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 3px;
     }
 
     .kb-action-item {
         background: #fff;
         border-radius: 6px;
         border: 1px solid #eef1f2;
-        transition: all 0.12s ease;
+        transition: background-color 0.08s ease, border-color 0.08s ease;
         display: flex;
         align-items: center;
-        gap: 10px;
-        padding: 10px 12px;
+        gap: 8px;
+        padding: 8px 10px;
         cursor: pointer;
 
         &:hover {
             background: #f0fdf6;
             border-color: #10b981;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 6px rgba(16, 185, 129, 0.08);
 
             .kb-action-icon {
                 color: #059669;
-                transform: scale(1.05);
             }
 
             .kb-action-title {
@@ -771,26 +1003,25 @@ const handleCreateKnowledgeBase = () => {
         }
 
         &:active {
-            transform: translateY(0);
-            box-shadow: 0 1px 3px rgba(16, 185, 129, 0.1);
+            background: #e6f9f0;
         }
     }
 
     .kb-action-icon-wrapper {
-        width: 32px;
-        height: 32px;
-        border-radius: 6px;
+        width: 28px;
+        height: 28px;
+        border-radius: 5px;
         background: #f0fdf6;
         display: flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
-        transition: all 0.12s ease;
+        transition: background-color 0.08s ease;
     }
 
     .kb-action-icon {
         color: #10b981;
-        transition: all 0.12s ease;
+        transition: color 0.08s ease;
     }
 
     .kb-action-item:hover .kb-action-icon-wrapper {
@@ -806,7 +1037,7 @@ const handleCreateKnowledgeBase = () => {
         font-size: 13px;
         font-weight: 500;
         color: #0f172a;
-        transition: color 0.12s ease;
+        transition: color 0.08s ease;
         display: block;
         overflow: hidden;
         text-overflow: ellipsis;

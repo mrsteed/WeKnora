@@ -21,6 +21,7 @@ import {
   updateKnowledgeBaseTag,
   deleteKnowledgeBaseTag,
   uploadKnowledgeFile,
+  createKnowledgeFromURL,
   listKnowledgeBases,
 } from "@/api/knowledge-base/index";
 import FAQEntryManager from './components/FAQEntryManager.vue';
@@ -116,6 +117,20 @@ const formatDocTime = (time?: string) => {
   if (!time) return '--'
   const formatted = formatStringDate(new Date(time))
   return formatted.slice(2, 16) // "YY-MM-DD HH:mm"
+}
+
+// 获取知识条目的显示类型
+const getKnowledgeType = (item: any) => {
+  if (item.type === 'url') {
+    return t('knowledgeBase.typeURL') || 'URL';
+  }
+  if (item.type === 'manual') {
+    return t('knowledgeBase.typeManual') || '手动创建';
+  }
+  if (item.file_type) {
+    return item.file_type.toUpperCase();
+  }
+  return '--';
 }
 
 const loadKnowledgeFiles = (kbIdValue: string) => {
@@ -384,16 +399,28 @@ const handleFileUploaded = (event: CustomEvent) => {
   }
 };
 
+// 监听从菜单触发的URL导入事件
+const handleOpenURLImportDialog = (event: CustomEvent) => {
+  const eventKbId = event.detail.kbId;
+  console.log('接收到URL导入对话框打开事件，知识库ID:', eventKbId, '当前知识库ID:', kbId.value);
+  if (eventKbId && eventKbId === kbId.value && !isFAQ.value) {
+    urlDialogVisible.value = true;
+  }
+};
+
 onMounted(() => {
   loadKnowledgeBaseInfo(kbId.value);
   loadKnowledgeList();
   
   // 监听文件上传事件
   window.addEventListener('knowledgeFileUploaded', handleFileUploaded as EventListener);
+  // 监听URL导入对话框打开事件
+  window.addEventListener('openURLImportDialog', handleOpenURLImportDialog as EventListener);
 });
 
 onUnmounted(() => {
   window.removeEventListener('knowledgeFileUploaded', handleFileUploaded as EventListener);
+  window.removeEventListener('openURLImportDialog', handleOpenURLImportDialog as EventListener);
 });
 watch(() => cardList.value, (newValue) => {
   if (isFAQ.value) return;
@@ -560,6 +587,76 @@ const handleManualCreate = () => {
   });
 };
 
+// URL 导入相关
+const urlDialogVisible = ref(false);
+const urlInputValue = ref('');
+const urlImporting = ref(false);
+
+const handleURLImportClick = () => {
+  if (!ensureDocumentKbReady()) return;
+  urlInputValue.value = '';
+  urlDialogVisible.value = true;
+};
+
+const handleURLImportCancel = () => {
+  urlDialogVisible.value = false;
+  urlInputValue.value = '';
+};
+
+const handleURLImportConfirm = async () => {
+  const url = urlInputValue.value.trim();
+  if (!url) {
+    MessagePlugin.warning(t('knowledgeBase.urlRequired') || '请输入URL');
+    return;
+  }
+  
+  // 简单的URL格式验证
+  try {
+    new URL(url);
+  } catch (error) {
+    MessagePlugin.warning(t('knowledgeBase.invalidURL') || '请输入有效的URL');
+    return;
+  }
+
+  if (!kbId.value) {
+    MessagePlugin.error("缺少知识库ID");
+    return;
+  }
+
+  urlImporting.value = true;
+  try {
+    const responseData: any = await createKnowledgeFromURL(kbId.value, { url });
+    window.dispatchEvent(new CustomEvent('knowledgeFileUploaded', {
+      detail: { kbId: kbId.value }
+    }));
+    const isSuccess = responseData?.success || responseData?.code === 200 || responseData?.status === 'success' || (!responseData?.error && responseData);
+    if (isSuccess) {
+      MessagePlugin.success(t('knowledgeBase.urlImportSuccess') || 'URL导入成功！');
+      urlDialogVisible.value = false;
+      urlInputValue.value = '';
+    } else {
+      let errorMessage = t('knowledgeBase.urlImportFailed') || "URL导入失败！";
+      if (responseData?.error?.message) {
+        errorMessage = responseData.error.message;
+      } else if (responseData?.message) {
+        errorMessage = responseData.message;
+      }
+      if (responseData?.code === 'duplicate_url' || responseData?.error?.code === 'duplicate_url') {
+        errorMessage = t('knowledgeBase.urlExists') || "该URL已存在";
+      }
+      MessagePlugin.error(errorMessage);
+    }
+  } catch (error: any) {
+    let errorMessage = error?.error?.message || error?.message || t('knowledgeBase.urlImportFailed') || "URL导入失败！";
+    if (error?.code === 'duplicate_url') {
+      errorMessage = t('knowledgeBase.urlExists') || "该URL已存在";
+    }
+    MessagePlugin.error(errorMessage);
+  } finally {
+    urlImporting.value = false;
+  }
+};
+
 const handleOpenKBSettings = () => {
   if (!kbId.value) {
     MessagePlugin.warning(t('knowledgeEditor.messages.missingId'));
@@ -581,7 +678,7 @@ const knowledgeDropdownOptions = computed(() =>
   knowledgeList.value.map((item) => ({
     content: item.name,
     value: item.id,
-    prefixIcon: () => h(TIcon, { name: item.type === 'faq' ? 'help-circle' : 'folder', size: '16px' }),
+    prefixIcon: () => h(TIcon, { name: item.type === 'faq' ? 'chat-bubble-help' : 'folder', size: '16px' }),
   }))
 );
 
@@ -898,6 +995,7 @@ async function createNewSession(value: string): Promise<void> {
             >
               <template v-if="cardList.length">
                 <div class="doc-card-list">
+                  <!-- 现有文档卡片 -->
                   <div
                     class="knowledge-card"
                     v-for="(item, index) in cardList"
@@ -975,7 +1073,7 @@ async function createNewSession(value: string): Promise<void> {
                           </t-dropdown>
                         </div>
                         <div class="card-type">
-                          <span>{{ item.file_type }}</span>
+                          <span>{{ getKnowledgeType(item) }}</span>
                         </div>
                       </div>
                     </div>
@@ -1012,6 +1110,34 @@ async function createNewSession(value: string): Promise<void> {
               </div>
             </div>
           </t-dialog>
+          
+          <!-- URL 导入对话框 -->
+          <t-dialog
+            v-model:visible="urlDialogVisible"
+            :header="$t('knowledgeBase.importURLTitle') || '导入网页'"
+            :confirm-btn="{
+              content: $t('common.confirm') || '确认',
+              theme: 'primary',
+              loading: urlImporting,
+            }"
+            :cancel-btn="{ content: $t('common.cancel') || '取消' }"
+            @confirm="handleURLImportConfirm"
+            @cancel="handleURLImportCancel"
+            width="500px"
+          >
+            <div class="url-import-form">
+              <div class="url-input-label">{{ $t('knowledgeBase.urlLabel') || 'URL地址' }}</div>
+              <t-input
+                v-model="urlInputValue"
+                :placeholder="$t('knowledgeBase.urlPlaceholder') || '请输入网页URL，例如：https://example.com'"
+                clearable
+                autofocus
+                @keydown.enter="handleURLImportConfirm"
+              />
+              <div class="url-input-tip">{{ $t('knowledgeBase.urlTip') || '支持导入各类网页内容，系统会自动提取和解析网页中的文本内容' }}</div>
+            </div>
+          </t-dialog>
+          
           <DocContent :visible="isCardDetails" :details="details" @closeDoc="closeDoc" @getDoc="getDoc"></DocContent>
         </div>
       </div>
@@ -1987,6 +2113,24 @@ async function createNewSession(value: string): Promise<void> {
 
 .knowledge-card:hover {
   border: 2px solid #07c05f;
+}
+
+.url-import-form {
+  padding: 8px 0;
+
+  .url-input-label {
+    color: #1d2129;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+
+  .url-input-tip {
+    color: #86909c;
+    font-size: 12px;
+    margin-top: 8px;
+    line-height: 1.5;
+  }
 }
 
 .knowledge-card-upload {

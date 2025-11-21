@@ -69,6 +69,10 @@ type KnowledgeBase struct {
 	UpdatedAt time.Time `yaml:"updated_at" json:"updated_at"`
 	// Deletion time of the knowledge base
 	DeletedAt gorm.DeletedAt `yaml:"deleted_at" json:"deleted_at" gorm:"index"`
+	// Knowledge count (not stored in database, calculated on query)
+	KnowledgeCount int64 `yaml:"knowledge_count" json:"knowledge_count" gorm:"-"`
+	// Chunk count (not stored in database, calculated on query)
+	ChunkCount int64 `yaml:"chunk_count" json:"chunk_count" gorm:"-"`
 }
 
 // KnowledgeBaseConfig represents the knowledge base configuration

@@ -37,6 +37,8 @@ type ChunkRepository interface {
 	DeleteChunksByKnowledgeID(ctx context.Context, tenantID uint, knowledgeID string) error
 	// DeleteByKnowledgeList deletes all chunks for a knowledge list
 	DeleteByKnowledgeList(ctx context.Context, tenantID uint, knowledgeIDs []string) error
+	// CountChunksByKnowledgeBaseID counts the number of chunks in a knowledge base.
+	CountChunksByKnowledgeBaseID(ctx context.Context, tenantID uint, kbID string) (int64, error)
 }
 
 // ChunkService defines the interface for chunk service operations

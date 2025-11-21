@@ -36,10 +36,10 @@ const props = defineProps<Props>();
 
 <style lang="less" scoped>
 .plan-display {
-  font-size: 13px;
-  color: #666;
+  font-size: 12px;
+  color: #6b7280;
   background: transparent;
-  padding: 8px 0 8px 12px;
+  padding: 6px 0 6px 12px;
   margin: 0;
   border: none !important;
   box-shadow: none !important;
@@ -49,15 +49,15 @@ const props = defineProps<Props>();
 .plan-steps {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .step-item {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 2px 0;
-  transition: all 0.2s;
+  gap: 7px;
+  padding: 1px 0;
+  transition: all 0.15s;
   
   &:last-child {
     margin-bottom: 0;
@@ -65,7 +65,7 @@ const props = defineProps<Props>();
   
   &.status-in_progress {
     .step-description {
-      color: #333;
+      color: #374151;
       font-weight: 500;
     }
   }
@@ -100,27 +100,27 @@ const props = defineProps<Props>();
 
 .step-description {
   flex: 1;
-  color: #666;
+  color: #6b7280;
   line-height: 1.5;
-  font-size: 13px;
+  font-size: 12px;
   
   &.completed {
     text-decoration: line-through;
-    color: #999;
+    color: #9ca3af;
   }
   
   .sparkle {
-    margin-left: 4px;
-    font-size: 12px;
+    margin-left: 3px;
+    font-size: 11px;
   }
 }
 
 .no-steps {
-  padding: 8px 12px;
+  padding: 12px;
   text-align: center;
   color: #9ca3af;
   font-style: italic;
-  font-size: 13px;
+  font-size: 12px;
 }
 </style>
 

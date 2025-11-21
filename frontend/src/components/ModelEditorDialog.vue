@@ -23,9 +23,29 @@
         <div class="form-item">
           <label class="form-label required">{{ $t('model.editor.sourceLabel') }}</label>
           <t-radio-group v-model="formData.source">
-            <t-radio value="local">{{ $t('model.editor.sourceLocal') }}</t-radio>
+            <t-radio
+              value="local"
+              :disabled="ollamaServiceStatus === false"
+            >
+              {{ $t('model.editor.sourceLocal') }}
+            </t-radio>
             <t-radio value="remote">{{ $t('model.editor.sourceRemote') }}</t-radio>
           </t-radio-group>
+
+          <!-- Ollama不可用时的提示信息 -->
+          <div v-if="ollamaServiceStatus === false" class="ollama-unavailable-tip">
+            <t-icon name="error-circle-filled" class="tip-icon" />
+            <span class="tip-text">{{ $t('model.editor.ollamaUnavailable') }}</span>
+            <t-button
+              variant="text"
+              size="small"
+              theme="primary"
+              @click="goToOllamaSettings"
+              class="tip-link"
+            >
+              {{ $t('model.editor.goToOllamaSettings') }}
+            </t-button>
+          </div>
         </div>
 
         <!-- Ollama 本地模型选择器 -->
@@ -205,10 +225,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onUnmounted } from 'vue'
+import { ref, watch, computed, onUnmounted, nextTick } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { checkOllamaModels, checkRemoteModel, testEmbeddingModel, checkRerankModel, listOllamaModels, downloadOllamaModel, getDownloadProgress, type OllamaModelInfo } from '@/api/initialization'
+import { checkOllamaModels, checkRemoteModel, testEmbeddingModel, checkRerankModel, listOllamaModels, downloadOllamaModel, getDownloadProgress, checkOllamaStatus, type OllamaModelInfo } from '@/api/initialization'
 import { useI18n } from 'vue-i18n'
+import { useUIStore } from '@/stores/ui'
 
 interface ModelFormData {
   id: string
@@ -229,6 +250,7 @@ interface Props {
 }
 
 const { t } = useI18n()
+const uiStore = useUIStore()
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
@@ -267,6 +289,10 @@ const downloading = ref(false)
 const downloadProgress = ref(0)
 const currentDownloadModel = ref('')
 let downloadInterval: any = null
+
+// Ollama 服务状态
+const ollamaServiceStatus = ref<boolean | null>(null)
+const checkingOllamaStatus = ref(false)
 
 const formData = ref<ModelFormData>({
   id: '',
@@ -344,12 +370,50 @@ const getBaseUrlPlaceholder = () => {
     : t('model.editor.baseUrlPlaceholder')
 }
 
+// 检查Ollama服务状态
+const checkOllamaServiceStatus = async () => {
+  console.log('开始检查Ollama服务状态...')
+  checkingOllamaStatus.value = true
+  try {
+    const result = await checkOllamaStatus()
+    ollamaServiceStatus.value = result.available
+    console.log('Ollama服务状态检查完成:', result.available)
+  } catch (error) {
+    console.error('检查Ollama服务状态失败:', error)
+    ollamaServiceStatus.value = false
+  } finally {
+    checkingOllamaStatus.value = false
+  }
+}
+
+// 打开Ollama设置窗口
+const goToOllamaSettings = async () => {
+  console.log('点击跳转到Ollama设置按钮')
+  // 关闭当前弹窗
+  emit('update:visible', false)
+  
+  // 先关闭设置弹窗（如果已打开）
+  if (uiStore.showSettingsModal) {
+    uiStore.closeSettings()
+    // 等待 DOM 更新
+    await nextTick()
+  }
+  
+  // 打开设置窗口并直接跳转到Ollama设置
+  console.log('调用uiStore.openSettings')
+  uiStore.openSettings('ollama')
+  console.log('uiStore.openSettings调用完成')
+}
+
 // 监听 visible 变化，初始化表单
 watch(() => props.visible, (val) => {
   if (val) {
     // 锁定背景滚动
     document.body.style.overflow = 'hidden'
-    
+
+    // 检查Ollama服务状态
+    checkOllamaServiceStatus()
+
     if (props.modelData) {
       formData.value = { ...props.modelData }
     } else {
@@ -781,24 +845,25 @@ const handleCancel = () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  backdrop-filter: blur(6px);
-  overflow: hidden; // 防止背景滚动
+  backdrop-filter: blur(4px);
+  overflow: hidden;
+  padding: 20px;
 }
 
 // 弹窗主体
 .model-editor-modal {
   position: relative;
-  width: 90vw;
-  max-width: 600px;
-  max-height: 85vh;
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
   background: #fff;
   border-radius: 12px;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 6px 28px rgba(15, 23, 42, 0.08);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -807,57 +872,53 @@ const handleCancel = () => {
 // 关闭按钮
 .close-btn {
   position: absolute;
-  top: 20px;
-  right: 20px;
+  top: 16px;
+  right: 16px;
   width: 32px;
   height: 32px;
   border: none;
-  background: #f5f5f5;
-  border-radius: 8px;
+  background: transparent;
+  border-radius: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #666;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  color: #666666;
+  transition: all 0.15s ease;
   z-index: 10;
 
   &:hover {
-    background: rgba(7, 192, 95, 0.1);
-    color: #07C05F;
+    background: #f5f5f5;
+    color: #333333;
   }
 }
 
 // 标题区域
 .modal-header {
-  padding: 28px 32px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 24px 24px 16px;
+  border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;
-  background: linear-gradient(to bottom, #ffffff 0%, #fafafa 100%);
 }
 
 .modal-title {
-  margin: 0 0 8px 0;
-  font-family: "PingFang SC";
-  font-size: 20px;
+  margin: 0 0 6px 0;
+  font-size: 18px;
   font-weight: 600;
-  color: #1a1a1a;
-  letter-spacing: -0.3px;
+  color: #333333;
 }
 
 .modal-desc {
   margin: 0;
-  font-family: "PingFang SC";
-  font-size: 14px;
+  font-size: 13px;
   color: #666666;
-  line-height: 22px;
+  line-height: 1.5;
 }
 
 // 内容区域
 .modal-body {
   flex: 1;
   overflow-y: auto;
-  padding: 28px 32px;
+  padding: 24px;
   background: #ffffff;
 
   // 自定义滚动条
@@ -873,16 +934,16 @@ const handleCancel = () => {
   &::-webkit-scrollbar-thumb {
     background: #d0d0d0;
     border-radius: 3px;
-    transition: background 0.2s;
+    transition: background 0.15s;
 
     &:hover {
-      background: #07C05F;
+      background: #b0b0b0;
     }
   }
 
   :deep(.t-form) {
     .t-form-item {
-      display: none; // 隐藏 t-form-item，使用自定义的 form-item
+      display: none;
     }
   }
 }
@@ -898,16 +959,14 @@ const handleCancel = () => {
 
 .form-label {
   display: block;
-  margin-bottom: 10px;
-  font-family: "PingFang SC";
+  margin-bottom: 8px;
   font-size: 14px;
   font-weight: 500;
   color: #333333;
-  letter-spacing: -0.2px;
 
   &.required::after {
     content: '*';
-    color: #FA5151;
+    color: #f56c6c;
     margin-left: 4px;
     font-weight: 600;
   }
@@ -919,23 +978,29 @@ const handleCancel = () => {
 :deep(.t-textarea),
 :deep(.t-input-number) {
   width: 100%;
-  font-size: 14px;
-  transition: all 0.2s ease;
-  
+  font-size: 13px;
+
   .t-input__inner,
-  input {
-    font-size: 14px;
+  .t-input__wrap,
+  input,
+  textarea {
+    font-size: 13px;
     border-radius: 6px;
-    transition: all 0.2s ease;
+    border-color: #d9d9d9;
+    transition: all 0.15s ease;
   }
-  
+
   &:hover .t-input__inner,
-  &:hover input {
-    border-color: #07C05F;
+  &:hover .t-input__wrap,
+  &:hover input,
+  &:hover textarea {
+    border-color: #b3b3b3;
   }
-  
+
   &.t-is-focused .t-input__inner,
-  &.t-is-focused input {
+  &.t-is-focused .t-input__wrap,
+  &.t-is-focused input,
+  &.t-is-focused textarea {
     border-color: #07C05F;
     box-shadow: 0 0 0 2px rgba(7, 192, 95, 0.1);
   }
@@ -944,13 +1009,12 @@ const handleCancel = () => {
 // 单选按钮组
 :deep(.t-radio-group) {
   display: flex;
-  gap: 20px;
-  
+  gap: 24px;
+
   .t-radio {
     margin-right: 0;
-    font-size: 14px;
-    transition: all 0.2s ease;
-    
+    font-size: 13px;
+
     &:hover {
       .t-radio__label {
         color: #07C05F;
@@ -959,11 +1023,11 @@ const handleCancel = () => {
   }
 
   .t-radio__label {
-    font-size: 14px;
+    font-size: 13px;
     color: #333333;
-    transition: color 0.2s ease;
+    transition: color 0.15s ease;
   }
-  
+
   .t-radio__input:checked + .t-radio__label {
     color: #07C05F;
     font-weight: 500;
@@ -972,44 +1036,55 @@ const handleCancel = () => {
 
 // 复选框
 :deep(.t-checkbox) {
-  font-size: 14px;
+  font-size: 13px;
 
   .t-checkbox__label {
-    font-size: 14px;
-    color: #000000e6;
+    font-size: 13px;
+    color: #333333;
   }
 }
 
 // 底部按钮区域
 .modal-footer {
-  padding: 20px 32px;
-  border-top: 1px solid #f0f0f0;
+  padding: 16px 24px;
+  border-top: 1px solid #e5e7eb;
   display: flex;
   justify-content: flex-end;
   gap: 12px;
   flex-shrink: 0;
   background: #fafafa;
-  
+
   :deep(.t-button) {
-    min-width: 88px;
+    min-width: 80px;
     height: 36px;
     font-weight: 500;
+    font-size: 14px;
     border-radius: 6px;
-    
+    transition: all 0.15s ease;
+
     &.t-button--theme-primary {
       background: #07C05F;
       border-color: #07C05F;
-      
+
       &:hover {
         background: #06b04d;
         border-color: #06b04d;
       }
+
+      &:active {
+        background: #059642;
+        border-color: #059642;
+      }
     }
-    
+
     &.t-button--variant-outline {
+      color: #666666;
+      border-color: #d9d9d9;
+
       &:hover {
         border-color: #07C05F;
         color: #07C05F;
+        background: rgba(7, 192, 95, 0.04);
       }
     }
   }
@@ -1018,7 +1093,11 @@ const handleCancel = () => {
 // 过渡动画
 .modal-enter-active,
 .modal-leave-active {
-  transition: all 0.3s ease;
+  transition: opacity 0.2s ease;
+
+  .model-editor-modal {
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
 }
 
 .modal-enter-from,
@@ -1027,6 +1106,7 @@ const handleCancel = () => {
 
   .model-editor-modal {
     transform: scale(0.95);
+    opacity: 0;
   }
 }
 
@@ -1039,20 +1119,25 @@ const handleCancel = () => {
   .test-message {
     font-size: 13px;
     line-height: 1.5;
-    
+    flex: 1;
+
     &.success {
-      color: #07C05F;
+      color: #059669;
     }
-    
+
     &.error {
-      color: #e34d59;
+      color: #f56c6c;
     }
   }
-  
+
   :deep(.t-button) {
-    min-width: 100px;
+    min-width: 88px;
+    height: 32px;
+    font-size: 13px;
+    border-radius: 6px;
+    flex-shrink: 0;
   }
-  
+
   .status-icon {
     font-size: 16px;
     flex-shrink: 0;
@@ -1062,7 +1147,7 @@ const handleCancel = () => {
     }
 
     &.unavailable {
-      color: #e34d59;
+      color: #f56c6c;
     }
   }
 }
@@ -1163,16 +1248,24 @@ const handleCancel = () => {
   .t-select {
     flex: 1;
   }
+
+  :deep(.t-button) {
+    height: 32px;
+    font-size: 13px;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
 }
 
 .refresh-btn {
   margin-top: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: #666666;
   flex-shrink: 0;
-  
+
   &:hover {
     color: #07C05F;
+    background: rgba(7, 192, 95, 0.04);
   }
 }
 
@@ -1205,6 +1298,66 @@ const handleCancel = () => {
 
   &.success {
     color: #07C05F;
+  }
+}
+
+// Ollama不可用提示样式
+.ollama-unavailable-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  font-size: 13px;
+
+  .tip-icon {
+    color: #f56c6c;
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-right: 2px;
+  }
+
+  .tip-text {
+    color: #dc2626;
+    flex: 1;
+    line-height: 1.5;
+  }
+
+  :deep(.tip-link) {
+    color: #07C05F;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 4px 6px 4px 10px !important;
+    min-height: auto !important;
+    height: auto !important;
+    line-height: 1.4 !important;
+    text-decoration: none;
+    white-space: nowrap;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 1px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background: rgba(7, 192, 95, 0.08) !important;
+      color: #05a04f !important;
+    }
+
+    &:active {
+      background: rgba(7, 192, 95, 0.12) !important;
+    }
+
+    .t-icon {
+      font-size: 14px !important;
+      margin: 0 !important;
+      line-height: 1 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+    }
   }
 }
 </style>

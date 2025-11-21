@@ -51,7 +51,7 @@ renderer.image = function (href, title, text) {
                 <figcaption style="text-align: left;">${text || ''}</figcaption>
             </figure>`;
 };
-const props = defineProps(["visible", "details"]);
+const props = defineProps(["visible", "details", "knowledgeType", "sourceInfo"]);
 const emit = defineEmits(["closeDoc", "getDoc"]);
 watch(() => props.details.md, (newVal) => {
   nextTick(async () => {
@@ -100,6 +100,91 @@ const handleClose = () => {
   emit("closeDoc", false);
   doc.scrollTop = 0;
 };
+
+// 获取显示标题
+const getDisplayTitle = () => {
+  if (!props.details.title) return '';
+  if (props.details.type === 'file') {
+    // 文件类型去掉扩展名
+    const lastDotIndex = props.details.title.lastIndexOf(".");
+    return lastDotIndex > 0 ? props.details.title.substring(0, lastDotIndex) : props.details.title;
+  }
+  // URL和手动创建直接返回标题
+  return props.details.title;
+};
+
+// 获取类型标签
+const getTypeLabel = () => {
+  switch (props.details.type) {
+    case 'url':
+      return t('knowledgeBase.typeURL') || '网页';
+    case 'manual':
+      return t('knowledgeBase.typeManual') || '手动创建';
+    case 'file':
+      return props.details.file_type ? props.details.file_type.toUpperCase() : t('knowledgeBase.typeFile') || '文件';
+    default:
+      return '';
+  }
+};
+
+// 获取类型主题色
+const getTypeTheme = () => {
+  switch (props.details.type) {
+    case 'url':
+      return 'primary';
+    case 'manual':
+      return 'success';
+    case 'file':
+      return 'default';
+    default:
+      return 'default';
+  }
+};
+
+// 获取内容标签
+const getContentLabel = () => {
+  switch (props.details.type) {
+    case 'url':
+      return t('knowledgeBase.webContent') || '网页内容';
+    case 'manual':
+      return t('knowledgeBase.documentContent') || '文档内容';
+    case 'file':
+    default:
+      return t('knowledgeBase.fileContent') || '文件内容';
+  }
+};
+
+// 获取时间标签
+const getTimeLabel = () => {
+  switch (props.details.type) {
+    case 'url':
+      return t('knowledgeBase.importTime') || '导入时间';
+    case 'manual':
+      return t('knowledgeBase.createTime') || '创建时间';
+    case 'file':
+    default:
+      return t('knowledgeBase.uploadTime') || '上传时间';
+  }
+};
+
+// 获取Chunk样式类
+const getChunkClass = (index: number) => {
+  return index % 2 !== 0 ? 'chunk-odd' : 'chunk-even';
+};
+
+// 获取Chunk元数据
+const getChunkMeta = (item: any) => {
+  if (!item) return '';
+  const parts = [];
+  if (item.char_count) {
+    parts.push(`${item.char_count} ${t('knowledgeBase.characters') || '字符'}`);
+  }
+  if (item.token_count) {
+    parts.push(`${item.token_count} tokens`);
+  }
+  return parts.join(' · ');
+};
+
 const downloadFile = () => {
   downKnowledgeDetails(props.details.id)
     .then((result) => {
@@ -139,10 +224,17 @@ const handleDetailsScroll = () => {
 <template>
   <div class="doc_content" ref="mdContentWrap">
     <t-drawer :visible="visible" :zIndex="2000" :closeBtn="true" @close="handleClose">
-      <template #header>{{
-        details.title.substring(0, details.title.lastIndexOf("."))
-      }}</template>
-      <div class="doc_box">
+      <template #header>
+        <div class="drawer-header">
+          <span class="header-title">{{ getDisplayTitle() }}</span>
+          <t-tag v-if="details.type" size="small" :theme="getTypeTheme()" variant="light">
+            {{ getTypeLabel() }}
+          </t-tag>
+        </div>
+      </template>
+      
+      <!-- 文件类型专属区域 -->
+      <div v-if="details.type === 'file'" class="doc_box">
         <a :href="url" style="display: none" ref="down" :download="details.title"></a>
         <span class="label">{{ $t('knowledgeBase.fileName') }}</span>
         <div class="download_box">
@@ -152,17 +244,48 @@ const handleDetailsScroll = () => {
           </div>
         </div>
       </div>
+      
+      <!-- URL类型专属区域 -->
+      <div v-else-if="details.type === 'url'" class="url_box">
+        <span class="label">{{ $t('knowledgeBase.urlSource') || '来源网址' }}</span>
+        <div class="url_link_box">
+          <a :href="details.source" target="_blank" class="url_link">
+            <t-icon name="link" size="14px" />
+            <span class="url_text">{{ details.source }}</span>
+            <t-icon name="jump" size="14px" class="jump-icon" />
+          </a>
+        </div>
+      </div>
+      
+      <!-- 手动创建类型专属区域 -->
+      <div v-else-if="details.type === 'manual'" class="manual_box">
+        <span class="label">{{ $t('knowledgeBase.documentTitle') || '文档标题' }}</span>
+        <div class="manual_title_box">
+          <span class="manual_title">{{ details.title }}</span>
+        </div>
+      </div>
+      
       <div class="content_header">
-        <span class="label">{{ $t('knowledgeBase.fileContent') }}</span>
-        <span class="time"> {{ $t('knowledgeBase.uploadTime') }}：{{ details.time }} </span>
+        <span class="label">{{ getContentLabel() }}</span>
+        <span class="time"> {{ getTimeLabel() }}：{{ details.time }} </span>
       </div>
+      
       <div v-if="details.md.length == 0" class="no_content">{{ $t('common.noData') }}</div>
-      <div v-else class="content" v-for="(item, index) in details.md" :key="index" :style="index % 2 !== 0
-        ? 'background: #07c05f26;'
-        : 'background: #3032360f;'
-        ">
-        <div class="md-content" v-html="processMarkdown(item.content)"></div>
+      <div v-else class="chunk-list">
+        <div 
+          class="chunk-item" 
+          v-for="(item, index) in details.md" 
+          :key="index"
+          :class="getChunkClass(index)"
+        >
+          <div class="chunk-header">
+            <span class="chunk-index">{{ $t('knowledgeBase.segment') || '片段' }} {{ index + 1 }}</span>
+            <span class="chunk-meta">{{ getChunkMeta(item) }}</span>
+          </div>
+          <div class="md-content" v-html="processMarkdown(item.content)"></div>
+        </div>
       </div>
+      
       <template #footer>
         <t-button @click="handleClose">{{ $t('common.confirm') }}</t-button>
         <t-button theme="default" @click="handleClose">{{ $t('common.cancel') }}</t-button>
@@ -185,16 +308,24 @@ const handleDetailsScroll = () => {
   padding: 16px 24px;
 }
 
-.content {
-  word-break: break-word;
-  padding: 4px;
-  gap: 4px;
-  margin-top: 12px;
+.drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  
+  .header-title {
+    flex: 1;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
-.doc_box {
+.doc_box, .url_box, .manual_box {
   display: flex;
   flex-direction: column;
+  margin-bottom: 16px;
 }
 
 .label {
@@ -206,6 +337,7 @@ const handleDetailsScroll = () => {
   margin-bottom: 8px;
 }
 
+// 文件下载区域
 .download_box {
   display: flex;
   align-items: center;
@@ -238,13 +370,71 @@ const handleDetailsScroll = () => {
   }
 }
 
+// URL链接区域
+.url_link_box {
+  border-radius: 4px;
+  border: 1px solid #d0e8dc;
+  background: #f0fdf4;
+  padding: 8px 12px;
+  
+  .url_link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #059669;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    
+    &:hover {
+      color: #07c05f;
+      background: #e6f7ed;
+      border-radius: 3px;
+      padding: 4px 6px;
+      margin: -4px -6px;
+      
+      .jump-icon {
+        transform: translateX(2px);
+      }
+    }
+    
+    .url_text {
+      flex: 1;
+      font-size: 13px;
+      word-break: break-all;
+    }
+    
+    .jump-icon {
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+      color: #059669;
+    }
+  }
+}
+
+// 手动创建标题区域
+.manual_title_box {
+  border-radius: 4px;
+  border: 1px solid #dcdcdc;
+  background: #f0fdf4;
+  padding: 8px 12px;
+  
+  .manual_title {
+    color: #1d2129;
+    font-size: 14px;
+    font-weight: 500;
+    word-break: break-word;
+  }
+}
+
 .content_header {
   margin-top: 22px;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .time {
-  margin-left: 12px;
   color: #00000066;
   font-size: 12px;
   font-style: normal;
@@ -258,5 +448,68 @@ const handleDetailsScroll = () => {
   font-size: 12px;
   padding: 16px;
   background: #fbfbfb;
+  text-align: center;
+}
+
+// Chunk列表样式
+.chunk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chunk-item {
+  border-radius: 6px;
+  padding: 12px;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  
+  &.chunk-even {
+    background: #3032360f;
+  }
+  
+  &.chunk-odd {
+    background: #07c05f0d;
+  }
+  
+  &:hover {
+    border-color: #07c05f;
+    box-shadow: 0 2px 8px rgba(7, 192, 95, 0.1);
+  }
+}
+
+.chunk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e7e7e7;
+  
+  .chunk-index {
+    color: #00000099;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  
+  .chunk-meta {
+    color: #00000066;
+    font-size: 11px;
+  }
+}
+
+.md-content {
+  word-break: break-word;
+  line-height: 1.6;
+  color: #1d2129;
+}
+
+// 保留旧样式作为兼容（已被chunk-item替代）
+.content {
+  word-break: break-word;
+  padding: 4px;
+  gap: 4px;
+  margin-top: 12px;
 }
 </style>

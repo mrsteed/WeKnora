@@ -154,3 +154,12 @@ func (r *chunkRepository) DeleteByKnowledgeList(ctx context.Context, tenantID ui
 		"tenant_id = ? AND knowledge_id in ?", tenantID, knowledgeIDs,
 	).Delete(&types.Chunk{}).Error
 }
+
+// CountChunksByKnowledgeBaseID counts the number of chunks in a knowledge base
+func (r *chunkRepository) CountChunksByKnowledgeBaseID(ctx context.Context, tenantID uint, kbID string) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&types.Chunk{}).
+		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
+		Count(&count).Error
+	return count, err
+}
