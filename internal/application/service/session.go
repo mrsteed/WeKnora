@@ -880,9 +880,8 @@ func (s *sessionService) AgentQA(ctx context.Context, session *types.Session, qu
 
 	// Create runtime AgentConfig by merging session and tenant configs
 	// Tenant config provides the runtime parameters (MaxIterations, Temperature, Tools, Models)
-	// Session config provides Enabled and KnowledgeBases
+	// Session config provides KnowledgeBases
 	agentConfig := &types.AgentConfig{
-		Enabled:           session.AgentConfig.AgentModeEnabled,
 		MaxIterations:     tenantInfo.AgentConfig.MaxIterations,
 		ReflectionEnabled: tenantInfo.AgentConfig.ReflectionEnabled,
 		AllowedTools:      tenantInfo.AgentConfig.AllowedTools,

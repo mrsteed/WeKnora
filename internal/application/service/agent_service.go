@@ -244,10 +244,6 @@ func (s *agentService) ValidateConfig(config *types.AgentConfig) error {
 		return fmt.Errorf("config cannot be nil")
 	}
 
-	if !config.Enabled {
-		return fmt.Errorf("agent is not enabled")
-	}
-
 	if config.MaxIterations <= 0 {
 		config.MaxIterations = 5 // Default
 	}
