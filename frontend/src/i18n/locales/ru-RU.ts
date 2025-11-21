@@ -784,7 +784,6 @@ export default {
       dimensionFailed: 'Не удалось определить, введите размерность вручную',
       remoteDimensionDetected: 'Обнаружена размерность: {value}',
       dimensionHint: 'Модель выбрана. Нажмите «Определить размерность», чтобы автоматически получить значение.',
-      setAsDefault: 'Сделать модель по умолчанию',
       loadModelListFailed: 'Не удалось загрузить список моделей',
       listRefreshed: 'Список обновлён',
       fillModelAndUrl: 'Сначала заполните идентификатор модели и Base URL',

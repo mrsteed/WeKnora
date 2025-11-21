@@ -1313,7 +1313,6 @@ export default {
       dimensionFailed: 'Detection failed, please enter the dimension manually',
       remoteDimensionDetected: 'Detected vector dimension: {value}',
       dimensionHint: 'Model selected. Click "Detect Dimension" to fetch the vector dimension automatically.',
-      setAsDefault: 'Set as default model',
       loadModelListFailed: 'Failed to load model list',
       listRefreshed: 'List refreshed',
       fillModelAndUrl: 'Please fill in the model identifier and Base URL first',

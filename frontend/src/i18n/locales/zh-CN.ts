@@ -876,7 +876,6 @@ export default {
       dimensionFailed: "检测失败，请手动输入维度",
       remoteDimensionDetected: "检测到向量维度：{value}",
       dimensionHint: "模型已选择，点击“检测维度”按钮自动获取向量维度",
-      setAsDefault: "设为默认模型",
       loadModelListFailed: "加载模型列表失败",
       listRefreshed: "列表已刷新",
       fillModelAndUrl: "请先填写模型标识和 Base URL",

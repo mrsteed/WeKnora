@@ -202,10 +202,6 @@
           </p>
         </div>
 
-        <!-- 设为默认 -->
-        <div class="form-item">
-          <t-checkbox v-model="formData.isDefault">{{ $t('model.editor.setAsDefault') }}</t-checkbox>
-        </div>
       </t-form>
           </div>
 
