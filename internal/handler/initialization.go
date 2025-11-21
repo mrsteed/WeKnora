@@ -1241,7 +1241,7 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 
 	if kb.ExtractConfig != nil {
 		config["nodeExtract"] = map[string]interface{}{
-			"enabled":   true,
+			"enabled":   kb.ExtractConfig.Enabled,
 			"text":      kb.ExtractConfig.Text,
 			"tags":      kb.ExtractConfig.Tags,
 			"nodes":     kb.ExtractConfig.Nodes,

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"os"
 	"regexp"
 	"slices"
 	"sort"
@@ -1045,8 +1044,6 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		return
 	}
 
-	enableGraphRAG := os.Getenv("ENABLE_GRAPH_RAG") == "true"
-
 	// Create chunk objects from proto chunks
 	maxSeq := 0
 
@@ -1187,55 +1184,6 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 			textChunks[i+1].PreChunkID = chunk.ID
 		}
 	}
-	if enableGraphRAG {
-		relationChunkSize := 5
-		indirectRelationChunkSize := 5
-		graphBuilder := NewGraphBuilder(s.config, chatModel)
-		err = graphBuilder.BuildGraph(ctx, textChunks)
-		if err != nil {
-			logger.GetLogger(ctx).WithField("error", err).Errorf("processChunks build graph failed")
-			span.RecordError(err)
-		} else {
-			for _, chunk := range textChunks {
-				chunk.RelationChunks, _ = json.Marshal(graphBuilder.GetRelationChunks(chunk.ID, relationChunkSize))
-				chunk.IndirectRelationChunks, _ = json.Marshal(graphBuilder.GetIndirectRelationChunks(chunk.ID, indirectRelationChunkSize))
-			}
-			for i, entity := range graphBuilder.GetAllEntities() {
-				relationChunks, _ := json.Marshal(entity.ChunkIDs)
-				entityChunk := &types.Chunk{
-					ID:              entity.ID,
-					TenantID:        knowledge.TenantID,
-					KnowledgeID:     knowledge.ID,
-					KnowledgeBaseID: knowledge.KnowledgeBaseID,
-					Content:         entity.Description,
-					ChunkIndex:      maxSeq + i*100 + 3,
-					IsEnabled:       true,
-					CreatedAt:       time.Now(),
-					UpdatedAt:       time.Now(),
-					ChunkType:       types.ChunkTypeEntity,
-					RelationChunks:  types.JSON(relationChunks),
-				}
-				insertChunks = append(insertChunks, entityChunk)
-			}
-			for i, relationship := range graphBuilder.GetAllRelationships() {
-				relationChunks, _ := json.Marshal(relationship.ChunkIDs)
-				relationshipChunk := &types.Chunk{
-					ID:              relationship.ID,
-					TenantID:        knowledge.TenantID,
-					KnowledgeID:     knowledge.ID,
-					KnowledgeBaseID: knowledge.KnowledgeBaseID,
-					Content:         relationship.Description,
-					ChunkIndex:      maxSeq + i*100 + 4,
-					IsEnabled:       true,
-					CreatedAt:       time.Now(),
-					UpdatedAt:       time.Now(),
-					ChunkType:       types.ChunkTypeRelationship,
-					RelationChunks:  types.JSON(relationChunks),
-				}
-				insertChunks = append(insertChunks, relationshipChunk)
-			}
-		}
-	}
 
 	span.AddEvent("extract summary")
 	summary, err := s.getSummary(ctx, chatModel, knowledge, textChunks)
@@ -1357,11 +1305,13 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	logger.GetLogger(ctx).Infof("processChunks batch index successfully, with %d index", len(indexInfoList))
 
 	logger.Infof(ctx, "processChunks create relationship rag task")
-	for _, chunk := range textChunks {
-		err := NewChunkExtractTask(ctx, s.task, chunk.TenantID, chunk.ID, kb.SummaryModelID)
-		if err != nil {
-			logger.GetLogger(ctx).WithField("error", err).Errorf("processChunks create chunk extract task failed")
-			span.RecordError(err)
+	if kb.ExtractConfig.Enabled {
+		for _, chunk := range textChunks {
+			err := NewChunkExtractTask(ctx, s.task, chunk.TenantID, chunk.ID, kb.SummaryModelID)
+			if err != nil {
+				logger.GetLogger(ctx).WithField("error", err).Errorf("processChunks create chunk extract task failed")
+				span.RecordError(err)
+			}
 		}
 	}
 

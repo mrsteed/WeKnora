@@ -188,6 +188,7 @@ func (c *VLMConfig) Scan(value interface{}) error {
 }
 
 type ExtractConfig struct {
+	Enabled   bool             `yaml:"enabled" json:"enabled"`
 	Text      string           `yaml:"text" json:"text"`
 	Tags      []string         `yaml:"tags" json:"tags"`
 	Nodes     []*GraphNode     `yaml:"nodes" json:"nodes"`
