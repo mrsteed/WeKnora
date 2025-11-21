@@ -821,7 +821,6 @@ const isAgentReady = computed(() => {
 })
 
 const buildAgentConfigPayload = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
-  enabled: isAgentReady.value,
   max_iterations: localMaxIterations.value,
   reflection_enabled: false,
   allowed_tools: localAllowedTools.value,

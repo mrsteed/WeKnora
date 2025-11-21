@@ -10,7 +10,6 @@ import (
 // AgentConfig represents the full agent configuration (used at tenant level and runtime)
 // This includes all configuration parameters for agent execution
 type AgentConfig struct {
-	Enabled                 bool     `json:"enabled"`                              // Whether agent mode is enabled
 	MaxIterations           int      `json:"max_iterations"`                       // Maximum number of ReAct iterations
 	ReflectionEnabled       bool     `json:"reflection_enabled"`                   // Whether to enable reflection
 	AllowedTools            []string `json:"allowed_tools"`                        // List of allowed tool names

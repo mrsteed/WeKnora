@@ -24,7 +24,6 @@ export interface PlaceholderDefinition {
 }
 
 export interface AgentConfig {
-  enabled: boolean
   max_iterations: number
   reflection_enabled: boolean
   allowed_tools: string[]

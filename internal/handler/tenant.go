@@ -233,7 +233,6 @@ func (h *TenantHandler) ListTenants(c *gin.Context) {
 
 // AgentConfigRequest represents the request body for updating agent configuration
 type AgentConfigRequest struct {
-	Enabled                 bool     `json:"enabled"`
 	MaxIterations           int      `json:"max_iterations"`
 	ReflectionEnabled       bool     `json:"reflection_enabled"`
 	AllowedTools            []string `json:"allowed_tools"`
@@ -311,7 +310,6 @@ func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"enabled":                    tenant.AgentConfig.Enabled,
 			"max_iterations":             tenant.AgentConfig.MaxIterations,
 			"reflection_enabled":         tenant.AgentConfig.ReflectionEnabled,
 			"allowed_tools":              tenant.AgentConfig.AllowedTools,
@@ -338,19 +336,13 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 	}
 
 	// Validate configuration
-	if req.Enabled {
-		if req.MaxIterations <= 0 || req.MaxIterations > 30 {
-			c.Error(errors.NewAgentInvalidMaxIterationsError())
-			return
-		}
-		if req.Temperature < 0 || req.Temperature > 2 {
-			c.Error(errors.NewAgentInvalidTemperatureError())
-			return
-		}
-		if len(req.AllowedTools) == 0 {
-			c.Error(errors.NewAgentMissingAllowedToolsError())
-			return
-		}
+	if req.MaxIterations <= 0 || req.MaxIterations > 30 {
+		c.Error(errors.NewAgentInvalidMaxIterationsError())
+		return
+	}
+	if req.Temperature < 0 || req.Temperature > 2 {
+		c.Error(errors.NewAgentInvalidTemperatureError())
+		return
 	}
 
 	// Get existing tenant
@@ -365,7 +357,6 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 	}
 
 	tenant.AgentConfig = &types.AgentConfig{
-		Enabled:                 req.Enabled,
 		MaxIterations:           req.MaxIterations,
 		ReflectionEnabled:       req.ReflectionEnabled,
 		AllowedTools:            req.AllowedTools,
