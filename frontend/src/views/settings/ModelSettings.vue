@@ -45,7 +45,6 @@
             <div class="model-name">
               {{ model.name }}
               <t-tag v-if="model.isBuiltin" theme="primary" size="small">内置</t-tag>
-              <t-tag v-if="model.isDefault" theme="success" size="small">{{ $t('common.default') }}</t-tag>
             </div>
             <div class="model-meta">
               <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.remote') }}</span>
@@ -95,7 +94,6 @@
             <div class="model-name">
               {{ model.name }}
               <t-tag v-if="model.isBuiltin" theme="primary" size="small">内置</t-tag>
-              <t-tag v-if="model.isDefault" theme="success" size="small">{{ $t('common.default') }}</t-tag>
             </div>
             <div class="model-meta">
               <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.remote') }}</span>
@@ -146,7 +144,6 @@
             <div class="model-name">
               {{ model.name }}
               <t-tag v-if="model.isBuiltin" theme="primary" size="small">内置</t-tag>
-              <t-tag v-if="model.isDefault" theme="success" size="small">{{ $t('common.default') }}</t-tag>
             </div>
             <div class="model-meta">
               <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.remote') }}</span>
@@ -196,7 +193,6 @@
             <div class="model-name">
               {{ model.name }}
               <t-tag v-if="model.isBuiltin" theme="primary" size="small">内置</t-tag>
-              <t-tag v-if="model.isDefault" theme="success" size="small">{{ $t('common.default') }}</t-tag>
             </div>
             <div class="model-meta">
               <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.openaiCompatible') }}</span>
@@ -295,7 +291,6 @@ function convertToLegacyFormat(model: ModelConfig) {
     baseUrl: model.parameters.base_url || '',
     apiKey: model.parameters.api_key || '',
     dimension: model.parameters.embedding_parameters?.dimension,
-    isDefault: model.is_default || false,
     isBuiltin: model.is_builtin || false
   }
 }
@@ -316,12 +311,6 @@ function deduplicateModels(models: any[]) {
     })
     
     if (seen.has(signature)) {
-      // 如果已经存在相同的模型，优先保留默认模型
-      const existing = seen.get(signature)
-      if (model.isDefault && !existing.isDefault) {
-        seen.set(signature, model)
-        return true
-      }
       return false
     }
     
@@ -417,8 +406,7 @@ const handleModelSave = async (modelData: any) => {
             truncate_prompt_tokens: 0
           }
         } : {})
-      },
-      is_default: modelData.isDefault || false
+      }
     }
 
     if (editingModel.value && editingModel.value.id) {
@@ -459,42 +447,13 @@ const deleteModel = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm', model
   }
 }
 
-// 设为默认
-const setDefault = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm', modelId: string) => {
-  try {
-    // 更新模型的 is_default 字段
-    await updateModelAPI(modelId, { is_default: true })
-    MessagePlugin.success(t('modelSettings.toasts.setDefault'))
-    // 重新加载模型列表
-    await loadModels()
-  } catch (error: any) {
-    console.error('设置默认模型失败:', error)
-    MessagePlugin.error(error.message || t('modelSettings.toasts.setDefaultFailed'))
-  }
-}
-
 // 获取模型操作菜单选项
 const getModelOptions = (type: 'chat' | 'embedding' | 'rerank' | 'vllm', model: any) => {
   const options: any[] = []
   
-  // 内置模型不能编辑和删除，只能设为默认
+  // 内置模型不能编辑和删除
   if (model.isBuiltin) {
-    // 如果不是默认模型，显示"设为默认"选项
-    if (!model.isDefault) {
-      options.push({
-        content: t('modelSettings.actions.setDefault'),
-        value: `set-default-${type}-${model.id}`
-      })
-    }
     return options
-  }
-  
-  // 如果不是默认模型，显示"设为默认"选项
-  if (!model.isDefault) {
-    options.push({
-      content: t('modelSettings.actions.setDefault'),
-      value: `set-default-${type}-${model.id}`
-    })
   }
   
   // 编辑选项
@@ -517,9 +476,7 @@ const getModelOptions = (type: 'chat' | 'embedding' | 'rerank' | 'vllm', model: 
 const handleMenuAction = (data: { value: string }, type: 'chat' | 'embedding' | 'rerank' | 'vllm', model: any) => {
   const value = data.value
   
-  if (value.indexOf('set-default-') === 0) {
-    setDefault(type, model.id)
-  } else if (value.indexOf('edit-') === 0) {
+  if (value.indexOf('edit-') === 0) {
     editModel(type, model)
   } else if (value.indexOf('delete-') === 0) {
     // 使用确认对话框进行确认

@@ -50,7 +50,6 @@ func hideSensitiveInfo(model *types.Model) *types.Model {
 			EmbeddingParameters: model.Parameters.EmbeddingParameters,
 			ParameterSize:       model.Parameters.ParameterSize,
 		},
-		IsDefault: model.IsDefault,
 		IsBuiltin: model.IsBuiltin,
 		Status:    model.Status,
 		CreatedAt: model.CreatedAt,
@@ -66,7 +65,6 @@ type CreateModelRequest struct {
 	Source      types.ModelSource     `json:"source" binding:"required"`
 	Description string                `json:"description"`
 	Parameters  types.ModelParameters `json:"parameters" binding:"required"`
-	IsDefault   bool                  `json:"is_default"`
 }
 
 // CreateModel handles the HTTP request to create a new model
@@ -103,7 +101,6 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 		Source:      req.Source,
 		Description: req.Description,
 		Parameters:  req.Parameters,
-		IsDefault:   req.IsDefault,
 	}
 
 	if err := h.service.CreateModel(ctx, model); err != nil {
@@ -214,7 +211,6 @@ type UpdateModelRequest struct {
 	Name        string                `json:"name"`
 	Description string                `json:"description"`
 	Parameters  types.ModelParameters `json:"parameters"`
-	IsDefault   bool                  `json:"is_default"`
 	Source      types.ModelSource     `json:"source"`
 	Type        types.ModelType       `json:"type"`
 }
@@ -264,7 +260,6 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 	if req.Parameters != (types.ModelParameters{}) {
 		model.Parameters = req.Parameters
 	}
-	model.IsDefault = req.IsDefault
 	model.Source = req.Source
 	model.Type = req.Type
 

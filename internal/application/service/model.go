@@ -36,18 +36,6 @@ func NewModelService(repo interfaces.ModelRepository, ollamaService *ollama.Olla
 func (s *modelService) CreateModel(ctx context.Context, model *types.Model) error {
 	logger.Infof(ctx, "Creating model: %s, type: %s, source: %s", model.Name, model.Type, model.Source)
 
-	// If this model is set as default, unset other default models of the same type
-	if model.IsDefault {
-		logger.Infof(ctx, "Model is set as default, clearing other default models of type: %s", model.Type)
-		if err := s.clearOtherDefaultModels(ctx, model.TenantID, model.Type, ""); err != nil {
-			logger.ErrorWithFields(ctx, err, map[string]interface{}{
-				"model_type": model.Type,
-				"tenant_id":  model.TenantID,
-			})
-			return err
-		}
-	}
-
 	// Handle remote models (e.g., OpenAI, Azure)
 	if model.Source == types.ModelSourceRemote {
 		logger.Info(ctx, "Remote model detected, setting status to active")
@@ -190,19 +178,6 @@ func (s *modelService) UpdateModel(ctx context.Context, model *types.Model) erro
 	if existingModel != nil && existingModel.IsBuiltin {
 		logger.Warnf(ctx, "Attempted to update builtin model: %s", model.ID)
 		return errors.New("builtin models cannot be updated")
-	}
-
-	// If this model is set as default, unset other default models of the same type
-	if model.IsDefault {
-		logger.Infof(ctx, "Model is set as default, clearing other default models of type: %s", model.Type)
-		if err := s.clearOtherDefaultModels(ctx, model.TenantID, model.Type, model.ID); err != nil {
-			logger.ErrorWithFields(ctx, err, map[string]interface{}{
-				"model_type": model.Type,
-				"tenant_id":  model.TenantID,
-				"model_id":   model.ID,
-			})
-			return err
-		}
 	}
 
 	// Update model in repository
@@ -371,24 +346,5 @@ func (s *modelService) GetChatModel(ctx context.Context, modelId string) (chat.C
 	return chatModel, nil
 }
 
-// clearOtherDefaultModels sets IsDefault to false for all models of the same type
-// except the one with the given ID (if excludeID is not empty)
-// This ensures only one default model exists per type per tenant
-// Uses batch update for better performance
-func (s *modelService) clearOtherDefaultModels(ctx context.Context, tenantID uint, modelType types.ModelType, excludeID string) error {
-	logger.Infof(ctx, "Clearing other default models for type: %s, tenant: %d, exclude: %s", modelType, tenantID, excludeID)
-
-	// Use batch update to clear default status for all models of this type (excluding the specified ID)
-	err := s.repo.ClearDefaultByType(ctx, tenantID, modelType, excludeID)
-	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{
-			"model_type": modelType,
-			"tenant_id":  tenantID,
-			"exclude_id": excludeID,
-		})
-		return err
-	}
-
-	logger.Infof(ctx, "Successfully cleared other default models for type: %s", modelType)
-	return nil
-}
+// Note: default model selection logic has been removed; models no longer
+// maintain a per-type default flag at the service layer.

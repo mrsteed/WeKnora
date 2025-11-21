@@ -279,23 +279,18 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 	modelID := session.SummaryModelID
 	if modelID == "" {
 		logger.Info(ctx, "Session SummaryModelID is empty, trying to get default chat model")
-		// Try to get default KnowledgeQA model
+		// Try to get an available KnowledgeQA model
 		models, err := s.modelService.ListModels(ctx)
 		if err != nil {
 			logger.ErrorWithFields(ctx, err, nil)
 			return "", fmt.Errorf("failed to list models: %w", err)
 		}
-		// Find default KnowledgeQA model or first KnowledgeQA model
+		// Find first available KnowledgeQA model
 		for _, model := range models {
 			if model.Type == types.ModelTypeKnowledgeQA {
-				if model.IsDefault {
-					modelID = model.ID
-					logger.Infof(ctx, "Using default KnowledgeQA model: %s", modelID)
-					break
-				} else if modelID == "" {
-					modelID = model.ID
-					logger.Infof(ctx, "Using first available KnowledgeQA model: %s", modelID)
-				}
+				modelID = model.ID
+				logger.Infof(ctx, "Using first available KnowledgeQA model: %s", modelID)
+				break
 			}
 		}
 		if modelID == "" {
