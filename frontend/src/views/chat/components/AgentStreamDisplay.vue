@@ -117,6 +117,11 @@
             <div class="results-summary-text" v-html="t('agent.webSearchFound', { count: getResultsCount(event.tool_data) })"></div>
           </div>
           
+          <!-- Grep Results Summary (Fixed, always visible, outside action-details) -->
+          <div v-if="!event.pending && event.tool_name === 'grep_chunks' && event.tool_data" class="search-results-summary-fixed grep-summary">
+            <div class="results-summary-text" v-html="getGrepResultsSummary(event.tool_data)"></div>
+          </div>
+          
           <div v-if="isEventExpanded(event.tool_call_id) && !event.pending" class="action-details">
             <!-- Thinking tool: only render markdown thought content -->
             <template v-if="event.tool_name === 'thinking' && event.tool_data?.thought">
@@ -223,6 +228,7 @@ const { t } = useI18n();
 const TOOL_NAME_I18N: Record<string, string> = {
   search_knowledge: '知识库检索',
   knowledge_search: '知识库检索',
+  grep_chunks: '文本模式搜索',
   web_search: '网络搜索',
   web_fetch: '网页抓取',
   get_document_info: '获取文档信息',
@@ -1195,6 +1201,8 @@ const getToolIcon = (toolName: string): string => {
     return thinkingIcon;
   } else if (toolName === 'search_knowledge' || toolName === 'knowledge_search') {
     return knowledgeIcon;
+  } else if (toolName === 'grep_chunks') {
+    return knowledgeIcon; // Use same icon as knowledge_search for consistency
   } else if (toolName === 'web_search') {
     return webSearchGlobeGreenIcon;
   } else if (toolName === 'get_document_info' || toolName === 'list_knowledge_chunks') {
@@ -1234,6 +1242,26 @@ const getWebSearchResultsSummary = (toolData: any): string => {
 const getResultsCount = (toolData: any): number => {
   if (!toolData) return 0;
   return toolData.results?.length || toolData.count || 0;
+};
+
+// Get grep results summary text (returns HTML with colored numbers)
+const getGrepResultsSummary = (toolData: any): string => {
+  if (!toolData) return '';
+  
+  const pattern = toolData.pattern || '';
+  const totalMatches = toolData.total_matches || 0;
+  const resultCount = toolData.result_count || 0;
+  
+  if (totalMatches === 0) {
+    return `未找到匹配 <code>${pattern}</code> 的内容`;
+  }
+  
+  let summary = `找到 <strong>${totalMatches}</strong> 处匹配`;
+  if (totalMatches > resultCount) {
+    summary += `（显示 <strong>${resultCount}</strong> 个）`;
+  }
+  
+  return summary;
 };
 
 // Extract and format query parameters from args

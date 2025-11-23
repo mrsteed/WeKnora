@@ -312,7 +312,7 @@ func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 		"data": gin.H{
 			"max_iterations":             tenant.AgentConfig.MaxIterations,
 			"reflection_enabled":         tenant.AgentConfig.ReflectionEnabled,
-			"allowed_tools":              tenant.AgentConfig.AllowedTools,
+			"allowed_tools":              agenttools.DefaultAllowedTools(),
 			"temperature":                tenant.AgentConfig.Temperature,
 			"system_prompt_web_enabled":  systemPromptWithWeb,
 			"system_prompt_web_disabled": systemPromptWithoutWeb,
@@ -359,7 +359,7 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 	tenant.AgentConfig = &types.AgentConfig{
 		MaxIterations:           req.MaxIterations,
 		ReflectionEnabled:       req.ReflectionEnabled,
-		AllowedTools:            req.AllowedTools,
+		AllowedTools:            agenttools.DefaultAllowedTools(),
 		Temperature:             req.Temperature,
 		SystemPromptWebEnabled:  req.SystemPromptWebEnabled,
 		SystemPromptWebDisabled: req.SystemPromptWebDisabled,

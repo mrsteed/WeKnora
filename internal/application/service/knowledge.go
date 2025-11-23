@@ -117,10 +117,18 @@ func (s *knowledgeService) GetRepository() interfaces.KnowledgeRepository {
 
 // CreateKnowledgeFromFile creates a knowledge entry from an uploaded file
 func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
-	kbID string, file *multipart.FileHeader, metadata map[string]string, enableMultimodel *bool,
+	kbID string, file *multipart.FileHeader, metadata map[string]string, enableMultimodel *bool, customFileName string,
 ) (*types.Knowledge, error) {
 	logger.Info(ctx, "Start creating knowledge from file")
-	logger.Infof(ctx, "Knowledge base ID: %s, file: %s", kbID, file.Filename)
+	
+	// Use custom filename if provided, otherwise use original filename
+	fileName := file.Filename
+	if customFileName != "" {
+		fileName = customFileName
+		logger.Infof(ctx, "Using custom filename: %s (original: %s)", customFileName, file.Filename)
+	}
+	
+	logger.Infof(ctx, "Knowledge base ID: %s, file: %s", kbID, fileName)
 	if metadata != nil {
 		logger.Infof(ctx, "Received metadata: %v", metadata)
 	}
@@ -135,7 +143,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 
 	// 检查多模态配置完整性 - 只在图片文件时校验
 	// 检查是否为图片文件
-	if !IsImageType(getFileType(file.Filename)) {
+	if !IsImageType(getFileType(fileName)) {
 		logger.Info(ctx, "Non-image file with multimodal enabled, skipping COS/VLM validation")
 	} else {
 		// 检查COS配置
@@ -164,8 +172,8 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	}
 
 	// Validate file type
-	logger.Infof(ctx, "Checking file type: %s", file.Filename)
-	if !isValidFileType(file.Filename) {
+	logger.Infof(ctx, "Checking file type: %s", fileName)
+	if !isValidFileType(fileName) {
 		logger.Error(ctx, "Invalid file type")
 		return nil, ErrInvalidFileType
 	}
@@ -183,7 +191,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	logger.Infof(ctx, "Checking if file exists, tenant ID: %d", tenantID)
 	exists, existingKnowledge, err := s.repo.CheckKnowledgeExists(ctx, tenantID, kbID, &types.KnowledgeCheckParams{
 		Type:     "file",
-		FileName: file.Filename,
+		FileName: fileName,
 		FileSize: file.Size,
 		FileHash: hash,
 	})
@@ -192,7 +200,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 		return nil, err
 	}
 	if exists {
-		logger.Infof(ctx, "File already exists: %s", file.Filename)
+		logger.Infof(ctx, "File already exists: %s", fileName)
 		// Update creation time for existing knowledge
 		if err := s.repo.UpdateKnowledgeColumn(ctx, existingKnowledge.ID, "created_at", time.Now()); err != nil {
 			logger.Errorf(ctx, "Failed to update existing knowledge: %v", err)
@@ -220,9 +228,9 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	}
 
 	// 验证文件名安全性
-	safeFilename, isValid := secutils.ValidateInput(file.Filename)
+	safeFilename, isValid := secutils.ValidateInput(fileName)
 	if !isValid {
-		logger.Errorf(ctx, "Invalid filename: %s", file.Filename)
+		logger.Errorf(ctx, "Invalid filename: %s", fileName)
 		return nil, werrors.NewValidationError("文件名包含非法字符")
 	}
 
@@ -1305,7 +1313,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	logger.GetLogger(ctx).Infof("processChunks batch index successfully, with %d index", len(indexInfoList))
 
 	logger.Infof(ctx, "processChunks create relationship rag task")
-	if kb.ExtractConfig.Enabled {
+	if kb.ExtractConfig != nil && kb.ExtractConfig.Enabled {
 		for _, chunk := range textChunks {
 			err := NewChunkExtractTask(ctx, s.task, chunk.TenantID, chunk.ID, kb.SummaryModelID)
 			if err != nil {

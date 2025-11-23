@@ -27,6 +27,9 @@ type knowledgeBaseService struct {
 	chunkRepo      interfaces.ChunkRepository
 	modelService   interfaces.ModelService
 	retrieveEngine interfaces.RetrieveEngineRegistry
+	tenantRepo     interfaces.TenantRepository
+	fileSvc        interfaces.FileService
+	graphEngine    interfaces.RetrieveGraphRepository
 }
 
 // NewKnowledgeBaseService creates a new knowledge base service
@@ -35,6 +38,9 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 	chunkRepo interfaces.ChunkRepository,
 	modelService interfaces.ModelService,
 	retrieveEngine interfaces.RetrieveEngineRegistry,
+	tenantRepo interfaces.TenantRepository,
+	fileSvc interfaces.FileService,
+	graphEngine interfaces.RetrieveGraphRepository,
 ) interfaces.KnowledgeBaseService {
 	return &knowledgeBaseService{
 		repo:           repo,
@@ -42,6 +48,9 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 		chunkRepo:      chunkRepo,
 		modelService:   modelService,
 		retrieveEngine: retrieveEngine,
+		tenantRepo:     tenantRepo,
+		fileSvc:        fileSvc,
+		graphEngine:    graphEngine,
 	}
 }
 
@@ -210,7 +219,107 @@ func (s *knowledgeBaseService) DeleteKnowledgeBase(ctx context.Context, id strin
 
 	logger.Infof(ctx, "Deleting knowledge base, ID: %s", id)
 
-	err := s.repo.DeleteKnowledgeBase(ctx, id)
+	// Get tenant ID from context
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+
+	// Step 1: Get all knowledge entries in this knowledge base
+	logger.Infof(ctx, "Fetching all knowledge entries in knowledge base, ID: %s", id)
+	knowledgeList, err := s.kgRepo.ListKnowledgeByKnowledgeBaseID(ctx, tenantID, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"knowledge_base_id": id,
+		})
+		return err
+	}
+	logger.Infof(ctx, "Found %d knowledge entries to delete", len(knowledgeList))
+
+	// Step 2: Delete all knowledge entries and their resources
+	if len(knowledgeList) > 0 {
+		knowledgeIDs := make([]string, 0, len(knowledgeList))
+		for _, knowledge := range knowledgeList {
+			knowledgeIDs = append(knowledgeIDs, knowledge.ID)
+		}
+
+		logger.Infof(ctx, "Deleting all knowledge entries and their resources")
+		
+		// Delete embeddings from vector store
+		logger.Infof(ctx, "Deleting embeddings from vector store")
+		tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to create retrieve engine: %v", err)
+		} else {
+			// Group knowledge by embedding model
+			embeddingGroups := make(map[string][]string)
+			for _, knowledge := range knowledgeList {
+				embeddingGroups[knowledge.EmbeddingModelID] = append(embeddingGroups[knowledge.EmbeddingModelID], knowledge.ID)
+			}
+
+			for embeddingModelID, knowledgeGroup := range embeddingGroups {
+				embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, embeddingModelID)
+				if err != nil {
+					logger.Warnf(ctx, "Failed to get embedding model %s: %v", embeddingModelID, err)
+					continue
+				}
+				if err := retrieveEngine.DeleteByKnowledgeIDList(ctx, knowledgeGroup, embeddingModel.GetDimensions()); err != nil {
+					logger.Warnf(ctx, "Failed to delete embeddings for model %s: %v", embeddingModelID, err)
+				}
+			}
+		}
+
+		// Delete all chunks
+		logger.Infof(ctx, "Deleting all chunks in knowledge base")
+		for _, knowledgeID := range knowledgeIDs {
+			if err := s.chunkRepo.DeleteChunksByKnowledgeID(ctx, tenantID, knowledgeID); err != nil {
+				logger.Warnf(ctx, "Failed to delete chunks for knowledge %s: %v", knowledgeID, err)
+			}
+		}
+
+		// Delete physical files and adjust storage
+		logger.Infof(ctx, "Deleting physical files")
+		storageAdjust := int64(0)
+		for _, knowledge := range knowledgeList {
+			if knowledge.FilePath != "" {
+				if err := s.fileSvc.DeleteFile(ctx, knowledge.FilePath); err != nil {
+					logger.Warnf(ctx, "Failed to delete file %s: %v", knowledge.FilePath, err)
+				}
+			}
+			storageAdjust -= knowledge.StorageSize
+		}
+		if storageAdjust != 0 {
+			if err := s.tenantRepo.AdjustStorageUsed(ctx, tenantID, storageAdjust); err != nil {
+				logger.Warnf(ctx, "Failed to adjust tenant storage: %v", err)
+			}
+		}
+
+		// Delete knowledge graph data
+		logger.Infof(ctx, "Deleting knowledge graph data")
+		namespaces := make([]types.NameSpace, 0, len(knowledgeList))
+		for _, knowledge := range knowledgeList {
+			namespaces = append(namespaces, types.NameSpace{
+				KnowledgeBase: knowledge.KnowledgeBaseID,
+				Knowledge:     knowledge.ID,
+			})
+		}
+		if s.graphEngine != nil && len(namespaces) > 0 {
+			if err := s.graphEngine.DelGraph(ctx, namespaces); err != nil {
+				logger.Warnf(ctx, "Failed to delete knowledge graph: %v", err)
+			}
+		}
+
+		// Delete all knowledge entries from database
+		logger.Infof(ctx, "Deleting knowledge entries from database")
+		if err := s.kgRepo.DeleteKnowledgeList(ctx, tenantID, knowledgeIDs); err != nil {
+			logger.ErrorWithFields(ctx, err, map[string]interface{}{
+				"knowledge_base_id": id,
+			})
+			return err
+		}
+	}
+
+	// Step 3: Delete the knowledge base itself
+	logger.Infof(ctx, "Deleting knowledge base from database")
+	err = s.repo.DeleteKnowledgeBase(ctx, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"knowledge_base_id": id,

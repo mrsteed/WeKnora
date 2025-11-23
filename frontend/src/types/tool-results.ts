@@ -18,7 +18,8 @@ export type DisplayType =
     | 'plan'
     | 'database_query'
     | 'web_search_results'
-    | 'web_fetch_results';
+    | 'web_fetch_results'
+    | 'grep_results';
 
 // Search result item
 export interface SearchResultItem {
@@ -192,6 +193,31 @@ export interface WebFetchResultsData {
     count?: number;
 }
 
+// Grep chunk result item
+export interface GrepChunkItem {
+    id: string;
+    content: string;
+    chunk_index: number;
+    knowledge_id: string;
+    knowledge_base_id: string;
+    chunk_type?: string;
+    knowledge_title?: string;
+}
+
+// Grep results data
+export interface GrepResultsData {
+    display_type: 'grep_results';
+    pattern: string;
+    case_sensitive: boolean;
+    use_regex: boolean;
+    results: GrepChunkItem[];
+    result_count: number;
+    total_matches: number;
+    knowledge_base_ids?: string[];
+    knowledge_ids?: string[];
+    limit: number;
+}
+
 // Union type for all tool result data
 export type ToolResultData =
     | SearchResultsData
@@ -204,7 +230,8 @@ export type ToolResultData =
     | PlanData
     | DatabaseQueryData
     | WebSearchResultsData
-    | WebFetchResultsData;
+    | WebFetchResultsData
+    | GrepResultsData;
 
 // Action data (from index.vue)
 export interface ActionData {

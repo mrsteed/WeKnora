@@ -879,7 +879,7 @@ func (s *sessionService) AgentQA(ctx context.Context, session *types.Session, qu
 	agentConfig := &types.AgentConfig{
 		MaxIterations:     tenantInfo.AgentConfig.MaxIterations,
 		ReflectionEnabled: tenantInfo.AgentConfig.ReflectionEnabled,
-		AllowedTools:      tenantInfo.AgentConfig.AllowedTools,
+		AllowedTools:      tools.DefaultAllowedTools(),
 		Temperature:       tenantInfo.AgentConfig.Temperature,
 		KnowledgeBases:    session.AgentConfig.KnowledgeBases,   // Use session's knowledge bases
 		WebSearchEnabled:  session.AgentConfig.WebSearchEnabled, // Web search enabled from session config

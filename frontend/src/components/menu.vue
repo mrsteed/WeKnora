@@ -758,13 +758,39 @@ const handleDocFolderChange = async (event: Event) => {
         return
     }
 
+    // 检查是否启用了VLM
+    const vlmEnabled = currentKbInfo.value?.vlm_config?.enabled || false
+
     // 过滤有效文件（文件夹上传始终使用静默模式）
     const validFiles: File[] = []
     let invalidCount = 0
+    let hiddenFileCount = 0
+    let imageFilteredCount = 0
 
     for (let i = 0; i < files.length; i++) {
         const file = files[i]
-        // 文件夹上传时始终静默过滤
+        const relativePath = (file as any).webkitRelativePath || file.name
+        
+        // 1. 过滤隐藏文件和隐藏文件夹
+        // 检查路径中是否包含以 . 开头的文件或文件夹
+        const pathParts = relativePath.split('/')
+        const hasHiddenComponent = pathParts.some((part: string) => part.startsWith('.'))
+        if (hasHiddenComponent) {
+            hiddenFileCount++
+            continue
+        }
+        
+        // 2. 如果未启用VLM，过滤图片文件
+        if (!vlmEnabled) {
+            const fileExt = file.name.substring(file.name.lastIndexOf('.') + 1).toLowerCase()
+            const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']
+            if (imageTypes.includes(fileExt)) {
+                imageFilteredCount++
+                continue
+            }
+        }
+        
+        // 3. 文件类型验证（文件夹上传时始终静默过滤）
         if (kbFileTypeVerification(file, true)) {
             invalidCount++
         } else {
@@ -774,8 +800,19 @@ const handleDocFolderChange = async (event: Event) => {
 
     // 如果没有有效文件，直接返回
     if (validFiles.length === 0) {
-        if (invalidCount > 0) {
-            MessagePlugin.error(t('knowledgeBase.noValidFilesInFolder', { total: files.length }))
+        const totalFiltered = invalidCount + hiddenFileCount + imageFilteredCount
+        if (totalFiltered > 0) {
+            let filterReasons = []
+            if (hiddenFileCount > 0) {
+                filterReasons.push(t('knowledgeBase.hiddenFilesFiltered', { count: hiddenFileCount }))
+            }
+            if (imageFilteredCount > 0) {
+                filterReasons.push(t('knowledgeBase.imagesFilteredNoVLM', { count: imageFilteredCount }))
+            }
+            if (invalidCount > 0) {
+                filterReasons.push(t('knowledgeBase.invalidFilesFiltered', { count: invalidCount }))
+            }
+            MessagePlugin.warning(t('knowledgeBase.noValidFilesInFolder', { total: files.length }) + '\n' + filterReasons.join('\n'))
         } else {
             MessagePlugin.error(t('knowledgeBase.noValidFiles'))
         }
@@ -785,11 +822,24 @@ const handleDocFolderChange = async (event: Event) => {
 
     // 显示过滤后的上传提示
     const totalCount = validFiles.length
-    if (invalidCount > 0) {
-        MessagePlugin.info(t('knowledgeBase.uploadingValidFiles', {
-            valid: totalCount,
-            total: files.length
-        }))
+    const totalFiltered = invalidCount + hiddenFileCount + imageFilteredCount
+    if (totalFiltered > 0) {
+        let filterInfo = []
+        if (hiddenFileCount > 0) {
+            filterInfo.push(t('knowledgeBase.hiddenFilesFiltered', { count: hiddenFileCount }))
+        }
+        if (imageFilteredCount > 0) {
+            filterInfo.push(t('knowledgeBase.imagesFilteredNoVLM', { count: imageFilteredCount }))
+        }
+        if (invalidCount > 0) {
+            filterInfo.push(t('knowledgeBase.invalidFilesFiltered', { count: invalidCount }))
+        }
+        MessagePlugin.info(
+            t('knowledgeBase.uploadingValidFiles', {
+                valid: totalCount,
+                total: files.length
+            }) + '\n' + filterInfo.join(', ')
+        )
     } else {
         MessagePlugin.info(t('knowledgeBase.uploadingFolder', { total: totalCount }))
     }
@@ -801,7 +851,23 @@ const handleDocFolderChange = async (event: Event) => {
 
     for (const file of validFiles) {
         try {
-            await uploadKnowledgeFile(kbId, { file })
+            // 获取文件的相对路径(webkitRelativePath)
+            const relativePath = (file as any).webkitRelativePath
+            let fileName = file.name
+            
+            // 如果存在相对路径，提取子文件夹路径并拼接到文件名前
+            if (relativePath) {
+                // webkitRelativePath 格式: "文件夹名/子文件夹/文件名.ext"
+                // 我们需要去掉第一层文件夹名，保留子路径
+                const pathParts = relativePath.split('/')
+                if (pathParts.length > 2) {
+                    // 有子文件夹，拼接子路径到文件名
+                    const subPath = pathParts.slice(1, -1).join('/') // 去掉顶层文件夹和文件名本身
+                    fileName = `${subPath}/${file.name}`
+                }
+            }
+            
+            await uploadKnowledgeFile(kbId, { file, fileName })
             successCount++
         } catch (error: any) {
             failCount++

@@ -17,6 +17,7 @@ type KnowledgeService interface {
 		file *multipart.FileHeader,
 		metadata map[string]string,
 		enableMultimodel *bool,
+		customFileName string,
 	) (*types.Knowledge, error)
 	// CreateKnowledgeFromURL creates knowledge from a URL.
 	CreateKnowledgeFromURL(ctx context.Context, kbID string, url string, enableMultimodel *bool) (*types.Knowledge, error)
