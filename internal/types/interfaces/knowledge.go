@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/hibiken/asynq"
 )
 
 // KnowledgeService defines the interface for knowledge services.
@@ -73,6 +74,10 @@ type KnowledgeService interface {
 	UpdateFAQEntryTagBatch(ctx context.Context, kbID string, updates map[string]*string) error
 	// GetRepository gets the knowledge repository
 	GetRepository() KnowledgeRepository
+	// ProcessDocument handles Asynq document processing tasks
+	ProcessDocument(ctx context.Context, t *asynq.Task) error
+	// ProcessFAQImport handles Asynq FAQ import tasks
+	ProcessFAQImport(ctx context.Context, t *asynq.Task) error
 }
 
 // KnowledgeRepository defines the interface for knowledge repositories.

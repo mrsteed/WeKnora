@@ -171,3 +171,22 @@ func (r *chunkRepository) CountChunksByKnowledgeBaseID(ctx context.Context, tena
 		Count(&count).Error
 	return count, err
 }
+
+func (r *chunkRepository) DeleteChunksByChunkIndexRange(ctx context.Context, tenantID uint, knowledgeID string, startChunkIndex int, endChunkIndex int) ([]*types.Chunk, error) {
+	var chunks []*types.Chunk
+	// 先查询要删除的chunks
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND knowledge_id = ? AND chunk_index >= ? AND chunk_index <= ? AND deleted_at IS NULL", tenantID, knowledgeID, startChunkIndex, endChunkIndex).
+		Find(&chunks).Error; err != nil {
+		return nil, err
+	}
+	// 然后删除它们
+	if len(chunks) > 0 {
+		if err := r.db.WithContext(ctx).
+			Where("tenant_id = ? AND knowledge_id = ? AND chunk_index >= ? AND chunk_index <= ? AND deleted_at IS NULL", tenantID, knowledgeID, startChunkIndex, endChunkIndex).
+			Delete(&types.Chunk{}).Error; err != nil {
+			return nil, err
+		}
+	}
+	return chunks, nil
+}

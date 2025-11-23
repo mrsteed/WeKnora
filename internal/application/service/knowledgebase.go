@@ -454,6 +454,8 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 		return nil, err
 	}
 
+	matchCount := params.MatchCount * 3
+
 	// Add vector retrieval params if supported
 	if retrieveEngine.SupportRetriever(types.VectorRetrieverType) && !params.DisableVectorMatch {
 		logger.Info(ctx, "Vector retrieval supported, preparing vector retrieval parameters")
@@ -479,7 +481,7 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 			Query:            params.QueryText,
 			Embedding:        queryEmbedding,
 			KnowledgeBaseIDs: []string{id},
-			TopK:             params.MatchCount,
+			TopK:             matchCount,
 			Threshold:        params.VectorThreshold,
 			RetrieverType:    types.VectorRetrieverType,
 		})
@@ -492,7 +494,7 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 		retrieveParams = append(retrieveParams, types.RetrieveParams{
 			Query:            params.QueryText,
 			KnowledgeBaseIDs: []string{id},
-			TopK:             params.MatchCount,
+			TopK:             matchCount,
 			Threshold:        params.KeywordThreshold,
 			RetrieverType:    types.KeywordsRetrieverType,
 		})
@@ -543,7 +545,7 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 	// Check if we need iterative retrieval for FAQ with separate indexing
 	// Only use iterative retrieval if we don't have enough unique chunks after first deduplication
 	needsIterativeRetrieval := len(deduplicatedChunks) < params.MatchCount &&
-		kb.Type == types.KnowledgeBaseTypeFAQ && len(matchResults) >= params.MatchCount
+		kb.Type == types.KnowledgeBaseTypeFAQ && len(matchResults) == matchCount
 	if needsIterativeRetrieval {
 		logger.Infof(ctx, "Not enough unique chunks (%d < %d), using iterative retrieval for FAQ",
 			len(deduplicatedChunks), params.MatchCount)

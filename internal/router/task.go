@@ -14,8 +14,9 @@ import (
 type AsynqTaskParams struct {
 	dig.In
 
-	Server    *asynq.Server
-	Extracter interfaces.Extracter
+	Server           *asynq.Server
+	Extracter        interfaces.Extracter
+	KnowledgeService interfaces.KnowledgeService
 }
 
 func getAsynqRedisClientOpt() *asynq.RedisClientOpt {
@@ -59,6 +60,12 @@ func RunAsynqServer(params AsynqTaskParams) *asynq.ServeMux {
 	mux := asynq.NewServeMux()
 
 	mux.HandleFunc(types.TypeChunkExtract, params.Extracter.Extract)
+
+	// Register document processing handler
+	mux.HandleFunc(types.TypeDocumentProcess, params.KnowledgeService.ProcessDocument)
+
+	// Register FAQ import handler
+	mux.HandleFunc(types.TypeFAQImport, params.KnowledgeService.ProcessFAQImport)
 
 	go func() {
 		// Start the server

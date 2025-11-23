@@ -114,10 +114,10 @@ type FAQSearchRequest struct {
 type FAQImportTaskStatus string
 
 const (
-	FAQImportStatusPending FAQImportTaskStatus = "pending"
-	FAQImportStatusRunning FAQImportTaskStatus = "running"
-	FAQImportStatusSuccess FAQImportTaskStatus = "success"
-	FAQImportStatusFailed  FAQImportTaskStatus = "failed"
+	FAQImportStatusPending    FAQImportTaskStatus = "pending"
+	FAQImportStatusProcessing FAQImportTaskStatus = "processing"
+	FAQImportStatusCompleted  FAQImportTaskStatus = "completed"
+	FAQImportStatusFailed     FAQImportTaskStatus = "failed"
 )
 
 // FAQImportMetadata 存储在Knowledge.Metadata中的FAQ导入任务信息
@@ -125,6 +125,7 @@ type FAQImportMetadata struct {
 	ImportProgress  int `json:"import_progress"` // 0-100
 	ImportTotal     int `json:"import_total"`
 	ImportProcessed int `json:"import_processed"`
+	NextChunkIndex  int `json:"next_chunk_index,omitempty"` // 下一个要分配的ChunkIndex（自增计数器）
 }
 
 // ToJSON converts the metadata to JSON type.

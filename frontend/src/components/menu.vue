@@ -716,38 +716,74 @@ const handleDocFileChange = async (event: Event) => {
     const totalCount = validFiles.length
     const failedFiles: Array<{ name: string; reason: string }> = []
 
-    // 显示上传提示
-    if (totalCount > 1) {
-        if (invalidCount > 0) {
-            MessagePlugin.info(t('knowledgeBase.uploadingValidFiles', {
-                valid: totalCount,
-                total: files.length
-            }))
-        } else {
-            MessagePlugin.info(t('knowledgeBase.uploadingMultiple', { total: totalCount }))
-        }
-    }
+    // 为每个文件创建上传任务并发送事件通知
+    const uploadPromises = validFiles.map(async (file) => {
+        const uploadId = `${file.name}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        let progress = 0
+        let status: 'uploading' | 'success' | 'error' = 'uploading'
+        let error: string | undefined
 
-    for (const file of validFiles) {
+        // 发送开始上传事件
+        window.dispatchEvent(new CustomEvent('knowledgeFileUploadStart', {
+            detail: { 
+                kbId, 
+                uploadId, 
+                fileName: file.name,
+                file
+            }
+        }))
+
         try {
-            await uploadKnowledgeFile(kbId, { file })
+            await uploadKnowledgeFile(
+                kbId, 
+                { file },
+                (progressEvent: any) => {
+                    if (progressEvent.total) {
+                        progress = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+                        // 发送进度更新事件
+                        window.dispatchEvent(new CustomEvent('knowledgeFileUploadProgress', {
+                            detail: { 
+                                kbId, 
+                                uploadId, 
+                                progress 
+                            }
+                        }))
+                    }
+                }
+            )
             successCount++
+            status = 'success'
+            progress = 100
         } catch (error: any) {
             failCount++
             let errorReason = error?.error?.message || error?.message || t('knowledgeBase.uploadFailed')
             if (error?.code === 'duplicate_file' || error?.error?.code === 'duplicate_file') {
                 errorReason = t('knowledgeBase.fileExists')
             }
+            status = 'error'
+            error = errorReason
+            failedFiles.push({ name: file.name, reason: errorReason })
 
             // 只在单文件上传时显示详细错误
             if (totalCount === 1) {
                 MessagePlugin.error(errorReason)
-            } else {
-                // 多文件上传时记录失败信息
-                failedFiles.push({ name: file.name, reason: errorReason })
             }
+        } finally {
+            // 发送上传完成事件
+            window.dispatchEvent(new CustomEvent('knowledgeFileUploadComplete', {
+                detail: { 
+                    kbId, 
+                    uploadId, 
+                    status,
+                    progress,
+                    error
+                }
+            }))
         }
-    }
+    })
+
+    // 等待所有上传完成
+    await Promise.allSettled(uploadPromises)
 
     // 显示上传结果
     if (successCount > 0) {

@@ -46,14 +46,6 @@ let knowledgeScroll = ref()
 let page = 1;
 let pageSize = 35;
 
-// 文档处理进度条状态
-const documentProcessingState = reactive({
-  processingIds: [] as string[],
-  total: 0,
-  completed: 0,
-  failed: 0,
-  pollingInterval: null as ReturnType<typeof setInterval> | null,
-})
 const selectedTagId = ref<string>("");
 const tagList = ref<any[]>([]);
 const tagLoading = ref(false);
@@ -405,17 +397,9 @@ const handleFileUploaded = (event: CustomEvent) => {
     // 如果上传的文件属于当前知识库，使用 loadKnowledgeFiles 刷新文件列表
     loadKnowledgeFiles(uploadedKbId);
     loadTags(uploadedKbId);
-    // 延迟一下，等待文件列表加载完成后再检查处理状态
-    setTimeout(() => {
-      const processingList = cardList.value.filter(item => 
-        item.parse_status === 'pending' || item.parse_status === 'processing'
-      )
-      if (processingList.length > 0) {
-        updateDocumentProcessingState(processingList)
-      }
-    }, 500)
   }
 };
+
 
 // 监听从菜单触发的URL导入事件
 const handleOpenURLImportDialog = (event: CustomEvent) => {
@@ -434,17 +418,11 @@ onMounted(() => {
   window.addEventListener('knowledgeFileUploaded', handleFileUploaded as EventListener);
   // 监听URL导入对话框打开事件
   window.addEventListener('openURLImportDialog', handleOpenURLImportDialog as EventListener);
-  
-  // 恢复文档处理状态
-  if (!isFAQ.value) {
-    restoreDocumentProcessingState()
-  }
 });
 
 onUnmounted(() => {
   window.removeEventListener('knowledgeFileUploaded', handleFileUploaded as EventListener);
   window.removeEventListener('openURLImportDialog', handleOpenURLImportDialog as EventListener);
-  stopDocumentProcessingPolling()
 });
 watch(() => cardList.value, (newValue) => {
   if (isFAQ.value) return;
@@ -460,8 +438,6 @@ watch(() => cardList.value, (newValue) => {
     updateStatus(analyzeList)
   }
   
-  // 更新文档处理进度条状态
-  updateDocumentProcessingState(analyzeList)
 }, { deep: true })
 type KnowledgeCard = {
   id: string;
@@ -504,167 +480,8 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
   }, 1500);
 };
 
-// 更新文档处理进度条状态
-const updateDocumentProcessingState = (processingList: KnowledgeCard[]) => {
-  const processingIds = processingList.map(item => item.id)
-  const hasChanged = JSON.stringify(processingIds.sort()) !== JSON.stringify(documentProcessingState.processingIds.sort())
-  
-  if (hasChanged) {
-    documentProcessingState.processingIds = processingIds
-    documentProcessingState.total = processingIds.length
-    documentProcessingState.completed = 0
-    documentProcessingState.failed = 0
-    
-    // 保存到 localStorage
-    saveProcessingIdsToStorage(processingIds)
-    
-    // 开始轮询
-    if (processingIds.length > 0) {
-      startDocumentProcessingPolling()
-    } else {
-      stopDocumentProcessingPolling()
-    }
-  }
-}
-
-// 开始轮询文档处理状态
-const startDocumentProcessingPolling = () => {
-  stopDocumentProcessingPolling()
-  
-  if (documentProcessingState.processingIds.length === 0) return
-  
-  documentProcessingState.pollingInterval = setInterval(() => {
-    if (documentProcessingState.processingIds.length === 0) {
-      stopDocumentProcessingPolling()
-      return
-    }
-    
-    let query = ``
-    documentProcessingState.processingIds.forEach(id => {
-      query += `ids=${id}&`
-    })
-    
-    batchQueryKnowledge(query).then((result: any) => {
-      if (result.success && result.data) {
-        const completedIds: string[] = []
-        const failedIds: string[] = []
-        
-        ;(result.data as KnowledgeCard[]).forEach((item: KnowledgeCard) => {
-          if (item.parse_status === 'completed') {
-            completedIds.push(item.id)
-            documentProcessingState.completed++
-          } else if (item.parse_status === 'failed') {
-            failedIds.push(item.id)
-            documentProcessingState.failed++
-          }
-        })
-        
-        // 从处理列表中移除已完成的文档
-        documentProcessingState.processingIds = documentProcessingState.processingIds.filter(
-          id => !completedIds.includes(id) && !failedIds.includes(id)
-        )
-        
-        // 如果所有文档都处理完成，停止轮询
-        if (documentProcessingState.processingIds.length === 0) {
-          stopDocumentProcessingPolling()
-          clearProcessingIdsFromStorage()
-          
-          // 刷新文件列表
-          if (kbId.value) {
-            loadKnowledgeFiles(kbId.value)
-          }
-        } else {
-          // 更新 localStorage
-          saveProcessingIdsToStorage(documentProcessingState.processingIds)
-        }
-      }
-    }).catch((_err) => {
-      // 错误处理
-    })
-  }, 2000)
-}
-
-// 停止轮询文档处理状态
-const stopDocumentProcessingPolling = () => {
-  if (documentProcessingState.pollingInterval) {
-    clearInterval(documentProcessingState.pollingInterval)
-    documentProcessingState.pollingInterval = null
-  }
-}
-
-// localStorage 相关函数
-const getProcessingIdsStorageKey = () => {
-  return `document_processing_ids_${kbId.value}`
-}
-
-const saveProcessingIdsToStorage = (ids: string[]) => {
-  if (!kbId.value) return
-  try {
-    localStorage.setItem(getProcessingIdsStorageKey(), JSON.stringify(ids))
-  } catch (error) {
-    console.error('Failed to save processing IDs to localStorage:', error)
-  }
-}
-
-const getProcessingIdsFromStorage = (): string[] => {
-  if (!kbId.value) return []
-  try {
-    const data = localStorage.getItem(getProcessingIdsStorageKey())
-    return data ? JSON.parse(data) : []
-  } catch (error) {
-    console.error('Failed to get processing IDs from localStorage:', error)
-    return []
-  }
-}
-
-const clearProcessingIdsFromStorage = () => {
-  if (!kbId.value) return
-  try {
-    localStorage.removeItem(getProcessingIdsStorageKey())
-  } catch (error) {
-    console.error('Failed to clear processing IDs from localStorage:', error)
-  }
-}
 
 // 恢复文档处理状态（用于刷新后恢复）
-const restoreDocumentProcessingState = async () => {
-  if (!kbId.value || isFAQ.value) return
-  
-  const savedIds = getProcessingIdsFromStorage()
-  if (savedIds.length === 0) return
-  
-  // 检查这些文档是否还在处理中
-  let query = ``
-  savedIds.forEach(id => {
-    query += `ids=${id}&`
-  })
-  
-  try {
-    const result: any = await batchQueryKnowledge(query)
-    if (result.success && result.data) {
-      const stillProcessing: string[] = []
-      ;(result.data as KnowledgeCard[]).forEach((item: KnowledgeCard) => {
-        if (item.parse_status === 'pending' || item.parse_status === 'processing') {
-          stillProcessing.push(item.id)
-        }
-      })
-      
-      if (stillProcessing.length > 0) {
-        documentProcessingState.processingIds = stillProcessing
-        documentProcessingState.total = stillProcessing.length
-        documentProcessingState.completed = 0
-        documentProcessingState.failed = 0
-        saveProcessingIdsToStorage(stillProcessing)
-        startDocumentProcessingPolling()
-      } else {
-        clearProcessingIdsFromStorage()
-      }
-    }
-  } catch (error) {
-    console.error('Failed to restore document processing state:', error)
-    clearProcessingIdsFromStorage()
-  }
-}
 
 const closeDoc = () => {
   isCardDetails.value = false;
@@ -709,15 +526,6 @@ const ensureDocumentKbReady = () => {
   return true;
 };
 
-// 关闭文档处理进度条
-const handleCloseDocumentProgress = () => {
-  stopDocumentProcessingPolling()
-  documentProcessingState.processingIds = []
-  documentProcessingState.total = 0
-  documentProcessingState.completed = 0
-  documentProcessingState.failed = 0
-  clearProcessingIdsFromStorage()
-}
 
 const handleDocumentUploadClick = () => {
   if (!ensureDocumentKbReady()) return;
@@ -732,49 +540,91 @@ const resetUploadInput = () => {
 
 const handleDocumentUpload = async (event: Event) => {
   const input = event.target as HTMLInputElement;
-  const file = input?.files?.[0];
-  if (!file) return;
-  if (kbFileTypeVerification(file)) {
-    resetUploadInput();
-    return;
-  }
+  const files = input?.files;
+  if (!files || files.length === 0) return;
+  
   if (!kbId.value) {
     MessagePlugin.error("缺少知识库ID");
     resetUploadInput();
     return;
   }
-  uploading.value = true;
-  try {
-    const responseData: any = await uploadKnowledgeFile(kbId.value, { file });
+
+  // 过滤有效文件
+  const validFiles: File[] = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (!kbFileTypeVerification(file, files.length > 1)) {
+      validFiles.push(file);
+    }
+  }
+
+  if (validFiles.length === 0) {
+    resetUploadInput();
+    return;
+  }
+
+  // 批量上传
+  let successCount = 0;
+  let failCount = 0;
+  const totalCount = validFiles.length;
+
+  for (const file of validFiles) {
+    try {
+      const responseData: any = await uploadKnowledgeFile(kbId.value, { file });
+      const isSuccess = responseData?.success || responseData?.code === 200 || responseData?.status === 'success' || (!responseData?.error && responseData);
+      if (isSuccess) {
+        successCount++;
+      } else {
+        failCount++;
+        let errorMessage = "上传失败！";
+        if (responseData?.error?.message) {
+          errorMessage = responseData.error.message;
+        } else if (responseData?.message) {
+          errorMessage = responseData.message;
+        }
+        if (responseData?.code === 'duplicate_file' || responseData?.error?.code === 'duplicate_file') {
+          errorMessage = "文件已存在";
+        }
+        if (totalCount === 1) {
+          MessagePlugin.error(errorMessage);
+        }
+      }
+    } catch (error: any) {
+      failCount++;
+      let errorMessage = error?.error?.message || error?.message || "上传失败！";
+      if (error?.code === 'duplicate_file') {
+        errorMessage = "文件已存在";
+      }
+      if (totalCount === 1) {
+        MessagePlugin.error(errorMessage);
+      }
+    }
+  }
+
+  // 显示上传结果
+  if (successCount > 0) {
     window.dispatchEvent(new CustomEvent('knowledgeFileUploaded', {
       detail: { kbId: kbId.value }
     }));
-    const isSuccess = responseData?.success || responseData?.code === 200 || responseData?.status === 'success' || (!responseData?.error && responseData);
-    if (isSuccess) {
-      MessagePlugin.info("上传成功！");
-    } else {
-      let errorMessage = "上传失败！";
-      if (responseData?.error?.message) {
-        errorMessage = responseData.error.message;
-      } else if (responseData?.message) {
-        errorMessage = responseData.message;
-      }
-      if (responseData?.code === 'duplicate_file' || responseData?.error?.code === 'duplicate_file') {
-        errorMessage = "文件已存在";
-      }
-      MessagePlugin.error(errorMessage);
-    }
-  } catch (error: any) {
-    let errorMessage = error?.error?.message || error?.message || "上传失败！";
-    if (error?.code === 'duplicate_file') {
-      errorMessage = "文件已存在";
-    }
-    MessagePlugin.error(errorMessage);
-  } finally {
-    uploading.value = false;
-    resetUploadInput();
   }
+
+  if (totalCount === 1) {
+    if (successCount === 1) {
+      MessagePlugin.success("上传成功！");
+    }
+  } else {
+    if (failCount === 0) {
+      MessagePlugin.success(`所有文件上传成功（${successCount}个）`);
+    } else if (successCount > 0) {
+      MessagePlugin.warning(`部分文件上传成功（成功：${successCount}，失败：${failCount}）`);
+    } else {
+      MessagePlugin.error(`所有文件上传失败（${failCount}个）`);
+    }
+  }
+
+  resetUploadInput();
 };
+
 
 const handleManualCreate = () => {
   if (!ensureDocumentKbReady()) return;
@@ -1018,45 +868,12 @@ async function createNewSession(value: string): Promise<void> {
         </div>
       </div>
       
-      <!-- 文档处理进度条 -->
-      <div v-if="!isFAQ && documentProcessingState.processingIds.length > 0" class="document-processing-progress-bar">
-        <div class="progress-bar-content">
-          <div class="progress-bar-header">
-            <t-icon 
-              name="loading" 
-              size="16px" 
-              class="progress-icon icon-loading"
-            />
-            <span class="progress-title">
-              {{ $t('knowledgeList.processingDocuments', { count: documentProcessingState.processingIds.length }) }}
-            </span>
-            <span class="progress-count">
-              {{ documentProcessingState.completed + documentProcessingState.failed }}/{{ documentProcessingState.total }}
-            </span>
-            <t-button
-              variant="text"
-              theme="default"
-              size="small"
-              class="progress-close-btn"
-              @click="handleCloseDocumentProgress"
-            >
-              <t-icon name="close" size="14px" />
-            </t-button>
-          </div>
-          <t-progress
-            :percentage="Math.round(((documentProcessingState.completed + documentProcessingState.failed) / documentProcessingState.total) * 100)"
-            :status="documentProcessingState.failed > 0 ? 'error' : 'active'"
-            :label="false"
-            class="progress-bar"
-          />
-        </div>
-      </div>
-      
       <input
         ref="uploadInputRef"
         type="file"
         class="document-upload-input"
         accept=".pdf,.docx,.doc,.txt,.md,.jpg,.jpeg,.png"
+        multiple
         @change="handleDocumentUpload"
       />
       <div class="knowledge-main">
@@ -2106,75 +1923,6 @@ async function createNewSession(value: string): Promise<void> {
   min-height: 100%;
 }
 
-.document-processing-progress-bar {
-  margin-bottom: 16px;
-  background: #fff;
-  border: 1px solid #e7ebf0;
-  border-radius: 8px;
-  padding: 12px 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-
-  .progress-bar-content {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .progress-bar-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
-    color: #000000e6;
-
-    .progress-icon {
-      flex-shrink: 0;
-
-      &.icon-loading {
-        animation: rotate 1s linear infinite;
-        color: #07c05f;
-      }
-    }
-
-    .progress-title {
-      font-weight: 500;
-      flex: 1;
-    }
-
-    .progress-count {
-      color: #86909c;
-      font-size: 13px;
-    }
-
-    .progress-close-btn {
-      flex-shrink: 0;
-      padding: 4px;
-      margin-left: 8px;
-    }
-  }
-
-  .progress-bar {
-    margin: 0;
-    width: 100%;
-    
-    :deep(.t-progress) {
-      width: 100%;
-    }
-    
-    :deep(.t-progress__bar) {
-      width: 100%;
-    }
-  }
-}
-
-@keyframes rotate {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 :deep(.del-knowledge) {
   padding: 0px !important;
