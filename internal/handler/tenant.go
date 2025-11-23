@@ -84,16 +84,12 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 func (h *TenantHandler) GetTenant(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	logger.Info(ctx, "Start retrieving tenant")
-
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		logger.Errorf(ctx, "Invalid tenant ID: %s", c.Param("id"))
 		c.Error(errors.NewBadRequestError("Invalid tenant ID"))
 		return
 	}
-
-	logger.Infof(ctx, "Retrieving tenant, ID: %d", id)
 
 	tenant, err := h.service.GetTenantByID(ctx, uint(id))
 	if err != nil {
@@ -108,7 +104,6 @@ func (h *TenantHandler) GetTenant(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieved tenant successfully, ID: %d, Name: %s", tenant.ID, tenant.Name)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    tenant,
@@ -207,8 +202,6 @@ func (h *TenantHandler) DeleteTenant(c *gin.Context) {
 func (h *TenantHandler) ListTenants(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	logger.Info(ctx, "Start retrieving tenant list")
-
 	tenants, err := h.service.ListTenants(ctx)
 	if err != nil {
 		// Check if this is an application-specific error
@@ -222,7 +215,6 @@ func (h *TenantHandler) ListTenants(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieved tenant list successfully, Total: %d tenants", len(tenants))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
@@ -246,8 +238,6 @@ type AgentConfigRequest struct {
 // This is the global agent configuration that applies to all sessions by default
 func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 	ctx := c.Request.Context()
-	logger.Info(ctx, "Start retrieving tenant agent config")
-
 	tenant := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	if tenant == nil {
 		logger.Error(ctx, "Tenant is empty")
@@ -558,8 +548,6 @@ func validateConversationConfig(req *types.ConversationConfig) error {
 // This is the global conversation configuration that applies to normal mode sessions by default
 func (h *TenantHandler) GetTenantConversationConfig(c *gin.Context) {
 	ctx := c.Request.Context()
-	logger.Info(ctx, "Start retrieving tenant conversation config")
-
 	tenant := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	if tenant == nil {
 		logger.Error(ctx, "Tenant is empty")

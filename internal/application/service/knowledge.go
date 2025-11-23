@@ -22,6 +22,7 @@ import (
 	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/models/utils"
 	"github.com/Tencent/WeKnora/internal/tracing"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -70,6 +71,7 @@ type knowledgeService struct {
 const (
 	manualContentMaxLength = 200000
 	manualFileExtension    = ".md"
+	faqImportBatchSize     = 50 // 每批处理的FAQ条目数
 )
 
 // NewKnowledgeService creates a new knowledge service instance
@@ -120,14 +122,14 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	kbID string, file *multipart.FileHeader, metadata map[string]string, enableMultimodel *bool, customFileName string,
 ) (*types.Knowledge, error) {
 	logger.Info(ctx, "Start creating knowledge from file")
-	
+
 	// Use custom filename if provided, otherwise use original filename
 	fileName := file.Filename
 	if customFileName != "" {
 		fileName = customFileName
 		logger.Infof(ctx, "Using custom filename: %s (original: %s)", customFileName, file.Filename)
 	}
-	
+
 	logger.Infof(ctx, "Knowledge base ID: %s, file: %s", kbID, fileName)
 	if metadata != nil {
 		logger.Infof(ctx, "Received metadata: %v", metadata)
@@ -2065,32 +2067,176 @@ func (s *knowledgeService) ListFAQEntries(ctx context.Context,
 	return types.NewPageResult(total, page, entries), nil
 }
 
-// UpsertFAQEntries imports or appends FAQ entries.
+// UpsertFAQEntries imports or appends FAQ entries asynchronously.
+// Returns task ID for tracking import progress.
 func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 	kbID string, payload *types.FAQBatchUpsertPayload,
-) error {
+) (string, error) {
 	if payload == nil || len(payload.Entries) == 0 {
-		return werrors.NewBadRequestError("FAQ 条目不能为空")
+		return "", werrors.NewBadRequestError("FAQ 条目不能为空")
 	}
 	if payload.Mode == "" {
 		payload.Mode = types.FAQBatchModeAppend
 	}
 	if payload.Mode != types.FAQBatchModeAppend && payload.Mode != types.FAQBatchModeReplace {
-		return werrors.NewBadRequestError("模式仅支持 append 或 replace")
+		return "", werrors.NewBadRequestError("模式仅支持 append 或 replace")
 	}
 
+	// 验证知识库是否存在且有效
+	if _, err := s.validateFAQKnowledgeBase(ctx, kbID); err != nil {
+		return "", err
+	}
+
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+
+	// 检查是否有正在进行的导入任务
+	runningKnowledge, err := s.getRunningFAQImportTask(ctx, kbID, tenantID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to check running import task: %v", err)
+		// 检查失败不影响导入，继续执行
+	} else if runningKnowledge != nil {
+		logger.Warnf(ctx, "Import task already running for KB %s: %s (status: %s)", kbID, runningKnowledge.ID, runningKnowledge.ParseStatus)
+		return "", werrors.NewBadRequestError(fmt.Sprintf("该知识库已有导入任务正在进行中（任务ID: %s），请等待完成后再试", runningKnowledge.ID))
+	}
+
+	// 确保FAQ Knowledge存在
 	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return "", err
+	}
+	faqKnowledge, err := s.ensureFAQKnowledge(ctx, tenantID, kb)
+	if err != nil {
+		return "", fmt.Errorf("failed to ensure FAQ knowledge: %w", err)
+	}
+
+	// 初始化导入任务状态到Knowledge表
+	taskID := faqKnowledge.ID // 使用Knowledge ID作为taskID
+	if err := s.updateFAQImportStatus(ctx, taskID, types.FAQImportStatusPending, 0, len(payload.Entries), 0, ""); err != nil {
+		logger.Errorf(ctx, "Failed to initialize FAQ import task status: %v", err)
+		return "", fmt.Errorf("failed to initialize task: %w", err)
+	}
+	bgCtx := logger.CloneContext(ctx)
+	// 在后台goroutine中执行导入
+	go func() {
+		// 使用独立的context，不受HTTP请求context影响
+		// 设置较长的超时时间（2小时）
+		bgCtx, cancel := context.WithTimeout(bgCtx, 2*time.Hour)
+		defer cancel()
+
+		logger.Infof(bgCtx, "Starting FAQ import task: %s, total entries: %d", taskID, len(payload.Entries))
+
+		// 更新任务状态为运行中
+		if err := s.updateFAQImportStatus(bgCtx, taskID, types.FAQImportStatusRunning, 0, len(payload.Entries), 0, ""); err != nil {
+			logger.Errorf(bgCtx, "Failed to update task status to running: %v", err)
+		}
+
+		// 执行实际导入
+		if err := s.executeFAQImport(bgCtx, taskID, kbID, payload, tenantID); err != nil {
+			logger.Errorf(bgCtx, "FAQ import task failed: %s, error: %v", taskID, err)
+			// 获取当前进度
+			tenantID := bgCtx.Value(types.TenantIDContextKey).(uint)
+			knowledge, _ := s.repo.GetKnowledgeByID(bgCtx, tenantID, taskID)
+			total := len(payload.Entries)
+			processed := 0
+			if knowledge != nil {
+				importMeta, _ := types.ParseFAQImportMetadata(knowledge)
+				if importMeta != nil {
+					total = importMeta.ImportTotal
+					processed = importMeta.ImportProcessed
+				}
+			}
+			if updateErr := s.updateFAQImportStatus(bgCtx, taskID, types.FAQImportStatusFailed, 0, total, processed, err.Error()); updateErr != nil {
+				logger.Errorf(bgCtx, "Failed to update task status to failed: %v", updateErr)
+			}
+			return
+		}
+
+		// 任务成功完成
+		logger.Infof(bgCtx, "FAQ import task completed: %s", taskID)
+		if err := s.updateFAQImportStatus(bgCtx, taskID, types.FAQImportStatusSuccess, 100, len(payload.Entries), len(payload.Entries), ""); err != nil {
+			logger.Errorf(bgCtx, "Failed to update task status to success: %v", err)
+		}
+	}()
+
+	return taskID, nil
+}
+
+// executeFAQImport 执行实际的FAQ导入逻辑
+func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, kbID string,
+	payload *types.FAQBatchUpsertPayload, tenantID uint) (err error) {
+	// 用于记录所有已创建的chunks，用于失败时回滚
+	var createdChunks []*types.Chunk
+	// 用于记录已索引的chunks，需要清理索引数据
+	var indexedChunks []*types.Chunk
+	// 保存知识库和embedding模型信息，用于清理索引
+	var kb *types.KnowledgeBase
+	var embeddingModel embedding.Embedder
+
+	// Recovery机制：如果发生任何错误或panic，回滚所有已创建的chunks和索引数据
+	defer func() {
+		// 捕获panic
+		if r := recover(); r != nil {
+			logger.Errorf(ctx, "FAQ import task %s panicked: %v", taskID, r)
+			err = fmt.Errorf("panic during FAQ import: %v", r)
+		}
+		if err != nil && len(createdChunks) > 0 {
+			logger.Warnf(ctx, "FAQ import task %s failed (error: %v), rolling back %d created chunks and their indices", taskID, err, len(createdChunks))
+
+			// 清理索引数据（如果有已索引的chunks）
+			if len(indexedChunks) > 0 && kb != nil && embeddingModel != nil {
+				chunkIDs := make([]string, 0, len(indexedChunks))
+				for _, chunk := range indexedChunks {
+					chunkIDs = append(chunkIDs, chunk.ID)
+				}
+				// 从context获取tenant信息
+				tenantInfo := ctx.Value(types.TenantInfoContextKey)
+				if tenantInfo != nil {
+					if tenant, ok := tenantInfo.(*types.Tenant); ok {
+						retrieveEngine, engineErr := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenant.RetrieverEngines.Engines)
+						if engineErr == nil {
+							if delIndexErr := retrieveEngine.DeleteByChunkIDList(ctx, chunkIDs, embeddingModel.GetDimensions()); delIndexErr != nil {
+								logger.Errorf(ctx, "Failed to delete indices for %d chunks during rollback: %v", len(chunkIDs), delIndexErr)
+							} else {
+								logger.Debugf(ctx, "Successfully deleted indices for %d chunks", len(chunkIDs))
+							}
+						} else {
+							logger.Errorf(ctx, "Failed to create retrieve engine during rollback: %v", engineErr)
+						}
+					}
+				}
+			}
+
+			// 批量删除chunks，提高回滚效率
+			chunkIDs := make([]string, 0, len(createdChunks))
+			for _, chunk := range createdChunks {
+				chunkIDs = append(chunkIDs, chunk.ID)
+			}
+			if delErr := s.chunkService.DeleteChunks(ctx, chunkIDs); delErr != nil {
+				logger.Errorf(ctx, "Failed to delete %d chunks during rollback: %v", len(chunkIDs), delErr)
+			} else {
+				logger.Debugf(ctx, "Successfully rolled back %d chunks", len(chunkIDs))
+			}
+		}
+	}()
+
+	kb, err = s.validateFAQKnowledgeBase(ctx, kbID)
 	if err != nil {
 		return err
 	}
 
 	kb.EnsureDefaults()
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+
+	// 获取embedding模型，用于后续清理索引
+	embeddingModel, err = s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+	if err != nil {
+		return fmt.Errorf("failed to get embedding model: %w", err)
+	}
 	faqKnowledge, err := s.ensureFAQKnowledge(ctx, tenantID, kb)
 	if err != nil {
 		return err
 	}
 
+	// 如果模式为replace，则清理知识库
 	if payload.Mode == types.FAQBatchModeReplace {
 		if err := s.cleanupFAQKnowledge(ctx, faqKnowledge); err != nil {
 			return err
@@ -2118,44 +2264,100 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 		indexMode = kb.FAQConfig.IndexMode
 	}
 
-	chunks := make([]*types.Chunk, 0, len(payload.Entries))
-	for idx := range payload.Entries {
-		entry := payload.Entries[idx]
-		meta, err := sanitizeFAQEntryPayload(&entry)
-		if err != nil {
-			return err
+	// 分批处理
+	totalEntries := len(payload.Entries)
+	processed := 0
+	batchStartTime := time.Now()
+
+	logger.Infof(ctx, "FAQ import task %s: starting batch processing, total entries: %d, batch size: %d", taskID, totalEntries, faqImportBatchSize)
+
+	for i := 0; i < totalEntries; i += faqImportBatchSize {
+		batchStartTime = time.Now()
+		end := i + faqImportBatchSize
+		if end > totalEntries {
+			end = totalEntries
 		}
-		isEnabled := true
-		if entry.IsEnabled != nil {
-			isEnabled = *entry.IsEnabled
+
+		batch := payload.Entries[i:end]
+		logger.Infof(ctx, "FAQ import task %s: processing batch %d-%d (%d entries)", taskID, i+1, end, len(batch))
+
+		// 构建chunks
+		buildStartTime := time.Now()
+		chunks := make([]*types.Chunk, 0, len(batch))
+		for idx, entry := range batch {
+			meta, err := sanitizeFAQEntryPayload(&entry)
+			if err != nil {
+				logger.ErrorWithFields(ctx, err, map[string]interface{}{
+					"entry":   entry,
+					"task_id": taskID,
+				})
+				return fmt.Errorf("failed to sanitize entry at index %d: %w", i+idx, err)
+			}
+			isEnabled := true
+			if entry.IsEnabled != nil {
+				isEnabled = *entry.IsEnabled
+			}
+			chunk := &types.Chunk{
+				ID:              uuid.New().String(),
+				TenantID:        tenantID,
+				KnowledgeID:     faqKnowledge.ID,
+				KnowledgeBaseID: kb.ID,
+				Content:         buildFAQChunkContent(meta, indexMode),
+				ChunkIndex:      startIndex + i + idx + 1,
+				IsEnabled:       isEnabled,
+				ChunkType:       types.ChunkTypeFAQ,
+				TagID:           entry.TagID,
+			}
+			if err := chunk.SetFAQMetadata(meta); err != nil {
+				return fmt.Errorf("failed to set FAQ metadata: %w", err)
+			}
+			chunks = append(chunks, chunk)
 		}
-		chunk := &types.Chunk{
-			ID:              uuid.New().String(),
-			TenantID:        tenantID,
-			KnowledgeID:     faqKnowledge.ID,
-			KnowledgeBaseID: kb.ID,
-			Content:         buildFAQChunkContent(meta, indexMode),
-			ChunkIndex:      startIndex + idx + 1,
-			IsEnabled:       isEnabled,
-			ChunkType:       types.ChunkTypeFAQ,
-			TagID:           entry.TagID,
+		buildDuration := time.Since(buildStartTime)
+		logger.Debugf(ctx, "FAQ import task %s: batch %d-%d built %d chunks in %v", taskID, i+1, end, len(chunks), buildDuration)
+
+		// 创建chunks
+		createStartTime := time.Now()
+		if err := s.chunkService.CreateChunks(ctx, chunks); err != nil {
+			return fmt.Errorf("failed to create chunks: %w", err)
 		}
-		if err := chunk.SetFAQMetadata(meta); err != nil {
-			return err
+		createDuration := time.Since(createStartTime)
+		logger.Infof(ctx, "FAQ import task %s: batch %d-%d created %d chunks in %v", taskID, i+1, end, len(chunks), createDuration)
+		// 记录已创建的chunks（用于失败时回滚）
+		createdChunks = append(createdChunks, chunks...)
+
+		// 索引chunks
+		indexStartTime := time.Now()
+		// 注意：如果索引失败，defer中的recovery机制会自动回滚已创建的chunks和索引数据
+		if err := s.indexFAQChunks(ctx, kb, faqKnowledge, chunks, embeddingModel, true, false); err != nil {
+			return fmt.Errorf("failed to index chunks: %w", err)
 		}
-		chunks = append(chunks, chunk)
+		indexDuration := time.Since(indexStartTime)
+		logger.Infof(ctx, "FAQ import task %s: batch %d-%d indexed %d chunks in %v", taskID, i+1, end, len(chunks), indexDuration)
+		// 记录已成功索引的chunks（用于失败时清理索引数据）
+		indexedChunks = append(indexedChunks, chunks...)
+
+		processed += len(batch)
+
+		// 更新任务进度
+		progressUpdateStartTime := time.Now()
+		progress := int(float64(processed) / float64(totalEntries) * 100)
+		if err := s.updateFAQImportStatus(ctx, taskID, types.FAQImportStatusRunning, progress, totalEntries, processed, ""); err != nil {
+			logger.Errorf(ctx, "Failed to update task progress: %v", err)
+		}
+		progressUpdateDuration := time.Since(progressUpdateStartTime)
+		if progressUpdateDuration > 100*time.Millisecond {
+			logger.Warnf(ctx, "FAQ import task %s: progress update took %v (may be slow)", taskID, progressUpdateDuration)
+		}
+
+		batchDuration := time.Since(batchStartTime)
+		logger.Infof(ctx, "FAQ import task %s: batch %d-%d completed in %v (build: %v, create: %v, index: %v, progress: %v), total progress: %d/%d (%d%%)",
+			taskID, i+1, end, batchDuration, buildDuration, createDuration, indexDuration, progressUpdateDuration, processed, totalEntries, progress)
 	}
 
-	if err := s.chunkService.CreateChunks(ctx, chunks); err != nil {
-		return err
-	}
-
-	if err := s.indexFAQChunks(ctx, kb, faqKnowledge, chunks, true); err != nil {
-		for _, chunk := range chunks {
-			_ = s.chunkService.DeleteChunk(ctx, chunk.ID)
-		}
-		return err
-	}
+	totalDuration := time.Since(batchStartTime)
+	logger.Infof(ctx, "FAQ import task %s: all batches completed, total: %d entries in %v, avg: %v per entry",
+		taskID, totalEntries, totalDuration, totalDuration/time.Duration(totalEntries))
 
 	return nil
 }
@@ -2228,7 +2430,11 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	return s.indexFAQChunks(ctx, kb, faqKnowledge, []*types.Chunk{chunk}, false)
+	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+	if err != nil {
+		return err
+	}
+	return s.indexFAQChunks(ctx, kb, faqKnowledge, []*types.Chunk{chunk}, embeddingModel, false, true)
 }
 
 // UpdateFAQEntryStatus updates enable status for a FAQ entry.
@@ -2732,6 +2938,63 @@ func (s *knowledgeService) ensureFAQKnowledge(ctx context.Context, tenantID uint
 	return knowledge, nil
 }
 
+// updateFAQImportStatus 更新FAQ Knowledge的导入任务状态
+func (s *knowledgeService) updateFAQImportStatus(ctx context.Context, knowledgeID string, status types.FAQImportTaskStatus, progress, total, processed int, errorMsg string) error {
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
+	if err != nil {
+		return err
+	}
+
+	// 更新ParseStatus：将FAQImportTaskStatus映射到ParseStatus
+	// pending -> "pending", running -> "processing", success -> "completed", failed -> "failed"
+	parseStatus := string(status)
+	if status == types.FAQImportStatusRunning {
+		parseStatus = "processing" // 使用"processing"以兼容文档类型的ParseStatus
+	} else if status == types.FAQImportStatusSuccess {
+		parseStatus = "completed"
+	}
+	knowledge.ParseStatus = parseStatus
+	knowledge.UpdatedAt = time.Now()
+
+	// 更新ErrorMessage
+	if errorMsg != "" {
+		knowledge.ErrorMessage = errorMsg
+	} else if status == types.FAQImportStatusSuccess {
+		knowledge.ErrorMessage = "" // 成功时清空错误信息
+	}
+
+	// 更新Metadata中的导入进度信息
+	importMeta := &types.FAQImportMetadata{
+		ImportProgress:  progress,
+		ImportTotal:     total,
+		ImportProcessed: processed,
+	}
+	metaJSON, err := importMeta.ToJSON()
+	if err != nil {
+		return fmt.Errorf("failed to marshal import metadata: %w", err)
+	}
+	knowledge.Metadata = metaJSON
+
+	return s.repo.UpdateKnowledge(ctx, knowledge)
+}
+
+// getRunningFAQImportTask 获取指定知识库的进行中导入任务
+func (s *knowledgeService) getRunningFAQImportTask(ctx context.Context, kbID string, tenantID uint) (*types.Knowledge, error) {
+	faqKnowledge, err := s.findFAQKnowledge(ctx, tenantID, kbID)
+	if err != nil {
+		return nil, err
+	}
+	if faqKnowledge == nil {
+		return nil, errors.New("FAQ knowledge not found")
+	}
+	// 检查ParseStatus是否为pending或processing（进行中状态）
+	if faqKnowledge.ParseStatus == "pending" || faqKnowledge.ParseStatus == "processing" {
+		return faqKnowledge, nil
+	}
+	return nil, nil
+}
+
 func (s *knowledgeService) chunkToFAQEntry(chunk *types.Chunk, kb *types.KnowledgeBase) (*types.FAQEntry, error) {
 	meta, err := chunk.FAQMetadata()
 	if err != nil {
@@ -2826,7 +3089,6 @@ func (s *knowledgeService) buildFAQIndexInfoList(ctx context.Context, kb *types.
 			questionIndexMode = kb.FAQConfig.QuestionIndexMode
 		}
 	}
-	logger.Infof(ctx, "buildFAQIndexInfoList: indexMode: %s, questionIndexMode: %s", indexMode, questionIndexMode)
 
 	meta, err := chunk.FAQMetadata()
 	if err != nil {
@@ -2896,27 +3158,29 @@ func (s *knowledgeService) buildFAQIndexInfoList(ctx context.Context, kb *types.
 			KnowledgeBaseID: chunk.KnowledgeBaseID,
 		})
 	}
-	logger.Infof(ctx, "buildFAQIndexInfoList: indexInfoList: %v", indexInfoList)
 
 	return indexInfoList, nil
 }
 
 func (s *knowledgeService) indexFAQChunks(ctx context.Context,
-	kb *types.KnowledgeBase, knowledge *types.Knowledge, chunks []*types.Chunk, adjustStorage bool,
+	kb *types.KnowledgeBase, knowledge *types.Knowledge,
+	chunks []*types.Chunk, embeddingModel embedding.Embedder,
+	adjustStorage bool, needDelete bool,
 ) error {
 	if len(chunks) == 0 {
 		return nil
 	}
-	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
-	if err != nil {
-		return err
-	}
+	indexStartTime := time.Now()
+	logger.Debugf(ctx, "indexFAQChunks: starting to index %d chunks", len(chunks))
+
 	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
 	if err != nil {
 		return err
 	}
 
+	// 构建索引信息
+	buildIndexInfoStartTime := time.Now()
 	indexInfo := make([]*types.IndexInfo, 0)
 	chunkIDs := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -2927,33 +3191,68 @@ func (s *knowledgeService) indexFAQChunks(ctx context.Context,
 		indexInfo = append(indexInfo, infoList...)
 		chunkIDs = append(chunkIDs, chunk.ID)
 	}
+	buildIndexInfoDuration := time.Since(buildIndexInfoStartTime)
+	logger.Debugf(ctx, "indexFAQChunks: built %d index info entries for %d chunks in %v", len(indexInfo), len(chunks), buildIndexInfoDuration)
 
 	var size int64
 	if adjustStorage {
+		estimateStartTime := time.Now()
 		size = retrieveEngine.EstimateStorageSize(ctx, embeddingModel, indexInfo)
+		estimateDuration := time.Since(estimateStartTime)
+		logger.Debugf(ctx, "indexFAQChunks: estimated storage size %d bytes in %v", size, estimateDuration)
 		if tenantInfo.StorageQuota > 0 && tenantInfo.StorageUsed+size > tenantInfo.StorageQuota {
 			return types.NewStorageQuotaExceededError()
 		}
 	}
 
-	if err := retrieveEngine.DeleteByChunkIDList(ctx, chunkIDs, embeddingModel.GetDimensions()); err != nil {
-		logger.Warnf(ctx, "Delete FAQ vectors failed: %v", err)
+	// 删除旧向量
+	var deleteDuration time.Duration
+	if needDelete {
+		deleteStartTime := time.Now()
+		if err := retrieveEngine.DeleteByChunkIDList(ctx, chunkIDs, embeddingModel.GetDimensions()); err != nil {
+			logger.Warnf(ctx, "Delete FAQ vectors failed: %v", err)
+		}
+		deleteDuration = time.Since(deleteStartTime)
+		if deleteDuration > 100*time.Millisecond {
+			logger.Debugf(ctx, "indexFAQChunks: deleted old vectors for %d chunks in %v", len(chunkIDs), deleteDuration)
+		}
 	}
+
+	// 批量索引（这里可能是性能瓶颈）
+	batchIndexStartTime := time.Now()
 	if err := retrieveEngine.BatchIndex(ctx, embeddingModel, indexInfo); err != nil {
 		return err
 	}
+	batchIndexDuration := time.Since(batchIndexStartTime)
+	logger.Debugf(ctx, "indexFAQChunks: batch indexed %d index info entries in %v (avg: %v per entry)", len(indexInfo), batchIndexDuration, batchIndexDuration/time.Duration(len(indexInfo)))
 
 	if adjustStorage && size > 0 {
+		adjustStartTime := time.Now()
 		if err := s.tenantRepo.AdjustStorageUsed(ctx, tenantInfo.ID, size); err == nil {
 			tenantInfo.StorageUsed += size
 		}
 		knowledge.StorageSize += size
+		adjustDuration := time.Since(adjustStartTime)
+		if adjustDuration > 50*time.Millisecond {
+			logger.Debugf(ctx, "indexFAQChunks: adjusted storage in %v", adjustDuration)
+		}
 	}
 
+	updateStartTime := time.Now()
 	now := time.Now()
 	knowledge.UpdatedAt = now
 	knowledge.ProcessedAt = &now
-	return s.repo.UpdateKnowledge(ctx, knowledge)
+	err = s.repo.UpdateKnowledge(ctx, knowledge)
+	updateDuration := time.Since(updateStartTime)
+	if updateDuration > 50*time.Millisecond {
+		logger.Debugf(ctx, "indexFAQChunks: updated knowledge in %v", updateDuration)
+	}
+
+	totalDuration := time.Since(indexStartTime)
+	logger.Debugf(ctx, "indexFAQChunks: completed indexing %d chunks in %v (build: %v, delete: %v, batchIndex: %v, update: %v)",
+		len(chunks), totalDuration, buildIndexInfoDuration, deleteDuration, batchIndexDuration, updateDuration)
+
+	return err
 }
 
 func (s *knowledgeService) deleteFAQChunkVectors(ctx context.Context,

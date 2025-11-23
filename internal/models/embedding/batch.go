@@ -2,6 +2,8 @@ package embedding
 
 import (
 	"context"
+	"os"
+	"strconv"
 	"sync"
 
 	"github.com/Tencent/WeKnora/internal/models/utils"
@@ -26,7 +28,14 @@ func (e *batchEmbedder) BatchEmbedWithPool(ctx context.Context, model Embedder, 
 	var wg sync.WaitGroup
 	var mu sync.Mutex  // For synchronizing access to error
 	var firstErr error // Record the first error that occurs
-	batchSize := 5
+	batchSizeStr := os.Getenv("BATCH_EMBED_SIZE")
+	if batchSizeStr == "" {
+		batchSizeStr = "5"
+	}
+	batchSize, err := strconv.Atoi(batchSizeStr)
+	if err != nil {
+		return nil, err
+	}
 	textEmbeddings := utils.MapSlice(texts, func(text string) *textEmbedding {
 		return &textEmbedding{text: text}
 	})

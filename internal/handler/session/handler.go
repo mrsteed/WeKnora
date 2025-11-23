@@ -226,8 +226,6 @@ func (h *Handler) GetSession(c *gin.Context) {
 func (h *Handler) GetSessionsByTenant(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	logger.Info(ctx, "Start retrieving all sessions for tenant")
-
 	// Parse pagination parameters from query
 	var pagination types.Pagination
 	if err := c.ShouldBindQuery(&pagination); err != nil {
@@ -235,8 +233,6 @@ func (h *Handler) GetSessionsByTenant(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
-
-	logger.Debugf(ctx, "Using pagination parameters: page=%d, page_size=%d", pagination.Page, pagination.PageSize)
 
 	// Use paginated query to get sessions
 	result, err := h.sessionService.GetPagedSessionsByTenant(ctx, &pagination)
@@ -247,7 +243,6 @@ func (h *Handler) GetSessionsByTenant(c *gin.Context) {
 	}
 
 	// Return sessions with pagination data
-	logger.Infof(ctx, "Successfully retrieved tenant sessions, total: %d", result.Total)
 	c.JSON(http.StatusOK, gin.H{
 		"success":   true,
 		"data":      result.Data,
@@ -260,8 +255,6 @@ func (h *Handler) GetSessionsByTenant(c *gin.Context) {
 // UpdateSession updates an existing session's properties
 func (h *Handler) UpdateSession(c *gin.Context) {
 	ctx := c.Request.Context()
-
-	logger.Info(ctx, "Start updating session")
 
 	// Get session ID from URL parameter
 	id := c.Param("id")
@@ -287,8 +280,6 @@ func (h *Handler) UpdateSession(c *gin.Context) {
 		return
 	}
 
-	// Set session ID and tenant ID
-	logger.Infof(ctx, "Updating session, ID: %s, tenant ID: %d", id, tenantID.(uint))
 	session.ID = id
 	session.TenantID = tenantID.(uint)
 
@@ -316,8 +307,6 @@ func (h *Handler) UpdateSession(c *gin.Context) {
 func (h *Handler) DeleteSession(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	logger.Info(ctx, "Start deleting session")
-
 	// Get session ID from URL parameter
 	id := c.Param("id")
 	if id == "" {
@@ -327,7 +316,6 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 	}
 
 	// Call service to delete session
-	logger.Infof(ctx, "Deleting session, ID: %s", id)
 	if err := h.sessionService.DeleteSession(ctx, id); err != nil {
 		if err == errors.ErrSessionNotFound {
 			logger.Warnf(ctx, "Session not found, ID: %s", id)
@@ -340,7 +328,6 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 	}
 
 	// Return success message
-	logger.Infof(ctx, "Session deleted successfully, ID: %s", id)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Session deleted successfully",

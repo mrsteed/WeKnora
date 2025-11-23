@@ -842,6 +842,8 @@ export default {
       knowledgeGraph: 'Граф знаний включен',
       multimodal: 'Мультимодальность включена'
     },
+    processing: 'Обработка задачи импорта',
+    processingDocuments: 'Обработка {count} документов',
     stats: {
       documents: 'Количество документов',
       faqEntries: 'FAQ записи',
@@ -951,6 +953,7 @@ export default {
       statusEnableSuccess: 'Запись FAQ включена',
       statusDisableSuccess: 'Запись FAQ отключена',
       statusUpdateFailed: 'Не удалось обновить статус',
+      batchOperations: 'Пакетные операции',
       batchUpdateTag: 'Пакетное обновление категории',
       batchUpdateTagTip: 'Установить категорию для {count} выбранных записей',
       batchEnable: 'Пакетное включение',
@@ -962,7 +965,7 @@ export default {
       appendMode: 'Добавить',
       replaceMode: 'Заменить существующие записи',
       fileLabel: 'Выберите файл',
-      fileTip: 'Поддерживаются JSON / CSV / Excel. Поля: standard_question, answers, similar_questions, negative_questions',
+      fileTip: 'Поддерживаются JSON / CSV / Excel. Заголовки CSV/Excel: 分类(必填), 问题(必填), 相似问题(选填-多个用##分隔), 反例问题(选填-多个用##分隔), 机器人回答(必填-多个用##分隔), 是否全部回复(选填-默认FALSE), 是否停用(选填-默认FALSE), 是否禁止被推荐(选填-默认False 可被推荐). Также поддерживается старый формат: standard_question, answers, similar_questions, negative_questions',
       clickToUpload: 'Нажмите для загрузки файла',
       dragDropTip: 'или перетащите файл сюда',
       importButton: 'Импортировать FAQ',

@@ -200,11 +200,11 @@ func (c *RemoteAPIChat) buildChatCompletionRequest(messages []Message,
 	}
 
 	// print req
-	jsonData, err := json.Marshal(req)
-	if err != nil {
-		logger.Error(context.Background(), "marshal request: %w", err)
-	}
-	logger.Infof(context.Background(), "llm request: %s", string(jsonData))
+	// jsonData, err := json.Marshal(req)
+	// if err != nil {
+	// 	logger.Error(context.Background(), "marshal request: %w", err)
+	// }
+	// logger.Infof(context.Background(), "llm request: %s", string(jsonData))
 
 	return req
 }

@@ -113,8 +113,6 @@ func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(c *gin.Context) (*typ
 		return nil, "", errors.NewBadRequestError("Knowledge base ID cannot be empty")
 	}
 
-	logger.Infof(ctx, "Retrieving knowledge base, ID: %s", id)
-
 	// Verify tenant has permission to access this knowledge base
 	kb, err := h.service.GetKnowledgeBaseByID(ctx, id)
 	if err != nil {
@@ -138,17 +136,12 @@ func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(c *gin.Context) (*typ
 
 // GetKnowledgeBase handles requests to retrieve a knowledge base by ID
 func (h *KnowledgeBaseHandler) GetKnowledgeBase(c *gin.Context) {
-	ctx := c.Request.Context()
-	logger.Info(ctx, "Start retrieving knowledge base")
-
 	// Validate and get the knowledge base
-	kb, id, err := h.validateAndGetKnowledgeBase(c)
+	kb, _, err := h.validateAndGetKnowledgeBase(c)
 	if err != nil {
 		c.Error(err)
 		return
 	}
-
-	logger.Infof(ctx, "Retrieved knowledge base successfully, ID: %s, name: %s", id, kb.Name)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    kb,
@@ -159,18 +152,6 @@ func (h *KnowledgeBaseHandler) GetKnowledgeBase(c *gin.Context) {
 func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	logger.Info(ctx, "Start retrieving knowledge base list")
-
-	// Get tenant ID from context
-	tenantID, exists := c.Get(types.TenantIDContextKey.String())
-	if !exists {
-		logger.Error(ctx, "Failed to get tenant ID")
-		c.Error(errors.NewUnauthorizedError("Unauthorized"))
-		return
-	}
-
-	logger.Infof(ctx, "Retrieving knowledge base list for tenant, tenant ID: %d", tenantID.(uint))
-
 	// Get all knowledge bases for this tenant
 	kbs, err := h.service.ListKnowledgeBases(ctx)
 	if err != nil {
@@ -179,11 +160,6 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(
-		ctx,
-		"Retrieved knowledge base list successfully, tenant ID: %d, total: %d knowledge bases",
-		tenantID.(uint), len(kbs),
-	)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    kbs,
@@ -269,16 +245,12 @@ type CopyKnowledgeBaseRequest struct {
 
 func (h *KnowledgeBaseHandler) CopyKnowledgeBase(c *gin.Context) {
 	ctx := c.Request.Context()
-	logger.Info(ctx, "Start copy knowledge base")
-
 	var req CopyKnowledgeBaseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to parse request parameters", err)
 		c.Error(errors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
 		return
 	}
-
-	logger.Infof(ctx, "Copy knowledge base, ID: %s to ID: %s", req.SourceID, req.TargetID)
 
 	go func(ctx context.Context) {
 		err := h.knowledgeService.CloneKnowledgeBase(ctx, req.SourceID, req.TargetID)
@@ -289,7 +261,6 @@ func (h *KnowledgeBaseHandler) CopyKnowledgeBase(c *gin.Context) {
 		logger.Infof(ctx, "Knowledge base copy from ID: %s to ID: %s successfully", req.SourceID, req.TargetID)
 	}(logger.CloneContext(ctx))
 
-	logger.Infof(ctx, "Knowledge base start copy from ID: %s to ID: %s", req.SourceID, req.TargetID)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Knowledge base copy successfully",

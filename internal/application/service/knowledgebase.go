@@ -98,8 +98,6 @@ func (s *knowledgeBaseService) GetKnowledgeBaseByID(ctx context.Context, id stri
 		return nil, errors.New("knowledge base ID cannot be empty")
 	}
 
-	logger.Infof(ctx, "Retrieving knowledge base, ID: %s", id)
-
 	kb, err := s.repo.GetKnowledgeBaseByID(ctx, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -109,15 +107,12 @@ func (s *knowledgeBaseService) GetKnowledgeBaseByID(ctx context.Context, id stri
 	}
 
 	kb.EnsureDefaults()
-
-	logger.Infof(ctx, "Knowledge base retrieved successfully, ID: %s, name: %s", kb.ID, kb.Name)
 	return kb, nil
 }
 
 // ListKnowledgeBases returns all knowledge bases for a tenant
 func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types.KnowledgeBase, error) {
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
-	logger.Infof(ctx, "Retrieving knowledge base list for tenant, tenant ID: %d", tenantID)
 
 	kbs, err := s.repo.ListKnowledgeBasesByTenantID(ctx, tenantID)
 	if err != nil {
@@ -134,7 +129,7 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 	// Query knowledge count and chunk count for each knowledge base
 	for _, kb := range kbs {
 		kb.EnsureDefaults()
-		
+
 		// Get knowledge count
 		if kb.Type == types.KnowledgeBaseTypeDocument {
 			knowledgeCount, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, tenantID, kb.ID)
@@ -152,14 +147,21 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 				kb.ChunkCount = chunkCount
 			}
 		}
-	}
 
-	logger.Infof(
-		ctx,
-		"Knowledge base list retrieved successfully, tenant ID: %d, knowledge base count: %d",
-		tenantID,
-		len(kbs),
-	)
+		// Check if there is a processing import task
+		processingCount, err := s.kgRepo.CountKnowledgeByStatus(
+			ctx,
+			tenantID,
+			kb.ID,
+			[]string{"pending", "processing"},
+		)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to check processing status for knowledge base %s: %v", kb.ID, err)
+		} else {
+			kb.IsProcessing = processingCount > 0
+			kb.ProcessingCount = processingCount
+		}
+	}
 	return kbs, nil
 }
 
@@ -241,7 +243,7 @@ func (s *knowledgeBaseService) DeleteKnowledgeBase(ctx context.Context, id strin
 		}
 
 		logger.Infof(ctx, "Deleting all knowledge entries and their resources")
-		
+
 		// Delete embeddings from vector store
 		logger.Infof(ctx, "Deleting embeddings from vector store")
 		tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
@@ -532,16 +534,9 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 	}
 	logger.Infof(ctx, "Result count before deduplication: %d", len(matchResults))
 
-	for _, chunk := range matchResults {
-		logger.Infof(ctx, "Before deduplication: Chunk: %s, Content: %s, Score: %f, MatchType: %d", chunk.ChunkID, chunk.Content, chunk.Score, chunk.MatchType)
-	}
-
 	// First, try standard deduplication
 	deduplicatedChunks := common.DeduplicateWithScore(func(r *types.IndexWithScore) string { return r.ChunkID }, matchResults...)
 	logger.Infof(ctx, "Result count after deduplication: %d", len(deduplicatedChunks))
-	for _, chunk := range deduplicatedChunks {
-		logger.Infof(ctx, "After deduplication: Chunk: %s, Content: %s, Score: %f, MatchType: %d", chunk.ChunkID, chunk.Content, chunk.Score, chunk.MatchType)
-	}
 
 	kb.EnsureDefaults()
 
@@ -582,8 +577,6 @@ func (s *knowledgeBaseService) iterativeRetrieveWithDeduplication(ctx context.Co
 	uniqueChunks := make(map[string]*types.IndexWithScore)
 
 	for i := 0; i < maxIterations; i++ {
-		logger.Infof(ctx, "Iterative retrieval iteration %d, TopK: %d", i+1, currentTopK)
-
 		// Update TopK in retrieve params
 		updatedParams := make([]types.RetrieveParams, len(retrieveParams))
 		for j := range retrieveParams {

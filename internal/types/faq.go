@@ -110,6 +110,47 @@ type FAQSearchRequest struct {
 	MatchCount      int     `json:"match_count"`
 }
 
+// FAQImportTaskStatus 导入任务状态
+type FAQImportTaskStatus string
+
+const (
+	FAQImportStatusPending FAQImportTaskStatus = "pending"
+	FAQImportStatusRunning FAQImportTaskStatus = "running"
+	FAQImportStatusSuccess FAQImportTaskStatus = "success"
+	FAQImportStatusFailed  FAQImportTaskStatus = "failed"
+)
+
+// FAQImportMetadata 存储在Knowledge.Metadata中的FAQ导入任务信息
+type FAQImportMetadata struct {
+	ImportProgress  int `json:"import_progress"` // 0-100
+	ImportTotal     int `json:"import_total"`
+	ImportProcessed int `json:"import_processed"`
+}
+
+// ToJSON converts the metadata to JSON type.
+func (m *FAQImportMetadata) ToJSON() (JSON, error) {
+	if m == nil {
+		return nil, nil
+	}
+	bytes, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	return JSON(bytes), nil
+}
+
+// ParseFAQImportMetadata parses FAQ import metadata from Knowledge.
+func ParseFAQImportMetadata(k *Knowledge) (*FAQImportMetadata, error) {
+	if k == nil || len(k.Metadata) == 0 {
+		return nil, nil
+	}
+	var metadata FAQImportMetadata
+	if err := json.Unmarshal(k.Metadata, &metadata); err != nil {
+		return nil, err
+	}
+	return &metadata, nil
+}
+
 func normalizeStrings(values []string) []string {
 	if len(values) == 0 {
 		return nil

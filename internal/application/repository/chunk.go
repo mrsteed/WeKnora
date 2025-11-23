@@ -25,7 +25,7 @@ func (r *chunkRepository) CreateChunks(ctx context.Context, chunks []*types.Chun
 	for _, chunk := range chunks {
 		chunk.Content = common.CleanInvalidUTF8(chunk.Content)
 	}
-	return r.db.Debug().WithContext(ctx).CreateInBatches(chunks, 100).Error
+	return r.db.WithContext(ctx).CreateInBatches(chunks, 100).Error
 }
 
 // GetChunkByID retrieves a chunk by its ID and tenant ID
@@ -139,6 +139,14 @@ func (r *chunkRepository) UpdateChunks(ctx context.Context, chunks []*types.Chun
 // DeleteChunk deletes a chunk by its ID
 func (r *chunkRepository) DeleteChunk(ctx context.Context, tenantID uint, id string) error {
 	return r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).Delete(&types.Chunk{}).Error
+}
+
+// DeleteChunks deletes chunks by IDs in batch
+func (r *chunkRepository) DeleteChunks(ctx context.Context, tenantID uint, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Where("tenant_id = ? AND id IN ?", tenantID, ids).Delete(&types.Chunk{}).Error
 }
 
 // DeleteChunksByKnowledgeID deletes all chunks for a knowledge ID

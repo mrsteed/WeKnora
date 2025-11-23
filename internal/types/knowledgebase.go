@@ -73,6 +73,10 @@ type KnowledgeBase struct {
 	KnowledgeCount int64 `yaml:"knowledge_count" json:"knowledge_count" gorm:"-"`
 	// Chunk count (not stored in database, calculated on query)
 	ChunkCount int64 `yaml:"chunk_count" json:"chunk_count" gorm:"-"`
+	// IsProcessing indicates if there is a processing import task (for FAQ type knowledge bases)
+	IsProcessing bool `yaml:"is_processing" json:"is_processing" gorm:"-"`
+	// ProcessingCount indicates the number of knowledge items being processed (for document type knowledge bases)
+	ProcessingCount int64 `yaml:"processing_count" json:"processing_count" gorm:"-"`
 }
 
 // KnowledgeBaseConfig represents the knowledge base configuration

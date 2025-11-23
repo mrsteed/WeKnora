@@ -207,7 +207,7 @@ export interface GrepChunkItem {
 // Grep results data
 export interface GrepResultsData {
     display_type: 'grep_results';
-    pattern: string;
+    patterns: string[];
     case_sensitive: boolean;
     use_regex: boolean;
     results: GrepChunkItem[];

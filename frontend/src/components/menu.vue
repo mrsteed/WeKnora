@@ -85,6 +85,37 @@
                                 <span class="kb-action-title">{{ t('knowledgeEditor.faqImport.importButton') }}</span>
                             </div>
                         </div>
+                        <div class="menu_item kb-action-item" @click.stop="handleFaqSearchTestFromMenu">
+                            <div class="kb-action-icon-wrapper">
+                                <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
+                                    <path d="M8.25 15C11.9779 15 15 11.9779 15 8.25C15 4.52208 11.9779 1.5 8.25 1.5C4.52208 1.5 1.5 4.52208 1.5 8.25C1.5 11.9779 4.52208 15 8.25 15Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M16.5 16.5L12.4875 12.4875" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <div class="kb-action-content">
+                                <span class="kb-action-title">{{ t('knowledgeEditor.faq.searchTest') }}</span>
+                            </div>
+                        </div>
+                        <t-dropdown
+                          v-if="selectedFaqCount > 0"
+                          :options="faqBatchActionOptions"
+                          trigger="hover"
+                          placement="right"
+                          @click="handleFaqBatchActionFromMenu"
+                        >
+                          <div class="menu_item kb-action-item">
+                            <div class="kb-action-icon-wrapper">
+                              <svg class="kb-action-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
+                                <path d="M3.75 9H14.25M9 3.75V14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M3.75 3.75H14.25V14.25H3.75V3.75Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                              </svg>
+                            </div>
+                            <div class="kb-action-content">
+                              <span class="kb-action-title">{{ t('knowledgeEditor.faq.batchOperations') }}</span>
+                              <span class="kb-action-count">({{ selectedFaqCount }})</span>
+                            </div>
+                          </div>
+                        </t-dropdown>
                     </template>
                 </div>
             </div>
@@ -153,7 +184,7 @@
 
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
-import { onMounted, watch, computed, ref, reactive } from 'vue';
+import { onMounted, onUnmounted, watch, computed, ref, reactive } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getSessionsList, delSession } from "@/api/chat/index";
 import { getKnowledgeBaseById, uploadKnowledgeFile, createKnowledgeFromURL } from '@/api/knowledge-base';
@@ -197,6 +228,11 @@ const isInKnowledgeBaseList = computed<boolean>(() => {
     return route.name === 'knowledgeBaseList';
 });
 
+// 是否在创建聊天页面
+const isInCreatChat = computed<boolean>(() => {
+    return route.name === 'globalCreatChat' || route.name === 'kbCreatChat';
+});
+
 // 统一的菜单项激活状态判断
 const isMenuItemActive = (itemPath: string): boolean => {
     const currentRoute = route.name;
@@ -234,7 +270,7 @@ const getIconActiveState = (itemPath: string) => {
 // 分离上下两部分菜单
 const topMenuItems = computed<MenuItem[]>(() => {
     return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => 
-        item.path === 'creatChat'
+        item.path === 'knowledge-bases' || item.path === 'creatChat'
     );
 });
 
@@ -253,12 +289,23 @@ const currentKbInfo = ref<any>(null)
 const docUploadInput = ref<HTMLInputElement | null>(null)
 const docFolderInput = ref<HTMLInputElement | null>(null)
 const pendingUploadKbId = ref<string | null>(null)
+const selectedFaqCount = ref<number>(0)
+const selectedFaqEnabledCount = ref<number>(0)
+const selectedFaqDisabledCount = ref<number>(0)
 
-const showKbActions = computed(() => (isInKnowledgeBase.value && !!currentKbInfo.value) || isInKnowledgeBaseList.value)
+// 监听FAQ选中数量变化
+const handleFaqSelectionChanged = ((event: CustomEvent<{ count: number; enabledCount?: number; disabledCount?: number }>) => {
+  const count = event.detail?.count || 0
+  selectedFaqCount.value = count
+  selectedFaqEnabledCount.value = event.detail?.enabledCount || 0
+  selectedFaqDisabledCount.value = event.detail?.disabledCount || 0
+}) as EventListener
+
+const showKbActions = computed(() => (isInKnowledgeBase.value && !!currentKbInfo.value) || isInKnowledgeBaseList.value || isInCreatChat.value)
 const currentKbType = computed(() => currentKbInfo.value?.type || 'document')
 const showDocActions = computed(() => showKbActions.value && isInKnowledgeBase.value && currentKbType.value !== 'faq')
 const showFaqActions = computed(() => showKbActions.value && isInKnowledgeBase.value && currentKbType.value === 'faq')
-const showCreateKbAction = computed(() => showKbActions.value && isInKnowledgeBaseList.value)
+const showCreateKbAction = computed(() => showKbActions.value && (isInKnowledgeBaseList.value || isInCreatChat.value))
 
 // 时间分组函数
 const getTimeCategory = (dateStr: string): string => {
@@ -438,9 +485,20 @@ onMounted(async () => {
     
     // 加载对话列表
     getMessageList();
+    
+    // 监听FAQ选中数量变化
+    window.addEventListener('faqSelectionChanged', handleFaqSelectionChanged)
 });
 
+onUnmounted(() => {
+    window.removeEventListener('faqSelectionChanged', handleFaqSelectionChanged)
+})
+
 watch([() => route.name, () => route.params], (newvalue, oldvalue) => {
+    // 切换知识库时重置选中数量
+    if (newvalue[1].kbId !== oldvalue?.[1]?.kbId) {
+        selectedFaqCount.value = 0
+    }
     const nameStr = typeof newvalue[0] === 'string' ? (newvalue[0] as string) : (newvalue[0] ? String(newvalue[0]) : '')
     currentpath.value = nameStr;
     if (newvalue[1].chatid) {
@@ -558,13 +616,11 @@ const gotopage = async (path: string) => {
         return;
     } else {
         if (path === 'creatChat') {
-            // 尝试获取当前知识库ID
-            const kbId = await getCurrentKbId()
-            if (kbId) {
-                // 如果在知识库内部，进入该知识库的对话页
-                router.push(`/platform/knowledge-bases/${kbId}/creatChat`)
+            // 如果在知识库详情页，跳转到全局对话创建页
+            if (isInKnowledgeBase.value) {
+                router.push('/platform/creatChat')
             } else {
-                // 如果不在知识库内，也进入对话创建页，让用户通过 @ 按钮选择知识库
+                // 如果不在知识库内，进入对话创建页
                 router.push(`/platform/creatChat`)
             }
         } else {
@@ -938,7 +994,7 @@ const handleDocURLImport = async () => {
     }))
 }
 
-const dispatchFaqMenuAction = (action: 'create' | 'import', kbId: string) => {
+const dispatchFaqMenuAction = (action: 'create' | 'import' | 'search' | 'batch' | 'batchTag' | 'batchEnable' | 'batchDisable' | 'batchDelete', kbId: string) => {
     window.dispatchEvent(new CustomEvent('faqMenuAction', {
         detail: { action, kbId }
     }))
@@ -960,6 +1016,65 @@ const handleFaqImportFromMenu = async () => {
         return
     }
     dispatchFaqMenuAction('import', kbId)
+}
+
+const handleFaqSearchTestFromMenu = async () => {
+    const kbId = await getCurrentKbId()
+    if (!kbId) {
+        MessagePlugin.warning(t('knowledgeEditor.messages.missingId'))
+        return
+    }
+    dispatchFaqMenuAction('search', kbId)
+}
+
+const faqBatchActionOptions = computed(() => {
+  if (selectedFaqCount.value === 0) {
+    return []
+  }
+  const options = [
+    { 
+      content: `${t('knowledgeEditor.faq.batchUpdateTag')} (${selectedFaqCount.value})`, 
+      value: 'batchTag', 
+      icon: 'folder'
+    }
+  ]
+  
+  // 根据选中条目的状态显示批量启用或禁用
+  if (selectedFaqDisabledCount.value > 0) {
+    options.push({
+      content: `${t('knowledgeEditor.faq.batchEnable')} (${selectedFaqDisabledCount.value})`,
+      value: 'batchEnable',
+      icon: 'check-circle',
+    })
+  }
+  if (selectedFaqEnabledCount.value > 0) {
+    options.push({
+      content: `${t('knowledgeEditor.faq.batchDisable')} (${selectedFaqEnabledCount.value})`,
+      value: 'batchDisable',
+      icon: 'close-circle',
+    })
+  }
+  
+  options.push({
+    content: `${t('knowledgeEditor.faqImport.deleteSelected')} (${selectedFaqCount.value})`,
+    value: 'batchDelete',
+    icon: 'delete',
+  })
+  
+  return options
+})
+
+const handleFaqBatchActionFromMenu = async (data: { value: string }) => {
+  const kbId = await getCurrentKbId()
+  if (!kbId) {
+    MessagePlugin.warning(t('knowledgeEditor.messages.missingId'))
+    return
+  }
+  if (selectedFaqCount.value === 0) {
+    MessagePlugin.warning(t('knowledgeEditor.faq.selectEntriesFirst') || '请先选中要操作的FAQ条目')
+    return
+  }
+  dispatchFaqMenuAction(data.value as 'batchTag' | 'batchEnable' | 'batchDisable' | 'batchDelete', kbId)
 }
 
 const handleCreateKnowledgeBase = () => {
@@ -1097,6 +1212,9 @@ const handleCreateKnowledgeBase = () => {
     .kb-action-content {
         flex: 1;
         min-width: 0;
+        display: flex;
+        align-items: center;
+        white-space: nowrap;
     }
 
     .kb-action-title {
@@ -1104,9 +1222,20 @@ const handleCreateKnowledgeBase = () => {
         font-weight: 500;
         color: #0f172a;
         transition: color 0.08s ease;
-        display: block;
+        display: inline;
         overflow: hidden;
         text-overflow: ellipsis;
+        white-space: nowrap;
+        flex-shrink: 1;
+        min-width: 0;
+    }
+
+    .kb-action-count {
+        font-size: 12px;
+        color: #10b981;
+        font-weight: 600;
+        margin-left: 4px;
+        flex-shrink: 0;
         white-space: nowrap;
     }
 

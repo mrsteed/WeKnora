@@ -125,8 +125,6 @@ func (s *sessionService) GetSession(ctx context.Context, id string) (*types.Sess
 
 // GetSessionsByTenant retrieves all sessions for the current tenant
 func (s *sessionService) GetSessionsByTenant(ctx context.Context) ([]*types.Session, error) {
-	logger.Info(ctx, "Start retrieving all sessions for tenant")
-
 	// Get tenant ID from context
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
 	logger.Infof(ctx, "Retrieving all sessions for tenant, tenant ID: %d", tenantID)
@@ -150,13 +148,8 @@ func (s *sessionService) GetSessionsByTenant(ctx context.Context) ([]*types.Sess
 func (s *sessionService) GetPagedSessionsByTenant(ctx context.Context,
 	pagination *types.Pagination,
 ) (*types.PageResult, error) {
-	logger.Info(ctx, "Start retrieving paged sessions for tenant")
-
 	// Get tenant ID from context
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
-	logger.Infof(ctx, "Retrieving paged sessions for tenant, tenant ID: %d, page: %d, page size: %d",
-		tenantID, pagination.Page, pagination.PageSize)
-
 	// Get paged sessions from repository
 	sessions, total, err := s.sessionRepo.GetPagedByTenantID(ctx, tenantID, pagination)
 	if err != nil {
@@ -168,21 +161,16 @@ func (s *sessionService) GetPagedSessionsByTenant(ctx context.Context,
 		return nil, err
 	}
 
-	logger.Infof(ctx, "Tenant paged sessions retrieved successfully, tenant ID: %d, total: %d", tenantID, total)
 	return types.NewPageResult(total, pagination, sessions), nil
 }
 
 // UpdateSession updates an existing session's properties
 func (s *sessionService) UpdateSession(ctx context.Context, session *types.Session) error {
-	logger.Info(ctx, "Start updating session")
-
 	// Validate session ID
 	if session.ID == "" {
 		logger.Error(ctx, "Failed to update session: session ID cannot be empty")
 		return errors.New("session id is required")
 	}
-
-	logger.Infof(ctx, "Updating session, ID: %s, tenant ID: %d", session.ID, session.TenantID)
 
 	// Update session in repository
 	err := s.sessionRepo.Update(ctx, session)
@@ -200,8 +188,6 @@ func (s *sessionService) UpdateSession(ctx context.Context, session *types.Sessi
 
 // DeleteSession removes a session by its ID
 func (s *sessionService) DeleteSession(ctx context.Context, id string) error {
-	logger.Info(ctx, "Start deleting session")
-
 	// Validate session ID
 	if id == "" {
 		logger.Error(ctx, "Failed to delete session: session ID cannot be empty")
@@ -210,7 +196,6 @@ func (s *sessionService) DeleteSession(ctx context.Context, id string) error {
 
 	// Get tenant ID from context
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
-	logger.Infof(ctx, "Deleting session, ID: %s, tenant ID: %d", id, tenantID)
 
 	// Cleanup temporary KB stored in Redis for this session
 	if err := s.DeleteWebSearchTempKBState(ctx, id); err != nil {
@@ -227,7 +212,6 @@ func (s *sessionService) DeleteSession(ctx context.Context, id string) error {
 		return err
 	}
 
-	logger.Infof(ctx, "Session deleted successfully, ID: %s", id)
 	return nil
 }
 
@@ -235,8 +219,6 @@ func (s *sessionService) DeleteSession(ctx context.Context, id string) error {
 func (s *sessionService) GenerateTitle(ctx context.Context,
 	session *types.Session, messages []types.Message,
 ) (string, error) {
-	logger.Info(ctx, "Start generating session title")
-
 	if session == nil {
 		logger.Error(ctx, "Failed to generate title: session cannot be empty")
 		return "", errors.New("session cannot be empty")
@@ -244,14 +226,12 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 
 	// Skip if title already exists
 	if session.Title != "" {
-		logger.Infof(ctx, "Session already has a title, session ID: %s, title: %s", session.ID, session.Title)
 		return session.Title, nil
 	}
 	var err error
 	// Get the first user message, either from provided messages or repository
 	var message *types.Message
 	if len(messages) == 0 {
-		logger.Info(ctx, "Message list is empty, getting the first user message")
 		message, err = s.messageRepo.GetFirstMessageOfUser(ctx, session.ID)
 		if err != nil {
 			logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -260,7 +240,6 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 			return "", err
 		}
 	} else {
-		logger.Info(ctx, "Searching for user message in message list")
 		for _, m := range messages {
 			if m.Role == "user" {
 				message = &m
@@ -278,7 +257,6 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 	// Get chat model, use default if SummaryModelID is empty
 	modelID := session.SummaryModelID
 	if modelID == "" {
-		logger.Info(ctx, "Session SummaryModelID is empty, trying to get default chat model")
 		// Try to get an available KnowledgeQA model
 		models, err := s.modelService.ListModels(ctx)
 		if err != nil {
@@ -299,7 +277,6 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 		}
 	}
 
-	logger.Infof(ctx, "Getting chat model, model ID: %s", modelID)
 	chatModel, err := s.modelService.GetChatModel(ctx, modelID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -309,7 +286,6 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 	}
 
 	// Prepare messages for title generation
-	logger.Info(ctx, "Preparing to generate session title")
 	var chatMessages []chat.Message
 	chatMessages = append(chatMessages,
 		chat.Message{Role: "system", Content: s.cfg.Conversation.GenerateSessionTitlePrompt},
@@ -320,7 +296,6 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 
 	// Call model to generate title
 	thinking := false
-	logger.Info(ctx, "Calling model to generate title")
 	response, err := chatModel.Chat(ctx, chatMessages, &chat.ChatOptions{
 		Temperature: 0.3,
 		Thinking:    &thinking,
@@ -332,17 +307,14 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 
 	// Process and store the generated title
 	session.Title = strings.TrimPrefix(response.Content, "<think>\n\n</think>")
-	logger.Infof(ctx, "Title generated successfully: %s", session.Title)
 
 	// Update session with new title
-	logger.Info(ctx, "Updating session title")
 	err = s.sessionRepo.Update(ctx, session)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		return "", err
 	}
 
-	logger.Infof(ctx, "Session title updated successfully, ID: %s, title: %s", session.ID, session.Title)
 	return session.Title, nil
 }
 
@@ -363,11 +335,8 @@ func (s *sessionService) GenerateTitleAsync(ctx context.Context, session *types.
 			bgCtx = context.WithValue(bgCtx, types.RequestIDContextKey, requestID)
 		}
 
-		logger.Info(bgCtx, "Starting async title generation")
-
 		// Skip if title already exists
 		if session.Title != "" {
-			logger.Infof(bgCtx, "Session already has a title, skipping generation, session ID: %s", session.ID)
 			return
 		}
 

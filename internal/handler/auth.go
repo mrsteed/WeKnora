@@ -217,8 +217,6 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	logger.Debugf(ctx, "Get current user info")
-
 	// Get current user from service (which extracts from context)
 	user, err := h.userService.GetCurrentUser(ctx)
 	if err != nil {
@@ -235,12 +233,9 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		if err != nil {
 			logger.Warnf(ctx, "Failed to get tenant info for user %s, tenant ID %d: %v", user.Email, user.TenantID, err)
 			// Don't fail the request if tenant info is not available
-		} else {
-			logger.Debugf(ctx, "Retrieved tenant info for user %s: %s", user.Email, tenant.Name)
 		}
 	}
 
-	logger.Debugf(ctx, "Retrieved current user info: %s", user.Email)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{

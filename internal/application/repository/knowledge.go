@@ -229,3 +229,26 @@ func (r *knowledgeRepository) CountKnowledgeByKnowledgeBaseID(ctx context.Contex
 		Count(&count).Error
 	return count, err
 }
+
+// CountKnowledgeByStatus counts the number of knowledge items with the specified parse status
+func (r *knowledgeRepository) CountKnowledgeByStatus(
+	ctx context.Context,
+	tenantID uint,
+	kbID string,
+	parseStatuses []string,
+) (int64, error) {
+	if len(parseStatuses) == 0 {
+		return 0, nil
+	}
+
+	var count int64
+	query := r.db.WithContext(ctx).Model(&types.Knowledge{}).
+		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
+		Where("parse_status IN ?", parseStatuses)
+
+	if err := query.Count(&count).Error; err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}

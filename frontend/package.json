@@ -14,10 +14,12 @@
   "dependencies": {
     "@microsoft/fetch-event-source": "^2.0.1",
     "@types/dompurify": "^3.0.5",
+    "@types/papaparse": "^5.5.0",
     "axios": "^1.8.4",
     "dompurify": "^3.2.6",
     "marked": "^5.1.2",
     "pagefind": "^1.1.1",
+    "papaparse": "^5.5.3",
     "pinia": "^3.0.1",
     "swiper": "^12.0.3",
     "tdesign-icons-vue-next": "^0.4.1",

@@ -46,7 +46,7 @@ func (h *FAQHandler) ListEntries(c *gin.Context) {
 	})
 }
 
-// UpsertEntries appends or replaces FAQ entries in batch.
+// UpsertEntries appends or replaces FAQ entries in batch asynchronously.
 func (h *FAQHandler) UpsertEntries(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req types.FAQBatchUpsertPayload
@@ -56,7 +56,8 @@ func (h *FAQHandler) UpsertEntries(c *gin.Context) {
 		return
 	}
 
-	if err := h.knowledgeService.UpsertFAQEntries(ctx, c.Param("id"), &req); err != nil {
+	taskID, err := h.knowledgeService.UpsertFAQEntries(ctx, c.Param("id"), &req)
+	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)
 		return
@@ -64,6 +65,9 @@ func (h *FAQHandler) UpsertEntries(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
+		"data": gin.H{
+			"task_id": taskID,
+		},
 	})
 }
 
