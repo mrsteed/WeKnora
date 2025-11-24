@@ -28,14 +28,12 @@ type DocumentProcessPayload struct {
 
 // FAQImportPayload FAQ导入任务payload
 type FAQImportPayload struct {
-	TenantID        uint              `json:"tenant_id"`
-	TaskID          string            `json:"task_id"`
-	KBID            string            `json:"kb_id"`
-	KnowledgeID     string            `json:"knowledge_id"`
-	Entries         []FAQEntryPayload `json:"entries"`
-	Mode            string            `json:"mode"`
-	StartChunkIndex int               `json:"start_chunk_index"`
-	EndChunkIndex   int               `json:"end_chunk_index"`
+	TenantID    uint              `json:"tenant_id"`
+	TaskID      string            `json:"task_id"`
+	KBID        string            `json:"kb_id"`
+	KnowledgeID string            `json:"knowledge_id"`
+	Entries     []FAQEntryPayload `json:"entries"`
+	Mode        string            `json:"mode"`
 }
 
 type PromptTemplateStructured struct {

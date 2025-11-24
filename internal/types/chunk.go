@@ -30,6 +30,17 @@ const (
 	ChunkTypeWebSearch ChunkType = "web_search"
 )
 
+// ChunkStatus 定义了不同状态的 Chunk
+type ChunkStatus int
+
+const (
+	ChunkStatusDefault ChunkStatus = 0
+	// ChunkStatusStored 表示已存储的 Chunk
+	ChunkStatusStored ChunkStatus = 1
+	// ChunkStatusIndexed 表示已索引的 Chunk
+	ChunkStatusIndexed ChunkStatus = 2
+)
+
 // ImageInfo 表示与 Chunk 关联的图片信息
 type ImageInfo struct {
 	// 图片URL（COS）
@@ -69,6 +80,8 @@ type Chunk struct {
 	ChunkIndex int `json:"chunk_index"`
 	// Whether the chunk is enabled, can be used to temporarily disable certain chunks
 	IsEnabled bool `json:"is_enabled" gorm:"default:true"`
+	// Status of the chunk
+	Status int `json:"status" gorm:"default:0"`
 	// Starting character position in the original text
 	StartAt int `json:"start_at" `
 	// Ending character position in the original text
@@ -87,6 +100,8 @@ type Chunk struct {
 	IndirectRelationChunks JSON `json:"indirect_relation_chunks" gorm:"type:json"`
 	// Metadata 存储 chunk 级别的扩展信息，例如 FAQ 元数据
 	Metadata JSON `json:"metadata" gorm:"type:json"`
+	// ContentHash 存储内容的 hash 值，用于快速匹配（主要用于 FAQ）
+	ContentHash string `json:"content_hash" gorm:"type:varchar(64);index"`
 	// 图片信息，存储为 JSON
 	ImageInfo string `json:"image_info" gorm:"type:text"`
 	// Chunk creation time

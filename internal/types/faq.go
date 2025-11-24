@@ -1,7 +1,10 @@
 package types
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 )
@@ -50,6 +53,7 @@ func (c *Chunk) SetFAQMetadata(meta *FAQChunkMetadata) error {
 	}
 	if meta == nil {
 		c.Metadata = nil
+		c.ContentHash = ""
 		return nil
 	}
 	meta.Normalize()
@@ -58,7 +62,49 @@ func (c *Chunk) SetFAQMetadata(meta *FAQChunkMetadata) error {
 		return err
 	}
 	c.Metadata = JSON(bytes)
+	// 计算并设置 ContentHash
+	c.ContentHash = CalculateFAQContentHash(meta)
 	return nil
+}
+
+// CalculateFAQContentHash 计算 FAQ 内容的 hash 值
+// hash 基于：标准问 + 相似问（排序后）+ 反例（排序后）+ 答案（排序后）
+// 用于快速匹配和去重
+func CalculateFAQContentHash(meta *FAQChunkMetadata) string {
+	if meta == nil {
+		return ""
+	}
+
+	// 创建副本并标准化
+	normalized := *meta
+	normalized.Normalize()
+
+	// 对数组进行排序（确保相同内容产生相同 hash）
+	similarQuestions := make([]string, len(normalized.SimilarQuestions))
+	copy(similarQuestions, normalized.SimilarQuestions)
+	sort.Strings(similarQuestions)
+
+	negativeQuestions := make([]string, len(normalized.NegativeQuestions))
+	copy(negativeQuestions, normalized.NegativeQuestions)
+	sort.Strings(negativeQuestions)
+
+	answers := make([]string, len(normalized.Answers))
+	copy(answers, normalized.Answers)
+	sort.Strings(answers)
+
+	// 构建用于 hash 的字符串：标准问 + 相似问 + 反例 + 答案
+	var builder strings.Builder
+	builder.WriteString(normalized.StandardQuestion)
+	builder.WriteString("|")
+	builder.WriteString(strings.Join(similarQuestions, ","))
+	builder.WriteString("|")
+	builder.WriteString(strings.Join(negativeQuestions, ","))
+	builder.WriteString("|")
+	builder.WriteString(strings.Join(answers, ","))
+
+	// 计算 SHA256 hash
+	hash := sha256.Sum256([]byte(builder.String()))
+	return hex.EncodeToString(hash[:])
 }
 
 // FAQEntry 表示返回给前端的 FAQ 条目
@@ -125,7 +171,6 @@ type FAQImportMetadata struct {
 	ImportProgress  int `json:"import_progress"` // 0-100
 	ImportTotal     int `json:"import_total"`
 	ImportProcessed int `json:"import_processed"`
-	NextChunkIndex  int `json:"next_chunk_index,omitempty"` // 下一个要分配的ChunkIndex（自增计数器）
 }
 
 // ToJSON converts the metadata to JSON type.

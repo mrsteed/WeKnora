@@ -81,7 +81,8 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	var total int64
 
 	query := r.db.WithContext(ctx).Model(&types.Chunk{}).
-		Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?)", tenantID, knowledgeID, chunkType)
+		Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?) AND status in (?)",
+			tenantID, knowledgeID, chunkType, []types.ChunkStatus{types.ChunkStatusStored, types.ChunkStatusDefault})
 	if tagID != "" {
 		query = query.Where("tag_id = ?", tagID)
 	}
@@ -94,7 +95,8 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	// Then query the paginated data
 	dataQuery := r.db.WithContext(ctx).
 		Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info, metadata, tag_id")
-	dataQuery = dataQuery.Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?)", tenantID, knowledgeID, chunkType)
+	dataQuery = dataQuery.Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?) AND status in (?)",
+		tenantID, knowledgeID, chunkType, []types.ChunkStatus{types.ChunkStatusStored, types.ChunkStatusDefault})
 	if tagID != "" {
 		dataQuery = dataQuery.Where("tag_id = ?", tagID)
 	}
@@ -172,21 +174,56 @@ func (r *chunkRepository) CountChunksByKnowledgeBaseID(ctx context.Context, tena
 	return count, err
 }
 
-func (r *chunkRepository) DeleteChunksByChunkIndexRange(ctx context.Context, tenantID uint, knowledgeID string, startChunkIndex int, endChunkIndex int) ([]*types.Chunk, error) {
+// DeleteUnindexedChunks by knowledge id and chunk index range
+func (r *chunkRepository) DeleteUnindexedChunks(ctx context.Context, tenantID uint, knowledgeID string) ([]*types.Chunk, error) {
 	var chunks []*types.Chunk
-	// 先查询要删除的chunks
 	if err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND knowledge_id = ? AND chunk_index >= ? AND chunk_index <= ? AND deleted_at IS NULL", tenantID, knowledgeID, startChunkIndex, endChunkIndex).
+		Where("tenant_id = ? AND knowledge_id = ? AND status = ?", tenantID, knowledgeID, types.ChunkStatusStored).
 		Find(&chunks).Error; err != nil {
 		return nil, err
 	}
-	// 然后删除它们
 	if len(chunks) > 0 {
 		if err := r.db.WithContext(ctx).
-			Where("tenant_id = ? AND knowledge_id = ? AND chunk_index >= ? AND chunk_index <= ? AND deleted_at IS NULL", tenantID, knowledgeID, startChunkIndex, endChunkIndex).
+			Where("tenant_id = ? AND knowledge_id = ? AND status = ?", tenantID, knowledgeID, types.ChunkStatusStored).
 			Delete(&types.Chunk{}).Error; err != nil {
 			return nil, err
 		}
 	}
 	return chunks, nil
+}
+
+// ListAllFAQChunksByKnowledgeID lists all FAQ chunks for a knowledge ID (only essential fields for efficiency)
+// Uses batch query to handle large datasets
+func (r *chunkRepository) ListAllFAQChunksByKnowledgeID(ctx context.Context, tenantID uint, knowledgeID string) ([]*types.Chunk, error) {
+	const batchSize = 1000 // 每批查询1000条
+	var allChunks []*types.Chunk
+	offset := 0
+
+	for {
+		var batchChunks []*types.Chunk
+		if err := r.db.WithContext(ctx).
+			Select("id, content_hash").
+			Where("tenant_id = ? AND knowledge_id = ? AND chunk_type = ?", tenantID, knowledgeID, types.ChunkTypeFAQ).
+			Offset(offset).
+			Limit(batchSize).
+			Find(&batchChunks).Error; err != nil {
+			return nil, err
+		}
+
+		// 如果没有查询到数据，说明已经查询完毕
+		if len(batchChunks) == 0 {
+			break
+		}
+
+		allChunks = append(allChunks, batchChunks...)
+
+		// 如果返回的数据少于批次大小，说明已经是最后一批
+		if len(batchChunks) < batchSize {
+			break
+		}
+
+		offset += batchSize
+	}
+
+	return allChunks, nil
 }

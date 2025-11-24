@@ -186,6 +186,26 @@ func (s *chunkService) UpdateChunk(ctx context.Context, chunk *types.Chunk) erro
 	return nil
 }
 
+// UpdateChunks updates chunks in batch
+func (s *chunkService) UpdateChunks(ctx context.Context, chunks []*types.Chunk) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	logger.Infof(ctx, "Updating %d chunks in batch", len(chunks))
+
+	// Update the chunks in the repository
+	err := s.chunkRepository.UpdateChunks(ctx, chunks)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"chunk_count": len(chunks),
+		})
+		return err
+	}
+
+	logger.Infof(ctx, "Successfully updated %d chunks", len(chunks))
+	return nil
+}
+
 // DeleteChunk deletes a chunk by ID
 // This method removes a specific chunk from the repository
 // Parameters:
