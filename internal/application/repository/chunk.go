@@ -82,7 +82,7 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 
 	query := r.db.WithContext(ctx).Model(&types.Chunk{}).
 		Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?) AND status in (?)",
-			tenantID, knowledgeID, chunkType, []types.ChunkStatus{types.ChunkStatusStored, types.ChunkStatusDefault})
+			tenantID, knowledgeID, chunkType, []types.ChunkStatus{types.ChunkStatusIndexed, types.ChunkStatusDefault})
 	if tagID != "" {
 		query = query.Where("tag_id = ?", tagID)
 	}
@@ -96,7 +96,7 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	dataQuery := r.db.WithContext(ctx).
 		Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info, metadata, tag_id")
 	dataQuery = dataQuery.Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?) AND status in (?)",
-		tenantID, knowledgeID, chunkType, []types.ChunkStatus{types.ChunkStatusStored, types.ChunkStatusDefault})
+		tenantID, knowledgeID, chunkType, []types.ChunkStatus{types.ChunkStatusIndexed, types.ChunkStatusDefault})
 	if tagID != "" {
 		dataQuery = dataQuery.Where("tag_id = ?", tagID)
 	}
