@@ -101,8 +101,16 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "File upload successful, filename: %s, size: %.2f KB", file.Filename, float64(file.Size)/1024)
-	logger.Infof(ctx, "Creating knowledge, knowledge base ID: %s, filename: %s", kbID, file.Filename)
+	// Get custom filename if provided (for folder uploads with path)
+	customFileName := c.PostForm("fileName")
+	displayFileName := file.Filename
+	if customFileName != "" {
+		displayFileName = customFileName
+		logger.Infof(ctx, "Using custom filename: %s (original: %s)", customFileName, file.Filename)
+	}
+
+	logger.Infof(ctx, "File upload successful, filename: %s, size: %.2f KB", displayFileName, float64(file.Size)/1024)
+	logger.Infof(ctx, "Creating knowledge, knowledge base ID: %s, filename: %s", kbID, displayFileName)
 
 	// Parse metadata if provided
 	var metadata map[string]string
@@ -129,7 +137,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 	}
 
 	// Create knowledge entry from the file
-	knowledge, err := h.kgService.CreateKnowledgeFromFile(ctx, kbID, file, metadata, enableMultimodel)
+	knowledge, err := h.kgService.CreateKnowledgeFromFile(ctx, kbID, file, metadata, enableMultimodel, customFileName)
 	// Check for duplicate knowledge error
 	if err != nil {
 		if h.handleDuplicateKnowledgeError(c, err, knowledge, "file") {

@@ -1,13 +1,41 @@
 package types
 
 const (
-	TypeChunkExtract = "chunk:extract"
+	TypeChunkExtract    = "chunk:extract"
+	TypeDocumentProcess = "document:process" // 文档处理任务
+	TypeFAQImport       = "faq:import"       // FAQ导入任务
 )
 
 type ExtractChunkPayload struct {
 	TenantID uint   `json:"tenant_id"`
 	ChunkID  string `json:"chunk_id"`
 	ModelID  string `json:"model_id"`
+}
+
+// DocumentProcessPayload 文档处理任务payload
+type DocumentProcessPayload struct {
+	RequestId        string   `json:"request_id"`
+	TenantID         uint     `json:"tenant_id"`
+	KnowledgeID      string   `json:"knowledge_id"`
+	KnowledgeBaseID  string   `json:"knowledge_base_id"`
+	FilePath         string   `json:"file_path,omitempty"` // 文件路径（文件导入时使用）
+	FileName         string   `json:"file_name,omitempty"` // 文件名（文件导入时使用）
+	FileType         string   `json:"file_type,omitempty"` // 文件类型（文件导入时使用）
+	URL              string   `json:"url,omitempty"`       // URL（URL导入时使用）
+	Passages         []string `json:"passages,omitempty"`  // 文本段落（文本导入时使用）
+	EnableMultimodel bool     `json:"enable_multimodel"`
+}
+
+// FAQImportPayload FAQ导入任务payload
+type FAQImportPayload struct {
+	TenantID        uint              `json:"tenant_id"`
+	TaskID          string            `json:"task_id"`
+	KBID            string            `json:"kb_id"`
+	KnowledgeID     string            `json:"knowledge_id"`
+	Entries         []FAQEntryPayload `json:"entries"`
+	Mode            string            `json:"mode"`
+	StartChunkIndex int               `json:"start_chunk_index"`
+	EndChunkIndex   int               `json:"end_chunk_index"`
 }
 
 type PromptTemplateStructured struct {

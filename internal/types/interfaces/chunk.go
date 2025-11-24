@@ -33,12 +33,15 @@ type ChunkRepository interface {
 	UpdateChunks(ctx context.Context, chunks []*types.Chunk) error
 	// DeleteChunk deletes a chunk
 	DeleteChunk(ctx context.Context, tenantID uint, id string) error
+	// DeleteChunks deletes chunks by IDs in batch
+	DeleteChunks(ctx context.Context, tenantID uint, ids []string) error
 	// DeleteChunksByKnowledgeID deletes chunks by knowledge id
 	DeleteChunksByKnowledgeID(ctx context.Context, tenantID uint, knowledgeID string) error
 	// DeleteByKnowledgeList deletes all chunks for a knowledge list
 	DeleteByKnowledgeList(ctx context.Context, tenantID uint, knowledgeIDs []string) error
 	// CountChunksByKnowledgeBaseID counts the number of chunks in a knowledge base.
 	CountChunksByKnowledgeBaseID(ctx context.Context, tenantID uint, kbID string) (int64, error)
+	DeleteChunksByChunkIndexRange(ctx context.Context, tenantID uint, knowledgeID string, startChunkIndex int, endChunkIndex int) ([]*types.Chunk, error)
 }
 
 // ChunkService defines the interface for chunk service operations
@@ -60,6 +63,8 @@ type ChunkService interface {
 	UpdateChunk(ctx context.Context, chunk *types.Chunk) error
 	// DeleteChunk deletes a chunk
 	DeleteChunk(ctx context.Context, id string) error
+	// DeleteChunks deletes chunks by IDs in batch
+	DeleteChunks(ctx context.Context, ids []string) error
 	// DeleteChunksByKnowledgeID deletes chunks by knowledge id
 	DeleteChunksByKnowledgeID(ctx context.Context, knowledgeID string) error
 	// DeleteByKnowledgeList deletes all chunks for a knowledge list

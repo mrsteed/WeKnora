@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/hibiken/asynq"
 )
 
 // KnowledgeService defines the interface for knowledge services.
@@ -17,6 +18,7 @@ type KnowledgeService interface {
 		file *multipart.FileHeader,
 		metadata map[string]string,
 		enableMultimodel *bool,
+		customFileName string,
 	) (*types.Knowledge, error)
 	// CreateKnowledgeFromURL creates knowledge from a URL.
 	CreateKnowledgeFromURL(ctx context.Context, kbID string, url string, enableMultimodel *bool) (*types.Knowledge, error)
@@ -55,8 +57,9 @@ type KnowledgeService interface {
 	// ListFAQEntries lists FAQ entries under a FAQ knowledge base.
 	// When tagID is non-empty, results are filtered by tag_id on FAQ chunks.
 	ListFAQEntries(ctx context.Context, kbID string, page *types.Pagination, tagID string) (*types.PageResult, error)
-	// UpsertFAQEntries imports or appends FAQ entries.
-	UpsertFAQEntries(ctx context.Context, kbID string, payload *types.FAQBatchUpsertPayload) error
+	// UpsertFAQEntries imports or appends FAQ entries asynchronously.
+	// Returns task ID (Knowledge ID) for tracking import progress.
+	UpsertFAQEntries(ctx context.Context, kbID string, payload *types.FAQBatchUpsertPayload) (string, error)
 	// UpdateFAQEntry updates a single FAQ entry.
 	UpdateFAQEntry(ctx context.Context, kbID string, entryID string, payload *types.FAQEntryPayload) error
 	// UpdateFAQEntryStatusBatch updates enable status for FAQ entries in batch.
@@ -71,6 +74,10 @@ type KnowledgeService interface {
 	UpdateFAQEntryTagBatch(ctx context.Context, kbID string, updates map[string]*string) error
 	// GetRepository gets the knowledge repository
 	GetRepository() KnowledgeRepository
+	// ProcessDocument handles Asynq document processing tasks
+	ProcessDocument(ctx context.Context, t *asynq.Task) error
+	// ProcessFAQImport handles Asynq FAQ import tasks
+	ProcessFAQImport(ctx context.Context, t *asynq.Task) error
 }
 
 // KnowledgeRepository defines the interface for knowledge repositories.
@@ -104,4 +111,6 @@ type KnowledgeRepository interface {
 	UpdateKnowledgeColumn(ctx context.Context, id string, column string, value interface{}) error
 	// CountKnowledgeByKnowledgeBaseID counts the number of knowledge items in a knowledge base.
 	CountKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint, kbID string) (int64, error)
+	// CountKnowledgeByStatus counts the number of knowledge items with the specified parse status.
+	CountKnowledgeByStatus(ctx context.Context, tenantID uint, kbID string, parseStatuses []string) (int64, error)
 }

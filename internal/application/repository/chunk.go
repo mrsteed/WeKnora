@@ -25,7 +25,7 @@ func (r *chunkRepository) CreateChunks(ctx context.Context, chunks []*types.Chun
 	for _, chunk := range chunks {
 		chunk.Content = common.CleanInvalidUTF8(chunk.Content)
 	}
-	return r.db.Debug().WithContext(ctx).CreateInBatches(chunks, 100).Error
+	return r.db.WithContext(ctx).CreateInBatches(chunks, 100).Error
 }
 
 // GetChunkByID retrieves a chunk by its ID and tenant ID
@@ -141,6 +141,14 @@ func (r *chunkRepository) DeleteChunk(ctx context.Context, tenantID uint, id str
 	return r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).Delete(&types.Chunk{}).Error
 }
 
+// DeleteChunks deletes chunks by IDs in batch
+func (r *chunkRepository) DeleteChunks(ctx context.Context, tenantID uint, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Where("tenant_id = ? AND id IN ?", tenantID, ids).Delete(&types.Chunk{}).Error
+}
+
 // DeleteChunksByKnowledgeID deletes all chunks for a knowledge ID
 func (r *chunkRepository) DeleteChunksByKnowledgeID(ctx context.Context, tenantID uint, knowledgeID string) error {
 	return r.db.WithContext(ctx).Where(
@@ -162,4 +170,23 @@ func (r *chunkRepository) CountChunksByKnowledgeBaseID(ctx context.Context, tena
 		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
 		Count(&count).Error
 	return count, err
+}
+
+func (r *chunkRepository) DeleteChunksByChunkIndexRange(ctx context.Context, tenantID uint, knowledgeID string, startChunkIndex int, endChunkIndex int) ([]*types.Chunk, error) {
+	var chunks []*types.Chunk
+	// 先查询要删除的chunks
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND knowledge_id = ? AND chunk_index >= ? AND chunk_index <= ? AND deleted_at IS NULL", tenantID, knowledgeID, startChunkIndex, endChunkIndex).
+		Find(&chunks).Error; err != nil {
+		return nil, err
+	}
+	// 然后删除它们
+	if len(chunks) > 0 {
+		if err := r.db.WithContext(ctx).
+			Where("tenant_id = ? AND knowledge_id = ? AND chunk_index >= ? AND chunk_index <= ? AND deleted_at IS NULL", tenantID, knowledgeID, startChunkIndex, endChunkIndex).
+			Delete(&types.Chunk{}).Error; err != nil {
+			return nil, err
+		}
+	}
+	return chunks, nil
 }

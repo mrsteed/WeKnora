@@ -58,8 +58,6 @@ func (s *chunkService) GetRepository() interfaces.ChunkRepository {
 // Returns:
 //   - error: Any error encountered during chunk creation
 func (s *chunkService) CreateChunks(ctx context.Context, chunks []*types.Chunk) error {
-	logger.Info(ctx, "Start creating chunks")
-	logger.Infof(ctx, "Creating %d chunks", len(chunks))
 
 	err := s.chunkRepository.CreateChunks(ctx, chunks)
 	if err != nil {
@@ -69,7 +67,7 @@ func (s *chunkService) CreateChunks(ctx context.Context, chunks []*types.Chunk) 
 		return err
 	}
 
-	logger.Info(ctx, "Chunks created successfully")
+	logger.Infof(ctx, "Add %d chunks successfully", len(chunks))
 	return nil
 }
 
@@ -213,6 +211,37 @@ func (s *chunkService) DeleteChunk(ctx context.Context, id string) error {
 	}
 
 	logger.Info(ctx, "Chunk deleted successfully")
+	return nil
+}
+
+// DeleteChunks deletes chunks by IDs in batch
+// This method removes multiple chunks from the repository in a single operation
+// Parameters:
+//   - ctx: Context with authentication and request information
+//   - ids: Slice of chunk IDs to delete
+//
+// Returns:
+//   - error: Any error encountered during batch deletion
+func (s *chunkService) DeleteChunks(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	logger.Info(ctx, "Start deleting chunks in batch")
+	logger.Infof(ctx, "Deleting %d chunks", len(ids))
+
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	logger.Infof(ctx, "Tenant ID: %d", tenantID)
+
+	err := s.chunkRepository.DeleteChunks(ctx, tenantID, ids)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"chunk_ids": ids,
+			"tenant_id": tenantID,
+		})
+		return err
+	}
+
+	logger.Infof(ctx, "Successfully deleted %d chunks", len(ids))
 	return nil
 }
 

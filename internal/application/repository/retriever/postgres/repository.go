@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -151,8 +152,10 @@ func (g *pgRepository) KeywordsRetrieve(ctx context.Context,
 	conds := make([]clause.Expression, 0)
 	if len(params.KnowledgeBaseIDs) > 0 {
 		logger.GetLogger(ctx).Debugf("[Postgres] Filtering by knowledge base IDs: %v", params.KnowledgeBaseIDs)
-		conds = append(conds, clause.Expr{
-			SQL: fmt.Sprintf("knowledge_base_id @@@ 'in (%s)'", common.StringSliceJoin(params.KnowledgeBaseIDs)),
+		// Use standard SQL IN clause instead of @@@ operator for better performance with B-tree index
+		conds = append(conds, clause.IN{
+			Column: "knowledge_base_id",
+			Values: common.ToInterfaceSlice(params.KnowledgeBaseIDs),
 		})
 	}
 	conds = append(conds, clause.Expr{
@@ -210,52 +213,96 @@ func (g *pgRepository) KeywordsRetrieve(ctx context.Context,
 }
 
 // VectorRetrieve performs vector similarity search using pgvector
+// Optimized to use HNSW index efficiently and avoid recalculating vector distance
 func (g *pgRepository) VectorRetrieve(ctx context.Context,
 	params types.RetrieveParams,
 ) ([]*types.RetrieveResult, error) {
 	logger.GetLogger(ctx).Infof("[Postgres] Vector retrieval: dim=%d, topK=%d, threshold=%.4f",
 		len(params.Embedding), params.TopK, params.Threshold)
 
-	conds := make([]clause.Expression, 0)
+	dimension := len(params.Embedding)
+	queryVector := pgvector.NewHalfVector(params.Embedding)
+
+	// Build WHERE conditions for filtering
+	whereParts := make([]string, 0)
+	allVars := make([]interface{}, 0)
+
+	// Add query vector first (used in ORDER BY for HNSW index)
+	allVars = append(allVars, queryVector)
+
+	// Dimension filter (required for HNSW index WHERE clause)
+	whereParts = append(whereParts, fmt.Sprintf("dimension = $%d", len(allVars)+1))
+	allVars = append(allVars, dimension)
+
+	// Knowledge base filter
 	if len(params.KnowledgeBaseIDs) > 0 {
 		logger.GetLogger(ctx).Debugf(
 			"[Postgres] Filtering vector search by knowledge base IDs: %v",
 			params.KnowledgeBaseIDs,
 		)
-		conds = append(conds, clause.IN{
-			Column: "knowledge_base_id",
-			Values: common.ToInterfaceSlice(params.KnowledgeBaseIDs),
-		})
+		// Build IN clause with proper placeholders
+		placeholders := make([]string, len(params.KnowledgeBaseIDs))
+		paramStart := len(allVars) + 1
+		for i := range params.KnowledgeBaseIDs {
+			placeholders[i] = fmt.Sprintf("$%d", paramStart+i)
+			allVars = append(allVars, params.KnowledgeBaseIDs[i])
+		}
+		whereParts = append(whereParts, fmt.Sprintf("knowledge_base_id IN (%s)",
+			strings.Join(placeholders, ", ")))
 	}
-	// <=> Cosine similarity operator
-	// <-> L2 distance operator
-	// <#> Inner product operator
-	dimension := len(params.Embedding)
-	conds = append(conds, clause.Expr{SQL: "dimension = ?", Vars: []interface{}{dimension}})
-	// Filter by is_enabled = true or NULL (NULL means enabled for historical data)
-	conds = append(conds, clause.Expr{
-		SQL:  "(is_enabled IS NULL OR is_enabled = ?)",
-		Vars: []interface{}{true},
-	})
-	conds = append(conds, clause.Expr{
-		SQL:  fmt.Sprintf("embedding::halfvec(%d) <=> ?::halfvec < ?", dimension),
-		Vars: []interface{}{pgvector.NewHalfVector(params.Embedding), 1 - params.Threshold},
-	})
-	conds = append(conds, clause.OrderBy{Expression: clause.Expr{
-		SQL:  fmt.Sprintf("embedding::halfvec(%d) <=> ?::halfvec", dimension),
-		Vars: []interface{}{pgvector.NewHalfVector(params.Embedding)},
-	}})
+
+	// is_enabled filter
+	whereParts = append(whereParts, fmt.Sprintf("(is_enabled IS NULL OR is_enabled = $%d)", len(allVars)+1))
+	allVars = append(allVars, true)
+
+	// Build WHERE clause string
+	whereClause := ""
+	if len(whereParts) > 0 {
+		whereClause = "WHERE " + strings.Join(whereParts, " AND ")
+	}
+
+	// Expand TopK to get more candidates before threshold filtering
+	expandedTopK := params.TopK * 2
+	if expandedTopK < 100 {
+		expandedTopK = 100 // Minimum 100 candidates
+	}
+	if expandedTopK > 1000 {
+		expandedTopK = 1000 // Maximum 1000 candidates
+	}
+
+	// Optimized query: Use subquery to calculate distance once
+	// Strategy: Use ORDER BY with vector distance to leverage HNSW index,
+	// then filter by threshold in outer query
+	// This allows PostgreSQL to use HNSW index efficiently
+	subqueryLimitParam := len(allVars) + 1
+	thresholdParam := len(allVars) + 2
+	finalLimitParam := len(allVars) + 3
+
+	querySQL := fmt.Sprintf(`
+		SELECT 
+			id, content, source_id, source_type, chunk_id, knowledge_id, knowledge_base_id,
+			(1 - distance) as score
+		FROM (
+			SELECT 
+				id, content, source_id, source_type, chunk_id, knowledge_id, knowledge_base_id,
+				embedding::halfvec(%d) <=> $1::halfvec as distance
+			FROM embeddings
+			%s
+			ORDER BY embedding::halfvec(%d) <=> $1::halfvec
+			LIMIT $%d
+		) AS candidates
+		WHERE distance < $%d
+		ORDER BY distance ASC
+		LIMIT $%d
+	`, dimension, whereClause, dimension, subqueryLimitParam, thresholdParam, finalLimitParam)
+
+	allVars = append(allVars, expandedTopK)       // LIMIT in subquery
+	allVars = append(allVars, 1-params.Threshold) // Distance threshold
+	allVars = append(allVars, params.TopK)        // Final LIMIT
 
 	var embeddingDBList []pgVectorWithScore
 
-	err := g.db.WithContext(ctx).Clauses(conds...).
-		Select(fmt.Sprintf(
-			"id, content, source_id, source_type, chunk_id, knowledge_id, knowledge_base_id, "+
-				"(1 - (embedding::halfvec(%d) <=> ?::halfvec)) as score",
-			dimension,
-		), pgvector.NewHalfVector(params.Embedding)).
-		Limit(int(params.TopK)).
-		Find(&embeddingDBList).Error
+	err := g.db.WithContext(ctx).Raw(querySQL, allVars...).Scan(&embeddingDBList).Error
 
 	if err == gorm.ErrRecordNotFound {
 		logger.GetLogger(ctx).Warnf("[Postgres] No vector matches found that meet threshold %.4f", params.Threshold)
@@ -264,6 +311,11 @@ func (g *pgRepository) VectorRetrieve(ctx context.Context,
 	if err != nil {
 		logger.GetLogger(ctx).Errorf("[Postgres] Vector retrieval failed: %v", err)
 		return nil, err
+	}
+
+	// Apply final TopK limit (in case we got more results than needed)
+	if len(embeddingDBList) > int(params.TopK) {
+		embeddingDBList = embeddingDBList[:params.TopK]
 	}
 
 	logger.GetLogger(ctx).Infof("[Postgres] Vector retrieval found %d results", len(embeddingDBList))

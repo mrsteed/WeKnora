@@ -23,23 +23,24 @@ func NewListKnowledgeChunksTool(
 	knowledgeService interfaces.KnowledgeService,
 	chunkService interfaces.ChunkService,
 ) *ListKnowledgeChunksTool {
-	description := `Retrieve paged chunks for a document (knowledge) by knowledge_id.
+	description := `Retrieve full chunk content for a document by knowledge_id.
 
-## When to Use
+## Use After grep_chunks or knowledge_search:
+1. grep_chunks(["keyword", "变体"]) → get knowledge_id  
+2. list_knowledge_chunks(knowledge_id) → read full content
 
-- Need deterministic chunk previews for a known document
-- Want to quickly confirm how many chunks a document contains
-- Require surrounding context around a chunk_index returned by search results
-- Need content snippets without running an additional search query
+## When to Use:
+- Need full content of chunks from a known document
+- Want to see context around specific chunks
+- Check how many chunks a document has
 
-Avoid when:
-- You don't know the knowledge_id (use knowledge_search first)
+## Parameters:
+- knowledge_id (required): Document ID
+- limit (optional): Chunks per page (default 20, max 100)
+- offset (optional): Start position (default 0)
 
-## Parameters
-
-- knowledge_id (required): Target document/knowledge ID
-- limit (optional): Number of chunks to fetch (default 20, max 100).
-- offset (optional): Offset to start fetching chunks from (default 0).`
+## Output:
+Full chunk content with chunk_id, chunk_index, and content text.`
 
 	return &ListKnowledgeChunksTool{
 		BaseTool:         NewBaseTool("list_knowledge_chunks", description),
@@ -56,18 +57,18 @@ func (t *ListKnowledgeChunksTool) Parameters() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"knowledge_id": map[string]interface{}{
 				"type":        "string",
-				"description": "Knowledge/document ID to inspect",
+				"description": "Document ID to retrieve chunks from",
 			},
 			"limit": map[string]interface{}{
 				"type":        "integer",
-				"description": "Number of chunks to fetch (default 20, max 100)",
+				"description": "Chunks per page (default 20, max 100)",
 				"default":     20,
 				"minimum":     1,
 				"maximum":     100,
 			},
 			"offset": map[string]interface{}{
 				"type":        "integer",
-				"description": "Offset to start fetching chunks from (default 0)",
+				"description": "Start position (default 0)",
 				"default":     0,
 				"minimum":     0,
 			},
@@ -115,7 +116,7 @@ func (t *ListKnowledgeChunksTool) Execute(ctx context.Context, args map[string]i
 	}
 
 	chunks, total, err := t.chunkService.GetRepository().ListPagedChunksByKnowledgeID(ctx,
-		t.tenantID, knowledgeID, pagination, []types.ChunkType{types.ChunkTypeText}, "")
+		t.tenantID, knowledgeID, pagination, []types.ChunkType{types.ChunkTypeText, types.ChunkTypeFAQ}, "")
 	if err != nil {
 		return &types.ToolResult{
 			Success: false,
@@ -134,7 +135,7 @@ func (t *ListKnowledgeChunksTool) Execute(ctx context.Context, args map[string]i
 
 	knowledgeTitle := t.lookupKnowledgeTitle(ctx, knowledgeID)
 
-	output := t.buildOutput(knowledgeID, knowledgeTitle, totalChunks, fetched, chunkLimit, chunks)
+	output := t.buildOutput(knowledgeID, knowledgeTitle, totalChunks, fetched, chunks)
 
 	formattedChunks := make([]map[string]interface{}, 0, len(chunks))
 	for idx, c := range chunks {
@@ -183,7 +184,6 @@ func (t *ListKnowledgeChunksTool) buildOutput(
 	knowledgeTitle string,
 	total int64,
 	fetched int,
-	chunkLimit int,
 	chunks []*types.Chunk,
 ) string {
 	builder := &strings.Builder{}
@@ -195,7 +195,6 @@ func (t *ListKnowledgeChunksTool) buildOutput(
 		builder.WriteString(fmt.Sprintf("文档 ID: %s\n", knowledgeID))
 	}
 	builder.WriteString(fmt.Sprintf("总分块数: %d\n", total))
-	builder.WriteString(fmt.Sprintf("本次拉取: %d 条（offset=%d）\n\n", fetched, chunkLimit))
 
 	if fetched == 0 {
 		builder.WriteString("未找到任何分块，请确认文档是否已完成解析。\n")
@@ -204,6 +203,7 @@ func (t *ListKnowledgeChunksTool) buildOutput(
 		}
 		return builder.String()
 	}
+	builder.WriteString(fmt.Sprintf("本次拉取: %d 条， 检索范围: %d - %d\n\n", fetched, chunks[0].ChunkIndex, chunks[len(chunks)-1].ChunkIndex))
 
 	builder.WriteString("=== 分块内容预览 ===\n\n")
 	for idx, c := range chunks {

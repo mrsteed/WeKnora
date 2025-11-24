@@ -45,6 +45,7 @@ let knowledgeIndex = ref(-1)
 let knowledgeScroll = ref()
 let page = 1;
 let pageSize = 35;
+
 const selectedTagId = ref<string>("");
 const tagList = ref<any[]>([]);
 const tagLoading = ref(false);
@@ -399,6 +400,7 @@ const handleFileUploaded = (event: CustomEvent) => {
   }
 };
 
+
 // 监听从菜单触发的URL导入事件
 const handleOpenURLImportDialog = (event: CustomEvent) => {
   const eventKbId = event.detail.kbId;
@@ -435,6 +437,7 @@ watch(() => cardList.value, (newValue) => {
   if (analyzeList.length) {
     updateStatus(analyzeList)
   }
+  
 }, { deep: true })
 type KnowledgeCard = {
   id: string;
@@ -476,6 +479,9 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
     });
   }, 1500);
 };
+
+
+// 恢复文档处理状态（用于刷新后恢复）
 
 const closeDoc = () => {
   isCardDetails.value = false;
@@ -520,6 +526,7 @@ const ensureDocumentKbReady = () => {
   return true;
 };
 
+
 const handleDocumentUploadClick = () => {
   if (!ensureDocumentKbReady()) return;
   uploadInputRef.value?.click();
@@ -533,49 +540,91 @@ const resetUploadInput = () => {
 
 const handleDocumentUpload = async (event: Event) => {
   const input = event.target as HTMLInputElement;
-  const file = input?.files?.[0];
-  if (!file) return;
-  if (kbFileTypeVerification(file)) {
-    resetUploadInput();
-    return;
-  }
+  const files = input?.files;
+  if (!files || files.length === 0) return;
+  
   if (!kbId.value) {
     MessagePlugin.error("缺少知识库ID");
     resetUploadInput();
     return;
   }
-  uploading.value = true;
-  try {
-    const responseData: any = await uploadKnowledgeFile(kbId.value, { file });
+
+  // 过滤有效文件
+  const validFiles: File[] = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (!kbFileTypeVerification(file, files.length > 1)) {
+      validFiles.push(file);
+    }
+  }
+
+  if (validFiles.length === 0) {
+    resetUploadInput();
+    return;
+  }
+
+  // 批量上传
+  let successCount = 0;
+  let failCount = 0;
+  const totalCount = validFiles.length;
+
+  for (const file of validFiles) {
+    try {
+      const responseData: any = await uploadKnowledgeFile(kbId.value, { file });
+      const isSuccess = responseData?.success || responseData?.code === 200 || responseData?.status === 'success' || (!responseData?.error && responseData);
+      if (isSuccess) {
+        successCount++;
+      } else {
+        failCount++;
+        let errorMessage = "上传失败！";
+        if (responseData?.error?.message) {
+          errorMessage = responseData.error.message;
+        } else if (responseData?.message) {
+          errorMessage = responseData.message;
+        }
+        if (responseData?.code === 'duplicate_file' || responseData?.error?.code === 'duplicate_file') {
+          errorMessage = "文件已存在";
+        }
+        if (totalCount === 1) {
+          MessagePlugin.error(errorMessage);
+        }
+      }
+    } catch (error: any) {
+      failCount++;
+      let errorMessage = error?.error?.message || error?.message || "上传失败！";
+      if (error?.code === 'duplicate_file') {
+        errorMessage = "文件已存在";
+      }
+      if (totalCount === 1) {
+        MessagePlugin.error(errorMessage);
+      }
+    }
+  }
+
+  // 显示上传结果
+  if (successCount > 0) {
     window.dispatchEvent(new CustomEvent('knowledgeFileUploaded', {
       detail: { kbId: kbId.value }
     }));
-    const isSuccess = responseData?.success || responseData?.code === 200 || responseData?.status === 'success' || (!responseData?.error && responseData);
-    if (isSuccess) {
-      MessagePlugin.info("上传成功！");
-    } else {
-      let errorMessage = "上传失败！";
-      if (responseData?.error?.message) {
-        errorMessage = responseData.error.message;
-      } else if (responseData?.message) {
-        errorMessage = responseData.message;
-      }
-      if (responseData?.code === 'duplicate_file' || responseData?.error?.code === 'duplicate_file') {
-        errorMessage = "文件已存在";
-      }
-      MessagePlugin.error(errorMessage);
-    }
-  } catch (error: any) {
-    let errorMessage = error?.error?.message || error?.message || "上传失败！";
-    if (error?.code === 'duplicate_file') {
-      errorMessage = "文件已存在";
-    }
-    MessagePlugin.error(errorMessage);
-  } finally {
-    uploading.value = false;
-    resetUploadInput();
   }
+
+  if (totalCount === 1) {
+    if (successCount === 1) {
+      MessagePlugin.success("上传成功！");
+    }
+  } else {
+    if (failCount === 0) {
+      MessagePlugin.success(`所有文件上传成功（${successCount}个）`);
+    } else if (successCount > 0) {
+      MessagePlugin.warning(`部分文件上传成功（成功：${successCount}，失败：${failCount}）`);
+    } else {
+      MessagePlugin.error(`所有文件上传失败（${failCount}个）`);
+    }
+  }
+
+  resetUploadInput();
 };
+
 
 const handleManualCreate = () => {
   if (!ensureDocumentKbReady()) return;
@@ -818,11 +867,13 @@ async function createNewSession(value: string): Promise<void> {
           <p class="document-subtitle">{{ $t('knowledgeEditor.document.subtitle') }}</p>
         </div>
       </div>
+      
       <input
         ref="uploadInputRef"
         type="file"
         class="document-upload-input"
         accept=".pdf,.docx,.doc,.txt,.md,.jpg,.jpeg,.png"
+        multiple
         @change="handleDocumentUpload"
       />
       <div class="knowledge-main">
@@ -1871,6 +1922,7 @@ async function createNewSession(value: string): Promise<void> {
   padding: 60px 20px;
   min-height: 100%;
 }
+
 
 :deep(.del-knowledge) {
   padding: 0px !important;

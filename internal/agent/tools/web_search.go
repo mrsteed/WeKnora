@@ -33,6 +33,12 @@ func NewWebSearchTool(
 ) *WebSearchTool {
 	description := `Search the web for current information and news. This tool searches the internet to find up-to-date information that may not be in the knowledge base.
 
+## CRITICAL - KB First Rule
+**ABSOLUTE RULE**: You MUST complete KB retrieval (grep_chunks AND knowledge_search) FIRST before using this tool.
+- NEVER use web_search without first trying grep_chunks and knowledge_search
+- ONLY use web_search if BOTH grep_chunks AND knowledge_search return insufficient/no results
+- KB retrieval is MANDATORY - you CANNOT skip it
+
 ## Features
 - Real-time web search: Search the internet for current information
 - RAG compression: Automatically compresses and extracts relevant content from search results
@@ -41,6 +47,8 @@ func NewWebSearchTool(
 ## Usage
 
 **Use when**:
+- **ONLY after** completing grep_chunks AND knowledge_search
+- KB retrieval returned insufficient or no results
 - Need current or real-time information (news, events, recent updates)
 - Information is not available in knowledge bases
 - Need to verify or supplement information from knowledge bases
@@ -70,7 +78,8 @@ func NewWebSearchTool(
 - Results are automatically compressed using RAG to extract relevant content
 - Search results are stored in a temporary knowledge base for the session
 - Use this tool when knowledge bases don't have the information you need
-- Results include URL, title, snippet, and full content when available
+- Results include URL, title, snippet, and content snippet (may be truncated)
+- **CRITICAL**: If content is truncated or you need full details, use **web_fetch** to fetch complete page content
 - Maximum ` + fmt.Sprintf("%d", maxResults) + ` results will be returned per search`
 
 	return &WebSearchTool{
@@ -230,6 +239,19 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 			resultData["published_at"] = result.PublishedAt.Format(time.RFC3339)
 		}
 		formattedResults = append(formattedResults, resultData)
+	}
+
+	// Add guidance for next steps
+	output += "\n=== Next Steps ===\n"
+	if len(webResults) > 0 {
+		output += "- ⚠️ Content may be truncated (showing first 500 chars). Use web_fetch to get full page content.\n"
+		output += "- Extract URLs from results above and use web_fetch with appropriate prompts to get detailed information.\n"
+		output += "- Synthesize information from multiple sources for comprehensive answers.\n"
+	} else {
+		output += "- No web search results found. Consider:\n"
+		output += "  - Try different search queries or keywords\n"
+		output += "  - Check if question can be answered from knowledge base instead\n"
+		output += "  - Verify if the topic requires real-time information\n"
 	}
 
 	return &types.ToolResult{

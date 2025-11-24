@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime/multipart"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/models/utils"
 	"github.com/Tencent/WeKnora/internal/tracing"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -70,6 +72,7 @@ type knowledgeService struct {
 const (
 	manualContentMaxLength = 200000
 	manualFileExtension    = ".md"
+	faqImportBatchSize     = 50 // 每批处理的FAQ条目数
 )
 
 // NewKnowledgeService creates a new knowledge service instance
@@ -117,10 +120,18 @@ func (s *knowledgeService) GetRepository() interfaces.KnowledgeRepository {
 
 // CreateKnowledgeFromFile creates a knowledge entry from an uploaded file
 func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
-	kbID string, file *multipart.FileHeader, metadata map[string]string, enableMultimodel *bool,
+	kbID string, file *multipart.FileHeader, metadata map[string]string, enableMultimodel *bool, customFileName string,
 ) (*types.Knowledge, error) {
 	logger.Info(ctx, "Start creating knowledge from file")
-	logger.Infof(ctx, "Knowledge base ID: %s, file: %s", kbID, file.Filename)
+
+	// Use custom filename if provided, otherwise use original filename
+	fileName := file.Filename
+	if customFileName != "" {
+		fileName = customFileName
+		logger.Infof(ctx, "Using custom filename: %s (original: %s)", customFileName, file.Filename)
+	}
+
+	logger.Infof(ctx, "Knowledge base ID: %s, file: %s", kbID, fileName)
 	if metadata != nil {
 		logger.Infof(ctx, "Received metadata: %v", metadata)
 	}
@@ -135,7 +146,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 
 	// 检查多模态配置完整性 - 只在图片文件时校验
 	// 检查是否为图片文件
-	if !IsImageType(getFileType(file.Filename)) {
+	if !IsImageType(getFileType(fileName)) {
 		logger.Info(ctx, "Non-image file with multimodal enabled, skipping COS/VLM validation")
 	} else {
 		// 检查COS配置
@@ -164,8 +175,8 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	}
 
 	// Validate file type
-	logger.Infof(ctx, "Checking file type: %s", file.Filename)
-	if !isValidFileType(file.Filename) {
+	logger.Infof(ctx, "Checking file type: %s", fileName)
+	if !isValidFileType(fileName) {
 		logger.Error(ctx, "Invalid file type")
 		return nil, ErrInvalidFileType
 	}
@@ -183,7 +194,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	logger.Infof(ctx, "Checking if file exists, tenant ID: %d", tenantID)
 	exists, existingKnowledge, err := s.repo.CheckKnowledgeExists(ctx, tenantID, kbID, &types.KnowledgeCheckParams{
 		Type:     "file",
-		FileName: file.Filename,
+		FileName: fileName,
 		FileSize: file.Size,
 		FileHash: hash,
 	})
@@ -192,7 +203,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 		return nil, err
 	}
 	if exists {
-		logger.Infof(ctx, "File already exists: %s", file.Filename)
+		logger.Infof(ctx, "File already exists: %s", fileName)
 		// Update creation time for existing knowledge
 		if err := s.repo.UpdateKnowledgeColumn(ctx, existingKnowledge.ID, "created_at", time.Now()); err != nil {
 			logger.Errorf(ctx, "Failed to update existing knowledge: %v", err)
@@ -220,9 +231,9 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	}
 
 	// 验证文件名安全性
-	safeFilename, isValid := secutils.ValidateInput(file.Filename)
+	safeFilename, isValid := secutils.ValidateInput(fileName)
 	if !isValid {
-		logger.Errorf(ctx, "Invalid filename: %s", file.Filename)
+		logger.Errorf(ctx, "Invalid filename: %s", fileName)
 		return nil, werrors.NewValidationError("文件名包含非法字符")
 	}
 
@@ -266,10 +277,40 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 		return nil, err
 	}
 
-	// Process document asynchronously
-	logger.Info(ctx, "Starting asynchronous document processing")
-	newCtx := logger.CloneContext(ctx)
-	go s.processDocument(newCtx, kb, knowledge, file, kb.VLMConfig.Enabled)
+	// Enqueue document processing task to Asynq
+	logger.Info(ctx, "Enqueuing document processing task to Asynq")
+	enableMultimodelValue := false
+	if enableMultimodel != nil {
+		enableMultimodelValue = *enableMultimodel
+	} else {
+		enableMultimodelValue = kb.VLMConfig.Enabled
+	}
+
+	taskPayload := types.DocumentProcessPayload{
+		TenantID:         tenantID,
+		KnowledgeID:      knowledge.ID,
+		KnowledgeBaseID:  kbID,
+		FilePath:         filePath,
+		FileName:         safeFilename,
+		FileType:         getFileType(safeFilename),
+		EnableMultimodel: enableMultimodelValue,
+	}
+
+	payloadBytes, err := json.Marshal(taskPayload)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to marshal document process task payload: %v", err)
+		// 即使入队失败，也返回knowledge，因为文件已保存
+		return knowledge, nil
+	}
+
+	task := asynq.NewTask(types.TypeDocumentProcess, payloadBytes, asynq.Queue("default"))
+	info, err := s.task.Enqueue(task)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to enqueue document process task: %v", err)
+		// 即使入队失败，也返回knowledge，因为文件已保存
+		return knowledge, nil
+	}
+	logger.Infof(ctx, "Enqueued document process task: id=%s queue=%s knowledge_id=%s", info.ID, info.Queue, knowledge.ID)
 
 	logger.Infof(ctx, "Knowledge from file created successfully, ID: %s", knowledge.ID)
 	return knowledge, nil
@@ -352,10 +393,36 @@ func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
 		return nil, err
 	}
 
-	// Process URL asynchronously
-	logger.Info(ctx, "Starting asynchronous URL processing")
-	newCtx := logger.CloneContext(ctx)
-	go s.processDocumentFromURL(newCtx, kb, knowledge, url, kb.VLMConfig.Enabled)
+	// Enqueue URL processing task to Asynq
+	logger.Info(ctx, "Enqueuing URL processing task to Asynq")
+	enableMultimodelValue := false
+	if enableMultimodel != nil {
+		enableMultimodelValue = *enableMultimodel
+	} else {
+		enableMultimodelValue = kb.VLMConfig.Enabled
+	}
+
+	taskPayload := types.DocumentProcessPayload{
+		TenantID:         tenantID,
+		KnowledgeID:      knowledge.ID,
+		KnowledgeBaseID:  kbID,
+		URL:              url,
+		EnableMultimodel: enableMultimodelValue,
+	}
+
+	payloadBytes, err := json.Marshal(taskPayload)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to marshal URL process task payload: %v", err)
+		return knowledge, nil
+	}
+
+	task := asynq.NewTask(types.TypeDocumentProcess, payloadBytes, asynq.Queue("default"))
+	info, err := s.task.Enqueue(task)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to enqueue URL process task: %v", err)
+		return knowledge, nil
+	}
+	logger.Infof(ctx, "Enqueued URL process task: id=%s queue=%s knowledge_id=%s", info.ID, info.Queue, knowledge.ID)
 
 	logger.Infof(ctx, "Knowledge from URL created successfully, ID: %s", knowledge.ID)
 	return knowledge, nil
@@ -522,8 +589,31 @@ func (s *knowledgeService) createKnowledgeFromPassageInternal(ctx context.Contex
 		s.processDocumentFromPassage(ctx, kb, knowledge, safePassages)
 		logger.Infof(ctx, "Knowledge from passage created successfully (sync), ID: %s", knowledge.ID)
 	} else {
-		logger.Info(ctx, "Starting asynchronous passage processing")
-		go s.processDocumentFromPassage(ctx, kb, knowledge, safePassages)
+		// Enqueue passage processing task to Asynq
+		logger.Info(ctx, "Enqueuing passage processing task to Asynq")
+		tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+		taskPayload := types.DocumentProcessPayload{
+			TenantID:         tenantID,
+			KnowledgeID:      knowledge.ID,
+			KnowledgeBaseID:  kbID,
+			Passages:         safePassages,
+			EnableMultimodel: false, // 文本段落不支持多模态
+		}
+
+		payloadBytes, err := json.Marshal(taskPayload)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to marshal passage process task payload: %v", err)
+			// 即使入队失败，也返回knowledge
+			return knowledge, nil
+		}
+
+		task := asynq.NewTask(types.TypeDocumentProcess, payloadBytes, asynq.Queue("default"))
+		info, err := s.task.Enqueue(task)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to enqueue passage process task: %v", err)
+			return knowledge, nil
+		}
+		logger.Infof(ctx, "Enqueued passage process task: id=%s queue=%s knowledge_id=%s", info.ID, info.Queue, knowledge.ID)
 		logger.Infof(ctx, "Knowledge from passage created successfully, ID: %s", knowledge.ID)
 	}
 	return knowledge, nil
@@ -1036,6 +1126,36 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		return
 	}
 
+	// 幂等性处理：清理旧的chunks和索引数据，避免重复数据
+	logger.Infof(ctx, "Cleaning up existing chunks and index data for knowledge: %s", knowledge.ID)
+
+	// 删除旧的chunks
+	if err := s.chunkService.DeleteChunksByKnowledgeID(ctx, knowledge.ID); err != nil {
+		logger.Warnf(ctx, "Failed to delete existing chunks (may not exist): %v", err)
+		// 不返回错误，继续处理（可能没有旧数据）
+	}
+
+	// 删除旧的索引数据
+	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+	if err == nil {
+		if err := retrieveEngine.DeleteByKnowledgeIDList(ctx, []string{knowledge.ID}, embeddingModel.GetDimensions()); err != nil {
+			logger.Warnf(ctx, "Failed to delete existing index data (may not exist): %v", err)
+			// 不返回错误，继续处理（可能没有旧数据）
+		} else {
+			logger.Infof(ctx, "Successfully deleted existing index data for knowledge: %s", knowledge.ID)
+		}
+	}
+
+	// 删除知识图谱数据（如果存在）
+	namespace := types.NameSpace{KnowledgeBase: knowledge.KnowledgeBaseID, Knowledge: knowledge.ID}
+	if err := s.graphEngine.DelGraph(ctx, []types.NameSpace{namespace}); err != nil {
+		logger.Warnf(ctx, "Failed to delete existing graph data (may not exist): %v", err)
+		// 不返回错误，继续处理
+	}
+
+	logger.Infof(ctx, "Cleanup completed, starting to process new chunks")
+
 	// Generate document summary - 只使用文本类型的 Chunk
 	chatModel, err := s.modelService.GetChatModel(ctx, kb.SummaryModelID)
 	if err != nil {
@@ -1233,16 +1353,6 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	})
 
 	// Initialize retrieval engine
-	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
-	retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
-	if err != nil {
-		knowledge.ParseStatus = "failed"
-		knowledge.ErrorMessage = err.Error()
-		knowledge.UpdatedAt = time.Now()
-		s.repo.UpdateKnowledge(ctx, knowledge)
-		span.RecordError(err)
-		return
-	}
 
 	// Calculate storage size required for embeddings
 	span.AddEvent("estimate storage size")
@@ -1305,7 +1415,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	logger.GetLogger(ctx).Infof("processChunks batch index successfully, with %d index", len(indexInfoList))
 
 	logger.Infof(ctx, "processChunks create relationship rag task")
-	if kb.ExtractConfig.Enabled {
+	if kb.ExtractConfig != nil && kb.ExtractConfig.Enabled {
 		for _, chunk := range textChunks {
 			err := NewChunkExtractTask(ctx, s.task, chunk.TenantID, chunk.ID, kb.SummaryModelID)
 			if err != nil {
@@ -2057,51 +2167,147 @@ func (s *knowledgeService) ListFAQEntries(ctx context.Context,
 	return types.NewPageResult(total, page, entries), nil
 }
 
-// UpsertFAQEntries imports or appends FAQ entries.
+// UpsertFAQEntries imports or appends FAQ entries asynchronously.
+// Returns task ID for tracking import progress.
 func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 	kbID string, payload *types.FAQBatchUpsertPayload,
-) error {
+) (string, error) {
 	if payload == nil || len(payload.Entries) == 0 {
-		return werrors.NewBadRequestError("FAQ 条目不能为空")
+		return "", werrors.NewBadRequestError("FAQ 条目不能为空")
 	}
 	if payload.Mode == "" {
 		payload.Mode = types.FAQBatchModeAppend
 	}
 	if payload.Mode != types.FAQBatchModeAppend && payload.Mode != types.FAQBatchModeReplace {
-		return werrors.NewBadRequestError("模式仅支持 append 或 replace")
+		return "", werrors.NewBadRequestError("模式仅支持 append 或 replace")
 	}
 
+	// 验证知识库是否存在且有效
 	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return "", err
+	}
+
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+
+	// 检查是否有正在进行的导入任务
+	runningKnowledge, err := s.getRunningFAQImportTask(ctx, kbID, tenantID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to check running import task: %v", err)
+		// 检查失败不影响导入，继续执行
+	} else if runningKnowledge != nil {
+		logger.Warnf(ctx, "Import task already running for KB %s: %s (status: %s)", kbID, runningKnowledge.ID, runningKnowledge.ParseStatus)
+		return "", werrors.NewBadRequestError(fmt.Sprintf("该知识库已有导入任务正在进行中（任务ID: %s），请等待完成后再试", runningKnowledge.ID))
+	}
+
+	faqKnowledge, err := s.ensureFAQKnowledge(ctx, tenantID, kb)
+	if err != nil {
+		return "", fmt.Errorf("failed to ensure FAQ knowledge: %w", err)
+	}
+
+	// 初始化导入任务状态到Knowledge表
+	taskID := faqKnowledge.ID // 使用Knowledge ID作为taskID
+
+	// 从Knowledge Metadata中读取当前的NextChunkIndex（自增计数器）
+	// 如果不存在，则初始化为1
+	existingMeta, _ := types.ParseFAQImportMetadata(faqKnowledge)
+	nextChunkIndex := 1
+	if existingMeta != nil && existingMeta.NextChunkIndex > 0 {
+		nextChunkIndex = existingMeta.NextChunkIndex
+	}
+	startChunkIndex := nextChunkIndex
+	endChunkIndex := startChunkIndex + len(payload.Entries) - 1
+
+	// 更新NextChunkIndex为下一个要分配的值
+	newNextChunkIndex := nextChunkIndex + len(payload.Entries)
+
+	// 更新Metadata，包含区间信息和新的NextChunkIndex
+	importMeta := &types.FAQImportMetadata{
+		ImportProgress:  0,
+		ImportTotal:     len(payload.Entries),
+		ImportProcessed: 0,
+		NextChunkIndex:  newNextChunkIndex,
+	}
+
+	if err := s.updateFAQImportStatusWithRanges(ctx, taskID, types.FAQImportStatusPending, 0, len(payload.Entries), 0, "", importMeta.NextChunkIndex); err != nil {
+		logger.Errorf(ctx, "Failed to initialize FAQ import task status: %v", err)
+		return "", fmt.Errorf("failed to initialize task: %w", err)
+	}
+
+	logger.Infof(ctx, "Allocated ChunkIndex range [%d, %d] for FAQ import task %s, next ChunkIndex will be %d",
+		startChunkIndex, endChunkIndex, taskID, newNextChunkIndex)
+
+	// Enqueue FAQ import task to Asynq
+	logger.Info(ctx, "Enqueuing FAQ import task to Asynq")
+	taskPayload := types.FAQImportPayload{
+		TenantID:        tenantID,
+		TaskID:          taskID,
+		KBID:            kbID,
+		KnowledgeID:     faqKnowledge.ID,
+		Entries:         payload.Entries,
+		Mode:            payload.Mode,
+		StartChunkIndex: startChunkIndex,
+		EndChunkIndex:   endChunkIndex,
+	}
+
+	payloadBytes, err := json.Marshal(taskPayload)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to marshal FAQ import task payload: %v", err)
+		return "", fmt.Errorf("failed to marshal task payload: %w", err)
+	}
+
+	task := asynq.NewTask(types.TypeFAQImport, payloadBytes, asynq.Queue("default"), asynq.MaxRetry(5))
+	info, err := s.task.Enqueue(task)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to enqueue FAQ import task: %v", err)
+		return "", fmt.Errorf("failed to enqueue task: %w", err)
+	}
+	logger.Infof(ctx, "Enqueued FAQ import task: id=%s queue=%s task_id=%s", info.ID, info.Queue, taskID)
+
+	return taskID, nil
+}
+
+// executeFAQImport 执行实际的FAQ导入逻辑
+func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, kbID string,
+	payload *types.FAQBatchUpsertPayload, tenantID uint, startChunkIndex int, processed int, totalEntries int) (err error) {
+	// 保存知识库和embedding模型信息，用于清理索引
+	var kb *types.KnowledgeBase
+	var embeddingModel embedding.Embedder
+
+	// Recovery机制：如果发生任何错误或panic，回滚所有已创建的chunks和索引数据
+	defer func() {
+		// 捕获panic
+		if r := recover(); r != nil {
+			buf := make([]byte, 8192)
+			n := runtime.Stack(buf, false)
+			stack := string(buf[:n])
+			logger.Errorf(ctx, "FAQ import task %s panicked: %v\n%s", taskID, r, stack)
+			err = fmt.Errorf("panic during FAQ import: %v", r)
+		}
+	}()
+
+	kb, err = s.validateFAQKnowledgeBase(ctx, kbID)
 	if err != nil {
 		return err
 	}
 
 	kb.EnsureDefaults()
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+
+	// 获取embedding模型，用于后续清理索引
+	embeddingModel, err = s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+	if err != nil {
+		return fmt.Errorf("failed to get embedding model: %w", err)
+	}
 	faqKnowledge, err := s.ensureFAQKnowledge(ctx, tenantID, kb)
 	if err != nil {
 		return err
 	}
 
+	// 如果模式为replace，则清理知识库
 	if payload.Mode == types.FAQBatchModeReplace {
 		if err := s.cleanupFAQKnowledge(ctx, faqKnowledge); err != nil {
 			return err
 		}
-	}
-
-	startIndex := 0
-	if payload.Mode == types.FAQBatchModeAppend {
-		_, total, err := s.chunkRepo.ListPagedChunksByKnowledgeID(ctx,
-			tenantID,
-			faqKnowledge.ID,
-			&types.Pagination{Page: 1, PageSize: 1},
-			[]types.ChunkType{types.ChunkTypeFAQ},
-			"",
-		)
-		if err != nil {
-			return err
-		}
-		startIndex = int(total)
 	}
 
 	// 获取索引模式
@@ -2110,44 +2316,96 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 		indexMode = kb.FAQConfig.IndexMode
 	}
 
-	chunks := make([]*types.Chunk, 0, len(payload.Entries))
-	for idx := range payload.Entries {
-		entry := payload.Entries[idx]
-		meta, err := sanitizeFAQEntryPayload(&entry)
-		if err != nil {
-			return err
+	// 分批处理
+	remainingEntries := len(payload.Entries)
+	totalStartTime := time.Now()
+	// 保存初始的processed值，用于计算ChunkIndex（i+idx是剩余条目中的索引，加上初始processed得到原始位置）
+	initialProcessed := processed
+
+	logger.Infof(ctx, "FAQ import task %s: starting batch processing, remaining entries: %d, total entries: %d, batch size: %d", taskID, remainingEntries, totalEntries, faqImportBatchSize)
+
+	for i := 0; i < remainingEntries; i += faqImportBatchSize {
+		batchStartTime := time.Now()
+		end := i + faqImportBatchSize
+		if end > remainingEntries {
+			end = remainingEntries
 		}
-		isEnabled := true
-		if entry.IsEnabled != nil {
-			isEnabled = *entry.IsEnabled
+
+		batch := payload.Entries[i:end]
+		logger.Infof(ctx, "FAQ import task %s: processing batch %d-%d (%d entries)", taskID, i+1, end, len(batch))
+
+		// 构建chunks
+		buildStartTime := time.Now()
+		chunks := make([]*types.Chunk, 0, len(batch))
+		chunkIds := make([]string, 0, len(batch))
+		for idx, entry := range batch {
+			meta, err := sanitizeFAQEntryPayload(&entry)
+			if err != nil {
+				logger.ErrorWithFields(ctx, err, map[string]interface{}{
+					"entry":   entry,
+					"task_id": taskID,
+				})
+				return fmt.Errorf("failed to sanitize entry at index %d: %w", i+idx, err)
+			}
+			isEnabled := true
+			if entry.IsEnabled != nil {
+				isEnabled = *entry.IsEnabled
+			}
+			// ChunkIndex计算：startChunkIndex + (i+idx) + initialProcessed
+			// i+idx是剩余条目中的索引，加上initialProcessed得到原始条目中的位置
+			chunk := &types.Chunk{
+				ID:              uuid.New().String(),
+				TenantID:        tenantID,
+				KnowledgeID:     faqKnowledge.ID,
+				KnowledgeBaseID: kb.ID,
+				Content:         buildFAQChunkContent(meta, indexMode),
+				ChunkIndex:      startChunkIndex + i + idx + initialProcessed,
+				IsEnabled:       isEnabled,
+				ChunkType:       types.ChunkTypeFAQ,
+				TagID:           entry.TagID,
+			}
+			if err := chunk.SetFAQMetadata(meta); err != nil {
+				return fmt.Errorf("failed to set FAQ metadata: %w", err)
+			}
+			chunks = append(chunks, chunk)
+			chunkIds = append(chunkIds, chunk.ID)
 		}
-		chunk := &types.Chunk{
-			ID:              uuid.New().String(),
-			TenantID:        tenantID,
-			KnowledgeID:     faqKnowledge.ID,
-			KnowledgeBaseID: kb.ID,
-			Content:         buildFAQChunkContent(meta, indexMode),
-			ChunkIndex:      startIndex + idx + 1,
-			IsEnabled:       isEnabled,
-			ChunkType:       types.ChunkTypeFAQ,
-			TagID:           entry.TagID,
+		buildDuration := time.Since(buildStartTime)
+		logger.Debugf(ctx, "FAQ import task %s: batch %d-%d built %d chunks in %v, chunk IDs: %v",
+			taskID, i+1, end, len(chunks), buildDuration, chunkIds)
+		// 创建chunks
+		createStartTime := time.Now()
+		if err := s.chunkService.CreateChunks(ctx, chunks); err != nil {
+			return fmt.Errorf("failed to create chunks: %w", err)
 		}
-		if err := chunk.SetFAQMetadata(meta); err != nil {
-			return err
+		createDuration := time.Since(createStartTime)
+		logger.Infof(ctx, "FAQ import task %s: batch %d-%d created %d chunks in %v", taskID, i+1, end, len(chunks), createDuration)
+
+		// 索引chunks
+		indexStartTime := time.Now()
+		// 注意：如果索引失败，defer中的recovery机制会自动回滚已创建的chunks和索引数据
+		if err := s.indexFAQChunks(ctx, kb, faqKnowledge, chunks, embeddingModel, true, false); err != nil {
+			return fmt.Errorf("failed to index chunks: %w", err)
 		}
-		chunks = append(chunks, chunk)
+		indexDuration := time.Since(indexStartTime)
+		logger.Infof(ctx, "FAQ import task %s: batch %d-%d indexed %d chunks in %v", taskID, i+1, end, len(chunks), indexDuration)
+
+		processed = processed + len(batch)
+
+		// 更新任务进度
+		progress := int(float64(processed) / float64(totalEntries) * 100)
+		if err := s.updateFAQImportStatus(ctx, taskID, types.FAQImportStatusProcessing, progress, totalEntries, processed, ""); err != nil {
+			logger.Errorf(ctx, "Failed to update task progress: %v", err)
+		}
+
+		batchDuration := time.Since(batchStartTime)
+		logger.Infof(ctx, "FAQ import task %s: batch %d-%d completed in %v (build: %v, create: %v, index: %v), total progress: %d/%d (%d%%)",
+			taskID, i+1, end, batchDuration, buildDuration, createDuration, indexDuration, processed, totalEntries, progress)
 	}
 
-	if err := s.chunkService.CreateChunks(ctx, chunks); err != nil {
-		return err
-	}
-
-	if err := s.indexFAQChunks(ctx, kb, faqKnowledge, chunks, true); err != nil {
-		for _, chunk := range chunks {
-			_ = s.chunkService.DeleteChunk(ctx, chunk.ID)
-		}
-		return err
-	}
+	totalDuration := time.Since(totalStartTime)
+	logger.Infof(ctx, "FAQ import task %s: all batches completed, processed: %d entries in %v, avg: %v per entry",
+		taskID, remainingEntries, totalDuration, totalDuration/time.Duration(remainingEntries))
 
 	return nil
 }
@@ -2220,7 +2478,11 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	return s.indexFAQChunks(ctx, kb, faqKnowledge, []*types.Chunk{chunk}, false)
+	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+	if err != nil {
+		return err
+	}
+	return s.indexFAQChunks(ctx, kb, faqKnowledge, []*types.Chunk{chunk}, embeddingModel, false, true)
 }
 
 // UpdateFAQEntryStatus updates enable status for a FAQ entry.
@@ -2724,6 +2986,68 @@ func (s *knowledgeService) ensureFAQKnowledge(ctx context.Context, tenantID uint
 	return knowledge, nil
 }
 
+func (s *knowledgeService) updateFAQImportStatus(ctx context.Context, knowledgeID string, status types.FAQImportTaskStatus,
+	progress, total, processed int, errorMsg string) error {
+	return s.updateFAQImportStatusWithRanges(ctx, knowledgeID, status, progress, total, processed, errorMsg, 0)
+}
+
+// updateFAQImportStatusWithRanges 更新FAQ Knowledge的导入任务状态，包含NextChunkIndex
+func (s *knowledgeService) updateFAQImportStatusWithRanges(ctx context.Context, knowledgeID string, status types.FAQImportTaskStatus,
+	progress, total, processed int, errorMsg string, nextChunkIndex int) error {
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
+	if err != nil {
+		return err
+	}
+
+	// 更新ParseStatus：将FAQImportTaskStatus映射到ParseStatus
+
+	knowledge.ParseStatus = string(status)
+	knowledge.UpdatedAt = time.Now()
+
+	meta, err := types.ParseFAQImportMetadata(knowledge)
+	if err != nil || meta == nil {
+		meta = &types.FAQImportMetadata{}
+	}
+
+	// 更新ErrorMessage
+	knowledge.ErrorMessage = errorMsg
+	if status == types.FAQImportStatusCompleted {
+		knowledge.ErrorMessage = ""
+	}
+
+	// 更新Metadata中的导入进度信息，保留已有的ChunkIndexRanges和NextChunkIndex
+	meta.ImportProgress = progress
+	meta.ImportTotal = total
+	meta.ImportProcessed = processed
+	if nextChunkIndex > 0 {
+		meta.NextChunkIndex = nextChunkIndex
+	}
+	metaJSON, err := meta.ToJSON()
+	if err != nil {
+		return fmt.Errorf("failed to marshal import metadata: %w", err)
+	}
+	knowledge.Metadata = metaJSON
+
+	return s.repo.UpdateKnowledge(ctx, knowledge)
+}
+
+// getRunningFAQImportTask 获取指定知识库的进行中导入任务
+func (s *knowledgeService) getRunningFAQImportTask(ctx context.Context, kbID string, tenantID uint) (*types.Knowledge, error) {
+	faqKnowledge, err := s.findFAQKnowledge(ctx, tenantID, kbID)
+	if err != nil {
+		return nil, err
+	}
+	if faqKnowledge == nil {
+		return nil, errors.New("FAQ knowledge not found")
+	}
+	// 检查ParseStatus是否为pending或processing（进行中状态）
+	if faqKnowledge.ParseStatus == "pending" || faqKnowledge.ParseStatus == "processing" {
+		return faqKnowledge, nil
+	}
+	return nil, nil
+}
+
 func (s *knowledgeService) chunkToFAQEntry(chunk *types.Chunk, kb *types.KnowledgeBase) (*types.FAQEntry, error) {
 	meta, err := chunk.FAQMetadata()
 	if err != nil {
@@ -2818,7 +3142,6 @@ func (s *knowledgeService) buildFAQIndexInfoList(ctx context.Context, kb *types.
 			questionIndexMode = kb.FAQConfig.QuestionIndexMode
 		}
 	}
-	logger.Infof(ctx, "buildFAQIndexInfoList: indexMode: %s, questionIndexMode: %s", indexMode, questionIndexMode)
 
 	meta, err := chunk.FAQMetadata()
 	if err != nil {
@@ -2888,27 +3211,29 @@ func (s *knowledgeService) buildFAQIndexInfoList(ctx context.Context, kb *types.
 			KnowledgeBaseID: chunk.KnowledgeBaseID,
 		})
 	}
-	logger.Infof(ctx, "buildFAQIndexInfoList: indexInfoList: %v", indexInfoList)
 
 	return indexInfoList, nil
 }
 
 func (s *knowledgeService) indexFAQChunks(ctx context.Context,
-	kb *types.KnowledgeBase, knowledge *types.Knowledge, chunks []*types.Chunk, adjustStorage bool,
+	kb *types.KnowledgeBase, knowledge *types.Knowledge,
+	chunks []*types.Chunk, embeddingModel embedding.Embedder,
+	adjustStorage bool, needDelete bool,
 ) error {
 	if len(chunks) == 0 {
 		return nil
 	}
-	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
-	if err != nil {
-		return err
-	}
+	indexStartTime := time.Now()
+	logger.Debugf(ctx, "indexFAQChunks: starting to index %d chunks", len(chunks))
+
 	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
 	if err != nil {
 		return err
 	}
 
+	// 构建索引信息
+	buildIndexInfoStartTime := time.Now()
 	indexInfo := make([]*types.IndexInfo, 0)
 	chunkIDs := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -2919,33 +3244,69 @@ func (s *knowledgeService) indexFAQChunks(ctx context.Context,
 		indexInfo = append(indexInfo, infoList...)
 		chunkIDs = append(chunkIDs, chunk.ID)
 	}
+	buildIndexInfoDuration := time.Since(buildIndexInfoStartTime)
+	logger.Debugf(ctx, "indexFAQChunks: built %d index info entries for %d chunks in %v", len(indexInfo), len(chunks), buildIndexInfoDuration)
 
 	var size int64
 	if adjustStorage {
+		estimateStartTime := time.Now()
 		size = retrieveEngine.EstimateStorageSize(ctx, embeddingModel, indexInfo)
+		estimateDuration := time.Since(estimateStartTime)
+		logger.Debugf(ctx, "indexFAQChunks: estimated storage size %d bytes in %v", size, estimateDuration)
 		if tenantInfo.StorageQuota > 0 && tenantInfo.StorageUsed+size > tenantInfo.StorageQuota {
 			return types.NewStorageQuotaExceededError()
 		}
 	}
 
-	if err := retrieveEngine.DeleteByChunkIDList(ctx, chunkIDs, embeddingModel.GetDimensions()); err != nil {
-		logger.Warnf(ctx, "Delete FAQ vectors failed: %v", err)
+	// 删除旧向量
+	var deleteDuration time.Duration
+	if needDelete {
+		deleteStartTime := time.Now()
+		if err := retrieveEngine.DeleteByChunkIDList(ctx, chunkIDs, embeddingModel.GetDimensions()); err != nil {
+			logger.Warnf(ctx, "Delete FAQ vectors failed: %v", err)
+		}
+		deleteDuration = time.Since(deleteStartTime)
+		if deleteDuration > 100*time.Millisecond {
+			logger.Debugf(ctx, "indexFAQChunks: deleted old vectors for %d chunks in %v", len(chunkIDs), deleteDuration)
+		}
 	}
+
+	// 批量索引（这里可能是性能瓶颈）
+	batchIndexStartTime := time.Now()
 	if err := retrieveEngine.BatchIndex(ctx, embeddingModel, indexInfo); err != nil {
 		return err
 	}
+	batchIndexDuration := time.Since(batchIndexStartTime)
+	logger.Debugf(ctx, "indexFAQChunks: batch indexed %d index info entries in %v (avg: %v per entry)",
+		len(indexInfo), batchIndexDuration, batchIndexDuration/time.Duration(len(indexInfo)))
 
 	if adjustStorage && size > 0 {
+		adjustStartTime := time.Now()
 		if err := s.tenantRepo.AdjustStorageUsed(ctx, tenantInfo.ID, size); err == nil {
 			tenantInfo.StorageUsed += size
 		}
 		knowledge.StorageSize += size
+		adjustDuration := time.Since(adjustStartTime)
+		if adjustDuration > 50*time.Millisecond {
+			logger.Debugf(ctx, "indexFAQChunks: adjusted storage in %v", adjustDuration)
+		}
 	}
 
+	updateStartTime := time.Now()
 	now := time.Now()
 	knowledge.UpdatedAt = now
 	knowledge.ProcessedAt = &now
-	return s.repo.UpdateKnowledge(ctx, knowledge)
+	err = s.repo.UpdateKnowledge(ctx, knowledge)
+	updateDuration := time.Since(updateStartTime)
+	if updateDuration > 50*time.Millisecond {
+		logger.Debugf(ctx, "indexFAQChunks: updated knowledge in %v", updateDuration)
+	}
+
+	totalDuration := time.Since(indexStartTime)
+	logger.Debugf(ctx, "indexFAQChunks: completed indexing %d chunks in %v (build: %v, delete: %v, batchIndex: %v, update: %v)",
+		len(chunks), totalDuration, buildIndexInfoDuration, deleteDuration, batchIndexDuration, updateDuration)
+
+	return err
 }
 
 func (s *knowledgeService) deleteFAQChunkVectors(ctx context.Context,
@@ -3205,4 +3566,360 @@ func IsImageType(fileType string) bool {
 	default:
 		return false
 	}
+}
+
+// ProcessDocument handles Asynq document processing tasks
+func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) error {
+	var payload types.DocumentProcessPayload
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		logger.Errorf(ctx, "failed to unmarshal document process task payload: %v", err)
+		return nil
+	}
+
+	ctx = logger.WithRequestID(ctx, payload.RequestId)
+	ctx = logger.WithField(ctx, "document_process", payload.KnowledgeID)
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, payload.TenantID)
+	tenantInfo, err := s.tenantRepo.GetTenantByID(ctx, payload.TenantID)
+	if err != nil {
+		logger.Errorf(ctx, "failed to get tenant: %v", err)
+		return nil
+	}
+	ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenantInfo)
+
+	logger.Infof(ctx, "Processing document task: knowledge_id=%s, file_path=%s", payload.KnowledgeID, payload.FilePath)
+
+	// 幂等性检查：获取knowledge记录
+	knowledge, err := s.repo.GetKnowledgeByID(ctx, payload.TenantID, payload.KnowledgeID)
+	if err != nil {
+		logger.Errorf(ctx, "failed to get knowledge: %v", err)
+		return nil
+	}
+
+	if knowledge == nil {
+		return nil
+	}
+
+	// 检查任务状态 - 幂等性处理
+	if knowledge.ParseStatus == "completed" {
+		logger.Infof(ctx, "Document already completed, skipping: %s", payload.KnowledgeID)
+		return nil // 幂等：已完成的任务直接返回
+	}
+
+	if knowledge.ParseStatus == "failed" {
+		// 检查是否可恢复（例如：超时、临时错误等）
+		// 对于不可恢复的错误，直接返回
+		logger.Warnf(ctx, "Document processing previously failed: %s, error: %s", payload.KnowledgeID, knowledge.ErrorMessage)
+		// 这里可以根据错误类型判断是否可恢复，暂时允许重试
+	}
+
+	// 检查是否有部分处理（有chunks但状态不是completed）
+	if knowledge.ParseStatus != "completed" && knowledge.ParseStatus != "pending" && knowledge.ParseStatus != "processing" {
+		// 状态异常，记录日志但继续处理
+		logger.Warnf(ctx, "Unexpected parse status: %s for knowledge: %s", knowledge.ParseStatus, payload.KnowledgeID)
+	}
+
+	// 获取知识库信息
+	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, payload.KnowledgeBaseID)
+	if err != nil {
+		logger.Errorf(ctx, "failed to get knowledge base: %v", err)
+		knowledge.ParseStatus = "failed"
+		knowledge.ErrorMessage = fmt.Sprintf("failed to get knowledge base: %v", err)
+		knowledge.UpdatedAt = time.Now()
+		s.repo.UpdateKnowledge(ctx, knowledge)
+		return nil
+	}
+
+	knowledge.ParseStatus = "processing"
+	knowledge.UpdatedAt = time.Now()
+	if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
+		logger.Errorf(ctx, "failed to update knowledge status to processing: %v", err)
+		return nil
+	}
+
+	// 构建VLM配置（如果需要）
+	var vlmConfig *proto.VLMConfig
+	if payload.EnableMultimodel {
+		vlmConfig, err = s.getVLMProtoConfig(ctx, kb)
+		if err != nil {
+			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
+				WithField("error", err).Errorf("processDocument build VLM config failed")
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = err.Error()
+			knowledge.UpdatedAt = time.Now()
+			s.repo.UpdateKnowledge(ctx, knowledge)
+			return nil
+		}
+		if vlmConfig == nil {
+			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
+				Error("processDocument enable multimodal but VLM config missing")
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = "VLM 配置缺失"
+			knowledge.UpdatedAt = time.Now()
+			s.repo.UpdateKnowledge(ctx, knowledge)
+			return nil
+		}
+	}
+
+	// 检查多模态配置（仅对文件导入）
+	if payload.FilePath != "" && !payload.EnableMultimodel && IsImageType(payload.FileType) {
+		logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
+			WithField("error", ErrImageNotParse).Errorf("processDocument image without enable multimodel")
+		knowledge.ParseStatus = "failed"
+		knowledge.ErrorMessage = ErrImageNotParse.Error()
+		knowledge.UpdatedAt = time.Now()
+		s.repo.UpdateKnowledge(ctx, knowledge)
+		return nil
+	}
+
+	// 处理不同类型的导入：文件、URL、文本段落
+	var chunks []*proto.Chunk
+	if payload.URL != "" {
+		// URL导入
+		urlResp, err := s.docReaderClient.ReadFromURL(ctx, &proto.ReadFromURLRequest{
+			Url:   payload.URL,
+			Title: knowledge.Title,
+			ReadConfig: &proto.ReadConfig{
+				ChunkSize:        int32(kb.ChunkingConfig.ChunkSize),
+				ChunkOverlap:     int32(kb.ChunkingConfig.ChunkOverlap),
+				Separators:       kb.ChunkingConfig.Separators,
+				EnableMultimodal: payload.EnableMultimodel,
+				StorageConfig: &proto.StorageConfig{
+					Provider:        proto.StorageProvider(proto.StorageProvider_value[strings.ToUpper(kb.StorageConfig.Provider)]),
+					Region:          kb.StorageConfig.Region,
+					BucketName:      kb.StorageConfig.BucketName,
+					AccessKeyId:     kb.StorageConfig.SecretID,
+					SecretAccessKey: kb.StorageConfig.SecretKey,
+					AppId:           kb.StorageConfig.AppID,
+					PathPrefix:      kb.StorageConfig.PathPrefix,
+				},
+				VlmConfig: vlmConfig,
+			},
+			RequestId: payload.RequestId,
+		})
+		if err != nil {
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = err.Error()
+			knowledge.UpdatedAt = time.Now()
+			s.repo.UpdateKnowledge(ctx, knowledge)
+			return fmt.Errorf("failed to read from URL: %w", err)
+		}
+		chunks = urlResp.Chunks
+	} else if len(payload.Passages) > 0 {
+		// 文本段落导入
+		chunks := make([]*proto.Chunk, 0, len(payload.Passages))
+		start, end := 0, 0
+		for i, p := range payload.Passages {
+			if p == "" {
+				continue
+			}
+			end += len([]rune(p))
+			chunk := &proto.Chunk{
+				Content: p,
+				Seq:     int32(i),
+				Start:   int32(start),
+				End:     int32(end),
+			}
+			start = end
+			chunks = append(chunks, chunk)
+		}
+		// 直接处理chunks，不需要调用docReader
+		s.processChunks(ctx, kb, knowledge, chunks)
+		return nil
+	} else {
+		// 文件导入
+		fileReader, err := s.fileSvc.GetFile(ctx, payload.FilePath)
+		if err != nil {
+			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
+				WithField("error", err).Errorf("processDocument get file failed")
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = err.Error()
+			knowledge.UpdatedAt = time.Now()
+			s.repo.UpdateKnowledge(ctx, knowledge)
+			return fmt.Errorf("failed to get file: %w", err)
+		}
+		defer fileReader.Close()
+
+		// 读取文件内容
+		contentBytes, err := io.ReadAll(fileReader)
+		if err != nil {
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = err.Error()
+			knowledge.UpdatedAt = time.Now()
+			s.repo.UpdateKnowledge(ctx, knowledge)
+			return fmt.Errorf("failed to read file: %w", err)
+		}
+
+		// 调用docReader处理文件
+		fileResp, err := s.docReaderClient.ReadFromFile(ctx, &proto.ReadFromFileRequest{
+			FileContent: contentBytes,
+			FileName:    payload.FileName,
+			FileType:    payload.FileType,
+			ReadConfig: &proto.ReadConfig{
+				ChunkSize:        int32(kb.ChunkingConfig.ChunkSize),
+				ChunkOverlap:     int32(kb.ChunkingConfig.ChunkOverlap),
+				Separators:       kb.ChunkingConfig.Separators,
+				EnableMultimodal: payload.EnableMultimodel,
+				StorageConfig: &proto.StorageConfig{
+					Provider:        proto.StorageProvider(proto.StorageProvider_value[strings.ToUpper(kb.StorageConfig.Provider)]),
+					Region:          kb.StorageConfig.Region,
+					BucketName:      kb.StorageConfig.BucketName,
+					AccessKeyId:     kb.StorageConfig.SecretID,
+					SecretAccessKey: kb.StorageConfig.SecretKey,
+					AppId:           kb.StorageConfig.AppID,
+					PathPrefix:      kb.StorageConfig.PathPrefix,
+				},
+				VlmConfig: vlmConfig,
+			},
+			RequestId: payload.RequestId,
+		})
+		if err != nil {
+			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
+				WithField("error", err).Errorf("processDocument read file failed")
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = err.Error()
+			knowledge.UpdatedAt = time.Now()
+			s.repo.UpdateKnowledge(ctx, knowledge)
+			return fmt.Errorf("failed to read file from docreader: %w", err)
+		}
+		chunks = fileResp.Chunks
+	}
+
+	// 处理chunks（这会更新状态为completed）
+	s.processChunks(ctx, kb, knowledge, chunks)
+
+	return nil
+}
+
+// ProcessFAQImport handles Asynq FAQ import tasks
+func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) error {
+	var payload types.FAQImportPayload
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		logger.Errorf(ctx, "failed to unmarshal FAQ import task payload: %v", err)
+		return fmt.Errorf("failed to unmarshal task payload: %w", err)
+	}
+
+	ctx = logger.WithRequestID(ctx, uuid.New().String())
+	ctx = logger.WithField(ctx, "faq_import", payload.TaskID)
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, payload.TenantID)
+
+	tenantInfo, err := s.tenantRepo.GetTenantByID(ctx, payload.TenantID)
+	if err != nil {
+		logger.Errorf(ctx, "failed to get tenant: %v", err)
+		return nil
+	}
+	ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenantInfo)
+
+	logger.Infof(ctx, "Processing FAQ import task: task_id=%s, kb_id=%s, total_entries=%d", payload.TaskID, payload.KBID, len(payload.Entries))
+
+	// 幂等性检查：获取knowledge记录（FAQ任务使用knowledge ID作为taskID）
+	knowledge, err := s.repo.GetKnowledgeByID(ctx, payload.TenantID, payload.TaskID)
+	if err != nil {
+		logger.Errorf(ctx, "failed to get FAQ knowledge: %v", err)
+		return nil
+	}
+
+	if knowledge == nil {
+		return nil
+	}
+
+	// 检查任务状态 - 幂等性处理
+	if knowledge.ParseStatus == "completed" {
+		logger.Infof(ctx, "FAQ import already completed, skipping: %s", payload.TaskID)
+		return nil // 幂等：已完成的任务直接返回
+	}
+
+	// 检查已处理进度
+	importMeta, _ := types.ParseFAQImportMetadata(knowledge)
+	var processedCount int
+	if importMeta != nil {
+		processedCount = importMeta.ImportProcessed
+		logger.Infof(ctx, "Resuming FAQ import from progress: %d/%d", processedCount, len(payload.Entries))
+	}
+
+	// 保存原始总数量（在截断payload.Entries之前）
+	originalTotalEntries := len(payload.Entries)
+
+	// 如果已经处理了一部分，需要从该位置继续
+	if processedCount < originalTotalEntries {
+		// 幂等性处理：清理processedCount之后可能已部分处理的chunks和索引数据
+		// 因为任务可能在处理过程中中断，导致部分chunks已入库或已写入索引
+		logger.Infof(ctx, "Cleaning up potentially partially processed chunks after entry %d", processedCount)
+
+		// 计算需要清理的ChunkIndex范围
+		// 已处理的chunks的ChunkIndex范围是 [payload.StartChunkIndex, payload.StartChunkIndex + processedCount - 1]
+		// 需要清理的chunks是从已处理位置之后开始，到分配的结束位置
+		minChunkIndex := payload.StartChunkIndex + processedCount
+		maxChunkIndex := payload.EndChunkIndex
+		logger.Infof(ctx, "Cleaning chunks with ChunkIndex in range [%d, %d] (allocated range: [%d, %d], processedCount=%d), knowledge_id=%s, kb_id=%s",
+			minChunkIndex, maxChunkIndex, payload.StartChunkIndex, payload.EndChunkIndex, processedCount, payload.KnowledgeID, payload.KBID)
+
+		// 查询并删除需要清理的chunks（使用ChunkIndex范围查询）
+		// 注意：只清理processedCount之后的部分，避免删除已成功处理的chunks
+		chunksToDelete, err := s.chunkRepo.DeleteChunksByChunkIndexRange(ctx,
+			payload.TenantID,
+			payload.KnowledgeID,
+			minChunkIndex,
+			maxChunkIndex,
+		)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to query chunks for cleanup: %v", err)
+			return fmt.Errorf("failed to query chunks: %w", err)
+		}
+		logger.Infof(ctx, "Cleaned %d chunks, from knowledge: %s, range: [%d, %d]",
+			len(chunksToDelete), payload.KnowledgeID, minChunkIndex, maxChunkIndex)
+
+		// 获取KB信息以删除索引数据
+		kb, err := s.kbService.GetKnowledgeBaseByID(ctx, payload.KBID)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to get knowledge base: %v", err)
+			return fmt.Errorf("failed to get knowledge base: %w", err)
+		}
+
+		// 删除索引数据
+		embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+		if err == nil {
+			retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+			if err == nil {
+				chunkIDs := make([]string, 0, len(chunksToDelete))
+				for _, chunk := range chunksToDelete {
+					chunkIDs = append(chunkIDs, chunk.ID)
+				}
+				if err := retrieveEngine.DeleteByChunkIDList(ctx, chunkIDs, embeddingModel.GetDimensions()); err != nil {
+					logger.Warnf(ctx, "Failed to delete index data for chunks (may not exist): %v", err)
+				} else {
+					logger.Infof(ctx, "Successfully deleted index data for %d chunks", len(chunksToDelete))
+				}
+			}
+		}
+
+		// 从已处理的位置继续
+		payload.Entries = payload.Entries[processedCount:]
+		logger.Infof(ctx, "Continuing FAQ import from entry %d, remaining: %d entries", processedCount, len(payload.Entries))
+	}
+
+	// 更新任务状态为运行中
+	if err := s.updateFAQImportStatusWithRanges(ctx, payload.TaskID, types.FAQImportStatusProcessing, 0,
+		originalTotalEntries, processedCount, "", importMeta.NextChunkIndex); err != nil {
+		logger.Errorf(ctx, "Failed to update task status to running: %v", err)
+	}
+
+	// 构建FAQBatchUpsertPayload
+	faqPayload := &types.FAQBatchUpsertPayload{
+		Entries: payload.Entries,
+		Mode:    payload.Mode,
+	}
+
+	// 执行FAQ导入（传入原始总数量）
+	if err := s.executeFAQImport(ctx, payload.TaskID, payload.KBID, faqPayload, payload.TenantID, payload.StartChunkIndex, processedCount, originalTotalEntries); err != nil {
+		logger.Errorf(ctx, "FAQ import task failed: %s, error: %v", payload.TaskID, err)
+		return fmt.Errorf("FAQ import failed: %w", err)
+	}
+
+	// 任务成功完成
+	logger.Infof(ctx, "FAQ import task completed: %s", payload.TaskID)
+	if err := s.updateFAQImportStatus(ctx, payload.TaskID, types.FAQImportStatusCompleted, 100, originalTotalEntries, originalTotalEntries, ""); err != nil {
+		logger.Errorf(ctx, "Failed to update task status to success: %v", err)
+	}
+
+	return nil
 }

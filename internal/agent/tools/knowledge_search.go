@@ -48,48 +48,31 @@ func NewKnowledgeSearchTool(
 	chatModel chat.Chat,
 	cfg *config.Config,
 ) *KnowledgeSearchTool {
-	description := `Search within knowledge bases. Unified tool that supports both targeted and broad searches.
+	description := `Semantic/vector search for understanding questions and concepts.
 
-## Features
-- Multi-KB search: Search across multiple knowledge bases concurrently
+## Core Function
+Finds content by MEANING using embeddings (NOT exact text matching).
 
-## Usage
+## CRITICAL: Always Check for Entities First
+**If query has ANY entities → grep_chunks FIRST, then use this tool**
 
-**Use when**:
-- You know which knowledge bases to target (specify knowledge_base_ids)
-- You're unsure which KB contains the info (omit knowledge_base_ids to search all allowed KBs)
-- Want to search with multiple queries to get comprehensive results
-- Want to filter results from specific documents (use knowledge_ids)
+## Use When:
+- Questions: "What is...", "How...", "Why...", "Explain..."
+- Conceptual understanding
+- AFTER grep_chunks pre-retrieval (hybrid approach)
 
-**Returns**: Merged and deduplicated search results from KBs 
+## Hybrid Workflow (Strongly Recommended):
+1. grep_chunks(["entity", "synonym", "变体"]) → pre-retrieve documents containing entity
+2. knowledge_search(["concept query"]) → deep understanding
 
-## Examples
+This ensures entity-related content is not missed!
 
-` + "`" + `
-# Simple search in specific KBs
-{
-  "knowledge_base_ids": ["kb1", "kb2"],
-  "queries": ["什么是向量数据库"]
-}
+## Parameters
+- queries (required): 1-5 semantic questions (NOT just keywords)
+- knowledge_base_ids (optional): Limit to specific KBs
 
-# Search all allowed KBs with multiple queries
-{
-  "queries": ["什么是向量数据库", "向量数据库的应用场景"]
-}
-
-# Search specific documents
-{
-  "knowledge_base_ids": ["kb1"],
-  "queries": ["彗星的起源"],
-  "knowledge_ids": ["doc1", "doc2"]
-}
-` + "`" + `
-
-## Tips
-
-- Concurrent search across multiple KBs
-- Results are automatically reranked to unify scores from different sources
-- Results are merged, deduplicated and sorted by relevance`
+## Output
+Semantically relevant chunks with scores, auto-reranked.`
 
 	return &KnowledgeSearchTool{
 		BaseTool:             NewBaseTool("knowledge_search", description),
@@ -110,7 +93,7 @@ func (t *KnowledgeSearchTool) Parameters() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"queries": map[string]interface{}{
 				"type":        "array",
-				"description": "Array of search queries",
+				"description": "REQUIRED: 1-5 semantic questions/topics (e.g., ['What is RAG?', 'RAG benefits'])",
 				"items": map[string]interface{}{
 					"type": "string",
 				},
@@ -119,21 +102,12 @@ func (t *KnowledgeSearchTool) Parameters() map[string]interface{} {
 			},
 			"knowledge_base_ids": map[string]interface{}{
 				"type":        "array",
-				"description": "Array of knowledge base IDs to search in (optional, if omitted searches all allowed KBs)",
+				"description": "Optional: KB IDs to search",
 				"items": map[string]interface{}{
 					"type": "string",
 				},
 				"minItems": 0,
 				"maxItems": 10,
-			},
-			"knowledge_ids": map[string]interface{}{
-				"type":        "array",
-				"description": "Optional array of document IDs to filter results (only return results from these specific documents)",
-				"items": map[string]interface{}{
-					"type": "string",
-				},
-				"minItems": 0,
-				"maxItems": 50,
 			},
 		},
 		"required": []string{"queries"},
@@ -243,17 +217,6 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Search params: top_k=%d, vector_threshold=%.2f, keyword_threshold=%.2f, min_score=%.2f",
 		topK, vectorThreshold, keywordThreshold, minScore)
 
-	// Extract knowledge_ids filter if provided
-	var knowledgeIDsFilter map[string]bool
-	if knowledgeIDsRaw, ok := args["knowledge_ids"].([]interface{}); ok && len(knowledgeIDsRaw) > 0 {
-		knowledgeIDsFilter = make(map[string]bool)
-		for _, id := range knowledgeIDsRaw {
-			if idStr, ok := id.(string); ok && idStr != "" {
-				knowledgeIDsFilter[idStr] = true
-			}
-		}
-	}
-
 	// Execute concurrent search (hybrid search handles both vector and keyword)
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Starting concurrent search across %d KBs", len(kbIDs))
 	kbTypeMap := t.getKnowledgeBaseTypes(ctx, kbIDs)
@@ -262,29 +225,10 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 		topK, vectorThreshold, keywordThreshold, kbTypeMap)
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Concurrent search completed: %d raw results", len(allResults))
 
-	// Filter by knowledge_ids if provided
-	if len(knowledgeIDsFilter) > 0 {
-		logger.Infof(ctx, "[Tool][KnowledgeSearch] Filtering by %d knowledge IDs", len(knowledgeIDsFilter))
-		filtered := make([]*searchResultWithMeta, 0)
-		for _, r := range allResults {
-			if knowledgeIDsFilter[r.KnowledgeID] {
-				filtered = append(filtered, r)
-			}
-		}
-		logger.Infof(ctx, "[Tool][KnowledgeSearch] After knowledge_id filter: %d results (from %d)",
-			len(filtered), len(allResults))
-		allResults = filtered
-	}
-
 	// Filter by threshold first
 	filteredResults := t.filterByThreshold(allResults, vectorThreshold, keywordThreshold)
-	logger.Infof(ctx, "[Tool][KnowledgeSearch] After threshold filter: %d results (from %d)",
-		len(filteredResults), len(allResults))
-
 	// Deduplicate before reranking to reduce processing overhead
 	deduplicatedBeforeRerank := t.deduplicateResults(filteredResults)
-	logger.Infof(ctx, "[Tool][KnowledgeSearch] After deduplication before rerank: %d results (from %d)",
-		len(deduplicatedBeforeRerank), len(filteredResults))
 
 	// Apply ReRank if model is configured
 	// Prefer chatModel (LLM-based reranking) over rerankModel if both are available
@@ -358,11 +302,12 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 
 	// Build output
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Formatting output with %d final results", len(deduplicatedResults))
-	result, err := t.formatOutput(ctx, deduplicatedResults, kbIDs, len(allResults), knowledgeIDsFilter, queries)
+	result, err := t.formatOutput(ctx, deduplicatedResults, kbIDs, len(allResults), queries)
 	if err != nil {
 		logger.Errorf(ctx, "[Tool][KnowledgeSearch] Failed to format output: %v", err)
 		return result, err
 	}
+	logger.Infof(ctx, "[Tool][KnowledgeSearch] Output: %s", result.Output)
 	return result, nil
 }
 
@@ -859,7 +804,6 @@ func (t *KnowledgeSearchTool) formatOutput(
 	results []*searchResultWithMeta,
 	kbsToSearch []string,
 	totalBeforeFilter int,
-	knowledgeIDsFilter map[string]bool,
 	queries []string,
 ) (*types.ToolResult, error) {
 	if len(results) == 0 {
@@ -868,39 +812,25 @@ func (t *KnowledgeSearchTool) formatOutput(
 			"results":            []interface{}{},
 			"count":              0,
 		}
-		if len(knowledgeIDsFilter) > 0 {
-			filterList := make([]string, 0, len(knowledgeIDsFilter))
-			for id := range knowledgeIDsFilter {
-				filterList = append(filterList, id)
-			}
-			data["knowledge_ids"] = filterList
-		}
 		if len(queries) > 0 {
 			data["queries"] = queries
 		}
+		output := fmt.Sprintf("No relevant content found in %d knowledge base(s).\n\n", len(kbsToSearch))
+		output += "=== ⚠️ CRITICAL - Next Steps ===\n"
+		output += "- ❌ DO NOT use training data or general knowledge to answer\n"
+		output += "- ✅ If web_search is enabled: You MUST use web_search to find information\n"
+		output += "- ✅ If web_search is disabled: State 'I couldn't find relevant information in the knowledge base'\n"
+		output += "- NEVER fabricate or infer answers - ONLY use retrieved content\n"
+
 		return &types.ToolResult{
 			Success: true,
-			Output:  fmt.Sprintf("No relevant content found in %d knowledge base(s).", len(kbsToSearch)),
+			Output:  output,
 			Data:    data,
 		}, nil
 	}
 
 	// Build output header
 	output := "=== Search Results ===\n"
-	output += fmt.Sprintf("Knowledge Bases: %v\n", kbsToSearch)
-	if len(knowledgeIDsFilter) > 0 {
-		filterList := make([]string, 0, len(knowledgeIDsFilter))
-		for id := range knowledgeIDsFilter {
-			filterList = append(filterList, id)
-		}
-		output += fmt.Sprintf("Document Filter: %v\n", filterList)
-	}
-	if len(queries) == 1 {
-		output += fmt.Sprintf("Query: %s\n", queries[0])
-	} else if len(queries) > 1 {
-		output += fmt.Sprintf("Queries (%d): %v\n", len(queries), queries)
-	}
-
 	output += fmt.Sprintf("Found %d relevant results", len(results))
 	if totalBeforeFilter > len(results) {
 		output += fmt.Sprintf(" (filtered from %d)", totalBeforeFilter)
@@ -925,6 +855,11 @@ func (t *KnowledgeSearchTool) formatOutput(
 
 	faqMetadataCache := make(map[string]*types.FAQChunkMetadata)
 
+	// Track chunks per knowledge for statistics
+	knowledgeChunkMap := make(map[string]map[int]bool) // knowledge_id -> set of chunk_index
+	knowledgeTotalMap := make(map[string]int64)        // knowledge_id -> total chunks
+	knowledgeTitleMap := make(map[string]string)       // knowledge_id -> title
+
 	for i, result := range results {
 		var faqMeta *types.FAQChunkMetadata
 		if result.KnowledgeBaseType == types.KnowledgeBaseTypeFAQ {
@@ -936,6 +871,13 @@ func (t *KnowledgeSearchTool) formatOutput(
 			}
 		}
 
+		// Track chunk indices per knowledge
+		if knowledgeChunkMap[result.KnowledgeID] == nil {
+			knowledgeChunkMap[result.KnowledgeID] = make(map[int]bool)
+		}
+		knowledgeChunkMap[result.KnowledgeID][result.ChunkIndex] = true
+		knowledgeTitleMap[result.KnowledgeID] = result.KnowledgeTitle
+
 		// Group by knowledge base
 		if result.KnowledgeID != currentKB {
 			currentKB = result.KnowledgeID
@@ -943,6 +885,20 @@ func (t *KnowledgeSearchTool) formatOutput(
 				output += "\n"
 			}
 			output += fmt.Sprintf("[Source Document: %s]\n", result.KnowledgeTitle)
+
+			// Get total chunk count for this knowledge (cache it)
+			if _, exists := knowledgeTotalMap[result.KnowledgeID]; !exists {
+				_, total, err := t.chunkService.GetRepository().ListPagedChunksByKnowledgeID(ctx,
+					t.tenantID, result.KnowledgeID,
+					&types.Pagination{Page: 1, PageSize: 1},
+					[]types.ChunkType{types.ChunkTypeText}, "")
+				if err != nil {
+					logger.Warnf(ctx, "[Tool][KnowledgeSearch] Failed to get total chunks for knowledge %s: %v", result.KnowledgeID, err)
+					knowledgeTotalMap[result.KnowledgeID] = 0
+				} else {
+					knowledgeTotalMap[result.KnowledgeID] = total
+				}
+			}
 		}
 
 		// relevanceLevel := GetRelevanceLevel(result.Score)
@@ -958,8 +914,8 @@ func (t *KnowledgeSearchTool) formatOutput(
 			}
 			if len(faqMeta.Answers) > 0 {
 				output += "  FAQ Answers:\n"
-				for _, ans := range faqMeta.Answers {
-					output += fmt.Sprintf("    Answer Choice %d: %s\n", i+1, ans)
+				for ansIdx, ans := range faqMeta.Answers {
+					output += fmt.Sprintf("    Answer Choice %d: %s\n", ansIdx+1, ans)
 				}
 			}
 		}
@@ -992,6 +948,59 @@ func (t *KnowledgeSearchTool) formatOutput(
 		}
 	}
 
+	// Add statistics and recommendations for each knowledge
+	output += "\n=== 检索统计与建议 ===\n\n"
+	for knowledgeID, retrievedChunks := range knowledgeChunkMap {
+		totalChunks := knowledgeTotalMap[knowledgeID]
+		retrievedCount := len(retrievedChunks)
+		title := knowledgeTitleMap[knowledgeID]
+
+		if totalChunks > 0 {
+			percentage := float64(retrievedCount) / float64(totalChunks) * 100
+			remaining := totalChunks - int64(retrievedCount)
+
+			output += fmt.Sprintf("文档: %s (%s)\n", title, knowledgeID)
+			output += fmt.Sprintf("  总 Chunk 数: %d\n", totalChunks)
+			output += fmt.Sprintf("  已召回: %d 个 (%.1f%%)\n", retrievedCount, percentage)
+			output += fmt.Sprintf("  未召回: %d 个\n", remaining)
+
+			if remaining > 0 {
+				output += "  建议: 使用 list_knowledge_chunks 工具获取完整内容\n"
+
+				// Find missing chunk ranges (gaps in retrieved chunks)
+				missingRanges := t.findMissingChunkRanges(retrievedChunks, int(totalChunks))
+
+				if len(missingRanges) == 0 {
+					// No gaps found (shouldn't happen if remaining > 0, but handle it)
+					output += fmt.Sprintf("    - 获取全部内容: list_knowledge_chunks(knowledge_id=\"%s\", offset=0, limit=%d)\n", knowledgeID, totalChunks)
+				} else if len(missingRanges) == 1 && missingRanges[0].start == 0 && missingRanges[0].end == int(totalChunks)-1 {
+					// All chunks are missing (shouldn't happen, but handle it)
+					output += fmt.Sprintf("    - 获取全部内容: list_knowledge_chunks(knowledge_id=\"%s\", offset=0, limit=%d)\n", knowledgeID, totalChunks)
+				} else {
+					// Suggest getting each missing range
+					for idx, r := range missingRanges {
+						rangeSize := r.end - r.start + 1
+						if rangeSize <= 100 {
+							// Small range, get all at once
+							output += fmt.Sprintf("    - 区间 %d: chunk_index %d-%d (%d 个) → list_knowledge_chunks(knowledge_id=\"%s\", offset=%d, limit=%d)\n",
+								idx+1, r.start, r.end, rangeSize, knowledgeID, r.start, rangeSize)
+						} else {
+							// Large range, suggest getting in batches
+							output += fmt.Sprintf("    - 区间 %d: chunk_index %d-%d (%d 个，建议分批获取):\n",
+								idx+1, r.start, r.end, rangeSize)
+							output += fmt.Sprintf("      首次: list_knowledge_chunks(knowledge_id=\"%s\", offset=%d, limit=100)\n",
+								knowledgeID, r.start)
+							if rangeSize > 100 {
+								output += "      继续: 根据返回结果调整 offset 继续获取剩余内容\n"
+							}
+						}
+					}
+				}
+			}
+			output += "\n"
+		}
+	}
+
 	// // Add usage guidance
 	// output += "\n\n=== Usage Guidelines ===\n"
 	// output += "- High relevance (>=0.8): directly usable for answering\n"
@@ -1011,13 +1020,7 @@ func (t *KnowledgeSearchTool) formatOutput(
 		"kb_counts":          kbCounts,
 		"display_type":       "search_results",
 	}
-	if len(knowledgeIDsFilter) > 0 {
-		filterList := make([]string, 0, len(knowledgeIDsFilter))
-		for id := range knowledgeIDsFilter {
-			filterList = append(filterList, id)
-		}
-		data["knowledge_ids"] = filterList
-	}
+
 	if len(queries) > 0 {
 		data["queries"] = queries
 	}
@@ -1031,4 +1034,53 @@ func (t *KnowledgeSearchTool) formatOutput(
 		Output:  output,
 		Data:    data,
 	}, nil
+}
+
+// chunkRange represents a continuous range of chunk indices
+type chunkRange struct {
+	start int
+	end   int
+}
+
+// findMissingChunkRanges finds all continuous ranges of missing chunks
+// retrievedChunks is a set of retrieved chunk indices
+// totalChunks is the total number of chunks
+func (t *KnowledgeSearchTool) findMissingChunkRanges(retrievedChunks map[int]bool, totalChunks int) []chunkRange {
+	if totalChunks <= 0 {
+		return nil
+	}
+
+	var ranges []chunkRange
+	var currentStart int = -1
+
+	// Iterate through all possible chunk indices (0 to totalChunks-1)
+	for i := 0; i < totalChunks; i++ {
+		if !retrievedChunks[i] {
+			// This chunk is missing
+			if currentStart == -1 {
+				// Start of a new missing range
+				currentStart = i
+			}
+		} else {
+			// This chunk is retrieved
+			if currentStart != -1 {
+				// End of a missing range
+				ranges = append(ranges, chunkRange{
+					start: currentStart,
+					end:   i - 1,
+				})
+				currentStart = -1
+			}
+		}
+	}
+
+	// Handle case where missing chunks extend to the end
+	if currentStart != -1 {
+		ranges = append(ranges, chunkRange{
+			start: currentStart,
+			end:   totalChunks - 1,
+		})
+	}
+
+	return ranges
 }

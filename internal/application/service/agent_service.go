@@ -171,10 +171,7 @@ func (s *agentService) registerTools(
 	sessionService interfaces.SessionService,
 ) error {
 	// If no specific tools allowed, register default tools
-	allowedTools := config.AllowedTools
-	if len(allowedTools) == 0 {
-		allowedTools = tools.DefaultAllowedTools()
-	}
+	allowedTools := tools.DefaultAllowedTools()
 	// If web search is enabled, add web_search to allowedTools
 	if config.WebSearchEnabled {
 		allowedTools = append(allowedTools, "web_search")
@@ -206,6 +203,9 @@ func (s *agentService) registerTools(
 					chatModel,
 					s.cfg,
 				))
+		case "grep_chunks":
+			registry.RegisterTool(tools.NewGrepChunksTool(s.db, tenantID, config.KnowledgeBases))
+			logger.Infof(ctx, "Registered grep_chunks tool for tenant: %d", tenantID)
 		case "list_knowledge_chunks":
 			registry.RegisterTool(tools.NewListKnowledgeChunksTool(tenantID, s.knowledgeService, s.chunkService))
 		case "query_knowledge_graph":

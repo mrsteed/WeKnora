@@ -7,6 +7,16 @@
             <InputField @send-msg="sendMsg"></InputField>
         </div>
     </div>
+    
+    <!-- 知识库编辑器（创建/编辑统一组件） -->
+    <KnowledgeBaseEditorModal 
+      :visible="uiStore.showKBEditorModal"
+      :mode="uiStore.kbEditorMode"
+      :kb-id="uiStore.currentKBId || undefined"
+      :initial-type="uiStore.kbEditorType"
+      @update:visible="(val) => val ? null : uiStore.closeKBEditor()"
+      @success="handleKBEditorSuccess"
+    />
 </template>
 <script setup lang="ts">
 import { ref } from 'vue';
@@ -14,14 +24,17 @@ import InputField from '@/components/Input-field.vue';
 import { createSessions } from "@/api/chat/index";
 import { useMenuStore } from '@/stores/menu';
 import { useSettingsStore } from '@/stores/settings';
+import { useUIStore } from '@/stores/ui';
 import { useRoute, useRouter } from 'vue-router';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useI18n } from 'vue-i18n';
+import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 
 const router = useRouter();
 const route = useRoute();
 const usemenuStore = useMenuStore();
 const settingsStore = useSettingsStore();
+const uiStore = useUIStore();
 const { t } = useI18n();
 
 const sendMsg = (value: string) => {
@@ -77,6 +90,15 @@ const navigateToSession = async (sessionId: string, value: string) => {
     usemenuStore.changeIsFirstSession(true);
     usemenuStore.changeFirstQuery(value);
     router.push(`/platform/chat/${sessionId}`);
+}
+
+const handleKBEditorSuccess = (kbId: string) => {
+    console.log('[creatChat] knowledge base created successfully:', kbId)
+    // 创建成功后跳转到知识库列表页面，并高亮新创建的知识库
+    router.push({
+        path: '/platform/knowledge-bases',
+        query: { highlightKbId: kbId }
+    })
 }
 
 </script>

@@ -81,14 +81,10 @@ func (s *tenantService) CreateTenant(ctx context.Context, tenant *types.Tenant) 
 
 // GetTenantByID retrieves a tenant by their ID
 func (s *tenantService) GetTenantByID(ctx context.Context, id uint) (*types.Tenant, error) {
-	logger.Info(ctx, "Start retrieving tenant")
-
 	if id == 0 {
 		logger.Error(ctx, "Tenant ID cannot be 0")
 		return nil, errors.New("tenant ID cannot be 0")
 	}
-
-	logger.Infof(ctx, "Retrieving tenant, ID: %d", id)
 
 	tenant, err := s.repo.GetTenantByID(ctx, id)
 	if err != nil {
@@ -98,14 +94,11 @@ func (s *tenantService) GetTenantByID(ctx context.Context, id uint) (*types.Tena
 		return nil, err
 	}
 
-	logger.Infof(ctx, "Tenant retrieved successfully, ID: %d, name: %s", tenant.ID, tenant.Name)
 	return tenant, nil
 }
 
 // ListTenants retrieves a list of all tenants
 func (s *tenantService) ListTenants(ctx context.Context) ([]*types.Tenant, error) {
-	logger.Info(ctx, "Start retrieving tenant list")
-
 	tenants, err := s.repo.ListTenants(ctx)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -191,8 +184,6 @@ func (s *tenantService) UpdateAPIKey(ctx context.Context, id uint) (string, erro
 		logger.Error(ctx, "Tenant ID cannot be 0")
 		return "", errors.New("tenant ID cannot be 0")
 	}
-
-	logger.Infof(ctx, "Retrieving tenant information, ID: %d", id)
 
 	tenant, err := s.repo.GetTenantByID(ctx, id)
 	if err != nil {

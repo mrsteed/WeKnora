@@ -43,20 +43,17 @@ type WebFetchTool struct {
 
 // NewWebFetchTool 创建 web_fetch 工具实例
 func NewWebFetchTool(chatModel chat.Chat) *WebFetchTool {
-	description := `Fetch web content from previously discovered URLs and analyze it with an LLM.
+	description := `Fetch detailed web content from previously discovered URLs and analyze it with an LLM.
 
-## 流程
-- 接收一个或多个 {url, prompt} 组合
-- 抓取网页内容并转换为 Markdown 文本
-- 使用提示词调用小模型进行分析与总结（若模型可用）
-- 返回总结结果与原始内容片段
+## Usage
+- Receive one or more {url, prompt} combinations
+- Fetch web page content and convert to Markdown text
+- Use prompt to call small model for analysis and summary (if model is available)
+- Return summary result and original content fragment
 
-## 使用场景
-- 对 web_search 返回的链接做进一步深入阅读
-- 从网页中提取结构化信息或关键信息
-
-## 参数
-- items (必填): 数组，元素为 { "url": "...", "prompt": "..." }
+## When to Use
+- **MANDATORY**: After web_search returns results, if content is truncated or incomplete, use web_fetch to get full page content
+- When web_search snippet is insufficient for answering the question
 `
 
 	return &WebFetchTool{
@@ -190,6 +187,22 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 				firstErr = res.err
 			}
 		}
+	}
+
+	// Add guidance for next steps
+	builder.WriteString("\n=== Next Steps ===\n")
+	if len(aggregated) > 0 {
+		builder.WriteString("- ✅ Full page content has been fetched and analyzed.\n")
+		builder.WriteString("- Evaluate if the content is sufficient to answer the question completely.\n")
+		builder.WriteString("- Synthesize information from all fetched pages for comprehensive answers.\n")
+		if !success {
+			builder.WriteString("- ⚠️ Some URLs failed to fetch. Use available content or try alternative sources.\n")
+		}
+	} else {
+		builder.WriteString("- ❌ No content was successfully fetched. Consider:\n")
+		builder.WriteString("  - Verify URLs are accessible\n")
+		builder.WriteString("  - Try alternative sources from web_search results\n")
+		builder.WriteString("  - Check if information can be found in knowledge base instead\n")
 	}
 
 	data := map[string]interface{}{

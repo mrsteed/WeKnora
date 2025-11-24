@@ -54,8 +54,56 @@
         </div>
       </div>
 
+      <!-- 导入进度条（显示在列表页面顶部） -->
+      <div v-if="importState.taskId && importState.taskStatus" class="faq-import-progress-bar">
+        <div class="progress-bar-content">
+          <div class="progress-bar-header">
+            <t-icon 
+              :name="importState.taskStatus.status === 'running' ? 'loading' : 
+                     importState.taskStatus.status === 'success' ? 'check-circle' : 
+                     importState.taskStatus.status === 'failed' ? 'error-circle' : 'time'"
+              size="16px" 
+              class="progress-icon"
+              :class="{
+                'icon-loading': importState.taskStatus.status === 'running',
+                'icon-success': importState.taskStatus.status === 'success',
+                'icon-error': importState.taskStatus.status === 'failed'
+              }"
+            />
+            <span class="progress-title">
+              {{ importState.taskStatus.status === 'running' ? '导入中...' : 
+                 importState.taskStatus.status === 'success' ? '导入完成' : 
+                 importState.taskStatus.status === 'failed' ? '导入失败' : '等待中...' }}
+            </span>
+            <span class="progress-count">
+              {{ importState.taskStatus.processed }}/{{ importState.taskStatus.total }}
+            </span>
+            <t-button
+              v-if="importState.taskStatus.status === 'success' || importState.taskStatus.status === 'failed'"
+              variant="text"
+              theme="default"
+              size="small"
+              class="progress-close-btn"
+              @click="handleCloseProgress"
+            >
+              <t-icon name="close" size="14px" />
+            </t-button>
+          </div>
+          <t-progress
+            :percentage="importState.taskStatus.progress"
+            :status="importState.taskStatus.status === 'failed' ? 'error' : 
+                     importState.taskStatus.status === 'success' ? 'success' : 'active'"
+            :label="false"
+            class="progress-bar"
+          />
+          <p v-if="importState.taskStatus.error" class="progress-error">
+            {{ importState.taskStatus.error }}
+          </p>
+        </div>
+      </div>
+
       <div class="faq-main">
-        <aside class="faq-tag-panel">
+          <aside class="faq-tag-panel">
           <div class="sidebar-header">
             <div class="sidebar-title">
               <span>{{ $t('knowledgeBase.faqCategoryTitle') }}</span>
@@ -756,14 +804,27 @@
                     {{ $t('knowledgeEditor.faqImport.previewMore', { count: importState.preview.length - 5 }) }}
                   </p>
                 </div>
+
               </div>
 
               <div class="faq-import-footer">
-                <t-button theme="default" variant="outline" @click="importVisible = false">
+                <t-button 
+                  theme="default" 
+                  variant="outline" 
+                  @click="handleCancelImport"
+                  :disabled="importState.importing && importState.taskStatus?.status === 'running'"
+                >
                   {{ $t('common.cancel') }}
                 </t-button>
-                <t-button theme="primary" @click="handleImport" :loading="importState.importing">
-                  {{ $t('knowledgeEditor.faqImport.importButton') }}
+                <t-button 
+                  theme="primary" 
+                  @click="handleImport" 
+                  :loading="importState.importing && !importState.taskId"
+                  :disabled="importState.taskStatus?.status === 'running'"
+                >
+                  {{ importState.taskStatus?.status === 'success' ? $t('common.close') : 
+                     importState.taskStatus?.status === 'failed' ? '重试' :
+                     $t('knowledgeEditor.faqImport.importButton') }}
                 </t-button>
               </div>
             </div>
@@ -773,37 +834,67 @@
     </Teleport>
 
     <!-- Batch Tag Dialog -->
-    <t-dialog
-      v-model:visible="batchTagDialogVisible"
-      :header="$t('knowledgeEditor.faq.batchUpdateTag')"
-      width="480px"
-      :confirm-btn="{ content: $t('common.confirm'), theme: 'primary' }"
-      :cancel-btn="{ content: $t('common.cancel') }"
-      @confirm="handleBatchTag"
-    >
-      <div class="batch-tag-dialog-content">
-        <p class="batch-tag-dialog-tip">
-          {{ $t('knowledgeEditor.faq.batchUpdateTagTip', { count: selectedRowKeys.length }) }}
-        </p>
-        <t-form layout="vertical" class="batch-tag-form">
-          <t-form-item :label="$t('knowledgeBase.tagLabel')">
-            <t-select
-              v-model="batchTagValue"
-              :options="tagSelectOptions"
-              :placeholder="$t('knowledgeBase.tagPlaceholder')"
-              clearable
-              filterable
-            >
-              <template #empty>
-                <div class="tag-select-empty">
-                  {{ $t('knowledgeBase.noTags') }}
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="batchTagDialogVisible" class="batch-tag-overlay" @click.self="batchTagDialogVisible = false">
+          <div class="batch-tag-modal">
+            <!-- 关闭按钮 -->
+            <button class="batch-tag-close-btn" @click="batchTagDialogVisible = false" :aria-label="$t('general.close')">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </button>
+
+            <div class="batch-tag-container">
+              <div class="batch-tag-header">
+                <h2 class="batch-tag-title">{{ $t('knowledgeEditor.faq.batchUpdateTag') }}</h2>
+              </div>
+
+              <div class="batch-tag-content">
+                <div class="batch-tag-tip">
+                  <t-icon name="info-circle" size="16px" class="tip-icon" />
+                  <span>{{ $t('knowledgeEditor.faq.batchUpdateTagTip', { count: selectedRowKeys.length }) }}</span>
                 </div>
-              </template>
-            </t-select>
-          </t-form-item>
-        </t-form>
-      </div>
-    </t-dialog>
+                <t-form layout="vertical" class="batch-tag-form">
+                  <t-form-item :label="$t('knowledgeBase.tagLabel')">
+                    <t-select
+                      v-model="batchTagValue"
+                      :options="tagSelectOptions"
+                      :placeholder="$t('knowledgeBase.tagPlaceholder')"
+                      clearable
+                      filterable
+                      class="batch-tag-select"
+                    >
+                      <template #empty>
+                        <div class="tag-select-empty">
+                          {{ $t('knowledgeBase.noTags') }}
+                        </div>
+                      </template>
+                    </t-select>
+                  </t-form-item>
+                </t-form>
+              </div>
+
+              <div class="batch-tag-footer">
+                <t-button 
+                  theme="default" 
+                  variant="outline" 
+                  @click="batchTagDialogVisible = false"
+                >
+                  {{ $t('common.cancel') }}
+                </t-button>
+                <t-button 
+                  theme="primary" 
+                  @click="handleBatchTag"
+                >
+                  {{ $t('common.confirm') }}
+                </t-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Search Test Drawer -->
     <t-drawer
@@ -986,8 +1077,10 @@ import {
   deleteKnowledgeBaseTag,
   getKnowledgeBaseById,
   listKnowledgeBases,
+  getKnowledgeDetails,
 } from '@/api/knowledge-base'
 import * as XLSX from 'xlsx'
+import Papa from 'papaparse'
 import FAQTagTooltip from '@/components/FAQTagTooltip.vue'
 import { useUIStore } from '@/stores/ui'
 
@@ -1018,6 +1111,7 @@ interface FAQEntryPayload {
   negative_questions: string[]
   answers: string[]
   tag_id?: string
+  is_enabled?: boolean
 }
 
 const props = defineProps<{
@@ -1158,6 +1252,15 @@ const importState = reactive({
   file: null as File | null,
   preview: [] as FAQEntryPayload[],
   importing: false,
+  taskId: null as string | null,
+  taskStatus: null as {
+    status: string
+    progress: number
+    total: number
+    processed: number
+    error?: string
+  } | null,
+  pollingInterval: null as ReturnType<typeof setInterval> | null,
 })
 
 // Search test state
@@ -1174,7 +1277,12 @@ const searchForm = reactive({
 // Toolbar actions dropdown
 const toolbarActionOptions = computed(() => {
   const options = [
-    { content: t('knowledgeEditor.faqImport.importButton'), value: 'import', icon: 'upload' },
+    { 
+      content: t('knowledgeEditor.faqImport.importButton'), 
+      value: 'import', 
+      icon: 'upload',
+      disabled: importState.taskStatus?.status === 'running' // 导入过程中禁用导入按钮
+    },
     { content: t('knowledgeEditor.faq.searchTest'), value: 'search', icon: 'search' },
   ]
   
@@ -1451,6 +1559,29 @@ const handleFaqMenuAction = (event: Event) => {
     openEditor()
   } else if (detail.action === 'import') {
     openImportDialog()
+  } else if (detail.action === 'search') {
+    searchDrawerVisible.value = true
+  } else if (detail.action === 'batch') {
+    // 批量操作通过左侧菜单的下拉菜单处理
+    if (selectedRowKeys.value.length === 0) {
+      MessagePlugin.warning(t('knowledgeEditor.faq.selectEntriesFirst') || '请先选中要操作的FAQ条目')
+    }
+  } else if (detail.action === 'batchTag') {
+    if (selectedRowKeys.value.length > 0) {
+      openBatchTagDialog()
+    }
+  } else if (detail.action === 'batchEnable') {
+    if (selectedRowKeys.value.length > 0) {
+      handleBatchStatusChange(true)
+    }
+  } else if (detail.action === 'batchDisable') {
+    if (selectedRowKeys.value.length > 0) {
+      handleBatchStatusChange(false)
+    }
+  } else if (detail.action === 'batchDelete') {
+    if (selectedRowKeys.value.length > 0) {
+      handleBatchDelete()
+    }
   }
 }
 
@@ -1767,10 +1898,18 @@ const handleMenuDelete = async (entry: FAQEntry) => {
 }
 
 const openImportDialog = () => {
+  // 如果正在导入，不允许打开导入对话框
+  if (importState.taskStatus?.status === 'running') {
+    MessagePlugin.warning('导入正在进行中，请等待完成后再试')
+    return
+  }
+  stopPolling()
   importVisible.value = true
   importState.file = null
   importState.preview = []
   importState.mode = 'append'
+  // 注意：不清除taskId和taskStatus，以便在关闭对话框后仍能看到进度
+  importState.importing = false
 }
 
 const processFile = async (file: File) => {
@@ -1820,25 +1959,55 @@ const parseJSONFile = async (file: File): Promise<FAQEntryPayload[]> => {
 
 const parseCSVFile = async (file: File): Promise<FAQEntryPayload[]> => {
   const text = await file.text()
-  const [headerLine, ...rows] = text.split(/\r?\n/).filter(Boolean)
-  const headers = headerLine.split(',').map((h) => h.trim().toLowerCase())
-  const payloads: FAQEntryPayload[] = []
-  rows.forEach((line) => {
-    const columns = line.split(',').map((c) => c.trim())
-    const record: Record<string, string> = {}
-    headers.forEach((key, idx) => {
-      record[key] = columns[idx] || ''
+  
+  // 使用 papaparse 解析 CSV，自动处理引号、转义、分隔符等
+  return new Promise((resolve, reject) => {
+    Papa.parse(text, {
+      header: true,
+      skipEmptyLines: true,
+      delimiter: '', // 自动检测分隔符（逗号或制表符）
+      quoteChar: '"',
+      escapeChar: '"',
+      transformHeader: (header: string) => {
+        // 移除字段名中的括号和说明，只保留核心字段名
+        const cleaned = header.trim()
+          .replace(/\([^)]*\)/g, '') // 移除括号及内容
+          .trim()
+        // 对于中文字段名，不转换为小写；对于英文字段名，转换为小写
+        return /[\u4e00-\u9fa5]/.test(cleaned) ? cleaned : cleaned.toLowerCase()
+      },
+      complete: (results) => {
+        try {
+          const payloads: FAQEntryPayload[] = []
+          results.data.forEach((row: any) => {
+            const record: Record<string, string> = {}
+            // 将行数据转换为记录对象
+            Object.keys(row).forEach((key) => {
+              record[key] = String(row[key] || '').trim()
+            })
+            
+            const isDisabled = parseBooleanField(record['是否停用'], false)
+            payloads.push(
+              normalizePayload({
+                standard_question: record['问题'] || record['standard_question'] || record['question'] || '',
+                answers: splitByDelimiter(record['机器人回答'] || record['answers']),
+                similar_questions: splitByDelimiter(record['相似问题'] || record['similar_questions']),
+                negative_questions: splitByDelimiter(record['反例问题'] || record['negative_questions']),
+                tag_id: record['分类'] || record['tag_id'] || '',
+                is_enabled: isDisabled !== undefined ? !isDisabled : undefined, // 是否停用：FALSE表示启用，TRUE表示停用，所以取反
+              }),
+            )
+          })
+          resolve(payloads)
+        } catch (error) {
+          reject(error)
+        }
+      },
+      error: (error: Error) => {
+        reject(new Error(`CSV解析失败: ${error.message}`))
+      },
     })
-    payloads.push(
-      normalizePayload({
-        standard_question: record['standard_question'] || record['question'] || '',
-        answers: splitByDelimiter(record['answers']),
-        similar_questions: splitByDelimiter(record['similar_questions']),
-        negative_questions: splitByDelimiter(record['negative_questions']),
-      }),
-    )
   })
-  return payloads
 }
 
 const parseExcelFile = async (file: File): Promise<FAQEntryPayload[]> => {
@@ -1846,60 +2015,65 @@ const parseExcelFile = async (file: File): Promise<FAQEntryPayload[]> => {
   const workbook = XLSX.read(data, { type: 'array' })
   const sheetName = workbook.SheetNames[0]
   const worksheet = workbook.Sheets[sheetName]
-  const json = XLSX.utils.sheet_to_json<Record<string, string>>(worksheet, { defval: '' })
-  return json.map((row) =>
-    normalizePayload({
-      standard_question: row['standard_question'] || row['question'] || '',
-      answers: splitByDelimiter(row['answers']),
-      similar_questions: splitByDelimiter(row['similar_questions']),
-      negative_questions: splitByDelimiter(row['negative_questions']),
-    }),
-  )
+  // 使用 raw: false 确保正确处理引号和转义
+  const json = XLSX.utils.sheet_to_json<Record<string, string>>(worksheet, { 
+    defval: '',
+    raw: false // 确保字符串值被正确解析
+  })
+  return json.map((row) => {
+    // 获取原始表头（去除括号说明）
+    const normalizedRow: Record<string, string> = {}
+    Object.keys(row).forEach((key) => {
+      const normalizedKey = key.trim()
+        .replace(/\([^)]*\)/g, '') // 移除括号及内容
+        .trim()
+      // 对于中文字段名，不转换为小写；对于英文字段名，转换为小写
+      const finalKey = /[\u4e00-\u9fa5]/.test(normalizedKey) ? normalizedKey : normalizedKey.toLowerCase()
+      // 确保值是字符串类型
+      normalizedRow[finalKey] = String(row[key] || '').trim()
+    })
+    
+    const isDisabled = parseBooleanField(normalizedRow['是否停用'], false)
+    return normalizePayload({
+      standard_question: normalizedRow['问题'] || normalizedRow['standard_question'] || normalizedRow['question'] || '',
+      answers: splitByDelimiter(normalizedRow['机器人回答'] || normalizedRow['answers']),
+      similar_questions: splitByDelimiter(normalizedRow['相似问题'] || normalizedRow['similar_questions']),
+      negative_questions: splitByDelimiter(normalizedRow['反例问题'] || normalizedRow['negative_questions']),
+      tag_id: normalizedRow['分类'] || normalizedRow['tag_id'] || '',
+      is_enabled: isDisabled !== undefined ? !isDisabled : undefined, // 是否停用：FALSE表示启用，TRUE表示停用，所以取反
+    })
+  })
 }
 
 const splitByDelimiter = (value?: string) => {
   if (!value) return []
-  // 支持引号包裹的内容，避免包含分隔符的内容被错误分割
-  const result: string[] = []
-  let current = ''
-  let inQuotes = false
-  // 支持多种引号字符
-  const quoteChars = ['"', "'", '\u201C', '\u201D', '\u2018', '\u2019', '\u300C', '\u300D', '\u300E', '\u300F']
+  // 只使用 ## 作为分隔符，避免错误分割包含逗号、分号等内容
+  const trimmedValue = value.trim()
+  if (!trimmedValue) return []
   
-  for (let i = 0; i < value.length; i++) {
-    const char = value[i]
-    
-    // 检查是否是引号
-    if (quoteChars.includes(char)) {
-      inQuotes = !inQuotes
-      continue
-    }
-    
-    // 如果在引号内，直接添加到当前字符串
-    if (inQuotes) {
-      current += char
-      continue
-    }
-    
-    // 检查是否是分隔符
-    if (/[\n;；,，]/.test(char)) {
-      const trimmed = current.trim()
-      if (trimmed) {
-        result.push(trimmed)
-      }
-      current = ''
-    } else {
-      current += char
-    }
+  // 如果包含 ## 分隔符，按 ## 分割
+  if (trimmedValue.includes('##')) {
+    return trimmedValue
+      .split('##')
+      .map(item => item.trim())
+      .filter(Boolean)
   }
   
-  // 添加最后一部分
-  const trimmed = current.trim()
-  if (trimmed) {
-    result.push(trimmed)
+  // 如果没有 ## 分隔符，整个值作为一个答案
+  return [trimmedValue]
+}
+
+// 解析布尔字段（支持多种格式：TRUE/FALSE, true/false, 是/否, 1/0等）
+const parseBooleanField = (value?: string, defaultValue: boolean = true): boolean | undefined => {
+  if (!value) return undefined
+  const normalized = value.trim().toUpperCase()
+  if (normalized === 'TRUE' || normalized === '1' || normalized === '是' || normalized === 'YES') {
+    return true
   }
-  
-  return result.filter(Boolean)
+  if (normalized === 'FALSE' || normalized === '0' || normalized === '否' || normalized === 'NO') {
+    return false
+  }
+  return defaultValue
 }
 
 const normalizePayload = (payload: Partial<FAQEntryPayload>): FAQEntryPayload => ({
@@ -1908,28 +2082,266 @@ const normalizePayload = (payload: Partial<FAQEntryPayload>): FAQEntryPayload =>
   similar_questions: payload.similar_questions?.filter(Boolean) || [],
   negative_questions: payload.negative_questions?.filter(Boolean) || [],
   tag_id: payload.tag_id || '',
+  is_enabled: payload.is_enabled !== undefined ? payload.is_enabled : undefined,
 })
+
+const stopPolling = () => {
+  if (importState.pollingInterval) {
+    clearInterval(importState.pollingInterval)
+    importState.pollingInterval = null
+  }
+}
+
+const startPolling = (taskId: string) => {
+  stopPolling()
+  // 保存taskId到localStorage，以便刷新后恢复
+  saveTaskIdToStorage(taskId)
+  
+  importState.pollingInterval = setInterval(async () => {
+    try {
+      const res: any = await getKnowledgeDetails(taskId)
+      const knowledge = res?.data
+      if (knowledge) {
+        // 从Knowledge对象中提取导入任务状态
+        // ParseStatus: "pending" -> "pending", "processing" -> "running", "completed" -> "success", "failed" -> "failed"
+        let status = knowledge.parse_status
+        if (status === 'processing') {
+          status = 'running'
+        } else if (status === 'completed') {
+          status = 'success'
+        }
+        
+        // 从Metadata中提取导入进度信息
+        const metadata = knowledge.metadata || {}
+        const progress = metadata.import_progress || 0
+        const total = metadata.import_total || 0
+        const processed = metadata.import_processed || 0
+        const error = knowledge.error_message || ''
+        
+        importState.taskStatus = {
+          status: status,
+          progress: progress,
+          total: total,
+          processed: processed,
+          error: error,
+        }
+
+        // 任务完成或失败，停止轮询（但不自动关闭进度条，让用户手动关闭）
+        if (status === 'success' || status === 'failed') {
+          stopPolling()
+          if (status === 'success') {
+            MessagePlugin.success(t('knowledgeEditor.faqImport.importSuccess'))
+            await loadEntries()
+            // 任务完成后，3秒后自动关闭进度条
+            setTimeout(() => {
+              if (importState.taskStatus?.status === 'success') {
+                handleCloseProgress()
+              }
+            }, 3000)
+          } else {
+            MessagePlugin.error(error || t('common.operationFailed'))
+            // 失败时不自动关闭，让用户看到错误信息
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to poll task status:', error)
+      // 如果任务不存在或已过期，清除存储
+      if (error?.response?.status === 404 || error?.message?.includes('not found')) {
+        clearTaskIdFromStorage()
+        stopPolling()
+        importState.taskId = null
+        importState.taskStatus = null
+      }
+    }
+  }, 3000) // 每3秒轮询一次
+}
+
+const handleCancelImport = () => {
+  stopPolling()
+  importState.importing = false
+  importState.taskId = null
+  importState.taskStatus = null
+  importVisible.value = false
+  // 注意：不清除localStorage，因为任务可能还在进行中
+}
+
+const handleCloseProgress = () => {
+  stopPolling()
+  importState.taskId = null
+  importState.taskStatus = null
+  clearTaskIdFromStorage()
+}
+
+// localStorage相关函数
+const getStorageKey = () => {
+  return `faq_import_task_${props.kbId}`
+}
+
+const saveTaskIdToStorage = (taskId: string) => {
+  if (!props.kbId) return
+  try {
+    localStorage.setItem(getStorageKey(), taskId)
+  } catch (error) {
+    console.error('Failed to save taskId to localStorage:', error)
+  }
+}
+
+const getTaskIdFromStorage = (): string | null => {
+  if (!props.kbId) return null
+  try {
+    return localStorage.getItem(getStorageKey())
+  } catch (error) {
+    console.error('Failed to get taskId from localStorage:', error)
+    return null
+  }
+}
+
+const clearTaskIdFromStorage = () => {
+  if (!props.kbId) return
+  try {
+    localStorage.removeItem(getStorageKey())
+  } catch (error) {
+    console.error('Failed to clear taskId from localStorage:', error)
+  }
+}
+
+// 恢复导入任务状态（用于刷新后恢复）
+const restoreImportTask = async () => {
+  if (!props.kbId) return
+  
+  const savedTaskId = getTaskIdFromStorage()
+  if (!savedTaskId) return
+
+  try {
+    // 查询Knowledge状态
+    const res: any = await getKnowledgeDetails(savedTaskId)
+    const knowledge = res?.data
+    
+    if (knowledge) {
+      // 从Knowledge对象中提取导入任务状态
+      let status = knowledge.parse_status
+      if (status === 'processing') {
+        status = 'running'
+      } else if (status === 'completed') {
+        status = 'success'
+      }
+      
+      // 从Metadata中提取导入进度信息
+      const metadata = knowledge.metadata || {}
+      const progress = metadata.import_progress || 0
+      const total = metadata.import_total || 0
+      const processed = metadata.import_processed || 0
+      const error = knowledge.error_message || ''
+      
+      importState.taskId = savedTaskId
+      importState.taskStatus = {
+        status: status,
+        progress: progress,
+        total: total,
+        processed: processed,
+        error: error,
+      }
+      
+      // 如果任务还在进行中，恢复轮询
+      if (status === 'pending' || status === 'running') {
+        startPolling(savedTaskId)
+      } else {
+        // 任务已完成或失败，清除存储
+        clearTaskIdFromStorage()
+      }
+    } else {
+      // 任务不存在，清除存储
+      clearTaskIdFromStorage()
+    }
+  } catch (error: any) {
+    console.error('Failed to restore import task:', error)
+    // 如果任务不存在或已过期，清除存储
+    if (error?.response?.status === 404 || error?.message?.includes('not found')) {
+      clearTaskIdFromStorage()
+    }
+  }
+}
 
 const handleImport = async () => {
   if (!importState.file || !importState.preview.length) {
     MessagePlugin.warning(t('knowledgeEditor.faqImport.selectFile'))
     return
   }
+
+  // 如果任务已完成或失败，关闭对话框
+  if (importState.taskStatus?.status === 'success' || importState.taskStatus?.status === 'failed') {
+    if (importState.taskStatus.status === 'success') {
+      handleCancelImport()
+    } else {
+      // 失败时重试
+      importState.taskId = null
+      importState.taskStatus = null
+      importState.importing = false
+    }
+    return
+  }
+
   importState.importing = true
   try {
-    await upsertFAQEntries(props.kbId, {
+    const res: any = await upsertFAQEntries(props.kbId, {
       entries: importState.preview,
       mode: importState.mode,
     })
-    MessagePlugin.success(t('knowledgeEditor.faqImport.importSuccess'))
-    importVisible.value = false
-    await loadEntries()
+    
+    const taskId = res?.data?.task_id
+    if (taskId) {
+      importState.taskId = taskId
+      importState.taskStatus = {
+        status: 'pending',
+        progress: 0,
+        total: importState.preview.length,
+        processed: 0,
+      }
+      // 开始轮询任务状态
+      startPolling(taskId)
+      // 立即关闭导入对话框，进度将在列表页面顶部显示
+      importVisible.value = false
+      // 重置导入对话框状态（但保留taskId和taskStatus用于进度显示）
+      importState.file = null
+      importState.preview = []
+      importState.importing = false
+    } else {
+      // 如果没有返回任务ID，可能是旧版本API，使用同步方式
+      MessagePlugin.success(t('knowledgeEditor.faqImport.importSuccess'))
+      importVisible.value = false
+      await loadEntries()
+      importState.importing = false
+    }
   } catch (error: any) {
     MessagePlugin.error(error?.message || t('common.operationFailed'))
-  } finally {
     importState.importing = false
+    stopPolling()
   }
 }
+
+// 监听选中数量变化，通知左侧菜单
+watch(selectedRowKeys, (newKeys, oldKeys) => {
+  const count = newKeys.length
+  // 获取选中条目的状态信息
+  const selectedEntries = entries.value.filter(entry => newKeys.includes(entry.id))
+  const enabledCount = selectedEntries.filter(entry => entry.is_enabled !== false).length
+  const disabledCount = count - enabledCount
+  
+  const event = new CustomEvent('faqSelectionChanged', {
+    detail: { 
+      count,
+      enabledCount,
+      disabledCount
+    }
+  })
+  window.dispatchEvent(event)
+}, { immediate: true, deep: true })
+
+// 组件卸载时清理轮询
+onUnmounted(() => {
+  stopPolling()
+})
 
 // 下载示例文件选项
 const downloadExampleOptions = computed(() => [
@@ -1986,18 +2398,28 @@ const downloadJSONExample = () => {
 
 // 下载 CSV 示例
 const downloadCSVExample = () => {
-  const headers = ['standard_question', 'answers', 'similar_questions', 'negative_questions']
+  const headers = ['分类(必填)', '问题(必填)', '相似问题(选填-多个用##分隔)', '反例问题(选填-多个用##分隔)', '机器人回答(必填-多个用##分隔)', '是否全部回复(选填-默认FALSE)', '是否停用(选填-默认FALSE)', '是否禁止被推荐(选填-默认False 可被推荐)']
   const rows = exampleData.map((item) => {
     return [
+      '', // 分类
       item.standard_question,
-      item.answers.join(';'),
-      item.similar_questions.join(';'),
-      item.negative_questions.join(';'),
+      item.similar_questions.join('##'),
+      item.negative_questions.join('##'),
+      item.answers.join('##'),
+      'FALSE', // 是否全部回复
+      'FALSE', // 是否停用
+      'FALSE', // 是否禁止被推荐
     ]
   })
   const csvContent = [
-    headers.join(','),
-    ...rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(',')),
+    headers.join('\t'), // 使用制表符分隔
+    ...rows.map((row) => row.map((cell) => {
+      // 如果包含制表符、换行符或引号，需要用引号包裹
+      if (cell.includes('\t') || cell.includes('\n') || cell.includes('"')) {
+        return `"${cell.replace(/"/g, '""')}"`
+      }
+      return cell
+    }).join('\t')),
   ].join('\n')
   const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
@@ -2014,10 +2436,14 @@ const downloadCSVExample = () => {
 const downloadExcelExample = () => {
   const worksheet = XLSX.utils.json_to_sheet(
     exampleData.map((item) => ({
-      standard_question: item.standard_question,
-      answers: item.answers.join(';'),
-      similar_questions: item.similar_questions.join(';'),
-      negative_questions: item.negative_questions.join(';'),
+      '分类(必填)': '',
+      '问题(必填)': item.standard_question,
+      '相似问题(选填-多个用##分隔)': item.similar_questions.join('##'),
+      '反例问题(选填-多个用##分隔)': item.negative_questions.join('##'),
+      '机器人回答(必填-多个用##分隔)': item.answers.join('##'),
+      '是否全部回复(选填-默认FALSE)': 'FALSE',
+      '是否停用(选填-默认FALSE)': 'FALSE',
+      '是否禁止被推荐(选填-默认False 可被推荐)': 'FALSE',
     })),
   )
   const workbook = XLSX.utils.book_new()
@@ -2037,6 +2463,11 @@ watch(
 
     if (!newKbId) {
       kbInfo.value = null
+      // kbId变化时，清除之前的任务状态
+      stopPolling()
+      importState.taskId = null
+      importState.taskStatus = null
+      clearTaskIdFromStorage()
       return
     }
 
@@ -2047,6 +2478,8 @@ watch(
 
     loadEntries()
     loadTags()
+    // 恢复导入任务状态（如果存在）
+    await restoreImportTask()
   },
   { immediate: true },
 )
@@ -2227,10 +2660,28 @@ const handleResize = () => {
   }, 150)
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadKnowledgeList()
   window.addEventListener('resize', handleResize)
   window.addEventListener('faqMenuAction', handleFaqMenuAction as EventListener)
+  // 如果已有kbId，恢复导入任务状态
+  if (props.kbId) {
+    await restoreImportTask()
+  }
+  // 主动触发一次选中数量事件，确保左侧菜单能接收到初始状态
+  nextTick(() => {
+    const count = selectedRowKeys.value.length
+    const selectedEntries = entries.value.filter(entry => selectedRowKeys.value.includes(entry.id))
+    const enabledCount = selectedEntries.filter(entry => entry.is_enabled !== false).length
+    const disabledCount = count - enabledCount
+    window.dispatchEvent(new CustomEvent('faqSelectionChanged', {
+      detail: { 
+        count,
+        enabledCount,
+        disabledCount
+      }
+    }))
+  })
 })
 
 onUnmounted(() => {
@@ -2743,6 +3194,93 @@ watch(() => entries.value.map(e => ({
   margin-bottom: 20px;
   border-bottom: 1px solid #e7ebf0;
   flex-shrink: 0;
+}
+
+// 导入进度条样式（显示在列表页面顶部）
+.faq-import-progress-bar {
+  margin-bottom: 16px;
+  background: #fff;
+  border: 1px solid #e7ebf0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+
+  .progress-bar-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .progress-bar-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #000000e6;
+
+    .progress-icon {
+      flex-shrink: 0;
+
+      &.icon-loading {
+        animation: rotate 1s linear infinite;
+        color: #00a870;
+      }
+
+      &.icon-success {
+        color: #00a870;
+      }
+
+      &.icon-error {
+        color: #fa5151;
+      }
+    }
+
+    .progress-title {
+      font-weight: 500;
+      flex: 1;
+    }
+
+    .progress-count {
+      color: #86909c;
+      font-size: 13px;
+    }
+
+    .progress-close-btn {
+      flex-shrink: 0;
+      padding: 4px;
+      margin-left: 8px;
+    }
+  }
+
+  .progress-bar {
+    margin: 0;
+    width: 100%;
+    
+    :deep(.t-progress) {
+      width: 100%;
+    }
+    
+    :deep(.t-progress__bar) {
+      width: 100%;
+    }
+  }
+
+  .progress-error {
+    margin: 0;
+    font-size: 13px;
+    color: #fa5151;
+    line-height: 1.5;
+  }
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
 
   .faq-header-title {
     display: flex;
@@ -2835,7 +3373,6 @@ watch(() => entries.value.map(e => ({
     line-height: 20px;
   }
 
-}
 
 .tag-filter-bar {
   display: flex;
@@ -4385,7 +4922,9 @@ watch(() => entries.value.map(e => ({
 }
 
 .modal-enter-active .faq-import-modal,
-.modal-leave-active .faq-import-modal {
+.modal-leave-active .faq-import-modal,
+.modal-enter-active .batch-tag-modal,
+.modal-leave-active .batch-tag-modal {
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
@@ -4395,7 +4934,9 @@ watch(() => entries.value.map(e => ({
 }
 
 .modal-enter-from .faq-import-modal,
-.modal-leave-to .faq-import-modal {
+.modal-leave-to .faq-import-modal,
+.modal-enter-from .batch-tag-modal,
+.modal-leave-to .batch-tag-modal {
   transform: scale(0.95);
   opacity: 0;
 }
@@ -4794,19 +5335,124 @@ watch(() => entries.value.map(e => ({
   gap: 8px;
 }
 
-.batch-tag-dialog-content {
-  padding: 8px 0;
+// 批量分类弹窗样式 - 与导入对话框风格一致
+.batch-tag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(4px);
 }
 
-.batch-tag-dialog-tip {
-  margin: 0 0 20px 0;
+.batch-tag-modal {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 6px 28px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+
+  .batch-tag-close-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: #f5f5f5;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #666;
+    transition: all 0.2s ease;
+    z-index: 10;
+
+    &:hover {
+      background: #e5e5e5;
+      color: #000;
+    }
+  }
+}
+
+.batch-tag-container {
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+}
+
+.batch-tag-header {
+  margin-bottom: 24px;
+  padding-right: 40px;
+
+  .batch-tag-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #0f172a;
+    line-height: 1.4;
+  }
+}
+
+.batch-tag-content {
+  flex: 1;
+  min-height: 0;
+}
+
+.batch-tag-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
   font-size: 14px;
-  color: #4e5969;
+  color: #0369a1;
   line-height: 1.5;
+
+  .tip-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: #0284c7;
+  }
 }
 
 .batch-tag-form {
   margin-top: 0;
+
+  :deep(.t-form-item) {
+    margin-bottom: 0;
+  }
+
+  :deep(.t-form-item__label) {
+    font-size: 14px;
+    font-weight: 500;
+    color: #1d2129;
+    margin-bottom: 8px;
+  }
+}
+
+.batch-tag-select {
+  width: 100%;
+}
+
+.batch-tag-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
 }
 
 .tag-select-empty {

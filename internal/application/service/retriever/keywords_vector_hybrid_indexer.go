@@ -77,13 +77,15 @@ func (v *KeywordsVectorHybridRetrieveEngineService) BatchIndex(ctx context.Conte
 			embeddings, err = embedder.BatchEmbedWithPool(ctx, embedder, contentList)
 			if err == nil {
 				break
+			} else {
+				logger.Errorf(ctx, "BatchEmbedWithPool failed: %v", err)
+				time.Sleep(100 * time.Millisecond)
 			}
-			time.Sleep(100 * time.Millisecond)
 		}
 		if err != nil {
 			return err
 		}
-		batchSize := 20
+		batchSize := 40
 		for i, indexChunk := range utils.ChunkSlice(indexInfoList, batchSize) {
 			embeddingMap := make(map[string][]float32)
 			for j, indexInfo := range indexChunk {

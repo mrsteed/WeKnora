@@ -111,7 +111,7 @@ func (r *RedisStreamManager) GetEvents(ctx context.Context, sessionID, messageID
 			continue
 		}
 		events = append(events, event)
-}
+	}
 
 	// Calculate next offset
 	nextOffset := fromOffset + len(results)

@@ -7,6 +7,7 @@
 export const toolIcons: Record<string, string> = {
     multi_kb_search: '🔍',
     knowledge_search: '📚',
+    grep_chunks: '🔎',
     get_chunk_detail: '📄',
     list_knowledge_bases: '📂',
     list_knowledge_chunks: '🧩',
@@ -42,6 +43,7 @@ export function getToolDisplayName(toolName: string): string {
     const displayNames: Record<string, string> = {
         multi_kb_search: '跨库搜索',
         knowledge_search: '知识库搜索',
+        grep_chunks: '文本模式搜索',
         get_chunk_detail: '获取片段详情',
         list_knowledge_chunks: '查看知识分块',
         list_knowledge_bases: '列出知识库',

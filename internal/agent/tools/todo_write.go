@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -169,13 +168,13 @@ func (t *TodoWriteTool) Parameters() map[string]interface{} {
 							"type":        "string",
 							"description": "Clear description of what to investigate or accomplish in this step",
 						},
-						"tools_to_use": map[string]interface{}{
-							"type":        "array",
-							"description": "Suggested tools for this step (e.g., ['knowledge_search', 'list_knowledge_chunks'])",
-							"items": map[string]interface{}{
-								"type": "string",
-							},
-						},
+						// "tools_to_use": map[string]interface{}{
+						// 	"type":        "array",
+						// 	"description": "Suggested tools for this step (e.g., ['knowledge_search', 'list_knowledge_chunks'])",
+						// 	"items": map[string]interface{}{
+						// 		"type": "string",
+						// 	},
+						// },
 						"status": map[string]interface{}{
 							"type":        "string",
 							"enum":        []string{"pending", "in_progress", "completed"},
@@ -274,6 +273,23 @@ func generatePlanOutput(task string, steps []PlanStep) string {
 		return output
 	}
 
+	// Count task statuses
+	pendingCount := 0
+	inProgressCount := 0
+	completedCount := 0
+	for _, step := range steps {
+		switch step.Status {
+		case "pending":
+			pendingCount++
+		case "in_progress":
+			inProgressCount++
+		case "completed":
+			completedCount++
+		}
+	}
+	totalCount := len(steps)
+	remainingCount := pendingCount + inProgressCount
+
 	output += "**计划步骤**:\n\n"
 
 	// Display all steps in order
@@ -281,12 +297,34 @@ func generatePlanOutput(task string, steps []PlanStep) string {
 		output += formatPlanStep(i+1, step)
 	}
 
-	output += "\n**执行指南**:\n"
-	output += "- 每步执行前标记为 in_progress，完成后标记为 completed\n"
-	output += "- 根据搜索结果灵活调整计划，可跳过不必要的步骤\n"
-	output += "- 在关键决策点使用 think 工具深入分析\n"
-	output += "- 如果某一步骤已获得足够信息，可跳过后续步骤\n\n"
-	output += "注意：计划是指导而非硬性要求，保持灵活应对。"
+	// Add summary and emphasis on remaining tasks
+	output += "\n=== 任务进度 ===\n"
+	output += fmt.Sprintf("总计: %d 个任务\n", totalCount)
+	output += fmt.Sprintf("✅ 已完成: %d 个\n", completedCount)
+	output += fmt.Sprintf("🔄 进行中: %d 个\n", inProgressCount)
+	output += fmt.Sprintf("⏳ 待处理: %d 个\n", pendingCount)
+
+	output += "\n=== ⚠️ 重要提醒 ===\n"
+	if remainingCount > 0 {
+		output += fmt.Sprintf("**还有 %d 个任务未完成！**\n\n", remainingCount)
+		output += "**必须完成所有任务后才能总结或得出结论。**\n\n"
+		output += "下一步操作：\n"
+		if inProgressCount > 0 {
+			output += "- 继续完成当前进行中的任务\n"
+		}
+		if pendingCount > 0 {
+			output += fmt.Sprintf("- 开始处理 %d 个待处理任务\n", pendingCount)
+			output += "- 按顺序完成每个任务，不要跳过\n"
+		}
+		output += "- 完成每个任务后，更新 todo_write 标记为 completed\n"
+		output += "- 只有在所有任务完成后，才能生成最终总结\n"
+	} else {
+		output += "✅ **所有任务已完成！**\n\n"
+		output += "现在可以：\n"
+		output += "- 综合所有任务的发现\n"
+		output += "- 生成完整的最终答案或报告\n"
+		output += "- 确保所有方面都已充分研究\n"
+	}
 
 	return output
 }
@@ -307,9 +345,9 @@ func formatPlanStep(index int, step PlanStep) string {
 
 	output := fmt.Sprintf("  %d. %s [%s] %s\n", index, emoji, step.Status, step.Description)
 
-	if len(step.ToolsToUse) > 0 {
-		output += fmt.Sprintf("     工具: %s\n", strings.Join(step.ToolsToUse, ", "))
-	}
+	// if len(step.ToolsToUse) > 0 {
+	// 	output += fmt.Sprintf("     工具: %s\n", strings.Join(step.ToolsToUse, ", "))
+	// }
 
 	return output
 }

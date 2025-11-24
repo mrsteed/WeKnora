@@ -67,6 +67,12 @@
       :data="toolData as WebFetchResultsData"
     />
     
+    <!-- Grep Results Display -->
+    <GrepResults
+      v-else-if="displayType === 'grep_results'"
+      :data="toolData as GrepResultsData"
+    />
+    
     <!-- Fallback: Display raw output -->
     <div v-else class="fallback-output">
       <div class="fallback-header">
@@ -93,7 +99,8 @@ import type {
   PlanData,
   DatabaseQueryData,
   WebSearchResultsData,
-  WebFetchResultsData
+  WebFetchResultsData,
+  GrepResultsData
 } from '@/types/tool-results';
 
 import SearchResults from './tool-results/SearchResults.vue';
@@ -107,6 +114,7 @@ import PlanDisplay from './tool-results/PlanDisplay.vue';
 import DatabaseQuery from './tool-results/DatabaseQuery.vue';
 import WebSearchResults from './tool-results/WebSearchResults.vue';
 import WebFetchResults from './tool-results/WebFetchResults.vue';
+import GrepResults from './tool-results/GrepResults.vue';
 
 interface Props {
   displayType?: DisplayType;

@@ -24,8 +24,10 @@
         :class="{ 
           'uninitialized': !isInitialized(kb),
           'kb-type-document': (kb.type || 'document') === 'document',
-          'kb-type-faq': kb.type === 'faq'
+          'kb-type-faq': kb.type === 'faq',
+          'highlight-flash': highlightedKbId !== null && highlightedKbId === kb.id
         }"
+        :ref="el => { if (highlightedKbId !== null && highlightedKbId === kb.id && el) highlightedCardRef = el as HTMLElement }"
         @click="handleCardClick(kb)"
       >
         <!-- 卡片头部 -->
@@ -78,6 +80,15 @@
                 {{ kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument') }}
                 ({{ kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0) }})
               </span>
+              <t-tooltip 
+                v-if="kb.isProcessing" 
+                :content="kb.type === 'document' && (kb.processing_count || 0) > 0 
+                  ? $t('knowledgeList.processingDocuments', { count: kb.processing_count || 0 })
+                  : $t('knowledgeList.processing')" 
+                placement="top"
+              >
+                <t-icon name="loading" size="14px" class="processing-icon" />
+              </t-tooltip>
             </div>
             <div class="feature-badges">
               <t-tooltip v-if="kb.extract_config?.enabled" :content="$t('knowledgeList.features.knowledgeGraph')" placement="top">
@@ -144,9 +155,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, computed, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { onMounted, ref, computed, watch, nextTick } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { MessagePlugin, Icon as TIcon } from 'tdesign-vue-next'
 import { listKnowledgeBases, deleteKnowledgeBase } from '@/api/knowledge-base'
 import { formatStringDate } from '@/utils/index'
 import { useUIStore } from '@/stores/ui'
@@ -155,6 +166,7 @@ import Settings from '@/views/settings/Settings.vue'
 import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
+const route = useRoute()
 const uiStore = useUIStore()
 const { t } = useI18n()
 
@@ -172,6 +184,8 @@ interface KB {
   cos_config?: { provider?: string; bucket_name?: string };
   knowledge_count?: number;
   chunk_count?: number;
+  isProcessing?: boolean; // 是否有正在处理的导入任务
+  processing_count?: number; // 正在处理的文档数量（仅文档类型）
 }
 
 const kbs = ref<KB[]>([])
@@ -179,22 +193,43 @@ const loading = ref(false)
 const deleteVisible = ref(false)
 const deletingKb = ref<KB | null>(null)
 const currentMoreIndex = ref<number>(-1)
+const highlightedKbId = ref<string | null>(null)
+const highlightedCardRef = ref<HTMLElement | null>(null)
 
 const fetchList = () => {
   loading.value = true
-  listKnowledgeBases().then((res: any) => {
+  return listKnowledgeBases().then((res: any) => {
     const data = res.data || []
     // 格式化时间，并初始化 showMore 状态
-    kbs.value = data.map((kb: KB) => ({
+    // is_processing 字段由后端返回
+    kbs.value = data.map((kb: any) => ({
       ...kb,
       updated_at: kb.updated_at ? formatStringDate(new Date(kb.updated_at)) : '',
-      showMore: false
+      showMore: false,
+      isProcessing: kb.is_processing || false,
+      processing_count: kb.processing_count || 0
     }))
   }).finally(() => loading.value = false)
 }
 
 onMounted(() => {
-  fetchList()
+  fetchList().then(() => {
+    // 检查路由参数中是否有需要高亮的知识库ID
+    const highlightKbId = route.query.highlightKbId as string
+    if (highlightKbId) {
+      triggerHighlightFlash(highlightKbId)
+      // 清除 URL 中的查询参数
+      router.replace({ query: {} })
+    }
+  })
+})
+
+// 监听路由变化，处理从其他页面跳转过来的高亮需求
+watch(() => route.query.highlightKbId, (newKbId) => {
+  if (newKbId && typeof newKbId === 'string' && kbs.value.length > 0) {
+    triggerHighlightFlash(newKbId)
+    router.replace({ query: {} })
+  }
 })
 
 const openMore = (index: number) => {
@@ -270,7 +305,32 @@ const goSettings = (id: string) => {
 // 知识库编辑器成功回调（创建或编辑成功）
 const handleKBEditorSuccess = (kbId: string) => {
   console.log('[KnowledgeBaseList] knowledge operation success:', kbId)
-  fetchList()
+  fetchList().then(() => {
+    // 如果是从路由参数中获取的高亮ID，触发闪烁效果
+    if (route.query.highlightKbId === kbId) {
+      triggerHighlightFlash(kbId)
+      // 清除 URL 中的查询参数
+      router.replace({ query: {} })
+    }
+  })
+}
+
+// 触发高亮闪烁效果
+const triggerHighlightFlash = (kbId: string) => {
+  highlightedKbId.value = kbId
+  nextTick(() => {
+    if (highlightedCardRef.value) {
+      // 滚动到高亮的卡片
+      highlightedCardRef.value.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'center' 
+      })
+    }
+    // 3秒后清除高亮
+    setTimeout(() => {
+      highlightedKbId.value = null
+    }, 3000)
+  })
 }
 </script>
 
@@ -533,6 +593,19 @@ const handleKBEditorSuccess = (kbId: string) => {
     color: #0052d9;
     border: 1px solid rgba(0, 82, 217, 0.2);
   }
+
+  .processing-icon {
+    animation: spin 1s linear infinite;
+    margin-left: 4px;
+  }
+
+  &.document .processing-icon {
+    color: #059669;
+  }
+
+  &.faq .processing-icon {
+    color: #0052d9;
+  }
 }
 
 .feature-badges {
@@ -569,6 +642,40 @@ const handleKBEditorSuccess = (kbId: string) => {
       background: rgba(255, 152, 0, 0.15);
     }
   }
+
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes highlightFlash {
+  0% {
+    border-color: #07c05f;
+    box-shadow: 0 0 0 0 rgba(7, 192, 95, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    border-color: #07c05f;
+    box-shadow: 0 0 0 8px rgba(7, 192, 95, 0);
+    transform: scale(1.02);
+  }
+  100% {
+    border-color: #07c05f;
+    box-shadow: 0 0 0 0 rgba(7, 192, 95, 0);
+    transform: scale(1);
+  }
+}
+
+.kb-card.highlight-flash {
+  animation: highlightFlash 0.6s ease-in-out 3;
+  border-color: #07c05f !important;
+  box-shadow: 0 0 12px rgba(7, 192, 95, 0.3) !important;
 }
 
 .card-time {

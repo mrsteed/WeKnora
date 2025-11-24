@@ -76,7 +76,7 @@
             'action-error': event.success === false 
           }"
         >
-          <div class="action-header" @click="toggleEvent(event.tool_call_id)">
+          <div class="action-header" @click="handleActionHeaderClick(event)" :class="{ 'no-results': !hasResults(event) }">
             <div class="action-title">
               <img v-if="event.tool_name && !isBookIcon(event.tool_name)" class="action-title-icon" :src="getToolIcon(event.tool_name)" alt="" />
               <t-icon v-if="event.tool_name && isBookIcon(event.tool_name)" class="action-title-icon" name="book" />
@@ -91,7 +91,7 @@
                 <span class="action-name">{{ getToolTitle(event) }}</span>
               </t-tooltip>
             </div>
-            <div v-if="!event.pending" class="action-show-icon">
+            <div v-if="!event.pending && hasResults(event)" class="action-show-icon">
               <t-icon :name="isEventExpanded(event.tool_call_id) ? 'chevron-up' : 'chevron-down'" />
             </div>
           </div>
@@ -109,7 +109,7 @@
           
           <!-- Search Results Summary (Fixed, always visible, outside action-details) -->
           <div v-if="!event.pending && (event.tool_name === 'search_knowledge' || event.tool_name === 'knowledge_search') && event.tool_data" class="search-results-summary-fixed">
-            <div class="results-summary-text" v-html="getSearchResultsSummary(event.tool_data)"></div>
+            <div class="results-summary-text" v-html="getSearchResultsSummary(event)"></div>
           </div>
           
           <!-- Web Search Results Summary (Fixed, always visible, outside action-details) -->
@@ -117,7 +117,12 @@
             <div class="results-summary-text" v-html="t('agent.webSearchFound', { count: getResultsCount(event.tool_data) })"></div>
           </div>
           
-          <div v-if="isEventExpanded(event.tool_call_id) && !event.pending" class="action-details">
+          <!-- Grep Results Summary (Fixed, always visible, outside action-details) -->
+          <div v-if="!event.pending && event.tool_name === 'grep_chunks' && event.tool_data" class="search-results-summary-fixed grep-summary">
+            <div class="results-summary-text" v-html="getGrepResultsSummary(event.tool_data)"></div>
+          </div>
+          
+          <div v-if="isEventExpanded(event.tool_call_id) && !event.pending && hasResults(event)" class="action-details">
             <!-- Thinking tool: only render markdown thought content -->
             <template v-if="event.tool_name === 'thinking' && event.tool_data?.thought">
               <div class="thinking-thought-content">
@@ -223,6 +228,7 @@ const { t } = useI18n();
 const TOOL_NAME_I18N: Record<string, string> = {
   search_knowledge: '知识库检索',
   knowledge_search: '知识库检索',
+  grep_chunks: '文本模式搜索',
   web_search: '网络搜索',
   web_fetch: '网页抓取',
   get_document_info: '获取文档信息',
@@ -670,8 +676,43 @@ const toggleEvent = (eventId: string) => {
   }
 };
 
+const handleActionHeaderClick = (event: any) => {
+  if (hasResults(event) && event.tool_call_id) {
+    toggleEvent(event.tool_call_id);
+  }
+};
+
 const isEventExpanded = (eventId: string): boolean => {
   return expandedEvents.value.has(eventId);
+};
+
+// Check if search/grep tools have results
+const hasResults = (event: any): boolean => {
+  if (!event || !event.tool_data) return true; // Default to true for other tools
+  
+  const toolName = event.tool_name;
+  
+  // For knowledge search tools
+  if (toolName === 'search_knowledge' || toolName === 'knowledge_search') {
+    const count = event.tool_data.results?.length || event.tool_data.count || 0;
+    return count > 0;
+  }
+  
+  // For web search tools
+  if (toolName === 'web_search') {
+    const count = event.tool_data.results?.length || event.tool_data.count || 0;
+    return count > 0;
+  }
+  
+  // For grep tools
+  if (toolName === 'grep_chunks') {
+    const totalMatches = event.tool_data.total_matches || 0;
+    const resultCount = event.tool_data.result_count || 0;
+    return totalMatches > 0 || resultCount > 0;
+  }
+  
+  // For other tools, always allow expansion
+  return true;
 };
 
 // Delegated handlers for span-based citation clicks/keyboard
@@ -1195,6 +1236,8 @@ const getToolIcon = (toolName: string): string => {
     return thinkingIcon;
   } else if (toolName === 'search_knowledge' || toolName === 'knowledge_search') {
     return knowledgeIcon;
+  } else if (toolName === 'grep_chunks') {
+    return knowledgeIcon; // Use same icon as knowledge_search for consistency
   } else if (toolName === 'web_search') {
     return webSearchGlobeGreenIcon;
   } else if (toolName === 'get_document_info' || toolName === 'list_knowledge_chunks') {
@@ -1207,17 +1250,22 @@ const getToolIcon = (toolName: string): string => {
 };
 
 // Get search results summary text (returns HTML with colored numbers)
-const getSearchResultsSummary = (toolData: any): string => {
-  if (!toolData) return '';
+const getSearchResultsSummary = (event: any): string => {
+  if (!event || !event.tool_data) return '';
   
+  const toolData = event.tool_data;
   const count = toolData.results?.length || toolData.count || 0;
-  if (count === 0) return '';
+  if (count === 0) return `未找到匹配的内容`;
   
+  // Build summary text
+  let summary = '';
   const kbCount = toolData.kb_counts ? Object.keys(toolData.kb_counts).length : 0;
   if (kbCount > 0) {
-    return `找到 <strong>${count}</strong> 个结果，来自 <strong>${kbCount}</strong> 个知识库`;
+    summary = `找到 <strong>${count}</strong> 个结果，来自 <strong>${kbCount}</strong> 个文件`;
+  } else {
+    summary = `找到 <strong>${count}</strong> 个结果`;
   }
-  return `找到 <strong>${count}</strong> 个结果`;
+  return summary;
 };
 
 // Get web search results summary text
@@ -1234,6 +1282,25 @@ const getWebSearchResultsSummary = (toolData: any): string => {
 const getResultsCount = (toolData: any): number => {
   if (!toolData) return 0;
   return toolData.results?.length || toolData.count || 0;
+};
+
+// Get grep results summary text (returns HTML with colored numbers)
+const getGrepResultsSummary = (toolData: any): string => {
+  if (!toolData) return '';
+  
+  const totalMatches = toolData.total_matches || 0;
+  const resultCount = toolData.result_count || 0;
+  
+  if (totalMatches === 0) {
+    return '未找到匹配的内容';
+  }
+  
+  let summary = `找到 <strong>${totalMatches}</strong> 处匹配`;
+  if (totalMatches > resultCount) {
+    summary += `（显示 <strong>${resultCount}</strong> 个）`;
+  }
+  
+  return summary;
 };
 
 // Extract and format query parameters from args
@@ -1260,28 +1327,15 @@ const getQueryText = (args: any): string => {
   }
   
   // Add vector_queries if exists
-  if (Array.isArray(parsedArgs.vector_queries) && parsedArgs.vector_queries.length > 0) {
-    const vectorQueries = parsedArgs.vector_queries
+  if (Array.isArray(parsedArgs.queries) && parsedArgs.queries.length > 0) {
+    queries.push(...parsedArgs.queries
       .filter((q: any) => q && typeof q === 'string')
-      .join(' ');
-    if (vectorQueries) {
-      queries.push(vectorQueries);
-    }
+      );
   }
   
-  // Add keyword_queries if exists
-  if (Array.isArray(parsedArgs.keyword_queries) && parsedArgs.keyword_queries.length > 0) {
-    const keywordQueries = parsedArgs.keyword_queries
-      .filter((q: any) => q && typeof q === 'string')
-      .join(' ');
-    if (keywordQueries) {
-      queries.push(keywordQueries);
-    }
-  }
-  
-  // Join all queries with space and remove duplicates
+  // Join all queries with comma and remove duplicates
   const uniqueQueries = Array.from(new Set(queries));
-  return uniqueQueries.join(' ');
+  return uniqueQueries.join('，');
 };
 
 // Get tool title - prefer summary over description, add query for search tools
@@ -1294,6 +1348,7 @@ const getToolTitle = (event: any): string => {
   const toolName = event.tool_name;
   const isSearchTool = toolName === 'search_knowledge' || toolName === 'knowledge_search';
   const isWebSearchTool = toolName === 'web_search';
+  const isGrepTool = toolName === 'grep_chunks';
   
   // For search tools, use description with query text
   if (isSearchTool) {
@@ -1313,12 +1368,52 @@ const getToolTitle = (event: any): string => {
     // Try to get query from arguments or tool_data
     let queryText = '';
     if (event.arguments && typeof event.arguments === 'object' && event.arguments.query) {
-      queryText = event.arguments.query;
+      const query = event.arguments.query;
+      // Handle both string and array formats
+      if (Array.isArray(query)) {
+        queryText = query.filter((q: any) => q && typeof q === 'string').join('，');
+      } else if (typeof query === 'string') {
+        queryText = query;
+      }
     } else if (event.tool_data && event.tool_data.query) {
-      queryText = event.tool_data.query;
+      const query = event.tool_data.query;
+      // Handle both string and array formats
+      if (Array.isArray(query)) {
+        queryText = query.filter((q: any) => q && typeof q === 'string').join('，');
+      } else if (typeof query === 'string') {
+        queryText = query;
+      }
     }
     if (queryText) {
       return `${baseTitle}：「${queryText}」`;
+    }
+    return baseTitle;
+  }
+  
+  // For grep tools, use description with patterns
+  if (isGrepTool) {
+    const baseTitle = getToolDescription(event);
+    // Try to get patterns from arguments or tool_data
+    let patterns: string[] = [];
+    if (event.arguments && typeof event.arguments === 'object') {
+      if (Array.isArray(event.arguments.patterns)) {
+        patterns = event.arguments.patterns;
+      } else if (event.arguments.pattern) {
+        patterns = [event.arguments.pattern];
+      }
+    } else if (event.tool_data) {
+      if (Array.isArray(event.tool_data.patterns)) {
+        patterns = event.tool_data.patterns;
+      } else if (event.tool_data.pattern) {
+        patterns = [event.tool_data.pattern];
+      }
+    }
+    if (patterns.length > 0) {
+      // Show up to 2 patterns in title
+      const displayPatterns = patterns.slice(0, 2);
+      const patternText = displayPatterns.join('、');
+      const moreText = patterns.length > 2 ? ` +${patterns.length - 2}` : '';
+      return `${baseTitle}：「${patternText}${moreText}」`;
     }
     return baseTitle;
   }
@@ -1486,80 +1581,93 @@ const handleAddToKnowledge = (answerEvent: any) => {
 // 时间轴连线容器
 .event-item {
   position: relative;
-  padding-left: 28px;
+  padding-left: 32px;
   margin-bottom: 12px;
   
   // 时间轴垂直线
   &::before {
     content: '';
     position: absolute;
-    left: 8px;
+    left: 10px;
     top: 0;
     bottom: -12px;
-    width: 2px;
-    background: linear-gradient(to bottom, #e5e7eb 0%, #e5e7eb 100%);
+    width: 1.5px;
+    background: linear-gradient(
+      to bottom,
+      rgba(7, 192, 95, 0.1) 0%,
+      rgba(7, 192, 95, 0.15) 50%,
+      rgba(7, 192, 95, 0.1) 100%
+    );
     z-index: 0;
   }
   
   // 第一个事件的连线从节点开始
   &:first-child::before {
-    top: 12px;
+    top: 14px;
   }
   
   // 最后一个事件不显示底部连线
   &.event-last::before {
     bottom: auto;
-    height: 20px;
+    height: 22px;
   }
   
   // 时间轴节点（圆点）
   &::after {
     content: '';
     position: absolute;
-    left: 4px;
-    top: 12px;
-    width: 10px;
-    height: 10px;
+    left: 6.25px; // 线条中心 10.75px - 圆点半径 4.5px = 6.25px (box-sizing: border-box)
+    top: 14px;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
     background: #ffffff;
-    border: 2px solid #e5e7eb;
+    border: 2px solid rgba(7, 192, 95, 0.3);
     z-index: 1;
-    transition: all 0.2s ease;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    box-sizing: border-box; // 确保 border 包含在尺寸内
   }
   
   // 不同事件类型的节点颜色
   &:has(.thinking-event)::after {
-    border-color: #9ca3af;
+    border-color: rgba(156, 163, 175, 0.4);
     background: #f9fafb;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   }
   
   &:has(.answer-event)::after {
     border-color: #07c05f;
     background: #07c05f;
-    box-shadow: 0 0 0 3px rgba(7, 192, 95, 0.15);
+    box-shadow: 0 0 0 2px rgba(7, 192, 95, 0.12), 0 2px 4px rgba(7, 192, 95, 0.2);
+    transform: scale(1.1);
   }
   
   &:has(.tool-event)::after {
     border-color: #07c05f;
     background: #ffffff;
+    box-shadow: 0 1px 3px rgba(7, 192, 95, 0.15);
   }
   
   &:has(.tool-event .action-pending)::after {
     border-color: #07c05f;
-    background: rgba(7, 192, 95, 0.2);
+    background: rgba(7, 192, 95, 0.15);
+    box-shadow: 0 0 0 2px rgba(7, 192, 95, 0.1);
     animation: pulseNode 2s ease-in-out infinite;
   }
   
   &:has(.tool-event .action-error)::after {
     border-color: #e34d59;
     background: #e34d59;
+    box-shadow: 0 0 0 2px rgba(227, 77, 89, 0.15), 0 2px 4px rgba(227, 77, 89, 0.2);
   }
   
   &:has(.plan-task-change-event)::after {
     border-color: #07c05f;
     background: #07c05f;
-    transform: rotate(45deg);
+    transform: rotate(45deg) scale(0.9);
     border-radius: 2px;
+    box-shadow: 0 1px 3px rgba(7, 192, 95, 0.2);
   }
 }
 
@@ -1578,21 +1686,6 @@ const handleAddToKnowledge = (answerEvent: any) => {
   margin-bottom: 16px;
   position: relative;
   
-  // 添加时间轴起点标记
-  &::before {
-    content: '';
-    position: absolute;
-    left: -20px;
-    top: 12px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #07c05f;
-    border: 2px solid #ffffff;
-    box-shadow: 0 0 0 2px #07c05f, 0 0 0 4px rgba(7, 192, 95, 0.1);
-    z-index: 2;
-  }
-  
   .intermediate-steps-header {
     display: flex;
     justify-content: space-between;
@@ -1602,6 +1695,10 @@ const handleAddToKnowledge = (answerEvent: any) => {
     font-weight: 500;
     cursor: pointer;
     background: linear-gradient(to right, rgba(7, 192, 95, 0.03), transparent);
+    
+    &:hover {
+      background: linear-gradient(to right, rgba(7, 192, 95, 0.05), rgba(7, 192, 95, 0.01));
+    }
   }
   
   .intermediate-steps-title {
@@ -1629,10 +1726,6 @@ const handleAddToKnowledge = (answerEvent: any) => {
     font-size: 13px;
     padding: 0 2px 1px 2px;
     color: #07c05f;
-  }
-  
-  .intermediate-steps-header:hover {
-    background: linear-gradient(to right, rgba(7, 192, 95, 0.05), rgba(7, 192, 95, 0.01));
   }
 }
 
@@ -1672,7 +1765,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
     
     &.markdown-content {
       :deep(p) {
-        margin: 6px 0;
+        margin: 0 0;
         line-height: 1.6;
       }
       
@@ -2051,6 +2144,14 @@ const handleAddToKnowledge = (answerEvent: any) => {
   &:hover {
     background-color: rgba(7, 192, 95, 0.03);
   }
+  
+  &.no-results {
+    cursor: default;
+    
+    &:hover {
+      background-color: transparent;
+    }
+  }
 }
 
 .action-title {
@@ -2123,11 +2224,15 @@ const handleAddToKnowledge = (answerEvent: any) => {
 @keyframes pulseNode {
   0%, 100% {
     border-color: #07c05f;
-    box-shadow: 0 0 0 0 rgba(7, 192, 95, 0.4);
+    background: rgba(7, 192, 95, 0.15);
+    box-shadow: 0 0 0 2px rgba(7, 192, 95, 0.1);
+    transform: scale(1);
   }
   50% {
     border-color: #0ae06f;
-    box-shadow: 0 0 0 4px rgba(7, 192, 95, 0.1);
+    background: rgba(7, 192, 95, 0.25);
+    box-shadow: 0 0 0 3px rgba(7, 192, 95, 0.15);
+    transform: scale(1.05);
   }
 }
 

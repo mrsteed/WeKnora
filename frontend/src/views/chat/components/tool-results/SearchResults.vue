@@ -25,9 +25,6 @@
           <div class="result-header">
             <div class="result-title">
               <span class="result-index">#{{ result.result_index }}</span>
-              <span class="relevance-badge" :class="getRelevanceClass(result.relevance_level)">
-                {{ getRelevanceLabel(result.relevance_level) }}
-              </span>
               <span class="knowledge-title">{{ result.knowledge_title }}</span>
             </div>
           </div>

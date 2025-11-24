@@ -40,8 +40,8 @@ export function copyKnowledgeBase(data: { source_id: string; target_id?: string 
 }
 
 // 知识文件 API（基于具体知识库）
-export function uploadKnowledgeFile(kbId: string, data = {}) {
-  return postUpload(`/api/v1/knowledge-bases/${kbId}/knowledge/file`, data);
+export function uploadKnowledgeFile(kbId: string, data = {}, onProgress?: (progressEvent: any) => void) {
+  return postUpload(`/api/v1/knowledge-bases/${kbId}/knowledge/file`, data, onProgress);
 }
 
 export function createKnowledgeFromURL(kbId: string, data: { url: string; enable_multimodel?: boolean }) {
