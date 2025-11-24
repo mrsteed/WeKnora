@@ -168,7 +168,7 @@
             ref="docUploadInput"
             type="file"
             class="kb-upload-input"
-            accept=".pdf,.docx,.doc,.txt,.md,.jpg,.jpeg,.png"
+            accept=".pdf,.docx,.doc,.txt,.md,.jpg,.jpeg,.png,.csv,.xls,.xlsx"
             multiple
             @change="handleDocFileChange"
         />
