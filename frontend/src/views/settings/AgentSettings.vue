@@ -494,6 +494,19 @@
       </div>
 
       <div class="settings-group">
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('conversationSettings.enableQueryExpansion.label') }}</label>
+            <p class="desc">{{ $t('conversationSettings.enableQueryExpansion.desc') }}</p>
+          </div>
+          <div class="setting-control">
+            <t-switch
+              v-model="localEnableQueryExpansion"
+              :label="[$t('common.off'), $t('common.on')]"
+              @change="handleEnableQueryExpansionChange"
+            />
+          </div>
+        </div>
         <!-- 开启问题改写 -->
         <div class="setting-row">
           <div class="setting-info">
@@ -505,20 +518,6 @@
               v-model="localEnableRewrite"
               :label="[$t('common.off'), $t('common.on')]"
               @change="handleEnableRewriteChange"
-            />
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-info">
-            <label>{{ $t('conversationSettings.enableQueryExpansion.label') }}</label>
-            <p class="desc">{{ $t('conversationSettings.enableQueryExpansion.desc') }}</p>
-          </div>
-          <div class="setting-control">
-            <t-switch
-              v-model="localEnableQueryExpansion"
-              :label="[$t('common.off'), $t('common.on')]"
-              @change="handleEnableQueryExpansionChange"
             />
           </div>
         </div>
