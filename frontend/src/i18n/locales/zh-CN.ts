@@ -1395,6 +1395,10 @@ export default {
     title: "Agent 配置",
     description:
       "配置 AI Agent 的默认行为和参数，这些设置将应用于所有启用 Agent 模式的对话",
+    modelRecommendation: {
+      title: "模型推荐",
+      content: "为获得更好的 Agent 体验，建议使用支持 FunctionCalling 的长上下文大语言模型，如 deepseek-v3.1-terminus 等",
+    },
     status: {
       label: "Agent 状态",
       ready: "可用",

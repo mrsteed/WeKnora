@@ -1,11 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"text/template"
 
 	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
@@ -417,7 +419,9 @@ func (s *sessionService) KnowledgeQA(ctx context.Context, session *types.Session
 	rerankTopK := session.RerankTopK
 	rerankThreshold := session.RerankThreshold
 	maxRounds := session.MaxRounds
+	fallbackStrategy := session.FallbackStrategy
 	fallbackResponse := session.FallbackResponse
+	fallbackPrompt := ""
 	enableRewrite := session.EnableRewrite
 	enableQueryExpansion := true
 
@@ -448,7 +452,13 @@ func (s *sessionService) KnowledgeQA(ctx context.Context, session *types.Session
 		rerankTopK = tenantConv.RerankTopK
 		rerankThreshold = tenantConv.RerankThreshold
 		maxRounds = tenantConv.MaxRounds
+		if tenantConv.FallbackStrategy != "" {
+			fallbackStrategy = types.FallbackStrategy(tenantConv.FallbackStrategy)
+		}
 		fallbackResponse = tenantConv.FallbackResponse
+		if tenantConv.FallbackPrompt != "" {
+			fallbackPrompt = tenantConv.FallbackPrompt
+		}
 		enableRewrite = tenantConv.EnableRewrite
 		enableQueryExpansion = tenantConv.EnableQueryExpansion
 
@@ -472,6 +482,12 @@ func (s *sessionService) KnowledgeQA(ctx context.Context, session *types.Session
 		}
 	}
 
+	// Set default fallback strategy if not set
+	if fallbackStrategy == "" {
+		fallbackStrategy = types.FallbackStrategyFixed
+		logger.Infof(ctx, "Fallback strategy not set, using default: %v", fallbackStrategy)
+	}
+
 	// Create chat management object with session settings
 	logger.Infof(ctx, "Creating chat manage object, knowledge base IDs: %v, chat model ID: %s", knowledgeBaseIDs, chatModelID)
 	chatManage := &types.ChatManage{
@@ -490,7 +506,9 @@ func (s *sessionService) KnowledgeQA(ctx context.Context, session *types.Session
 		MaxRounds:            maxRounds,
 		ChatModelID:          chatModelID,
 		SummaryConfig:        summaryConfig,
+		FallbackStrategy:     fallbackStrategy,
 		FallbackResponse:     fallbackResponse,
+		FallbackPrompt:       fallbackPrompt,
 		EventBus:             eventBus.AsEventBusInterface(), // NEW: For pipeline to emit events directly
 		WebSearchEnabled:     webSearchEnabled,
 		TenantID:             session.TenantID,
@@ -665,26 +683,8 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 
 		// Handle case where search returns no results
 		if err == chatpipline.ErrSearchNothing {
-			logger.Warnf(ctx, "Event %v triggered, search result is empty, using fallback response", eventType)
-			chatManage.ChatResponse = &types.ChatResponse{Content: chatManage.FallbackResponse}
-
-			// Emit fallback response as answer event
-			if chatManage.EventBus != nil {
-				fallbackID := generateEventID("fallback")
-				if err := chatManage.EventBus.Emit(ctx, types.Event{
-					ID:        fallbackID,
-					Type:      types.EventType(event.EventAgentFinalAnswer),
-					SessionID: chatManage.SessionID,
-					Data: event.AgentFinalAnswerData{
-						Content: chatManage.FallbackResponse,
-						Done:    true,
-					},
-				}); err != nil {
-					logger.Errorf(ctx, "Failed to emit fallback answer event: %v", err)
-				} else {
-					logger.Infof(ctx, "Fallback answer event emitted successfully")
-				}
-			}
+			logger.Warnf(ctx, "Event %v triggered, search result is empty, using fallback response, strategy: %v", eventType, chatManage.FallbackStrategy)
+			s.handleFallbackResponse(ctx, chatManage)
 			return nil
 		}
 
@@ -1113,4 +1113,160 @@ func (s *sessionService) DeleteWebSearchTempKBState(ctx context.Context, session
 
 	logger.Infof(ctx, "Successfully cleaned up temporary KB for session %s", sessionID)
 	return nil
+}
+
+// handleFallbackResponse handles fallback response based on strategy
+func (s *sessionService) handleFallbackResponse(ctx context.Context, chatManage *types.ChatManage) {
+	if chatManage.FallbackStrategy == types.FallbackStrategyModel {
+		s.handleModelFallback(ctx, chatManage)
+	} else {
+		s.handleFixedFallback(ctx, chatManage)
+	}
+}
+
+// handleFixedFallback handles fixed fallback response
+func (s *sessionService) handleFixedFallback(ctx context.Context, chatManage *types.ChatManage) {
+	fallbackContent := chatManage.FallbackResponse
+	chatManage.ChatResponse = &types.ChatResponse{Content: fallbackContent}
+	s.emitFallbackAnswer(ctx, chatManage, fallbackContent)
+}
+
+// handleModelFallback handles model-based fallback response using streaming
+func (s *sessionService) handleModelFallback(ctx context.Context, chatManage *types.ChatManage) {
+	// Check if FallbackPrompt is available
+	if chatManage.FallbackPrompt == "" {
+		logger.Warnf(ctx, "Fallback strategy is 'model' but FallbackPrompt is empty, falling back to fixed response")
+		s.handleFixedFallback(ctx, chatManage)
+		return
+	}
+
+	// Render template with Query variable
+	promptContent, err := s.renderFallbackPrompt(ctx, chatManage)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to render fallback prompt: %v, falling back to fixed response", err)
+		s.handleFixedFallback(ctx, chatManage)
+		return
+	}
+
+	// Check if EventBus is available for streaming
+	if chatManage.EventBus == nil {
+		logger.Warnf(ctx, "EventBus not available for streaming fallback, falling back to fixed response")
+		s.handleFixedFallback(ctx, chatManage)
+		return
+	}
+
+	// Get chat model
+	chatModel, err := s.modelService.GetChatModel(ctx, chatManage.ChatModelID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get chat model for fallback: %v, falling back to fixed response", err)
+		s.handleFixedFallback(ctx, chatManage)
+		return
+	}
+
+	// Prepare chat options
+	thinking := false
+	opt := &chat.ChatOptions{
+		Temperature:         chatManage.SummaryConfig.Temperature,
+		MaxCompletionTokens: chatManage.SummaryConfig.MaxCompletionTokens,
+		Thinking:            &thinking,
+	}
+
+	// Start streaming response
+	responseChan, err := chatModel.ChatStream(ctx, []chat.Message{
+		{Role: "user", Content: promptContent},
+	}, opt)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to start streaming fallback response: %v, falling back to fixed response", err)
+		s.handleFixedFallback(ctx, chatManage)
+		return
+	}
+
+	if responseChan == nil {
+		logger.Errorf(ctx, "Chat stream returned nil channel, falling back to fixed response")
+		s.handleFixedFallback(ctx, chatManage)
+		return
+	}
+
+	// Start goroutine to consume stream and emit events
+	go s.consumeFallbackStream(ctx, chatManage, responseChan)
+}
+
+// renderFallbackPrompt renders the fallback prompt template with Query variable
+func (s *sessionService) renderFallbackPrompt(ctx context.Context, chatManage *types.ChatManage) (string, error) {
+	tmpl, err := template.New("fallbackPrompt").Parse(chatManage.FallbackPrompt)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	var promptContent bytes.Buffer
+	err = tmpl.Execute(&promptContent, map[string]interface{}{
+		"Query": chatManage.Query,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return promptContent.String(), nil
+}
+
+// consumeFallbackStream consumes the streaming response and emits events
+func (s *sessionService) consumeFallbackStream(ctx context.Context, chatManage *types.ChatManage, responseChan <-chan types.StreamResponse) {
+	fallbackID := generateEventID("fallback")
+	eventBus := chatManage.EventBus
+	var finalContent string
+	streamCompleted := false
+
+	for response := range responseChan {
+		// Emit event for each answer chunk
+		if response.ResponseType == types.ResponseTypeAnswer {
+			finalContent += response.Content
+			if err := eventBus.Emit(ctx, types.Event{
+				ID:        fallbackID,
+				Type:      types.EventType(event.EventAgentFinalAnswer),
+				SessionID: chatManage.SessionID,
+				Data: event.AgentFinalAnswerData{
+					Content: response.Content,
+					Done:    response.Done,
+				},
+			}); err != nil {
+				logger.Errorf(ctx, "Failed to emit fallback answer chunk event: %v", err)
+			}
+
+			// Update ChatResponse with final content when done
+			if response.Done {
+				chatManage.ChatResponse = &types.ChatResponse{Content: finalContent}
+				streamCompleted = true
+				logger.Infof(ctx, "Fallback streaming response completed")
+				break
+			}
+		}
+	}
+
+	// If channel closed without Done=true, emit final event with fixed response
+	if !streamCompleted {
+		logger.Warnf(ctx, "Fallback stream closed without completion, emitting final event with fixed response")
+		s.emitFallbackAnswer(ctx, chatManage, chatManage.FallbackResponse)
+	}
+}
+
+// emitFallbackAnswer emits fallback answer event
+func (s *sessionService) emitFallbackAnswer(ctx context.Context, chatManage *types.ChatManage, content string) {
+	if chatManage.EventBus == nil {
+		return
+	}
+
+	fallbackID := generateEventID("fallback")
+	if err := chatManage.EventBus.Emit(ctx, types.Event{
+		ID:        fallbackID,
+		Type:      types.EventType(event.EventAgentFinalAnswer),
+		SessionID: chatManage.SessionID,
+		Data: event.AgentFinalAnswerData{
+			Content: content,
+			Done:    true,
+		},
+	}); err != nil {
+		logger.Errorf(ctx, "Failed to emit fallback answer event: %v", err)
+	} else {
+		logger.Infof(ctx, "Fallback answer event emitted successfully")
+	}
 }

@@ -44,6 +44,17 @@
         </div>
       </div>
 
+          <!-- 模型推荐提示 -->
+          <div class="model-recommendation-box">
+            <div class="recommendation-header">
+              <t-icon name="info-circle" class="recommendation-icon" />
+              <span class="recommendation-title">{{ $t('agentSettings.modelRecommendation.title') }}</span>
+            </div>
+            <div class="recommendation-content">
+              <p>{{ $t('agentSettings.modelRecommendation.content') }}</p>
+            </div>
+          </div>
+
           <div class="settings-group">
 
       <!-- 最大迭代次数 -->
@@ -1965,6 +1976,44 @@ const handleConversationRerankModelChange = async (value: string) => {
         flex-shrink: 0;
         margin-top: 2px;
       }
+    }
+  }
+}
+
+.model-recommendation-box {
+  margin: 20px 0;
+  background: #f0fdf6;
+  border: 1px solid #d1fae5;
+  border-left: 3px solid #07C05F;
+  border-radius: 6px;
+  padding: 16px;
+
+  .recommendation-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+
+    .recommendation-icon {
+      font-size: 16px;
+      color: #07C05F;
+      flex-shrink: 0;
+    }
+
+    .recommendation-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: #059669;
+    }
+  }
+
+  .recommendation-content {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #065f46;
+
+    p {
+      margin: 0;
     }
   }
 }

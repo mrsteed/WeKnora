@@ -1121,7 +1121,7 @@ const getImgSrc = (url: string) => {
   padding: 0 10px;
   min-width: auto;
   font-weight: 500;
-  border: 1.5px solid transparent;
+  border: 1px solid transparent;
   transition: background 0.12s, border-color 0.12s;
   position: relative;
   
@@ -1132,7 +1132,7 @@ const getImgSrc = (url: string) => {
     box-shadow: 0 2px 6px rgba(16, 185, 129, 0.12);
     
     .agent-mode-text {
-      color: #10b981;
+      color: #07C05F;
       font-weight: 600;
     }
     
@@ -1141,7 +1141,7 @@ const getImgSrc = (url: string) => {
     }
     
     .dropdown-arrow {
-      color: #10b981;
+      color: #07C05F;
     }
     
     &:hover {
@@ -1195,7 +1195,7 @@ const getImgSrc = (url: string) => {
   
   &.active {
     background: rgba(16, 185, 129, 0.1);
-    color: #10b981;
+    color: #07C05F;
     
     &:hover {
       background: rgba(16, 185, 129, 0.15);
@@ -1211,7 +1211,7 @@ const getImgSrc = (url: string) => {
 }
 
 .kb-btn.active .kb-btn-text {
-  color: #10b981;
+  color: #07C05F;
 }
 
 .websearch-btn {
@@ -1227,7 +1227,7 @@ const getImgSrc = (url: string) => {
     background: rgba(16, 185, 129, 0.1);
     
     .websearch-icon {
-      color: #10b981;
+      color: #07C05F;
     }
     
     &:hover {
@@ -1355,7 +1355,7 @@ const getImgSrc = (url: string) => {
   height: 28px;
   padding: 0;
   background: rgba(16, 185, 129, 0.08);
-  color: #10b981;
+  color: #07C05F;
   border: 1.5px solid rgba(16, 185, 129, 0.2);
   position: relative;
   display: flex;
@@ -1364,7 +1364,7 @@ const getImgSrc = (url: string) => {
   
   &:hover {
     background: rgba(16, 185, 129, 0.12);
-    border-color: #10b981;
+    border-color: #07C05F;
   }
   
   &:active {
@@ -1379,7 +1379,7 @@ const getImgSrc = (url: string) => {
     content: '';
     width: 12px;
     height: 12px;
-    background: #10b981;
+    background: #07C05F;
     border-radius: 50%;
     display: block;
   }
@@ -1389,7 +1389,7 @@ const getImgSrc = (url: string) => {
   width: 28px;
   height: 28px;
   padding: 0;
-  background-color: #10b981;
+  background-color: #07C05F;
   
   &:hover:not(.disabled) {
     background-color: #059669;
@@ -1446,7 +1446,7 @@ const getImgSrc = (url: string) => {
   flex: 1;
   font-size: 12px;
   font-weight: 600;
-  color: #10b981;
+  color: #07C05F;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1455,7 +1455,7 @@ const getImgSrc = (url: string) => {
 .model-dropdown-arrow {
   width: 10px;
   height: 10px;
-  color: #10b981;
+  color: #07C05F;
   flex-shrink: 0;
   transition: transform 0.12s;
   

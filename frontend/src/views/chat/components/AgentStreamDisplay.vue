@@ -16,7 +16,7 @@
     
     <!-- Event Stream -->
     <template v-for="(event, index) in displayEvents" :key="getEventKey(event, index)">
-      <div v-if="event && event.type" class="event-item" :data-event-index="index" :class="{ 'event-last': index === displayEvents.length - 1 }">
+      <div v-if="event && event.type" class="event-item" :data-event-index="index" :class="{ 'event-last': index === displayEvents.length - 1, 'no-timeline': !shouldShowTimeline }">
         
         <!-- Plan Task Change Event -->
         <div v-if="event.type === 'plan_task_change'" class="plan-task-change-event">
@@ -167,7 +167,7 @@
     </template>
     
     <!-- Loading Indicator -->
-    <div v-if="!isConversationDone && eventStream.length > 0" class="loading-indicator">
+    <div v-if="!isConversationDone && eventStream.length > 0" class="loading-indicator" :class="{ 'no-timeline': !shouldShowTimeline }">
       <!-- 方案1: 三个跳动的圆点 -->
       <!-- <div class="loading-dots">
         <span></span>
@@ -340,6 +340,26 @@ marked.use({
 
 // Event stream
 const eventStream = computed(() => props.session?.agentEventStream || []);
+
+// Check if should show timeline (only show when there are tool calls or thinking events)
+const shouldShowTimeline = computed(() => {
+  // Only show timeline in agent mode and when there are intermediate steps
+  if (props.session?.isAgentMode !== true) {
+    return false;
+  }
+  
+  const stream = eventStream.value;
+  if (!stream || stream.length === 0) {
+    return false;
+  }
+  
+  // Check if there are any tool calls or thinking events (not just simple answer)
+  const hasToolCalls = stream.some((e: any) => e.type === 'tool_call');
+  const hasThinking = stream.some((e: any) => e.type === 'thinking');
+  
+  // Only show timeline if there are tool calls or thinking events
+  return hasToolCalls || hasThinking;
+});
 
 // Expanded events tracking (for tool calls)
 // Initialize with thinking tools expanded by default
@@ -1669,6 +1689,42 @@ const handleAddToKnowledge = (answerEvent: any) => {
     border-radius: 2px;
     box-shadow: 0 1px 3px rgba(7, 192, 95, 0.2);
   }
+  
+  // 普通模式下隐藏时间轴（放在最后以确保优先级）
+  &.no-timeline {
+    padding-left: 0 !important;
+    
+    &::before,
+    &::after {
+      display: none !important;
+      content: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+    
+    // 确保所有事件类型的时间轴都被隐藏（使用更强的选择器）
+    &.event-last::before,
+    &.event-last::after,
+    &:first-child::before,
+    &:first-child::after,
+    &:has(.thinking-event)::before,
+    &:has(.thinking-event)::after,
+    &:has(.answer-event)::before,
+    &:has(.answer-event)::after,
+    &:has(.tool-event)::before,
+    &:has(.tool-event)::after,
+    &:has(.plan-task-change-event)::before,
+    &:has(.plan-task-change-event)::after {
+      display: none !important;
+      content: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+  }
 }
 
 .intermediate-steps-collapsed {
@@ -1753,7 +1809,6 @@ const handleAddToKnowledge = (answerEvent: any) => {
     }
     
     &.thinking-active {
-      border-color: #07c05f;
       box-shadow: 0 1px 3px rgba(7, 192, 95, 0.06);
     }
   }
@@ -2804,6 +2859,10 @@ const handleAddToKnowledge = (answerEvent: any) => {
   padding-left: 28px;
   position: relative;
   animation: fadeInUp 0.3s ease-out;
+  
+  &.no-timeline {
+    padding-left: 0;
+  }
   
   // 方案1: 三个跳动的圆点
   .loading-dots {

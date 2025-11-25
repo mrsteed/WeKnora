@@ -24,8 +24,13 @@ type PlanStep struct {
 
 // NewTodoWriteTool creates a new todo_write tool instance
 func NewTodoWriteTool() *TodoWriteTool {
-	description := `Use this tool to create and manage a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.
-It also helps the user understand the progress of the task and overall progress of their requests.
+	description := `Use this tool to create and manage a structured task list for retrieval and research tasks. This helps you track progress, organize complex retrieval operations, and demonstrate thoroughness to the user.
+
+**CRITICAL - Focus on Retrieval Tasks Only**:
+- This tool is for tracking RETRIEVAL and RESEARCH tasks (e.g., searching knowledge bases, retrieving documents, gathering information)
+- DO NOT include summary or synthesis tasks in todo_write - those are handled by the thinking tool
+- Examples of appropriate tasks: "Search for X in knowledge base", "Retrieve information about Y", "Compare A and B"
+- Examples of tasks to EXCLUDE: "Summarize findings", "Generate final answer", "Synthesize results" - these are for thinking tool
 
 ## When to Use This Tool
 Use this tool proactively in these scenarios:
@@ -50,38 +55,36 @@ NOTE that you should not use this tool if there is only one trivial task to do. 
 ## Examples of When to Use the Todo List
 
 <example>
-User: I need to implement these features for my e-commerce site: user registration, product catalog, shopping cart, and checkout flow.
-Assistant: I'll help implement these features for your e-commerce site. Let me first think through the architecture and dependencies between these features to create an optimal implementation plan.
-*Uses think tool to analyze the e-commerce architecture, identify dependencies between features (user auth needed for cart, catalog needed for checkout), consider database design, security requirements, and implementation order*
-Assistant: After analyzing the system architecture and feature dependencies, let me create a strategic todo list that accounts for the interconnected nature of these features.
-*Creates a todo list breaking down each feature into specific tasks based on the project architecture and dependencies*
-Assistant: Let's start with user registration since it's foundational for the shopping cart and checkout features. This will involve creating database models, API endpoints, and frontend forms that integrate with your existing authentication system.
+User: Compare WeKnora with other RAG frameworks like LangChain and LlamaIndex.
+Assistant: I'll help you compare WeKnora with other RAG frameworks. Let me create a retrieval plan to gather information about each framework.
+*Creates a todo list with retrieval tasks: 1) Search knowledge base for WeKnora features and architecture, 2) Use web_search to find LangChain documentation and features, 3) Use web_search to find LlamaIndex documentation and features, 4) Retrieve detailed comparison points for each framework*
+*Note: Summary and synthesis will be handled by thinking tool after all retrieval tasks are completed*
+Assistant: Let me start by searching the knowledge base for detailed WeKnora information.
 
 <reasoning>
-The assistant used both think and todo_write tools because:
-1. First used think tool to analyze the complex e-commerce architecture and feature dependencies
-2. Considered the interconnected nature of features (user auth → cart → checkout)
-3. Analyzed security requirements, database design, and optimal implementation order
-4. Then created a strategic todo list that accounts for these dependencies
-5. This approach ensures features are implemented in the correct order with proper foundations
+The assistant used todo_write tool correctly because:
+1. The task requires multiple retrieval operations (searching KB for WeKnora, web search for LangChain and LlamaIndex)
+2. Each retrieval task is specific and actionable
+3. The todo list focuses on WHAT to retrieve, not HOW to summarize
+4. Summary and synthesis will be handled separately by thinking tool after all retrieval is complete
+5. This separation ensures clear task boundaries and avoids duplication
 </reasoning>
 </example>
 
 <example>
-User: Can you help optimize my React application? It's rendering slowly and has performance issues.</user>
-Assistant: I'll help optimize your React application. First, let me examine your codebase to identify potential performance bottlenecks.
-*Reviews component structure, render patterns, state management, and data fetching*
-Assistant: After analyzing your codebase, I've identified several performance issues. Let me create a todo list to track our optimization efforts.
-*Creates todo list with items like: 1) Implement memoization for expensive calculations in ProductList, 2) Add virtualization for long lists in Dashboard, 3) Optimize image loading in Gallery component, 4) Fix state update loops in ShoppingCart, 5) Review bundle size and implement code splitting*
-Let's start by implementing memoization for the expensive calculations in your ProductList component.</assistant>
+User: I need to research the latest developments in vector databases for RAG applications.
+Assistant: I'll help you research vector databases for RAG. Let me create a retrieval plan to gather comprehensive information.
+*Creates todo list with retrieval tasks: 1) Search knowledge base for vector database information, 2) Use web_search to find latest vector database technologies, 3) Retrieve information about performance comparisons, 4) Gather information about integration approaches*
+*Note: After completing all retrieval tasks, thinking tool will synthesize the findings into a comprehensive answer*
+Assistant: Let me start by searching the knowledge base for vector database information.
 
 <reasoning>
-The assistant used the todo list because:
-1. First, the assistant examined the codebase to identify specific performance issues
-2. Based on this analysis, it identified multiple optimization opportunities
-3. Performance optimization is a non-trivial task requiring multiple steps
-4. The todo list helps methodically track improvements across different components
-5. This systematic approach ensures all performance bottlenecks are addressed
+The assistant used todo_write tool correctly because:
+1. The research task requires multiple retrieval operations (KB search, web search for latest info)
+2. Each task focuses on retrieving specific information
+3. The todo list tracks retrieval progress, not synthesis
+4. Summary and analysis will be handled by thinking tool after retrieval is complete
+5. This approach separates retrieval (todo_write) from synthesis (thinking tool)
 </reasoning>
 </example>
 
@@ -134,11 +137,14 @@ The assistant did not use the todo list because this is an informational request
     - You couldn't find necessary files or dependencies
 
 4. **Task Breakdown**:
-  - Create specific, actionable items
-  - Break complex tasks into smaller, manageable steps
-  - Use clear, descriptive task names
+  - Create specific, actionable RETRIEVAL tasks
+  - Break complex retrieval needs into smaller, manageable steps
+  - Use clear, descriptive task names focused on what to retrieve or research
+  - **DO NOT include summary/synthesis tasks** - those are handled separately by the thinking tool
 
-When in doubt, use this tool. Being proactive with task management demonstrates attentiveness and ensures you complete all requirements successfully.`
+**Important**: After completing all retrieval tasks in todo_write, use the thinking tool to synthesize findings and generate the final answer. The todo_write tool tracks WHAT to retrieve, while thinking tool handles HOW to synthesize and present the information.
+
+When in doubt, use this tool. Being proactive with task management demonstrates attentiveness and ensures you complete all retrieval requirements successfully.`
 
 	return &TodoWriteTool{
 		BaseTool: NewBaseTool("todo_write", description),
@@ -264,12 +270,13 @@ func generatePlanOutput(task string, steps []PlanStep) string {
 	output += fmt.Sprintf("**任务**: %s\n\n", task)
 
 	if len(steps) == 0 {
-		output += "注意：未提供具体步骤。建议创建3-7个结构化步骤以系统化研究。\n\n"
-		output += "建议的通用流程：\n"
-		output += "1. 使用 knowledge_search 进行初步信息收集\n"
-		output += "2. 使用 list_knowledge_chunks 获取关键信息详情\n"
-		output += "3. 使用 list_knowledge_chunks 扩展上下文理解\n"
-		output += "4. 使用 think 工具评估结果并综合答案\n"
+		output += "注意：未提供具体步骤。建议创建3-7个检索任务以系统化研究。\n\n"
+		output += "建议的检索流程（专注于检索任务，不包含总结）：\n"
+		output += "1. 使用 grep_chunks 搜索关键词定位相关文档\n"
+		output += "2. 使用 knowledge_search 进行语义搜索获取相关内容\n"
+		output += "3. 使用 list_knowledge_chunks 获取关键文档的完整内容\n"
+		output += "4. 使用 web_search 获取补充信息（如需要）\n"
+		output += "\n注意：总结和综合由 thinking 工具处理，不要在此处添加总结任务。\n"
 		return output
 	}
 

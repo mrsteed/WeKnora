@@ -27,6 +27,7 @@ type ChatManage struct {
 	SummaryConfig    SummaryConfig    `json:"summary_config"`    // Configuration for summary generation
 	FallbackStrategy FallbackStrategy `json:"fallback_strategy"` // Strategy when no relevant results are found
 	FallbackResponse string           `json:"fallback_response"` // Default response when fallback occurs
+	FallbackPrompt   string           `json:"fallback_prompt"`   // Prompt for model-based fallback response
 
 	EnableRewrite        bool   `json:"enable_rewrite"`         // Whether to enable rewrite
 	EnableQueryExpansion bool   `json:"enable_query_expansion"` // Whether to enable query expansion with LLM
@@ -90,6 +91,7 @@ func (c *ChatManage) Clone() *ChatManage {
 		},
 		FallbackStrategy:     c.FallbackStrategy,
 		FallbackResponse:     c.FallbackResponse,
+		FallbackPrompt:       c.FallbackPrompt,
 		RewritePromptSystem:  c.RewritePromptSystem,
 		RewritePromptUser:    c.RewritePromptUser,
 		EnableRewrite:        c.EnableRewrite,

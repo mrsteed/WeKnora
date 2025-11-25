@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -188,16 +190,52 @@ func (t *GrepChunksTool) Execute(ctx context.Context, args map[string]interface{
 
 	logger.Infof(ctx, "[Tool][GrepChunks] Found %d matching chunks", len(results))
 
+	// Apply deduplication to remove duplicate or near-duplicate chunks
+	deduplicatedResults := t.deduplicateChunks(ctx, results)
+	logger.Infof(ctx, "[Tool][GrepChunks] After deduplication: %d chunks (from %d)",
+		len(deduplicatedResults), len(results))
+
+	// Calculate match scores for sorting (based on match count and position)
+	scoredResults := t.scoreChunks(ctx, deduplicatedResults, patterns)
+
+	// Apply MMR to reduce redundancy if we have many results
+	finalResults := scoredResults
+	if len(scoredResults) > 10 {
+		// Use MMR when we have more than 10 results
+		mmrK := len(scoredResults)
+		if maxResults > 0 && mmrK > maxResults {
+			mmrK = maxResults
+		}
+		logger.Debugf(ctx, "[Tool][GrepChunks] Applying MMR: k=%d, lambda=0.7, input=%d results", mmrK, len(scoredResults))
+		mmrResults := t.applyMMR(ctx, scoredResults, patterns, mmrK, 0.7)
+		if len(mmrResults) > 0 {
+			finalResults = mmrResults
+			logger.Infof(ctx, "[Tool][GrepChunks] MMR completed: %d results selected", len(finalResults))
+		}
+	}
+
+	// Sort by match score (descending), then by chunk index
+	sort.Slice(finalResults, func(i, j int) bool {
+		if finalResults[i].MatchScore != finalResults[j].MatchScore {
+			return finalResults[i].MatchScore > finalResults[j].MatchScore
+		}
+		return finalResults[i].ChunkIndex < finalResults[j].ChunkIndex
+	})
+
+	if len(finalResults) > 20 {
+		finalResults = finalResults[:20]
+	}
+
 	// Format output
-	output := t.formatOutput(ctx, results, totalCount, patterns, contextLines, countOnly, showLineNumbers, kbIDs, knowledgeIDs)
+	output := t.formatOutput(ctx, finalResults, totalCount, patterns, contextLines, countOnly, showLineNumbers, kbIDs, knowledgeIDs)
 
 	return &types.ToolResult{
 		Success: true,
 		Output:  output,
 		Data: map[string]interface{}{
 			"patterns":           patterns,
-			"results":            results,
-			"result_count":       len(results),
+			"results":            finalResults,
+			"result_count":       len(finalResults),
 			"total_matches":      totalCount,
 			"knowledge_base_ids": kbIDs,
 			"knowledge_ids":      knowledgeIDs,
@@ -207,6 +245,12 @@ func (t *GrepChunksTool) Execute(ctx context.Context, args map[string]interface{
 	}, nil
 }
 
+type chunkWithTitle struct {
+	types.Chunk
+	Title      string
+	MatchScore float64 // Score based on match count and position
+}
+
 // searchChunks performs the database search with pattern matching
 func (t *GrepChunksTool) searchChunks(
 	ctx context.Context,
@@ -214,7 +258,7 @@ func (t *GrepChunksTool) searchChunks(
 	kbIDs []string,
 	knowledgeIDs []string,
 	maxResults int,
-) ([]map[string]interface{}, int64, error) {
+) ([]chunkWithTitle, int64, error) {
 	// Build base query
 	query := t.db.WithContext(ctx).Table("chunks").
 		Select("chunks.id, chunks.content, chunks.chunk_index, chunks.knowledge_id, chunks.knowledge_base_id, chunks.chunk_type, chunks.created_at, knowledges.title as knowledge_title").
@@ -255,7 +299,7 @@ func (t *GrepChunksTool) searchChunks(
 	}
 
 	// Fetch results
-	var results []map[string]interface{}
+	var results []chunkWithTitle
 	if err := query.Limit(maxResults).Order("chunks.created_at DESC").Find(&results).Error; err != nil {
 		logger.Errorf(ctx, "[Tool][GrepChunks] Failed to fetch results: %v", err)
 		return nil, 0, err
@@ -267,7 +311,7 @@ func (t *GrepChunksTool) searchChunks(
 // formatOutput formats the search results for display (grep-style output)
 func (t *GrepChunksTool) formatOutput(
 	ctx context.Context,
-	results []map[string]interface{},
+	results []chunkWithTitle,
 	totalCount int64,
 	patterns []string,
 	contextLines int,
@@ -304,19 +348,21 @@ func (t *GrepChunksTool) formatOutput(
 
 	// Group by document (like grep showing filename)
 	docGroups := make(map[string]struct {
-		title  string
-		chunks []map[string]interface{}
+		title           string
+		knowledgeBaseID string
+		chunks          []chunkWithTitle
 	})
 
 	for _, result := range results {
-		knowledgeID := fmt.Sprintf("%v", result["knowledge_id"])
+		knowledgeID := fmt.Sprintf("%v", result.KnowledgeID)
 		title := "Untitled"
-		if t := result["knowledge_title"]; t != nil {
+		if t := result.Title; t != "" {
 			title = fmt.Sprintf("%v", t)
 		}
 
 		group := docGroups[knowledgeID]
 		group.title = title
+		group.knowledgeBaseID = result.KnowledgeBaseID
 		group.chunks = append(group.chunks, result)
 		docGroups[knowledgeID] = group
 	}
@@ -324,28 +370,13 @@ func (t *GrepChunksTool) formatOutput(
 	// Display results in grep-style format
 	for docID, group := range docGroups {
 		// Show document header (like grep showing filename)
-		if len(docGroups) > 1 {
-			output.WriteString(fmt.Sprintf("\n--- %s (knowledge_id: %s) ---\n", group.title, docID))
-		}
+		output.WriteString(fmt.Sprintf("\n--- knowledge_base_id: %s, knowledge_id: %s, title: %s ---\n",
+			group.knowledgeBaseID, docID, group.title))
 
 		// Show each matching chunk
 		for _, chunk := range group.chunks {
-			chunkIndex := 0
-			if idx, ok := chunk["chunk_index"]; ok {
-				switch v := idx.(type) {
-				case int:
-					chunkIndex = v
-				case int64:
-					chunkIndex = int(v)
-				case float64:
-					chunkIndex = int(v)
-				}
-			}
-
-			content := ""
-			if c, ok := chunk["content"]; ok && c != nil {
-				content = fmt.Sprintf("%v", c)
-			}
+			chunkIndex := chunk.ChunkIndex
+			content := chunk.Content
 
 			// Extract preview with context around match (case-insensitive)
 			// Try each pattern and use the first match
@@ -367,17 +398,6 @@ func (t *GrepChunksTool) formatOutput(
 			}
 		}
 	}
-
-	// Add guidance for next steps
-	output.WriteString("\n=== Next Steps ===\n")
-	if len(results) > 0 {
-		output.WriteString("- Found matching documents. Use knowledge_search with semantic queries to understand the context.\n")
-		output.WriteString("- Filter knowledge_search by knowledge_ids from above results for better relevance.\n")
-	} else {
-		output.WriteString("- No matches found. Try different keywords or use knowledge_search for semantic search.\n")
-		output.WriteString("- Consider using synonyms or related terms in your search patterns.\n")
-	}
-
 	return output.String()
 }
 
@@ -476,4 +496,239 @@ func extractPreviewMultiPattern(content string, patterns []string, caseSensitive
 		return string(runes)
 	}
 	return string(runes[:contextLen*2])
+}
+
+// deduplicateChunks removes duplicate or near-duplicate chunks using content signature
+func (t *GrepChunksTool) deduplicateChunks(ctx context.Context, results []chunkWithTitle) []chunkWithTitle {
+	seen := make(map[string]bool)
+	contentSig := make(map[string]bool)
+	uniqueResults := make([]chunkWithTitle, 0)
+
+	for _, r := range results {
+		// Build multiple keys for deduplication
+		keys := []string{r.ID}
+		if r.ParentChunkID != "" {
+			keys = append(keys, "parent:"+r.ParentChunkID)
+		}
+		if r.KnowledgeID != "" {
+			keys = append(keys, fmt.Sprintf("kb:%s#%d", r.KnowledgeID, r.ChunkIndex))
+		}
+
+		// Check if any key is already seen
+		dup := false
+		for _, k := range keys {
+			if seen[k] {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+
+		// Check content signature for near-duplicate content
+		sig := t.buildContentSignature(r.Content)
+		if sig != "" {
+			if contentSig[sig] {
+				continue
+			}
+			contentSig[sig] = true
+		}
+
+		// Mark all keys as seen
+		for _, k := range keys {
+			seen[k] = true
+		}
+
+		uniqueResults = append(uniqueResults, r)
+	}
+
+	// If we have duplicates by ID, keep the first one
+	seenByID := make(map[string]bool)
+	deduplicated := make([]chunkWithTitle, 0)
+	for _, r := range uniqueResults {
+		if !seenByID[r.ID] {
+			seenByID[r.ID] = true
+			deduplicated = append(deduplicated, r)
+		}
+	}
+
+	return deduplicated
+}
+
+// buildContentSignature creates a normalized signature for content to detect near-duplicates
+func (t *GrepChunksTool) buildContentSignature(content string) string {
+	c := strings.ToLower(strings.TrimSpace(content))
+	if c == "" {
+		return ""
+	}
+	// Normalize whitespace
+	c = strings.Join(strings.Fields(c), " ")
+	// Use first 128 characters as signature
+	if len(c) > 128 {
+		c = c[:128]
+	}
+	return c
+}
+
+// scoreChunks calculates match scores for chunks based on pattern matches
+func (t *GrepChunksTool) scoreChunks(ctx context.Context, results []chunkWithTitle, patterns []string) []chunkWithTitle {
+	scored := make([]chunkWithTitle, len(results))
+	for i := range results {
+		scored[i] = results[i]
+		scored[i].MatchScore = t.calculateMatchScore(results[i].Content, patterns)
+	}
+	return scored
+}
+
+// calculateMatchScore calculates a score based on how many patterns match and their positions
+func (t *GrepChunksTool) calculateMatchScore(content string, patterns []string) float64 {
+	if content == "" || len(patterns) == 0 {
+		return 0.0
+	}
+
+	contentLower := strings.ToLower(content)
+	matchCount := 0
+	earliestPos := len(content)
+
+	// Count how many patterns match and find earliest position
+	for _, pattern := range patterns {
+		patternLower := strings.ToLower(pattern)
+		if strings.Contains(contentLower, patternLower) {
+			matchCount++
+			// Find position of first match
+			pos := strings.Index(contentLower, patternLower)
+			if pos >= 0 && pos < earliestPos {
+				earliestPos = pos
+			}
+		}
+	}
+
+	// Score: higher for more matches, slightly higher for earlier positions
+	// Base score: match ratio (0.0 to 1.0)
+	baseScore := float64(matchCount) / float64(len(patterns))
+
+	// Position bonus: earlier matches get slight boost (max 0.1)
+	positionBonus := 0.0
+	if earliestPos < len(content) {
+		// Normalize position to [0, 1] and apply small bonus
+		positionRatio := 1.0 - float64(earliestPos)/float64(len(content))
+		positionBonus = positionRatio * 0.1
+	}
+
+	return math.Min(baseScore+positionBonus, 1.0)
+}
+
+// applyMMR applies Maximal Marginal Relevance algorithm to reduce redundancy
+func (t *GrepChunksTool) applyMMR(
+	ctx context.Context,
+	results []chunkWithTitle,
+	patterns []string,
+	k int,
+	lambda float64,
+) []chunkWithTitle {
+	if k <= 0 || len(results) == 0 {
+		return nil
+	}
+
+	logger.Debugf(ctx, "[Tool][GrepChunks] Applying MMR: lambda=%.2f, k=%d, candidates=%d",
+		lambda, k, len(results))
+
+	selected := make([]chunkWithTitle, 0, k)
+	candidates := make([]chunkWithTitle, len(results))
+	copy(candidates, results)
+
+	// Pre-compute token sets for all candidates
+	tokenSets := make([]map[string]struct{}, len(candidates))
+	for i, r := range candidates {
+		tokenSets[i] = t.tokenizeSimple(r.Content)
+	}
+
+	// MMR selection loop
+	for len(selected) < k && len(candidates) > 0 {
+		bestIdx := 0
+		bestScore := -1.0
+
+		for i, r := range candidates {
+			relevance := r.MatchScore
+			redundancy := 0.0
+
+			// Calculate maximum redundancy with already selected results
+			for _, s := range selected {
+				selectedTokens := t.tokenizeSimple(s.Content)
+				redundancy = math.Max(redundancy, t.jaccard(tokenSets[i], selectedTokens))
+			}
+
+			// MMR score: balance relevance and diversity
+			mmr := lambda*relevance - (1.0-lambda)*redundancy
+			if mmr > bestScore {
+				bestScore = mmr
+				bestIdx = i
+			}
+		}
+
+		// Add best candidate to selected and remove from candidates
+		selected = append(selected, candidates[bestIdx])
+		candidates = append(candidates[:bestIdx], candidates[bestIdx+1:]...)
+		// Remove corresponding token set
+		tokenSets = append(tokenSets[:bestIdx], tokenSets[bestIdx+1:]...)
+	}
+
+	// Compute average redundancy among selected results
+	avgRed := 0.0
+	if len(selected) > 1 {
+		pairs := 0
+		for i := 0; i < len(selected); i++ {
+			for j := i + 1; j < len(selected); j++ {
+				si := t.tokenizeSimple(selected[i].Content)
+				sj := t.tokenizeSimple(selected[j].Content)
+				avgRed += t.jaccard(si, sj)
+				pairs++
+			}
+		}
+		if pairs > 0 {
+			avgRed /= float64(pairs)
+		}
+	}
+
+	logger.Debugf(ctx, "[Tool][GrepChunks] MMR completed: selected=%d, avg_redundancy=%.4f",
+		len(selected), avgRed)
+
+	return selected
+}
+
+// tokenizeSimple tokenizes text into a set of words (simple whitespace-based)
+func (t *GrepChunksTool) tokenizeSimple(text string) map[string]struct{} {
+	text = strings.ToLower(text)
+	fields := strings.Fields(text)
+	set := make(map[string]struct{}, len(fields))
+	for _, f := range fields {
+		if len(f) > 1 {
+			set[f] = struct{}{}
+		}
+	}
+	return set
+}
+
+// jaccard calculates Jaccard similarity between two token sets
+func (t *GrepChunksTool) jaccard(a, b map[string]struct{}) float64 {
+	if len(a) == 0 && len(b) == 0 {
+		return 0
+	}
+
+	// Calculate intersection
+	inter := 0
+	for k := range a {
+		if _, ok := b[k]; ok {
+			inter++
+		}
+	}
+
+	// Calculate union
+	union := len(a) + len(b) - inter
+	if union == 0 {
+		return 0
+	}
+
+	return float64(inter) / float64(union)
 }

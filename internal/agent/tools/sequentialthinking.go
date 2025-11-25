@@ -69,6 +69,14 @@ Each thought can build on, question, or revise previous insights as understandin
   * Changes in approach
   * Hypothesis generation
   * Hypothesis verification
+  
+  **CRITICAL - User-Friendly Thinking**: Write your thoughts in natural, user-friendly language. NEVER mention tool names (like "grep_chunks", "knowledge_search", "web_search", etc.) in your thinking process. Instead, describe your actions in plain language:
+  - ❌ BAD: "I'll use grep_chunks to search for keywords, then knowledge_search for semantic understanding"
+  - ✅ GOOD: "I'll start by searching for key terms in the knowledge base, then explore related concepts"
+  - ❌ BAD: "After grep_chunks returns results, I'll use knowledge_search"
+  - ✅ GOOD: "After finding relevant documents, I'll search for semantically related content"
+  
+  Write thinking as if explaining your reasoning to a user, not documenting technical steps. Focus on WHAT you're trying to find and WHY, not HOW (which tools you'll use).
 
 - **next_thought_needed**: True if you need more thinking, even if at what seemed like the end
 - **thought_number**: Current number in sequence (can go beyond initial total if needed)
@@ -107,7 +115,7 @@ func (t *SequentialThinkingTool) Parameters() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"thought": map[string]interface{}{
 				"type":        "string",
-				"description": "Your current thinking step",
+				"description": `Your current thinking step. Write in natural, user-friendly language. NEVER mention tool names (like "grep_chunks", "knowledge_search", "web_search", etc.). Instead, describe actions in plain language (e.g., "I'll search for key terms" instead of "I'll use grep_chunks"). Focus on WHAT you're trying to find and WHY, not HOW (which tools you'll use).`,
 			},
 			"nextThoughtNeeded": map[string]interface{}{
 				"type":        "boolean",

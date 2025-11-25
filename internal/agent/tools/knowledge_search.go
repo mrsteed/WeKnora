@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -225,6 +226,11 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 		topK, vectorThreshold, keywordThreshold, kbTypeMap)
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Concurrent search completed: %d raw results", len(allResults))
 
+	// Normalize keyword search results to ensure fair comparison across knowledge bases
+	logger.Debugf(ctx, "[Tool][KnowledgeSearch] Normalizing keyword search results...")
+	t.normalizeKeywordSearchResults(ctx, allResults)
+	logger.Infof(ctx, "[Tool][KnowledgeSearch] After keyword normalization: %d results", len(allResults))
+
 	// Filter by threshold first
 	filteredResults := t.filterByThreshold(allResults, vectorThreshold, keywordThreshold)
 	// Deduplicate before reranking to reduce processing overhead
@@ -271,6 +277,28 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 		filteredResults = deduplicatedBeforeRerank
 	}
 
+	// Apply MMR (Maximal Marginal Relevance) to reduce redundancy and improve diversity
+	// Note: composite scoring is already applied inside rerankResults
+	if len(filteredResults) > 0 {
+		// Calculate k for MMR: use min(len(results), max(1, topK))
+		mmrK := len(filteredResults)
+		if topK > 0 && mmrK > topK {
+			mmrK = topK
+		}
+		if mmrK < 1 {
+			mmrK = 1
+		}
+		// Apply MMR with lambda=0.7 (balance between relevance and diversity)
+		logger.Debugf(ctx, "[Tool][KnowledgeSearch] Applying MMR: k=%d, lambda=0.7, input=%d results", mmrK, len(filteredResults))
+		mmrResults := t.applyMMR(ctx, filteredResults, mmrK, 0.7)
+		if len(mmrResults) > 0 {
+			filteredResults = mmrResults
+			logger.Infof(ctx, "[Tool][KnowledgeSearch] MMR completed: %d results selected", len(filteredResults))
+		} else {
+			logger.Warnf(ctx, "[Tool][KnowledgeSearch] MMR returned no results, using original results")
+		}
+	}
+
 	// Apply absolute minimum score filter to remove very low quality chunks
 	logger.Debugf(ctx, "[Tool][KnowledgeSearch] Applying min_score filter (%.2f)...", minScore)
 	filteredResults = t.filterByMinScore(filteredResults, minScore)
@@ -302,7 +330,7 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 
 	// Build output
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Formatting output with %d final results", len(deduplicatedResults))
-	result, err := t.formatOutput(ctx, deduplicatedResults, kbIDs, len(allResults), queries)
+	result, err := t.formatOutput(ctx, deduplicatedResults, kbIDs, queries)
 	if err != nil {
 		logger.Errorf(ctx, "[Tool][KnowledgeSearch] Failed to format output: %v", err)
 		return result, err
@@ -390,26 +418,38 @@ func (t *KnowledgeSearchTool) concurrentSearch(
 }
 
 // filterByThreshold filters results based on match type and threshold
+// Special handling for history matches: uses lower threshold (reduced by 0.1, minimum 0.5)
 func (t *KnowledgeSearchTool) filterByThreshold(
 	results []*searchResultWithMeta,
 	vectorThreshold, keywordThreshold float64,
 ) []*searchResultWithMeta {
 	filtered := make([]*searchResultWithMeta, 0)
 	for _, r := range results {
-		// Check if result meets threshold based on match type
-		if r.MatchType == types.MatchTypeEmbedding && r.Score >= vectorThreshold {
-			filtered = append(filtered, r)
-		} else if r.MatchType == types.MatchTypeKeywords && r.Score >= keywordThreshold {
-			filtered = append(filtered, r)
+		var threshold float64
+
+		// Special handling for history matches: use lower threshold
+		if r.MatchType == types.MatchTypeHistory {
+			// Use the lower of the two thresholds, then reduce by 0.1 (minimum 0.5)
+			th := vectorThreshold
+			if keywordThreshold < th {
+				th = keywordThreshold
+			}
+			threshold = math.Max(th-0.1, 0.5)
+		} else if r.MatchType == types.MatchTypeEmbedding {
+			threshold = vectorThreshold
+		} else if r.MatchType == types.MatchTypeKeywords {
+			threshold = keywordThreshold
 		} else {
 			// For other match types (graph, nearby chunk, etc.), use the lower threshold
-			minThreshold := vectorThreshold
-			if keywordThreshold < minThreshold {
-				minThreshold = keywordThreshold
+			threshold = vectorThreshold
+			if keywordThreshold < threshold {
+				threshold = keywordThreshold
 			}
-			if r.Score >= minThreshold {
-				filtered = append(filtered, r)
-			}
+		}
+
+		// Check if result meets threshold
+		if r.Score >= threshold {
+			filtered = append(filtered, r)
 		}
 	}
 	return filtered
@@ -444,17 +484,48 @@ func (t *KnowledgeSearchTool) rerankResults(
 	)
 
 	// Apply reranking only to non-FAQ results
-	switch {
-	case t.chatModel != nil:
-		rerankedNonFAQ, err = t.rerankWithLLM(ctx, query, nonFAQResults)
-	case t.rerankModel != nil:
+	// Try rerankModel first, fallback to chatModel if rerankModel fails or returns no results
+	if t.rerankModel != nil {
 		rerankedNonFAQ, err = t.rerankWithModel(ctx, query, nonFAQResults)
-	default:
+		// If rerankModel fails or returns no results, fallback to chatModel
+		if err != nil || len(rerankedNonFAQ) == 0 {
+			if err != nil {
+				logger.Warnf(ctx, "[Tool][KnowledgeSearch] Rerank model failed, falling back to chat model: %v", err)
+			} else {
+				logger.Warnf(ctx, "[Tool][KnowledgeSearch] Rerank model returned no results, falling back to chat model")
+			}
+			// Reset error to allow fallback
+			err = nil
+			// Try chatModel if available
+			if t.chatModel != nil {
+				rerankedNonFAQ, err = t.rerankWithLLM(ctx, query, nonFAQResults)
+			} else {
+				// No fallback available, use original results
+				rerankedNonFAQ = nonFAQResults
+			}
+		}
+	} else if t.chatModel != nil {
+		// No rerankModel, use chatModel directly
+		rerankedNonFAQ, err = t.rerankWithLLM(ctx, query, nonFAQResults)
+	} else {
+		// No reranking available, use original results
 		rerankedNonFAQ = nonFAQResults
 	}
 
 	if err != nil {
 		return nil, err
+	}
+
+	// Apply composite scoring to reranked results
+	// Get query intent from context if available (optional)
+	queryIntent := t.getQueryIntentFromContext(ctx)
+	logger.Debugf(ctx, "[Tool][KnowledgeSearch] Applying composite scoring with query_intent=%s", queryIntent)
+
+	// Store base scores before composite scoring
+	for _, result := range rerankedNonFAQ {
+		baseScore := result.Score
+		// Apply composite score
+		result.Score = t.compositeScore(result, result.Score, baseScore, queryIntent)
 	}
 
 	// Combine FAQ results (with original order) and reranked non-FAQ results
@@ -537,8 +608,10 @@ func (t *KnowledgeSearchTool) rerankWithLLM(
 		// Build prompt with query and batch passages
 		var passagesBuilder strings.Builder
 		for i, result := range batch {
+			// Get enriched passage (content + image info)
+			enrichedContent := t.getEnrichedPassage(ctx, result.SearchResult)
 			// Truncate content if too long to save tokens
-			content := result.Content
+			content := enrichedContent
 			if len([]rune(content)) > maxContentLength {
 				runes := []rune(content)
 				content = string(runes[:maxContentLength]) + "..."
@@ -734,10 +807,10 @@ func (t *KnowledgeSearchTool) rerankWithModel(
 	query string,
 	results []*searchResultWithMeta,
 ) ([]*searchResultWithMeta, error) {
-	// Prepare passages for reranking
+	// Prepare passages for reranking (with enriched content including image info)
 	passages := make([]string, len(results))
 	for i, result := range results {
-		passages[i] = result.Content
+		passages[i] = t.getEnrichedPassage(ctx, result.SearchResult)
 	}
 
 	// Call rerank model
@@ -776,26 +849,87 @@ func (t *KnowledgeSearchTool) filterByMinScore(
 }
 
 // deduplicateResults removes duplicate chunks, keeping the highest score
+// Uses multiple keys (ID, parent chunk ID, knowledge+index) and content signature for deduplication
 func (t *KnowledgeSearchTool) deduplicateResults(results []*searchResultWithMeta) []*searchResultWithMeta {
-	seen := make(map[string]*searchResultWithMeta)
+	seen := make(map[string]bool)
+	contentSig := make(map[string]bool)
+	uniqueResults := make([]*searchResultWithMeta, 0)
 
 	for _, r := range results {
-		if existing, ok := seen[r.ID]; ok {
+		// Build multiple keys for deduplication
+		keys := []string{r.ID}
+		if r.ParentChunkID != "" {
+			keys = append(keys, "parent:"+r.ParentChunkID)
+		}
+		if r.KnowledgeID != "" {
+			keys = append(keys, fmt.Sprintf("kb:%s#%d", r.KnowledgeID, r.ChunkIndex))
+		}
+
+		// Check if any key is already seen
+		dup := false
+		for _, k := range keys {
+			if seen[k] {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+
+		// Check content signature for near-duplicate content
+		sig := t.buildContentSignature(r.Content)
+		if sig != "" {
+			if contentSig[sig] {
+				continue
+			}
+			contentSig[sig] = true
+		}
+
+		// Mark all keys as seen
+		for _, k := range keys {
+			seen[k] = true
+		}
+
+		uniqueResults = append(uniqueResults, r)
+	}
+
+	// If we have duplicates by ID but different scores, keep the highest score
+	// This handles cases where the same chunk appears multiple times with different scores
+	seenByID := make(map[string]*searchResultWithMeta)
+	for _, r := range uniqueResults {
+		if existing, ok := seenByID[r.ID]; ok {
 			// Keep the result with higher score
 			if r.Score > existing.Score {
-				seen[r.ID] = r
+				seenByID[r.ID] = r
 			}
 		} else {
-			seen[r.ID] = r
+			seenByID[r.ID] = r
 		}
 	}
 
-	deduplicated := make([]*searchResultWithMeta, 0, len(seen))
-	for _, r := range seen {
+	// Convert back to slice
+	deduplicated := make([]*searchResultWithMeta, 0, len(seenByID))
+	for _, r := range seenByID {
 		deduplicated = append(deduplicated, r)
 	}
 
 	return deduplicated
+}
+
+// buildContentSignature creates a normalized signature for content to detect near-duplicates
+func (t *KnowledgeSearchTool) buildContentSignature(content string) string {
+	c := strings.ToLower(strings.TrimSpace(content))
+	if c == "" {
+		return ""
+	}
+	// Normalize whitespace
+	c = strings.Join(strings.Fields(c), " ")
+	// Use first 128 characters as signature
+	if len(c) > 128 {
+		c = c[:128]
+	}
+	return c
 }
 
 // formatOutput formats the search results for display
@@ -803,7 +937,6 @@ func (t *KnowledgeSearchTool) formatOutput(
 	ctx context.Context,
 	results []*searchResultWithMeta,
 	kbsToSearch []string,
-	totalBeforeFilter int,
 	queries []string,
 ) (*types.ToolResult, error) {
 	if len(results) == 0 {
@@ -832,9 +965,6 @@ func (t *KnowledgeSearchTool) formatOutput(
 	// Build output header
 	output := "=== Search Results ===\n"
 	output += fmt.Sprintf("Found %d relevant results", len(results))
-	if totalBeforeFilter > len(results) {
-		output += fmt.Sprintf(" (filtered from %d)", totalBeforeFilter)
-	}
 	output += "\n\n"
 
 	// Count results by KB
@@ -1016,17 +1146,13 @@ func (t *KnowledgeSearchTool) formatOutput(
 	data := map[string]interface{}{
 		"knowledge_base_ids": kbsToSearch,
 		"results":            formattedResults,
-		"count":              len(results),
+		"count":              len(formattedResults),
 		"kb_counts":          kbCounts,
 		"display_type":       "search_results",
 	}
 
 	if len(queries) > 0 {
 		data["queries"] = queries
-	}
-	if totalBeforeFilter > len(results) {
-		data["total_before_filter"] = totalBeforeFilter
-		data["total_after_filter"] = len(results)
 	}
 
 	return &types.ToolResult{
@@ -1083,4 +1209,341 @@ func (t *KnowledgeSearchTool) findMissingChunkRanges(retrievedChunks map[int]boo
 	}
 
 	return ranges
+}
+
+// normalizeKeywordSearchResults normalizes keyword search result scores into [0,1] globally across all knowledge bases
+// Improvements:
+// 1. Uses robust normalization with percentile-based bounds to handle outliers
+// 2. Handles edge cases: single result, no variance, negative scores
+// 3. Global normalization ensures fair comparison across different knowledge bases
+func (t *KnowledgeSearchTool) normalizeKeywordSearchResults(ctx context.Context, results []*searchResultWithMeta) {
+	// Filter keyword match results
+	keywordResults := make([]*searchResultWithMeta, 0)
+	for _, result := range results {
+		if result.MatchType == types.MatchTypeKeywords {
+			keywordResults = append(keywordResults, result)
+		}
+	}
+
+	if len(keywordResults) == 0 {
+		return
+	}
+
+	// Single result: set to 1.0
+	if len(keywordResults) == 1 {
+		keywordResults[0].Score = 1.0
+		return
+	}
+
+	// Find min and max scores globally
+	minS := keywordResults[0].Score
+	maxS := keywordResults[0].Score
+	for _, r := range keywordResults {
+		if r.Score < minS {
+			minS = r.Score
+		}
+		if r.Score > maxS {
+			maxS = r.Score
+		}
+	}
+
+	// No variance: all scores are the same
+	if maxS <= minS {
+		for _, r := range keywordResults {
+			r.Score = 1.0
+		}
+		logger.Infof(ctx, "[Tool][KnowledgeSearch] Keyword scores have no variance, all set to 1.0: count=%d, score=%.3f",
+			len(keywordResults), minS)
+		return
+	}
+
+	// Robust normalization: use percentile-based bounds to reduce outlier impact
+	// For small groups, use min/max; for larger groups, use 5th and 95th percentiles
+	normalizeMin := minS
+	normalizeMax := maxS
+
+	if len(keywordResults) >= 10 {
+		// For larger groups, use percentile-based bounds to handle outliers
+		// Sort scores to find percentiles
+		scores := make([]float64, len(keywordResults))
+		for i, r := range keywordResults {
+			scores[i] = r.Score
+		}
+		sort.Float64s(scores)
+
+		// Use 5th and 95th percentiles to reduce outlier impact
+		p5Idx := len(scores) * 5 / 100
+		p95Idx := len(scores) * 95 / 100
+		if p5Idx < len(scores) {
+			normalizeMin = scores[p5Idx]
+		}
+		if p95Idx < len(scores) {
+			normalizeMax = scores[p95Idx]
+		}
+	}
+
+	// Normalize scores with bounds checking
+	rangeSize := normalizeMax - normalizeMin
+	if rangeSize > 0 {
+		for _, r := range keywordResults {
+			// Clamp to [normalizeMin, normalizeMax] before normalization
+			clampedScore := r.Score
+			if clampedScore < normalizeMin {
+				clampedScore = normalizeMin
+			} else if clampedScore > normalizeMax {
+				clampedScore = normalizeMax
+			}
+
+			// Normalize to [0, 1]
+			ns := (clampedScore - normalizeMin) / rangeSize
+			if ns < 0 {
+				ns = 0
+			} else if ns > 1 {
+				ns = 1
+			}
+			r.Score = ns
+		}
+
+		logger.Infof(ctx, "[Tool][KnowledgeSearch] Normalized keyword scores: count=%d, raw_min=%.3f, raw_max=%.3f, normalize_min=%.3f, normalize_max=%.3f",
+			len(keywordResults), minS, maxS, normalizeMin, normalizeMax)
+	} else {
+		// Fallback: all scores are the same after percentile filtering
+		for _, r := range keywordResults {
+			r.Score = 1.0
+		}
+	}
+}
+
+// getEnrichedPassage 合并Content和ImageInfo的文本内容
+func (t *KnowledgeSearchTool) getEnrichedPassage(ctx context.Context, result *types.SearchResult) string {
+	if result.ImageInfo == "" {
+		return result.Content
+	}
+
+	// 解析ImageInfo
+	var imageInfos []types.ImageInfo
+	err := json.Unmarshal([]byte(result.ImageInfo), &imageInfos)
+	if err != nil {
+		logger.Warnf(ctx, "[Tool][KnowledgeSearch] Failed to parse image info: %v", err)
+		return result.Content
+	}
+
+	if len(imageInfos) == 0 {
+		return result.Content
+	}
+
+	// 提取所有图片的描述和OCR文本
+	var imageTexts []string
+	for _, img := range imageInfos {
+		if img.Caption != "" {
+			imageTexts = append(imageTexts, fmt.Sprintf("图片描述: %s", img.Caption))
+		}
+		if img.OCRText != "" {
+			imageTexts = append(imageTexts, fmt.Sprintf("图片文本: %s", img.OCRText))
+		}
+	}
+
+	if len(imageTexts) == 0 {
+		return result.Content
+	}
+
+	// 组合内容和图片信息
+	combinedText := result.Content
+	if combinedText != "" {
+		combinedText += "\n\n"
+	}
+	combinedText += strings.Join(imageTexts, "\n")
+
+	logger.Debugf(ctx, "[Tool][KnowledgeSearch] Enriched passage: content_len=%d, image_texts=%d",
+		len(result.Content), len(imageTexts))
+
+	return combinedText
+}
+
+// getQueryIntentFromContext attempts to extract query intent from context (optional)
+func (t *KnowledgeSearchTool) getQueryIntentFromContext(ctx context.Context) string {
+	// Try to get query intent from context if available
+	// This is optional and may not always be present in agent tool context
+	// Return empty string if not available
+	return ""
+}
+
+// compositeScore calculates a composite score considering multiple factors
+func (t *KnowledgeSearchTool) compositeScore(
+	result *searchResultWithMeta,
+	modelScore, baseScore float64,
+	queryIntent string,
+) float64 {
+	// Source weight: web_search results get slightly lower weight
+	sourceWeight := 1.0
+	if strings.ToLower(result.KnowledgeSource) == "web_search" {
+		sourceWeight = 0.95
+	}
+
+	// Intent boost: adjust score based on query intent and chunk characteristics
+	intentBoost := 1.0
+	if queryIntent != "" {
+		switch queryIntent {
+		case "definition":
+			// Boost summary chunks for definition queries
+			if result.ChunkType == string(types.ChunkTypeSummary) {
+				intentBoost = 1.05
+			}
+		case "howto":
+			// Boost longer chunks for howto queries
+			if result.EndAt-result.StartAt > 300 {
+				intentBoost = 1.03
+			}
+		case "compare":
+			// No boost for compare queries
+			intentBoost = 1.0
+		}
+	}
+
+	// Position prior: slightly favor chunks earlier in the document
+	positionPrior := 1.0
+	if result.StartAt >= 0 && result.EndAt > result.StartAt {
+		// Calculate position ratio and apply small boost for earlier positions
+		positionRatio := 1.0 - float64(result.StartAt)/float64(result.EndAt+1)
+		positionPrior += t.clampFloat(positionRatio, -0.05, 0.05)
+	}
+
+	// Composite formula: weighted combination of model score, base score, and source weight
+	composite := 0.6*modelScore + 0.3*baseScore + 0.1*sourceWeight
+	composite *= intentBoost
+	composite *= positionPrior
+
+	// Clamp to [0, 1]
+	if composite < 0 {
+		composite = 0
+	}
+	if composite > 1 {
+		composite = 1
+	}
+
+	return composite
+}
+
+// clampFloat clamps a float value to the specified range
+func (t *KnowledgeSearchTool) clampFloat(v, minV, maxV float64) float64 {
+	if v < minV {
+		return minV
+	}
+	if v > maxV {
+		return maxV
+	}
+	return v
+}
+
+// applyMMR applies Maximal Marginal Relevance algorithm to reduce redundancy
+func (t *KnowledgeSearchTool) applyMMR(
+	ctx context.Context,
+	results []*searchResultWithMeta,
+	k int,
+	lambda float64,
+) []*searchResultWithMeta {
+	if k <= 0 || len(results) == 0 {
+		return nil
+	}
+
+	logger.Infof(ctx, "[Tool][KnowledgeSearch] Applying MMR: lambda=%.2f, k=%d, candidates=%d",
+		lambda, k, len(results))
+
+	selected := make([]*searchResultWithMeta, 0, k)
+	candidates := make([]*searchResultWithMeta, len(results))
+	copy(candidates, results)
+
+	// Pre-compute token sets for all candidates
+	tokenSets := make([]map[string]struct{}, len(candidates))
+	for i, r := range candidates {
+		tokenSets[i] = t.tokenizeSimple(t.getEnrichedPassage(ctx, r.SearchResult))
+	}
+
+	// MMR selection loop
+	for len(selected) < k && len(candidates) > 0 {
+		bestIdx := 0
+		bestScore := -1.0
+
+		for i, r := range candidates {
+			relevance := r.Score
+			redundancy := 0.0
+
+			// Calculate maximum redundancy with already selected results
+			for _, s := range selected {
+				selectedTokens := t.tokenizeSimple(t.getEnrichedPassage(ctx, s.SearchResult))
+				redundancy = math.Max(redundancy, t.jaccard(tokenSets[i], selectedTokens))
+			}
+
+			// MMR score: balance relevance and diversity
+			mmr := lambda*relevance - (1.0-lambda)*redundancy
+			if mmr > bestScore {
+				bestScore = mmr
+				bestIdx = i
+			}
+		}
+
+		// Add best candidate to selected and remove from candidates
+		selected = append(selected, candidates[bestIdx])
+		candidates = append(candidates[:bestIdx], candidates[bestIdx+1:]...)
+		// Remove corresponding token set
+		tokenSets = append(tokenSets[:bestIdx], tokenSets[bestIdx+1:]...)
+	}
+
+	// Compute average redundancy among selected results
+	avgRed := 0.0
+	if len(selected) > 1 {
+		pairs := 0
+		for i := 0; i < len(selected); i++ {
+			for j := i + 1; j < len(selected); j++ {
+				si := t.tokenizeSimple(t.getEnrichedPassage(ctx, selected[i].SearchResult))
+				sj := t.tokenizeSimple(t.getEnrichedPassage(ctx, selected[j].SearchResult))
+				avgRed += t.jaccard(si, sj)
+				pairs++
+			}
+		}
+		if pairs > 0 {
+			avgRed /= float64(pairs)
+		}
+	}
+
+	logger.Infof(ctx, "[Tool][KnowledgeSearch] MMR completed: selected=%d, avg_redundancy=%.4f",
+		len(selected), avgRed)
+
+	return selected
+}
+
+// tokenizeSimple tokenizes text into a set of words (simple whitespace-based)
+func (t *KnowledgeSearchTool) tokenizeSimple(text string) map[string]struct{} {
+	text = strings.ToLower(text)
+	fields := strings.Fields(text)
+	set := make(map[string]struct{}, len(fields))
+	for _, f := range fields {
+		if len(f) > 1 {
+			set[f] = struct{}{}
+		}
+	}
+	return set
+}
+
+// jaccard calculates Jaccard similarity between two token sets
+func (t *KnowledgeSearchTool) jaccard(a, b map[string]struct{}) float64 {
+	if len(a) == 0 && len(b) == 0 {
+		return 0
+	}
+
+	// Calculate intersection
+	inter := 0
+	for k := range a {
+		if _, ok := b[k]; ok {
+			inter++
+		}
+	}
+
+	// Calculate union
+	union := len(a) + len(b) - inter
+	if union == 0 {
+		return 0
+	}
+
+	return float64(inter) / float64(union)
 }

@@ -11,15 +11,30 @@
         </div>
         <div class="refer_box" v-show="showReferBox">
             <div v-for="(item, index) in session.knowledge_references" :key="index">
-                <t-popup overlayClassName="refer-to-layer" placement="bottom-left" width="400" :showArrow="false"
-                    trigger="click">
-                    <template #content>
-                        <ContentPopup :content="safeProcessContent(item.content)" :is-html="true" />
-                    </template>
-                    <span class="doc">
-                        {{ session.knowledge_references.length < 2 ? item.knowledge_title : `${index +
-                            1}.${item.knowledge_title}` }} </span>
-                </t-popup>
+                <!-- Web search references: show URL and make it clickable -->
+                <template v-if="item.chunk_type === 'web_search'">
+                    <a 
+                        :href="getWebSearchUrl(item)" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        class="doc doc-web"
+                        @click.stop
+                    >
+                        {{ session.knowledge_references.length < 2 ? getWebSearchDisplayText(item) : `${index + 1}.${getWebSearchDisplayText(item)}` }}
+                    </a>
+                </template>
+                <!-- Regular knowledge references: show title with popup -->
+                <template v-else>
+                    <t-popup overlayClassName="refer-to-layer" placement="bottom-left" width="400" :showArrow="false"
+                        trigger="click">
+                        <template #content>
+                            <ContentPopup :content="safeProcessContent(item.content)" :is-html="true" />
+                        </template>
+                        <span class="doc">
+                            {{ session.knowledge_references.length < 2 ? item.knowledge_title : `${index +
+                                1}.${item.knowledge_title}` }} </span>
+                    </t-popup>
+                </template>
             </div>
         </div>
     </div>
@@ -52,16 +67,49 @@ const safeProcessContent = (content) => {
     return sanitized.replace(/\n/g, '<br/>');
 };
 
+// 获取 web_search 类型的 URL
+const getWebSearchUrl = (item) => {
+    // 优先使用 metadata.url，其次使用 id（如果 id 是 URL）
+    if (item.metadata?.url) {
+        return item.metadata.url;
+    }
+    if (item.id && (item.id.startsWith('http://') || item.id.startsWith('https://'))) {
+        return item.id;
+    }
+    return '#';
+};
+
+// 获取 web_search 类型的显示文本
+const getWebSearchDisplayText = (item) => {
+    // 优先使用 knowledge_title，其次使用 metadata.title，最后使用 URL 的域名
+    if (item.knowledge_title) {
+        return item.knowledge_title;
+    }
+    if (item.metadata?.title) {
+        return item.metadata.title;
+    }
+    // 如果都没有，使用 URL 的域名部分
+    const url = getWebSearchUrl(item);
+    if (url && url !== '#') {
+        try {
+            const urlObj = new URL(url);
+            return urlObj.hostname;
+        } catch {
+            return url;
+        }
+    }
+    return 'Web Search Result';
+};
+
 </script>
 <style lang="less" scoped>
 .refer {
     display: flex;
     flex-direction: column;
-    font-size: 14px;
+    font-size: 12px;
     width: 100%;
     border-radius: 8px;
     background-color: #ffffff;
-    border-left: 3px solid #07c05f;
     box-shadow: 0 2px 4px rgba(7, 192, 95, 0.08);
     overflow: hidden;
     box-sizing: border-box;
@@ -72,7 +120,7 @@ const safeProcessContent = (content) => {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 10px 14px;
+        padding: 6px 14px;
         color: #333333;
         font-weight: 500;
 
@@ -90,7 +138,7 @@ const safeProcessContent = (content) => {
 
             span {
                 white-space: nowrap;
-                font-size: 14px;
+                font-size: 12px;
             }
         }
 
@@ -107,7 +155,7 @@ const safeProcessContent = (content) => {
     }
 
     .refer_box {
-        padding: 4px 14px 10px 14px;
+        padding: 4px 14px 4px 14px;
         flex-direction: column;
         border-top: 1px solid #f0f0f0;
     }
@@ -135,12 +183,21 @@ const safeProcessContent = (content) => {
     text-overflow: ellipsis;
     line-height: 20px;
     padding: 2px 0;
-    font-weight: 500;
     transition: all 0.2s ease;
     border-bottom: 1px solid transparent;
     
     &:hover {
         border-bottom-color: #07c05f;
+    }
+    
+    &.doc-web {
+        // Web search links can be longer, allow wrapping if needed
+        white-space: normal;
+        word-break: break-all;
+        
+        &:hover {
+            text-decoration: underline;
+        }
     }
 }
 </style>

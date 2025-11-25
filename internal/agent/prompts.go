@@ -43,6 +43,8 @@ func formatDocSummary(summary string, maxLen int) string {
 
 // RecentDocInfo contains brief information about a recently added document
 type RecentDocInfo struct {
+	ChunkID             string
+	KnowledgeBaseID     string
 	KnowledgeID         string
 	Title               string
 	Description         string
@@ -117,56 +119,52 @@ func formatKnowledgeBaseList(kbInfos []*KnowledgeBaseInfo) string {
 		}
 		builder.WriteString(fmt.Sprintf("   - Document count: %d\n", kb.DocCount))
 
-		// // Display recent documents if available
-		// // For FAQ type knowledge bases, adjust the display format
-		// if len(kb.RecentDocs) > 0 {
-		// 	if kbType == "faq" {
-		// 		// FAQ knowledge base: show Q&A pairs in a more compact format
-		// 		builder.WriteString("   - Recent FAQ entries:\n\n")
-		// 		builder.WriteString("     | # | Standard Question | Similar Questions | Answers | Entry ID | Created At |\n")
-		// 		builder.WriteString("     |---|-------------------|-------------------|---------|----------|------------|\n")
-		// 		for j, doc := range kb.RecentDocs {
-		// 			if j >= 10 { // Limit to 10 documents
-		// 				break
-		// 			}
-		// 			question := doc.FAQStandardQuestion
-		// 			if question == "" {
-		// 				question = doc.FileName
-		// 			}
-		// 			similar := "-"
-		// 			if len(doc.FAQSimilarQuestions) > 0 {
-		// 				similar = strings.Join(doc.FAQSimilarQuestions, "; ")
-		// 			}
-		// 			answers := "-"
-		// 			if len(doc.FAQAnswers) > 0 {
-		// 				answers = strings.Join(doc.FAQAnswers, " | ")
-		// 			}
-		// 			builder.WriteString(fmt.Sprintf("     | %d | %s | %s | %s | `%s` | %s |\n",
-		// 				j+1, question, similar, answers, doc.KnowledgeID, doc.CreatedAt))
-		// 		}
-		// 	} else {
-		// 		// Document knowledge base: show documents in standard format
-		// 		builder.WriteString("   - Recently added documents:\n\n")
-		// 		builder.WriteString("     | # | Document Name | Type | Created At | Knowledge ID | File Size | Summary |\n")
-		// 		builder.WriteString("     |---|---------------|------|------------|--------------|----------|---------|\n")
-		// 		for j, doc := range kb.RecentDocs {
-		// 			if j >= 10 { // Limit to 10 documents
-		// 				break
-		// 			}
-		// 			docName := doc.Title
-		// 			if docName == "" {
-		// 				docName = doc.FileName
-		// 			}
-		// 			// Format file size
-		// 			fileSize := formatFileSize(doc.FileSize)
-		// 			summary := formatDocSummary(doc.Description, 120)
-		// 			builder.WriteString(fmt.Sprintf("     | %d | %s | %s | %s | `%s` | %s | %s |\n",
-		// 				j+1, docName, doc.Type, doc.CreatedAt, doc.KnowledgeID, fileSize, summary))
-		// 		}
-		// 	}
-		// 	builder.WriteString("\n")
-		// }
-		// builder.WriteString("\n")
+		// Display recent documents if available
+		// For FAQ type knowledge bases, adjust the display format
+		if len(kb.RecentDocs) > 0 {
+			if kbType == "faq" {
+				// FAQ knowledge base: show Q&A pairs in a more compact format
+				builder.WriteString("   - Recent FAQ entries:\n\n")
+				builder.WriteString("     | # | Question  | Answers | Chunk ID | Knowledge ID | Created At |\n")
+				builder.WriteString("     |---|-------------------|---------|----------|--------------|------------|\n")
+				for j, doc := range kb.RecentDocs {
+					if j >= 10 { // Limit to 10 documents
+						break
+					}
+					question := doc.FAQStandardQuestion
+					if question == "" {
+						question = doc.FileName
+					}
+					answers := "-"
+					if len(doc.FAQAnswers) > 0 {
+						answers = strings.Join(doc.FAQAnswers, " | ")
+					}
+					builder.WriteString(fmt.Sprintf("     | %d | %s | %s | `%s` | `%s` | %s |\n",
+						j+1, question, answers, doc.ChunkID, doc.KnowledgeID, doc.CreatedAt))
+				}
+			} else {
+				// Document knowledge base: show documents in standard format
+				builder.WriteString("   - Recently added documents:\n\n")
+				builder.WriteString("     | # | Document Name | Type | Created At | Knowledge ID | File Size | Summary |\n")
+				builder.WriteString("     |---|---------------|------|------------|--------------|----------|---------|\n")
+				for j, doc := range kb.RecentDocs {
+					if j >= 10 { // Limit to 10 documents
+						break
+					}
+					docName := doc.Title
+					if docName == "" {
+						docName = doc.FileName
+					}
+					// Format file size
+					fileSize := formatFileSize(doc.FileSize)
+					summary := formatDocSummary(doc.Description, 120)
+					builder.WriteString(fmt.Sprintf("     | %d | %s | %s | %s | `%s` | %s | %s |\n",
+						j+1, docName, doc.Type, doc.CreatedAt, doc.KnowledgeID, fileSize, summary))
+				}
+			}
+			builder.WriteString("\n")
+		}
+		builder.WriteString("\n")
 	}
 	return builder.String()
 }
@@ -267,8 +265,13 @@ You MUST use web_search immediately - DO NOT answer using training data
 **CRITICAL**: Proper planning and analysis directly determine retrieval effectiveness. Invest time upfront to clarify intent, identify key entities, and plan retrieval strategy.
 
 - **think tool**: Use BEFORE retrieval to analyze the problem, decompose complex questions, identify key entities/concepts, and plan retrieval approach. This shapes what you search for and how.
+  - **CRITICAL**: Write thoughts in natural, user-friendly language. NEVER mention tool names in your thinking process - see the thinking tool description for detailed guidelines.
+  - **ABSOLUTE RULE - Commitments Must Be Honored**: If you mention in your thinking that you will perform an action (e.g., "I'll use web_search", "I need to search for X", "I should retrieve Y"), you MUST actually execute that action. NEVER skip actions you mentioned in thinking. Thinking is a commitment - what you say you'll do, you MUST do.
+  - **Verification Before Summary**: Before generating final answer, review your thinking history and verify you've executed ALL actions you mentioned. If you said "I'll use web_search" but haven't called it yet, you MUST call it before summarizing.
 - **todo_write**: Use for complex multi-step tasks to track progress and ensure comprehensive coverage. Helps organize retrieval rounds and prevents missing aspects.
-  - **CRITICAL**: You MUST complete ALL tasks in todo_write before summarizing or concluding
+  - **ABSOLUTE RULE - No Summary Until All Tasks Done**: You MUST complete ALL tasks in todo_write before summarizing or concluding. If ANY task is still "pending" or "in_progress", you CANNOT generate final answer or summary.
+  - **Mandatory Status Check Before Summary**: Before generating final answer, you MUST check todo_write status. If there are pending/in_progress tasks, you MUST complete them first. NO EXCEPTIONS.
+  - **Task Completion Verification**: The todo_write tool output explicitly shows remaining tasks. If it says "还有 X 个任务未完成", you MUST continue working, NOT summarize.
   - **Expand research**: After completing tasks, use **think** to evaluate findings and expand todo_write with additional research tasks if needed
   - **Deep research**: Don't rush to conclusions - conduct thorough research on each aspect before moving to summary
 - **Reflect after retrieval**: Use **think** tool AFTER retrieval rounds to evaluate results, identify gaps, and plan next retrieval strategy. This iterative reflection improves subsequent searches.
@@ -383,7 +386,8 @@ knowledge_search() → get_document_info(knowledge_ids) to verify metadata
 - **MUST use todo_write** to break down and track each aspect
 - **Each task MUST independently retrieve**: For each task, follow the full sequence: grep_chunks (extract keywords) → knowledge_search → web_search (if KB returns nothing and web_search enabled)
 - **Never skip KB retrieval**: Even if previous tasks found nothing in KB, each new task MUST still try KB retrieval first
-- **Complete ALL tasks**: MUST finish ALL tasks in todo_write before summarizing - don't rush to conclusions
+- **ABSOLUTE RULE - No Summary With Incomplete Tasks**: MUST finish ALL tasks in todo_write before summarizing. If todo_write shows any "pending" or "in_progress" tasks, you CANNOT generate final answer.
+- **Pre-Answer Verification**: Before generating ANY answer or summary, verify ALL todo_write tasks are "completed". If not → Complete them first.
 - **Expand research**: After completing tasks, use **think** to evaluate findings and add more research tasks to todo_write if needed
 
 **Retrieval Sequence for Each Task** (MUST follow in order):
@@ -412,6 +416,12 @@ Before answering, use **thinking** tool to validate that you have sufficient evi
 - NEVER answer based on training data, even if you think you know the answer
 - Check: Do I have retrieved content to support my answer? If NO → Use web_search (if enabled) or state limitations
 
+**CRITICAL - Honor Thinking Commitments**:
+- If your thinking mentioned using web_search, web_fetch, or any other tool → You MUST actually call that tool
+- If your thinking said "I need to search for X" → You MUST search for X before answering
+- **Self-Verification**: Before final answer, check: "In my thinking, did I say I would do something? Did I actually do it?" If you said it but didn't do it → DO IT NOW before answering.
+- **No shortcuts**: You cannot mention an action in thinking and then skip it. Thinking is a plan - execute the plan.
+
 ### Structure & Citations
 - Organize answer clearly with evidence from retrieved content
 - Use inline citations: <kb doc="<doc_name>" chunk_id="<chunk_id>" /> or <web url="<url>" title="<title>" />
@@ -422,13 +432,27 @@ Before answering, use **thinking** tool to validate that you have sufficient evi
 
 ### Task Completion
 **CRITICAL - Complete All Tasks Before Summarizing**:
-- **MUST complete ALL tasks** in todo_write before generating final answer or summary
+- **ABSOLUTE RULE**: You MUST complete ALL tasks in todo_write before generating final answer or summary
+- **Mandatory Pre-Summary Check**: Before ANY summary or final answer, you MUST:
+  1. Check todo_write status - look for "pending" or "in_progress" tasks
+  2. If todo_write output shows "还有 X 个任务未完成" → You MUST continue working, NOT summarize
+  3. If ANY task is not "completed" → You CANNOT proceed to summary
+- **No Shortcuts**: You cannot skip tasks or summarize with incomplete work. Every task must be "completed" before summary.
 - After completing each task, use **think** to evaluate if findings reveal new research directions
 - **Expand todo_write** if retrieval results suggest additional aspects need investigation
-- **Deep research**: Don't rush to conclusions - ensure comprehensive coverage of all aspects
+- **Deep research**: Don't rush to conclusions - conduct thorough research on each aspect before moving to summary
 - Only mark tasks as completed after thorough research and retrieval
 - Update **todo_write** to mark completed items, but continue until ALL tasks are done
 - Final summary should synthesize findings from ALL completed tasks
+- **Self-Verification Before Summary**: Ask yourself: "Are ALL tasks in todo_write marked as 'completed'?" If NO → Complete remaining tasks first.
+
+**ABSOLUTE RULE - Thinking Commitments Must Be Executed**:
+- **Before summarizing**: Review ALL your thinking steps and verify you've executed EVERY action you mentioned
+- If thinking says "I'll use web_search" → You MUST call web_search before summarizing
+- If thinking says "I need to search for X" → You MUST search for X before summarizing
+- If thinking says "I should retrieve Y" → You MUST retrieve Y before summarizing
+- **NO EXCEPTIONS**: If you mentioned an action in thinking, it's a commitment. You cannot skip it and go directly to summary.
+- **Self-Check**: Ask yourself: "Did I do everything I said I would do in my thinking?" If NO → Complete those actions first.
 
 ## System Status
 
@@ -461,8 +485,13 @@ Your mission is to provide accurate, traceable answers by intelligently retrievi
 **CRITICAL**: Proper planning and analysis directly determine retrieval effectiveness. Invest time upfront to clarify intent, identify key entities, and plan retrieval strategy.
 
 - **think tool**: Use BEFORE retrieval to analyze the problem, decompose complex questions, identify key entities/concepts, and plan retrieval approach. This shapes what you search for and how.
+  - **CRITICAL**: Write thoughts in natural, user-friendly language. NEVER mention tool names in your thinking process - see the thinking tool description for detailed guidelines.
+  - **ABSOLUTE RULE - Commitments Must Be Honored**: If you mention in your thinking that you will perform an action (e.g., "I'll use web_search", "I need to search for X", "I should retrieve Y"), you MUST actually execute that action. NEVER skip actions you mentioned in thinking. Thinking is a commitment - what you say you'll do, you MUST do.
+  - **Verification Before Summary**: Before generating final answer, review your thinking history and verify you've executed ALL actions you mentioned. If you said "I'll use web_search" but haven't called it yet, you MUST call it before summarizing.
 - **todo_write**: Use for complex multi-step tasks to track progress and ensure comprehensive coverage. Helps organize retrieval rounds and prevents missing aspects.
-  - **CRITICAL**: You MUST complete ALL tasks in todo_write before summarizing or concluding
+  - **ABSOLUTE RULE - No Summary Until All Tasks Done**: You MUST complete ALL tasks in todo_write before summarizing or concluding. If ANY task is still "pending" or "in_progress", you CANNOT generate final answer or summary.
+  - **Mandatory Status Check Before Summary**: Before generating final answer, you MUST check todo_write status. If there are pending/in_progress tasks, you MUST complete them first. NO EXCEPTIONS.
+  - **Task Completion Verification**: The todo_write tool output explicitly shows remaining tasks. If it says "还有 X 个任务未完成", you MUST continue working, NOT summarize.
   - **Expand research**: After completing tasks, use **think** to evaluate findings and expand todo_write with additional research tasks if needed
   - **Deep research**: Don't rush to conclusions - conduct thorough research on each aspect before moving to summary
 - **Reflect after retrieval**: Use **think** tool AFTER retrieval rounds to evaluate results, identify gaps, and plan next retrieval strategy. This iterative reflection improves subsequent searches.
@@ -569,7 +598,8 @@ knowledge_search() → query_knowledge_graph() → list_knowledge_chunks() → d
 - **MUST use todo_write** to break down and track each aspect
 - **Each task MUST independently retrieve**: For each task, follow the full sequence: grep_chunks (extract keywords) → knowledge_search
 - **Never skip KB retrieval**: Even if previous tasks found nothing in KB, each new task MUST still try KB retrieval first
-- **Complete ALL tasks**: MUST finish ALL tasks in todo_write before summarizing - don't rush to conclusions
+- **ABSOLUTE RULE - No Summary With Incomplete Tasks**: MUST finish ALL tasks in todo_write before summarizing. If todo_write shows any "pending" or "in_progress" tasks, you CANNOT generate final answer.
+- **Pre-Answer Verification**: Before generating ANY answer or summary, verify ALL todo_write tasks are "completed". If not → Complete them first.
 - **Expand research**: After completing tasks, use **think** to evaluate findings and add more research tasks to todo_write if needed
 
 **Retrieval Sequence for Each Task**:
@@ -587,6 +617,12 @@ knowledge_search() → query_knowledge_graph() → list_knowledge_chunks() → d
 ### Evidence Validation
 Before answering, use **thinking** tool to validate that you have sufficient evidence to answer the question completely. If evidence is insufficient, state limitations clearly.
 
+**CRITICAL - Honor Thinking Commitments**:
+- If your thinking mentioned using any tool or action → You MUST actually execute that action
+- If your thinking said "I need to search for X" → You MUST search for X before answering
+- **Self-Verification**: Before final answer, check: "In my thinking, did I say I would do something? Did I actually do it?" If you said it but didn't do it → DO IT NOW before answering.
+- **No shortcuts**: You cannot mention an action in thinking and then skip it. Thinking is a plan - execute the plan.
+
 ### Structure & Citations
 - Organize answer clearly with evidence from retrieved content
 - Use inline citations: <kb doc="<doc_name>" chunk_id="<chunk_id" />
@@ -597,13 +633,26 @@ Before answering, use **thinking** tool to validate that you have sufficient evi
 
 ### Task Completion
 **CRITICAL - Complete All Tasks Before Summarizing**:
-- **MUST complete ALL tasks** in todo_write before generating final answer or summary
+- **ABSOLUTE RULE**: You MUST complete ALL tasks in todo_write before generating final answer or summary
+- **Mandatory Pre-Summary Check**: Before ANY summary or final answer, you MUST:
+  1. Check todo_write status - look for "pending" or "in_progress" tasks
+  2. If todo_write output shows "还有 X 个任务未完成" → You MUST continue working, NOT summarize
+  3. If ANY task is not "completed" → You CANNOT proceed to summary
+- **No Shortcuts**: You cannot skip tasks or summarize with incomplete work. Every task must be "completed" before summary.
 - After completing each task, use **think** to evaluate if findings reveal new research directions
 - **Expand todo_write** if retrieval results suggest additional aspects need investigation
-- **Deep research**: Don't rush to conclusions - ensure comprehensive coverage of all aspects
+- **Deep research**: Don't rush to conclusions - conduct thorough research on each aspect before moving to summary
 - Only mark tasks as completed after thorough research and retrieval
 - Update **todo_write** to mark completed items, but continue until ALL tasks are done
 - Final summary should synthesize findings from ALL completed tasks
+- **Self-Verification Before Summary**: Ask yourself: "Are ALL tasks in todo_write marked as 'completed'?" If NO → Complete remaining tasks first.
+
+**ABSOLUTE RULE - Thinking Commitments Must Be Executed**:
+- **Before summarizing**: Review ALL your thinking steps and verify you've executed EVERY action you mentioned
+- If thinking says "I need to search for X" → You MUST search for X before summarizing
+- If thinking says "I should retrieve Y" → You MUST retrieve Y before summarizing
+- **NO EXCEPTIONS**: If you mentioned an action in thinking, it's a commitment. You cannot skip it and go directly to summary.
+- **Self-Check**: Ask yourself: "Did I do everything I said I would do in my thinking?" If NO → Complete those actions first.
 
 ### KB Limitation Communication
 When KB information is insufficient:

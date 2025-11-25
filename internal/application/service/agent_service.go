@@ -297,7 +297,9 @@ func (s *agentService) getKnowledgeBaseInfos(ctx context.Context, kbIDs []string
 							break
 						}
 						recentDocs = append(recentDocs, agent.RecentDocInfo{
-							KnowledgeID:         entry.ChunkID,
+							ChunkID:             entry.ChunkID,
+							KnowledgeID:         entry.KnowledgeID,
+							KnowledgeBaseID:     entry.KnowledgeBaseID,
 							Title:               entry.StandardQuestion,
 							Type:                string(types.ChunkTypeFAQ),
 							CreatedAt:           entry.CreatedAt.Format("2006-01-02"),

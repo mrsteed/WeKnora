@@ -1397,6 +1397,10 @@ export default {
   agentSettings: {
     title: 'Agent Settings',
     description: 'Configure the default behavior and parameters for the AI Agent. These settings apply to all chats with Agent mode enabled.',
+    modelRecommendation: {
+      title: 'Model Recommendation',
+      content: 'For better Agent experience, we recommend using large language models with FunctionCalling support and long context windows, such as deepseek-v3.1-terminus',
+    },
     status: {
       label: 'Agent Status',
       ready: 'Ready',
