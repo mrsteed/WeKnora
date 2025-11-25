@@ -314,6 +314,8 @@ export default {
     extractFailed: 'Не удалось извлечь сущности и отношения',
     exampleLoaded: 'Пример загружен',
     exampleCleared: 'Пример очищен',
+    disabledWarning: 'База данных графа знаний не включена, извлечение сущностей и отношений будет недоступно',
+    howToEnable: 'Как включить граф знаний?',
     saveSuccess: 'Настройки графа сохранены',
     saveFailed: 'Не удалось сохранить настройки: {message}',
     errors: {

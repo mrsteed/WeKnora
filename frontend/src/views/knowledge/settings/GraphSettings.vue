@@ -3,6 +3,20 @@
     <div class="section-header">
       <h2>{{ t('graphSettings.title') }}</h2>
       <p class="section-description">{{ t('graphSettings.description') }}</p>
+      
+      <!-- Warning message when graph database is not enabled -->
+      <t-alert
+        v-if="!isGraphDatabaseEnabled"
+        theme="warning"
+        style="margin-top: 16px;"
+      >
+        <template #message>
+          <div>{{ t('graphSettings.disabledWarning') }}</div>
+          <t-link class="graph-guide-link" theme="primary" @click="handleOpenGraphGuide">
+            {{ t('graphSettings.howToEnable') }}
+          </t-link>
+        </template>
+      </t-alert>
     </div>
 
     <div class="settings-group">
@@ -279,11 +293,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import { extractTextRelations, fabriText, fabriTag, type Node, type Relation, type LLMConfig } from '@/api/initialization'
 import { listModels } from '@/api/model'
+import { getSystemInfo } from '@/api/system'
 
 const { t } = useI18n()
 
@@ -324,6 +339,14 @@ const modelStatus = ref({
     available: false,
     config: null as LLMConfig | null
   }
+})
+
+// 系统信息
+const systemInfo = ref<any>(null)
+
+// 计算图数据库是否启用
+const isGraphDatabaseEnabled = computed(() => {
+  return systemInfo.value?.graph_database_engine && systemInfo.value.graph_database_engine !== '未启用'
 })
 
 // Watch for prop changes
@@ -542,9 +565,31 @@ const loadModelStatus = async () => {
   }
 }
 
+// 加载系统信息
+const loadSystemInfo = async () => {
+  try {
+    const response = await getSystemInfo()
+    systemInfo.value = response.data
+  } catch (error: any) {
+    console.error('Failed to load system info:', error)
+  }
+}
+
+const graphGuideUrl =
+  import.meta.env.VITE_KG_GUIDE_URL ||
+  'https://github.com/Tencent/WeKnora/blob/main/docs/KnowledgeGraph.md'
+
+// Open guide documentation to show how to enable graph database
+const handleOpenGraphGuide = () => {
+  window.open(graphGuideUrl, '_blank', 'noopener')
+}
+
 // 初始化
 onMounted(async () => {
-  await loadModelStatus()
+  await Promise.all([
+    loadModelStatus(),
+    loadSystemInfo()
+  ])
 })
 </script>
 

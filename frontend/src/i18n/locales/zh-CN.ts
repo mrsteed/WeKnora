@@ -417,6 +417,8 @@ export default {
     extractFailed: "实体关系提取失败",
     exampleLoaded: "示例已加载",
     exampleCleared: "示例已清除",
+    disabledWarning: "知识图谱数据库未启用，实体关系提取功能将无法使用",
+    howToEnable: "如何启用知识图谱？",
     saveSuccess: "图谱配置已保存",
     saveFailed: "保存配置失败: {message}",
     errors: {

@@ -315,6 +315,8 @@ export default {
     extractFailed: 'Entity-relationship extraction failed',
     exampleLoaded: 'Example loaded',
     exampleCleared: 'Example cleared',
+    disabledWarning: 'Knowledge graph database is not enabled, entity-relationship extraction will not be available',
+    howToEnable: 'How to enable knowledge graph?',
     saveSuccess: 'Graph configuration saved',
     saveFailed: 'Failed to save configuration: {message}',
     errors: {
