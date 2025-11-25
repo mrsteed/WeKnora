@@ -132,7 +132,7 @@
                 <div v-if="!isFAQ" v-show="currentSection === 'graph'" class="section">
                   <GraphSettings
                     v-if="formData"
-                    :graph-extract="formData.extractConfig"
+                    :graph-extract="formData.nodeExtractConfig"
                     :all-models="allModels"
                     @update:graphExtract="handleNodeExtractUpdate"
                   />
@@ -282,7 +282,7 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
         pathPrefix: ''
       }
     },
-    extractConfig: {
+    nodeExtractConfig: {
       enabled: false,
       text: '',
       tags: [] as string[],
@@ -367,7 +367,7 @@ const loadKBData = async () => {
           pathPrefix: kb.cos_config?.path_prefix || ''
         }
       },
-      extractConfig: {
+      nodeExtractConfig: {
         enabled: kb.extract_config?.enabled || false,
         text: kb.extract_config?.text || '',
         tags: kb.extract_config?.tags || [],
@@ -408,7 +408,7 @@ const handleMultimodalUpdate = (config: any) => {
 
 const handleNodeExtractUpdate = (config: any) => {
   if (formData.value) {
-    formData.value.extractConfig = { ...config }
+    formData.value.nodeExtractConfig = { ...config }
   }
 }
 
@@ -504,13 +504,13 @@ const buildSubmitData = () => {
   }
 
   // 添加知识图谱配置
-  if (formData.value.extractConfig.enabled) {
+  if (formData.value.nodeExtractConfig.enabled) {
     data.extract_config = {
       enabled: true,
-      text: formData.value.extractConfig.text,
-      tags: formData.value.extractConfig.tags,
-      nodes: formData.value.extractConfig.nodes,
-      relations: formData.value.extractConfig.relations
+      text: formData.value.nodeExtractConfig.text,
+      tags: formData.value.nodeExtractConfig.tags,
+      nodes: formData.value.nodeExtractConfig.nodes,
+      relations: formData.value.nodeExtractConfig.relations
     }
   }
 
