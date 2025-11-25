@@ -885,18 +885,30 @@ func (e *elasticsearchRepository) querySourceBatch(ctx context.Context,
 ) ([]interface{}, error) {
 	log := logger.GetLogger(ctx)
 
-	// Build query request
-	filter := e.getBaseConds(retrieveParams)
-	query := fmt.Sprintf(`{
-		"query": %s,
-		"from": %d,
-		"size": %d
-	}`, filter, from, batchSize)
+	// Build query request safely
+	filterJSON := e.getBaseConds(retrieveParams)
+	var filter map[string]interface{}
+	if err := json.Unmarshal([]byte(filterJSON), &filter); err != nil {
+		log.Errorf("[ElasticsearchV7] Failed to parse base conditions: %v", err)
+		filter = map[string]interface{}{}
+	}
+
+	queryBody := map[string]interface{}{
+		"query": filter,
+		"from":  from,
+		"size":  batchSize,
+	}
+
+	queryBytes, err := json.Marshal(queryBody)
+	if err != nil {
+		log.Errorf("[ElasticsearchV7] Failed to marshal query body: %v", err)
+		return nil, err
+	}
 
 	// Execute query
 	response, err := e.client.Search(
 		e.client.Search.WithIndex(e.index),
-		e.client.Search.WithBody(strings.NewReader(query)),
+		e.client.Search.WithBody(strings.NewReader(string(queryBytes))),
 		e.client.Search.WithContext(ctx),
 	)
 	if err != nil {

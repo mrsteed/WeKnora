@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -17,14 +20,27 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
-// JWT secret key - in production this should be from environment variable
+var (
+	jwtSecretOnce sync.Once
+	jwtSecret     string
+)
 
+// getJwtSecret retrieves the JWT secret from the environment, falling back to a securely generated random secret.
 func getJwtSecret() string {
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret != "" {
-		return jwtSecret
-	}
-	return "your-secret-key"
+	jwtSecretOnce.Do(func() {
+		if envSecret := strings.TrimSpace(os.Getenv("JWT_SECRET")); envSecret != "" {
+			jwtSecret = envSecret
+			return
+		}
+
+		randomBytes := make([]byte, 32)
+		if _, err := rand.Read(randomBytes); err != nil {
+			panic(fmt.Sprintf("failed to generate JWT secret: %v", err))
+		}
+		jwtSecret = base64.StdEncoding.EncodeToString(randomBytes)
+	})
+
+	return jwtSecret
 }
 
 // userService implements the UserService interface
