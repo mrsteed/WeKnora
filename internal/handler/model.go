@@ -110,7 +110,7 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Model created successfully, ID: %s, Name: %s", model.ID, model.Name)
+	logger.Infof(ctx, "Model created successfully, ID: %s, Name: %s", secutils.SanitizeForLog(model.ID), secutils.SanitizeForLog(model.Name))
 
 	// Hide sensitive information for builtin models (though newly created models are unlikely to be builtin)
 	responseModel := hideSensitiveInfo(model)
@@ -138,11 +138,11 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving model, ID: %s", id)
+	logger.Infof(ctx, "Retrieving model, ID: %s", secutils.SanitizeForLog(id))
 	model, err := h.service.GetModelByID(ctx, id)
 	if err != nil {
 		if err == service.ErrModelNotFound {
-			logger.Warnf(ctx, "Model not found, ID: %s", id)
+			logger.Warnf(ctx, "Model not found, ID: %s", secutils.SanitizeForLog(id))
 			c.Error(errors.NewNotFoundError("Model not found"))
 			return
 		}
@@ -151,12 +151,12 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieved model successfully, ID: %s, Name: %s", model.ID, model.Name)
+	logger.Infof(ctx, "Retrieved model successfully, ID: %s, Name: %s", secutils.SanitizeForLog(model.ID), secutils.SanitizeForLog(model.Name))
 
 	// Hide sensitive information for builtin models
 	responseModel := hideSensitiveInfo(model)
 	if model.IsBuiltin {
-		logger.Infof(ctx, "Builtin model detected, hiding sensitive information for model: %s", model.ID)
+		logger.Infof(ctx, "Builtin model detected, hiding sensitive information for model: %s", secutils.SanitizeForLog(model.ID))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -196,7 +196,7 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 	for i, model := range models {
 		responseModels[i] = hideSensitiveInfo(model)
 		if model.IsBuiltin {
-			logger.Infof(ctx, "Builtin model detected in list, hiding sensitive information for model: %s", model.ID)
+			logger.Infof(ctx, "Builtin model detected in list, hiding sensitive information for model: %s", secutils.SanitizeForLog(model.ID))
 		}
 	}
 
@@ -240,11 +240,11 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving model information, ID: %s", id)
+	logger.Infof(ctx, "Retrieving model information, ID: %s", secutils.SanitizeForLog(id))
 	model, err := h.service.GetModelByID(ctx, id)
 	if err != nil {
 		if err == service.ErrModelNotFound {
-			logger.Warnf(ctx, "Model not found, ID: %s", id)
+			logger.Warnf(ctx, "Model not found, ID: %s", secutils.SanitizeForLog(id))
 			c.Error(errors.NewNotFoundError("Model not found"))
 			return
 		}
@@ -264,14 +264,14 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 	model.Source = req.Source
 	model.Type = req.Type
 
-	logger.Infof(ctx, "Updating model, ID: %s, Name: %s", id, model.Name)
+	logger.Infof(ctx, "Updating model, ID: %s, Name: %s", secutils.SanitizeForLog(id), secutils.SanitizeForLog(model.Name))
 	if err := h.service.UpdateModel(ctx, model); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
 
-	logger.Infof(ctx, "Model updated successfully, ID: %s", id)
+	logger.Infof(ctx, "Model updated successfully, ID: %s", secutils.SanitizeForLog(id))
 
 	// Hide sensitive information for builtin models (though builtin models cannot be updated)
 	responseModel := hideSensitiveInfo(model)
@@ -299,10 +299,10 @@ func (h *ModelHandler) DeleteModel(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Deleting model, ID: %s", id)
+	logger.Infof(ctx, "Deleting model, ID: %s", secutils.SanitizeForLog(id))
 	if err := h.service.DeleteModel(ctx, id); err != nil {
 		if err == service.ErrModelNotFound {
-			logger.Warnf(ctx, "Model not found, ID: %s", id)
+			logger.Warnf(ctx, "Model not found, ID: %s", secutils.SanitizeForLog(id))
 			c.Error(errors.NewNotFoundError("Model not found"))
 			return
 		}
@@ -311,7 +311,7 @@ func (h *ModelHandler) DeleteModel(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Model deleted successfully, ID: %s", id)
+	logger.Infof(ctx, "Model deleted successfully, ID: %s", secutils.SanitizeForLog(id))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Model deleted",

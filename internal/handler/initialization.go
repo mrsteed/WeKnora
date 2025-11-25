@@ -1589,18 +1589,28 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("图片文件大小不能超过10MB"))
 		return
 	}
-	logger.Infof(ctx, "Processing image: %s, size: %d bytes", header.Filename, header.Size)
+	logger.Infof(ctx, "Processing image: %s, size: %d bytes", secutils.SanitizeForLog(header.Filename), header.Size)
 
 	// 解析文档分割配置
-	chunkSizeInt64, err := strconv.ParseInt(req.ChunkSize, 10, 0)
-	chunkSize := int(chunkSizeInt64)
-	if err != nil || chunkSize < 100 || chunkSize > 10000 {
+	chunkSizeInt32, err := strconv.ParseInt(req.ChunkSize, 10, 32)
+	if err != nil {
+		logger.Error(ctx, "Failed to parse chunk size", err)
+		c.Error(errors.NewBadRequestError("Failed to parse chunk size"))
+		return
+	}
+	chunkSize := int32(chunkSizeInt32)
+	if chunkSize < 100 || chunkSize > 10000 {
 		chunkSize = 1000
 	}
 
-	chunkOverlapInt64, err := strconv.ParseInt(req.ChunkOverlap, 10, 0)
-	chunkOverlap := int(chunkOverlapInt64)
-	if err != nil || chunkOverlap < 0 || chunkOverlap >= chunkSize {
+	chunkOverlapInt32, err := strconv.ParseInt(req.ChunkOverlap, 10, 32)
+	if err != nil {
+		logger.Error(ctx, "Failed to parse chunk overlap", err)
+		c.Error(errors.NewBadRequestError("Failed to parse chunk overlap"))
+		return
+	}
+	chunkOverlap := int32(chunkOverlapInt32)
+	if chunkOverlap < 0 || chunkOverlap >= chunkSize {
 		chunkOverlap = 200
 	}
 
@@ -1660,7 +1670,7 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 func (h *InitializationHandler) testMultimodalWithDocReader(
 	ctx context.Context,
 	imageContent []byte, filename string,
-	chunkSize, chunkOverlap int, separators []string,
+	chunkSize, chunkOverlap int32, separators []string,
 	req *testMultimodalForm,
 ) (map[string]string, error) {
 	// 获取文件扩展名
@@ -1680,8 +1690,8 @@ func (h *InitializationHandler) testMultimodalWithDocReader(
 		FileName:    filename,
 		FileType:    fileExt,
 		ReadConfig: &proto.ReadConfig{
-			ChunkSize:        int32(chunkSize),
-			ChunkOverlap:     int32(chunkOverlap),
+			ChunkSize:        chunkSize,
+			ChunkOverlap:     chunkOverlap,
 			Separators:       separators,
 			EnableMultimodal: true, // 启用多模态处理
 			VlmConfig: &proto.VLMConfig{

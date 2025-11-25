@@ -105,6 +105,7 @@ func RequestID() gin.HandlerFunc {
 		if requestID == "" {
 			requestID = uuid.New().String()
 		}
+		safeRequestID := secutils.SanitizeForLog(requestID)
 		// Set request ID in header
 		c.Header("X-Request-ID", requestID)
 
@@ -113,7 +114,7 @@ func RequestID() gin.HandlerFunc {
 
 		// Set logger in context
 		requestLogger := logger.GetLogger(c)
-		requestLogger = requestLogger.WithField("request_id", requestID)
+		requestLogger = requestLogger.WithField("request_id", safeRequestID)
 		c.Set(types.LoggerContextKey.String(), requestLogger)
 
 		// Set request ID in the global context for logging
@@ -154,9 +155,13 @@ func Logger() gin.HandlerFunc {
 
 		// Get request ID from context
 		requestID, exists := c.Get(types.RequestIDContextKey.String())
-		if !exists {
-			requestID = "unknown"
+		requestIDStr := "unknown"
+		if exists {
+			if idStr, ok := requestID.(string); ok && idStr != "" {
+				requestIDStr = idStr
+			}
 		}
+		safeRequestID := secutils.SanitizeForLog(requestIDStr)
 
 		// Calculate latency
 		latency := time.Since(start)
@@ -189,26 +194,26 @@ func Logger() gin.HandlerFunc {
 			}
 		}
 
-	// 构建日志消息
-	logMsg := logger.GetLogger(c)
-	logMsg = logMsg.WithFields(map[string]interface{}{
-		"request_id":  requestID,
-		"method":      method,
-		"path":        secutils.SanitizeForLog(path),
-		"status_code": statusCode,
-		"size":        c.Writer.Size(),
-		"latency":     latency.String(),
-		"client_ip":   secutils.SanitizeForLog(clientIP),
-	})
+		// 构建日志消息
+		logMsg := logger.GetLogger(c)
+		logMsg = logMsg.WithFields(map[string]interface{}{
+			"request_id":  safeRequestID,
+			"method":      method,
+			"path":        secutils.SanitizeForLog(path),
+			"status_code": statusCode,
+			"size":        c.Writer.Size(),
+			"latency":     latency.String(),
+			"client_ip":   secutils.SanitizeForLog(clientIP),
+		})
 
 		// 添加请求体（如果有）
 		if requestBody != "" {
-			logMsg = logMsg.WithField("request_body", requestBody)
+			logMsg = logMsg.WithField("request_body", secutils.SanitizeForLog(requestBody))
 		}
 
 		// 添加响应体（如果有）
 		if responseBodyStr != "" {
-			logMsg = logMsg.WithField("response_body", responseBodyStr)
+			logMsg = logMsg.WithField("response_body", secutils.SanitizeForLog(responseBodyStr))
 		}
 		logMsg.Info()
 	}

@@ -126,7 +126,7 @@ func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(c *gin.Context) (*typ
 			ctx,
 			"Tenant has no permission to access this knowledge base, knowledge base ID: %s, "+
 				"request tenant ID: %d, knowledge base tenant ID: %d",
-			id, tenantID.(uint), kb.TenantID,
+			id, tenantID.(uint64), kb.TenantID,
 		)
 		return nil, id, errors.NewForbiddenError("No permission to operate")
 	}

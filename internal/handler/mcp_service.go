@@ -44,7 +44,7 @@ func (h *MCPServiceHandler) CreateMCPService(c *gin.Context) {
 	service.TenantID = tenantID
 
 	if err := h.mcpServiceService.CreateMCPService(ctx, &service); err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_name": service.Name})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_name": secutils.SanitizeForLog(service.Name)})
 		c.Error(errors.NewInternalServerError("Failed to create MCP service: " + err.Error()))
 		return
 	}

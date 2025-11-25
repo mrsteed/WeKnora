@@ -13,6 +13,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 // TenantHandler implements HTTP request handlers for tenant management
@@ -54,7 +55,7 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Creating tenant, name: %s", tenantData.Name)
+	logger.Infof(ctx, "Creating tenant, name: %s", secutils.SanitizeForLog(tenantData.Name))
 
 	createdTenant, err := h.service.CreateTenant(ctx, &tenantData)
 	if err != nil {
@@ -69,7 +70,7 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Tenant created successfully, ID: %d, name: %s", createdTenant.ID, createdTenant.Name)
+	logger.Infof(ctx, "Tenant created successfully, ID: %d, name: %s", createdTenant.ID, secutils.SanitizeForLog(createdTenant.Name))
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
 		"data":    createdTenant,
@@ -86,7 +87,7 @@ func (h *TenantHandler) GetTenant(c *gin.Context) {
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		logger.Errorf(ctx, "Invalid tenant ID: %s", c.Param("id"))
+		logger.Errorf(ctx, "Invalid tenant ID: %s", secutils.SanitizeForLog(c.Param("id")))
 		c.Error(errors.NewBadRequestError("Invalid tenant ID"))
 		return
 	}
@@ -122,7 +123,7 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		logger.Errorf(ctx, "Invalid tenant ID: %s", c.Param("id"))
+		logger.Errorf(ctx, "Invalid tenant ID: %s", secutils.SanitizeForLog(c.Param("id")))
 		c.Error(errors.NewBadRequestError("Invalid tenant ID"))
 		return
 	}
@@ -134,7 +135,7 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Updating tenant, ID: %d, Name: %s", id, tenantData.Name)
+	logger.Infof(ctx, "Updating tenant, ID: %d, Name: %s", id, secutils.SanitizeForLog(tenantData.Name))
 
 	tenantData.ID = id
 	updatedTenant, err := h.service.UpdateTenant(ctx, &tenantData)
@@ -150,7 +151,7 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Tenant updated successfully, ID: %d, Name: %s", updatedTenant.ID, updatedTenant.Name)
+	logger.Infof(ctx, "Tenant updated successfully, ID: %d, Name: %s", updatedTenant.ID, secutils.SanitizeForLog(updatedTenant.Name))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    updatedTenant,
@@ -169,7 +170,7 @@ func (h *TenantHandler) DeleteTenant(c *gin.Context) {
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		logger.Errorf(ctx, "Invalid tenant ID: %s", c.Param("id"))
+		logger.Errorf(ctx, "Invalid tenant ID: %s", secutils.SanitizeForLog(c.Param("id")))
 		c.Error(errors.NewBadRequestError("Invalid tenant ID"))
 		return
 	}

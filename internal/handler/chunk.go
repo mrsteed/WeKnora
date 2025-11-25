@@ -33,6 +33,7 @@ func (h *ChunkHandler) GetChunkByIDOnly(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("Chunk ID cannot be empty"))
 		return
 	}
+	safeChunkID := secutils.SanitizeForLog(chunkID)
 
 	// Get tenant ID from context
 	tenantID, exists := c.Get(types.TenantIDContextKey.String())
@@ -42,13 +43,13 @@ func (h *ChunkHandler) GetChunkByIDOnly(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving chunk by ID, chunk ID: %s, tenant ID: %d", secutils.SanitizeForLog(chunkID), tenantID)
+	logger.Infof(ctx, "Retrieving chunk by ID, chunk ID: %s, tenant ID: %d", safeChunkID, tenantID)
 
 	// Get chunk by ID
 	chunk, err := h.service.GetChunkByID(ctx, chunkID)
 	if err != nil {
 		if err == service.ErrChunkNotFound {
-			logger.Warnf(ctx, "Chunk not found, chunk ID: %s", chunkID)
+			logger.Warnf(ctx, "Chunk not found, chunk ID: %s", safeChunkID)
 			c.Error(errors.NewNotFoundError("Chunk not found"))
 			return
 		}
@@ -62,7 +63,7 @@ func (h *ChunkHandler) GetChunkByIDOnly(c *gin.Context) {
 		logger.Warnf(
 			ctx,
 			"Tenant has no permission to access chunk, chunk ID: %s, req tenant: %d, chunk tenant: %d",
-			chunkID, tenantID.(uint), chunk.TenantID,
+			safeChunkID, tenantID.(uint64), chunk.TenantID,
 		)
 		c.Error(errors.NewForbiddenError("No permission to access this chunk"))
 		return
@@ -147,6 +148,7 @@ func (h *ChunkHandler) validateAndGetChunk(c *gin.Context) (*types.Chunk, string
 		logger.Error(ctx, "Knowledge ID is empty")
 		return nil, "", errors.NewBadRequestError("Knowledge ID cannot be empty")
 	}
+	safeKnowledgeID := secutils.SanitizeForLog(knowledgeID)
 
 	// Validate chunk ID
 	id := c.Param("id")
@@ -154,6 +156,7 @@ func (h *ChunkHandler) validateAndGetChunk(c *gin.Context) (*types.Chunk, string
 		logger.Error(ctx, "Chunk ID is empty")
 		return nil, knowledgeID, errors.NewBadRequestError("Chunk ID cannot be empty")
 	}
+	safeChunkID := secutils.SanitizeForLog(id)
 
 	// Get tenant ID from context
 	tenantID, exists := c.Get(types.TenantIDContextKey.String())
@@ -162,13 +165,13 @@ func (h *ChunkHandler) validateAndGetChunk(c *gin.Context) (*types.Chunk, string
 		return nil, knowledgeID, errors.NewUnauthorizedError("Unauthorized")
 	}
 
-	logger.Infof(ctx, "Retrieving knowledge chunk information, knowledge ID: %s, chunk ID: %s", knowledgeID, id)
+	logger.Infof(ctx, "Retrieving knowledge chunk information, knowledge ID: %s, chunk ID: %s", safeKnowledgeID, safeChunkID)
 
 	// Get existing chunk
 	chunk, err := h.service.GetChunkByID(ctx, id)
 	if err != nil {
 		if err == service.ErrChunkNotFound {
-			logger.Warnf(ctx, "Chunk not found, knowledge ID: %s, chunk ID: %s", knowledgeID, id)
+			logger.Warnf(ctx, "Chunk not found, knowledge ID: %s, chunk ID: %s", safeKnowledgeID, safeChunkID)
 			return nil, knowledgeID, errors.NewNotFoundError("Chunk not found")
 		}
 		logger.ErrorWithFields(ctx, err, nil)
@@ -180,7 +183,7 @@ func (h *ChunkHandler) validateAndGetChunk(c *gin.Context) (*types.Chunk, string
 		logger.Warnf(
 			ctx,
 			"Tenant has no permission to access chunk, knowledge ID: %s, chunk ID: %s, req tenant: %d, chunk tenant: %d",
-			knowledgeID, id, tenantID, chunk.TenantID,
+			safeKnowledgeID, safeChunkID, tenantID, chunk.TenantID,
 		)
 		return nil, knowledgeID, errors.NewForbiddenError("No permission to access this chunk")
 	}
@@ -219,7 +222,8 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge chunk updated successfully, knowledge ID: %s, chunk ID: %s", knowledgeID, chunk.ID)
+	logger.Infof(ctx, "Knowledge chunk updated successfully, knowledge ID: %s, chunk ID: %s",
+		secutils.SanitizeForLog(knowledgeID), secutils.SanitizeForLog(chunk.ID))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    chunk,

@@ -140,8 +140,8 @@ func Auth(tenantService interfaces.TenantService, userService interfaces.UserSer
 }
 
 // GetTenantIDFromContext helper function to get tenant ID from context
-func GetTenantIDFromContext(ctx context.Context) (uint, error) {
-	tenantID, ok := ctx.Value("tenantID").(uint)
+func GetTenantIDFromContext(ctx context.Context) (uint64, error) {
+	tenantID, ok := ctx.Value("tenantID").(uint64)
 	if !ok {
 		return 0, errors.New("tenant ID not found in context")
 	}

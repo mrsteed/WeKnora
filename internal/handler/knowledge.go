@@ -70,7 +70,7 @@ func (h *KnowledgeHandler) handleDuplicateKnowledgeError(c *gin.Context,
 ) bool {
 	if dupErr, ok := err.(*types.DuplicateKnowledgeError); ok {
 		ctx := c.Request.Context()
-		logger.Warnf(ctx, "Detected duplicate %s: %s", duplicateType, dupErr.Error())
+		logger.Warnf(ctx, "Detected duplicate %s: %s", duplicateType, secutils.SanitizeForLog(dupErr.Error()))
 		c.JSON(http.StatusConflict, gin.H{
 			"success": false,
 			"message": dupErr.Error(),
@@ -107,11 +107,11 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 	displayFileName := file.Filename
 	if customFileName != "" {
 		displayFileName = customFileName
-		logger.Infof(ctx, "Using custom filename: %s (original: %s)", customFileName, file.Filename)
+		logger.Infof(ctx, "Using custom filename: %s (original: %s)", secutils.SanitizeForLog(customFileName), secutils.SanitizeForLog(file.Filename))
 	}
 
-	logger.Infof(ctx, "File upload successful, filename: %s, size: %.2f KB", displayFileName, float64(file.Size)/1024)
-	logger.Infof(ctx, "Creating knowledge, knowledge base ID: %s, filename: %s", kbID, displayFileName)
+	logger.Infof(ctx, "File upload successful, filename: %s, size: %.2f KB", secutils.SanitizeForLog(displayFileName), float64(file.Size)/1024)
+	logger.Infof(ctx, "Creating knowledge, knowledge base ID: %s, filename: %s", secutils.SanitizeForLog(kbID), secutils.SanitizeForLog(displayFileName))
 
 	// Parse metadata if provided
 	var metadata map[string]string
@@ -122,7 +122,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 			c.Error(errors.NewBadRequestError("Invalid metadata format").WithDetails(err.Error()))
 			return
 		}
-		logger.Infof(ctx, "Received file metadata: %v", metadata)
+		logger.Infof(ctx, "Received file metadata: %s", secutils.SanitizeForLog(fmt.Sprintf("%v", metadata)))
 	}
 
 	enableMultimodelForm := c.PostForm("enable_multimodel")
@@ -153,7 +153,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge created successfully, ID: %s, title: %s", knowledge.ID, knowledge.Title)
+	logger.Infof(ctx, "Knowledge created successfully, ID: %s, title: %s", secutils.SanitizeForLog(knowledge.ID), secutils.SanitizeForLog(knowledge.Title))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    knowledge,
@@ -198,7 +198,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge created successfully from URL, ID: %s, title: %s", knowledge.ID, knowledge.Title)
+	logger.Infof(ctx, "Knowledge created successfully from URL, ID: %s, title: %s", secutils.SanitizeForLog(knowledge.ID), secutils.SanitizeForLog(knowledge.Title))
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
 		"data":    knowledge,
@@ -236,7 +236,7 @@ func (h *KnowledgeHandler) CreateManualKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Manual knowledge created successfully, knowledge ID: %s", knowledge.ID)
+	logger.Infof(ctx, "Manual knowledge created successfully, knowledge ID: %s", secutils.SanitizeForLog(knowledge.ID))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    knowledge,
@@ -257,7 +257,7 @@ func (h *KnowledgeHandler) GetKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving knowledge, ID: %s", id)
+	logger.Infof(ctx, "Retrieving knowledge, ID: %s", secutils.SanitizeForLog(id))
 	knowledge, err := h.kgService.GetKnowledgeByID(ctx, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -265,7 +265,7 @@ func (h *KnowledgeHandler) GetKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge retrieved successfully, ID: %s, title: %s", knowledge.ID, knowledge.Title)
+	logger.Infof(ctx, "Knowledge retrieved successfully, ID: %s, title: %s", secutils.SanitizeForLog(knowledge.ID), secutils.SanitizeForLog(knowledge.Title))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    knowledge,
@@ -297,7 +297,7 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 	tagID := c.Query("tag_id")
 
 	logger.Infof(ctx, "Retrieving knowledge list under knowledge base, knowledge base ID: %s, tag_id: %s, page: %d, page size: %d",
-		kbID, tagID, pagination.Page, pagination.PageSize)
+		secutils.SanitizeForLog(kbID), secutils.SanitizeForLog(tagID), pagination.Page, pagination.PageSize)
 
 	// Retrieve paginated knowledge entries
 	result, err := h.kgService.ListPagedKnowledgeByKnowledgeBaseID(ctx, kbID, &pagination, tagID)
@@ -307,7 +307,7 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge list retrieved successfully, knowledge base ID: %s, total: %d", kbID, result.Total)
+	logger.Infof(ctx, "Knowledge list retrieved successfully, knowledge base ID: %s, total: %d", secutils.SanitizeForLog(kbID), result.Total)
 	c.JSON(http.StatusOK, gin.H{
 		"success":   true,
 		"data":      result.Data,
@@ -331,7 +331,7 @@ func (h *KnowledgeHandler) DeleteKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Deleting knowledge, ID: %s", id)
+	logger.Infof(ctx, "Deleting knowledge, ID: %s", secutils.SanitizeForLog(id))
 	err := h.kgService.DeleteKnowledge(ctx, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -339,7 +339,7 @@ func (h *KnowledgeHandler) DeleteKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge deleted successfully, ID: %s", id)
+	logger.Infof(ctx, "Knowledge deleted successfully, ID: %s", secutils.SanitizeForLog(id))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Deleted successfully",
@@ -360,7 +360,7 @@ func (h *KnowledgeHandler) DownloadKnowledgeFile(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving knowledge file, ID: %s", id)
+	logger.Infof(ctx, "Retrieving knowledge file, ID: %s", secutils.SanitizeForLog(id))
 
 	// Get file content and filename
 	file, filename, err := h.kgService.GetKnowledgeFile(ctx, id)
@@ -371,7 +371,7 @@ func (h *KnowledgeHandler) DownloadKnowledgeFile(c *gin.Context) {
 	}
 	defer file.Close()
 
-	logger.Infof(ctx, "Knowledge file retrieved successfully, ID: %s, filename: %s", id, filename)
+	logger.Infof(ctx, "Knowledge file retrieved successfully, ID: %s, filename: %s", secutils.SanitizeForLog(id), secutils.SanitizeForLog(filename))
 
 	// Set response headers for file download
 	c.Header("Content-Description", "File Transfer")
@@ -472,7 +472,7 @@ func (h *KnowledgeHandler) UpdateKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge updated successfully, knowledge ID: %s", knowledge.ID)
+	logger.Infof(ctx, "Knowledge updated successfully, knowledge ID: %s", secutils.SanitizeForLog(knowledge.ID))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Knowledge chunk updated successfully",
@@ -511,7 +511,7 @@ func (h *KnowledgeHandler) UpdateManualKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Manual knowledge updated successfully, knowledge ID: %s", knowledge.ID)
+	logger.Infof(ctx, "Manual knowledge updated successfully, knowledge ID: %s", secutils.SanitizeForLog(knowledge.ID))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    knowledge,
@@ -571,7 +571,7 @@ func (h *KnowledgeHandler) UpdateImageInfo(c *gin.Context) {
 	}
 
 	// Update chunk properties
-	logger.Infof(ctx, "Updating knowledge chunk, knowledge ID: %s, chunk ID: %s", id, chunkID)
+	logger.Infof(ctx, "Updating knowledge chunk, knowledge ID: %s, chunk ID: %s", secutils.SanitizeForLog(id), secutils.SanitizeForLog(chunkID))
 	err := h.kgService.UpdateImageInfo(ctx, id, chunkID, request.ImageInfo)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -579,7 +579,7 @@ func (h *KnowledgeHandler) UpdateImageInfo(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge chunk updated successfully, knowledge ID: %s, chunk ID: %s", id, chunkID)
+	logger.Infof(ctx, "Knowledge chunk updated successfully, knowledge ID: %s, chunk ID: %s", secutils.SanitizeForLog(id), secutils.SanitizeForLog(chunkID))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Knowledge chunk image updated successfully",

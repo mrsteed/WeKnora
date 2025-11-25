@@ -7,6 +7,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -34,7 +35,7 @@ func (e *EvaluationHandler) Evaluation(c *gin.Context) {
 
 	logger.Info(ctx, "Start processing evaluation request")
 
-	var request *EvaluationRequest
+	var request EvaluationRequest
 	if err := c.ShouldBind(&request); err != nil {
 		logger.Error(ctx, "Failed to parse request parameters", err)
 		c.Error(errors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
@@ -49,13 +50,12 @@ func (e *EvaluationHandler) Evaluation(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Executing evaluation, tenant: %v, dataset: %s, knowledge_base: %s, chat: %s, rerank: %s",
-		tenantID, request.DatasetID, request.KnowledgeBaseID, request.ChatModelID, request.RerankModelID)
-
-	if request == nil {
-		logger.Error(ctx, "Request is nil")
-		c.Error(errors.NewBadRequestError("Invalid request parameters"))
-		return
-	}
+		tenantID,
+		secutils.SanitizeForLog(request.DatasetID),
+		secutils.SanitizeForLog(request.KnowledgeBaseID),
+		secutils.SanitizeForLog(request.ChatModelID),
+		secutils.SanitizeForLog(request.RerankModelID),
+	)
 
 	task, err := e.evaluationService.Evaluation(ctx,
 		request.DatasetID,

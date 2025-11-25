@@ -46,8 +46,8 @@ func (h *Handler) SearchKnowledge(c *gin.Context) {
 	logger.Infof(
 		ctx,
 		"Knowledge search request, knowledge base ID: %s, query: %s",
-		request.KnowledgeBaseID,
-		request.Query,
+		secutils.SanitizeForLog(request.KnowledgeBaseID),
+		secutils.SanitizeForLog(request.Query),
 	)
 
 	// Directly call knowledge retrieval service without LLM summarization
@@ -80,6 +80,7 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(errors.ErrInvalidSessionID.Error()))
 		return
 	}
+	safeSessionID := secutils.SanitizeForLog(sessionID)
 
 	// Parse request body
 	var request CreateKnowledgeQARequest
@@ -104,12 +105,12 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge QA request, session ID: %s, query: %s", secutils.SanitizeForLog(sessionID), secutils.SanitizeForLog(request.Query))
+	logger.Infof(ctx, "Knowledge QA request, session ID: %s, query: %s", safeSessionID, secutils.SanitizeForLog(request.Query))
 
 	// Get session to prepare knowledge base IDs
 	session, err := h.sessionService.GetSession(ctx, sessionID)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get session, session ID: %s, error: %v", secutils.SanitizeForLog(sessionID), err)
+		logger.Errorf(ctx, "Failed to get session, session ID: %s, error: %v", safeSessionID, err)
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
@@ -137,6 +138,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(errors.ErrInvalidSessionID.Error()))
 		return
 	}
+	safeSessionID := secutils.SanitizeForLog(sessionID)
 
 	// Parse request body
 	var request CreateKnowledgeQARequest
@@ -145,7 +147,11 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
-	logger.Infof(ctx, "Agent QA request, request: %+v", request)
+	if requestJSON, err := json.Marshal(request); err == nil {
+		logger.Infof(ctx, "Agent QA request, request: %s", secutils.SanitizeForLog(string(requestJSON)))
+	} else {
+		logger.Warnf(ctx, "Agent QA request received but failed to marshal for logging: %s", secutils.SanitizeForLog(err.Error()))
+	}
 
 	// Validate query content
 	if request.Query == "" {
@@ -169,7 +175,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
-	logger.Infof(ctx, "Before AgentQA, Session: %s", string(sessionJSON))
+	logger.Infof(ctx, "Before AgentQA, Session: %s", secutils.SanitizeForLog(string(sessionJSON)))
 
 	// Create assistant message
 	assistantMessage := &types.Message{
@@ -210,7 +216,10 @@ func (h *Handler) AgentQA(c *gin.Context) {
 			}
 		}
 		if knowledgeBasesChanged {
-			logger.Infof(ctx, "Knowledge bases changed from %v to %v", session.AgentConfig.KnowledgeBases, request.KnowledgeBaseIDs)
+			logger.Infof(ctx, "Knowledge bases changed from %s to %s",
+				secutils.SanitizeForLog(fmt.Sprintf("%v", session.AgentConfig.KnowledgeBases)),
+				secutils.SanitizeForLog(fmt.Sprintf("%v", request.KnowledgeBaseIDs)),
+			)
 		}
 	}
 
@@ -239,14 +248,14 @@ func (h *Handler) AgentQA(c *gin.Context) {
 
 	// If configuration changed, clear context and update session
 	if configChanged {
-		logger.Warnf(ctx, "Configuration changed, clearing context for session: %s", sessionID)
+		logger.Warnf(ctx, "Configuration changed, clearing context for session: %s", safeSessionID)
 		// Clear the LLM context to prevent contamination
 		if err := h.sessionService.ClearContext(ctx, sessionID); err != nil {
-			logger.Errorf(ctx, "Failed to clear context for session %s: %v", sessionID, err)
+			logger.Errorf(ctx, "Failed to clear context for session %s: %v", safeSessionID, err)
 			// Continue anyway - this is not a fatal error
 		}
 		if err := h.sessionService.DeleteWebSearchTempKBState(ctx, sessionID); err != nil {
-			logger.Errorf(ctx, "Failed to delete temp knowledge base for session %s: %v", sessionID, err)
+			logger.Errorf(ctx, "Failed to delete temp knowledge base for session %s: %v", safeSessionID, err)
 			// Continue anyway - this is not a fatal error
 		}
 		session.AgentConfig.KnowledgeBases = request.KnowledgeBaseIDs
@@ -255,16 +264,16 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		session.SummaryModelID = summaryModelID
 		// Persist the session changes
 		if err := h.sessionService.UpdateSession(ctx, session); err != nil {
-			logger.Errorf(ctx, "Failed to update session %s: %v", sessionID, err)
+			logger.Errorf(ctx, "Failed to update session %s: %v", safeSessionID, err)
 			c.Error(errors.NewInternalServerError("Failed to update session configuration"))
 			return
 		}
-		logger.Infof(ctx, "Session configuration updated successfully for session: %s", sessionID)
+		logger.Infof(ctx, "Session configuration updated successfully for session: %s", safeSessionID)
 	}
 
 	// If Agent mode is disabled, delegate to KnowledgeQA
 	if !request.AgentEnabled {
-		logger.Infof(ctx, "Agent mode disabled, delegating to KnowledgeQA for session: %s", sessionID)
+		logger.Infof(ctx, "Agent mode disabled, delegating to KnowledgeQA for session: %s", safeSessionID)
 
 		// Use knowledge bases from request or session config
 		knowledgeBaseIDs := request.KnowledgeBaseIDs
@@ -285,7 +294,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 			return
 		}
 
-		logger.Infof(ctx, "Delegating to KnowledgeQA with knowledge bases: %v", knowledgeBaseIDs)
+		logger.Infof(ctx, "Delegating to KnowledgeQA with knowledge bases: %s", secutils.SanitizeForLog(fmt.Sprintf("%v", knowledgeBaseIDs)))
 
 		// Use shared function to handle KnowledgeQA request (no title generation for AgentQA fallback)
 		h.handleKnowledgeQARequest(ctx, c, session, request.Query, knowledgeBaseIDs, assistantMessage, false, request.SummaryModelID, request.WebSearchEnabled)
@@ -325,7 +334,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 	}
 	assistantMessage = assistantMessagePtr
 
-	logger.Infof(ctx, "Calling agent QA service, session ID: %s", sessionID)
+	logger.Infof(ctx, "Calling agent QA service, session ID: %s", safeSessionID)
 
 	// Write initial agent_query event to StreamManager
 	h.writeAgentQueryEvent(ctx, sessionID, assistantMessage.ID)
@@ -338,7 +347,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 
 	// Start async title generation if session has no title
 	if session.Title == "" {
-		logger.Infof(ctx, "Session has no title, starting async title generation, session ID: %s", sessionID)
+		logger.Infof(ctx, "Session has no title, starting async title generation, session ID: %s", safeSessionID)
 		h.sessionService.GenerateTitleAsync(asyncCtx, session, request.Query, eventBus)
 	}
 
@@ -353,11 +362,11 @@ func (h *Handler) AgentQA(c *gin.Context) {
 				logger.ErrorWithFields(asyncCtx,
 					errors.NewInternalServerError(fmt.Sprintf("Agent QA service panicked: %v\n%s", r, string(buf))),
 					map[string]interface{}{
-						"session_id": sessionID,
+						"session_id": safeSessionID,
 					})
 			}
 			h.completeAssistantMessage(asyncCtx, assistantMessage)
-			logger.Infof(asyncCtx, "Agent QA service completed for session: %s", sessionID)
+			logger.Infof(asyncCtx, "Agent QA service completed for session: %s", safeSessionID)
 		}()
 		err := h.sessionService.AgentQA(asyncCtx, session, request.Query, assistantMessage.ID, eventBus)
 		if err != nil {
@@ -394,6 +403,7 @@ func (h *Handler) handleKnowledgeQARequest(
 	webSearchEnabled bool, // Whether web search is enabled
 ) {
 	sessionID := session.ID
+	safeSessionID := secutils.SanitizeForLog(sessionID)
 	requestID := getRequestID(c)
 
 	// Create user message
@@ -415,7 +425,7 @@ func (h *Handler) handleKnowledgeQARequest(
 		return
 	}
 
-	logger.Infof(ctx, "Using knowledge bases: %v", knowledgeBaseIDs)
+	logger.Infof(ctx, "Using knowledge bases: %s", secutils.SanitizeForLog(fmt.Sprintf("%v", knowledgeBaseIDs)))
 
 	// Set headers for SSE
 	setSSEHeaders(c)
@@ -434,7 +444,7 @@ func (h *Handler) handleKnowledgeQARequest(
 
 	// Generate title if needed
 	if generateTitle && session.Title == "" {
-		logger.Infof(ctx, "Session has no title, starting async title generation, session ID: %s", sessionID)
+		logger.Infof(ctx, "Session has no title, starting async title generation, session ID: %s", safeSessionID)
 		h.sessionService.GenerateTitleAsync(asyncCtx, session, query, eventBus)
 	}
 
@@ -445,7 +455,7 @@ func (h *Handler) handleKnowledgeQARequest(
 		}
 		assistantMessage.Content += data.Content
 		if data.Done {
-			logger.Infof(asyncCtx, "Knowledge QA service completed for session: %s", sessionID)
+			logger.Infof(asyncCtx, "Knowledge QA service completed for session: %s", safeSessionID)
 			h.completeAssistantMessage(asyncCtx, assistantMessage)
 			// Emit completion event when stream finishes
 			if err := eventBus.Emit(asyncCtx, event.Event{
