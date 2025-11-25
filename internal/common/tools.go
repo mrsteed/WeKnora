@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/logger"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 // ToInterfaceSlice converts a slice of strings to a slice of empty interfaces.
@@ -174,7 +175,7 @@ func PipelineLog(stage, action string, fields map[string]interface{}) string {
 			builder.WriteString(" ")
 			builder.WriteString(key)
 			builder.WriteString("=")
-			builder.WriteString(formatPipelineLogValue(fields[key]))
+			builder.WriteString(secutils.SanitizeForLog(formatPipelineLogValue(fields[key])))
 		}
 	}
 	return builder.String()

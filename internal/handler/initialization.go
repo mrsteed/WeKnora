@@ -1589,7 +1589,7 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("图片文件大小不能超过10MB"))
 		return
 	}
-	logger.Infof(ctx, "Processing image: %s, size: %d bytes", secutils.SanitizeForLog(header.Filename), header.Size)
+	logger.Infof(ctx, "Processing image: %s", secutils.SanitizeForLog(header.Filename))
 
 	// 解析文档分割配置
 	chunkSizeInt32, err := strconv.ParseInt(req.ChunkSize, 10, 32)

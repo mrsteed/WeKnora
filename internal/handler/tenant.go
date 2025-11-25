@@ -388,7 +388,7 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 // - "web-search-config": returns masked tenant.WebSearchConfig (API key masked)
 func (h *TenantHandler) GetTenantKV(c *gin.Context) {
 	ctx := c.Request.Context()
-	key := c.Param("key")
+	key := secutils.SanitizeForLog(c.Param("key"))
 
 	switch key {
 	case "agent-config":
@@ -411,7 +411,7 @@ func (h *TenantHandler) GetTenantKV(c *gin.Context) {
 // Body is the JSON value to set for the key.
 func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 	ctx := c.Request.Context()
-	key := c.Param("key")
+	key := secutils.SanitizeForLog(c.Param("key"))
 
 	switch key {
 	case "agent-config":

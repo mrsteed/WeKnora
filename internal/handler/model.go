@@ -131,18 +131,18 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 
 	logger.Info(ctx, "Start retrieving model")
 
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Model ID is empty")
 		c.Error(errors.NewBadRequestError("Model ID cannot be empty"))
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving model, ID: %s", secutils.SanitizeForLog(id))
+	logger.Infof(ctx, "Retrieving model, ID: %s", id)
 	model, err := h.service.GetModelByID(ctx, id)
 	if err != nil {
 		if err == service.ErrModelNotFound {
-			logger.Warnf(ctx, "Model not found, ID: %s", secutils.SanitizeForLog(id))
+			logger.Warnf(ctx, "Model not found, ID: %s", id)
 			c.Error(errors.NewNotFoundError("Model not found"))
 			return
 		}
@@ -151,12 +151,12 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieved model successfully, ID: %s, Name: %s", secutils.SanitizeForLog(model.ID), secutils.SanitizeForLog(model.Name))
+	logger.Infof(ctx, "Retrieved model successfully, ID: %s, Name: %s", model.ID, model.Name)
 
 	// Hide sensitive information for builtin models
 	responseModel := hideSensitiveInfo(model)
 	if model.IsBuiltin {
-		logger.Infof(ctx, "Builtin model detected, hiding sensitive information for model: %s", secutils.SanitizeForLog(model.ID))
+		logger.Infof(ctx, "Builtin model detected, hiding sensitive information for model: %s", model.ID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -181,7 +181,6 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving model list, Tenant ID: %d", tenantID)
 	models, err := h.service.ListModels(ctx)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -196,7 +195,7 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 	for i, model := range models {
 		responseModels[i] = hideSensitiveInfo(model)
 		if model.IsBuiltin {
-			logger.Infof(ctx, "Builtin model detected in list, hiding sensitive information for model: %s", secutils.SanitizeForLog(model.ID))
+			logger.Infof(ctx, "Builtin model detected in list, hiding sensitive information for model: %s", model.ID)
 		}
 	}
 
@@ -226,7 +225,7 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 
 	logger.Info(ctx, "Start updating model")
 
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Model ID is empty")
 		c.Error(errors.NewBadRequestError("Model ID cannot be empty"))
@@ -240,11 +239,11 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving model information, ID: %s", secutils.SanitizeForLog(id))
+	logger.Infof(ctx, "Retrieving model information, ID: %s", id)
 	model, err := h.service.GetModelByID(ctx, id)
 	if err != nil {
 		if err == service.ErrModelNotFound {
-			logger.Warnf(ctx, "Model not found, ID: %s", secutils.SanitizeForLog(id))
+			logger.Warnf(ctx, "Model not found, ID: %s", id)
 			c.Error(errors.NewNotFoundError("Model not found"))
 			return
 		}
@@ -264,14 +263,14 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 	model.Source = req.Source
 	model.Type = req.Type
 
-	logger.Infof(ctx, "Updating model, ID: %s, Name: %s", secutils.SanitizeForLog(id), secutils.SanitizeForLog(model.Name))
+	logger.Infof(ctx, "Updating model, ID: %s, Name: %s", id, model.Name)
 	if err := h.service.UpdateModel(ctx, model); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
 
-	logger.Infof(ctx, "Model updated successfully, ID: %s", secutils.SanitizeForLog(id))
+	logger.Infof(ctx, "Model updated successfully, ID: %s", id)
 
 	// Hide sensitive information for builtin models (though builtin models cannot be updated)
 	responseModel := hideSensitiveInfo(model)
@@ -292,17 +291,17 @@ func (h *ModelHandler) DeleteModel(c *gin.Context) {
 
 	logger.Info(ctx, "Start deleting model")
 
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Model ID is empty")
 		c.Error(errors.NewBadRequestError("Model ID cannot be empty"))
 		return
 	}
 
-	logger.Infof(ctx, "Deleting model, ID: %s", secutils.SanitizeForLog(id))
+	logger.Infof(ctx, "Deleting model, ID: %s", id)
 	if err := h.service.DeleteModel(ctx, id); err != nil {
 		if err == service.ErrModelNotFound {
-			logger.Warnf(ctx, "Model not found, ID: %s", secutils.SanitizeForLog(id))
+			logger.Warnf(ctx, "Model not found, ID: %s", id)
 			c.Error(errors.NewNotFoundError("Model not found"))
 			return
 		}
@@ -311,7 +310,7 @@ func (h *ModelHandler) DeleteModel(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Model deleted successfully, ID: %s", secutils.SanitizeForLog(id))
+	logger.Infof(ctx, "Model deleted successfully, ID: %s", id)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Model deleted",

@@ -3508,9 +3508,6 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 	// 检查是否需要启用多模态（对于手动内容通常不需要，但保持一致性）
 	enableMultimodel := kb.VLMConfig.Enabled && kb.StorageConfig.Provider != ""
 
-	logger.GetLogger(ctx).Infof("triggerManualProcessing split manual content size: %d, file name: %s, file type: %s, separators: %v, enable multimodal: %v",
-		len(contentBytes), fileName, fileType, kb.ChunkingConfig.Separators, enableMultimodel)
-
 	var vlmConfig *proto.VLMConfig
 	if enableMultimodel {
 		cfg, cfgErr := s.getVLMProtoConfig(ctx, kb)

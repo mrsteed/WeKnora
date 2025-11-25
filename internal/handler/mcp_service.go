@@ -84,7 +84,7 @@ func (h *MCPServiceHandler) ListMCPServices(c *gin.Context) {
 // GET /api/mcp-services/:id
 func (h *MCPServiceHandler) GetMCPService(c *gin.Context) {
 	ctx := c.Request.Context()
-	serviceID := c.Param("id")
+	serviceID := secutils.SanitizeForLog(c.Param("id"))
 
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
@@ -110,7 +110,7 @@ func (h *MCPServiceHandler) GetMCPService(c *gin.Context) {
 // PUT /api/mcp-services/:id
 func (h *MCPServiceHandler) UpdateMCPService(c *gin.Context) {
 	ctx := c.Request.Context()
-	serviceID := c.Param("id")
+	serviceID := secutils.SanitizeForLog(c.Param("id"))
 
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
@@ -227,7 +227,7 @@ func (h *MCPServiceHandler) UpdateMCPService(c *gin.Context) {
 // DELETE /api/mcp-services/:id
 func (h *MCPServiceHandler) DeleteMCPService(c *gin.Context) {
 	ctx := c.Request.Context()
-	serviceID := c.Param("id")
+	serviceID := secutils.SanitizeForLog(c.Param("id"))
 
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
@@ -253,7 +253,7 @@ func (h *MCPServiceHandler) DeleteMCPService(c *gin.Context) {
 // POST /api/mcp-services/:id/test
 func (h *MCPServiceHandler) TestMCPService(c *gin.Context) {
 	ctx := c.Request.Context()
-	serviceID := c.Param("id")
+	serviceID := secutils.SanitizeForLog(c.Param("id"))
 
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
@@ -288,7 +288,7 @@ func (h *MCPServiceHandler) TestMCPService(c *gin.Context) {
 // GET /api/mcp-services/:id/tools
 func (h *MCPServiceHandler) GetMCPServiceTools(c *gin.Context) {
 	ctx := c.Request.Context()
-	serviceID := c.Param("id")
+	serviceID := secutils.SanitizeForLog(c.Param("id"))
 
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
@@ -314,7 +314,7 @@ func (h *MCPServiceHandler) GetMCPServiceTools(c *gin.Context) {
 // GET /api/mcp-services/:id/resources
 func (h *MCPServiceHandler) GetMCPServiceResources(c *gin.Context) {
 	ctx := c.Request.Context()
-	serviceID := c.Param("id")
+	serviceID := secutils.SanitizeForLog(c.Param("id"))
 
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {

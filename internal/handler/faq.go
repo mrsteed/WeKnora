@@ -34,7 +34,7 @@ func (h *FAQHandler) ListEntries(c *gin.Context) {
 
 	tagID := c.Query("tag_id")
 
-	result, err := h.knowledgeService.ListFAQEntries(ctx, c.Param("id"), &page, tagID)
+	result, err := h.knowledgeService.ListFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), &page, tagID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)
@@ -57,7 +57,7 @@ func (h *FAQHandler) UpsertEntries(c *gin.Context) {
 		return
 	}
 
-	taskID, err := h.knowledgeService.UpsertFAQEntries(ctx, c.Param("id"), &req)
+	taskID, err := h.knowledgeService.UpsertFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), &req)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)
@@ -82,7 +82,8 @@ func (h *FAQHandler) UpdateEntry(c *gin.Context) {
 		return
 	}
 
-	if err := h.knowledgeService.UpdateFAQEntry(ctx, c.Param("id"), c.Param("entry_id"), &req); err != nil {
+	if err := h.knowledgeService.UpdateFAQEntry(ctx,
+		secutils.SanitizeForLog(c.Param("id")), secutils.SanitizeForLog(c.Param("entry_id")), &req); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)
 		return
@@ -102,7 +103,7 @@ func (h *FAQHandler) UpdateEntryTagBatch(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
 		return
 	}
-	if err := h.knowledgeService.UpdateFAQEntryTagBatch(ctx, c.Param("id"), req.Updates); err != nil {
+	if err := h.knowledgeService.UpdateFAQEntryTagBatch(ctx, secutils.SanitizeForLog(c.Param("id")), req.Updates); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)
 		return
@@ -121,7 +122,7 @@ func (h *FAQHandler) UpdateEntryStatusBatch(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
 		return
 	}
-	if err := h.knowledgeService.UpdateFAQEntryStatusBatch(ctx, c.Param("id"), req.Updates); err != nil {
+	if err := h.knowledgeService.UpdateFAQEntryStatusBatch(ctx, secutils.SanitizeForLog(c.Param("id")), req.Updates); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)
 		return
@@ -153,7 +154,7 @@ func (h *FAQHandler) DeleteEntries(c *gin.Context) {
 		return
 	}
 
-	if err := h.knowledgeService.DeleteFAQEntries(ctx, c.Param("id"), req.IDs); err != nil {
+	if err := h.knowledgeService.DeleteFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), req.IDs); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)
 		return

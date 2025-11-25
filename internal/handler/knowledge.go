@@ -250,7 +250,7 @@ func (h *KnowledgeHandler) GetKnowledge(c *gin.Context) {
 	logger.Info(ctx, "Start retrieving knowledge")
 
 	// Get knowledge ID from URL path parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
@@ -279,7 +279,7 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 	logger.Info(ctx, "Start retrieving knowledge list")
 
 	// Get knowledge base ID from URL path parameter
-	kbID := c.Param("id")
+	kbID := secutils.SanitizeForLog(c.Param("id"))
 	if kbID == "" {
 		logger.Error(ctx, "Knowledge base ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge base ID cannot be empty"))
@@ -324,7 +324,7 @@ func (h *KnowledgeHandler) DeleteKnowledge(c *gin.Context) {
 	logger.Info(ctx, "Start deleting knowledge")
 
 	// Get knowledge ID from URL path parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
@@ -353,7 +353,7 @@ func (h *KnowledgeHandler) DownloadKnowledgeFile(c *gin.Context) {
 	logger.Info(ctx, "Start downloading knowledge file")
 
 	// Get knowledge ID from URL path parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
@@ -452,7 +452,7 @@ func (h *KnowledgeHandler) UpdateKnowledge(c *gin.Context) {
 	logger.Info(ctx, "Start Update knowledge")
 
 	// Get knowledge ID from URL path parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
@@ -472,7 +472,7 @@ func (h *KnowledgeHandler) UpdateKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge updated successfully, knowledge ID: %s", secutils.SanitizeForLog(knowledge.ID))
+	logger.Infof(ctx, "Knowledge updated successfully, knowledge ID: %s", id)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Knowledge chunk updated successfully",
@@ -484,8 +484,8 @@ func (h *KnowledgeHandler) UpdateManualKnowledge(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger.Info(ctx, "Start updating manual knowledge")
 
-	knowledgeID := c.Param("id")
-	if knowledgeID == "" {
+	id := secutils.SanitizeForLog(c.Param("id"))
+	if id == "" {
 		logger.Error(ctx, "Knowledge ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
 		return
@@ -498,20 +498,20 @@ func (h *KnowledgeHandler) UpdateManualKnowledge(c *gin.Context) {
 		return
 	}
 
-	knowledge, err := h.kgService.UpdateManualKnowledge(ctx, knowledgeID, &req)
+	knowledge, err := h.kgService.UpdateManualKnowledge(ctx, id, &req)
 	if err != nil {
 		if appErr, ok := errors.IsAppError(err); ok {
 			c.Error(appErr)
 			return
 		}
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
-			"knowledge_id": knowledgeID,
+			"knowledge_id": id,
 		})
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
 
-	logger.Infof(ctx, "Manual knowledge updated successfully, knowledge ID: %s", secutils.SanitizeForLog(knowledge.ID))
+	logger.Infof(ctx, "Manual knowledge updated successfully, knowledge ID: %s", id)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    knowledge,
@@ -547,14 +547,14 @@ func (h *KnowledgeHandler) UpdateImageInfo(c *gin.Context) {
 	logger.Info(ctx, "Start updating image info")
 
 	// Get knowledge ID from URL path parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
 		return
 	}
-	chunkID := c.Param("chunk_id")
-	if id == "" {
+	chunkID := secutils.SanitizeForLog(c.Param("chunk_id"))
+	if chunkID == "" {
 		logger.Error(ctx, "Chunk ID is empty")
 		c.Error(errors.NewBadRequestError("Chunk ID cannot be empty"))
 		return
@@ -571,7 +571,7 @@ func (h *KnowledgeHandler) UpdateImageInfo(c *gin.Context) {
 	}
 
 	// Update chunk properties
-	logger.Infof(ctx, "Updating knowledge chunk, knowledge ID: %s, chunk ID: %s", secutils.SanitizeForLog(id), secutils.SanitizeForLog(chunkID))
+	logger.Infof(ctx, "Updating knowledge chunk, knowledge ID: %s, chunk ID: %s", id, chunkID)
 	err := h.kgService.UpdateImageInfo(ctx, id, chunkID, request.ImageInfo)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -579,7 +579,7 @@ func (h *KnowledgeHandler) UpdateImageInfo(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge chunk updated successfully, knowledge ID: %s, chunk ID: %s", secutils.SanitizeForLog(id), secutils.SanitizeForLog(chunkID))
+	logger.Infof(ctx, "Knowledge chunk updated successfully, knowledge ID: %s, chunk ID: %s", id, chunkID)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Knowledge chunk image updated successfully",
