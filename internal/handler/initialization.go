@@ -362,7 +362,7 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 	}
 
 	if kb == nil {
-		logger.Error(ctx, "Knowledge base not found", "kbId", kbIdStr)
+		logger.Error(ctx, "Knowledge base not found")
 		c.Error(errors.NewNotFoundError("知识库不存在"))
 		return
 	}
@@ -584,6 +584,9 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 	// 找到模型ID
 	var embeddingModelID, llmModelID, vlmModelID string
 	for _, model := range processedModels {
+		if model == nil {
+			continue
+		}
 		if model.Type == types.ModelTypeEmbedding {
 			embeddingModelID = model.ID
 		}
@@ -671,7 +674,6 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 		return
 	}
 
-	logger.Info(ctx, "Knowledge base configuration updated successfully", "kbId", kbIdStr)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "知识库配置更新成功",
@@ -806,15 +808,11 @@ func (h *InitializationHandler) DownloadOllamaModel(c *gin.Context) {
 	// 检查模型是否已存在
 	available, err := h.ollamaService.IsModelAvailable(ctx, req.ModelName)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{
-			"model_name": req.ModelName,
-		})
 		c.Error(errors.NewInternalServerError("检查模型状态失败: " + err.Error()))
 		return
 	}
 
 	if available {
-		logger.Infof(ctx, "Model %s already exists", req.ModelName)
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": "模型已存在",
@@ -869,7 +867,7 @@ func (h *InitializationHandler) DownloadOllamaModel(c *gin.Context) {
 		h.downloadModelAsync(newCtx, taskID, req.ModelName)
 	}()
 
-	logger.Infof(ctx, "Created download task for model: %s, task ID: %s", req.ModelName, taskID)
+	logger.Infof(ctx, "Created download task for model, task ID: %s", taskID)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "模型下载任务已创建",
@@ -956,7 +954,7 @@ func (h *InitializationHandler) ListOllamaModels(c *gin.Context) {
 func (h *InitializationHandler) downloadModelAsync(ctx context.Context,
 	taskID, modelName string,
 ) {
-	logger.Infof(ctx, "Starting async download for model: %s, task: %s", modelName, taskID)
+	logger.Infof(ctx, "Starting async download for model, task: %s", taskID)
 
 	// 更新任务状态为下载中
 	h.updateTaskStatus(taskID, "downloading", 0.0, "开始下载模型")
@@ -966,16 +964,13 @@ func (h *InitializationHandler) downloadModelAsync(ctx context.Context,
 		h.updateTaskStatus(taskID, "downloading", progress, message)
 	})
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{
-			"model_name": modelName,
-			"task_id":    taskID,
-		})
+		logger.Error(ctx, "Failed to download model", err)
 		h.updateTaskStatus(taskID, "failed", 0.0, fmt.Sprintf("下载失败: %v", err))
 		return
 	}
 
 	// 下载成功
-	logger.Infof(ctx, "Model %s downloaded successfully, task: %s", modelName, taskID)
+	logger.Infof(ctx, "Model downloaded successfully, task: %s", taskID)
 	h.updateTaskStatus(taskID, "completed", 100.0, "下载完成")
 }
 
@@ -993,17 +988,13 @@ func (h *InitializationHandler) pullModelWithProgress(ctx context.Context,
 	// 检查模型是否已存在
 	available, err := h.ollamaService.IsModelAvailable(ctx, modelName)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{
-			"model_name": modelName,
-		})
+		logger.Error(ctx, "Failed to check model availability", err)
 		return err
 	}
 	if available {
 		progressCallback(100.0, "模型已存在")
 		return nil
 	}
-
-	logger.GetLogger(ctx).Infof("Pulling model %s...", modelName)
 
 	// 创建下载请求
 	pullReq := &api.PullRequest{
@@ -1026,8 +1017,7 @@ func (h *InitializationHandler) pullModelWithProgress(ctx context.Context,
 		progressCallback(progressPercent, message)
 
 		logger.Infof(ctx,
-			"Download progress for %s: %.2f%% - %s",
-			modelName, progressPercent, message,
+			"Download progress: %.2f%% - %s", progressPercent, message,
 		)
 		return nil
 	})
@@ -1062,18 +1052,18 @@ func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 	ctx := c.Request.Context()
 	kbIdStr := c.Param("kbId")
 
-	logger.Info(ctx, "Getting configuration for knowledge base", "kbId", kbIdStr)
+	logger.Info(ctx, "Getting configuration for knowledge base")
 
 	// 获取指定知识库信息
 	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbIdStr)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": kbIdStr})
+		logger.Error(ctx, "Failed to get knowledge base", err)
 		c.Error(errors.NewInternalServerError("获取知识库信息失败: " + err.Error()))
 		return
 	}
 
 	if kb == nil {
-		logger.Error(ctx, "Knowledge base not found", "kbId", kbIdStr)
+		logger.Error(ctx, "Knowledge base not found")
 		c.Error(errors.NewNotFoundError("知识库不存在"))
 		return
 	}
@@ -1090,7 +1080,7 @@ func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 		if modelID != "" {
 			model, err := h.modelService.GetModelByID(ctx, modelID)
 			if err != nil {
-				logger.Warn(ctx, "Failed to get model", "kbId", kbIdStr, "modelId", modelID, "error", err)
+				logger.Warn(ctx, "Failed to get model", err)
 				// 如果模型不存在或获取失败，继续处理其他模型
 				continue
 			}
@@ -1114,7 +1104,7 @@ func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 	// 构建配置响应
 	config := h.buildConfigResponse(ctx, models, kb, hasFiles)
 
-	logger.Info(ctx, "Knowledge base configuration retrieved successfully", "kbId", kbIdStr)
+	logger.Info(ctx, "Knowledge base configuration retrieved successfully")
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    config,
@@ -1298,12 +1288,7 @@ func (h *InitializationHandler) CheckRemoteModel(c *gin.Context) {
 	// 检查远程模型连接
 	available, message := h.checkRemoteModelConnection(ctx, modelConfig)
 
-	logger.Info(ctx,
-		fmt.Sprintf(
-			"Remote model check completed: modelName=%s, baseUrl=%s, available=%v, message=%s",
-			req.ModelName, req.BaseURL, available, message,
-		),
-	)
+	logger.Infof(ctx, "Remote model check completed, available: %v, message: %s", available, message)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -1359,7 +1344,7 @@ func (h *InitializationHandler) TestEmbeddingModel(c *gin.Context) {
 	sample := "hello"
 	vec, err := emb.Embed(ctx, sample)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"model": req.ModelName})
+		logger.Error(ctx, "Failed to create embedder", err)
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data":    gin.H{`available`: false, `message`: fmt.Sprintf("调用Embedding失败: %v", err), `dimension`: 0},
@@ -1367,7 +1352,7 @@ func (h *InitializationHandler) TestEmbeddingModel(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Embedding test succeeded, dim=%d", len(vec))
+	logger.Infof(ctx, "Embedding test succeeded, dimension: %d", len(vec))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    gin.H{`available`: true, `message`: fmt.Sprintf("测试成功，向量维度=%d", len(vec)), `dimension`: len(vec)},
@@ -1497,11 +1482,7 @@ func (h *InitializationHandler) CheckRerankModel(c *gin.Context) {
 		ctx, req.ModelName, req.BaseURL, req.APIKey,
 	)
 
-	logger.Info(ctx,
-		fmt.Sprintf("Rerank model check completed: modelName=%s, baseUrl=%s, available=%v, message=%s",
-			req.ModelName, req.BaseURL, available, message,
-		),
-	)
+	logger.Infof(ctx, "Rerank model check completed, available: %v, message: %s", available, message)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -1565,8 +1546,6 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 	}
 	switch req.StorageType {
 	case "cos":
-		logger.Infof(ctx, "COS config: Region=%s, Bucket=%s, App=%s, Prefix=%s",
-			req.COSRegion, req.COSBucketName, req.COSAppID, req.COSPathPrefix)
 		// 必填：SecretID/SecretKey/Region/BucketName/AppID；PathPrefix 可选
 		if req.COSSecretID == "" || req.COSSecretKey == "" ||
 			req.COSRegion == "" || req.COSBucketName == "" ||
@@ -1576,7 +1555,6 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 			return
 		}
 	case "minio":
-		logger.Infof(ctx, "MinIO config: Bucket=%s, PathPrefix=%s", req.MinioBucketName, req.MinioPathPrefix)
 		if req.MinioBucketName == "" {
 			logger.Error(ctx, "MinIO configuration is required")
 			c.Error(errors.NewBadRequestError("MinIO配置信息不能为空"))
@@ -1587,9 +1565,6 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("无效的存储类型"))
 		return
 	}
-
-	logger.Infof(ctx, "VLM config: Model=%s, URL=%s, HasKey=%v, Type=%s",
-		req.VLMModel, req.VLMBaseURL, req.VLMAPIKey != "", req.VLMInterfaceType)
 
 	// 获取上传的图片文件
 	file, header, err := c.Request.FormFile("image")
@@ -1616,12 +1591,14 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 	logger.Infof(ctx, "Processing image: %s, size: %d bytes", header.Filename, header.Size)
 
 	// 解析文档分割配置
-	chunkSize, err := strconv.Atoi(req.ChunkSize)
+	chunkSizeInt64, err := strconv.ParseInt(req.ChunkSize, 10, 0)
+	chunkSize := int(chunkSizeInt64)
 	if err != nil || chunkSize < 100 || chunkSize > 10000 {
 		chunkSize = 1000
 	}
 
-	chunkOverlap, err := strconv.Atoi(req.ChunkOverlap)
+	chunkOverlapInt64, err := strconv.ParseInt(req.ChunkOverlap, 10, 0)
+	chunkOverlap := int(chunkOverlapInt64)
 	if err != nil || chunkOverlap < 0 || chunkOverlap >= chunkSize {
 		chunkOverlap = 200
 	}
@@ -1653,11 +1630,7 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 	processingTime := time.Since(startTime).Milliseconds()
 
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{
-			"vlm_model":    req.VLMModel,
-			"vlm_base_url": req.VLMBaseURL,
-			"filename":     header.Filename,
-		})
+		logger.Error(ctx, "Failed to test multimodal", err)
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data": gin.H{
@@ -1669,7 +1642,7 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 		return
 	}
 
-	logger.Info(ctx, fmt.Sprintf("Multimodal test completed successfully in %dms", processingTime))
+	logger.Infof(ctx, "Multimodal test completed successfully in %dms", processingTime)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

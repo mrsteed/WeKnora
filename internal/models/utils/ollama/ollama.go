@@ -147,8 +147,6 @@ func (s *OllamaService) PullModel(ctx context.Context, modelName string) error {
 		return nil
 	}
 
-	logger.GetLogger(ctx).Infof("Pulling model %s...", modelName)
-
 	// Use official client to pull model
 	pullReq := &api.PullRequest{
 		Name: modelName,

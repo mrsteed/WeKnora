@@ -353,38 +353,70 @@ func (e *elasticsearchRepository) deleteByFieldList(ctx context.Context, field s
 // Returns a JSON string representing the query conditions
 func (e *elasticsearchRepository) getBaseConds(params typesLocal.RetrieveParams) string {
 	// Build MUST conditions (positive filters)
-	must := make([]string, 0)
+	must := make([]map[string]interface{}, 0)
 	if len(params.KnowledgeBaseIDs) > 0 {
-		ids, _ := json.Marshal(params.KnowledgeBaseIDs)
-		must = append(must, fmt.Sprintf(`{"terms": {"knowledge_base_id.keyword": %s}}`, ids))
+		must = append(must, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"knowledge_base_id.keyword": params.KnowledgeBaseIDs,
+			},
+		})
 	}
 
 	// Build MUST_NOT conditions (negative filters)
-	mustNot := make([]string, 0)
+	mustNot := make([]map[string]interface{}, 0)
 	// Exclude disabled chunks (is_enabled = false)
 	// Note: Historical data without is_enabled field will be included (not matching must_not)
-	mustNot = append(mustNot, `{"term": {"is_enabled": false}}`)
+	mustNot = append(mustNot, map[string]interface{}{
+		"term": map[string]interface{}{
+			"is_enabled": false,
+		},
+	})
 	if len(params.ExcludeKnowledgeIDs) > 0 {
-		ids, _ := json.Marshal(params.ExcludeKnowledgeIDs)
-		mustNot = append(mustNot, fmt.Sprintf(`{"terms": {"knowledge_id.keyword": %s}}`, ids))
+		mustNot = append(mustNot, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"knowledge_id.keyword": params.ExcludeKnowledgeIDs,
+			},
+		})
 	}
 	if len(params.ExcludeChunkIDs) > 0 {
-		ids, _ := json.Marshal(params.ExcludeChunkIDs)
-		mustNot = append(mustNot, fmt.Sprintf(`{"terms": {"chunk_id.keyword": %s}}`, ids))
+		mustNot = append(mustNot, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"chunk_id.keyword": params.ExcludeChunkIDs,
+			},
+		})
 	}
 
 	// Combine conditions based on presence
+	var query map[string]interface{}
 	if len(must) == 0 && len(mustNot) == 0 {
-		return "{}" // Empty query if no conditions
+		query = map[string]interface{}{}
+	} else if len(must) == 0 {
+		query = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must_not": mustNot,
+			},
+		}
+	} else if len(mustNot) == 0 {
+		query = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": must,
+			},
+		}
+	} else {
+		query = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must":     must,
+				"must_not": mustNot,
+			},
+		}
 	}
-	if len(must) == 0 {
-		return fmt.Sprintf(`{"bool": {"must_not": [%s]}}`, strings.Join(mustNot, ","))
+
+	// Marshal to JSON string
+	jsonBytes, err := json.Marshal(query)
+	if err != nil {
+		return "{}"
 	}
-	if len(mustNot) == 0 {
-		return fmt.Sprintf(`{"bool": {"must": [%s]}}`, strings.Join(must, ","))
-	}
-	return fmt.Sprintf(`{"bool": {"must": [%s], "must_not": [%s]}}`,
-		strings.Join(must, ","), strings.Join(mustNot, ","))
+	return string(jsonBytes)
 }
 
 func (e *elasticsearchRepository) Retrieve(ctx context.Context,
@@ -439,26 +471,43 @@ func (e *elasticsearchRepository) buildVectorSearchQuery(ctx context.Context,
 ) (string, error) {
 	log := logger.GetLogger(ctx)
 
-	filter := e.getBaseConds(params)
-
-	// Serialize the query vector
-	queryVectorJSON, err := json.Marshal(params.Embedding)
-	if err != nil {
-		log.Errorf("[ElasticsearchV7] Failed to marshal query vector: %v", err)
-		return "", fmt.Errorf("failed to marshal query embedding: %w", err)
+	// Parse filter conditions
+	var filterQuery map[string]interface{}
+	filterJSON := e.getBaseConds(params)
+	if err := json.Unmarshal([]byte(filterJSON), &filterQuery); err != nil {
+		log.Errorf("[ElasticsearchV7] Failed to unmarshal filter: %v", err)
+		filterQuery = map[string]interface{}{}
 	}
 
-	// Construct the script_score query
-	query := fmt.Sprintf(
-		`{"query":{"script_score":{"query":{"bool":{"filter":[%s]}},
-			"script":{"source":"cosineSimilarity(params.query_vector,'embedding')",
-			"params":{"query_vector":%s}},"min_score":%f}},"size":%d}`,
-		filter,
-		string(queryVectorJSON),
-		params.Threshold,
-		params.TopK,
-	)
+	// Construct the script_score query using structured objects
+	queryObj := map[string]interface{}{
+		"query": map[string]interface{}{
+			"script_score": map[string]interface{}{
+				"query": map[string]interface{}{
+					"bool": map[string]interface{}{
+						"filter": []interface{}{filterQuery},
+					},
+				},
+				"script": map[string]interface{}{
+					"source": "cosineSimilarity(params.query_vector,'embedding')",
+					"params": map[string]interface{}{
+						"query_vector": params.Embedding,
+					},
+				},
+				"min_score": params.Threshold,
+			},
+		},
+		"size": params.TopK,
+	}
 
+	// Marshal to JSON string
+	queryBytes, err := json.Marshal(queryObj)
+	if err != nil {
+		log.Errorf("[ElasticsearchV7] Failed to marshal query: %v", err)
+		return "", fmt.Errorf("failed to marshal query: %w", err)
+	}
+
+	query := string(queryBytes)
 	log.Debugf("[ElasticsearchV7] Executing vector search with query: %s", query)
 	return query, nil
 }

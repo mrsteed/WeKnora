@@ -587,15 +587,13 @@ func (s *sessionService) selectChatModelIDWithOverride(ctx context.Context, sess
 // 3. Session's SummaryModelID (if not Remote)
 // 4. First knowledge base's SummaryModelID
 func (s *sessionService) selectChatModelID(ctx context.Context, session *types.Session, knowledgeBaseIDs []string) (string, error) {
-	chatModelID := ""
 
 	// First, check if session has a SummaryModelID and if it's a Remote model
 	if session.SummaryModelID != "" {
 		model, err := s.modelService.GetModelByID(ctx, session.SummaryModelID)
 		if err == nil && model != nil && model.Source == types.ModelSourceRemote {
-			chatModelID = session.SummaryModelID
-			logger.Infof(ctx, "Using session's Remote summary model: %s", chatModelID)
-			return chatModelID, nil
+			logger.Infof(ctx, "Using session's Remote summary model: %s", session.SummaryModelID)
+			return session.SummaryModelID, nil
 		} else if err == nil && model != nil {
 			// Session has a model but it's not Remote, we'll check knowledge bases for Remote models
 			logger.Infof(ctx, "Session has summary model %s but it's not Remote, checking knowledge bases for Remote models", session.SummaryModelID)
@@ -603,7 +601,7 @@ func (s *sessionService) selectChatModelID(ctx context.Context, session *types.S
 	}
 
 	// If no Remote model found from session, check knowledge bases for Remote models
-	if chatModelID == "" && len(knowledgeBaseIDs) > 0 {
+	if len(knowledgeBaseIDs) > 0 {
 		// Try to find a knowledge base with Remote model
 		for _, kbID := range knowledgeBaseIDs {
 			kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, kbID)
@@ -614,44 +612,35 @@ func (s *sessionService) selectChatModelID(ctx context.Context, session *types.S
 			if kb != nil && kb.SummaryModelID != "" {
 				model, err := s.modelService.GetModelByID(ctx, kb.SummaryModelID)
 				if err == nil && model != nil && model.Source == types.ModelSourceRemote {
-					chatModelID = kb.SummaryModelID
-					logger.Infof(ctx, "Using Remote summary model from knowledge base %s: %s", kbID, chatModelID)
-					return chatModelID, nil
+					logger.Infof(ctx, "Using Remote summary model from knowledge base %s: %s", kbID, kb.SummaryModelID)
+					return kb.SummaryModelID, nil
 				}
 			}
 		}
 
 		// If still no Remote model found, use session's SummaryModelID if available
-		if chatModelID == "" && session.SummaryModelID != "" {
-			chatModelID = session.SummaryModelID
-			logger.Infof(ctx, "No Remote model found, using session's summary model: %s", chatModelID)
-			return chatModelID, nil
+		if session.SummaryModelID != "" {
+			logger.Infof(ctx, "No Remote model found, using session's summary model: %s", session.SummaryModelID)
+			return session.SummaryModelID, nil
 		}
 
 		// If still empty, use first knowledge base's model
-		if chatModelID == "" {
-			kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseIDs[0])
-			if err != nil {
-				logger.Errorf(ctx, "Failed to get knowledge base for model ID: %v", err)
-				return "", fmt.Errorf("failed to get knowledge base %s: %w", knowledgeBaseIDs[0], err)
-			}
-			if kb != nil && kb.SummaryModelID != "" {
-				chatModelID = kb.SummaryModelID
-				logger.Infof(ctx, "Using summary model from first knowledge base %s: %s", knowledgeBaseIDs[0], chatModelID)
-				return chatModelID, nil
-			} else {
-				logger.Errorf(ctx, "Knowledge base %s has no summary model ID", knowledgeBaseIDs[0])
-				return "", fmt.Errorf("knowledge base %s has no summary model configured", knowledgeBaseIDs[0])
-			}
+		kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseIDs[0])
+		if err != nil {
+			logger.Errorf(ctx, "Failed to get knowledge base for model ID: %v", err)
+			return "", fmt.Errorf("failed to get knowledge base %s: %w", knowledgeBaseIDs[0], err)
+		}
+		if kb != nil && kb.SummaryModelID != "" {
+			logger.Infof(ctx, "Using summary model from first knowledge base %s: %s", knowledgeBaseIDs[0], kb.SummaryModelID)
+			return kb.SummaryModelID, nil
+		} else {
+			logger.Errorf(ctx, "Knowledge base %s has no summary model ID", knowledgeBaseIDs[0])
+			return "", fmt.Errorf("knowledge base %s has no summary model configured", knowledgeBaseIDs[0])
 		}
 	}
 
-	if chatModelID == "" {
-		logger.Error(ctx, "No chat model ID available")
-		return "", errors.New("no chat model ID available: session has no SummaryModelID and knowledge bases have no SummaryModelID")
-	}
-
-	return chatModelID, nil
+	logger.Error(ctx, "No chat model ID available")
+	return "", errors.New("no chat model ID available: session has no SummaryModelID and knowledge bases have no SummaryModelID")
 }
 
 // KnowledgeQAByEvent processes knowledge QA through a series of events in the pipeline

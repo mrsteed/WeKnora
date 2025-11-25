@@ -51,6 +51,12 @@ func (e *EvaluationHandler) Evaluation(c *gin.Context) {
 	logger.Infof(ctx, "Executing evaluation, tenant: %v, dataset: %s, knowledge_base: %s, chat: %s, rerank: %s",
 		tenantID, request.DatasetID, request.KnowledgeBaseID, request.ChatModelID, request.RerankModelID)
 
+	if request == nil {
+		logger.Error(ctx, "Request is nil")
+		c.Error(errors.NewBadRequestError("Invalid request parameters"))
+		return
+	}
+
 	task, err := e.evaluationService.Evaluation(ctx,
 		request.DatasetID,
 		request.KnowledgeBaseID,
@@ -81,12 +87,13 @@ func (e *EvaluationHandler) GetEvaluationResult(c *gin.Context) {
 
 	logger.Info(ctx, "Start retrieving evaluation result")
 
-	var request *GetEvaluationRequest
+	var request GetEvaluationRequest
 	if err := c.ShouldBind(&request); err != nil {
 		logger.Error(ctx, "Failed to parse request parameters", err)
 		c.Error(errors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
 		return
 	}
+
 	result, err := e.evaluationService.EvaluationResult(ctx, request.TaskID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)

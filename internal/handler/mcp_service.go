@@ -48,7 +48,6 @@ func (h *MCPServiceHandler) CreateMCPService(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "MCP service created successfully: %s", service.Name)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    service,

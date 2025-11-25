@@ -18,7 +18,14 @@ import (
 )
 
 // JWT secret key - in production this should be from environment variable
-var jwtSecret = []byte("your-secret-key")
+
+func getJwtSecret() string {
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret != "" {
+		return jwtSecret
+	}
+	return "your-secret-key"
+}
 
 // userService implements the UserService interface
 type userService struct {
@@ -282,7 +289,7 @@ func (s *userService) GenerateTokens(ctx context.Context, user *types.User) (acc
 	}
 
 	accessTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-	accessToken, err = accessTokenObj.SignedString(jwtSecret)
+	accessToken, err = accessTokenObj.SignedString([]byte(getJwtSecret()))
 	if err != nil {
 		return "", "", err
 	}
@@ -296,7 +303,7 @@ func (s *userService) GenerateTokens(ctx context.Context, user *types.User) (acc
 	}
 
 	refreshTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	refreshToken, err = refreshTokenObj.SignedString(jwtSecret)
+	refreshToken, err = refreshTokenObj.SignedString([]byte(getJwtSecret()))
 	if err != nil {
 		return "", "", err
 	}
@@ -334,7 +341,7 @@ func (s *userService) ValidateToken(ctx context.Context, tokenString string) (*t
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return jwtSecret, nil
+		return []byte(getJwtSecret()), nil
 	})
 
 	if err != nil || !token.Valid {
@@ -366,7 +373,7 @@ func (s *userService) RefreshToken(ctx context.Context, refreshTokenString strin
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return jwtSecret, nil
+		return []byte(getJwtSecret()), nil
 	})
 
 	if err != nil || !token.Valid {

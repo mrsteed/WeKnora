@@ -145,6 +145,9 @@ func (b *graphBuilder) extractEntities(ctx context.Context, chunk *types.Chunk) 
 	defer b.mutex.Unlock()
 
 	for _, entity := range extractedEntities {
+		if entity == nil {
+			continue
+		}
 		if entity.Title == "" || entity.Description == "" {
 			log.WithField("entity", entity).Warn("Invalid entity with empty title or description")
 			continue
@@ -272,6 +275,10 @@ func (b *graphBuilder) extractRelationships(ctx context.Context,
 				relationship.Source, relationship.Target, relationship.ID)
 		} else {
 			// This relationship already exists, update its properties
+			if existingRel == nil {
+				log.Warnf("existingRel is nil, skip update")
+				continue
+			}
 			chunkIDsAdded := 0
 			for _, chunkID := range relationChunkIDs {
 				if !slices.Contains(existingRel.ChunkIDs, chunkID) {

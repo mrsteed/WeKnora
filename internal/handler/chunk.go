@@ -73,7 +73,6 @@ func (h *ChunkHandler) GetChunkByIDOnly(c *gin.Context) {
 		chunk.Content = secutils.SanitizeForDisplay(chunk.Content)
 	}
 
-	logger.Infof(ctx, "Successfully retrieved chunk by ID, chunk ID: %s", chunkID)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    chunk,
@@ -102,9 +101,6 @@ func (h *ChunkHandler) ListKnowledgeChunks(c *gin.Context) {
 
 	chunkType := []types.ChunkType{types.ChunkTypeText}
 
-	logger.Infof(ctx, "Retrieving knowledge chunks list, knowledge ID: %s, page: %d, page size: %d",
-		knowledgeID, pagination.Page, pagination.PageSize)
-
 	// Use pagination for query
 	result, err := h.service.ListPagedChunksByKnowledgeID(ctx, knowledgeID, &pagination, chunkType)
 	if err != nil {
@@ -120,10 +116,6 @@ func (h *ChunkHandler) ListKnowledgeChunks(c *gin.Context) {
 		}
 	}
 
-	logger.Infof(
-		ctx, "Successfully retrieved knowledge chunks list, knowledge ID: %s, total: %d",
-		knowledgeID, result.Total,
-	)
 	c.JSON(http.StatusOK, gin.H{
 		"success":   true,
 		"data":      result.Data,
@@ -221,8 +213,6 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 
 	chunk.IsEnabled = req.IsEnabled
 
-	logger.Infof(ctx, "Updating knowledge chunk, knowledge ID: %s, chunk ID: %s", knowledgeID, chunk.ID)
-
 	if err := h.service.UpdateChunk(ctx, chunk); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))
@@ -242,13 +232,11 @@ func (h *ChunkHandler) DeleteChunk(c *gin.Context) {
 	logger.Info(ctx, "Start deleting knowledge chunk")
 
 	// Validate parameters and get chunk
-	chunk, knowledgeID, err := h.validateAndGetChunk(c)
+	chunk, _, err := h.validateAndGetChunk(c)
 	if err != nil {
 		c.Error(err)
 		return
 	}
-
-	logger.Infof(ctx, "Deleting knowledge chunk, knowledge ID: %s, chunk ID: %s", knowledgeID, chunk.ID)
 
 	if err := h.service.DeleteChunk(ctx, chunk.ID); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -256,7 +244,6 @@ func (h *ChunkHandler) DeleteChunk(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge chunk deleted successfully, knowledge ID: %s, chunk ID: %s", knowledgeID, chunk.ID)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Chunk deleted",
@@ -275,16 +262,6 @@ func (h *ChunkHandler) DeleteChunksByKnowledgeID(c *gin.Context) {
 		return
 	}
 
-	// Get tenant ID from context
-	tenantID, exists := c.Get(types.TenantIDContextKey.String())
-	if !exists {
-		logger.Error(ctx, "Failed to get tenant ID")
-		c.Error(errors.NewUnauthorizedError("Unauthorized"))
-		return
-	}
-
-	logger.Infof(ctx, "Deleting all chunks under knowledge, knowledge ID: %s, tenant ID: %d", knowledgeID, tenantID.(uint))
-
 	// Delete all chunks under the knowledge
 	err := h.service.DeleteChunksByKnowledgeID(ctx, knowledgeID)
 	if err != nil {
@@ -293,7 +270,6 @@ func (h *ChunkHandler) DeleteChunksByKnowledgeID(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "All chunks under knowledge deleted successfully, knowledge ID: %s", knowledgeID)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "All chunks under knowledge deleted",

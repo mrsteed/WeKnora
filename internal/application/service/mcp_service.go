@@ -44,7 +44,6 @@ func (s *mcpServiceService) CreateMCPService(ctx context.Context, service *types
 		return fmt.Errorf("failed to create MCP service: %w", err)
 	}
 
-	logger.GetLogger(ctx).Infof("MCP service created: %s (ID: %s)", service.Name, service.ID)
 	return nil
 }
 

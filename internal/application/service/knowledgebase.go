@@ -433,7 +433,6 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 	logger.Infof(ctx, "Hybrid search parameters, knowledge base ID: %s, query text: %s", id, params.QueryText)
 
 	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
-	logger.Infof(ctx, "Creating composite retrieval engine, tenant ID: %d", tenantInfo.ID)
 
 	// Create a composite retrieval engine with tenant's configured retrievers
 	retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
