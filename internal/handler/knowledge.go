@@ -11,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -182,8 +183,8 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Received URL request: %s", req.URL)
-	logger.Infof(ctx, "Creating knowledge from URL, knowledge base ID: %s, URL: %s", kbID, req.URL)
+	logger.Infof(ctx, "Received URL request: %s", secutils.SanitizeForLog(req.URL))
+	logger.Infof(ctx, "Creating knowledge from URL, knowledge base ID: %s, URL: %s", secutils.SanitizeForLog(kbID), secutils.SanitizeForLog(req.URL))
 
 	// Create knowledge entry from the URL
 	knowledge, err := h.kgService.CreateKnowledgeFromURL(ctx, kbID, req.URL, req.EnableMultimodel)

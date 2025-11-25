@@ -10,6 +10,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -188,17 +189,17 @@ func Logger() gin.HandlerFunc {
 			}
 		}
 
-		// 构建日志消息
-		logMsg := logger.GetLogger(c)
-		logMsg = logMsg.WithFields(map[string]interface{}{
-			"request_id":  requestID,
-			"method":      method,
-			"path":        path,
-			"status_code": statusCode,
-			"size":        c.Writer.Size(),
-			"latency":     latency.String(),
-			"client_ip":   clientIP,
-		})
+	// 构建日志消息
+	logMsg := logger.GetLogger(c)
+	logMsg = logMsg.WithFields(map[string]interface{}{
+		"request_id":  requestID,
+		"method":      method,
+		"path":        secutils.SanitizeForLog(path),
+		"status_code": statusCode,
+		"size":        c.Writer.Size(),
+		"latency":     latency.String(),
+		"client_ip":   secutils.SanitizeForLog(clientIP),
+	})
 
 		// 添加请求体（如果有）
 		if requestBody != "" {

@@ -26,6 +26,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/utils"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/ollama/ollama/api"
@@ -209,7 +210,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 	// 获取知识库信息
 	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbIdStr)
 	if err != nil || kb == nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": kbIdStr})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": secutils.SanitizeForLog(kbIdStr)})
 		c.Error(errors.NewNotFoundError("知识库不存在"))
 		return
 	}
@@ -351,12 +352,12 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
-	logger.Infof(ctx, "Starting knowledge base configuration update, kbId: %s, request: %s", kbIdStr, utils.ToJSON(req))
+	logger.Infof(ctx, "Starting knowledge base configuration update, kbId: %s, request: %s", secutils.SanitizeForLog(kbIdStr), secutils.SanitizeForLog(utils.ToJSON(req)))
 
 	// 获取指定知识库信息
 	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbIdStr)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": kbIdStr})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": secutils.SanitizeForLog(kbIdStr)})
 		c.Error(errors.NewInternalServerError("获取知识库信息失败: " + err.Error()))
 		return
 	}
@@ -669,7 +670,7 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 
 	err = h.kbRepository.UpdateKnowledgeBase(ctx, kb)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": kbIdStr})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": secutils.SanitizeForLog(kbIdStr)})
 		c.Error(errors.NewInternalServerError("更新知识库配置失败: " + err.Error()))
 		return
 	}
@@ -768,7 +769,7 @@ func (h *InitializationHandler) CheckOllamaModels(c *gin.Context) {
 			modelStatus[modelName] = available
 		}
 
-		logger.Infof(ctx, "Model %s availability: %v", modelName, modelStatus[modelName])
+		logger.Infof(ctx, "Model %s availability: %v", secutils.SanitizeForLog(modelName), modelStatus[modelName])
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1332,7 +1333,7 @@ func (h *InitializationHandler) TestEmbeddingModel(c *gin.Context) {
 
 	emb, err := embedding.NewEmbedder(cfg)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"model": req.ModelName})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"model": secutils.SanitizeForLog(req.ModelName)})
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data":    gin.H{`available`: false, `message`: fmt.Sprintf("创建Embedder失败: %v", err), `dimension`: 0},

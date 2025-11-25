@@ -12,6 +12,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -103,12 +104,12 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge QA request, session ID: %s, query: %s", sessionID, request.Query)
+	logger.Infof(ctx, "Knowledge QA request, session ID: %s, query: %s", secutils.SanitizeForLog(sessionID), secutils.SanitizeForLog(request.Query))
 
 	// Get session to prepare knowledge base IDs
 	session, err := h.sessionService.GetSession(ctx, sessionID)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get session, session ID: %s, error: %v", sessionID, err)
+		logger.Errorf(ctx, "Failed to get session, session ID: %s, error: %v", secutils.SanitizeForLog(sessionID), err)
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
@@ -117,7 +118,7 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 	knowledgeBaseIDs := request.KnowledgeBaseIDs
 	if len(knowledgeBaseIDs) == 0 && session.KnowledgeBaseID != "" {
 		knowledgeBaseIDs = []string{session.KnowledgeBaseID}
-		logger.Infof(ctx, "No knowledge base IDs in request, using session default: %s", session.KnowledgeBaseID)
+		logger.Infof(ctx, "No knowledge base IDs in request, using session default: %s", secutils.SanitizeForLog(session.KnowledgeBaseID))
 	}
 
 	// Use shared function to handle KnowledgeQA request
@@ -158,13 +159,13 @@ func (h *Handler) AgentQA(c *gin.Context) {
 	// Get session information first
 	session, err := h.sessionService.GetSession(ctx, sessionID)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get session, session ID: %s, error: %v", sessionID, err)
+		logger.Errorf(ctx, "Failed to get session, session ID: %s, error: %v", secutils.SanitizeForLog(sessionID), err)
 		c.Error(errors.NewNotFoundError("Session not found"))
 		return
 	}
 	sessionJSON, err := json.Marshal(session)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to marshal session, session ID: %s, error: %v", sessionID, err)
+		logger.Errorf(ctx, "Failed to marshal session, session ID: %s, error: %v", secutils.SanitizeForLog(sessionID), err)
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
@@ -274,7 +275,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		// If still empty, use session default knowledge base
 		if len(knowledgeBaseIDs) == 0 && session.KnowledgeBaseID != "" {
 			knowledgeBaseIDs = []string{session.KnowledgeBaseID}
-			logger.Infof(ctx, "Using session default knowledge base: %s", session.KnowledgeBaseID)
+			logger.Infof(ctx, "Using session default knowledge base: %s", secutils.SanitizeForLog(session.KnowledgeBaseID))
 		}
 
 		// Validate at least one knowledge base is available

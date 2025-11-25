@@ -9,6 +9,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 // FAQHandler handles FAQ knowledge base operations.
@@ -173,7 +174,7 @@ func (h *FAQHandler) SearchFAQ(c *gin.Context) {
 		return
 	}
 
-	entries, err := h.knowledgeService.SearchFAQEntries(ctx, c.Param("id"), &req)
+	entries, err := h.knowledgeService.SearchFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), &req)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

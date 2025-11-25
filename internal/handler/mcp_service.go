@@ -7,6 +7,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -94,7 +95,7 @@ func (h *MCPServiceHandler) GetMCPService(c *gin.Context) {
 
 	service, err := h.mcpServiceService.GetMCPServiceByID(ctx, tenantID, serviceID)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": serviceID})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": secutils.SanitizeForLog(serviceID)})
 		c.Error(errors.NewNotFoundError("MCP service not found"))
 		return
 	}
@@ -210,12 +211,12 @@ func (h *MCPServiceHandler) UpdateMCPService(c *gin.Context) {
 	}
 
 	if err := h.mcpServiceService.UpdateMCPService(ctx, &service); err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": serviceID})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": secutils.SanitizeForLog(serviceID)})
 		c.Error(errors.NewInternalServerError("Failed to update MCP service: " + err.Error()))
 		return
 	}
 
-	logger.Infof(ctx, "MCP service updated successfully: %s", serviceID)
+	logger.Infof(ctx, "MCP service updated successfully: %s", secutils.SanitizeForLog(serviceID))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    service,
@@ -236,12 +237,12 @@ func (h *MCPServiceHandler) DeleteMCPService(c *gin.Context) {
 	}
 
 	if err := h.mcpServiceService.DeleteMCPService(ctx, tenantID, serviceID); err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": serviceID})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": secutils.SanitizeForLog(serviceID)})
 		c.Error(errors.NewInternalServerError("Failed to delete MCP service: " + err.Error()))
 		return
 	}
 
-	logger.Infof(ctx, "MCP service deleted successfully: %s", serviceID)
+	logger.Infof(ctx, "MCP service deleted successfully: %s", secutils.SanitizeForLog(serviceID))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "MCP service deleted successfully",
@@ -261,11 +262,11 @@ func (h *MCPServiceHandler) TestMCPService(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Testing MCP service: %s", serviceID)
+	logger.Infof(ctx, "Testing MCP service: %s", secutils.SanitizeForLog(serviceID))
 
 	result, err := h.mcpServiceService.TestMCPService(ctx, tenantID, serviceID)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": serviceID})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": secutils.SanitizeForLog(serviceID)})
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data": types.MCPTestResult{
@@ -276,7 +277,7 @@ func (h *MCPServiceHandler) TestMCPService(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "MCP service test completed: %s, success: %v", serviceID, result.Success)
+	logger.Infof(ctx, "MCP service test completed: %s, success: %v", secutils.SanitizeForLog(serviceID), result.Success)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    result,
@@ -298,7 +299,7 @@ func (h *MCPServiceHandler) GetMCPServiceTools(c *gin.Context) {
 
 	tools, err := h.mcpServiceService.GetMCPServiceTools(ctx, tenantID, serviceID)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": serviceID})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": secutils.SanitizeForLog(serviceID)})
 		c.Error(errors.NewInternalServerError("Failed to get MCP service tools: " + err.Error()))
 		return
 	}
@@ -324,7 +325,7 @@ func (h *MCPServiceHandler) GetMCPServiceResources(c *gin.Context) {
 
 	resources, err := h.mcpServiceService.GetMCPServiceResources(ctx, tenantID, serviceID)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": serviceID})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": secutils.SanitizeForLog(serviceID)})
 		c.Error(errors.NewInternalServerError("Failed to get MCP service resources: " + err.Error()))
 		return
 	}

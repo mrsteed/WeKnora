@@ -42,7 +42,7 @@ func (h *ChunkHandler) GetChunkByIDOnly(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving chunk by ID, chunk ID: %s, tenant ID: %d", chunkID, tenantID)
+	logger.Infof(ctx, "Retrieving chunk by ID, chunk ID: %s, tenant ID: %d", secutils.SanitizeForLog(chunkID), tenantID)
 
 	// Get chunk by ID
 	chunk, err := h.service.GetChunkByID(ctx, chunkID)

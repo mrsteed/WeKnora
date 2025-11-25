@@ -8,6 +8,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -92,7 +93,7 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Creating model, Tenant ID: %d, Model name: %s, Model type: %s",
-		tenantID, req.Name, req.Type)
+		tenantID, secutils.SanitizeForLog(req.Name), secutils.SanitizeForLog(string(req.Type)))
 
 	model := &types.Model{
 		TenantID:    tenantID,
