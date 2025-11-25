@@ -46,7 +46,7 @@ type KnowledgeBase struct {
 	// Description of the knowledge base
 	Description string `yaml:"description" json:"description"`
 	// Tenant ID
-	TenantID uint `yaml:"tenant_id" json:"tenant_id"`
+	TenantID uint64 `yaml:"tenant_id" json:"tenant_id"`
 	// Chunking configuration
 	ChunkingConfig ChunkingConfig `yaml:"chunking_config" json:"chunking_config" gorm:"type:json"`
 	// Image processing configuration

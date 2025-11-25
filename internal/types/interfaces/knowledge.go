@@ -31,7 +31,7 @@ type KnowledgeService interface {
 	// GetKnowledgeByID retrieves knowledge by ID.
 	GetKnowledgeByID(ctx context.Context, id string) (*types.Knowledge, error)
 	// GetKnowledgeBatch retrieves a batch of knowledge by IDs.
-	GetKnowledgeBatch(ctx context.Context, tenantID uint, ids []string) ([]*types.Knowledge, error)
+	GetKnowledgeBatch(ctx context.Context, tenantID uint64, ids []string) ([]*types.Knowledge, error)
 	// ListKnowledgeByKnowledgeBaseID lists all knowledge under a knowledge base.
 	ListKnowledgeByKnowledgeBaseID(ctx context.Context, kbID string) ([]*types.Knowledge, error)
 	// ListPagedKnowledgeByKnowledgeBaseID lists all knowledge under a knowledge base with pagination.
@@ -83,34 +83,34 @@ type KnowledgeService interface {
 // KnowledgeRepository defines the interface for knowledge repositories.
 type KnowledgeRepository interface {
 	CreateKnowledge(ctx context.Context, knowledge *types.Knowledge) error
-	GetKnowledgeByID(ctx context.Context, tenantID uint, id string) (*types.Knowledge, error)
-	ListKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint, kbID string) ([]*types.Knowledge, error)
+	GetKnowledgeByID(ctx context.Context, tenantID uint64, id string) (*types.Knowledge, error)
+	ListKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) ([]*types.Knowledge, error)
 	// ListPagedKnowledgeByKnowledgeBaseID lists all knowledge in a knowledge base with pagination.
 	// When tagID is non-empty, results are filtered by tag_id.
 	ListPagedKnowledgeByKnowledgeBaseID(ctx context.Context,
-		tenantID uint, kbID string, page *types.Pagination, tagID string,
+		tenantID uint64, kbID string, page *types.Pagination, tagID string,
 	) ([]*types.Knowledge, int64, error)
 	UpdateKnowledge(ctx context.Context, knowledge *types.Knowledge) error
 	// UpdateKnowledgeBatch updates knowledge items in batch
 	UpdateKnowledgeBatch(ctx context.Context, knowledgeList []*types.Knowledge) error
-	DeleteKnowledge(ctx context.Context, tenantID uint, id string) error
-	DeleteKnowledgeList(ctx context.Context, tenantID uint, ids []string) error
-	GetKnowledgeBatch(ctx context.Context, tenantID uint, ids []string) ([]*types.Knowledge, error)
+	DeleteKnowledge(ctx context.Context, tenantID uint64, id string) error
+	DeleteKnowledgeList(ctx context.Context, tenantID uint64, ids []string) error
+	GetKnowledgeBatch(ctx context.Context, tenantID uint64, ids []string) ([]*types.Knowledge, error)
 	// CheckKnowledgeExists checks if knowledge already exists.
 	// For file types, check by fileHash or (fileName+fileSize).
 	// For URL types, check by URL.
 	// Returns whether it exists, the existing knowledge object (if any), and possible error.
 	CheckKnowledgeExists(
 		ctx context.Context,
-		tenantID uint,
+		tenantID uint64,
 		kbID string,
 		params *types.KnowledgeCheckParams,
 	) (bool, *types.Knowledge, error)
 	// AminusB returns the difference set of A and B.
-	AminusB(ctx context.Context, Atenant uint, A string, Btenant uint, B string) ([]string, error)
+	AminusB(ctx context.Context, Atenant uint64, A string, Btenant uint64, B string) ([]string, error)
 	UpdateKnowledgeColumn(ctx context.Context, id string, column string, value interface{}) error
 	// CountKnowledgeByKnowledgeBaseID counts the number of knowledge items in a knowledge base.
-	CountKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint, kbID string) (int64, error)
+	CountKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) (int64, error)
 	// CountKnowledgeByStatus counts the number of knowledge items with the specified parse status.
-	CountKnowledgeByStatus(ctx context.Context, tenantID uint, kbID string, parseStatuses []string) (int64, error)
+	CountKnowledgeByStatus(ctx context.Context, tenantID uint64, kbID string, parseStatuses []string) (int64, error)
 }

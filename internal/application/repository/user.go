@@ -4,16 +4,15 @@ import (
 	"context"
 	"errors"
 
-	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
 )
 
 var (
-	ErrUserNotFound     = errors.New("user not found")
+	ErrUserNotFound      = errors.New("user not found")
 	ErrUserAlreadyExists = errors.New("user already exists")
-	ErrTokenNotFound    = errors.New("token not found")
+	ErrTokenNotFound     = errors.New("token not found")
 )
 
 // userRepository implements user repository interface
@@ -28,7 +27,6 @@ func NewUserRepository(db *gorm.DB) interfaces.UserRepository {
 
 // CreateUser creates a user
 func (r *userRepository) CreateUser(ctx context.Context, user *types.User) error {
-	logger.Infof(ctx, "Creating user in database: %s", user.Email)
 	return r.db.WithContext(ctx).Create(user).Error
 }
 
@@ -82,15 +80,15 @@ func (r *userRepository) DeleteUser(ctx context.Context, id string) error {
 func (r *userRepository) ListUsers(ctx context.Context, offset, limit int) ([]*types.User, error) {
 	var users []*types.User
 	query := r.db.WithContext(ctx).Order("created_at DESC")
-	
+
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	
+
 	if offset > 0 {
 		query = query.Offset(offset)
 	}
-	
+
 	if err := query.Find(&users).Error; err != nil {
 		return nil, err
 	}

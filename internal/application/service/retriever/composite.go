@@ -38,6 +38,9 @@ func (c *CompositeRetrieveEngine) Retrieve(ctx context.Context,
 		func(ctx context.Context, param types.RetrieveParams, results *[]*types.RetrieveResult, mu *sync.Mutex) error {
 			found := false
 			for _, engineInfo := range c.engineInfos {
+				if engineInfo == nil {
+					continue
+				}
 				if slices.Contains(engineInfo.retrieverType, param.RetrieverType) {
 					result, err := engineInfo.retrieveEngine.Retrieve(ctx, param)
 					if err != nil {
@@ -86,6 +89,9 @@ func NewCompositeRetrieveEngine(registry interfaces.RetrieveEngineRegistry, engi
 // SupportRetriever checks if a retriever type is supported by any of the registered engines
 func (c *CompositeRetrieveEngine) SupportRetriever(r types.RetrieverType) bool {
 	for _, engineInfo := range c.engineInfos {
+		if engineInfo == nil {
+			continue
+		}
 		if slices.Contains(engineInfo.retrieverType, r) {
 			return true
 		}

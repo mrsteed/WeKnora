@@ -192,7 +192,7 @@ func (h *Handler) StopSession(c *gin.Context) {
 		c.JSON(401, gin.H{"error": "Unauthorized"})
 		return
 	}
-	tenantIDUint := tenantID.(uint)
+	tenantIDUint := tenantID.(uint64)
 
 	// Verify message ownership and status
 	message, err := h.messageService.GetMessage(ctx, sessionID, assistantMessageID)

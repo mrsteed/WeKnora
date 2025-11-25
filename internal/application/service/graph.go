@@ -131,6 +131,9 @@ func (b *graphBuilder) extractEntities(ctx context.Context, chunk *types.Chunk) 
 	// Print detailed entity information in a clear format
 	log.Info("=========== EXTRACTED ENTITIES ===========")
 	for i, entity := range extractedEntities {
+		if entity == nil {
+			continue
+		}
 		log.Infof("[Entity %d] Title: '%s', Description: '%s'", i+1, entity.Title, entity.Description)
 	}
 	log.Info("=========================================")
@@ -156,6 +159,10 @@ func (b *graphBuilder) extractEntities(ctx context.Context, chunk *types.Chunk) 
 			entities = append(entities, entity)
 			log.Debugf("New entity added: %s (ID: %s)", entity.Title, entity.ID)
 		} else {
+			if existEntity == nil {
+				log.Warnf("existEntity is nil, skip update")
+				continue
+			}
 			// Entity already exists, update its ChunkIDs
 			if !slices.Contains(existEntity.ChunkIDs, chunk.ID) {
 				existEntity.ChunkIDs = append(existEntity.ChunkIDs, chunk.ID)
@@ -231,6 +238,9 @@ func (b *graphBuilder) extractRelationships(ctx context.Context,
 	// Print detailed relationship information in a clear format
 	log.Info("========= EXTRACTED RELATIONSHIPS =========")
 	for i, rel := range extractedRelationships {
+		if rel == nil {
+			continue
+		}
 		log.Infof("[Relation %d] Source: '%s', Target: '%s', Description: '%s', Strength: %d",
 			i+1, rel.Source, rel.Target, rel.Description, rel.Strength)
 	}
@@ -243,6 +253,9 @@ func (b *graphBuilder) extractRelationships(ctx context.Context,
 	relationshipsAdded := 0
 	relationshipsUpdated := 0
 	for _, relationship := range extractedRelationships {
+		if relationship == nil {
+			continue
+		}
 		key := fmt.Sprintf("%s#%s", relationship.Source, relationship.Target)
 		relationChunkIDs := b.findRelationChunkIDs(relationship.Source, relationship.Target, entities)
 		if len(relationChunkIDs) == 0 {
@@ -291,6 +304,9 @@ func (b *graphBuilder) findRelationChunkIDs(source, target string, entities []*t
 
 	// Collect all document chunk IDs for source and target entities
 	for _, entity := range entities {
+		if entity == nil {
+			continue
+		}
 		if entity.Title == source || entity.Title == target {
 			for _, chunkID := range entity.ChunkIDs {
 				relationChunkIDs[chunkID] = struct{}{}
@@ -475,6 +491,9 @@ func (b *graphBuilder) calculateWeights(ctx context.Context) {
 	entityFrequency := make(map[string]int)
 
 	for _, entity := range b.entityMap {
+		if entity == nil {
+			continue
+		}
 		frequency := len(entity.ChunkIDs)
 		entityFrequency[entity.Title] = frequency
 		totalEntityOccurrences += frequency
@@ -483,6 +502,9 @@ func (b *graphBuilder) calculateWeights(ctx context.Context) {
 	// Calculate total relationship occurrences
 	totalRelOccurrences := 0
 	for _, rel := range b.relationshipMap {
+		if rel == nil {
+			continue
+		}
 		totalRelOccurrences += len(rel.ChunkIDs)
 	}
 
@@ -499,6 +521,9 @@ func (b *graphBuilder) calculateWeights(ctx context.Context) {
 	// First calculate PMI and find maximum values
 	pmiValues := make(map[string]float64)
 	for _, rel := range b.relationshipMap {
+		if rel == nil {
+			continue
+		}
 		sourceFreq := entityFrequency[rel.Source]
 		targetFreq := entityFrequency[rel.Target]
 		relFreq := len(rel.ChunkIDs)
@@ -564,11 +589,17 @@ func (b *graphBuilder) calculateDegrees(ctx context.Context) {
 
 	// Set degree for each entity
 	for _, entity := range b.entityMap {
+		if entity == nil {
+			continue
+		}
 		entity.Degree = inDegree[entity.Title] + outDegree[entity.Title]
 	}
 
 	// Set combined degree for relationships
 	for _, rel := range b.relationshipMap {
+		if rel == nil {
+			continue
+		}
 		sourceEntity := b.getEntityByTitle(rel.Source)
 		targetEntity := b.getEntityByTitle(rel.Target)
 
@@ -588,6 +619,9 @@ func (b *graphBuilder) buildChunkGraph(ctx context.Context) {
 
 	// Create document chunk relationship graph based on entity relationships
 	for _, rel := range b.relationshipMap {
+		if rel == nil {
+			continue
+		}
 		// Ensure source and target entities exist for the relationship
 		sourceEntity := b.entityMapByTitle[rel.Source]
 		targetEntity := b.entityMapByTitle[rel.Target]
@@ -665,6 +699,9 @@ func (b *graphBuilder) GetRelationChunks(chunkID string, topK int) []string {
 	// Collect related chunks with their weights and degrees
 	weightedChunks := make([]weightedChunk, 0)
 	for relationChunkID, relation := range b.chunkGraph[chunkID] {
+		if relation == nil {
+			continue
+		}
 		weightedChunks = append(weightedChunks, weightedChunk{
 			id:     relationChunkID,
 			weight: relation.Weight,
@@ -737,8 +774,14 @@ func (b *graphBuilder) GetIndirectRelationChunks(chunkID string, topK int) []str
 
 	// Get first-degree connections
 	for directChunkID, directRelation := range b.chunkGraph[chunkID] {
+		if directRelation == nil {
+			continue
+		}
 		// Get second-degree connections
 		for indirectChunkID, indirectRelation := range b.chunkGraph[directChunkID] {
+			if indirectRelation == nil {
+				continue
+			}
 			// Skip self and all direct connections
 			if _, isDirect := directChunks[indirectChunkID]; isDirect {
 				continue
@@ -764,6 +807,9 @@ func (b *graphBuilder) GetIndirectRelationChunks(chunkID string, topK int) []str
 	// Convert to sortable slice
 	weightedChunks := make([]weightedChunk, 0, len(indirectChunkMap))
 	for id, relation := range indirectChunkMap {
+		if relation == nil {
+			continue
+		}
 		weightedChunks = append(weightedChunks, weightedChunk{
 			id:     id,
 			weight: relation.Weight,

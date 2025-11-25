@@ -28,7 +28,7 @@ func (r *knowledgeRepository) CreateKnowledge(ctx context.Context, knowledge *ty
 }
 
 // GetKnowledgeByID gets knowledge
-func (r *knowledgeRepository) GetKnowledgeByID(ctx context.Context, tenantID uint, id string) (*types.Knowledge, error) {
+func (r *knowledgeRepository) GetKnowledgeByID(ctx context.Context, tenantID uint64, id string) (*types.Knowledge, error) {
 	var knowledge types.Knowledge
 	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).First(&knowledge).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -41,7 +41,7 @@ func (r *knowledgeRepository) GetKnowledgeByID(ctx context.Context, tenantID uin
 
 // ListKnowledgeByKnowledgeBaseID lists all knowledge in a knowledge base
 func (r *knowledgeRepository) ListKnowledgeByKnowledgeBaseID(
-	ctx context.Context, tenantID uint, kbID string,
+	ctx context.Context, tenantID uint64, kbID string,
 ) ([]*types.Knowledge, error) {
 	var knowledges []*types.Knowledge
 	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
@@ -54,7 +54,7 @@ func (r *knowledgeRepository) ListKnowledgeByKnowledgeBaseID(
 // ListPagedKnowledgeByKnowledgeBaseID lists all knowledge in a knowledge base with pagination
 func (r *knowledgeRepository) ListPagedKnowledgeByKnowledgeBaseID(
 	ctx context.Context,
-	tenantID uint,
+	tenantID uint64,
 	kbID string,
 	page *types.Pagination,
 	tagID string,
@@ -106,18 +106,18 @@ func (r *knowledgeRepository) UpdateKnowledgeBatch(ctx context.Context, knowledg
 }
 
 // DeleteKnowledge deletes knowledge
-func (r *knowledgeRepository) DeleteKnowledge(ctx context.Context, tenantID uint, id string) error {
+func (r *knowledgeRepository) DeleteKnowledge(ctx context.Context, tenantID uint64, id string) error {
 	return r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).Delete(&types.Knowledge{}).Error
 }
 
 // DeleteKnowledge deletes knowledge
-func (r *knowledgeRepository) DeleteKnowledgeList(ctx context.Context, tenantID uint, ids []string) error {
+func (r *knowledgeRepository) DeleteKnowledgeList(ctx context.Context, tenantID uint64, ids []string) error {
 	return r.db.WithContext(ctx).Where("tenant_id = ? AND id in ?", tenantID, ids).Delete(&types.Knowledge{}).Error
 }
 
 // GetKnowledgeBatch gets knowledge in batch
 func (r *knowledgeRepository) GetKnowledgeBatch(
-	ctx context.Context, tenantID uint, ids []string,
+	ctx context.Context, tenantID uint64, ids []string,
 ) ([]*types.Knowledge, error) {
 	var knowledge []*types.Knowledge
 	if err := r.db.WithContext(ctx).Debug().
@@ -131,7 +131,7 @@ func (r *knowledgeRepository) GetKnowledgeBatch(
 // CheckKnowledgeExists checks if knowledge already exists
 func (r *knowledgeRepository) CheckKnowledgeExists(
 	ctx context.Context,
-	tenantID uint,
+	tenantID uint64,
 	kbID string,
 	params *types.KnowledgeCheckParams,
 ) (bool, *types.Knowledge, error) {
@@ -199,8 +199,8 @@ func (r *knowledgeRepository) CheckKnowledgeExists(
 
 func (r *knowledgeRepository) AminusB(
 	ctx context.Context,
-	Atenant uint, A string,
-	Btenant uint, B string,
+	Atenant uint64, A string,
+	Btenant uint64, B string,
 ) ([]string, error) {
 	knowledgeIDs := []string{}
 	subQuery := r.db.Model(&types.Knowledge{}).
@@ -222,7 +222,7 @@ func (r *knowledgeRepository) UpdateKnowledgeColumn(ctx context.Context, id stri
 }
 
 // CountKnowledgeByKnowledgeBaseID counts the number of knowledge items in a knowledge base
-func (r *knowledgeRepository) CountKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint, kbID string) (int64, error) {
+func (r *knowledgeRepository) CountKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&types.Knowledge{}).
 		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
@@ -233,7 +233,7 @@ func (r *knowledgeRepository) CountKnowledgeByKnowledgeBaseID(ctx context.Contex
 // CountKnowledgeByStatus counts the number of knowledge items with the specified parse status
 func (r *knowledgeRepository) CountKnowledgeByStatus(
 	ctx context.Context,
-	tenantID uint,
+	tenantID uint64,
 	kbID string,
 	parseStatuses []string,
 ) (int64, error) {

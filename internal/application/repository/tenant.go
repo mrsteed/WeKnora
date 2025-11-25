@@ -32,7 +32,7 @@ func (r *tenantRepository) CreateTenant(ctx context.Context, tenant *types.Tenan
 }
 
 // GetTenantByID gets tenant by ID
-func (r *tenantRepository) GetTenantByID(ctx context.Context, id uint) (*types.Tenant, error) {
+func (r *tenantRepository) GetTenantByID(ctx context.Context, id uint64) (*types.Tenant, error) {
 	var tenant types.Tenant
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&tenant).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -58,11 +58,11 @@ func (r *tenantRepository) UpdateTenant(ctx context.Context, tenant *types.Tenan
 }
 
 // DeleteTenant deletes tenant
-func (r *tenantRepository) DeleteTenant(ctx context.Context, id uint) error {
+func (r *tenantRepository) DeleteTenant(ctx context.Context, id uint64) error {
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.Tenant{}).Error
 }
 
-func (r *tenantRepository) AdjustStorageUsed(ctx context.Context, tenantID uint, delta int64) error {
+func (r *tenantRepository) AdjustStorageUsed(ctx context.Context, tenantID uint64, delta int64) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var tenant types.Tenant
 		// 使用悲观锁确保并发安全

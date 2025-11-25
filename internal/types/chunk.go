@@ -67,7 +67,7 @@ type Chunk struct {
 	// Unique identifier of the chunk, using UUID format
 	ID string `json:"id" gorm:"type:varchar(36);primaryKey"`
 	// Tenant ID, used for multi-tenant isolation
-	TenantID uint `json:"tenant_id"`
+	TenantID uint64 `json:"tenant_id"`
 	// ID of the parent knowledge, associated with the Knowledge model
 	KnowledgeID string `json:"knowledge_id"`
 	// ID of the knowledge base, for quick location

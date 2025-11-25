@@ -73,7 +73,7 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		kb.ID = uuid.New().String()
 	}
 	kb.CreatedAt = time.Now()
-	kb.TenantID = ctx.Value(types.TenantIDContextKey).(uint)
+	kb.TenantID = ctx.Value(types.TenantIDContextKey).(uint64)
 	kb.UpdatedAt = time.Now()
 	kb.EnsureDefaults()
 
@@ -112,7 +112,7 @@ func (s *knowledgeBaseService) GetKnowledgeBaseByID(ctx context.Context, id stri
 
 // ListKnowledgeBases returns all knowledge bases for a tenant
 func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types.KnowledgeBase, error) {
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
 	kbs, err := s.repo.ListKnowledgeBasesByTenantID(ctx, tenantID)
 	if err != nil {
@@ -222,7 +222,7 @@ func (s *knowledgeBaseService) DeleteKnowledgeBase(ctx context.Context, id strin
 	logger.Infof(ctx, "Deleting knowledge base, ID: %s", id)
 
 	// Get tenant ID from context
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
 	// Step 1: Get all knowledge entries in this knowledge base
 	logger.Infof(ctx, "Fetching all knowledge entries in knowledge base, ID: %s", id)
@@ -390,7 +390,7 @@ func (s *knowledgeBaseService) CopyKnowledgeBase(ctx context.Context,
 		return nil, nil, err
 	}
 	sourceKB.EnsureDefaults()
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	var targetKB *types.KnowledgeBase
 	if dstKB != "" {
 		targetKB, err = s.repo.GetKnowledgeBaseByID(ctx, dstKB)
@@ -685,7 +685,7 @@ func (s *knowledgeBaseService) filterByNegativeQuestions(ctx context.Context,
 		return chunks
 	}
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
 	// Collect chunk IDs
 	chunkIDs := make([]string, 0, len(chunks))
@@ -772,7 +772,7 @@ func (s *knowledgeBaseService) processSearchResults(ctx context.Context,
 		return nil, nil
 	}
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
 	// Prepare data structures for efficient processing
 	var knowledgeIDs []string
@@ -950,7 +950,7 @@ func (s *knowledgeBaseService) isValidTextChunk(chunk *types.Chunk) bool {
 
 // fetchKnowledgeData gets knowledge data in batch
 func (s *knowledgeBaseService) fetchKnowledgeData(ctx context.Context,
-	tenantID uint,
+	tenantID uint64,
 	knowledgeIDs []string,
 ) (map[string]*types.Knowledge, error) {
 	knowledges, err := s.kgRepo.GetKnowledgeBatch(ctx, tenantID, knowledgeIDs)

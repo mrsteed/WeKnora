@@ -34,7 +34,7 @@ func (h *MCPServiceHandler) CreateMCPService(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint(types.TenantIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
 		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
@@ -60,7 +60,7 @@ func (h *MCPServiceHandler) CreateMCPService(c *gin.Context) {
 func (h *MCPServiceHandler) ListMCPServices(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	tenantID := c.GetUint(types.TenantIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
 		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
@@ -86,7 +86,7 @@ func (h *MCPServiceHandler) GetMCPService(c *gin.Context) {
 	ctx := c.Request.Context()
 	serviceID := c.Param("id")
 
-	tenantID := c.GetUint(types.TenantIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
 		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
@@ -112,7 +112,7 @@ func (h *MCPServiceHandler) UpdateMCPService(c *gin.Context) {
 	ctx := c.Request.Context()
 	serviceID := c.Param("id")
 
-	tenantID := c.GetUint(types.TenantIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
 		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
@@ -229,7 +229,7 @@ func (h *MCPServiceHandler) DeleteMCPService(c *gin.Context) {
 	ctx := c.Request.Context()
 	serviceID := c.Param("id")
 
-	tenantID := c.GetUint(types.TenantIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
 		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
@@ -255,7 +255,7 @@ func (h *MCPServiceHandler) TestMCPService(c *gin.Context) {
 	ctx := c.Request.Context()
 	serviceID := c.Param("id")
 
-	tenantID := c.GetUint(types.TenantIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
 		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
@@ -290,7 +290,7 @@ func (h *MCPServiceHandler) GetMCPServiceTools(c *gin.Context) {
 	ctx := c.Request.Context()
 	serviceID := c.Param("id")
 
-	tenantID := c.GetUint(types.TenantIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
 		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
@@ -316,7 +316,7 @@ func (h *MCPServiceHandler) GetMCPServiceResources(c *gin.Context) {
 	ctx := c.Request.Context()
 	serviceID := c.Param("id")
 
-	tenantID := c.GetUint(types.TenantIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
 		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))

@@ -29,6 +29,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useI18n } from 'vue-i18n';
 import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
+import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
 
 const router = useRouter();
 const route = useRoute();
@@ -36,6 +37,7 @@ const usemenuStore = useMenuStore();
 const settingsStore = useSettingsStore();
 const uiStore = useUIStore();
 const { t } = useI18n();
+const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 
 const sendMsg = (value: string) => {
     createNewSession(value);
@@ -93,12 +95,7 @@ const navigateToSession = async (sessionId: string, value: string) => {
 }
 
 const handleKBEditorSuccess = (kbId: string) => {
-    console.log('[creatChat] knowledge base created successfully:', kbId)
-    // 创建成功后跳转到知识库列表页面，并高亮新创建的知识库
-    router.push({
-        path: '/platform/knowledge-bases',
-        query: { highlightKbId: kbId }
-    })
+    navigateToKnowledgeBaseList(kbId)
 }
 
 </script>

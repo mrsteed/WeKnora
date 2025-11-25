@@ -49,7 +49,7 @@ func (s *mcpServiceService) CreateMCPService(ctx context.Context, service *types
 }
 
 // GetMCPServiceByID retrieves an MCP service by ID
-func (s *mcpServiceService) GetMCPServiceByID(ctx context.Context, tenantID uint, id string) (*types.MCPService, error) {
+func (s *mcpServiceService) GetMCPServiceByID(ctx context.Context, tenantID uint64, id string) (*types.MCPService, error) {
 	service, err := s.mcpServiceRepo.GetByID(ctx, tenantID, id)
 	if err != nil {
 		logger.GetLogger(ctx).Errorf("Failed to get MCP service: %v", err)
@@ -64,7 +64,7 @@ func (s *mcpServiceService) GetMCPServiceByID(ctx context.Context, tenantID uint
 }
 
 // ListMCPServices lists all MCP services for a tenant
-func (s *mcpServiceService) ListMCPServices(ctx context.Context, tenantID uint) ([]*types.MCPService, error) {
+func (s *mcpServiceService) ListMCPServices(ctx context.Context, tenantID uint64) ([]*types.MCPService, error) {
 	services, err := s.mcpServiceRepo.List(ctx, tenantID)
 	if err != nil {
 		logger.GetLogger(ctx).Errorf("Failed to list MCP services: %v", err)
@@ -80,7 +80,7 @@ func (s *mcpServiceService) ListMCPServices(ctx context.Context, tenantID uint) 
 }
 
 // ListMCPServicesByIDs retrieves multiple MCP services by IDs
-func (s *mcpServiceService) ListMCPServicesByIDs(ctx context.Context, tenantID uint, ids []string) ([]*types.MCPService, error) {
+func (s *mcpServiceService) ListMCPServicesByIDs(ctx context.Context, tenantID uint64, ids []string) ([]*types.MCPService, error) {
 	if len(ids) == 0 {
 		return []*types.MCPService{}, nil
 	}
@@ -198,7 +198,7 @@ func (s *mcpServiceService) UpdateMCPService(ctx context.Context, service *types
 }
 
 // DeleteMCPService deletes an MCP service
-func (s *mcpServiceService) DeleteMCPService(ctx context.Context, tenantID uint, id string) error {
+func (s *mcpServiceService) DeleteMCPService(ctx context.Context, tenantID uint64, id string) error {
 	// Check if service exists
 	existing, err := s.mcpServiceRepo.GetByID(ctx, tenantID, id)
 	if err != nil {
@@ -221,7 +221,7 @@ func (s *mcpServiceService) DeleteMCPService(ctx context.Context, tenantID uint,
 }
 
 // TestMCPService tests the connection to an MCP service and returns available tools/resources
-func (s *mcpServiceService) TestMCPService(ctx context.Context, tenantID uint, id string) (*types.MCPTestResult, error) {
+func (s *mcpServiceService) TestMCPService(ctx context.Context, tenantID uint64, id string) (*types.MCPTestResult, error) {
 	// Get service
 	service, err := s.mcpServiceRepo.GetByID(ctx, tenantID, id)
 	if err != nil {
@@ -288,7 +288,7 @@ func (s *mcpServiceService) TestMCPService(ctx context.Context, tenantID uint, i
 }
 
 // GetMCPServiceTools retrieves the list of tools from an MCP service
-func (s *mcpServiceService) GetMCPServiceTools(ctx context.Context, tenantID uint, id string) ([]*types.MCPTool, error) {
+func (s *mcpServiceService) GetMCPServiceTools(ctx context.Context, tenantID uint64, id string) ([]*types.MCPTool, error) {
 	// Get service
 	service, err := s.mcpServiceRepo.GetByID(ctx, tenantID, id)
 	if err != nil {
@@ -314,7 +314,7 @@ func (s *mcpServiceService) GetMCPServiceTools(ctx context.Context, tenantID uin
 }
 
 // GetMCPServiceResources retrieves the list of resources from an MCP service
-func (s *mcpServiceService) GetMCPServiceResources(ctx context.Context, tenantID uint, id string) ([]*types.MCPResource, error) {
+func (s *mcpServiceService) GetMCPServiceResources(ctx context.Context, tenantID uint64, id string) ([]*types.MCPResource, error) {
 	// Get service
 	service, err := s.mcpServiceRepo.GetByID(ctx, tenantID, id)
 	if err != nil {

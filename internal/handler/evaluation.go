@@ -87,9 +87,6 @@ func (e *EvaluationHandler) GetEvaluationResult(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
 		return
 	}
-
-	logger.Infof(ctx, "Retrieving evaluation result, task ID: %s", request.TaskID)
-
 	result, err := e.evaluationService.EvaluationResult(ctx, request.TaskID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -97,7 +94,7 @@ func (e *EvaluationHandler) GetEvaluationResult(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieved evaluation result successfully, task ID: %s", request.TaskID)
+	logger.Info(ctx, "Retrieved evaluation result successfully")
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    result,

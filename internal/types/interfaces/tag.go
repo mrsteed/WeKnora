@@ -22,9 +22,9 @@ type KnowledgeTagService interface {
 type KnowledgeTagRepository interface {
 	Create(ctx context.Context, tag *types.KnowledgeTag) error
 	Update(ctx context.Context, tag *types.KnowledgeTag) error
-	GetByID(ctx context.Context, tenantID uint, id string) (*types.KnowledgeTag, error)
-	ListByKB(ctx context.Context, tenantID uint, kbID string) ([]*types.KnowledgeTag, error)
-	Delete(ctx context.Context, tenantID uint, id string) error
+	GetByID(ctx context.Context, tenantID uint64, id string) (*types.KnowledgeTag, error)
+	ListByKB(ctx context.Context, tenantID uint64, kbID string) ([]*types.KnowledgeTag, error)
+	Delete(ctx context.Context, tenantID uint64, id string) error
 	// CountReferences returns number of knowledges and chunks that reference the tag.
-	CountReferences(ctx context.Context, tenantID uint, kbID string, tagID string) (knowledgeCount int64, chunkCount int64, err error)
+	CountReferences(ctx context.Context, tenantID uint64, kbID string, tagID string) (knowledgeCount int64, chunkCount int64, err error)
 }

@@ -82,7 +82,7 @@ func (s *chunkService) CreateChunks(ctx context.Context, chunks []*types.Chunk) 
 //   - *types.Chunk: Retrieved chunk if found
 //   - error: Any error encountered during retrieval
 func (s *chunkService) GetChunkByID(ctx context.Context, id string) (*types.Chunk, error) {
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Getting chunk by ID, ID: %s, tenant ID: %d", id, tenantID)
 	chunk, err := s.chunkRepository.GetChunkByID(ctx, tenantID, id)
 	if err != nil {
@@ -110,7 +110,7 @@ func (s *chunkService) ListChunksByKnowledgeID(ctx context.Context, knowledgeID 
 	logger.Info(ctx, "Start listing chunks by knowledge ID")
 	logger.Infof(ctx, "Knowledge ID: %s", knowledgeID)
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 
 	chunks, err := s.chunkRepository.ListChunksByKnowledgeID(ctx, tenantID, knowledgeID)
@@ -142,7 +142,7 @@ func (s *chunkService) ListPagedChunksByKnowledgeID(ctx context.Context,
 	logger.Info(ctx, "Start listing paged chunks by knowledge ID")
 	logger.Infof(ctx, "Knowledge ID: %s, page: %d, page size: %d", knowledgeID, page.Page, page.PageSize)
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 	chunks, total, err := s.chunkRepository.ListPagedChunksByKnowledgeID(ctx, tenantID, knowledgeID, page, chunkType, "")
 	if err != nil {
@@ -218,7 +218,7 @@ func (s *chunkService) DeleteChunk(ctx context.Context, id string) error {
 	logger.Info(ctx, "Start deleting chunk")
 	logger.Infof(ctx, "Deleting chunk, ID: %s", id)
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 
 	err := s.chunkRepository.DeleteChunk(ctx, tenantID, id)
@@ -249,7 +249,7 @@ func (s *chunkService) DeleteChunks(ctx context.Context, ids []string) error {
 	logger.Info(ctx, "Start deleting chunks in batch")
 	logger.Infof(ctx, "Deleting %d chunks", len(ids))
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 
 	err := s.chunkRepository.DeleteChunks(ctx, tenantID, ids)
@@ -277,7 +277,7 @@ func (s *chunkService) DeleteChunksByKnowledgeID(ctx context.Context, knowledgeI
 	logger.Info(ctx, "Start deleting all chunks by knowledge ID")
 	logger.Infof(ctx, "Knowledge ID: %s", knowledgeID)
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 
 	err := s.chunkRepository.DeleteChunksByKnowledgeID(ctx, tenantID, knowledgeID)
@@ -297,7 +297,7 @@ func (s *chunkService) DeleteByKnowledgeList(ctx context.Context, ids []string) 
 	logger.Info(ctx, "Start deleting all chunks by knowledge IDs")
 	logger.Infof(ctx, "Knowledge IDs: %v", ids)
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 
 	err := s.chunkRepository.DeleteByKnowledgeList(ctx, tenantID, ids)
@@ -313,7 +313,7 @@ func (s *chunkService) DeleteByKnowledgeList(ctx context.Context, ids []string) 
 	return nil
 }
 
-func (s *chunkService) ListChunkByParentID(ctx context.Context, tenantID uint, parentID string) ([]*types.Chunk, error) {
+func (s *chunkService) ListChunkByParentID(ctx context.Context, tenantID uint64, parentID string) ([]*types.Chunk, error) {
 	logger.Info(ctx, "Start listing chunk by parent ID")
 	logger.Infof(ctx, "Parent ID: %s", parentID)
 

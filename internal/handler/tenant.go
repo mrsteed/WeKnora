@@ -91,7 +91,7 @@ func (h *TenantHandler) GetTenant(c *gin.Context) {
 		return
 	}
 
-	tenant, err := h.service.GetTenantByID(ctx, uint(id))
+	tenant, err := h.service.GetTenantByID(ctx, id)
 	if err != nil {
 		// Check if this is an application-specific error
 		if appErr, ok := errors.IsAppError(err); ok {
@@ -136,7 +136,7 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 
 	logger.Infof(ctx, "Updating tenant, ID: %d, Name: %s", id, tenantData.Name)
 
-	tenantData.ID = uint(id)
+	tenantData.ID = id
 	updatedTenant, err := h.service.UpdateTenant(ctx, &tenantData)
 	if err != nil {
 		// Check if this is an application-specific error
@@ -176,7 +176,7 @@ func (h *TenantHandler) DeleteTenant(c *gin.Context) {
 
 	logger.Infof(ctx, "Deleting tenant, ID: %d", id)
 
-	if err := h.service.DeleteTenant(ctx, uint(id)); err != nil {
+	if err := h.service.DeleteTenant(ctx, id); err != nil {
 		// Check if this is an application-specific error
 		if appErr, ok := errors.IsAppError(err); ok {
 			logger.Error(ctx, "Failed to delete tenant: application error", appErr)
@@ -337,6 +337,11 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 
 	// Get existing tenant
 	tenant := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	if tenant == nil {
+		logger.Error(ctx, "Tenant is empty")
+		c.Error(errors.NewBadRequestError("Tenant is empty"))
+		return
+	}
 	// Update agent configuration
 	useCustomPrompt := false
 	if tenant.AgentConfig != nil {
@@ -557,15 +562,13 @@ func (h *TenantHandler) GetTenantConversationConfig(c *gin.Context) {
 
 	// If tenant has no conversation config, return defaults from config.yaml
 	var response *types.ConversationConfig
-	if tenant.ConversationConfig == nil {
+	if tc := tenant.ConversationConfig; tc == nil {
 		logger.Info(ctx, "Tenant has no conversation config, returning defaults")
 		response = h.buildDefaultConversationConfig()
 	} else {
 		logger.Infof(ctx, "Tenant has conversation config, merging with defaults, Tenant ID: %d", tenant.ID)
 		// Merge tenant config with defaults, so that newly added fields always have valid values
 		defaultCfg := h.buildDefaultConversationConfig()
-		tc := tenant.ConversationConfig
-
 		// Prompt related
 		defaultCfg.UseCustomSystemPrompt = tc.UseCustomSystemPrompt
 		if !defaultCfg.UseCustomSystemPrompt && tc.Prompt != "" {

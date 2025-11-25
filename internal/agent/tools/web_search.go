@@ -124,8 +124,8 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 	logger.Infof(ctx, "[Tool][WebSearch] Searching with query: %s, max_results: %d", query, t.maxResults)
 
 	// Get tenant ID from context
-	tenantID := uint(0)
-	if tid, ok := ctx.Value(types.TenantIDContextKey).(uint); ok {
+	tenantID := uint64(0)
+	if tid, ok := ctx.Value(types.TenantIDContextKey).(uint64); ok {
 		tenantID = tid
 	}
 

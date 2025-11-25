@@ -84,7 +84,7 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint(types.TenantIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
 		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
@@ -173,7 +173,7 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 
 	logger.Info(ctx, "Start retrieving model list")
 
-	tenantID := c.GetUint(types.TenantIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
 		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))

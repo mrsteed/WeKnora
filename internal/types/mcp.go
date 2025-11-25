@@ -21,7 +21,7 @@ const (
 // MCPService represents an MCP (Model Context Protocol) service configuration
 type MCPService struct {
 	ID             string             `json:"id" gorm:"type:varchar(36);primaryKey"`
-	TenantID       uint               `json:"tenant_id" gorm:"index"`
+	TenantID       uint64             `json:"tenant_id" gorm:"index"`
 	Name           string             `json:"name" gorm:"type:varchar(255);not null"`
 	Description    string             `json:"description" gorm:"type:text"`
 	Enabled        bool               `json:"enabled" gorm:"default:true;index"`

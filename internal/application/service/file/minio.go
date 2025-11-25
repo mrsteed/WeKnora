@@ -52,7 +52,7 @@ func NewMinioFileService(endpoint,
 
 // SaveFile saves a file to MinIO
 func (s *minioFileService) SaveFile(ctx context.Context,
-	file *multipart.FileHeader, tenantID uint, knowledgeID string,
+	file *multipart.FileHeader, tenantID uint64, knowledgeID string,
 ) (string, error) {
 	// Generate object name
 	ext := filepath.Ext(file.Filename)

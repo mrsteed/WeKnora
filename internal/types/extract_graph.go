@@ -7,7 +7,7 @@ const (
 )
 
 type ExtractChunkPayload struct {
-	TenantID uint   `json:"tenant_id"`
+	TenantID uint64 `json:"tenant_id"`
 	ChunkID  string `json:"chunk_id"`
 	ModelID  string `json:"model_id"`
 }
@@ -15,7 +15,7 @@ type ExtractChunkPayload struct {
 // DocumentProcessPayload 文档处理任务payload
 type DocumentProcessPayload struct {
 	RequestId        string   `json:"request_id"`
-	TenantID         uint     `json:"tenant_id"`
+	TenantID         uint64   `json:"tenant_id"`
 	KnowledgeID      string   `json:"knowledge_id"`
 	KnowledgeBaseID  string   `json:"knowledge_base_id"`
 	FilePath         string   `json:"file_path,omitempty"` // 文件路径（文件导入时使用）
@@ -28,7 +28,7 @@ type DocumentProcessPayload struct {
 
 // FAQImportPayload FAQ导入任务payload
 type FAQImportPayload struct {
-	TenantID    uint              `json:"tenant_id"`
+	TenantID    uint64            `json:"tenant_id"`
 	TaskID      string            `json:"task_id"`
 	KBID        string            `json:"kb_id"`
 	KnowledgeID string            `json:"knowledge_id"`

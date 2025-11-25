@@ -34,18 +34,18 @@ type ModelRepository interface {
 	// Create creates a model
 	Create(ctx context.Context, model *types.Model) error
 	// GetByID gets a model by ID
-	GetByID(ctx context.Context, tenantID uint, id string) (*types.Model, error)
+	GetByID(ctx context.Context, tenantID uint64, id string) (*types.Model, error)
 	// List lists all models
 	List(
 		ctx context.Context,
-		tenantID uint,
+		tenantID uint64,
 		modelType types.ModelType,
 		source types.ModelSource,
 	) ([]*types.Model, error)
 	// Update updates a model
 	Update(ctx context.Context, model *types.Model) error
 	// Delete deletes a model
-	Delete(ctx context.Context, tenantID uint, id string) error
+	Delete(ctx context.Context, tenantID uint64, id string) error
 	// ClearDefaultByType clears the default flag for all models of a specific type, optionally excluding a specific model ID
 	ClearDefaultByType(ctx context.Context, tenantID uint, modelType types.ModelType, excludeID string) error
 }

@@ -54,7 +54,7 @@ type Model struct {
 	// Unique identifier of the model
 	ID string `yaml:"id" json:"id" gorm:"type:varchar(36);primaryKey"`
 	// Tenant ID
-	TenantID uint `yaml:"tenant_id" json:"tenant_id"`
+	TenantID uint64 `yaml:"tenant_id" json:"tenant_id"`
 	// Name of the model
 	Name string `yaml:"name" json:"name"`
 	// Type of the model

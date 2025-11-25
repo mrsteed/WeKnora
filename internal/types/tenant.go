@@ -11,7 +11,7 @@ import (
 // Tenant represents the tenant
 type Tenant struct {
 	// ID
-	ID uint `yaml:"id" json:"id" gorm:"primaryKey"`
+	ID uint64 `yaml:"id" json:"id" gorm:"primaryKey"`
 	// Name
 	Name string `yaml:"name" json:"name"`
 	// Description

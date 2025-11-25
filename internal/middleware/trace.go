@@ -11,7 +11,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/Tencent/WeKnora/internal/tracing"
-	"github.com/Tencent/WeKnora/internal/types"
 )
 
 // Custom ResponseWriter to capture response content
@@ -34,12 +33,6 @@ func TracingMiddleware() gin.HandlerFunc {
 		if propagator == nil {
 			c.Next()
 			return
-		}
-
-		// Get request ID as Span ID
-		requestID := c.GetString(string(types.RequestIDContextKey))
-		if requestID == "" {
-			requestID = c.GetHeader("X-Request-ID")
 		}
 
 		// Create new span

@@ -233,6 +233,9 @@ const isInCreatChat = computed<boolean>(() => {
     return route.name === 'globalCreatChat' || route.name === 'kbCreatChat';
 });
 
+// 是否在对话详情页
+const isInChatDetail = computed<boolean>(() => route.name === 'chat');
+
 // 统一的菜单项激活状态判断
 const isMenuItemActive = (itemPath: string): boolean => {
     const currentRoute = route.name;
@@ -301,11 +304,16 @@ const handleFaqSelectionChanged = ((event: CustomEvent<{ count: number; enabledC
   selectedFaqDisabledCount.value = event.detail?.disabledCount || 0
 }) as EventListener
 
-const showKbActions = computed(() => (isInKnowledgeBase.value && !!currentKbInfo.value) || isInKnowledgeBaseList.value || isInCreatChat.value)
+const showKbActions = computed(() => 
+    (isInKnowledgeBase.value && !!currentKbInfo.value) || 
+    isInKnowledgeBaseList.value || 
+    isInCreatChat.value ||
+    isInChatDetail.value
+)
 const currentKbType = computed(() => currentKbInfo.value?.type || 'document')
 const showDocActions = computed(() => showKbActions.value && isInKnowledgeBase.value && currentKbType.value !== 'faq')
 const showFaqActions = computed(() => showKbActions.value && isInKnowledgeBase.value && currentKbType.value === 'faq')
-const showCreateKbAction = computed(() => showKbActions.value && (isInKnowledgeBaseList.value || isInCreatChat.value))
+const showCreateKbAction = computed(() => showKbActions.value && (isInKnowledgeBaseList.value || isInCreatChat.value || isInChatDetail.value))
 
 // 时间分组函数
 const getTimeCategory = (dateStr: string): string => {

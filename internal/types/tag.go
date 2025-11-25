@@ -9,7 +9,7 @@ type KnowledgeTag struct {
 	// Unique identifier of the tag (UUID)
 	ID string `json:"id" gorm:"type:varchar(36);primaryKey"`
 	// Tenant ID
-	TenantID uint `json:"tenant_id"`
+	TenantID uint64 `json:"tenant_id"`
 	// Knowledge base ID that this tag belongs to
 	KnowledgeBaseID string `json:"knowledge_base_id" gorm:"type:varchar(36);index"`
 	// Tag name, unique within the same knowledge base

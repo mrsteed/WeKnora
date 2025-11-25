@@ -29,7 +29,7 @@ func (r *chunkRepository) CreateChunks(ctx context.Context, chunks []*types.Chun
 }
 
 // GetChunkByID retrieves a chunk by its ID and tenant ID
-func (r *chunkRepository) GetChunkByID(ctx context.Context, tenantID uint, id string) (*types.Chunk, error) {
+func (r *chunkRepository) GetChunkByID(ctx context.Context, tenantID uint64, id string) (*types.Chunk, error) {
 	var chunk types.Chunk
 	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).First(&chunk).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -42,7 +42,7 @@ func (r *chunkRepository) GetChunkByID(ctx context.Context, tenantID uint, id st
 
 // ListChunksByID retrieves multiple chunks by their IDs
 func (r *chunkRepository) ListChunksByID(
-	ctx context.Context, tenantID uint, ids []string,
+	ctx context.Context, tenantID uint64, ids []string,
 ) ([]*types.Chunk, error) {
 	var chunks []*types.Chunk
 	if err := r.db.Debug().WithContext(ctx).
@@ -55,7 +55,7 @@ func (r *chunkRepository) ListChunksByID(
 
 // ListChunksByKnowledgeID lists all chunks for a knowledge ID
 func (r *chunkRepository) ListChunksByKnowledgeID(
-	ctx context.Context, tenantID uint, knowledgeID string,
+	ctx context.Context, tenantID uint64, knowledgeID string,
 ) ([]*types.Chunk, error) {
 	var chunks []*types.Chunk
 	if err := r.db.WithContext(ctx).
@@ -71,7 +71,7 @@ func (r *chunkRepository) ListChunksByKnowledgeID(
 // ListPagedChunksByKnowledgeID lists chunks for a knowledge ID with pagination
 func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	ctx context.Context,
-	tenantID uint,
+	tenantID uint64,
 	knowledgeID string,
 	page *types.Pagination,
 	chunkType []types.ChunkType,
@@ -112,7 +112,7 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	return chunks, total, nil
 }
 
-func (r *chunkRepository) ListChunkByParentID(ctx context.Context, tenantID uint, parentID string) ([]*types.Chunk, error) {
+func (r *chunkRepository) ListChunkByParentID(ctx context.Context, tenantID uint64, parentID string) ([]*types.Chunk, error) {
 	var chunks []*types.Chunk
 	if err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND parent_chunk_id = ?", tenantID, parentID).
@@ -139,12 +139,12 @@ func (r *chunkRepository) UpdateChunks(ctx context.Context, chunks []*types.Chun
 }
 
 // DeleteChunk deletes a chunk by its ID
-func (r *chunkRepository) DeleteChunk(ctx context.Context, tenantID uint, id string) error {
+func (r *chunkRepository) DeleteChunk(ctx context.Context, tenantID uint64, id string) error {
 	return r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).Delete(&types.Chunk{}).Error
 }
 
 // DeleteChunks deletes chunks by IDs in batch
-func (r *chunkRepository) DeleteChunks(ctx context.Context, tenantID uint, ids []string) error {
+func (r *chunkRepository) DeleteChunks(ctx context.Context, tenantID uint64, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -152,21 +152,21 @@ func (r *chunkRepository) DeleteChunks(ctx context.Context, tenantID uint, ids [
 }
 
 // DeleteChunksByKnowledgeID deletes all chunks for a knowledge ID
-func (r *chunkRepository) DeleteChunksByKnowledgeID(ctx context.Context, tenantID uint, knowledgeID string) error {
+func (r *chunkRepository) DeleteChunksByKnowledgeID(ctx context.Context, tenantID uint64, knowledgeID string) error {
 	return r.db.WithContext(ctx).Where(
 		"tenant_id = ? AND knowledge_id = ?", tenantID, knowledgeID,
 	).Delete(&types.Chunk{}).Error
 }
 
 // DeleteByKnowledgeList deletes all chunks for a knowledge list
-func (r *chunkRepository) DeleteByKnowledgeList(ctx context.Context, tenantID uint, knowledgeIDs []string) error {
+func (r *chunkRepository) DeleteByKnowledgeList(ctx context.Context, tenantID uint64, knowledgeIDs []string) error {
 	return r.db.WithContext(ctx).Where(
 		"tenant_id = ? AND knowledge_id in ?", tenantID, knowledgeIDs,
 	).Delete(&types.Chunk{}).Error
 }
 
 // CountChunksByKnowledgeBaseID counts the number of chunks in a knowledge base
-func (r *chunkRepository) CountChunksByKnowledgeBaseID(ctx context.Context, tenantID uint, kbID string) (int64, error) {
+func (r *chunkRepository) CountChunksByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&types.Chunk{}).
 		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
@@ -175,7 +175,7 @@ func (r *chunkRepository) CountChunksByKnowledgeBaseID(ctx context.Context, tena
 }
 
 // DeleteUnindexedChunks by knowledge id and chunk index range
-func (r *chunkRepository) DeleteUnindexedChunks(ctx context.Context, tenantID uint, knowledgeID string) ([]*types.Chunk, error) {
+func (r *chunkRepository) DeleteUnindexedChunks(ctx context.Context, tenantID uint64, knowledgeID string) ([]*types.Chunk, error) {
 	var chunks []*types.Chunk
 	if err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND knowledge_id = ? AND status = ?", tenantID, knowledgeID, types.ChunkStatusStored).
@@ -194,7 +194,7 @@ func (r *chunkRepository) DeleteUnindexedChunks(ctx context.Context, tenantID ui
 
 // ListAllFAQChunksByKnowledgeID lists all FAQ chunks for a knowledge ID (only essential fields for efficiency)
 // Uses batch query to handle large datasets
-func (r *chunkRepository) ListAllFAQChunksByKnowledgeID(ctx context.Context, tenantID uint, knowledgeID string) ([]*types.Chunk, error) {
+func (r *chunkRepository) ListAllFAQChunksByKnowledgeID(ctx context.Context, tenantID uint64, knowledgeID string) ([]*types.Chunk, error) {
 	const batchSize = 1000 // 每批查询1000条
 	var allChunks []*types.Chunk
 	offset := 0

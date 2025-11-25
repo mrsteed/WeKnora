@@ -32,7 +32,7 @@ type KnowledgeSearchTool struct {
 	BaseTool
 	knowledgeBaseService interfaces.KnowledgeBaseService
 	chunkService         interfaces.ChunkService
-	tenantID             uint
+	tenantID             uint64
 	allowedKBs           []string
 	rerankModel          rerank.Reranker
 	chatModel            chat.Chat      // Optional chat model for LLM-based reranking
@@ -43,7 +43,7 @@ type KnowledgeSearchTool struct {
 func NewKnowledgeSearchTool(
 	knowledgeBaseService interfaces.KnowledgeBaseService,
 	chunkService interfaces.ChunkService,
-	tenantID uint,
+	tenantID uint64,
 	allowedKBs []string,
 	rerankModel rerank.Reranker,
 	chatModel chat.Chat,

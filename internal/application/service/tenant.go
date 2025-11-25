@@ -80,7 +80,7 @@ func (s *tenantService) CreateTenant(ctx context.Context, tenant *types.Tenant) 
 }
 
 // GetTenantByID retrieves a tenant by their ID
-func (s *tenantService) GetTenantByID(ctx context.Context, id uint) (*types.Tenant, error) {
+func (s *tenantService) GetTenantByID(ctx context.Context, id uint64) (*types.Tenant, error) {
 	if id == 0 {
 		logger.Error(ctx, "Tenant ID cannot be 0")
 		return nil, errors.New("tenant ID cannot be 0")
@@ -139,7 +139,7 @@ func (s *tenantService) UpdateTenant(ctx context.Context, tenant *types.Tenant) 
 }
 
 // DeleteTenant removes a tenant by their ID
-func (s *tenantService) DeleteTenant(ctx context.Context, id uint) error {
+func (s *tenantService) DeleteTenant(ctx context.Context, id uint64) error {
 	logger.Info(ctx, "Start deleting tenant")
 
 	if id == 0 {
@@ -177,7 +177,7 @@ func (s *tenantService) DeleteTenant(ctx context.Context, id uint) error {
 }
 
 // UpdateAPIKey updates the API key for a specific tenant
-func (s *tenantService) UpdateAPIKey(ctx context.Context, id uint) (string, error) {
+func (s *tenantService) UpdateAPIKey(ctx context.Context, id uint64) (string, error) {
 	logger.Info(ctx, "Start updating tenant API Key")
 
 	if id == 0 {
@@ -208,7 +208,7 @@ func (s *tenantService) UpdateAPIKey(ctx context.Context, id uint) (string, erro
 }
 
 // generateApiKey generates a secure API key for tenant authentication
-func (r *tenantService) generateApiKey(tenantID uint) string {
+func (r *tenantService) generateApiKey(tenantID uint64) string {
 	// 1. Convert tenant_id to bytes
 	idBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(idBytes, uint64(tenantID))
@@ -240,7 +240,7 @@ func (r *tenantService) generateApiKey(tenantID uint) string {
 }
 
 // ExtractTenantIDFromAPIKey extracts the tenant ID from an API key
-func (r *tenantService) ExtractTenantIDFromAPIKey(apiKey string) (uint, error) {
+func (r *tenantService) ExtractTenantIDFromAPIKey(apiKey string) (uint64, error) {
 	// 1. Validate format and extract encrypted part
 	parts := strings.SplitN(apiKey, "-", 2)
 	if len(parts) != 2 || parts[0] != "sk" {
@@ -278,5 +278,5 @@ func (r *tenantService) ExtractTenantIDFromAPIKey(apiKey string) (uint, error) {
 	// 5. Convert back to tenant_id
 	tenantID := binary.LittleEndian.Uint64(plaintext)
 
-	return uint(tenantID), nil
+	return tenantID, nil
 }

@@ -46,7 +46,7 @@ func NewCosFileService(bucketName, region, secretId, secretKey, cosPathPrefix st
 // SaveFile saves a file to COS storage
 // It generates a unique name for the file and organizes it by tenant and knowledge ID
 func (s *cosFileService) SaveFile(ctx context.Context,
-	file *multipart.FileHeader, tenantID uint, knowledgeID string,
+	file *multipart.FileHeader, tenantID uint64, knowledgeID string,
 ) (string, error) {
 	ext := filepath.Ext(file.Filename)
 	objectName := fmt.Sprintf("%s/%d/%s/%s%s", s.cosPathPrefix, tenantID, knowledgeID, uuid.New().String(), ext)

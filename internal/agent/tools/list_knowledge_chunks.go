@@ -12,14 +12,14 @@ import (
 // ListKnowledgeChunksTool retrieves chunk snapshots for a specific knowledge document.
 type ListKnowledgeChunksTool struct {
 	BaseTool
-	tenantID         uint
+	tenantID         uint64
 	chunkService     interfaces.ChunkService
 	knowledgeService interfaces.KnowledgeService
 }
 
 // NewListKnowledgeChunksTool creates a new tool instance.
 func NewListKnowledgeChunksTool(
-	tenantID uint,
+	tenantID uint64,
 	knowledgeService interfaces.KnowledgeService,
 	chunkService interfaces.ChunkService,
 ) *ListKnowledgeChunksTool {

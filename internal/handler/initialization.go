@@ -205,7 +205,6 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
-	logger.Infof(ctx, "Starting KB configuration update with model IDs, kbId: %s", kbIdStr)
 
 	// 获取知识库信息
 	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbIdStr)
@@ -233,14 +232,14 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 	// 从数据库获取模型详情并验证
 	llmModel, err := h.modelService.GetModelByID(ctx, req.LLMModelID)
 	if err != nil || llmModel == nil {
-		logger.Error(ctx, "LLM model not found", "modelId", req.LLMModelID)
+		logger.Error(ctx, "LLM model not found")
 		c.Error(errors.NewBadRequestError("LLM模型不存在"))
 		return
 	}
 
 	embeddingModel, err := h.modelService.GetModelByID(ctx, req.EmbeddingModelID)
 	if err != nil || embeddingModel == nil {
-		logger.Error(ctx, "Embedding model not found", "modelId", req.EmbeddingModelID)
+		logger.Error(ctx, "Embedding model not found")
 		c.Error(errors.NewBadRequestError("Embedding模型不存在"))
 		return
 	}
@@ -254,7 +253,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 	if req.VLMConfig != nil && req.Multimodal.Enabled && req.VLMConfig.ModelID != "" {
 		vllmModel, err := h.modelService.GetModelByID(ctx, req.VLMConfig.ModelID)
 		if err != nil || vllmModel == nil {
-			logger.Warn(ctx, "VLM model not found", "modelId", req.VLMConfig.ModelID)
+			logger.Warn(ctx, "VLM model not found")
 		} else {
 			kb.VLMConfig.Enabled = req.VLMConfig.Enabled
 			kb.VLMConfig.ModelID = req.VLMConfig.ModelID
@@ -335,7 +334,6 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		return
 	}
 
-	logger.Info(ctx, "KB configuration updated successfully", "kbId", kbIdStr)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "配置更新成功",
@@ -1133,6 +1131,9 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 
 	// 按类型分组模型
 	for _, model := range models {
+		if model == nil {
+			continue
+		}
 		// Hide sensitive information for builtin models
 		baseURL := model.Parameters.BaseURL
 		apiKey := model.Parameters.APIKey

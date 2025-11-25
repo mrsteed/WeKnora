@@ -108,7 +108,7 @@ func (s *sessionService) GetSession(ctx context.Context, id string) (*types.Sess
 	}
 
 	// Get tenant ID from context
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Retrieving session, ID: %s, tenant ID: %d", id, tenantID)
 
 	// Get session from repository
@@ -128,7 +128,7 @@ func (s *sessionService) GetSession(ctx context.Context, id string) (*types.Sess
 // GetSessionsByTenant retrieves all sessions for the current tenant
 func (s *sessionService) GetSessionsByTenant(ctx context.Context) ([]*types.Session, error) {
 	// Get tenant ID from context
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Retrieving all sessions for tenant, tenant ID: %d", tenantID)
 
 	// Get sessions from repository
@@ -151,7 +151,7 @@ func (s *sessionService) GetPagedSessionsByTenant(ctx context.Context,
 	pagination *types.Pagination,
 ) (*types.PageResult, error) {
 	// Get tenant ID from context
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	// Get paged sessions from repository
 	sessions, total, err := s.sessionRepo.GetPagedByTenantID(ctx, tenantID, pagination)
 	if err != nil {
@@ -197,7 +197,7 @@ func (s *sessionService) DeleteSession(ctx context.Context, id string) error {
 	}
 
 	// Get tenant ID from context
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
 	// Cleanup temporary KB stored in Redis for this session
 	if err := s.DeleteWebSearchTempKBState(ctx, id); err != nil {
@@ -267,6 +267,9 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 		}
 		// Find first available KnowledgeQA model
 		for _, model := range models {
+			if model == nil {
+				continue
+			}
 			if model.Type == types.ModelTypeKnowledgeQA {
 				modelID = model.ID
 				logger.Infof(ctx, "Using first available KnowledgeQA model: %s", modelID)
@@ -746,6 +749,9 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 
 	// Find the first available rerank model
 	for _, model := range models {
+		if model == nil {
+			continue
+		}
 		if model.Type == types.ModelTypeRerank {
 			chatManage.RerankModelID = model.ID
 			break
@@ -808,7 +814,7 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 // AgentQA performs agent-based question answering with conversation history and streaming support
 func (s *sessionService) AgentQA(ctx context.Context, session *types.Session, query string, assistantMessageID string, eventBus *event.EventBus) error {
 	sessionID := session.ID
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	sessionJSON, err := json.Marshal(session)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to marshal session, session ID: %s, error: %v", sessionID, err)
@@ -892,6 +898,9 @@ func (s *sessionService) AgentQA(ctx context.Context, session *types.Session, qu
 			// Extract knowledge base IDs
 			agentConfig.KnowledgeBases = make([]string, len(allKBs))
 			for i, kb := range allKBs {
+				if kb == nil {
+					continue
+				}
 				agentConfig.KnowledgeBases[i] = kb.ID
 			}
 			logger.Infof(ctx, "Agent defaulting to all %d knowledge base(s) in tenant: %v",

@@ -17,12 +17,12 @@ import (
 type GrepChunksTool struct {
 	BaseTool
 	db               *gorm.DB
-	tenantID         uint
+	tenantID         uint64
 	knowledgeBaseIDs []string
 }
 
 // NewGrepChunksTool creates a new grep chunks tool
-func NewGrepChunksTool(db *gorm.DB, tenantID uint, knowledgeBaseIDs []string) *GrepChunksTool {
+func NewGrepChunksTool(db *gorm.DB, tenantID uint64, knowledgeBaseIDs []string) *GrepChunksTool {
 	description := `Unix-style text pattern matching tool for knowledge base chunks.
 
 Searches for text patterns in chunk content, similar to the Unix grep command.

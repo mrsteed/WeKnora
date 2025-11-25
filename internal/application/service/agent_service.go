@@ -95,8 +95,8 @@ func (s *agentService) CreateAgentEngine(
 	}
 
 	// Register MCP tools from enabled services for this tenant
-	tenantID := uint(0)
-	if tid, ok := ctx.Value(types.TenantIDContextKey).(uint); ok {
+	tenantID := uint64(0)
+	if tid, ok := ctx.Value(types.TenantIDContextKey).(uint64); ok {
 		tenantID = tid
 	}
 	if tenantID > 0 && s.mcpServiceService != nil && s.mcpManager != nil {
@@ -108,7 +108,7 @@ func (s *agentService) CreateAgentEngine(
 			// Filter enabled services
 			enabledServices := make([]*types.MCPService, 0)
 			for _, svc := range mcpServices {
-				if svc.Enabled {
+				if svc != nil && svc.Enabled {
 					enabledServices = append(enabledServices, svc)
 				}
 			}
@@ -179,8 +179,8 @@ func (s *agentService) registerTools(
 	}
 
 	// Get tenant ID from context
-	tenantID := uint(0)
-	if tid, ok := ctx.Value(types.TenantIDContextKey).(uint); ok {
+	tenantID := uint64(0)
+	if tid, ok := ctx.Value(types.TenantIDContextKey).(uint64); ok {
 		tenantID = tid
 	}
 	logger.Infof(ctx, "Registering tools: %v, tenant ID: %d, webSearchEnabled: %v", allowedTools, tenantID, config.WebSearchEnabled)

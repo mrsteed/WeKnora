@@ -62,6 +62,9 @@ func (e *batchEmbedder) BatchEmbedWithPool(ctx context.Context, model Embedder, 
 			}
 			mu.Lock()
 			for i, text := range texts {
+				if text == nil {
+					continue
+				}
 				text.results = embedding[i]
 			}
 			mu.Unlock()

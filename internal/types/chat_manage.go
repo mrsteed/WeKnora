@@ -48,8 +48,8 @@ type ChatManage struct {
 	MessageID string            `json:"-"` // Assistant message ID for event emission
 
 	// Web search configuration (internal use)
-	TenantID         uint `json:"-"` // Tenant ID for retrieving web search config
-	WebSearchEnabled bool `json:"-"` // Whether web search is enabled for this request
+	TenantID         uint64 `json:"-"` // Tenant ID for retrieving web search config
+	WebSearchEnabled bool   `json:"-"` // Whether web search is enabled for this request
 }
 
 // Clone creates a deep copy of the ChatManage object

@@ -43,7 +43,7 @@ func (s *messageService) CreateMessage(ctx context.Context, message *types.Messa
 	logger.Infof(ctx, "Creating message for session ID: %s", message.SessionID)
 
 	// Check if the session exists to validate the message belongs to a valid session
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d, session ID: %s", tenantID, message.SessionID)
 	_, err := s.sessionRepo.Get(ctx, tenantID, message.SessionID)
 	if err != nil {
@@ -77,7 +77,7 @@ func (s *messageService) GetMessage(ctx context.Context, sessionID string, messa
 	logger.Infof(ctx, "Getting message, session ID: %s, message ID: %s", sessionID, messageID)
 
 	// Verify the session exists before attempting to retrieve the message
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
 	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
 	if err != nil {
@@ -115,7 +115,7 @@ func (s *messageService) GetMessagesBySession(ctx context.Context,
 	logger.Infof(ctx, "Getting messages for session ID: %s, page: %d, pageSize: %d", sessionID, page, pageSize)
 
 	// Verify the session exists before retrieving messages
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
 	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
 	if err != nil {
@@ -154,7 +154,7 @@ func (s *messageService) GetRecentMessagesBySession(ctx context.Context,
 	logger.Infof(ctx, "Getting recent messages for session ID: %s, limit: %d", sessionID, limit)
 
 	// Verify the session exists before retrieving messages
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
 	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
 	if err != nil {
@@ -193,7 +193,7 @@ func (s *messageService) GetMessagesBySessionBeforeTime(ctx context.Context,
 	logger.Infof(ctx, "Getting messages before %v for session ID: %s, limit: %d", beforeTime, sessionID, limit)
 
 	// Verify the session exists before retrieving messages
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
 	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
 	if err != nil {
@@ -228,7 +228,7 @@ func (s *messageService) UpdateMessage(ctx context.Context, message *types.Messa
 	logger.Infof(ctx, "Updating message, ID: %s, session ID: %s", message.ID, message.SessionID)
 
 	// Verify the session exists before updating the message
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
 	_, err := s.sessionRepo.Get(ctx, tenantID, message.SessionID)
 	if err != nil {
@@ -263,7 +263,7 @@ func (s *messageService) DeleteMessage(ctx context.Context, sessionID string, me
 	logger.Infof(ctx, "Deleting message, session ID: %s, message ID: %s", sessionID, messageID)
 
 	// Verify the session exists before deleting the message
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
 	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
 	if err != nil {

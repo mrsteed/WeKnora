@@ -82,6 +82,9 @@ func TestDuckDuckGoProvider_Search_HTMLSuccess(t *testing.T) {
 	// Build provider and inject our test client
 	prov, _ := NewDuckDuckGoProvider(config.WebSearchProviderConfig{})
 	dp := prov.(*DuckDuckGoProvider)
+	if dp == nil {
+		t.Fatalf("failed to build provider")
+	}
 	dp.client = newTestClient(ts)
 
 	ctx := context.Background()
@@ -138,6 +141,9 @@ func TestDuckDuckGoProvider_Search_APIFallback(t *testing.T) {
 
 	prov, _ := NewDuckDuckGoProvider(config.WebSearchProviderConfig{})
 	dp := prov.(*DuckDuckGoProvider)
+	if dp == nil {
+		t.Fatalf("failed to build provider")
+	}
 	dp.client = newTestClient(ts)
 
 	ctx := context.Background()
@@ -167,6 +173,9 @@ func TestDuckDuckGoProvider_Search_Real(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create DuckDuckGo provider: %v", err)
 	}
+	if provider == nil {
+		t.Fatalf("failed to build provider")
+	}
 
 	// Test with a simple, general query that should return results
 	query := "Go programming language"
@@ -186,6 +195,9 @@ func TestDuckDuckGoProvider_Search_Real(t *testing.T) {
 
 	// Verify result structure
 	for i, result := range results {
+		if result == nil {
+			t.Fatalf("Result[%d]: is nil", i)
+		}
 		if result.Title == "" {
 			t.Errorf("Result[%d]: Title is empty", i)
 		}
@@ -229,6 +241,9 @@ func TestDuckDuckGoProvider_Search_Real_Chinese(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create DuckDuckGo provider: %v", err)
 	}
+	if provider == nil {
+		t.Fatalf("failed to build provider")
+	}
 
 	// Test with a Chinese query
 	query := "WeKnora 企业级RAG框架 介绍 文档"
@@ -248,6 +263,9 @@ func TestDuckDuckGoProvider_Search_Real_Chinese(t *testing.T) {
 
 	// Verify result structure
 	for i, result := range results {
+		if result == nil {
+			t.Fatalf("Result[%d]: is nil", i)
+		}
 		if result.Title == "" {
 			t.Errorf("Result[%d]: Title is empty", i)
 		}

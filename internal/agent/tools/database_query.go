@@ -17,11 +17,11 @@ import (
 type DatabaseQueryTool struct {
 	BaseTool
 	db       *gorm.DB
-	tenantID uint
+	tenantID uint64
 }
 
 // NewDatabaseQueryTool creates a new database query tool
-func NewDatabaseQueryTool(db *gorm.DB, tenantID uint) *DatabaseQueryTool {
+func NewDatabaseQueryTool(db *gorm.DB, tenantID uint64) *DatabaseQueryTool {
 	description := `Execute SQL queries to retrieve information from the database.
 
 ## Security Features

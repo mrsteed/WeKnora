@@ -19,7 +19,7 @@ type User struct {
 	// Avatar URL of the user
 	Avatar string `json:"avatar" gorm:"type:varchar(500)"`
 	// Tenant ID that the user belongs to
-	TenantID uint `json:"tenant_id" gorm:"index"`
+	TenantID uint64 `json:"tenant_id" gorm:"index"`
 	// Whether the user is active
 	IsActive bool `json:"is_active" gorm:"default:true"`
 	// Creation time of the user
@@ -93,7 +93,7 @@ type UserInfo struct {
 	Username  string    `json:"username"`
 	Email     string    `json:"email"`
 	Avatar    string    `json:"avatar"`
-	TenantID  uint      `json:"tenant_id"`
+	TenantID  uint64    `json:"tenant_id"`
 	IsActive  bool      `json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

@@ -48,12 +48,12 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccess(c *gin.Context) (*types.K
 	}
 
 	// Verify tenant permissions
-	if kb.TenantID != c.GetUint(types.TenantIDContextKey.String()) {
+	if kb.TenantID != c.GetUint64(types.TenantIDContextKey.String()) {
 		logger.Warnf(
 			ctx,
 			"Permission denied to access this knowledge base, tenant ID mismatch, "+
 				"requested tenant ID: %d, knowledge base tenant ID: %d",
-			c.GetUint(types.TenantIDContextKey.String()),
+			c.GetUint64(types.TenantIDContextKey.String()),
 			kb.TenantID,
 		)
 		return nil, kbID, errors.NewForbiddenError("Permission denied to access this knowledge base")
@@ -422,11 +422,11 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 	logger.Infof(
 		ctx,
 		"Batch retrieving knowledge, tenant ID: %d, number of knowledge IDs: %d",
-		tenantID.(uint), len(req.IDs),
+		tenantID, len(req.IDs),
 	)
 
 	// Retrieve knowledge entries in batch
-	knowledges, err := h.kgService.GetKnowledgeBatch(ctx, tenantID.(uint), req.IDs)
+	knowledges, err := h.kgService.GetKnowledgeBatch(ctx, tenantID.(uint64), req.IDs)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError("Failed to retrieve knowledge list").WithDetails(err.Error()))

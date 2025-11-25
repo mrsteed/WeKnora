@@ -99,7 +99,7 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 		}
 	}
 	egs = uniqueRetrieverEngine(egs)
-	logger.Debugf(ctx, "user register retriever engines: %v", egs)
+	logger.Debug(ctx, "user register retriever engines")
 
 	// Create default tenant for the user
 	tenant := &types.Tenant{
@@ -111,7 +111,7 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 
 	createdTenant, err := s.tenantService.CreateTenant(ctx, tenant)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to create tenant: %v", err)
+		logger.Errorf(ctx, "Failed to create tenant")
 		return nil, errors.New("failed to create workspace")
 	}
 
@@ -133,36 +133,33 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 		return nil, errors.New("failed to create user")
 	}
 
-	logger.Infof(ctx, "User registered successfully: %s", user.Email)
+	logger.Info(ctx, "User registered successfully")
 	return user, nil
 }
 
 // Login authenticates a user and returns tokens
 func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*types.LoginResponse, error) {
-	logger.Infof(ctx, "Start user login for email: %s", req.Email)
-
+	logger.Info(ctx, "Start user login")
 	// Get user by email
 	user, err := s.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get user by email %s: %v", req.Email, err)
+		logger.Errorf(ctx, "Failed to get user by email: %v", err)
 		return &types.LoginResponse{
 			Success: false,
 			Message: "Invalid email or password",
 		}, nil
 	}
 	if user == nil {
-		logger.Warnf(ctx, "User not found for email: %s", req.Email)
+		logger.Warn(ctx, "User not found for email")
 		return &types.LoginResponse{
 			Success: false,
 			Message: "Invalid email or password",
 		}, nil
 	}
 
-	logger.Infof(ctx, "Found user: ID=%s, Email=%s, IsActive=%t", user.ID, user.Email, user.IsActive)
-
 	// Check if user is active
 	if !user.IsActive {
-		logger.Warnf(ctx, "User account is disabled for email: %s", req.Email)
+		logger.Warn(ctx, "User account is disabled")
 		return &types.LoginResponse{
 			Success: false,
 			Message: "Account is disabled",
@@ -170,39 +167,37 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 	}
 
 	// Verify password
-	logger.Infof(ctx, "Verifying password for user: %s", user.Email)
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
 	if err != nil {
-		logger.Warnf(ctx, "Password verification failed for user %s: %v", user.Email, err)
+		logger.Warn(ctx, "Password verification failed")
 		return &types.LoginResponse{
 			Success: false,
 			Message: "Invalid email or password",
 		}, nil
 	}
-	logger.Infof(ctx, "Password verification successful for user: %s", user.Email)
+	logger.Info(ctx, "Password verification successful")
 
 	// Generate tokens
-	logger.Infof(ctx, "Generating tokens for user: %s", user.Email)
+	logger.Info(ctx, "Generating tokens")
 	accessToken, refreshToken, err := s.GenerateTokens(ctx, user)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to generate tokens for user %s: %v", user.Email, err)
+		logger.Errorf(ctx, "Failed to generate tokens: %v", err)
 		return &types.LoginResponse{
 			Success: false,
 			Message: "Login failed",
 		}, nil
 	}
-	logger.Infof(ctx, "Tokens generated successfully for user: %s", user.Email)
+	logger.Info(ctx, "Tokens generated successfully")
 
 	// Get tenant information
-	logger.Infof(ctx, "Getting tenant information for user %s, tenant ID: %s", user.Email, user.TenantID)
 	tenant, err := s.tenantService.GetTenantByID(ctx, user.TenantID)
 	if err != nil {
-		logger.Warnf(ctx, "Failed to get tenant info for user %s, tenant ID %s: %v", user.Email, user.TenantID, err)
+		logger.Warn(ctx, "Failed to get tenant info")
 	} else {
-		logger.Infof(ctx, "Tenant information retrieved successfully for user: %s", user.Email)
+		logger.Info(ctx, "Tenant information retrieved successfully")
 	}
 
-	logger.Infof(ctx, "User logged in successfully: %s", user.Email)
+	logger.Info(ctx, "User logged in successfully")
 	return &types.LoginResponse{
 		Success:      true,
 		Message:      "Login successful",

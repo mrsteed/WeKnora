@@ -56,13 +56,13 @@ type SessionRepository interface {
 	// Create creates a session
 	Create(ctx context.Context, session *types.Session) (*types.Session, error)
 	// Get gets a session
-	Get(ctx context.Context, tenantID uint, id string) (*types.Session, error)
+	Get(ctx context.Context, tenantID uint64, id string) (*types.Session, error)
 	// GetByTenantID gets all sessions of a tenant
-	GetByTenantID(ctx context.Context, tenantID uint) ([]*types.Session, error)
+	GetByTenantID(ctx context.Context, tenantID uint64) ([]*types.Session, error)
 	// GetPagedByTenantID gets paged sessions of a tenant
-	GetPagedByTenantID(ctx context.Context, tenantID uint, page *types.Pagination) ([]*types.Session, int64, error)
+	GetPagedByTenantID(ctx context.Context, tenantID uint64, page *types.Pagination) ([]*types.Session, int64, error)
 	// Update updates a session
 	Update(ctx context.Context, session *types.Session) error
 	// Delete deletes a session
-	Delete(ctx context.Context, tenantID uint, id string) error
+	Delete(ctx context.Context, tenantID uint64, id string) error
 }

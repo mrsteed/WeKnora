@@ -126,7 +126,7 @@ type KnowledgeBaseRepository interface {
 	// Returns:
 	//   - List of knowledge base objects
 	//   - Possible errors such as database errors, etc.
-	ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint) ([]*types.KnowledgeBase, error)
+	ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
 
 	// UpdateKnowledgeBase updates a knowledge base record
 	// Parameters:

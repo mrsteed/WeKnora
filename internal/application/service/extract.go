@@ -16,7 +16,7 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-func NewChunkExtractTask(ctx context.Context, client *asynq.Client, tenantID uint, chunkID string, modelID string) error {
+func NewChunkExtractTask(ctx context.Context, client *asynq.Client, tenantID uint64, chunkID string, modelID string) error {
 	if strings.ToLower(os.Getenv("NEO4J_ENABLE")) != "true" {
 		logger.Warn(ctx, "NEO4J is not enabled, skip chunk extract task")
 		return nil

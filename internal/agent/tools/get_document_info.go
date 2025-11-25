@@ -12,14 +12,14 @@ import (
 // GetDocumentInfoTool retrieves detailed information about a document/knowledge
 type GetDocumentInfoTool struct {
 	BaseTool
-	tenantID         uint
+	tenantID         uint64
 	knowledgeService interfaces.KnowledgeService
 	chunkService     interfaces.ChunkService
 }
 
 // NewGetDocumentInfoTool creates a new get document info tool
 func NewGetDocumentInfoTool(
-	tenantID uint,
+	tenantID uint64,
 	knowledgeService interfaces.KnowledgeService,
 	chunkService interfaces.ChunkService,
 ) *GetDocumentInfoTool {

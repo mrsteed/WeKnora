@@ -25,7 +25,7 @@ func (r *modelRepository) Create(ctx context.Context, m *types.Model) error {
 }
 
 // GetByID retrieves a model by ID
-func (r *modelRepository) GetByID(ctx context.Context, tenantID uint, id string) (*types.Model, error) {
+func (r *modelRepository) GetByID(ctx context.Context, tenantID uint64, id string) (*types.Model, error) {
 	var m types.Model
 	if err := r.db.WithContext(ctx).Where("id = ?", id).Where(
 		"tenant_id = ? OR is_builtin = true", tenantID,
@@ -40,7 +40,7 @@ func (r *modelRepository) GetByID(ctx context.Context, tenantID uint, id string)
 
 // List lists models with optional filtering
 func (r *modelRepository) List(
-	ctx context.Context, tenantID uint, modelType types.ModelType, source types.ModelSource,
+	ctx context.Context, tenantID uint64, modelType types.ModelType, source types.ModelSource,
 ) ([]*types.Model, error) {
 	var models []*types.Model
 	query := r.db.WithContext(ctx).Where(
@@ -71,7 +71,7 @@ func (r *modelRepository) Update(ctx context.Context, m *types.Model) error {
 }
 
 // Delete deletes a model
-func (r *modelRepository) Delete(ctx context.Context, tenantID uint, id string) error {
+func (r *modelRepository) Delete(ctx context.Context, tenantID uint64, id string) error {
 	return r.db.WithContext(ctx).Where(
 		"id = ? AND tenant_id = ?", id, tenantID,
 	).Delete(&types.Model{}).Error

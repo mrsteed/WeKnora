@@ -104,7 +104,7 @@ func Auth(tenantService interfaces.TenantService, userService interfaces.UserSer
 			// Verify API key validity (matches the one in database)
 			t, err := tenantService.GetTenantByID(c.Request.Context(), tenantID)
 			if err != nil {
-				log.Printf("Error getting tenant by ID: %v, tenantID: %d, apiKey: %s", err, tenantID, apiKey)
+				log.Printf("Error getting tenant by ID: %v, tenantID: %d", err, tenantID)
 				c.JSON(http.StatusUnauthorized, gin.H{
 					"error": "Unauthorized: invalid API key",
 				})

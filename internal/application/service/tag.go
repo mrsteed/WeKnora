@@ -48,6 +48,9 @@ func (s *knowledgeTagService) ListTags(ctx context.Context, kbID string) ([]*typ
 
 	results := make([]*types.KnowledgeTagWithStats, 0, len(tags))
 	for _, tag := range tags {
+		if tag == nil {
+			continue
+		}
 		kCount, cCount, err := s.repo.CountReferences(ctx, tenantID, kbID, tag.ID)
 		if err != nil {
 			logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -97,7 +100,7 @@ func (s *knowledgeTagService) UpdateTag(ctx context.Context, id string, name *st
 	if id == "" {
 		return nil, werrors.NewBadRequestError("标签ID不能为空")
 	}
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	tag, err := s.repo.GetByID(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
@@ -128,7 +131,7 @@ func (s *knowledgeTagService) DeleteTag(ctx context.Context, id string, force bo
 	if id == "" {
 		return werrors.NewBadRequestError("标签ID不能为空")
 	}
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	tag, err := s.repo.GetByID(ctx, tenantID, id)
 	if err != nil {
 		return err

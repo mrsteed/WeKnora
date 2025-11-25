@@ -25,7 +25,7 @@ func (r *mcpServiceRepository) Create(ctx context.Context, service *types.MCPSer
 }
 
 // GetByID retrieves an MCP service by ID and tenant ID
-func (r *mcpServiceRepository) GetByID(ctx context.Context, tenantID uint, id string) (*types.MCPService, error) {
+func (r *mcpServiceRepository) GetByID(ctx context.Context, tenantID uint64, id string) (*types.MCPService, error) {
 	var service types.MCPService
 	err := r.db.WithContext(ctx).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
@@ -42,7 +42,7 @@ func (r *mcpServiceRepository) GetByID(ctx context.Context, tenantID uint, id st
 }
 
 // List retrieves all MCP services for a tenant
-func (r *mcpServiceRepository) List(ctx context.Context, tenantID uint) ([]*types.MCPService, error) {
+func (r *mcpServiceRepository) List(ctx context.Context, tenantID uint64) ([]*types.MCPService, error) {
 	var services []*types.MCPService
 	err := r.db.WithContext(ctx).
 		Where("tenant_id = ?", tenantID).
@@ -57,7 +57,7 @@ func (r *mcpServiceRepository) List(ctx context.Context, tenantID uint) ([]*type
 }
 
 // ListEnabled retrieves all enabled MCP services for a tenant
-func (r *mcpServiceRepository) ListEnabled(ctx context.Context, tenantID uint) ([]*types.MCPService, error) {
+func (r *mcpServiceRepository) ListEnabled(ctx context.Context, tenantID uint64) ([]*types.MCPService, error) {
 	var services []*types.MCPService
 	err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND enabled = ?", tenantID, true).
@@ -72,7 +72,7 @@ func (r *mcpServiceRepository) ListEnabled(ctx context.Context, tenantID uint) (
 }
 
 // ListByIDs retrieves MCP services by multiple IDs for a tenant
-func (r *mcpServiceRepository) ListByIDs(ctx context.Context, tenantID uint, ids []string) ([]*types.MCPService, error) {
+func (r *mcpServiceRepository) ListByIDs(ctx context.Context, tenantID uint64, ids []string) ([]*types.MCPService, error) {
 	if len(ids) == 0 {
 		return []*types.MCPService{}, nil
 	}
@@ -134,7 +134,7 @@ func (r *mcpServiceRepository) Update(ctx context.Context, service *types.MCPSer
 }
 
 // Delete deletes an MCP service (soft delete)
-func (r *mcpServiceRepository) Delete(ctx context.Context, tenantID uint, id string) error {
+func (r *mcpServiceRepository) Delete(ctx context.Context, tenantID uint64, id string) error {
 	return r.db.WithContext(ctx).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Delete(&types.MCPService{}).Error

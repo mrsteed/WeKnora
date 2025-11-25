@@ -58,7 +58,7 @@ func (h *ChunkHandler) GetChunkByIDOnly(c *gin.Context) {
 	}
 
 	// Validate tenant ID
-	if chunk.TenantID != tenantID.(uint) {
+	if chunk.TenantID != tenantID.(uint64) {
 		logger.Warnf(
 			ctx,
 			"Tenant has no permission to access chunk, chunk ID: %s, req tenant: %d, chunk tenant: %d",
@@ -184,11 +184,11 @@ func (h *ChunkHandler) validateAndGetChunk(c *gin.Context) (*types.Chunk, string
 	}
 
 	// Validate tenant ID
-	if chunk.TenantID != tenantID.(uint) || chunk.KnowledgeID != knowledgeID {
+	if chunk.TenantID != tenantID.(uint64) || chunk.KnowledgeID != knowledgeID {
 		logger.Warnf(
 			ctx,
 			"Tenant has no permission to access chunk, knowledge ID: %s, chunk ID: %s, req tenant: %d, chunk tenant: %d",
-			knowledgeID, id, tenantID.(uint), chunk.TenantID,
+			knowledgeID, id, tenantID, chunk.TenantID,
 		)
 		return nil, knowledgeID, errors.NewForbiddenError("No permission to access this chunk")
 	}

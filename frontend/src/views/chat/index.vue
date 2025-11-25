@@ -31,6 +31,14 @@
             ></InputField>
         </div>
     </div>
+    <KnowledgeBaseEditorModal 
+        :visible="uiStore.showKBEditorModal"
+        :mode="uiStore.kbEditorMode"
+        :kb-id="uiStore.currentKBId || undefined"
+        :initial-type="uiStore.kbEditorType"
+        @update:visible="(val) => val ? null : uiStore.closeKBEditor()"
+        @success="handleKBEditorSuccess"
+    />
 </template>
 <script setup>
 import { storeToRefs } from 'pinia';
@@ -45,8 +53,13 @@ import { useMenuStore } from '@/stores/menu';
 import { useSettingsStore } from '@/stores/settings';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useI18n } from 'vue-i18n';
+import { useUIStore } from '@/stores/ui';
+import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
+import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
 const usemenuStore = useMenuStore();
 const useSettingsStoreInstance = useSettingsStore();
+const uiStore = useUIStore();
+const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 const { t } = useI18n();
 const { menuArr, isFirstSession, firstQuery } = storeToRefs(usemenuStore);
 const { output, onChunk, isStreaming, isLoading, error, startStream, stopStream } = useStream();
@@ -66,6 +79,9 @@ const loading = ref(false);
 let fullContent = ref('')
 let userquery = ref('')
 const scrollContainer = ref(null)
+const handleKBEditorSuccess = (kbId) => {
+    navigateToKnowledgeBaseList(kbId)
+}
 
 const getUserQuery = (index) => {
     if (index <= 0) {

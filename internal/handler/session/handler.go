@@ -69,7 +69,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	logger.Infof(
 		ctx,
 		"Processing session creation request, tenant ID: %d, knowledge base ID: %s, agent mode: %v, agent KBs: %v",
-		tenantID.(uint),
+		tenantID,
 		request.KnowledgeBaseID,
 		isAgentMode,
 		hasAgentKnowledgeBases,
@@ -77,7 +77,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 
 	// Create session object with base properties
 	createdSession := &types.Session{
-		TenantID:        tenantID.(uint),
+		TenantID:        tenantID.(uint64),
 		KnowledgeBaseID: request.KnowledgeBaseID,
 		AgentConfig:     request.AgentConfig, // Set agent config if provided
 	}
@@ -281,7 +281,7 @@ func (h *Handler) UpdateSession(c *gin.Context) {
 	}
 
 	session.ID = id
-	session.TenantID = tenantID.(uint)
+	session.TenantID = tenantID.(uint64)
 
 	// Call service to update session
 	if err := h.sessionService.UpdateSession(ctx, &session); err != nil {

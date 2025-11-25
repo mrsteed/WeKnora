@@ -365,6 +365,9 @@ func ConvertWebSearchResults(webResults []*types.WebSearchResult) []*types.Searc
 	results := make([]*types.SearchResult, 0, len(webResults))
 
 	for i, webResult := range webResults {
+		if webResult == nil {
+			continue
+		}
 		// Use URL as ChunkID for web search results
 		chunkID := webResult.URL
 		if chunkID == "" {

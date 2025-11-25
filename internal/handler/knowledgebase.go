@@ -121,7 +121,7 @@ func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(c *gin.Context) (*typ
 	}
 
 	// Verify tenant ownership
-	if kb.TenantID != tenantID.(uint) {
+	if kb.TenantID != tenantID.(uint64) {
 		logger.Warnf(
 			ctx,
 			"Tenant has no permission to access this knowledge base, knowledge base ID: %s, "+

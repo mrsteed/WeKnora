@@ -217,7 +217,7 @@ func (p *PluginMerge) populateFAQAnswers(ctx context.Context, chatManage *types.
 		return results
 	}
 
-	tenantID, _ := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID, _ := ctx.Value(types.TenantIDContextKey).(uint64)
 	if tenantID == 0 && chatManage != nil {
 		tenantID = chatManage.TenantID
 	}
@@ -342,7 +342,7 @@ func (p *PluginMerge) expandShortContextWithNeighbors(ctx context.Context, chatM
 		return results
 	}
 
-	tenantID, _ := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID, _ := ctx.Value(types.TenantIDContextKey).(uint64)
 	if tenantID == 0 && chatManage != nil {
 		tenantID = chatManage.TenantID
 	}
@@ -626,7 +626,7 @@ func containsID(ids []string, target string) bool {
 	return false
 }
 
-func (p *PluginMerge) fetchChunksIfMissing(ctx context.Context, tenantID uint, chunkMap map[string]*types.Chunk, chunkIDs ...string) {
+func (p *PluginMerge) fetchChunksIfMissing(ctx context.Context, tenantID uint64, chunkMap map[string]*types.Chunk, chunkIDs ...string) {
 	missing := make([]string, 0, len(chunkIDs))
 	for _, id := range chunkIDs {
 		if id == "" {

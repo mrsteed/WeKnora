@@ -73,7 +73,7 @@ func (c *Client) CreateTenant(ctx context.Context, tenant *Tenant) (*Tenant, err
 }
 
 // GetTenant retrieves a tenant by ID
-func (c *Client) GetTenant(ctx context.Context, tenantID uint) (*Tenant, error) {
+func (c *Client) GetTenant(ctx context.Context, tenantID uint64) (*Tenant, error) {
 	path := fmt.Sprintf("/api/v1/tenants/%d", tenantID)
 	resp, err := c.doRequest(ctx, http.MethodGet, path, nil, nil)
 	if err != nil {
@@ -105,7 +105,7 @@ func (c *Client) UpdateTenant(ctx context.Context, tenant *Tenant) (*Tenant, err
 }
 
 // DeleteTenant removes a tenant by ID
-func (c *Client) DeleteTenant(ctx context.Context, tenantID uint) error {
+func (c *Client) DeleteTenant(ctx context.Context, tenantID uint64) error {
 	path := fmt.Sprintf("/api/v1/tenants/%d", tenantID)
 	resp, err := c.doRequest(ctx, http.MethodDelete, path, nil, nil)
 	if err != nil {

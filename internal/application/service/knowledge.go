@@ -190,7 +190,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	}
 
 	// Check if file already exists
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Checking if file exists, tenant ID: %d", tenantID)
 	exists, existingKnowledge, err := s.repo.CheckKnowledgeExists(ctx, tenantID, kbID, &types.KnowledgeCheckParams{
 		Type:     "file",
@@ -339,7 +339,7 @@ func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
 	}
 
 	// Check if URL already exists in the knowledge base
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Checking if URL exists, tenant ID: %d", tenantID)
 	fileHash := calculateStr(url)
 	exists, existingKnowledge, err := s.repo.CheckKnowledgeExists(ctx, tenantID, kbID, &types.KnowledgeCheckParams{
@@ -479,7 +479,7 @@ func (s *knowledgeService) CreateKnowledgeFromManual(ctx context.Context,
 		return nil, err
 	}
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	now := time.Now()
 	title := safeTitle
 	if title == "" {
@@ -566,7 +566,7 @@ func (s *knowledgeService) createKnowledgeFromPassageInternal(ctx context.Contex
 	}
 	knowledge := &types.Knowledge{
 		ID:               uuid.New().String(),
-		TenantID:         ctx.Value(types.TenantIDContextKey).(uint),
+		TenantID:         ctx.Value(types.TenantIDContextKey).(uint64),
 		KnowledgeBaseID:  kbID,
 		Type:             "passage",
 		ParseStatus:      "pending",
@@ -591,7 +591,7 @@ func (s *knowledgeService) createKnowledgeFromPassageInternal(ctx context.Contex
 	} else {
 		// Enqueue passage processing task to Asynq
 		logger.Info(ctx, "Enqueuing passage processing task to Asynq")
-		tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+		tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 		taskPayload := types.DocumentProcessPayload{
 			TenantID:         tenantID,
 			KnowledgeID:      knowledge.ID,
@@ -624,7 +624,7 @@ func (s *knowledgeService) GetKnowledgeByID(ctx context.Context, id string) (*ty
 	logger.Info(ctx, "Start getting knowledge by ID")
 	logger.Infof(ctx, "Knowledge ID: %s", id)
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 
 	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, id)
@@ -644,7 +644,7 @@ func (s *knowledgeService) GetKnowledgeByID(ctx context.Context, id string) (*ty
 func (s *knowledgeService) ListKnowledgeByKnowledgeBaseID(ctx context.Context,
 	kbID string,
 ) ([]*types.Knowledge, error) {
-	return s.repo.ListKnowledgeByKnowledgeBaseID(ctx, ctx.Value(types.TenantIDContextKey).(uint), kbID)
+	return s.repo.ListKnowledgeByKnowledgeBaseID(ctx, ctx.Value(types.TenantIDContextKey).(uint64), kbID)
 }
 
 // ListPagedKnowledgeByKnowledgeBaseID returns paginated knowledge entries in a knowledge base
@@ -652,7 +652,7 @@ func (s *knowledgeService) ListPagedKnowledgeByKnowledgeBaseID(ctx context.Conte
 	kbID string, page *types.Pagination, tagID string,
 ) (*types.PageResult, error) {
 	knowledges, total, err := s.repo.ListPagedKnowledgeByKnowledgeBaseID(ctx,
-		ctx.Value(types.TenantIDContextKey).(uint), kbID, page, tagID)
+		ctx.Value(types.TenantIDContextKey).(uint64), kbID, page, tagID)
 	if err != nil {
 		return nil, err
 	}
@@ -663,7 +663,7 @@ func (s *knowledgeService) ListPagedKnowledgeByKnowledgeBaseID(ctx context.Conte
 // DeleteKnowledge deletes a knowledge entry and all related resources
 func (s *knowledgeService) DeleteKnowledge(ctx context.Context, id string) error {
 	// Get the knowledge entry
-	knowledge, err := s.repo.GetKnowledgeByID(ctx, ctx.Value(types.TenantIDContextKey).(uint), id)
+	knowledge, err := s.repo.GetKnowledgeByID(ctx, ctx.Value(types.TenantIDContextKey).(uint64), id)
 	if err != nil {
 		return err
 	}
@@ -726,7 +726,7 @@ func (s *knowledgeService) DeleteKnowledge(ctx context.Context, id string) error
 		return err
 	}
 	// Delete the knowledge entry itself from the database
-	return s.repo.DeleteKnowledge(ctx, ctx.Value(types.TenantIDContextKey).(uint), id)
+	return s.repo.DeleteKnowledge(ctx, ctx.Value(types.TenantIDContextKey).(uint64), id)
 }
 
 // DeleteKnowledge deletes a knowledge entry and all related resources
@@ -1544,7 +1544,8 @@ func (s *knowledgeService) getSummary(ctx context.Context,
 // GetKnowledgeFile retrieves the physical file associated with a knowledge entry
 func (s *knowledgeService) GetKnowledgeFile(ctx context.Context, id string) (io.ReadCloser, string, error) {
 	// Get knowledge record
-	knowledge, err := s.repo.GetKnowledgeByID(ctx, ctx.Value(types.TenantIDContextKey).(uint), id)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, id)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1559,7 +1560,7 @@ func (s *knowledgeService) GetKnowledgeFile(ctx context.Context, id string) (io.
 }
 
 func (s *knowledgeService) UpdateKnowledge(ctx context.Context, knowledge *types.Knowledge) error {
-	record, err := s.repo.GetKnowledgeByID(ctx, ctx.Value(types.TenantIDContextKey).(uint), knowledge.ID)
+	record, err := s.repo.GetKnowledgeByID(ctx, ctx.Value(types.TenantIDContextKey).(uint64), knowledge.ID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get knowledge record: %v", err)
 		return err
@@ -1608,7 +1609,7 @@ func (s *knowledgeService) UpdateManualKnowledge(ctx context.Context,
 		return nil, werrors.NewValidationError("状态仅支持 draft 或 publish")
 	}
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	existing, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to load knowledge: %v", err)
@@ -1714,7 +1715,7 @@ func isValidURL(url string) bool {
 
 // GetKnowledgeBatch retrieves multiple knowledge entries by their IDs
 func (s *knowledgeService) GetKnowledgeBatch(ctx context.Context,
-	tenantID uint, ids []string,
+	tenantID uint64, ids []string,
 ) ([]*types.Knowledge, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -1885,7 +1886,7 @@ func (s *knowledgeService) UpdateImageInfo(ctx context.Context, knowledgeID stri
 		return err
 	}
 	chunk.ImageInfo = imageInfo
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	chunkChildren, err := s.chunkService.ListChunkByParentID(ctx, tenantID, chunkID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -2140,7 +2141,7 @@ func (s *knowledgeService) ListFAQEntries(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	faqKnowledge, err := s.findFAQKnowledge(ctx, tenantID, kb.ID)
 	if err != nil {
 		return nil, err
@@ -2188,7 +2189,7 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 		return "", err
 	}
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
 	// 检查是否有正在进行的导入任务
 	runningKnowledge, err := s.getRunningFAQImportTask(ctx, kbID, tenantID)
@@ -2246,7 +2247,7 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 
 // calculateAppendOperations 计算Append模式下需要处理的条目，跳过已存在且内容相同的条目
 func (s *knowledgeService) calculateAppendOperations(ctx context.Context,
-	tenantID uint, knowledgeID string, entries []types.FAQEntryPayload) ([]types.FAQEntryPayload, int, error) {
+	tenantID uint64, knowledgeID string, entries []types.FAQEntryPayload) ([]types.FAQEntryPayload, int, error) {
 	if len(entries) == 0 {
 		return []types.FAQEntryPayload{}, 0, nil
 	}
@@ -2255,7 +2256,7 @@ func (s *knowledgeService) calculateAppendOperations(ctx context.Context,
 
 // calculateReplaceOperations 计算Replace模式下需要删除、创建、更新的条目
 func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
-	tenantID uint, knowledgeID string, newEntries []types.FAQEntryPayload) ([]types.FAQEntryPayload, []*types.Chunk, int, error) {
+	tenantID uint64, knowledgeID string, newEntries []types.FAQEntryPayload) ([]types.FAQEntryPayload, []*types.Chunk, int, error) {
 	// 计算所有新条目的 content hash，并同时构建 hash 到 entry 的映射
 	type entryWithHash struct {
 		entry types.FAQEntryPayload
@@ -2322,7 +2323,7 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 
 // executeFAQImport 执行实际的FAQ导入逻辑
 func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, kbID string,
-	payload *types.FAQBatchUpsertPayload, tenantID uint, processedCount int) (err error) {
+	payload *types.FAQBatchUpsertPayload, tenantID uint64, processedCount int) (err error) {
 	// 保存知识库和embedding模型信息，用于清理索引
 	var kb *types.KnowledgeBase
 	var embeddingModel embedding.Embedder
@@ -2521,7 +2522,7 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 		return err
 	}
 	kb.EnsureDefaults()
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	chunk, err := s.chunkRepo.GetChunkByID(ctx, tenantID, entryID)
 	if err != nil {
 		return err
@@ -2592,7 +2593,7 @@ func (s *knowledgeService) UpdateFAQEntryStatus(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	chunk, err := s.chunkRepo.GetChunkByID(ctx, tenantID, entryID)
 	if err != nil {
 		return err
@@ -2634,7 +2635,7 @@ func (s *knowledgeService) UpdateFAQEntryStatusBatch(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
 	// Get all chunks in batch
 	entryIDs := make([]string, 0, len(updates))
@@ -2684,7 +2685,7 @@ func (s *knowledgeService) UpdateFAQEntryStatusBatch(ctx context.Context,
 
 // UpdateKnowledgeTag updates the tag assigned to a knowledge document.
 func (s *knowledgeService) UpdateKnowledgeTag(ctx context.Context, knowledgeID string, tagID *string) error {
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
 	if err != nil {
 		return err
@@ -2711,7 +2712,7 @@ func (s *knowledgeService) UpdateKnowledgeTagBatch(ctx context.Context, updates 
 	if len(updates) == 0 {
 		return nil
 	}
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
 	// Get all knowledge items in batch
 	knowledgeIDs := make([]string, 0, len(updates))
@@ -2784,7 +2785,7 @@ func (s *knowledgeService) UpdateFAQEntryTag(ctx context.Context, kbID string, e
 	if err != nil {
 		return err
 	}
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	chunk, err := s.chunkRepo.GetChunkByID(ctx, tenantID, entryID)
 	if err != nil {
 		return err
@@ -2819,7 +2820,7 @@ func (s *knowledgeService) UpdateFAQEntryTagBatch(ctx context.Context, kbID stri
 	if err != nil {
 		return err
 	}
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
 	// Get all chunks in batch
 	entryIDs := make([]string, 0, len(updates))
@@ -2942,7 +2943,7 @@ func (s *knowledgeService) SearchFAQEntries(ctx context.Context,
 	}
 
 	// Batch fetch chunks
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	chunks, err := s.chunkRepo.ListChunksByID(ctx, tenantID, chunkIDs)
 	if err != nil {
 		return nil, err
@@ -2997,7 +2998,7 @@ func (s *knowledgeService) DeleteFAQEntries(ctx context.Context,
 		return err
 	}
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	var faqKnowledge *types.Knowledge
 	chunksToRemove := make([]*types.Chunk, 0, len(entryIDs))
 	for _, id := range entryIDs {
@@ -3045,7 +3046,7 @@ func (s *knowledgeService) validateFAQKnowledgeBase(ctx context.Context, kbID st
 	return kb, nil
 }
 
-func (s *knowledgeService) findFAQKnowledge(ctx context.Context, tenantID uint, kbID string) (*types.Knowledge, error) {
+func (s *knowledgeService) findFAQKnowledge(ctx context.Context, tenantID uint64, kbID string) (*types.Knowledge, error) {
 	knowledges, err := s.repo.ListKnowledgeByKnowledgeBaseID(ctx, tenantID, kbID)
 	if err != nil {
 		return nil, err
@@ -3058,7 +3059,7 @@ func (s *knowledgeService) findFAQKnowledge(ctx context.Context, tenantID uint, 
 	return nil, nil
 }
 
-func (s *knowledgeService) ensureFAQKnowledge(ctx context.Context, tenantID uint, kb *types.KnowledgeBase) (*types.Knowledge, error) {
+func (s *knowledgeService) ensureFAQKnowledge(ctx context.Context, tenantID uint64, kb *types.KnowledgeBase) (*types.Knowledge, error) {
 	existing, err := s.findFAQKnowledge(ctx, tenantID, kb.ID)
 	if err != nil {
 		return nil, err
@@ -3093,7 +3094,7 @@ func (s *knowledgeService) updateFAQImportStatus(ctx context.Context, knowledgeI
 // updateFAQImportStatusWithRanges 更新FAQ Knowledge的导入任务状态，包含NextChunkIndex
 func (s *knowledgeService) updateFAQImportStatusWithRanges(ctx context.Context, knowledgeID string, status types.FAQImportTaskStatus,
 	progress, total, processed int, errorMsg string) error {
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
 	if err != nil {
 		return err
@@ -3129,7 +3130,7 @@ func (s *knowledgeService) updateFAQImportStatusWithRanges(ctx context.Context, 
 }
 
 // getRunningFAQImportTask 获取指定知识库的进行中导入任务
-func (s *knowledgeService) getRunningFAQImportTask(ctx context.Context, kbID string, tenantID uint) (*types.Knowledge, error) {
+func (s *knowledgeService) getRunningFAQImportTask(ctx context.Context, kbID string, tenantID uint64) (*types.Knowledge, error) {
 	faqKnowledge, err := s.findFAQKnowledge(ctx, tenantID, kbID)
 	if err != nil {
 		return nil, err

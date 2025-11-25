@@ -25,7 +25,7 @@ func (r *knowledgeTagRepository) Update(ctx context.Context, tag *types.Knowledg
 	return r.db.WithContext(ctx).Save(tag).Error
 }
 
-func (r *knowledgeTagRepository) GetByID(ctx context.Context, tenantID uint, id string) (*types.KnowledgeTag, error) {
+func (r *knowledgeTagRepository) GetByID(ctx context.Context, tenantID uint64, id string) (*types.KnowledgeTag, error) {
 	var tag types.KnowledgeTag
 	if err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND id = ?", tenantID, id).
@@ -35,7 +35,7 @@ func (r *knowledgeTagRepository) GetByID(ctx context.Context, tenantID uint, id 
 	return &tag, nil
 }
 
-func (r *knowledgeTagRepository) ListByKB(ctx context.Context, tenantID uint, kbID string) ([]*types.KnowledgeTag, error) {
+func (r *knowledgeTagRepository) ListByKB(ctx context.Context, tenantID uint64, kbID string) ([]*types.KnowledgeTag, error) {
 	var tags []*types.KnowledgeTag
 	if err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
@@ -46,7 +46,7 @@ func (r *knowledgeTagRepository) ListByKB(ctx context.Context, tenantID uint, kb
 	return tags, nil
 }
 
-func (r *knowledgeTagRepository) Delete(ctx context.Context, tenantID uint, id string) error {
+func (r *knowledgeTagRepository) Delete(ctx context.Context, tenantID uint64, id string) error {
 	return r.db.WithContext(ctx).
 		Where("tenant_id = ? AND id = ?", tenantID, id).
 		Delete(&types.KnowledgeTag{}).Error
@@ -55,7 +55,7 @@ func (r *knowledgeTagRepository) Delete(ctx context.Context, tenantID uint, id s
 // CountReferences returns how many knowledges and chunks reference this tag.
 func (r *knowledgeTagRepository) CountReferences(
 	ctx context.Context,
-	tenantID uint,
+	tenantID uint64,
 	kbID string,
 	tagID string,
 ) (knowledgeCount int64, chunkCount int64, err error) {
