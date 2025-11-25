@@ -19,7 +19,7 @@
       </t-alert>
     </div>
 
-    <div class="settings-group">
+    <div v-if="isGraphDatabaseEnabled" class="settings-group">
       <!-- 启用实体关系提取 -->
       <div class="setting-row">
         <div class="setting-info">
