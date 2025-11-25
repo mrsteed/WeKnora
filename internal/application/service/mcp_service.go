@@ -9,6 +9,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/mcp"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 // mcpServiceService implements MCPServiceService interface
@@ -175,24 +176,24 @@ func (s *mcpServiceService) UpdateMCPService(ctx context.Context, service *types
 	if service.AuthConfig != nil {
 		configChanged = true
 	}
-
+	name := secutils.SanitizeForLog(existing.Name)
 	// Close existing client connection if:
 	// 1. Service is now disabled (need to close connection)
 	// 2. Critical configuration changed (need to reconnect with new config)
 	if !existing.Enabled {
 		s.mcpManager.CloseClient(service.ID)
-		logger.GetLogger(ctx).Infof("MCP service disabled, connection closed: %s (ID: %s)", existing.Name, service.ID)
+		logger.GetLogger(ctx).Infof("MCP service disabled, connection closed: %s (ID: %s)", name, service.ID)
 	} else if configChanged {
 		s.mcpManager.CloseClient(service.ID)
-		logger.GetLogger(ctx).Infof("MCP service config changed, connection closed for reconnect: %s (ID: %s)", existing.Name, service.ID)
+		logger.GetLogger(ctx).Infof("MCP service config changed, connection closed for reconnect: %s (ID: %s)", name, service.ID)
 	} else if oldEnabled != existing.Enabled && existing.Enabled {
 		// Service was just enabled (was disabled, now enabled)
 		// Close any existing connection to ensure clean state
 		s.mcpManager.CloseClient(service.ID)
-		logger.GetLogger(ctx).Infof("MCP service enabled, existing connection closed for clean state: %s (ID: %s)", existing.Name, service.ID)
+		logger.GetLogger(ctx).Infof("MCP service enabled, existing connection closed for clean state: %s (ID: %s)", name, service.ID)
 	}
 
-	logger.GetLogger(ctx).Infof("MCP service updated: %s (ID: %s), enabled: %v", existing.Name, service.ID, existing.Enabled)
+	logger.GetLogger(ctx).Infof("MCP service updated: %s (ID: %s), enabled: %v", name, service.ID, existing.Enabled)
 	return nil
 }
 
@@ -215,7 +216,7 @@ func (s *mcpServiceService) DeleteMCPService(ctx context.Context, tenantID uint6
 		return fmt.Errorf("failed to delete MCP service: %w", err)
 	}
 
-	logger.GetLogger(ctx).Infof("MCP service deleted: %s (ID: %s)", existing.Name, id)
+	logger.GetLogger(ctx).Infof("MCP service deleted: %s (ID: %s)", secutils.SanitizeForLog(existing.Name), id)
 	return nil
 }
 

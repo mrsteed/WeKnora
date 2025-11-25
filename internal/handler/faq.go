@@ -174,7 +174,7 @@ func (h *FAQHandler) SearchFAQ(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
 		return
 	}
-
+	req.QueryText = secutils.SanitizeForLog(req.QueryText)
 	entries, err := h.knowledgeService.SearchFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), &req)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)

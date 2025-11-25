@@ -10,6 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 // MessageHandler handles HTTP requests related to messages within chat sessions
@@ -39,8 +40,8 @@ func (h *MessageHandler) LoadMessages(c *gin.Context) {
 
 	// Get path parameters and query parameters
 	sessionID := c.Param("session_id")
-	limit := c.DefaultQuery("limit", "20")
-	beforeTimeStr := c.DefaultQuery("before_time", "")
+	limit := secutils.SanitizeForLog(c.DefaultQuery("limit", "20"))
+	beforeTimeStr := secutils.SanitizeForLog(c.DefaultQuery("before_time", ""))
 
 	logger.Infof(ctx, "Loading messages params, session ID: %s, limit: %s, before time: %s",
 		sessionID, limit, beforeTimeStr)
@@ -115,8 +116,8 @@ func (h *MessageHandler) DeleteMessage(c *gin.Context) {
 	logger.Info(ctx, "Start deleting message")
 
 	// Get path parameters for session and message identification
-	sessionID := c.Param("session_id")
-	messageID := c.Param("id")
+	sessionID := secutils.SanitizeForLog(c.Param("session_id"))
+	messageID := secutils.SanitizeForLog(c.Param("id"))
 
 	logger.Infof(ctx, "Deleting message, session ID: %s, message ID: %s", sessionID, messageID)
 

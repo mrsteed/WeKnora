@@ -15,6 +15,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 // DuckDuckGoProvider implements web search using DuckDuckGo (HTML first, API fallback)
@@ -74,7 +75,7 @@ func (p *DuckDuckGoProvider) searchHTML(ctx context.Context, query string, maxRe
 
 	// print curl of request
 	curlCommand := fmt.Sprintf("curl -X GET '%s' -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'", req.URL.String())
-	logger.Infof(ctx, "Curl of request: %s", curlCommand)
+	logger.Infof(ctx, "Curl of request: %s", secutils.SanitizeForLog(curlCommand))
 
 	resp, err := p.client.Do(req)
 	if err != nil {

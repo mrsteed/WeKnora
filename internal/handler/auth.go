@@ -10,6 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 // AuthHandler implements HTTP request handlers for user authentication
@@ -58,7 +59,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		c.Error(appErr)
 		return
 	}
-
+	req.Username = secutils.SanitizeForLog(req.Username)
+	req.Email = secutils.SanitizeForLog(req.Email)
 	// Call service to register user
 	user, err := h.userService.Register(ctx, &req)
 	if err != nil {
