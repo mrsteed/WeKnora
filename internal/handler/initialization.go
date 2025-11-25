@@ -319,13 +319,19 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		}
 
 		kb.ExtractConfig = &types.ExtractConfig{
+			Enabled:   req.NodeExtract.Enabled,
 			Text:      req.NodeExtract.Text,
 			Tags:      req.NodeExtract.Tags,
 			Nodes:     nodes,
 			Relations: relations,
 		}
 	} else {
-		kb.ExtractConfig = nil
+		kb.ExtractConfig = &types.ExtractConfig{Enabled: false}
+	}
+	if err := validateExtractConfig(kb.ExtractConfig); err != nil {
+		logger.Error(ctx, "Invalid extract configuration", err)
+		c.Error(err)
+		return
 	}
 
 	// 保存更新后的知识库
@@ -1811,13 +1817,7 @@ func (h *InitializationHandler) ExtractTextRelations(c *gin.Context) {
 	result, err := h.extractRelationsFromText(ctx, req.Text, req.Tags, req.LLMConfig)
 	if err != nil {
 		logger.Error(ctx, "文本关系提取失败", err)
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"data": gin.H{
-				"success": false,
-				"message": err.Error(),
-			},
-		})
+		c.Error(errors.NewInternalServerError("文本关系提取失败: " + err.Error()))
 		return
 	}
 
@@ -1885,13 +1885,7 @@ func (h *InitializationHandler) FabriText(c *gin.Context) {
 	result, err := h.fabriText(ctx, req.Tags, req.LLMConfig)
 	if err != nil {
 		logger.Error(ctx, "生成示例文本失败", err)
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"data": gin.H{
-				"success": false,
-				"message": err.Error(),
-			},
-		})
+		c.Error(errors.NewInternalServerError("生成示例文本失败: " + err.Error()))
 		return
 	}
 

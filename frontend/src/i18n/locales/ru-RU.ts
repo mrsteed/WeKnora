@@ -270,6 +270,56 @@ export default {
       saveFailed: 'Не удалось сохранить настройки: {message}'
     }
   },
+  graphSettings: {
+    title: 'Настройки графа знаний',
+    description: 'Настройте извлечение сущностей и отношений для автоматического построения графа знаний из текста',
+    enableLabel: 'Включить извлечение сущностей и отношений',
+    enableDescription: 'Автоматически извлекать сущности и отношения из текста при включении',
+    tagsLabel: 'Типы отношений',
+    tagsDescription: 'Определите теги типов отношений для извлечения, разделённые запятыми',
+    tagsPlaceholder: 'Введите типы отношений, например: работает_в, коллега, друг',
+    generateRandomTags: 'Сгенерировать случайные теги',
+    sampleTextLabel: 'Образец текста',
+    sampleTextDescription: 'Образец текста для тестирования извлечения сущностей и отношений',
+    sampleTextPlaceholder: 'Введите текст, содержащий сущности и отношения...',
+    generateRandomText: 'Сгенерировать случайный текст',
+    entityListLabel: 'Список сущностей',
+    entityListDescription: 'Сущности и их атрибуты, извлечённые из текста',
+    nodeNamePlaceholder: 'Введите имя сущности',
+    attributePlaceholder: 'Введите значение атрибута',
+    addAttribute: 'Добавить атрибут',
+    manageEntitiesLabel: 'Управление сущностями',
+    manageEntitiesDescription: 'Добавить или удалить узлы сущностей',
+    addEntity: 'Добавить сущность',
+    relationListLabel: 'Список отношений',
+    relationListDescription: 'Определите связи отношений между сущностями',
+    selectEntity: 'Выберите сущность',
+    selectRelationType: 'Выберите тип отношения',
+    manageRelationsLabel: 'Управление отношениями',
+    manageRelationsDescription: 'Добавить или удалить отношения между сущностями',
+    addRelation: 'Добавить отношение',
+    extractActionsLabel: 'Действия извлечения',
+    extractActionsDescription: 'Выполнить извлечение сущностей и отношений или управлять образцами данных',
+    startExtraction: 'Начать извлечение',
+    extracting: 'Извлечение...',
+    defaultExample: 'Пример по умолчанию',
+    clearExample: 'Очистить пример',
+    completeModelConfig: 'Пожалуйста, сначала завершите настройку модели',
+    tagsGenerated: 'Теги успешно сгенерированы',
+    tagsGenerateFailed: 'Не удалось сгенерировать теги',
+    textGenerated: 'Текст успешно сгенерирован',
+    textGenerateFailed: 'Не удалось сгенерировать текст',
+    pleaseInputText: 'Пожалуйста, сначала введите образец текста',
+    extractSuccess: 'Извлечение сущностей и отношений выполнено успешно',
+    extractFailed: 'Не удалось извлечь сущности и отношения',
+    exampleLoaded: 'Пример загружен',
+    exampleCleared: 'Пример очищен',
+    saveSuccess: 'Настройки графа сохранены',
+    saveFailed: 'Не удалось сохранить настройки: {message}',
+    errors: {
+      unknown: 'Неизвестная ошибка',
+    },
+  },
   initialization: {
     title: 'Инициализация',
     welcome: 'Добро пожаловать в WeKnora',
@@ -858,7 +908,8 @@ export default {
       models: 'Конфигурация моделей',
       chunking: 'Настройки разбиения',
       advanced: 'Дополнительные настройки',
-      faq: 'FAQ настройки'
+      faq: 'FAQ настройки',
+      graph: 'Граф знаний'
     },
     basic: {
       title: 'Основная информация',
@@ -1021,7 +1072,7 @@ export default {
     },
     advanced: {
       title: 'Расширенные настройки',
-      description: 'Настройте мультимодальные возможности и извлечение знаний',
+      description: 'Настройте мультимодальные возможности',
       multimodal: {
         label: 'Мультимодальная функция',
         description: 'Включите понимание мультимедийного контента, такого как изображения и видео',
@@ -1066,19 +1117,6 @@ export default {
           pathPrefixDescription: 'Необязательный префикс для путей хранения файлов',
           pathPrefixPlaceholder: 'Введите префикс пути'
         }
-      },
-      graph: {
-        label: 'Извлечение знаний',
-        description: 'Автоматически извлекайте сущности и связи для построения графа знаний',
-        configTitle: 'Настройки графа',
-        promptLabel: 'Текст подсказки',
-        promptDescription: 'Текст подсказки, который помогает модели извлекать сущности и связи',
-        promptPlaceholder: 'Введите текст подсказки',
-        tagsLabel: 'Теги',
-        tagsDescription: 'Предопределённые теги сущностей (несколько тегов разделяйте запятыми)',
-        tagsPlaceholder: 'Введите тег и нажмите Enter',
-        disabledWarning: 'Графовая база данных не включена. Пожалуйста, сначала включите графовую базу данных, чтобы использовать эту функцию.',
-        howToEnable: 'Как включить'
       }
     }
   },

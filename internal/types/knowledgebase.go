@@ -197,10 +197,10 @@ func (c *VLMConfig) Scan(value interface{}) error {
 
 type ExtractConfig struct {
 	Enabled   bool             `yaml:"enabled" json:"enabled"`
-	Text      string           `yaml:"text" json:"text"`
-	Tags      []string         `yaml:"tags" json:"tags"`
-	Nodes     []*GraphNode     `yaml:"nodes" json:"nodes"`
-	Relations []*GraphRelation `yaml:"relations" json:"relations"`
+	Text      string           `yaml:"text" json:"text,omitempty"`
+	Tags      []string         `yaml:"tags" json:"tags,omitempty"`
+	Nodes     []*GraphNode     `yaml:"nodes" json:"nodes,omitempty"`
+	Relations []*GraphRelation `yaml:"relations" json:"relations,omitempty"`
 }
 
 // Value implements the driver.Valuer interface, used to convert ExtractConfig to database value
