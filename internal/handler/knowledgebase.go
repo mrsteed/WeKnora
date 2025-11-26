@@ -33,7 +33,7 @@ func (h *KnowledgeBaseHandler) HybridSearch(c *gin.Context) {
 	logger.Info(ctx, "Start hybrid search")
 
 	// Validate knowledge base ID
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge base ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge base ID cannot be empty"))
@@ -48,7 +48,8 @@ func (h *KnowledgeBaseHandler) HybridSearch(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Executing hybrid search, knowledge base ID: %s, query: %s", id, req.QueryText)
+	logger.Infof(ctx, "Executing hybrid search, knowledge base ID: %s, query: %s",
+		secutils.SanitizeForLog(id), secutils.SanitizeForLog(req.QueryText))
 
 	// Execute hybrid search with default search parameters
 	results, err := h.service.HybridSearch(ctx, id, req)
@@ -58,7 +59,8 @@ func (h *KnowledgeBaseHandler) HybridSearch(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Hybrid search completed, knowledge base ID: %s, result count: %d", id, len(results))
+	logger.Infof(ctx, "Hybrid search completed, knowledge base ID: %s, result count: %d",
+		secutils.SanitizeForLog(id), len(results))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    results,
@@ -79,7 +81,7 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Creating knowledge base, name: %s", req.Name)
+	logger.Infof(ctx, "Creating knowledge base, name: %s", secutils.SanitizeForLog(req.Name))
 	// Create knowledge base using the service
 	kb, err := h.service.CreateKnowledgeBase(ctx, &req)
 	if err != nil {
@@ -88,7 +90,8 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge base created successfully, ID: %s, name: %s", kb.ID, kb.Name)
+	logger.Infof(ctx, "Knowledge base created successfully, ID: %s, name: %s",
+		secutils.SanitizeForLog(kb.ID), secutils.SanitizeForLog(kb.Name))
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
 		"data":    kb,
@@ -194,7 +197,8 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Updating knowledge base, ID: %s, name: %s", id, req.Name)
+	logger.Infof(ctx, "Updating knowledge base, ID: %s, name: %s",
+		secutils.SanitizeForLog(id), secutils.SanitizeForLog(req.Name))
 
 	// Update the knowledge base
 	kb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config)
@@ -204,7 +208,8 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge base updated successfully, ID: %s", id)
+	logger.Infof(ctx, "Knowledge base updated successfully, ID: %s",
+		secutils.SanitizeForLog(id))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    kb,
@@ -223,7 +228,8 @@ func (h *KnowledgeBaseHandler) DeleteKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Deleting knowledge base, ID: %s, name: %s", id, kb.Name)
+	logger.Infof(ctx, "Deleting knowledge base, ID: %s, name: %s",
+		secutils.SanitizeForLog(id), secutils.SanitizeForLog(kb.Name))
 
 	// Delete the knowledge base
 	if err := h.service.DeleteKnowledgeBase(ctx, id); err != nil {
@@ -232,7 +238,8 @@ func (h *KnowledgeBaseHandler) DeleteKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge base deleted successfully, ID: %s", id)
+	logger.Infof(ctx, "Knowledge base deleted successfully, ID: %s",
+		secutils.SanitizeForLog(id))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Knowledge base deleted successfully",
@@ -256,10 +263,12 @@ func (h *KnowledgeBaseHandler) CopyKnowledgeBase(c *gin.Context) {
 	go func(ctx context.Context) {
 		err := h.knowledgeService.CloneKnowledgeBase(ctx, req.SourceID, req.TargetID)
 		if err != nil {
-			logger.Errorf(ctx, "Failed to copy knowledge base, ID: %s to ID: %s", req.SourceID, req.TargetID)
+			logger.Errorf(ctx, "Failed to copy knowledge base, ID: %s to ID: %s",
+				secutils.SanitizeForLog(req.SourceID), secutils.SanitizeForLog(req.TargetID))
 			return
 		}
-		logger.Infof(ctx, "Knowledge base copy from ID: %s to ID: %s successfully", req.SourceID, req.TargetID)
+		logger.Infof(ctx, "Knowledge base copy from ID: %s to ID: %s successfully",
+			secutils.SanitizeForLog(req.SourceID), secutils.SanitizeForLog(req.TargetID))
 	}(logger.CloneContext(ctx))
 
 	c.JSON(http.StatusOK, gin.H{

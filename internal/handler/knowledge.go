@@ -238,7 +238,8 @@ func (h *KnowledgeHandler) CreateManualKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Manual knowledge created successfully, knowledge ID: %s", secutils.SanitizeForLog(knowledge.ID))
+	logger.Infof(ctx, "Manual knowledge created successfully, knowledge ID: %s",
+		secutils.SanitizeForLog(knowledge.ID))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    knowledge,

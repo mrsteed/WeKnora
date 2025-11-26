@@ -32,7 +32,7 @@ func (h *FAQHandler) ListEntries(c *gin.Context) {
 		return
 	}
 
-	tagID := c.Query("tag_id")
+	tagID := secutils.SanitizeForLog(c.Query("tag_id"))
 
 	result, err := h.knowledgeService.ListFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), &page, tagID)
 	if err != nil {
@@ -177,6 +177,12 @@ func (h *FAQHandler) SearchFAQ(c *gin.Context) {
 		return
 	}
 	req.QueryText = secutils.SanitizeForLog(req.QueryText)
+	if req.MatchCount <= 0 {
+		req.MatchCount = 10
+	}
+	if req.MatchCount > 200 {
+		req.MatchCount = 200
+	}
 	entries, err := h.knowledgeService.SearchFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), &req)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)

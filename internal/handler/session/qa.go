@@ -297,7 +297,8 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		logger.Infof(ctx, "Delegating to KnowledgeQA with knowledge bases: %s", secutils.SanitizeForLog(fmt.Sprintf("%v", knowledgeBaseIDs)))
 
 		// Use shared function to handle KnowledgeQA request (no title generation for AgentQA fallback)
-		h.handleKnowledgeQARequest(ctx, c, session, request.Query, knowledgeBaseIDs, assistantMessage, false, request.SummaryModelID, request.WebSearchEnabled)
+		h.handleKnowledgeQARequest(ctx, c, session, secutils.SanitizeForLog(request.Query),
+			secutils.SanitizeForLogArray(knowledgeBaseIDs), assistantMessage, false, secutils.SanitizeForLog(request.SummaryModelID), request.WebSearchEnabled)
 		return
 	}
 
