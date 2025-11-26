@@ -18,6 +18,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 var (
@@ -126,7 +127,7 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 
 	// Create default tenant for the user
 	tenant := &types.Tenant{
-		Name:             fmt.Sprintf("%s's Workspace", req.Username),
+		Name:             fmt.Sprintf("%s's Workspace", secutils.SanitizeForLog(req.Username)),
 		Description:      "Default workspace",
 		Status:           "active",
 		RetrieverEngines: types.RetrieverEngines{Engines: egs},

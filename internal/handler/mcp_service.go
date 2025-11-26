@@ -145,7 +145,11 @@ func (h *MCPServiceHandler) UpdateMCPService(c *gin.Context) {
 		updateFields["description"] = true
 	}
 	if enabled, ok := updateData["enabled"].(bool); ok {
-		service.Enabled = enabled
+		if enabled {
+			service.Enabled = true
+		} else {
+			service.Enabled = false
+		}
 		updateFields["enabled"] = true
 	}
 	if transportType, ok := updateData["transport_type"].(string); ok {

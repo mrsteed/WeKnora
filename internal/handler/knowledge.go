@@ -35,7 +35,7 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccess(c *gin.Context) (*types.K
 	ctx := c.Request.Context()
 
 	// Get knowledge base ID from URL path parameter
-	kbID := c.Param("id")
+	kbID := secutils.SanitizeForLog(c.Param("id"))
 	if kbID == "" {
 		logger.Error(ctx, "Knowledge base ID is empty")
 		return nil, "", errors.NewBadRequestError("Knowledge base ID cannot be empty")
@@ -104,14 +104,16 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 
 	// Get custom filename if provided (for folder uploads with path)
 	customFileName := c.PostForm("fileName")
+	customFileName = secutils.SanitizeForLog(customFileName)
 	displayFileName := file.Filename
+	displayFileName = secutils.SanitizeForLog(displayFileName)
 	if customFileName != "" {
 		displayFileName = customFileName
-		logger.Infof(ctx, "Using custom filename: %s (original: %s)", secutils.SanitizeForLog(customFileName), secutils.SanitizeForLog(file.Filename))
+		logger.Infof(ctx, "Using custom filename: %s (original: %s)", customFileName, displayFileName)
 	}
 
-	logger.Infof(ctx, "File upload successful, filename: %s, size: %.2f KB", secutils.SanitizeForLog(displayFileName), float64(file.Size)/1024)
-	logger.Infof(ctx, "Creating knowledge, knowledge base ID: %s, filename: %s", secutils.SanitizeForLog(kbID), secutils.SanitizeForLog(displayFileName))
+	logger.Infof(ctx, "File upload successful, filename: %s, size: %.2f KB", displayFileName, float64(file.Size)/1024)
+	logger.Infof(ctx, "Creating knowledge, knowledge base ID: %s, filename: %s", kbID, displayFileName)
 
 	// Parse metadata if provided
 	var metadata map[string]string
@@ -572,7 +574,7 @@ func (h *KnowledgeHandler) UpdateImageInfo(c *gin.Context) {
 
 	// Update chunk properties
 	logger.Infof(ctx, "Updating knowledge chunk, knowledge ID: %s, chunk ID: %s", id, chunkID)
-	err := h.kgService.UpdateImageInfo(ctx, id, chunkID, request.ImageInfo)
+	err := h.kgService.UpdateImageInfo(ctx, id, chunkID, secutils.SanitizeForLog(request.ImageInfo))
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))

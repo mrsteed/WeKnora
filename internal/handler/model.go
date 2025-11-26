@@ -84,7 +84,6 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
-	req.Name = secutils.SanitizeForLog(req.Name)
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
@@ -97,10 +96,10 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 
 	model := &types.Model{
 		TenantID:    tenantID,
-		Name:        req.Name,
+		Name:        secutils.SanitizeForLog(req.Name),
 		Type:        req.Type,
 		Source:      req.Source,
-		Description: req.Description,
+		Description: secutils.SanitizeForLog(req.Description),
 		Parameters:  req.Parameters,
 	}
 

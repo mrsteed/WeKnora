@@ -51,6 +51,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		c.Error(appErr)
 		return
 	}
+	req.Username = secutils.SanitizeForLog(req.Username)
+	req.Email = secutils.SanitizeForLog(req.Email)
+	req.Password = secutils.SanitizeForLog(req.Password)
 
 	// Validate required fields
 	if req.Username == "" || req.Email == "" || req.Password == "" {
@@ -77,7 +80,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		User:    user,
 	}
 
-	logger.Infof(ctx, "User registered successfully: %s", user.Email)
+	logger.Infof(ctx, "User registered successfully: %s", secutils.SanitizeForLog(user.Email))
 	c.JSON(http.StatusCreated, response)
 }
 
