@@ -234,7 +234,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		logger.Infof(ctx, "Web search mode changed from %v to %v", currentWebSearchEnabled, request.WebSearchEnabled)
 		configChanged = true
 	}
-	summaryModelID := request.SummaryModelID
+	summaryModelID := secutils.SanitizeForLog(request.SummaryModelID)
 	if summaryModelID == "" {
 		summaryModelID = session.SummaryModelID
 	}
@@ -258,10 +258,10 @@ func (h *Handler) AgentQA(c *gin.Context) {
 			logger.Errorf(ctx, "Failed to delete temp knowledge base for session %s: %v", sessionID, err)
 			// Continue anyway - this is not a fatal error
 		}
-		session.AgentConfig.KnowledgeBases = request.KnowledgeBaseIDs
+		session.AgentConfig.KnowledgeBases = secutils.SanitizeForLogArray(request.KnowledgeBaseIDs)
 		session.AgentConfig.AgentModeEnabled = request.AgentEnabled
 		session.AgentConfig.WebSearchEnabled = request.WebSearchEnabled
-		session.SummaryModelID = summaryModelID
+		session.SummaryModelID = secutils.SanitizeForLog(summaryModelID)
 		// Persist the session changes
 		if err := h.sessionService.UpdateSession(ctx, session); err != nil {
 			logger.Errorf(ctx, "Failed to update session %s: %v", sessionID, err)
@@ -276,7 +276,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		logger.Infof(ctx, "Agent mode disabled, delegating to KnowledgeQA for session: %s", sessionID)
 
 		// Use knowledge bases from request or session config
-		knowledgeBaseIDs := request.KnowledgeBaseIDs
+		knowledgeBaseIDs := secutils.SanitizeForLogArray(request.KnowledgeBaseIDs)
 		if len(knowledgeBaseIDs) == 0 {
 			knowledgeBaseIDs = session.AgentConfig.KnowledgeBases
 		}
@@ -303,14 +303,14 @@ func (h *Handler) AgentQA(c *gin.Context) {
 	}
 
 	// Emit agent query event to create user message
-	requestID := c.GetString(types.RequestIDContextKey.String())
+	requestID := secutils.SanitizeForLog(c.GetString(types.RequestIDContextKey.String()))
 	if err := event.Emit(ctx, event.Event{
 		Type:      event.EventAgentQuery,
 		SessionID: sessionID,
 		RequestID: requestID,
 		Data: event.AgentQueryData{
 			SessionID: sessionID,
-			Query:     request.Query,
+			Query:     secutils.SanitizeForLog(request.Query),
 			RequestID: requestID,
 		},
 	}); err != nil {
@@ -322,7 +322,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 	setSSEHeaders(c)
 
 	// Create user message
-	if err := h.createUserMessage(ctx, sessionID, request.Query, requestID); err != nil {
+	if err := h.createUserMessage(ctx, sessionID, secutils.SanitizeForLog(request.Query), requestID); err != nil {
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
@@ -349,7 +349,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 	// Start async title generation if session has no title
 	if session.Title == "" {
 		logger.Infof(ctx, "Session has no title, starting async title generation, session ID: %s", sessionID)
-		h.sessionService.GenerateTitleAsync(asyncCtx, session, request.Query, eventBus)
+		h.sessionService.GenerateTitleAsync(asyncCtx, session, secutils.SanitizeForLog(request.Query), eventBus)
 	}
 
 	// Register stop event handler to cancel the context
@@ -369,7 +369,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 			h.completeAssistantMessage(asyncCtx, assistantMessage)
 			logger.Infof(asyncCtx, "Agent QA service completed for session: %s", sessionID)
 		}()
-		err := h.sessionService.AgentQA(asyncCtx, session, request.Query, assistantMessage.ID, eventBus)
+		err := h.sessionService.AgentQA(asyncCtx, session, secutils.SanitizeForLog(request.Query), assistantMessage.ID, eventBus)
 		if err != nil {
 			logger.ErrorWithFields(asyncCtx, err, nil)
 			// Emit error event to dedicated EventBus

@@ -132,9 +132,6 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	}
 
 	logger.Infof(ctx, "Knowledge base ID: %s, file: %s", kbID, fileName)
-	if metadata != nil {
-		logger.Infof(ctx, "Received metadata: %v", metadata)
-	}
 
 	// Get knowledge base configuration
 	logger.Info(ctx, "Getting knowledge base configuration")
