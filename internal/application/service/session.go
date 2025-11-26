@@ -606,13 +606,13 @@ func (s *sessionService) selectChatModelID(ctx context.Context, session *types.S
 		for _, kbID := range knowledgeBaseIDs {
 			kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, kbID)
 			if err != nil {
-				logger.Warnf(ctx, "Failed to get knowledge base %s: %v", kbID, err)
+				logger.Warnf(ctx, "Failed to get knowledge base: %v", err)
 				continue
 			}
 			if kb != nil && kb.SummaryModelID != "" {
 				model, err := s.modelService.GetModelByID(ctx, kb.SummaryModelID)
 				if err == nil && model != nil && model.Source == types.ModelSourceRemote {
-					logger.Infof(ctx, "Using Remote summary model from knowledge base %s: %s", kbID, kb.SummaryModelID)
+					logger.Info(ctx, "Using Remote summary model from knowledge base")
 					return kb.SummaryModelID, nil
 				}
 			}

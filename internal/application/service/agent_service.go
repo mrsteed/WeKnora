@@ -14,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/models/rerank"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"gorm.io/gorm"
 )
 
@@ -267,7 +268,7 @@ func (s *agentService) getKnowledgeBaseInfos(ctx context.Context, kbIDs []string
 		// Get knowledge base details
 		kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, kbID)
 		if err != nil {
-			logger.Warnf(ctx, "Failed to get knowledge base %s: %v", kbID, err)
+			logger.Warnf(ctx, "Failed to get knowledge base %s: %v", secutils.SanitizeForLog(kbID), err)
 			// Add fallback info
 			kbInfos = append(kbInfos, &agent.KnowledgeBaseInfo{
 				ID:          kbID,

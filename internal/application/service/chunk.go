@@ -87,7 +87,6 @@ func (s *chunkService) GetChunkByID(ctx context.Context, id string) (*types.Chun
 	chunk, err := s.chunkRepository.GetChunkByID(ctx, tenantID, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
-			"chunk_id":  id,
 			"tenant_id": tenantID,
 		})
 		return nil, err
@@ -213,7 +212,6 @@ func (s *chunkService) DeleteChunk(ctx context.Context, id string) error {
 	err := s.chunkRepository.DeleteChunk(ctx, tenantID, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
-			"chunk_id":  id,
 			"tenant_id": tenantID,
 		})
 		return err

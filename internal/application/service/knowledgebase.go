@@ -546,8 +546,7 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 	needsIterativeRetrieval := len(deduplicatedChunks) < params.MatchCount &&
 		kb.Type == types.KnowledgeBaseTypeFAQ && len(matchResults) == matchCount
 	if needsIterativeRetrieval {
-		logger.Infof(ctx, "Not enough unique chunks (%d < %d), using iterative retrieval for FAQ",
-			len(deduplicatedChunks), params.MatchCount)
+		logger.Info(ctx, "Not enough unique chunks, using iterative retrieval for FAQ")
 		// Use iterative retrieval to get more unique chunks (with negative question filtering inside)
 		deduplicatedChunks = s.iterativeRetrieveWithDeduplication(ctx, retrieveEngine, retrieveParams, params.MatchCount, params.QueryText)
 	} else if kb.Type == types.KnowledgeBaseTypeFAQ {
