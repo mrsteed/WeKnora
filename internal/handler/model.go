@@ -97,7 +97,7 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 	model := &types.Model{
 		TenantID:    tenantID,
 		Name:        secutils.SanitizeForLog(req.Name),
-		Type:        req.Type,
+		Type:        types.ModelType(secutils.SanitizeForLog(string(req.Type))),
 		Source:      req.Source,
 		Description: secutils.SanitizeForLog(req.Description),
 		Parameters:  req.Parameters,
