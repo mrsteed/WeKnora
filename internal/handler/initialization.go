@@ -198,7 +198,7 @@ type InitializationRequest struct {
 // UpdateKBConfig 根据知识库ID和模型ID更新配置（简化版）
 func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 	ctx := c.Request.Context()
-	kbIdStr := c.Param("kbId")
+	kbIdStr := secutils.SanitizeForLog(c.Param("kbId"))
 
 	var req KBModelConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -344,7 +344,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 // InitializeByKB 根据知识库ID执行配置更新
 func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 	ctx := c.Request.Context()
-	kbIdStr := c.Param("kbId")
+	kbIdStr := secutils.SanitizeForLog(c.Param("kbId"))
 
 	var req InitializationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1051,7 +1051,7 @@ func (h *InitializationHandler) updateTaskStatus(
 // GetCurrentConfigByKB 根据知识库ID获取配置信息
 func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 	ctx := c.Request.Context()
-	kbIdStr := c.Param("kbId")
+	kbIdStr := secutils.SanitizeForLog(c.Param("kbId"))
 
 	logger.Info(ctx, "Getting configuration for knowledge base")
 
