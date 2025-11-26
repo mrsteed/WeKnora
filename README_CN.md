@@ -15,7 +15,7 @@
         <img src="https://img.shields.io/badge/License-MIT-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="License">
     </a>
     <a href="./CHANGELOG.md">
-        <img alt="版本" src="https://img.shields.io/badge/version-0.1.3-2e6cc4?labelColor=d4eaf7">
+        <img alt="版本" src="https://img.shields.io/badge/version-0.2.0-2e6cc4?labelColor=d4eaf7">
     </a>
 </p>
 
@@ -41,6 +41,18 @@
 
 **官网：** https://weknora.weixin.qq.com
 
+## ✨ 最新更新
+
+**v0.2.0 版本亮点：**
+
+- 🤖 **Agent模式**：新增ReACT Agent模式，支持调用内置工具、MCP工具和网络搜索，通过多次迭代和反思提供全面总结报告
+- 📚 **多类型知识库**：支持FAQ和文档两种类型知识库，新增文件夹导入、URL导入、标签管理和在线录入功能
+- ⚙️ **对话策略**：支持配置Agent模型、普通模式模型、检索阈值和Prompt，精确控制多轮对话行为
+- 🌐 **网络搜索**：支持可扩展的网络搜索引擎，内置DuckDuckGo搜索引擎
+- 🔌 **MCP工具集成**：支持通过MCP扩展Agent能力，内置uvx、npx启动工具，支持多种传输方式
+- 🎨 **全新UI**：优化对话界面，支持Agent模式/普通模式切换，展示工具调用过程，知识库管理界面全面升级
+- ⚡ **底层升级**：引入MQ异步任务管理，支持数据库自动迁移，提供快速开发模式
+
 ## 🔒 安全声明
 
 **重要提示：** 从 v0.1.3 版本开始，WeKnora 提供了登录鉴权功能，以增强系统安全性。在生产环境部署时，我们强烈建议：
@@ -52,7 +64,7 @@
 
 ## 🏗️ 架构设计
 
-![weknora-pipelone.png](./docs/images/pipeline.jpg)
+![weknora-pipelone.png](./docs/images/architecture.png)
 
 WeKnora 采用现代化模块化设计，构建了一条完整的文档理解与检索流水线。系统主要包括文档解析、向量化处理、检索引擎和大模型推理等核心模块，每个组件均可灵活配置与扩展。
 
@@ -335,7 +347,7 @@ make dev-frontend   # 启动前端（新终端）
 - ✅ 无需重新构建 Docker 镜像
 - ✅ 支持 IDE 断点调试
 
-**详细文档：** [开发环境快速入门](./DEVELOPMENT.md) | [完整开发指南](./docs/开发指南.md)
+**详细文档：** [开发环境快速入门](./docs/开发指南.md)
 
 ### 📁 项目目录结构
 

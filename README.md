@@ -15,7 +15,7 @@
         <img src="https://img.shields.io/badge/License-MIT-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="License">
     </a>
     <a href="./CHANGELOG.md">
-        <img alt="Version" src="https://img.shields.io/badge/version-0.1.3-2e6cc4?labelColor=d4eaf7">
+        <img alt="Version" src="https://img.shields.io/badge/version-0.2.0-2e6cc4?labelColor=d4eaf7">
     </a>
 </p>
 
@@ -41,6 +41,18 @@ It adopts a modular architecture that combines multimodal preprocessing, semanti
 
 **Website:** https://weknora.weixin.qq.com
 
+## ✨ Latest Updates
+
+**v0.2.0 Highlights:**
+
+- 🤖 **Agent Mode**: New ReACT Agent mode that can call built-in tools, MCP tools, and web search, providing comprehensive summary reports through multiple iterations and reflection
+- 📚 **Multi-Type Knowledge Bases**: Support for FAQ and document knowledge base types, with new features including folder import, URL import, tag management, and online entry
+- ⚙️ **Conversation Strategy**: Support for configuring Agent models, normal mode models, retrieval thresholds, and Prompts, with precise control over multi-turn conversation behavior
+- 🌐 **Web Search**: Support for extensible web search engines with built-in DuckDuckGo search engine
+- 🔌 **MCP Tool Integration**: Support for extending Agent capabilities through MCP, with built-in uvx and npx launchers, supporting multiple transport methods
+- 🎨 **New UI**: Optimized conversation interface with Agent mode/normal mode switching, tool call process display, and comprehensive knowledge base management interface upgrade
+- ⚡ **Infrastructure Upgrade**: Introduced MQ async task management, support for automatic database migration, and fast development mode
+
 ## 🔒 Security Notice
 
 **Important:** Starting from v0.1.3, WeKnora includes login authentication functionality to enhance system security. For production deployments, we strongly recommend:
@@ -52,7 +64,7 @@ It adopts a modular architecture that combines multimodal preprocessing, semanti
 
 ## 🏗️ Architecture
 
-![weknora-pipeline.png](./docs/images/pipeline.jpg)
+![weknora-architecture.png](./docs/images/architecture.png)
 
 WeKnora employs a modern modular design to build a complete document understanding and retrieval pipeline. The system primarily includes document parsing, vector processing, retrieval engine, and large model inference as core modules, with each component being flexibly configurable and extendable.
 
@@ -307,6 +319,33 @@ Troubleshooting FAQ: [Troubleshooting FAQ](./docs/QA.md)
 Detailed API documentation is available at: [API Docs](./docs/API.md)
 
 ## 🧭 Developer Guide
+
+### ⚡ Fast Development Mode (Recommended)
+
+If you need to frequently modify code, **you don't need to rebuild Docker images every time**! Use fast development mode:
+
+```bash
+# Method 1: Using Make commands (Recommended)
+make dev-start      # Start infrastructure
+make dev-app        # Start backend (new terminal)
+make dev-frontend   # Start frontend (new terminal)
+
+# Method 2: One-click start
+./scripts/quick-dev.sh
+
+# Method 3: Using scripts
+./scripts/dev.sh start     # Start infrastructure
+./scripts/dev.sh app       # Start backend (new terminal)
+./scripts/dev.sh frontend  # Start frontend (new terminal)
+```
+
+**Development Advantages:**
+- ✅ Frontend modifications auto hot-reload (no restart needed)
+- ✅ Backend modifications quick restart (5-10 seconds, supports Air hot-reload)
+- ✅ No need to rebuild Docker images
+- ✅ Support IDE breakpoint debugging
+
+**Detailed Documentation:** [Development Environment Quick Start](./docs/开发指南.md)
 
 ### 📁 Directory Structure
 

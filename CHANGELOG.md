@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2025-11-26
+
+### 🚀 Major Features
+- **NEW**: ReACT Agent Mode
+  - Added ReACT Agent mode that can use built-in tools to retrieve knowledge bases
+  - Support for calling user-configured MCP tools and web search tools to access external services
+  - Multiple iterations and reflection to provide comprehensive summary reports
+  - Cross-knowledge base retrieval support, allowing selection of multiple knowledge bases
+- **NEW**: Model Management System
+  - Centralized model configuration
+  - Added model selection in knowledge base settings page
+  - Built-in model sharing functionality across multiple tenants
+  - Tenants can use shared models but are restricted from editing or viewing model details
+- **NEW**: Multi-Type Knowledge Base Support
+  - Support for creating FAQ and document knowledge base types
+  - Folder import functionality
+  - URL import functionality
+  - Tag management system
+  - Online knowledge entry capability
+- **NEW**: FAQ Knowledge Base
+  - New FAQ-type knowledge base
+  - Batch import and batch delete functionality
+  - Online FAQ entry
+  - Online FAQ testing capability
+- **NEW**: Conversation Strategy Configuration
+  - Support for configuring Agent models and normal mode models
+  - Configurable retrieval thresholds
+  - Online Prompt configuration
+  - Precise control over multi-turn conversation behavior and retrieval execution methods
+- **NEW**: Web Search Integration
+  - Support for extensible web search engines
+  - Built-in DuckDuckGo search engine
+- **NEW**: MCP Tool Integration
+  - Support for extending Agent capabilities through MCP
+  - Built-in uvx and npx MCP launcher tools
+  - Support for three transport methods: Stdio, HTTP Streamable, and SSE
+
+### 🎨 UI/UX Improvements
+- **REDESIGNED**: Conversation interface with Agent mode/normal mode switching
+  - Added Agent mode/normal mode toggle in conversation input box
+  - Support for enabling/disabling web search
+  - Support for selecting conversation models
+- **REDESIGNED**: Login page UI adjustments
+- **ENHANCED**: Session list with time-ordered grouping
+- **NEW**: Quick Actions area for unified UI visual effects
+- **IMPROVED**: Knowledge base list cards
+  - Display knowledge base type, knowledge count, build status
+  - Show advanced settings capabilities
+- **NEW**: Breadcrumb navigation in FAQ and document list pages
+  - Quick navigation and knowledge base switching
+- **ENHANCED**: Knowledge base settings in document list page
+- **REDESIGNED**: Knowledge base settings page
+  - Separate configuration for knowledge base type, models, chunking methods, and advanced settings
+- **NEW**: Global settings page for permissions
+  - Configure models, web search, MCP services, and Agent mode
+- **IMPROVED**: Chunk details page display
+- **NEW**: Knowledge classification and tagging support
+- **ENHANCED**: Conversation flow page with tool call execution process display
+
+### ⚡ Infrastructure Upgrades
+- **NEW**: MQ-based async task management
+  - Introduced MQ for async task state maintenance
+  - Ensures task integrity even after service abnormal restart
+- **NEW**: Automatic database migration
+  - Support for automatic database schema and data migration during version upgrades
+- **NEW**: Fast development mode
+  - Added docker-compose.dev.yml file for quick development environment startup
+  - Improved development workflow efficiency
+- **IMPROVED**: Log structure optimization
+- **NEW**: Event subscription and publishing mechanism
+  - Support for event handling at various steps in user query processing flow
+
+### 🐛 Bug Fixes
+- Various bug fixes and stability improvements
+
+### 📚 Documentation Updates
+- Updated README files with v0.2.0 highlights (English, Chinese, Japanese)
+- Added latest updates section in all README files
+- Updated architecture diagrams and feature matrices
+
 ## [0.1.4] - 2025-09-17
 
 ### 🚀 Major Features
@@ -97,6 +177,7 @@ All notable changes to this project will be documented in this file.
 - Docker Compose for quick startup and service orchestration.
 - MCP server support for integrating with MCP-compatible clients.
 
+[0.2.0]: https://github.com/Tencent/WeKnora/tree/v0.2.0
 [0.1.4]: https://github.com/Tencent/WeKnora/tree/v0.1.4
 [0.1.3]: https://github.com/Tencent/WeKnora/tree/v0.1.3
 [0.1.2]: https://github.com/Tencent/WeKnora/tree/v0.1.2
