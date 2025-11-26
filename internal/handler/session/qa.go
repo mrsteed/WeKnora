@@ -122,7 +122,8 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 	}
 
 	// Use shared function to handle KnowledgeQA request
-	h.handleKnowledgeQARequest(ctx, c, session, request.Query, knowledgeBaseIDs, assistantMessage, true, request.SummaryModelID, request.WebSearchEnabled)
+	h.handleKnowledgeQARequest(ctx, c, session, secutils.SanitizeForLog(request.Query),
+		knowledgeBaseIDs, assistantMessage, true, secutils.SanitizeForLog(request.SummaryModelID), request.WebSearchEnabled)
 }
 
 // AgentQA handles agent-based question answering with conversation history and streaming

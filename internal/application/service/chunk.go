@@ -145,8 +145,6 @@ func (s *chunkService) ListPagedChunksByKnowledgeID(ctx context.Context,
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"knowledge_id": knowledgeID,
 			"tenant_id":    tenantID,
-			"page":         page.Page,
-			"page_size":    page.PageSize,
 		})
 		return nil, err
 	}
@@ -211,12 +209,7 @@ func (s *chunkService) UpdateChunks(ctx context.Context, chunks []*types.Chunk) 
 // Returns:
 //   - error: Any error encountered during deletion
 func (s *chunkService) DeleteChunk(ctx context.Context, id string) error {
-	logger.Info(ctx, "Start deleting chunk")
-	logger.Infof(ctx, "Deleting chunk, ID: %s", id)
-
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
-	logger.Infof(ctx, "Tenant ID: %d", tenantID)
-
 	err := s.chunkRepository.DeleteChunk(ctx, tenantID, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -225,7 +218,6 @@ func (s *chunkService) DeleteChunk(ctx context.Context, id string) error {
 		})
 		return err
 	}
-
 	logger.Info(ctx, "Chunk deleted successfully")
 	return nil
 }
