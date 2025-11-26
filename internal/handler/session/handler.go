@@ -9,6 +9,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -193,7 +194,7 @@ func (h *Handler) GetSession(c *gin.Context) {
 	logger.Info(ctx, "Start retrieving session")
 
 	// Get session ID from URL parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Session ID is empty")
 		c.Error(errors.NewBadRequestError(errors.ErrInvalidSessionID.Error()))
@@ -257,7 +258,7 @@ func (h *Handler) UpdateSession(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// Get session ID from URL parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Session ID is empty")
 		c.Error(errors.NewBadRequestError(errors.ErrInvalidSessionID.Error()))
@@ -308,7 +309,7 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// Get session ID from URL parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Session ID is empty")
 		c.Error(errors.NewBadRequestError(errors.ErrInvalidSessionID.Error()))

@@ -139,11 +139,7 @@ func (s *chunkService) ListChunksByKnowledgeID(ctx context.Context, knowledgeID 
 func (s *chunkService) ListPagedChunksByKnowledgeID(ctx context.Context,
 	knowledgeID string, page *types.Pagination, chunkType []types.ChunkType,
 ) (*types.PageResult, error) {
-	logger.Info(ctx, "Start listing paged chunks by knowledge ID")
-	logger.Infof(ctx, "Knowledge ID: %s, page: %d, page size: %d", knowledgeID, page.Page, page.PageSize)
-
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
-	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 	chunks, total, err := s.chunkRepository.ListPagedChunksByKnowledgeID(ctx, tenantID, knowledgeID, page, chunkType, "")
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
