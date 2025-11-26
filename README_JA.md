@@ -289,11 +289,11 @@ http://localhost
 
 <table>
   <tr>
-    <td><b>ナレッジアップロード</b><br/><img src="./docs/images/knowledges.png" alt="ナレッジアップロードインターフェース"></td>
-    <td><b>ナレッジQ&Aエントリー</b><br/><img src="./docs/images/qa.png" alt="ナレッジQ&Aエントリー"></td>
+    <td><b>ナレッジベース管理</b><br/><img src="./docs/images/knowledgebases.png" alt="ナレッジベース管理"></td>
+    <td><b>対話設定</b><br/><img src="./docs/images/settings.png" alt="対話設定"></td>
   </tr>
   <tr>
-    <td colspan="2"><b>図文結果回答</b><br/><img src="./docs/images/answer.png" alt="図文結果回答"></td>
+    <td colspan="2"><b>Agentモードツール呼び出しプロセス</b><br/><img src="./docs/images/agent-qa.png" alt="Agentモードツール呼び出しプロセス"></td>
   </tr>
 </table>
 
