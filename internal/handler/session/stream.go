@@ -11,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,7 +22,7 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 	logger.Info(ctx, "Start continuing stream response processing")
 
 	// Get session ID from URL parameter
-	sessionID := c.Param("session_id")
+	sessionID := secutils.SanitizeForLog(c.Param("session_id"))
 	if sessionID == "" {
 		logger.Error(ctx, "Session ID is empty")
 		c.Error(errors.NewBadRequestError(errors.ErrInvalidSessionID.Error()))
@@ -29,7 +30,7 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 	}
 
 	// Get message ID from query parameter
-	messageID := c.Query("message_id")
+	messageID := secutils.SanitizeForLog(c.Query("message_id"))
 	if messageID == "" {
 		logger.Error(ctx, "Message ID is empty")
 		c.Error(errors.NewBadRequestError("Missing message ID"))
@@ -165,7 +166,7 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 // StopSession handles the stop generation request
 func (h *Handler) StopSession(c *gin.Context) {
 	ctx := logger.CloneContext(c.Request.Context())
-	sessionID := c.Param("session_id")
+	sessionID := secutils.SanitizeForLog(c.Param("session_id"))
 
 	if sessionID == "" {
 		c.JSON(400, gin.H{"error": "Session ID is required"})
@@ -182,7 +183,7 @@ func (h *Handler) StopSession(c *gin.Context) {
 		return
 	}
 
-	assistantMessageID := req.MessageID
+	assistantMessageID := secutils.SanitizeForLog(req.MessageID)
 	logger.Infof(ctx, "Stop generation request for session: %s, message: %s", sessionID, assistantMessageID)
 
 	// Get tenant ID from context

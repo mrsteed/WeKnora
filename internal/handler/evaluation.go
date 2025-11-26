@@ -94,7 +94,7 @@ func (e *EvaluationHandler) GetEvaluationResult(c *gin.Context) {
 		return
 	}
 
-	result, err := e.evaluationService.EvaluationResult(ctx, request.TaskID)
+	result, err := e.evaluationService.EvaluationResult(ctx, secutils.SanitizeForLog(request.TaskID))
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))

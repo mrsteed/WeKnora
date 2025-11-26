@@ -94,7 +94,7 @@ func (h *ChunkHandler) ListKnowledgeChunks(c *gin.Context) {
 	// Parse pagination parameters
 	var pagination types.Pagination
 	if err := c.ShouldBindQuery(&pagination); err != nil {
-		logger.Error(ctx, "Failed to parse pagination parameters", err)
+		logger.Errorf(ctx, "Failed to parse pagination parameters: %s", secutils.SanitizeForLog(err.Error()))
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
@@ -201,7 +201,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	}
 	var req UpdateChunkRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Error(ctx, "Failed to parse request parameters", err)
+		logger.Errorf(ctx, "Failed to parse request parameters: %s", secutils.SanitizeForLog(err.Error()))
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
