@@ -288,11 +288,11 @@ On your first visit, you will be automatically redirected to the registration/lo
 
 <table>
   <tr>
-    <td><b>Knowledge Upload</b><br/><img src="./docs/images/knowledges.png" alt="Knowledge Upload Interface"></td>
-    <td><b>Q&A Entry</b><br/><img src="./docs/images/qa.png" alt="Q&A Entry Interface"></td>
+    <td><b>Knowledge Base Management</b><br/><img src="./docs/images/knowledgebases.png" alt="Knowledge Base Management"></td>
+    <td><b>Conversation Settings</b><br/><img src="./docs/images/settings.png" alt="Conversation Settings"></td>
   </tr>
   <tr>
-    <td colspan="2"><b>Rich Text & Image Responses</b><br/><img src="./docs/images/answer.png" alt="Rich Answer Interface"></td>
+    <td colspan="2"><b>Agent Mode Tool Call Process</b><br/><img src="./docs/images/agent-qa.png" alt="Agent Mode Tool Call Process"></td>
   </tr>
 </table>
 

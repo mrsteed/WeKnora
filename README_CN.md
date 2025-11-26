@@ -290,11 +290,11 @@ http://localhost
 
 <table>
   <tr>
-    <td><b>知识上传</b><br/><img src="./docs/images/knowledges.png" alt="知识上传界面"></td>
-    <td><b>知识问答入口</b><br/><img src="./docs/images/qa.png" alt="知识问答入口"></td>
+    <td><b>知识库管理</b><br/><img src="./docs/images/knowledgebases.png" alt="知识库管理"></td>
+    <td><b>对话设置</b><br/><img src="./docs/images/settings.png" alt="对话设置"></td>
   </tr>
   <tr>
-    <td colspan="2"><b>图文结果回答</b><br/><img src="./docs/images/answer.png" alt="图文结果回答"></td>
+    <td colspan="2"><b>Agent模式工具调用过程</b><br/><img src="./docs/images/agent-qa.png" alt="Agent模式工具调用过程"></td>
   </tr>
 </table>
 
