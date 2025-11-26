@@ -98,6 +98,15 @@ func (h *ChunkHandler) ListKnowledgeChunks(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
+	if pagination.Page < 1 {
+		pagination.Page = 1
+	}
+	if pagination.PageSize < 1 {
+		pagination.PageSize = 10
+	}
+	if pagination.PageSize > 100 {
+		pagination.PageSize = 100
+	}
 
 	chunkType := []types.ChunkType{types.ChunkTypeText}
 

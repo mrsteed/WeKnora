@@ -181,10 +181,10 @@ func SanitizeForLog(input string) string {
 	// 替换换行符(LF, CR, CRLF)为空格,防止日志注入
 	sanitized := strings.ReplaceAll(input, "\n", " ")
 	sanitized = strings.ReplaceAll(sanitized, "\r", " ")
-	
+
 	// 替换制表符为空格
 	sanitized = strings.ReplaceAll(sanitized, "\t", " ")
-	
+
 	// 移除其他控制字符(ASCII 0-31,除了空格已处理的)
 	var builder strings.Builder
 	for _, r := range sanitized {
@@ -193,13 +193,26 @@ func SanitizeForLog(input string) string {
 			builder.WriteRune(r)
 		}
 	}
-	
+
 	sanitized = builder.String()
-	
+
 	// 限制长度,防止日志溢出
 	if len(sanitized) > 1000 {
 		sanitized = sanitized[:1000] + "...[truncated]"
 	}
-	
+
 	return sanitized
+}
+
+// SanitizeForLogArray 清理日志输入数组,防止日志注入攻击
+func SanitizeForLogArray(input []string) []string {
+	if len(input) == 0 {
+		return []string{}
+	}
+
+	for _, item := range input {
+		input = append(input, SanitizeForLog(item))
+	}
+
+	return input
 }

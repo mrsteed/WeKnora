@@ -149,12 +149,14 @@ func (h *FAQHandler) DeleteEntries(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req faqDeleteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Error(ctx, "Failed to bind FAQ delete payload", err)
+		logger.Errorf(ctx, "Failed to bind FAQ delete payload: %s", secutils.SanitizeForLog(err.Error()))
 		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
 		return
 	}
 
-	if err := h.knowledgeService.DeleteFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), req.IDs); err != nil {
+	if err := h.knowledgeService.DeleteFAQEntries(ctx,
+		secutils.SanitizeForLog(c.Param("id")),
+		secutils.SanitizeForLogArray(req.IDs)); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)
 		return
