@@ -39,7 +39,7 @@ func (h *MessageHandler) LoadMessages(c *gin.Context) {
 	logger.Info(ctx, "Start loading messages")
 
 	// Get path parameters and query parameters
-	sessionID := c.Param("session_id")
+	sessionID := secutils.SanitizeForLog(c.Param("session_id"))
 	limit := secutils.SanitizeForLog(c.DefaultQuery("limit", "20"))
 	beforeTimeStr := secutils.SanitizeForLog(c.DefaultQuery("before_time", ""))
 

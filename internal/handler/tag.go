@@ -8,6 +8,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 // TagHandler handles knowledge base tag operations.
@@ -23,7 +24,7 @@ func NewTagHandler(tagService interfaces.KnowledgeTagService) *TagHandler {
 // ListTags returns all tags under a knowledge base with statistics.
 func (h *TagHandler) ListTags(c *gin.Context) {
 	ctx := c.Request.Context()
-	kbID := c.Param("id")
+	kbID := secutils.SanitizeForLog(c.Param("id"))
 
 	tags, err := h.tagService.ListTags(ctx, kbID)
 	if err != nil {
@@ -47,7 +48,7 @@ type createTagRequest struct {
 // CreateTag creates a new tag.
 func (h *TagHandler) CreateTag(c *gin.Context) {
 	ctx := c.Request.Context()
-	kbID := c.Param("id")
+	kbID := secutils.SanitizeForLog(c.Param("id"))
 
 	var req createTagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -56,7 +57,8 @@ func (h *TagHandler) CreateTag(c *gin.Context) {
 		return
 	}
 
-	tag, err := h.tagService.CreateTag(ctx, kbID, req.Name, req.Color, req.SortOrder)
+	tag, err := h.tagService.CreateTag(ctx, kbID,
+		secutils.SanitizeForLog(req.Name), secutils.SanitizeForLog(req.Color), req.SortOrder)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"kb_id": kbID,
@@ -81,7 +83,7 @@ type updateTagRequest struct {
 func (h *TagHandler) UpdateTag(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	tagID := c.Param("tag_id")
+	tagID := secutils.SanitizeForLog(c.Param("tag_id"))
 	var req updateTagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to bind update tag payload", err)
@@ -107,7 +109,7 @@ func (h *TagHandler) UpdateTag(c *gin.Context) {
 // DeleteTag deletes a tag. Use query param force=true to force delete even if referenced.
 func (h *TagHandler) DeleteTag(c *gin.Context) {
 	ctx := c.Request.Context()
-	tagID := c.Param("tag_id")
+	tagID := secutils.SanitizeForLog(c.Param("tag_id"))
 
 	force := c.Query("force") == "true"
 
