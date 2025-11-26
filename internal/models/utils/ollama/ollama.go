@@ -67,20 +67,19 @@ func (s *OllamaService) StartService(ctx context.Context) error {
 	// Check if service is available
 	err := s.client.Heartbeat(ctx)
 	if err != nil {
-		logger.GetLogger(ctx).Warnf("Ollama service unavailable: %v", err)
+		logger.GetLogger(ctx).Warnf("ollama service unavailable: %v", err)
 		s.isAvailable = false
 
 		// If configured as optional, don't return an error
 		if s.isOptional {
-			logger.GetLogger(ctx).Info("Ollama service set as optional, will continue running the application")
+			logger.GetLogger(ctx).Info("ollama service set as optional, will continue running the application")
 			return nil
 		}
 
-		return fmt.Errorf("Ollama service unavailable: %w", err)
+		return fmt.Errorf("ollama service unavailable: %w", err)
 	}
 
 	s.isAvailable = true
-	logger.GetLogger(ctx).Info("Ollama service ready")
 	return nil
 }
 

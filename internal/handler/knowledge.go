@@ -404,8 +404,6 @@ type GetKnowledgeBatchRequest struct {
 func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	logger.Info(ctx, "Start batch retrieving knowledge")
-
 	// Get tenant ID from context
 	tenantID, ok := c.Get(types.TenantIDContextKey.String())
 	if !ok {
@@ -451,8 +449,6 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 
 func (h *KnowledgeHandler) UpdateKnowledge(c *gin.Context) {
 	ctx := c.Request.Context()
-	logger.Info(ctx, "Start Update knowledge")
-
 	// Get knowledge ID from URL path parameter
 	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {

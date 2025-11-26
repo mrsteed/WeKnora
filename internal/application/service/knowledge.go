@@ -621,11 +621,7 @@ func (s *knowledgeService) createKnowledgeFromPassageInternal(ctx context.Contex
 
 // GetKnowledgeByID retrieves a knowledge entry by its ID
 func (s *knowledgeService) GetKnowledgeByID(ctx context.Context, id string) (*types.Knowledge, error) {
-	logger.Info(ctx, "Start getting knowledge by ID")
-	logger.Infof(ctx, "Knowledge ID: %s", id)
-
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
-	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 
 	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, id)
 	if err != nil {
@@ -2914,7 +2910,7 @@ func (s *knowledgeService) SearchFAQEntries(ctx context.Context,
 
 	// Prepare search parameters
 	searchParams := types.SearchParams{
-		QueryText:            req.QueryText,
+		QueryText:            secutils.SanitizeForLog(req.QueryText),
 		VectorThreshold:      req.VectorThreshold,
 		MatchCount:           req.MatchCount,
 		DisableKeywordsMatch: true,

@@ -101,6 +101,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.Error(appErr)
 		return
 	}
+	email := secutils.SanitizeForLog(req.Email)
 
 	// Validate required fields
 	if req.Email == "" || req.Password == "" {
@@ -128,7 +129,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	// User is already in the correct format from service
 
-	logger.Infof(ctx, "User logged in successfully: %s", req.Email)
+	logger.Infof(ctx, "User logged in successfully, email: %s", email)
 	c.JSON(http.StatusOK, response)
 }
 

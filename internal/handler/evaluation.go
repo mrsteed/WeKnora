@@ -58,10 +58,10 @@ func (e *EvaluationHandler) Evaluation(c *gin.Context) {
 	)
 
 	task, err := e.evaluationService.Evaluation(ctx,
-		request.DatasetID,
-		request.KnowledgeBaseID,
-		request.ChatModelID,
-		request.RerankModelID,
+		secutils.SanitizeForLog(request.DatasetID),
+		secutils.SanitizeForLog(request.KnowledgeBaseID),
+		secutils.SanitizeForLog(request.ChatModelID),
+		secutils.SanitizeForLog(request.RerankModelID),
 	)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)

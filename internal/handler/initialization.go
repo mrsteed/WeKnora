@@ -444,18 +444,18 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 	}{
 		{
 			modelType:   types.ModelTypeKnowledgeQA,
-			name:        req.LLM.ModelName,
+			name:        secutils.SanitizeForLog(req.LLM.ModelName),
 			source:      types.ModelSource(req.LLM.Source),
 			description: "LLM Model for Knowledge QA",
-			baseURL:     req.LLM.BaseURL,
+			baseURL:     secutils.SanitizeForLog(req.LLM.BaseURL),
 			apiKey:      req.LLM.APIKey,
 		},
 		{
 			modelType:   types.ModelTypeEmbedding,
-			name:        req.Embedding.ModelName,
+			name:        secutils.SanitizeForLog(req.Embedding.ModelName),
 			source:      types.ModelSource(req.Embedding.Source),
 			description: "Embedding Model",
-			baseURL:     req.Embedding.BaseURL,
+			baseURL:     secutils.SanitizeForLog(req.Embedding.BaseURL),
 			apiKey:      req.Embedding.APIKey,
 			dimension:   req.Embedding.Dimension,
 		},
@@ -474,10 +474,10 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 			interfaceType string
 		}{
 			modelType:   types.ModelTypeRerank,
-			name:        req.Rerank.ModelName,
+			name:        secutils.SanitizeForLog(req.Rerank.ModelName),
 			source:      types.ModelSourceRemote,
 			description: "Rerank Model",
-			baseURL:     req.Rerank.BaseURL,
+			baseURL:     secutils.SanitizeForLog(req.Rerank.BaseURL),
 			apiKey:      req.Rerank.APIKey,
 		})
 	}
@@ -495,10 +495,10 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 			interfaceType string
 		}{
 			modelType:     types.ModelTypeVLLM,
-			name:          req.Multimodal.VLM.ModelName,
+			name:          secutils.SanitizeForLog(req.Multimodal.VLM.ModelName),
 			source:        types.ModelSourceRemote,
 			description:   "VLM Model",
-			baseURL:       req.Multimodal.VLM.BaseURL,
+			baseURL:       secutils.SanitizeForLog(req.Multimodal.VLM.BaseURL),
 			apiKey:        req.Multimodal.VLM.APIKey,
 			interfaceType: req.Multimodal.VLM.InterfaceType,
 		})
