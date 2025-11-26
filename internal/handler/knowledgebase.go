@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -78,6 +79,11 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to parse request parameters", err)
 		c.Error(errors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+	if err := validateExtractConfig(req.ExtractConfig); err != nil {
+		logger.Error(ctx, "Invalid extract configuration", err)
+		c.Error(err)
 		return
 	}
 
@@ -275,4 +281,71 @@ func (h *KnowledgeBaseHandler) CopyKnowledgeBase(c *gin.Context) {
 		"success": true,
 		"message": "Knowledge base copy successfully",
 	})
+}
+
+// validateExtractConfig validates the graph configuration parameters
+func validateExtractConfig(config *types.ExtractConfig) error {
+	logger.Errorf(context.Background(), "Validating extract configuration: %+v", config)
+	if config == nil {
+		return nil
+	}
+	if !config.Enabled {
+		*config = types.ExtractConfig{Enabled: false}
+		return nil
+	}
+	// Validate text field
+	if config.Text == "" {
+		return errors.NewBadRequestError("text cannot be empty")
+	}
+
+	// Validate tags field
+	if len(config.Tags) == 0 {
+		return errors.NewBadRequestError("tags cannot be empty")
+	}
+	for i, tag := range config.Tags {
+		if tag == "" {
+			return errors.NewBadRequestError("tag cannot be empty at index " + strconv.Itoa(i))
+		}
+	}
+
+	// Validate nodes
+	if len(config.Nodes) == 0 {
+		return errors.NewBadRequestError("nodes cannot be empty")
+	}
+	nodeNames := make(map[string]bool)
+	for i, node := range config.Nodes {
+		if node.Name == "" {
+			return errors.NewBadRequestError("node name cannot be empty at index " + strconv.Itoa(i))
+		}
+		// Check for duplicate node names
+		if nodeNames[node.Name] {
+			return errors.NewBadRequestError("duplicate node name: " + node.Name)
+		}
+		nodeNames[node.Name] = true
+	}
+
+	if len(config.Relations) == 0 {
+		return errors.NewBadRequestError("relations cannot be empty")
+	}
+	// Validate relations
+	for i, relation := range config.Relations {
+		if relation.Node1 == "" {
+			return errors.NewBadRequestError("relation node1 cannot be empty at index " + strconv.Itoa(i))
+		}
+		if relation.Node2 == "" {
+			return errors.NewBadRequestError("relation node2 cannot be empty at index " + strconv.Itoa(i))
+		}
+		if relation.Type == "" {
+			return errors.NewBadRequestError("relation type cannot be empty at index " + strconv.Itoa(i))
+		}
+		// Check if referenced nodes exist
+		if !nodeNames[relation.Node1] {
+			return errors.NewBadRequestError("relation references non-existent node1: " + relation.Node1)
+		}
+		if !nodeNames[relation.Node2] {
+			return errors.NewBadRequestError("relation references non-existent node2: " + relation.Node2)
+		}
+	}
+
+	return nil
 }

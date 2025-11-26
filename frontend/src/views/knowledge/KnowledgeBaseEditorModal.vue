@@ -128,16 +128,24 @@
                   />
                 </div>
 
+                <!-- 图谱设置 -->
+                <div v-if="!isFAQ" v-show="currentSection === 'graph'" class="section">
+                  <GraphSettings
+                    v-if="formData"
+                    :graph-extract="formData.nodeExtractConfig"
+                    :all-models="allModels"
+                    @update:graphExtract="handleNodeExtractUpdate"
+                  />
+                </div>
+
                 <!-- 高级设置 -->
                 <div v-if="!isFAQ" v-show="currentSection === 'advanced'" class="section">
                   <KBAdvancedSettings
                     ref="advancedSettingsRef"
                     v-if="formData"
                     :multimodal="formData.multimodalConfig"
-                    :node-extract="formData.nodeExtractConfig"
                     :all-models="allModels"
                     @update:multimodal="handleMultimodalUpdate"
-                    @update:nodeExtract="handleNodeExtractUpdate"
                   />
                 </div>
               </div>
@@ -169,6 +177,7 @@ import { useUIStore } from '@/stores/ui'
 import KBModelConfig from './settings/KBModelConfig.vue'
 import KBChunkingSettings from './settings/KBChunkingSettings.vue'
 import KBAdvancedSettings from './settings/KBAdvancedSettings.vue'
+import GraphSettings from './settings/GraphSettings.vue'
 import { useI18n } from 'vue-i18n'
 
 const uiStore = useUIStore()
@@ -204,6 +213,7 @@ const navItems = computed(() => {
   } else {
     items.push(
       { key: 'chunking', icon: 'file-copy', label: t('knowledgeEditor.sidebar.chunking') },
+      { key: 'graph', icon: 'chart-bubble', label: t('knowledgeEditor.sidebar.graph') },
       { key: 'advanced', icon: 'setting', label: t('knowledgeEditor.sidebar.advanced') }
     )
   }
@@ -278,7 +288,6 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
       tags: [] as string[],
       nodes: [] as Array<{
         name: string
-        chunks: string[]
         attributes: string[]
       }>,
       relations: [] as Array<{
@@ -286,7 +295,7 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
         node2: string
         type: string
       }>
-    }
+    },
   }
 }
 
@@ -362,9 +371,12 @@ const loadKBData = async () => {
         enabled: kb.extract_config?.enabled || false,
         text: kb.extract_config?.text || '',
         tags: kb.extract_config?.tags || [],
-        nodes: kb.extract_config?.nodes || [],
+        nodes: (kb.extract_config?.nodes || []).map((node: any) => ({
+          name: node.name,
+          attributes: node.attributes || []
+        })),
         relations: kb.extract_config?.relations || []
-      }
+      },
     }
   } catch (error) {
     console.error('Failed to load knowledge base data:', error)
@@ -584,8 +596,8 @@ const handleSubmit = async () => {
           enabled: data.extract_config?.enabled || false,
           text: data.extract_config?.text || '',
           tags: data.extract_config?.tags || [],
-          nodes: [],
-          relations: []
+          nodes: data.extract_config?.nodes || [],
+          relations: data.extract_config?.relations || []
         }
       }
 
