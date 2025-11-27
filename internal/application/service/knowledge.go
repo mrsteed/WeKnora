@@ -3447,33 +3447,6 @@ func (s *knowledgeService) deleteFAQChunkVectors(ctx context.Context,
 	return s.repo.UpdateKnowledge(ctx, knowledge)
 }
 
-func (s *knowledgeService) cleanupFAQKnowledge(ctx context.Context, knowledge *types.Knowledge) error {
-	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
-	if knowledge.EmbeddingModelID != "" {
-		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
-		if err == nil {
-			if embeddingModel, modelErr := s.modelService.GetEmbeddingModel(ctx, knowledge.EmbeddingModelID); modelErr == nil {
-				_ = retrieveEngine.DeleteByKnowledgeIDList(ctx, []string{knowledge.ID}, embeddingModel.GetDimensions())
-			}
-		}
-	}
-	if err := s.chunkService.DeleteChunksByKnowledgeID(ctx, knowledge.ID); err != nil {
-		return err
-	}
-	if knowledge.StorageSize > 0 {
-		if err := s.tenantRepo.AdjustStorageUsed(ctx, tenantInfo.ID, -knowledge.StorageSize); err == nil {
-			tenantInfo.StorageUsed -= knowledge.StorageSize
-			if tenantInfo.StorageUsed < 0 {
-				tenantInfo.StorageUsed = 0
-			}
-		}
-		knowledge.StorageSize = 0
-	}
-	knowledge.UpdatedAt = time.Now()
-	knowledge.ProcessedAt = nil
-	return s.repo.UpdateKnowledge(ctx, knowledge)
-}
-
 func ensureManualFileName(title string) string {
 	if title == "" {
 		return fmt.Sprintf("manual-%s%s", time.Now().Format("20060102-150405"), manualFileExtension)

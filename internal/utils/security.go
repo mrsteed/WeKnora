@@ -210,9 +210,10 @@ func SanitizeForLogArray(input []string) []string {
 		return []string{}
 	}
 
+	sanitized := make([]string, 0, len(input))
 	for _, item := range input {
-		input = append(input, SanitizeForLog(item))
+		sanitized = append(sanitized, SanitizeForLog(item))
 	}
 
-	return input
+	return sanitized
 }
