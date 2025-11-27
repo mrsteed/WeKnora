@@ -247,8 +247,8 @@ func (t *GrepChunksTool) Execute(ctx context.Context, args map[string]interface{
 
 type chunkWithTitle struct {
 	types.Chunk
-	Title      string
-	MatchScore float64 // Score based on match count and position
+	KnowledgeTitle string  `json:"knowledge_title" gorm:"column:knowledge_title"`
+	MatchScore     float64 `json:"match_score" gorm:"column:match_score"` // Score based on match count and position
 }
 
 // searchChunks performs the database search with pattern matching
@@ -356,7 +356,7 @@ func (t *GrepChunksTool) formatOutput(
 	for _, result := range results {
 		knowledgeID := fmt.Sprintf("%v", result.KnowledgeID)
 		title := "Untitled"
-		if t := result.Title; t != "" {
+		if t := result.KnowledgeTitle; t != "" {
 			title = fmt.Sprintf("%v", t)
 		}
 
