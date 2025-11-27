@@ -49,31 +49,62 @@ func NewKnowledgeSearchTool(
 	chatModel chat.Chat,
 	cfg *config.Config,
 ) *KnowledgeSearchTool {
-	description := `Semantic/vector search for understanding questions and concepts.
+	description := `Semantic/vector search tool for retrieving knowledge by meaning, intent, and conceptual relevance.
 
-## Core Function
-Finds content by MEANING using embeddings (NOT exact text matching).
+This tool uses embeddings to understand the user's query and find semantically similar content across knowledge base chunks.
 
-## CRITICAL: Always Check for Entities First
-**If query has ANY entities → grep_chunks FIRST, then use this tool**
+## Purpose
+Designed for high-level understanding tasks, such as:
+- conceptual explanations
+- topic overviews
+- reasoning-based information needs
+- contextual or intent-driven retrieval
+- queries that cannot be answered with literal keyword matching
 
-## Use When:
-- Questions: "What is...", "How...", "Why...", "Explain..."
-- Conceptual understanding
-- AFTER grep_chunks pre-retrieval (hybrid approach)
+The tool searches by MEANING rather than exact text. It identifies chunks that are conceptually relevant even when the wording differs.
 
-## Hybrid Workflow (Strongly Recommended):
-1. grep_chunks(["entity", "synonym", "变体"]) → pre-retrieve documents containing entity
-2. knowledge_search(["concept query"]) → deep understanding
+## What the Tool Does NOT Do
+- Does NOT perform exact keyword matching
+- Does NOT search for specific named entities
+- Should NOT be used for literal lookup tasks
+- Should NOT receive long raw text or user messages as queries
+- Should NOT be used to locate specific strings or error codes
 
-This ensures entity-related content is not missed!
+For literal/keyword/entity search, another tool should be used.
+
+## Required Input Behavior
+"queries" must contain **1–5 short, well-formed semantic questions or conceptual statements** that clearly express the meaning the model is trying to retrieve.
+
+Each query should represent a **concept, idea, topic, explanation, or intent**, such as:
+- abstract topics
+- definitions
+- mechanisms
+- best practices
+- comparisons
+- how/why questions
+
+Avoid:
+- keyword lists
+- raw text from user messages
+- full paragraphs
+- unprocessed input
+
+## Examples of valid query shapes (not content):
+- "What is the main idea of..."
+- "How does X work in general?"
+- "Explain the purpose of..."
+- "What are the key principles behind..."
+- "Overview of ..."
 
 ## Parameters
-- queries (required): 1-5 semantic questions (NOT just keywords)
-- knowledge_base_ids (optional): Limit to specific KBs
+- queries (required): 1–5 semantic questions or conceptual statements.
+  These should reflect the meaning or topic you want embeddings to capture.
+- knowledge_base_ids (optional): limit the search scope.
 
 ## Output
-Semantically relevant chunks with scores, auto-reranked.`
+Returns chunks ranked by semantic similarity, reranked when applicable.  
+Results represent conceptual relevance, not literal keyword overlap.
+`
 
 	return &KnowledgeSearchTool{
 		BaseTool:             NewBaseTool("knowledge_search", description),

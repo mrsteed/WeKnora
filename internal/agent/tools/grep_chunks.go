@@ -25,42 +25,39 @@ type GrepChunksTool struct {
 func NewGrepChunksTool(db *gorm.DB, tenantID uint64, knowledgeBaseIDs []string) *GrepChunksTool {
 	description := `Unix-style text pattern matching tool for knowledge base chunks.
 
-Searches for text patterns in chunk content, similar to the Unix grep command.
+Searches for text patterns in chunk content using strict literal text matching (fixed-string search). This tool performs exact keyword lookup, not semantic search.
 
 ## Core Function
-Performs **exact text pattern matching** (NOT semantic search). Finds chunks containing any of the specified patterns using literal text matching (fixed string). Supports multiple patterns with OR logic.
+Performs exact, literal text pattern matching. Accepts multiple patterns and returns chunks matching any of them (OR logic).
 
-## CRITICAL - Keyword Granularity
-**MUST use SHORT keywords (1-3 words), NOT long phrases.** Break down long phrases into smaller keywords for better match rate.
+## CRITICAL – Keyword Extraction Rules
+This tool MUST receive **short, high-value keywords** only.  
+**Do NOT use long phrases, sentences, or multi-word expressions.**
 
-**Why**: Long phrases like "中国饮食文化" may not match if the document contains "中国" and "饮食" and "文化" separately but not the exact phrase.
+Provide only the **minimal core entities** extracted from user query, such as:
+- Proper nouns
+- Key concepts
+- Domain terms
+- Distinct entities that define the query
 
-**Guidelines**:
-- ❌ **Bad**: ["中国饮食文化", "日本饮食文化"] - too long, may not match
-- ✅ **Good**: ["中国", "饮食", "文化", "日本", "料理", "和食"] - short keywords, higher match rate
-- For comparisons: Extract keywords for each entity separately
-- Use single words or 2-word phrases, avoid 3+ word phrases
+### Requirements
+- Keywords should be **1–3 words maximum**
+- Focus exclusively on **core entities**, not descriptions
+- Break complex input into individual, essential keywords
+- Avoid phrases, explanations, or anything that reduces match probability
 
-**Examples**:
-- "中国饮食文化" → ["中国", "饮食", "文化", "中餐", "中华"]
-- "日本饮食文化" → ["日本", "饮食", "文化", "料理", "和食", "日式"]
-- "对比中国和日本" → Search separately: ["中国", "中华"] then ["日本", "日式"]
+Long phrases dramatically reduce recall because chunks rarely contain identical wording.  
+Only short, atomic keywords ensure accurate matching and avoid unrelated retrieval.
 
 ## Usage
-grep_chunks searches through all enabled chunks in the knowledge base(s) and displays matching chunks with context. When multiple patterns are provided, results match any pattern (OR logic).
-
-Default behavior: case-insensitive matching, shows chunk indices, displays context around matches.
+grep_chunks scans enabled chunks across the specified knowledge bases and returns those containing any provided keyword. Matching is case-insensitive, with chunk indices and local context included.
 
 ## When to Use
-- Finding specific entities: "FAISS", "Redis", "404", "RAG"
-- Exact keyword lookup
-- Quick text search before semantic search
+- Extracting core entities from user input
+- Exact keyword presence checks
+- Fast preliminary filtering before semantic search
+- Situations requiring deterministic text search
 
-## Examples
-- Single pattern: pattern=["FAISS"]
-- Multiple patterns: pattern=["向量", "vector", "embedding"]
-- Search synonyms: pattern=["RAG", "检索增强生成"]
-- Short keywords: pattern=["中国", "饮食", "文化"] (NOT ["中国饮食文化"])
 `
 
 	return &GrepChunksTool{
