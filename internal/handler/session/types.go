@@ -58,7 +58,6 @@ type CreateKnowledgeQARequest struct {
 	AgentEnabled     bool     `json:"agent_enabled"`            // Whether agent mode is enabled for this request
 	WebSearchEnabled bool     `json:"web_search_enabled"`       // Whether web search is enabled for this request
 	SummaryModelID   string   `json:"summary_model_id"`         // Optional summary model ID for this request (overrides session default)
-	MCPServiceIDs    []string `json:"mcp_service_ids"`          // Optional MCP service IDs to use in agent mode
 }
 
 // SearchKnowledgeRequest defines the request structure for searching knowledge without LLM summarization

@@ -12,9 +12,14 @@ import (
 	"strings"
 )
 
-// AgentQARequest agent Q&A request
+// AgentQARequest agent Q&A request payload.
 type AgentQARequest struct {
-	Query string `json:"query"`
+	Query            string   `json:"query"`                        // Required query text
+	KnowledgeBaseIDs []string `json:"knowledge_base_ids,omitempty"` // Optional KBs for this query
+	AgentEnabled     bool     `json:"agent_enabled"`                // Whether to run in agent mode
+	WebSearchEnabled bool     `json:"web_search_enabled"`           // Whether to enable web search
+	SummaryModelID   string   `json:"summary_model_id,omitempty"`   // Optional summary model override
+	MCPServiceIDs    []string `json:"mcp_service_ids,omitempty"`    // Optional MCP service allow list
 }
 
 // AgentResponseType defines the type of agent response
@@ -44,15 +49,28 @@ type AgentStreamResponse struct {
 // Return error to stop processing the stream
 type AgentEventCallback func(*AgentStreamResponse) error
 
-// AgentQAStream performs agent-based Q&A with SSE streaming
-// The callback will be invoked for each event received from the server
+// AgentQAStream performs agent-based Q&A with SSE streaming using default agent settings.
+// Deprecated: prefer AgentQAStreamWithRequest to customize agent behavior.
 func (c *Client) AgentQAStream(ctx context.Context, sessionID string, query string, callback AgentEventCallback) error {
-	path := fmt.Sprintf("/api/v1/agent-chat/%s", sessionID)
+	req := &AgentQARequest{
+		Query:        query,
+		AgentEnabled: true,
+	}
+	return c.AgentQAStreamWithRequest(ctx, sessionID, req, callback)
+}
 
-	request := &AgentQARequest{
-		Query: query,
+// AgentQAStreamWithRequest performs agent-based Q&A with SSE streaming using the full request payload.
+func (c *Client) AgentQAStreamWithRequest(ctx context.Context,
+	sessionID string, request *AgentQARequest, callback AgentEventCallback,
+) error {
+	if request == nil {
+		return fmt.Errorf("agent QA request cannot be nil")
+	}
+	if strings.TrimSpace(request.Query) == "" {
+		return fmt.Errorf("agent QA query cannot be empty")
 	}
 
+	path := fmt.Sprintf("/api/v1/agent-chat/%s", sessionID)
 	resp, err := c.doRequest(ctx, http.MethodPost, path, request, nil)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
@@ -126,9 +144,14 @@ func (c *Client) NewAgentSession(sessionID string) *AgentSession {
 	}
 }
 
-// Ask sends a query to the agent and processes the streaming response
+// Ask sends a query to the agent with default agent-enabled behavior.
 func (as *AgentSession) Ask(ctx context.Context, query string, callback AgentEventCallback) error {
 	return as.client.AgentQAStream(ctx, as.sessionID, query, callback)
+}
+
+// AskWithRequest sends a customized agent request for this session.
+func (as *AgentSession) AskWithRequest(ctx context.Context, request *AgentQARequest, callback AgentEventCallback) error {
+	return as.client.AgentQAStreamWithRequest(ctx, as.sessionID, request, callback)
 }
 
 // GetSessionID returns the session ID

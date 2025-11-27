@@ -193,29 +193,26 @@ export interface WebFetchResultsData {
     count?: number;
 }
 
-// Grep chunk result item
-export interface GrepChunkItem {
-    id: string;
-    content: string;
-    chunk_index: number;
+// Grep knowledge aggregation item
+export interface GrepKnowledgeResult {
     knowledge_id: string;
     knowledge_base_id: string;
-    chunk_type?: string;
-    knowledge_title?: string;
+    knowledge_title: string;
+    chunk_hit_count: number;
+    pattern_counts: Record<string, number>;
+    total_pattern_hits: number;
+    distinct_patterns: number;
 }
 
 // Grep results data
 export interface GrepResultsData {
     display_type: 'grep_results';
     patterns: string[];
-    case_sensitive: boolean;
-    use_regex: boolean;
-    results: GrepChunkItem[];
+    knowledge_results: GrepKnowledgeResult[];
     result_count: number;
     total_matches: number;
     knowledge_base_ids?: string[];
-    knowledge_ids?: string[];
-    limit: number;
+    max_results: number;
 }
 
 // Union type for all tool result data

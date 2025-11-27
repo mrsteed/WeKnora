@@ -49,13 +49,11 @@ type SummaryConfig struct {
 	MaxCompletionTokens int     `json:"max_completion_tokens"`
 }
 
-// AgentConfig defines agent configuration for agent mode
+// AgentConfig defines session-level agent configuration (matches server struct).
 type AgentConfig struct {
-	MaxIterations     int      `json:"max_iterations"`     // Maximum number of ReAct iterations
-	ReflectionEnabled bool     `json:"reflection_enabled"` // Whether to enable reflection
-	AllowedTools      []string `json:"allowed_tools"`      // List of allowed tool names
-	Temperature       float64  `json:"temperature"`        // LLM temperature for agent
-	KnowledgeBases    []string `json:"knowledge_bases"`    // Accessible knowledge base IDs
+	AgentModeEnabled bool     `json:"agent_mode_enabled"` // Whether agent mode is enabled for this session
+	WebSearchEnabled bool     `json:"web_search_enabled"` // Whether web search is enabled for this session
+	KnowledgeBases   []string `json:"knowledge_bases"`    // Accessible knowledge base IDs
 }
 
 // CreateSessionRequest session creation request
@@ -193,6 +191,11 @@ type GenerateTitleRequest struct {
 type GenerateTitleResponse struct {
 	Success bool   `json:"success"`
 	Data    string `json:"data"`
+}
+
+// StopSessionRequest stop generation payload.
+type StopSessionRequest struct {
+	MessageID string `json:"message_id"`
 }
 
 // GenerateTitle generates a session title
@@ -370,6 +373,31 @@ func (c *Client) ContinueStream(ctx context.Context, sessionID string, messageID
 	}
 
 	return nil
+}
+
+// StopSession stops the generation for a specific assistant message under a session.
+func (c *Client) StopSession(ctx context.Context, sessionID string, messageID string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("sessionID cannot be empty")
+	}
+	if strings.TrimSpace(messageID) == "" {
+		return fmt.Errorf("messageID cannot be empty")
+	}
+
+	path := fmt.Sprintf("/api/v1/sessions/%s/stop", sessionID)
+	resp, err := c.doRequest(ctx, http.MethodPost, path, &StopSessionRequest{
+		MessageID: messageID,
+	}, nil)
+	if err != nil {
+		return err
+	}
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message,omitempty"`
+	}
+
+	return parseResponse(resp, &response)
 }
 
 // SearchKnowledgeRequest knowledge search request

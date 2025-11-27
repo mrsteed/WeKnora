@@ -45,9 +45,11 @@ Provide only the **minimal core entities** extracted from user query, such as:
 - Focus exclusively on **core entities**, not descriptions
 - Break complex input into individual, essential keywords
 - Avoid phrases, explanations, or anything that reduces match probability
+- Preserve precision details embedded in the query (e.g., version numbers, build IDs) when they materially define the entity being matched.
 
 Long phrases dramatically reduce recall because chunks rarely contain identical wording.  
 Only short, atomic keywords ensure accurate matching and avoid unrelated retrieval.
+
 
 ## Usage
 grep_chunks scans enabled chunks across the specified knowledge bases and returns those containing any provided keyword. Matching is case-insensitive, with chunk indices and local context included.
@@ -88,13 +90,13 @@ func (t *GrepChunksTool) Parameters() map[string]interface{} {
 					"type": "string",
 				},
 			},
-			"knowledge_ids": map[string]interface{}{
-				"type":        "array",
-				"description": "Filter by document/knowledge IDs. If empty, searches all documents.",
-				"items": map[string]interface{}{
-					"type": "string",
-				},
-			},
+			// "knowledge_ids": map[string]interface{}{
+			// 	"type":        "array",
+			// 	"description": "Filter by document/knowledge IDs. If empty, searches all documents.",
+			// 	"items": map[string]interface{}{
+			// 		"type": "string",
+			// 	},
+			// },
 			"max_results": map[string]interface{}{
 				"type":        "integer",
 				"description": "Maximum number of matching chunks to return (default: 50, max: 200)",
@@ -135,9 +137,7 @@ func (t *GrepChunksTool) Execute(ctx context.Context, args map[string]interface{
 	}
 
 	// Use default values for all options
-	contextLines := 50      // default: 50 context characters
-	countOnly := false      // default: show results
-	showLineNumbers := true // default: show chunk indices
+	countOnly := false // default: show results
 
 	maxResults := 50
 	if mr, ok := args["max_results"].(float64); ok {
@@ -162,21 +162,21 @@ func (t *GrepChunksTool) Execute(ctx context.Context, args map[string]interface{
 		kbIDs = t.knowledgeBaseIDs
 	}
 
-	// Parse knowledge_ids filter
-	var knowledgeIDs []string
-	if knowledgeIDsRaw, ok := args["knowledge_ids"].([]interface{}); ok {
-		for _, id := range knowledgeIDsRaw {
-			if idStr, ok := id.(string); ok && idStr != "" {
-				knowledgeIDs = append(knowledgeIDs, idStr)
-			}
-		}
-	}
+	// // Parse knowledge_ids filter
+	// var knowledgeIDs []string
+	// if knowledgeIDsRaw, ok := args["knowledge_ids"].([]interface{}); ok {
+	// 	for _, id := range knowledgeIDsRaw {
+	// 		if idStr, ok := id.(string); ok && idStr != "" {
+	// 			knowledgeIDs = append(knowledgeIDs, idStr)
+	// 		}
+	// 	}
+	// }
 
 	logger.Infof(ctx, "[Tool][GrepChunks] Patterns: %v, MaxResults: %d",
 		patterns, maxResults)
 
 	// Build and execute query
-	results, totalCount, err := t.searchChunks(ctx, patterns, kbIDs, knowledgeIDs, maxResults)
+	results, totalCount, err := t.searchChunks(ctx, patterns, kbIDs)
 	if err != nil {
 		logger.Errorf(ctx, "[Tool][GrepChunks] Search failed: %v", err)
 		return &types.ToolResult{
@@ -213,29 +213,37 @@ func (t *GrepChunksTool) Execute(ctx context.Context, args map[string]interface{
 
 	// Sort by match score (descending), then by chunk index
 	sort.Slice(finalResults, func(i, j int) bool {
+		if finalResults[i].MatchedPatterns != finalResults[j].MatchedPatterns {
+			return finalResults[i].MatchedPatterns > finalResults[j].MatchedPatterns
+		}
 		if finalResults[i].MatchScore != finalResults[j].MatchScore {
 			return finalResults[i].MatchScore > finalResults[j].MatchScore
 		}
 		return finalResults[i].ChunkIndex < finalResults[j].ChunkIndex
 	})
 
-	if len(finalResults) > 20 {
-		finalResults = finalResults[:20]
+	aggregatedResults := t.aggregateByKnowledge(finalResults, patterns)
+
+	totalKnowledge := len(aggregatedResults)
+
+	if len(aggregatedResults) > 20 {
+		aggregatedResults = aggregatedResults[:20]
 	}
 
+	logger.Infof(ctx, "[Tool][GrepChunks] Aggregated results: %d", len(aggregatedResults))
+
 	// Format output
-	output := t.formatOutput(ctx, finalResults, totalCount, patterns, contextLines, countOnly, showLineNumbers, kbIDs, knowledgeIDs)
+	output := t.formatOutput(ctx, aggregatedResults, totalCount, patterns, countOnly)
 
 	return &types.ToolResult{
 		Success: true,
 		Output:  output,
 		Data: map[string]interface{}{
 			"patterns":           patterns,
-			"results":            finalResults,
-			"result_count":       len(finalResults),
-			"total_matches":      totalCount,
+			"knowledge_results":  aggregatedResults,
+			"result_count":       len(aggregatedResults),
+			"total_matches":      totalKnowledge,
 			"knowledge_base_ids": kbIDs,
-			"knowledge_ids":      knowledgeIDs,
 			"max_results":        maxResults,
 			"display_type":       "grep_results",
 		},
@@ -244,8 +252,9 @@ func (t *GrepChunksTool) Execute(ctx context.Context, args map[string]interface{
 
 type chunkWithTitle struct {
 	types.Chunk
-	KnowledgeTitle string  `json:"knowledge_title" gorm:"column:knowledge_title"`
-	MatchScore     float64 `json:"match_score" gorm:"column:match_score"` // Score based on match count and position
+	KnowledgeTitle  string  `json:"knowledge_title" gorm:"column:knowledge_title"`
+	MatchScore      float64 `json:"match_score" gorm:"column:match_score"` // Score based on match count and position
+	MatchedPatterns int     `json:"matched_patterns"`                      // Number of unique patterns matched
 }
 
 // searchChunks performs the database search with pattern matching
@@ -253,11 +262,9 @@ func (t *GrepChunksTool) searchChunks(
 	ctx context.Context,
 	patterns []string,
 	kbIDs []string,
-	knowledgeIDs []string,
-	maxResults int,
 ) ([]chunkWithTitle, int64, error) {
 	// Build base query
-	query := t.db.WithContext(ctx).Table("chunks").
+	query := t.db.Debug().WithContext(ctx).Table("chunks").
 		Select("chunks.id, chunks.content, chunks.chunk_index, chunks.knowledge_id, chunks.knowledge_base_id, chunks.chunk_type, chunks.created_at, knowledges.title as knowledge_title").
 		Joins("LEFT JOIN knowledges ON chunks.knowledge_id = knowledges.id").
 		Where("chunks.tenant_id = ?", t.tenantID).
@@ -268,11 +275,6 @@ func (t *GrepChunksTool) searchChunks(
 	// Apply knowledge base filter
 	if len(kbIDs) > 0 {
 		query = query.Where("chunks.knowledge_base_id IN ?", kbIDs)
-	}
-
-	// Apply knowledge filter
-	if len(knowledgeIDs) > 0 {
-		query = query.Where("chunks.knowledge_id IN ?", knowledgeIDs)
 	}
 
 	// Apply pattern matching (case-insensitive fixed string matching, OR logic for multiple patterns)
@@ -297,7 +299,7 @@ func (t *GrepChunksTool) searchChunks(
 
 	// Fetch results
 	var results []chunkWithTitle
-	if err := query.Limit(maxResults).Order("chunks.created_at DESC").Find(&results).Error; err != nil {
+	if err := query.Order("chunks.created_at DESC").Find(&results).Error; err != nil {
 		logger.Errorf(ctx, "[Tool][GrepChunks] Failed to fetch results: %v", err)
 		return nil, 0, err
 	}
@@ -308,14 +310,10 @@ func (t *GrepChunksTool) searchChunks(
 // formatOutput formats the search results for display (grep-style output)
 func (t *GrepChunksTool) formatOutput(
 	ctx context.Context,
-	results []chunkWithTitle,
+	results []knowledgeAggregation,
 	totalCount int64,
 	patterns []string,
-	contextLines int,
 	countOnly bool,
-	showLineNumbers bool,
-	kbIDs []string,
-	knowledgeIDs []string,
 ) string {
 	var output strings.Builder
 
@@ -331,7 +329,7 @@ func (t *GrepChunksTool) formatOutput(
 	} else {
 		output.WriteString(fmt.Sprintf("Patterns (%d): %v (case-insensitive, OR logic)\n", len(patterns), patterns))
 	}
-	output.WriteString(fmt.Sprintf("Matches: %d chunk(s)\n\n", len(results)))
+	output.WriteString(fmt.Sprintf("Matches: %d knowledge item(s)\n\n", len(results)))
 
 	if len(results) == 0 {
 		output.WriteString("No matches found.\n")
@@ -343,156 +341,143 @@ func (t *GrepChunksTool) formatOutput(
 		return output.String()
 	}
 
-	// Group by document (like grep showing filename)
-	docGroups := make(map[string]struct {
-		title           string
-		knowledgeBaseID string
-		chunks          []chunkWithTitle
-	})
-
-	for _, result := range results {
-		knowledgeID := fmt.Sprintf("%v", result.KnowledgeID)
-		title := "Untitled"
-		if t := result.KnowledgeTitle; t != "" {
-			title = fmt.Sprintf("%v", t)
+	for idx, result := range results {
+		var patternSummaries []string
+		for _, pattern := range patterns {
+			count := result.PatternCounts[pattern]
+			patternSummaries = append(patternSummaries, fmt.Sprintf("%s=%d", pattern, count))
 		}
 
-		group := docGroups[knowledgeID]
-		group.title = title
-		group.knowledgeBaseID = result.KnowledgeBaseID
-		group.chunks = append(group.chunks, result)
-		docGroups[knowledgeID] = group
-	}
-
-	// Display results in grep-style format
-	for docID, group := range docGroups {
-		// Show document header (like grep showing filename)
-		output.WriteString(fmt.Sprintf("\n--- knowledge_base_id: %s, knowledge_id: %s, title: %s ---\n",
-			group.knowledgeBaseID, docID, group.title))
-
-		// Show each matching chunk
-		for _, chunk := range group.chunks {
-			chunkIndex := chunk.ChunkIndex
-			content := chunk.Content
-
-			// Extract preview with context around match (case-insensitive)
-			// Try each pattern and use the first match
-			preview := extractPreviewMultiPattern(content, patterns, false, contextLines)
-
-			// Format like grep: [filename:]line:content
-			if showLineNumbers {
-				if len(docGroups) > 1 {
-					output.WriteString(fmt.Sprintf("%s:chunk[%d]:%s\n", group.title, chunkIndex, preview))
-				} else {
-					output.WriteString(fmt.Sprintf("chunk[%d]:%s\n", chunkIndex, preview))
-				}
-			} else {
-				if len(docGroups) > 1 {
-					output.WriteString(fmt.Sprintf("%s:%s\n", group.title, preview))
-				} else {
-					output.WriteString(fmt.Sprintf("%s\n", preview))
-				}
-			}
-		}
+		output.WriteString(fmt.Sprintf("%d) knowledge_id=%s | title=%s | chunk_hits=%d | pattern_hits=[%s]\n",
+			idx+1,
+			result.KnowledgeID,
+			result.KnowledgeTitle,
+			result.ChunkHitCount,
+			strings.Join(patternSummaries, ", "),
+		))
 	}
 	return output.String()
 }
 
-// extractPreview extracts a preview of content around the matched pattern
-func extractPreview(content, pattern string, caseSensitive bool, contextLen int) string {
-	if content == "" {
-		return ""
-	}
-
-	// Find the pattern in content
-	searchContent := content
-	searchPattern := pattern
-	if !caseSensitive {
-		searchContent = strings.ToLower(content)
-		searchPattern = strings.ToLower(pattern)
-	}
-
-	pos := strings.Index(searchContent, searchPattern)
-	if pos == -1 {
-		// If pattern not found (might be regex), just return first 60 chars
-		runes := []rune(content)
-		if len(runes) <= contextLen*2 {
-			return string(runes)
-		}
-		return string(runes[:contextLen*2])
-	}
-
-	// Extract context around the match
-	runes := []rune(content)
-	start := pos
-
-	// Convert to rune positions for proper unicode handling
-	runePos := 0
-	for i, r := range runes {
-		if runePos >= start {
-			start = i
-			break
-		}
-		runePos += len(string(r))
-	}
-
-	// Calculate preview bounds
-	previewStart := start - contextLen
-	if previewStart < 0 {
-		previewStart = 0
-	}
-
-	previewEnd := start + len([]rune(pattern)) + contextLen
-	if previewEnd > len(runes) {
-		previewEnd = len(runes)
-	}
-
-	preview := string(runes[previewStart:previewEnd])
-
-	// Clean up whitespace
-	preview = strings.ReplaceAll(preview, "\n", " ")
-	preview = strings.ReplaceAll(preview, "\t", " ")
-
-	// Collapse multiple spaces
-	for strings.Contains(preview, "  ") {
-		preview = strings.ReplaceAll(preview, "  ", " ")
-	}
-
-	return strings.TrimSpace(preview)
+type knowledgeAggregation struct {
+	KnowledgeID      string         `json:"knowledge_id"`
+	KnowledgeBaseID  string         `json:"knowledge_base_id"`
+	KnowledgeTitle   string         `json:"knowledge_title"`
+	ChunkHitCount    int            `json:"chunk_hit_count"`
+	PatternCounts    map[string]int `json:"pattern_counts"`
+	TotalPatternHits int            `json:"total_pattern_hits"`
+	DistinctPatterns int            `json:"distinct_patterns"`
 }
 
-// extractPreviewMultiPattern extracts a preview around the first matched pattern
-func extractPreviewMultiPattern(content string, patterns []string, caseSensitive bool, contextLen int) string {
+func (t *GrepChunksTool) aggregateByKnowledge(results []chunkWithTitle, patterns []string) []knowledgeAggregation {
+	if len(results) == 0 {
+		return nil
+	}
+
+	patternKeys := make([]string, 0, len(patterns))
+	for _, p := range patterns {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		patternKeys = append(patternKeys, p)
+	}
+
+	aggregated := make(map[string]*knowledgeAggregation)
+	for _, chunk := range results {
+		knowledgeID := chunk.KnowledgeID
+		if knowledgeID == "" {
+			knowledgeID = fmt.Sprintf("chunk-%s", chunk.ID)
+		}
+
+		if _, ok := aggregated[knowledgeID]; !ok {
+			title := chunk.KnowledgeTitle
+			if strings.TrimSpace(title) == "" {
+				title = "Untitled"
+			}
+			aggregated[knowledgeID] = &knowledgeAggregation{
+				KnowledgeID:     knowledgeID,
+				KnowledgeBaseID: chunk.KnowledgeBaseID,
+				KnowledgeTitle:  title,
+				PatternCounts:   make(map[string]int, len(patternKeys)),
+			}
+			for _, pKey := range patternKeys {
+				aggregated[knowledgeID].PatternCounts[pKey] = 0
+			}
+		}
+
+		entry := aggregated[knowledgeID]
+		entry.ChunkHitCount++
+
+		patternOccurrences := t.countPatternOccurrences(chunk.Content, patternKeys)
+		for _, p := range patternKeys {
+			count := patternOccurrences[p]
+			if count == 0 {
+				continue
+			}
+			entry.PatternCounts[p] += count
+			entry.TotalPatternHits += count
+		}
+	}
+
+	resultSlice := make([]knowledgeAggregation, 0, len(aggregated))
+	for _, entry := range aggregated {
+		distinct := 0
+		for _, count := range entry.PatternCounts {
+			if count > 0 {
+				distinct++
+			}
+		}
+		entry.DistinctPatterns = distinct
+		resultSlice = append(resultSlice, *entry)
+	}
+
+	sort.Slice(resultSlice, func(i, j int) bool {
+		if resultSlice[i].DistinctPatterns != resultSlice[j].DistinctPatterns {
+			return resultSlice[i].DistinctPatterns > resultSlice[j].DistinctPatterns
+		}
+		if resultSlice[i].TotalPatternHits != resultSlice[j].TotalPatternHits {
+			return resultSlice[i].TotalPatternHits > resultSlice[j].TotalPatternHits
+		}
+		if resultSlice[i].ChunkHitCount != resultSlice[j].ChunkHitCount {
+			return resultSlice[i].ChunkHitCount > resultSlice[j].ChunkHitCount
+		}
+		return resultSlice[i].KnowledgeTitle < resultSlice[j].KnowledgeTitle
+	})
+	return resultSlice
+}
+
+func (t *GrepChunksTool) countPatternOccurrences(content string, patterns []string) map[string]int {
+	counts := make(map[string]int, len(patterns))
 	if content == "" || len(patterns) == 0 {
-		return ""
+		return counts
 	}
 
-	// Try each pattern and find the first match
+	contentLower := strings.ToLower(content)
 	for _, pattern := range patterns {
-		preview := extractPreview(content, pattern, caseSensitive, contextLen)
-		// Check if this pattern found a match (not just truncated content)
-		searchContent := content
-		searchPattern := pattern
-		if !caseSensitive {
-			searchContent = strings.ToLower(content)
-			searchPattern = strings.ToLower(pattern)
+		p := strings.ToLower(pattern)
+		if strings.TrimSpace(p) == "" {
+			continue
 		}
-		if strings.Contains(searchContent, searchPattern) {
-			return preview
+		counts[pattern] = countOccurrences(contentLower, p)
+	}
+	return counts
+}
+
+func countOccurrences(text string, pattern string) int {
+	if pattern == "" {
+		return 0
+	}
+	count := 0
+	index := 0
+	for index < len(text) {
+		pos := strings.Index(text[index:], pattern)
+		if pos == -1 {
+			break
 		}
+		count++
+		index += pos + len(pattern)
 	}
-
-	// If no pattern matched, return preview from first pattern
-	if len(patterns) > 0 {
-		return extractPreview(content, patterns[0], caseSensitive, contextLen)
-	}
-
-	// Fallback: return first N chars
-	runes := []rune(content)
-	if len(runes) <= contextLen*2 {
-		return string(runes)
-	}
-	return string(runes[:contextLen*2])
+	return count
 }
 
 // deduplicateChunks removes duplicate or near-duplicate chunks using content signature
@@ -573,15 +558,17 @@ func (t *GrepChunksTool) scoreChunks(ctx context.Context, results []chunkWithTit
 	scored := make([]chunkWithTitle, len(results))
 	for i := range results {
 		scored[i] = results[i]
-		scored[i].MatchScore = t.calculateMatchScore(results[i].Content, patterns)
+		score, patternCount := t.calculateMatchScore(results[i].Content, patterns)
+		scored[i].MatchScore = score
+		scored[i].MatchedPatterns = patternCount
 	}
 	return scored
 }
 
 // calculateMatchScore calculates a score based on how many patterns match and their positions
-func (t *GrepChunksTool) calculateMatchScore(content string, patterns []string) float64 {
+func (t *GrepChunksTool) calculateMatchScore(content string, patterns []string) (float64, int) {
 	if content == "" || len(patterns) == 0 {
-		return 0.0
+		return 0.0, 0
 	}
 
 	contentLower := strings.ToLower(content)
@@ -613,7 +600,7 @@ func (t *GrepChunksTool) calculateMatchScore(content string, patterns []string) 
 		positionBonus = positionRatio * 0.1
 	}
 
-	return math.Min(baseScore+positionBonus, 1.0)
+	return math.Min(baseScore+positionBonus, 1.0), matchCount
 }
 
 // applyMMR applies Maximal Marginal Relevance algorithm to reduce redundancy
