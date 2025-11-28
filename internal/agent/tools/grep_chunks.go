@@ -255,6 +255,7 @@ type chunkWithTitle struct {
 	KnowledgeTitle  string  `json:"knowledge_title" gorm:"column:knowledge_title"`
 	MatchScore      float64 `json:"match_score" gorm:"column:match_score"` // Score based on match count and position
 	MatchedPatterns int     `json:"matched_patterns"`                      // Number of unique patterns matched
+	TotalChunkCount int     `json:"total_chunk_count" gorm:"column:total_chunk_count"`
 }
 
 // searchChunks performs the database search with pattern matching
@@ -265,7 +266,7 @@ func (t *GrepChunksTool) searchChunks(
 ) ([]chunkWithTitle, int64, error) {
 	// Build base query
 	query := t.db.Debug().WithContext(ctx).Table("chunks").
-		Select("chunks.id, chunks.content, chunks.chunk_index, chunks.knowledge_id, chunks.knowledge_base_id, chunks.chunk_type, chunks.created_at, knowledges.title as knowledge_title").
+		Select("chunks.id, chunks.content, chunks.chunk_index, chunks.knowledge_id, chunks.knowledge_base_id, chunks.chunk_type, chunks.created_at, knowledges.title as knowledge_title, COUNT(*) OVER (PARTITION BY chunks.knowledge_id) AS total_chunk_count").
 		Joins("LEFT JOIN knowledges ON chunks.knowledge_id = knowledges.id").
 		Where("chunks.tenant_id = ?", t.tenantID).
 		Where("chunks.is_enabled = ?", true).
@@ -333,11 +334,6 @@ func (t *GrepChunksTool) formatOutput(
 
 	if len(results) == 0 {
 		output.WriteString("No matches found.\n")
-		output.WriteString("\n=== ⚠️ CRITICAL - Next Steps ===\n")
-		output.WriteString("- ❌ DO NOT use training data or general knowledge to answer\n")
-		output.WriteString("- ✅ Try knowledge_search for semantic search\n")
-		output.WriteString("- ✅ If KB search fails and web_search is enabled: You MUST use web_search\n")
-		output.WriteString("- NEVER fabricate or infer answers - ONLY use retrieved content\n")
 		return output.String()
 	}
 
@@ -348,11 +344,12 @@ func (t *GrepChunksTool) formatOutput(
 			patternSummaries = append(patternSummaries, fmt.Sprintf("%s=%d", pattern, count))
 		}
 
-		output.WriteString(fmt.Sprintf("%d) knowledge_id=%s | title=%s | chunk_hits=%d | pattern_hits=[%s]\n",
+		output.WriteString(fmt.Sprintf("%d) knowledge_id=%s | title=%s | chunk_hits=%d | chunk_total=%d | pattern_hits=[%s]\n",
 			idx+1,
 			result.KnowledgeID,
 			result.KnowledgeTitle,
 			result.ChunkHitCount,
+			result.TotalChunkCount,
 			strings.Join(patternSummaries, ", "),
 		))
 	}
@@ -364,6 +361,7 @@ type knowledgeAggregation struct {
 	KnowledgeBaseID  string         `json:"knowledge_base_id"`
 	KnowledgeTitle   string         `json:"knowledge_title"`
 	ChunkHitCount    int            `json:"chunk_hit_count"`
+	TotalChunkCount  int            `json:"total_chunk_count"`
 	PatternCounts    map[string]int `json:"pattern_counts"`
 	TotalPatternHits int            `json:"total_pattern_hits"`
 	DistinctPatterns int            `json:"distinct_patterns"`
@@ -398,6 +396,7 @@ func (t *GrepChunksTool) aggregateByKnowledge(results []chunkWithTitle, patterns
 				KnowledgeID:     knowledgeID,
 				KnowledgeBaseID: chunk.KnowledgeBaseID,
 				KnowledgeTitle:  title,
+				TotalChunkCount: chunk.TotalChunkCount,
 				PatternCounts:   make(map[string]int, len(patternKeys)),
 			}
 			for _, pKey := range patternKeys {

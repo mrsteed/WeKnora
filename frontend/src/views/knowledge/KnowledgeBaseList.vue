@@ -15,6 +15,48 @@
       <span>{{ $t('knowledgeList.uninitializedBanner') }}</span>
     </div>
 
+    <!-- 上传进度提示 -->
+    <div v-if="uploadSummaries.length" class="upload-progress-panel">
+      <div 
+        v-for="summary in uploadSummaries" 
+        :key="summary.kbId" 
+        class="upload-progress-item"
+      >
+        <div class="upload-progress-icon">
+          <t-icon :name="summary.completed === summary.total ? 'check-circle-filled' : 'upload'" size="20px" />
+        </div>
+        <div class="upload-progress-content">
+          <div class="progress-title">
+            {{
+              summary.completed === summary.total
+                ? $t('knowledgeList.uploadProgress.completedTitle', { name: summary.kbName })
+                : $t('knowledgeList.uploadProgress.uploadingTitle', { name: summary.kbName })
+            }}
+          </div>
+          <div class="progress-subtitle">
+            {{
+              summary.completed === summary.total
+                ? $t('knowledgeList.uploadProgress.completedDetail', { total: summary.total })
+                : $t('knowledgeList.uploadProgress.detail', { completed: summary.completed, total: summary.total })
+            }}
+          </div>
+          <div class="progress-subtitle secondary">
+            {{
+              summary.completed === summary.total
+                ? $t('knowledgeList.uploadProgress.refreshing')
+                : $t('knowledgeList.uploadProgress.keepPageOpen')
+            }}
+          </div>
+          <div v-if="summary.hasError" class="progress-subtitle error">
+            {{ $t('knowledgeList.uploadProgress.errorTip') }}
+          </div>
+          <div class="progress-bar">
+            <div class="progress-bar-inner" :style="{ width: summary.progress + '%' }"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 卡片网格 -->
     <div v-if="kbs.length > 0" class="kb-card-wrap">
       <div 
@@ -155,7 +197,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, computed, watch, nextTick } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { MessagePlugin, Icon as TIcon } from 'tdesign-vue-next'
 import { listKnowledgeBases, deleteKnowledgeBase } from '@/api/knowledge-base'
@@ -195,6 +237,28 @@ const deletingKb = ref<KB | null>(null)
 const currentMoreIndex = ref<number>(-1)
 const highlightedKbId = ref<string | null>(null)
 const highlightedCardRef = ref<HTMLElement | null>(null)
+const uploadTasks = ref<UploadTaskState[]>([])
+const uploadCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>()
+let uploadRefreshTimer: ReturnType<typeof setTimeout> | null = null
+const UPLOAD_CLEANUP_DELAY = 10000
+
+interface UploadTaskState {
+  uploadId: string
+  kbId: string
+  fileName?: string
+  progress: number
+  status: 'uploading' | 'success' | 'error'
+  error?: string
+}
+
+interface UploadSummary {
+  kbId: string
+  kbName: string
+  total: number
+  completed: number
+  progress: number
+  hasError: boolean
+}
 
 const fetchList = () => {
   loading.value = true
@@ -222,6 +286,25 @@ onMounted(() => {
       router.replace({ query: {} })
     }
   })
+
+  window.addEventListener('knowledgeFileUploadStart', handleUploadStartEvent as EventListener)
+  window.addEventListener('knowledgeFileUploadProgress', handleUploadProgressEvent as EventListener)
+  window.addEventListener('knowledgeFileUploadComplete', handleUploadCompleteEvent as EventListener)
+  window.addEventListener('knowledgeFileUploaded', handleUploadFinishedEvent as EventListener)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('knowledgeFileUploadStart', handleUploadStartEvent as EventListener)
+  window.removeEventListener('knowledgeFileUploadProgress', handleUploadProgressEvent as EventListener)
+  window.removeEventListener('knowledgeFileUploadComplete', handleUploadCompleteEvent as EventListener)
+  window.removeEventListener('knowledgeFileUploaded', handleUploadFinishedEvent as EventListener)
+
+  uploadCleanupTimers.forEach(timer => clearTimeout(timer))
+  uploadCleanupTimers.clear()
+  if (uploadRefreshTimer) {
+    clearTimeout(uploadRefreshTimer)
+    uploadRefreshTimer = null
+  }
 })
 
 // 监听路由变化，处理从其他页面跳转过来的高亮需求
@@ -285,6 +368,101 @@ const hasUninitializedKbs = computed(() => {
   return kbs.value.some(kb => !isInitialized(kb))
 })
 
+const getKbDisplayName = (kbId: string) => {
+  const target = kbs.value.find(kb => kb.id === kbId)
+  if (target?.name) return target.name
+  return t('knowledgeList.uploadProgress.unknownKb', { id: kbId }) as string
+}
+
+const uploadSummaries = computed<UploadSummary[]>(() => {
+  if (!uploadTasks.value.length) return []
+  const grouped: Record<string, UploadTaskState[]> = {}
+  uploadTasks.value.forEach(task => {
+    const kbKey = String(task.kbId)
+    if (!grouped[kbKey]) grouped[kbKey] = []
+    grouped[kbKey].push(task)
+  })
+  return Object.entries(grouped).map(([kbId, tasks]) => {
+    const total = tasks.length
+    const completed = tasks.filter(task => task.status !== 'uploading').length
+    const progressSum = tasks.reduce((sum, task) => sum + (task.progress ?? 0), 0)
+    const avgProgress = total === 0 ? 0 : Math.min(100, Math.max(0, Math.round(progressSum / total)))
+    const hasError = tasks.some(task => task.status === 'error')
+    return {
+      kbId,
+      kbName: getKbDisplayName(kbId),
+      total,
+      completed,
+      progress: avgProgress,
+      hasError
+    }
+  }).sort((a, b) => a.kbName.localeCompare(b.kbName))
+})
+
+const clampProgress = (value: number) => Math.min(100, Math.max(0, Math.round(value)))
+
+const addUploadTask = (task: UploadTaskState) => {
+  uploadTasks.value = [
+    ...uploadTasks.value.filter(item => item.uploadId !== task.uploadId),
+    task,
+  ]
+}
+
+const patchUploadTask = (uploadId: string, patch: Partial<UploadTaskState>) => {
+  const index = uploadTasks.value.findIndex(task => task.uploadId === uploadId)
+  if (index === -1) return
+  const nextTasks = [...uploadTasks.value]
+  nextTasks[index] = { ...nextTasks[index], ...patch }
+  uploadTasks.value = nextTasks
+}
+
+const removeUploadTask = (uploadId: string) => {
+  uploadTasks.value = uploadTasks.value.filter(task => task.uploadId !== uploadId)
+  const timer = uploadCleanupTimers.get(uploadId)
+  if (timer) {
+    clearTimeout(timer)
+    uploadCleanupTimers.delete(uploadId)
+  }
+}
+
+const scheduleUploadTaskCleanup = (uploadId: string) => {
+  const existing = uploadCleanupTimers.get(uploadId)
+  if (existing) {
+    clearTimeout(existing)
+  }
+  const timer = setTimeout(() => {
+    removeUploadTask(uploadId)
+  }, UPLOAD_CLEANUP_DELAY)
+  uploadCleanupTimers.set(uploadId, timer)
+}
+
+type UploadEventDetail = {
+  uploadId: string
+  kbId?: string | number
+  fileName?: string
+  progress?: number
+  status?: UploadTaskState['status']
+  error?: string
+}
+
+const ensureUploadTaskEntry = (detail?: UploadEventDetail) => {
+  if (!detail?.uploadId) return null
+  const existing = uploadTasks.value.find(task => task.uploadId === detail.uploadId)
+  if (existing) return existing
+  if (!detail.kbId) return null
+  const initialProgress = typeof detail.progress === 'number' ? clampProgress(detail.progress) : 0
+  const newTask: UploadTaskState = {
+    uploadId: detail.uploadId,
+    kbId: String(detail.kbId),
+    fileName: detail.fileName,
+    progress: initialProgress,
+    status: detail.status || 'uploading',
+    error: detail.error
+  }
+  addUploadTask(newTask)
+  return newTask
+}
+
 const handleCardClick = (kb: KB) => {
   if (isInitialized(kb)) {
     goDetail(kb.id)
@@ -331,6 +509,54 @@ const triggerHighlightFlash = (kbId: string) => {
       highlightedKbId.value = null
     }, 3000)
   })
+}
+
+const handleUploadStartEvent = (event: Event) => {
+  const detail = (event as CustomEvent<UploadEventDetail>).detail
+  if (!detail?.uploadId || !detail?.kbId) return
+  addUploadTask({
+    uploadId: detail.uploadId,
+    kbId: String(detail.kbId),
+    fileName: detail.fileName,
+    progress: typeof detail.progress === 'number' ? clampProgress(detail.progress) : 0,
+    status: 'uploading'
+  })
+}
+
+const handleUploadProgressEvent = (event: Event) => {
+  const detail = (event as CustomEvent<UploadEventDetail>).detail
+  if (!detail?.uploadId || typeof detail.progress !== 'number') return
+  if (!ensureUploadTaskEntry(detail)) return
+  patchUploadTask(detail.uploadId, {
+    progress: clampProgress(detail.progress)
+  })
+}
+
+const handleUploadCompleteEvent = (event: Event) => {
+  const detail = (event as CustomEvent<UploadEventDetail>).detail
+  if (!detail?.uploadId) return
+  const progress = typeof detail.progress === 'number'
+    ? clampProgress(detail.progress)
+    : 100
+  if (!ensureUploadTaskEntry({ ...detail, progress })) return
+  patchUploadTask(detail.uploadId, {
+    status: detail.status || 'success',
+    progress,
+    error: detail.error
+  })
+  scheduleUploadTaskCleanup(detail.uploadId)
+}
+
+const handleUploadFinishedEvent = (event: Event) => {
+  const detail = (event as CustomEvent<{ kbId?: string | number }>).detail
+  if (!detail?.kbId) return
+  if (uploadRefreshTimer) {
+    clearTimeout(uploadRefreshTimer)
+  }
+  uploadRefreshTimer = setTimeout(() => {
+    fetchList()
+    uploadRefreshTimer = null
+  }, 800)
 }
 </script>
 
@@ -399,6 +625,75 @@ const triggerHighlightFlash = (kbId: string) => {
     color: #d46b08;
     flex-shrink: 0;
   }
+}
+
+.upload-progress-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.upload-progress-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid #e7ebf0;
+  border-radius: 8px;
+  background: #f7fbff;
+}
+
+.upload-progress-icon {
+  color: #07c05f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-progress-content {
+  flex: 1;
+}
+
+.progress-title {
+  color: #0f172a;
+  font-family: "PingFang SC";
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+  margin-bottom: 2px;
+}
+
+.progress-subtitle {
+  color: #475467;
+  font-family: "PingFang SC";
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.progress-subtitle.secondary {
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.progress-subtitle.error {
+  color: #d92d20;
+  margin-top: 4px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: #e7eef5;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.progress-bar-inner {
+  height: 100%;
+  background: linear-gradient(90deg, #05a04f 0%, #07c05f 100%);
+  transition: width 0.2s ease;
 }
 
 .kb-card-wrap {

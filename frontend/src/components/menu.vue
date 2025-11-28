@@ -678,6 +678,35 @@ const handleDocUploadClick = async () => {
     docUploadInput.value?.click()
 }
 
+const FAILED_FILES_PREVIEW_LIMIT = 10
+
+const summarizeFailedFiles = (failedFiles: Array<{ name: string; reason: string }>) => {
+    const duplicateLabel = t('knowledgeBase.fileExists')
+    let duplicateCount = 0
+    const nonDuplicate: Array<{ name: string; reason: string }> = []
+    failedFiles.forEach((file) => {
+        if (file.reason === duplicateLabel) {
+            duplicateCount++
+        } else {
+            nonDuplicate.push(file)
+        }
+    })
+
+    const previewList = nonDuplicate.slice(0, FAILED_FILES_PREVIEW_LIMIT).map(f => `• ${f.name}: ${f.reason}`)
+    let nonDuplicateText = ''
+    if (previewList.length) {
+        nonDuplicateText = previewList.join('\n')
+        if (nonDuplicate.length > FAILED_FILES_PREVIEW_LIMIT) {
+            nonDuplicateText += `\n${t('knowledgeBase.andMoreFiles', { count: nonDuplicate.length - FAILED_FILES_PREVIEW_LIMIT })}`
+        }
+    }
+
+    return {
+        duplicateCount,
+        nonDuplicateText,
+    }
+}
+
 const handleDocFileChange = async (event: Event) => {
     const input = event.target as HTMLInputElement
     const files = input?.files
@@ -736,8 +765,7 @@ const handleDocFileChange = async (event: Event) => {
             detail: { 
                 kbId, 
                 uploadId, 
-                fileName: file.name,
-                file
+                fileName: file.name
             }
         }))
 
@@ -809,24 +837,35 @@ const handleDocFileChange = async (event: Event) => {
         if (failCount === 0) {
             MessagePlugin.success(t('knowledgeBase.uploadAllSuccess', { count: successCount }))
         } else if (successCount > 0) {
-            // 部分成功，显示详细失败信息
-            const failedList = failedFiles.map(f => `• ${f.name}: ${f.reason}`).join('\n')
+            const { duplicateCount, nonDuplicateText } = summarizeFailedFiles(failedFiles)
+            const extraSections: string[] = []
+            if (duplicateCount > 0) {
+                extraSections.push(t('knowledgeBase.duplicateFilesSkipped', { count: duplicateCount }))
+            }
+            if (nonDuplicateText) {
+                extraSections.push(t('knowledgeBase.failedFilesList') + '\n' + nonDuplicateText)
+            }
+            const extraContent = extraSections.length ? '\n\n' + extraSections.join('\n\n') : ''
             MessagePlugin.warning({
                 content: t('knowledgeBase.uploadPartialSuccess', {
                     success: successCount,
                     fail: failCount
-                }) + '\n\n' + t('knowledgeBase.failedFilesList') + '\n' + failedList,
+                }) + extraContent,
                 duration: 8000,
                 closeBtn: true
             })
         } else {
-            // 全部失败，显示详细失败信息
-            const failedList = failedFiles.slice(0, 5).map(f => `• ${f.name}: ${f.reason}`).join('\n')
-            const moreCount = failedFiles.length > 5 ? failedFiles.length - 5 : 0
+            const { duplicateCount, nonDuplicateText } = summarizeFailedFiles(failedFiles)
+            const extraSections: string[] = []
+            if (duplicateCount > 0) {
+                extraSections.push(t('knowledgeBase.duplicateFilesSkipped', { count: duplicateCount }))
+            }
+            if (nonDuplicateText) {
+                extraSections.push(t('knowledgeBase.failedFilesList') + '\n' + nonDuplicateText)
+            }
+            const extraContent = extraSections.length ? '\n\n' + extraSections.join('\n\n') : ''
             MessagePlugin.error({
-                content: t('knowledgeBase.uploadAllFailed') + '\n\n' +
-                    t('knowledgeBase.failedFilesList') + '\n' + failedList +
-                    (moreCount > 0 ? `\n${t('knowledgeBase.andMoreFiles', { count: moreCount })}` : ''),
+                content: t('knowledgeBase.uploadAllFailed') + extraContent,
                 duration: 8000,
                 closeBtn: true
             })
@@ -950,32 +989,69 @@ const handleDocFolderChange = async (event: Event) => {
     const failedFiles: Array<{ name: string; reason: string }> = []
 
     for (const file of validFiles) {
-        try {
-            // 获取文件的相对路径(webkitRelativePath)
-            const relativePath = (file as any).webkitRelativePath
-            let fileName = file.name
-            
-            // 如果存在相对路径，提取子文件夹路径并拼接到文件名前
-            if (relativePath) {
-                // webkitRelativePath 格式: "文件夹名/子文件夹/文件名.ext"
-                // 我们需要去掉第一层文件夹名，保留子路径
-                const pathParts = relativePath.split('/')
-                if (pathParts.length > 2) {
-                    // 有子文件夹，拼接子路径到文件名
-                    const subPath = pathParts.slice(1, -1).join('/') // 去掉顶层文件夹和文件名本身
-                    fileName = `${subPath}/${file.name}`
-                }
+        // 获取文件的相对路径(webkitRelativePath)，用于保留子目录结构
+        const relativePath = (file as any).webkitRelativePath
+        let fileName = file.name
+        if (relativePath) {
+            const pathParts = relativePath.split('/')
+            if (pathParts.length > 2) {
+                const subPath = pathParts.slice(1, -1).join('/')
+                fileName = `${subPath}/${file.name}`
             }
-            
-            await uploadKnowledgeFile(kbId, { file, fileName })
+        }
+
+        const uploadId = `${file.name}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        let progress = 0
+        let status: 'uploading' | 'success' | 'error' = 'uploading'
+        let errorReason: string | undefined
+
+        window.dispatchEvent(new CustomEvent('knowledgeFileUploadStart', {
+            detail: {
+                kbId,
+                uploadId,
+                fileName
+            }
+        }))
+
+        try {
+            await uploadKnowledgeFile(
+                kbId,
+                { file, fileName },
+                (progressEvent: any) => {
+                    if (progressEvent?.total) {
+                        progress = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+                        window.dispatchEvent(new CustomEvent('knowledgeFileUploadProgress', {
+                            detail: {
+                                kbId,
+                                uploadId,
+                                progress
+                            }
+                        }))
+                    }
+                }
+            )
             successCount++
+            status = 'success'
+            progress = 100
         } catch (error: any) {
             failCount++
-            let errorReason = error?.error?.message || error?.message || t('knowledgeBase.uploadFailed')
+            errorReason = error?.error?.message || error?.message || t('knowledgeBase.uploadFailed')
             if (error?.code === 'duplicate_file' || error?.error?.code === 'duplicate_file') {
                 errorReason = t('knowledgeBase.fileExists')
             }
-            failedFiles.push({ name: file.name, reason: errorReason })
+            failedFiles.push({ name: fileName, reason: errorReason })
+            status = 'error'
+        } finally {
+            window.dispatchEvent(new CustomEvent('knowledgeFileUploadComplete', {
+                detail: {
+                    kbId,
+                    uploadId,
+                    status,
+                    progress,
+                    error: errorReason,
+                    fileName
+                }
+            }))
         }
     }
 
@@ -988,24 +1064,35 @@ const handleDocFolderChange = async (event: Event) => {
     if (failCount === 0) {
         MessagePlugin.success(t('knowledgeBase.uploadAllSuccess', { count: successCount }))
     } else if (successCount > 0) {
-        // 部分成功，显示详细失败信息
-        const failedList = failedFiles.map(f => `• ${f.name}: ${f.reason}`).join('\n')
+        const { duplicateCount, nonDuplicateText } = summarizeFailedFiles(failedFiles)
+        const extraSections: string[] = []
+        if (duplicateCount > 0) {
+            extraSections.push(t('knowledgeBase.duplicateFilesSkipped', { count: duplicateCount }))
+        }
+        if (nonDuplicateText) {
+            extraSections.push(t('knowledgeBase.failedFilesList') + '\n' + nonDuplicateText)
+        }
+        const extraContent = extraSections.length ? '\n\n' + extraSections.join('\n\n') : ''
         MessagePlugin.warning({
             content: t('knowledgeBase.uploadPartialSuccess', {
                 success: successCount,
                 fail: failCount
-            }) + '\n\n' + t('knowledgeBase.failedFilesList') + '\n' + failedList,
+            }) + extraContent,
             duration: 8000,
             closeBtn: true
         })
     } else {
-        // 全部失败，显示详细失败信息
-        const failedList = failedFiles.slice(0, 5).map(f => `• ${f.name}: ${f.reason}`).join('\n')
-        const moreCount = failedFiles.length > 5 ? failedFiles.length - 5 : 0
+        const { duplicateCount, nonDuplicateText } = summarizeFailedFiles(failedFiles)
+        const extraSections: string[] = []
+        if (duplicateCount > 0) {
+            extraSections.push(t('knowledgeBase.duplicateFilesSkipped', { count: duplicateCount }))
+        }
+        if (nonDuplicateText) {
+            extraSections.push(t('knowledgeBase.failedFilesList') + '\n' + nonDuplicateText)
+        }
+        const extraContent = extraSections.length ? '\n\n' + extraSections.join('\n\n') : ''
         MessagePlugin.error({
-            content: t('knowledgeBase.uploadAllFailed') + '\n\n' +
-                t('knowledgeBase.failedFilesList') + '\n' + failedList +
-                (moreCount > 0 ? `\n${t('knowledgeBase.andMoreFiles', { count: moreCount })}` : ''),
+            content: t('knowledgeBase.uploadAllFailed') + extraContent,
             duration: 8000,
             closeBtn: true
         })

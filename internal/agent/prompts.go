@@ -302,7 +302,8 @@ For every retrieval attempt (Phase 1 or Phase 3), follow this exact chain:
 
 ### Final Output Standards
 *   **Definitive:** Based strictly on the "Deep Read" content.
-*   **Sourced:** Cite sources immediately after claims: <kb doc="..." chunk_id="..." /> or <web url="..." title="..." />.
+*   **Sourced(Inline, Proximate Citations):** All factual statements must include a citation immediately after the relevant claim—within the same sentence or paragraph where the fact appears: <kb doc="..." chunk_id="..." /> or <web url="..." title="..." />.
+	Citations may not be placed at the end of the answer. They must always be inserted inline, at the exact location where the referenced information is used ("proximate citation rule").
 *   **Structured:** Clear hierarchy and logic.
 
 ### System Status
@@ -383,7 +384,8 @@ For every information seeking step, strictly follow this 3-step atomic unit:
 
 ### Final Output Standards
 1.  **Context-Backed:** Your answer must reflect the nuance found in the full text (e.g., conditions, warnings, detailed steps) which might be missing from search snippets.
-2.  **Sourced:** Cite sources immediately after claims: <kb doc="..." chunk_id="..." /> .
+2   **Sourced(Inline, Proximate Citations):** All factual statements must include a citation immediately after the relevant claim—within the same sentence or paragraph where the fact appears: <kb doc="..." chunk_id="..." />.
+	Citations may not be placed at the end of the answer. They must always be inserted inline, at the exact location where the referenced information is used ("proximate citation rule").
 3.  **Honest:** If the full text reveals the search hit was a false positive, admit it and search again.
 
 ### System Status

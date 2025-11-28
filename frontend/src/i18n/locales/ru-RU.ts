@@ -65,6 +65,7 @@ export default {
     unsupportedFileType: 'Неподдерживаемый тип файла',
     failedFilesList: 'Неудавшиеся файлы:',
     andMoreFiles: '...и ещё {count} файлов',
+    duplicateFilesSkipped: 'Пропущено {count} повторяющихся файлов',
     uploadFile: 'Загрузить файл',
     uploadFileDesc: 'Поддерживает PDF, Word, TXT и т.д.',
     importURL: 'Импорт из URL',
@@ -900,6 +901,16 @@ export default {
       documents: 'Количество документов',
       faqEntries: 'FAQ записи',
       chunks: 'Количество фрагментов'
+    },
+    uploadProgress: {
+      uploadingTitle: 'Загрузка документов папки в «{name}»',
+      detail: 'Готово {completed} из {total} файлов',
+      keepPageOpen: 'Пожалуйста, не закрывайте страницу, пока идет загрузка.',
+      completedTitle: 'Загрузка для «{name}» завершена',
+      completedDetail: 'Загружено {total} файлов. Обновляем список, чтобы показать статус разбора...',
+      refreshing: 'Обновляем список и статусы разбора...',
+      errorTip: 'Часть файлов загрузить не удалось. Проверьте уведомления.',
+      unknownKb: 'База знаний {id}'
     }
   },
   knowledgeEditor: {

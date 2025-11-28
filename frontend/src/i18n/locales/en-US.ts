@@ -65,6 +65,7 @@ export default {
     unsupportedFileType: 'Unsupported file type',
     failedFilesList: 'Failed files:',
     andMoreFiles: '...and {count} more files',
+    duplicateFilesSkipped: '{count} duplicate files skipped',
     uploadFile: 'Upload File',
     uploadFileDesc: 'Supports PDF, Word, TXT, etc.',
     importURL: 'Import from URL',
@@ -812,6 +813,16 @@ export default {
       documents: 'Document Count',
       faqEntries: 'FAQ Entries',
       chunks: 'Chunk Count'
+    },
+    uploadProgress: {
+      uploadingTitle: 'Uploading folder documents to "{name}"',
+      detail: '{completed}/{total} files finished',
+      keepPageOpen: 'Please keep this page open while files upload.',
+      completedTitle: 'Upload finished for "{name}"',
+      completedDetail: 'All {total} files uploaded. Refreshing list to show parsing status...',
+      refreshing: 'Refreshing list to show parsing status...',
+      errorTip: 'Some files failed to upload. Please check the notifications.',
+      unknownKb: 'Knowledge Base {id}'
     }
   },
   knowledgeEditor: {
