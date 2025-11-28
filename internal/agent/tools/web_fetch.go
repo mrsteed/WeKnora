@@ -502,7 +502,7 @@ func (t *WebFetchTool) processNode(s *goquery.Selection, markdown *strings.Build
 			isOrdered := nodeName == "ol"
 			node.Find("li").Each(func(idx int, li *goquery.Selection) {
 				if isOrdered {
-					markdown.WriteString(fmt.Sprintf("%d. ", idx+1))
+					fmt.Fprintf(markdown, "%d. ", idx+1)
 				} else {
 					markdown.WriteString("- ")
 				}

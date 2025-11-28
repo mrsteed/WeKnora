@@ -27,7 +27,7 @@ func (r *RetrieveEngineRegistry) Register(repo interfaces.RetrieveEngineService)
 	defer r.mu.Unlock()
 
 	if _, exists := r.repositories[repo.EngineType()]; exists {
-		return fmt.Errorf("Repository type %s already registered", repo.EngineType())
+		return fmt.Errorf("repository type %s already registered", repo.EngineType())
 	}
 
 	r.repositories[repo.EngineType()] = repo
@@ -43,7 +43,7 @@ func (r *RetrieveEngineRegistry) GetRetrieveEngineService(repoType types.Retriev
 
 	repo, exists := r.repositories[repoType]
 	if !exists {
-		return nil, fmt.Errorf("Repository of type %s not found", repoType)
+		return nil, fmt.Errorf("repository of type %s not found", repoType)
 	}
 
 	return repo, nil

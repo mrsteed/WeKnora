@@ -44,10 +44,12 @@ type Tenant struct {
 	DeletedAt gorm.DeletedAt `yaml:"deleted_at" json:"deleted_at" gorm:"index"`
 }
 
+// RetrieverEngines represents the retriever engines for a tenant
 type RetrieverEngines struct {
 	Engines []RetrieverEngineParams `yaml:"engines" json:"engines" gorm:"type:json"`
 }
 
+// BeforeCreate is a hook function that is called before creating a tenant
 func (t *Tenant) BeforeCreate(tx *gorm.DB) error {
 	if t.RetrieverEngines.Engines == nil {
 		t.RetrieverEngines.Engines = []RetrieverEngineParams{}

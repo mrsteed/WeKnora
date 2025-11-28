@@ -10,10 +10,13 @@ import (
 )
 
 const (
+	// KnowledgeTypeManual represents the manual knowledge type
 	KnowledgeTypeManual = "manual"
-	KnowledgeTypeFAQ    = "faq"
+	// KnowledgeTypeFAQ represents the FAQ knowledge type
+	KnowledgeTypeFAQ = "faq"
 )
 
+// ManualKnowledgeFormat represents the format of the manual knowledge
 const (
 	ManualKnowledgeFormatMarkdown = "markdown"
 	ManualKnowledgeStatusDraft    = "draft"

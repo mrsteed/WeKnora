@@ -73,7 +73,7 @@ func (m *MemoryStreamManager) AppendEvent(ctx context.Context, sessionID, messag
 
 	// Append event
 	stream.events = append(stream.events, event)
-			stream.lastUpdated = time.Now()
+	stream.lastUpdated = time.Now()
 
 	return nil
 }
@@ -104,7 +104,7 @@ func (m *MemoryStreamManager) GetEvents(ctx context.Context, sessionID, messageI
 	copy(eventsCopy, events)
 
 	return eventsCopy, nextOffset, nil
-		}
+}
 
 // Ensure MemoryStreamManager implements StreamManager interface
 var _ interfaces.StreamManager = (*MemoryStreamManager)(nil)

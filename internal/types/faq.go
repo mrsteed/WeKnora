@@ -160,10 +160,14 @@ type FAQSearchRequest struct {
 type FAQImportTaskStatus string
 
 const (
-	FAQImportStatusPending    FAQImportTaskStatus = "pending"
+	// FAQImportStatusPending represents the pending status of the FAQ import task
+	FAQImportStatusPending FAQImportTaskStatus = "pending"
+	// FAQImportStatusProcessing represents the processing status of the FAQ import task
 	FAQImportStatusProcessing FAQImportTaskStatus = "processing"
-	FAQImportStatusCompleted  FAQImportTaskStatus = "completed"
-	FAQImportStatusFailed     FAQImportTaskStatus = "failed"
+	// FAQImportStatusCompleted represents the completed status of the FAQ import task
+	FAQImportStatusCompleted FAQImportTaskStatus = "completed"
+	// FAQImportStatusFailed represents the failed status of the FAQ import task
+	FAQImportStatusFailed FAQImportTaskStatus = "failed"
 )
 
 // FAQImportMetadata 存储在Knowledge.Metadata中的FAQ导入任务信息

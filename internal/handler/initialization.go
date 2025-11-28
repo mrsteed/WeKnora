@@ -26,7 +26,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/utils"
-	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/ollama/ollama/api"
@@ -198,7 +197,7 @@ type InitializationRequest struct {
 // UpdateKBConfig 根据知识库ID和模型ID更新配置（简化版）
 func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 	ctx := c.Request.Context()
-	kbIdStr := secutils.SanitizeForLog(c.Param("kbId"))
+	kbIdStr := utils.SanitizeForLog(c.Param("kbId"))
 
 	var req KBModelConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -210,7 +209,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 	// 获取知识库信息
 	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbIdStr)
 	if err != nil || kb == nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": secutils.SanitizeForLog(kbIdStr)})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": utils.SanitizeForLog(kbIdStr)})
 		c.Error(errors.NewNotFoundError("知识库不存在"))
 		return
 	}
@@ -350,7 +349,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 // InitializeByKB 根据知识库ID执行配置更新
 func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 	ctx := c.Request.Context()
-	kbIdStr := secutils.SanitizeForLog(c.Param("kbId"))
+	kbIdStr := utils.SanitizeForLog(c.Param("kbId"))
 
 	var req InitializationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -358,12 +357,12 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
-	logger.Infof(ctx, "Starting knowledge base configuration update, kbId: %s, request: %s", secutils.SanitizeForLog(kbIdStr), secutils.SanitizeForLog(utils.ToJSON(req)))
+	logger.Infof(ctx, "Starting knowledge base configuration update, kbId: %s, request: %s", utils.SanitizeForLog(kbIdStr), utils.SanitizeForLog(utils.ToJSON(req)))
 
 	// 获取指定知识库信息
 	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbIdStr)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": secutils.SanitizeForLog(kbIdStr)})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": utils.SanitizeForLog(kbIdStr)})
 		c.Error(errors.NewInternalServerError("获取知识库信息失败: " + err.Error()))
 		return
 	}
@@ -450,18 +449,18 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 	}{
 		{
 			modelType:   types.ModelTypeKnowledgeQA,
-			name:        secutils.SanitizeForLog(req.LLM.ModelName),
+			name:        utils.SanitizeForLog(req.LLM.ModelName),
 			source:      types.ModelSource(req.LLM.Source),
 			description: "LLM Model for Knowledge QA",
-			baseURL:     secutils.SanitizeForLog(req.LLM.BaseURL),
+			baseURL:     utils.SanitizeForLog(req.LLM.BaseURL),
 			apiKey:      req.LLM.APIKey,
 		},
 		{
 			modelType:   types.ModelTypeEmbedding,
-			name:        secutils.SanitizeForLog(req.Embedding.ModelName),
+			name:        utils.SanitizeForLog(req.Embedding.ModelName),
 			source:      types.ModelSource(req.Embedding.Source),
 			description: "Embedding Model",
-			baseURL:     secutils.SanitizeForLog(req.Embedding.BaseURL),
+			baseURL:     utils.SanitizeForLog(req.Embedding.BaseURL),
 			apiKey:      req.Embedding.APIKey,
 			dimension:   req.Embedding.Dimension,
 		},
@@ -480,10 +479,10 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 			interfaceType string
 		}{
 			modelType:   types.ModelTypeRerank,
-			name:        secutils.SanitizeForLog(req.Rerank.ModelName),
+			name:        utils.SanitizeForLog(req.Rerank.ModelName),
 			source:      types.ModelSourceRemote,
 			description: "Rerank Model",
-			baseURL:     secutils.SanitizeForLog(req.Rerank.BaseURL),
+			baseURL:     utils.SanitizeForLog(req.Rerank.BaseURL),
 			apiKey:      req.Rerank.APIKey,
 		})
 	}
@@ -501,10 +500,10 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 			interfaceType string
 		}{
 			modelType:     types.ModelTypeVLLM,
-			name:          secutils.SanitizeForLog(req.Multimodal.VLM.ModelName),
+			name:          utils.SanitizeForLog(req.Multimodal.VLM.ModelName),
 			source:        types.ModelSourceRemote,
 			description:   "VLM Model",
-			baseURL:       secutils.SanitizeForLog(req.Multimodal.VLM.BaseURL),
+			baseURL:       utils.SanitizeForLog(req.Multimodal.VLM.BaseURL),
 			apiKey:        req.Multimodal.VLM.APIKey,
 			interfaceType: req.Multimodal.VLM.InterfaceType,
 		})
@@ -676,7 +675,7 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 
 	err = h.kbRepository.UpdateKnowledgeBase(ctx, kb)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": secutils.SanitizeForLog(kbIdStr)})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": utils.SanitizeForLog(kbIdStr)})
 		c.Error(errors.NewInternalServerError("更新知识库配置失败: " + err.Error()))
 		return
 	}
@@ -775,7 +774,7 @@ func (h *InitializationHandler) CheckOllamaModels(c *gin.Context) {
 			modelStatus[modelName] = available
 		}
 
-		logger.Infof(ctx, "Model %s availability: %v", secutils.SanitizeForLog(modelName), modelStatus[modelName])
+		logger.Infof(ctx, "Model %s availability: %v", utils.SanitizeForLog(modelName), modelStatus[modelName])
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1010,8 +1009,8 @@ func (h *InitializationHandler) pullModelWithProgress(ctx context.Context,
 
 	// 使用Ollama客户端的Pull方法，带进度回调
 	err = h.ollamaService.GetClient().Pull(ctx, pullReq, func(progress api.ProgressResponse) error {
-		var progressPercent float64 = 0.0
-		var message string = "下载中"
+		progressPercent := 0.0
+		message := "下载中"
 
 		if progress.Total > 0 && progress.Completed > 0 {
 			progressPercent = float64(progress.Completed) / float64(progress.Total) * 100
@@ -1057,7 +1056,7 @@ func (h *InitializationHandler) updateTaskStatus(
 // GetCurrentConfigByKB 根据知识库ID获取配置信息
 func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 	ctx := c.Request.Context()
-	kbIdStr := secutils.SanitizeForLog(c.Param("kbId"))
+	kbIdStr := utils.SanitizeForLog(c.Param("kbId"))
 
 	logger.Info(ctx, "Getting configuration for knowledge base")
 
@@ -1103,10 +1102,7 @@ func (h *InitializationHandler) GetCurrentConfigByKB(c *gin.Context) {
 			Page:     1,
 			PageSize: 1,
 		}, "")
-	hasFiles := false
-	if err == nil && knowledgeList != nil && knowledgeList.Total > 0 {
-		hasFiles = true
-	}
+	hasFiles := err == nil && knowledgeList != nil && knowledgeList.Total > 0
 
 	// 构建配置响应
 	config := h.buildConfigResponse(ctx, models, kb, hasFiles)
@@ -1339,7 +1335,7 @@ func (h *InitializationHandler) TestEmbeddingModel(c *gin.Context) {
 
 	emb, err := embedding.NewEmbedder(cfg)
 	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"model": secutils.SanitizeForLog(req.ModelName)})
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"model": utils.SanitizeForLog(req.ModelName)})
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data":    gin.H{`available`: false, `message`: fmt.Sprintf("创建Embedder失败: %v", err), `dimension`: 0},
@@ -1595,7 +1591,7 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("图片文件大小不能超过10MB"))
 		return
 	}
-	logger.Infof(ctx, "Processing image: %s", secutils.SanitizeForLog(header.Filename))
+	logger.Infof(ctx, "Processing image: %s", utils.SanitizeForLog(header.Filename))
 
 	// 解析文档分割配置
 	chunkSizeInt32, err := strconv.ParseInt(req.ChunkSize, 10, 32)

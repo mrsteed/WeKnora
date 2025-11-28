@@ -587,7 +587,6 @@ func (s *sessionService) selectChatModelIDWithOverride(ctx context.Context, sess
 // 3. Session's SummaryModelID (if not Remote)
 // 4. First knowledge base's SummaryModelID
 func (s *sessionService) selectChatModelID(ctx context.Context, session *types.Session, knowledgeBaseIDs []string) (string, error) {
-
 	// First, check if session has a SummaryModelID and if it's a Remote model
 	if session.SummaryModelID != "" {
 		model, err := s.modelService.GetModelByID(ctx, session.SummaryModelID)

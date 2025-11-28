@@ -304,12 +304,12 @@ func (f *Formater) formatExtraction(nodes []*types.GraphNode, relations []*types
 
 func (f *Formater) parseOutput(ctx context.Context, text string) ([]map[string]interface{}, error) {
 	if text == "" {
-		return nil, errors.New("Empty or invalid input string.")
+		return nil, errors.New("empty or invalid input string")
 	}
 	content := f.extractContent(ctx, text)
 	// logger.Debugf(ctx, "Extracted content: %s", content)
 	if content == "" {
-		return nil, errors.New("Empty or invalid input string.")
+		return nil, errors.New("empty or invalid input string")
 	}
 
 	var parsed interface{}
@@ -318,10 +318,10 @@ func (f *Formater) parseOutput(ctx context.Context, text string) ([]map[string]i
 		err = json.Unmarshal([]byte(content), &parsed)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse %s content: %s", strings.ToUpper(string(f.formatType)), err.Error())
+		return nil, fmt.Errorf("failed to parse %s content: %s", strings.ToUpper(string(f.formatType)), err.Error())
 	}
 	if parsed == nil {
-		return nil, fmt.Errorf("Content must be a list of extractions or a dict.")
+		return nil, fmt.Errorf("content must be a list of extractions or a dict")
 	}
 
 	var items []interface{}
@@ -330,7 +330,7 @@ func (f *Formater) parseOutput(ctx context.Context, text string) ([]map[string]i
 	} else if parsedList, ok := parsed.([]interface{}); ok {
 		items = parsedList
 	} else {
-		return nil, fmt.Errorf("Expected list or dict, got %T", parsed)
+		return nil, fmt.Errorf("expected list or dict, got %T", parsed)
 	}
 
 	itemsList := make([]map[string]interface{}, 0)
@@ -338,7 +338,7 @@ func (f *Formater) parseOutput(ctx context.Context, text string) ([]map[string]i
 		if itemMap, ok := item.(map[string]interface{}); ok {
 			itemsList = append(itemsList, itemMap)
 		} else {
-			return nil, fmt.Errorf("Each item in the sequence must be a mapping.")
+			return nil, fmt.Errorf("each item in the sequence must be a mapping.")
 		}
 	}
 	return itemsList, nil
@@ -350,7 +350,7 @@ func (f *Formater) ParseGraph(ctx context.Context, text string) (*types.GraphDat
 		return nil, err
 	}
 	if len(matchData) == 0 {
-		logger.Debugf(ctx, "Received empty extraction data.")
+		logger.Debugf(ctx, "received empty extraction data.")
 		return &types.GraphData{}, nil
 	}
 	// mm, _ := json.Marshal(matchData)
@@ -403,9 +403,7 @@ func (f *Formater) rebuildGraph(ctx context.Context, graph *types.GraphData) {
 				node.Attributes = make([]string, 0)
 			}
 			if prenode.Attributes != nil {
-				for _, attr := range prenode.Attributes {
-					node.Attributes = append(node.Attributes, attr)
-				}
+				node.Attributes = append(node.Attributes, prenode.Attributes...)
 			}
 			continue
 		}

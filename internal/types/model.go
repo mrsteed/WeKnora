@@ -19,6 +19,7 @@ const (
 	ModelTypeVLLM        ModelType = "VLLM"        // VLLM model
 )
 
+// ModelStatus represents the status of the model
 type ModelStatus string
 
 const (
@@ -36,6 +37,7 @@ const (
 	ModelSourceAliyun ModelSource = "aliyun" // Aliyun DashScope model
 )
 
+// EmbeddingParameters represents the embedding parameters for a model
 type EmbeddingParameters struct {
 	Dimension            int `yaml:"dimension" json:"dimension"`
 	TruncatePromptTokens int `yaml:"truncate_prompt_tokens" json:"truncate_prompt_tokens"`

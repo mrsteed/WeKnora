@@ -192,7 +192,6 @@ func (s *smartCompressionStrategy) summarizeMessages(ctx context.Context, messag
 		Temperature: 0.3, // Lower temperature for more consistent summaries
 		MaxTokens:   500, // Limit summary length
 	})
-
 	if err != nil {
 		return "", fmt.Errorf("failed to generate summary: %w", err)
 	}

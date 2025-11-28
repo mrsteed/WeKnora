@@ -138,7 +138,8 @@ func (r *knowledgeRepository) CheckKnowledgeExists(
 	query := r.db.WithContext(ctx).Model(&types.Knowledge{}).
 		Where("tenant_id = ? AND knowledge_base_id = ? AND parse_status <> ?", tenantID, kbID, "failed")
 
-	if params.Type == "file" {
+	switch params.Type {
+	case "file":
 		// If file hash exists, prioritize exact match using hash
 		if params.FileHash != "" {
 			var knowledge types.Knowledge
@@ -167,7 +168,7 @@ func (r *knowledgeRepository) CheckKnowledgeExists(
 			}
 			return true, &knowledge, nil
 		}
-	} else if params.Type == "url" {
+	case "url":
 		// If file hash exists, prioritize exact match using hash
 		if params.FileHash != "" {
 			var knowledge types.Knowledge

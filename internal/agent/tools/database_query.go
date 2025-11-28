@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -420,38 +419,4 @@ func (t *DatabaseQueryTool) formatQueryResults(columns []string, results []map[s
 	}
 
 	return output
-}
-
-// Helper function to convert database value to proper type
-func convertDatabaseValue(val interface{}) interface{} {
-	if val == nil {
-		return nil
-	}
-
-	switch v := val.(type) {
-	case []byte:
-		return string(v)
-	case sql.NullString:
-		if v.Valid {
-			return v.String
-		}
-		return nil
-	case sql.NullInt64:
-		if v.Valid {
-			return v.Int64
-		}
-		return nil
-	case sql.NullFloat64:
-		if v.Valid {
-			return v.Float64
-		}
-		return nil
-	case sql.NullBool:
-		if v.Valid {
-			return v.Bool
-		}
-		return nil
-	default:
-		return v
-	}
 }

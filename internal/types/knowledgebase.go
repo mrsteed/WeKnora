@@ -8,32 +8,34 @@ import (
 	"gorm.io/gorm"
 )
 
+// KnowledgeBaseType represents the type of the knowledge base
 const (
+	// KnowledgeBaseTypeDocument represents the document knowledge base type
 	KnowledgeBaseTypeDocument = "document"
 	KnowledgeBaseTypeFAQ      = "faq"
 )
 
-// FAQIndexMode 表示 FAQ 索引策略：仅索引标准问还是同时索引问答内容
+// FAQIndexMode represents the FAQ index mode: only index questions or index questions and answers
 type FAQIndexMode string
 
 const (
-	// FAQIndexModeQuestionOnly 仅使用标准问及相似问向量化
+	// FAQIndexModeQuestionOnly only index questions and similar questions
 	FAQIndexModeQuestionOnly FAQIndexMode = "question_only"
-	// FAQIndexModeQuestionAnswer 将标准问与答案拼接后向量化
+	// FAQIndexModeQuestionAnswer index questions and answers together
 	FAQIndexModeQuestionAnswer FAQIndexMode = "question_answer"
 )
 
-// FAQQuestionIndexMode 表示 FAQ 问题索引方式：一起索引还是分别索引
+// FAQQuestionIndexMode represents the FAQ question index mode: index together or index separately
 type FAQQuestionIndexMode string
 
 const (
-	// FAQQuestionIndexModeCombined 将标准问和相似问一起索引（当前方式）
+	// FAQQuestionIndexModeCombined index questions and similar questions together
 	FAQQuestionIndexModeCombined FAQQuestionIndexMode = "combined"
-	// FAQQuestionIndexModeSeparate 将标准问和相似问分别索引
+	// FAQQuestionIndexModeSeparate index questions and similar questions separately
 	FAQQuestionIndexModeSeparate FAQQuestionIndexMode = "separate"
 )
 
-// KnowledgeBase represents a knowledge base
+// KnowledgeBase represents a knowledge base entity
 type KnowledgeBase struct {
 	// Unique identifier of the knowledge base
 	ID string `yaml:"id" json:"id" gorm:"type:varchar(36);primaryKey"`
@@ -195,6 +197,7 @@ func (c *VLMConfig) Scan(value interface{}) error {
 	return json.Unmarshal(b, c)
 }
 
+// ExtractConfig represents the extract configuration for a knowledge base
 type ExtractConfig struct {
 	Enabled   bool             `yaml:"enabled" json:"enabled"`
 	Text      string           `yaml:"text" json:"text,omitempty"`

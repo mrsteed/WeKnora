@@ -459,18 +459,19 @@ func (t *KnowledgeSearchTool) filterByThreshold(
 		var threshold float64
 
 		// Special handling for history matches: use lower threshold
-		if r.MatchType == types.MatchTypeHistory {
+		switch r.MatchType {
+		case types.MatchTypeHistory:
 			// Use the lower of the two thresholds, then reduce by 0.1 (minimum 0.5)
 			th := vectorThreshold
 			if keywordThreshold < th {
 				th = keywordThreshold
 			}
 			threshold = math.Max(th-0.1, 0.5)
-		} else if r.MatchType == types.MatchTypeEmbedding {
+		case types.MatchTypeEmbedding:
 			threshold = vectorThreshold
-		} else if r.MatchType == types.MatchTypeKeywords {
+		case types.MatchTypeKeywords:
 			threshold = keywordThreshold
-		} else {
+		default:
 			// For other match types (graph, nearby chunk, etc.), use the lower threshold
 			threshold = vectorThreshold
 			if keywordThreshold < threshold {
@@ -1208,7 +1209,7 @@ func (t *KnowledgeSearchTool) findMissingChunkRanges(retrievedChunks map[int]boo
 	}
 
 	var ranges []chunkRange
-	var currentStart int = -1
+	currentStart := -1
 
 	// Iterate through all possible chunk indices (0 to totalChunks-1)
 	for i := 0; i < totalChunks; i++ {

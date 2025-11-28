@@ -124,7 +124,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 
 	// Session service (depends on agent service)
 	// SessionService is created after AgentService and passes itself to AgentService.CreateAgentEngine when needed
-    must(container.Provide(service.NewSessionService))
+	must(container.Provide(service.NewSessionService))
 
 	must(container.Provide(router.NewAsyncqClient))
 	must(container.Provide(router.NewAsynqServer))

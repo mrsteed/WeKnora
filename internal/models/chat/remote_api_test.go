@@ -122,7 +122,6 @@ func TestRemoteAPIChat(t *testing.T) {
 					response.Usage.CompletionTokens,
 					response.Usage.TotalTokens)
 			})
-
 		})
 	}
 }

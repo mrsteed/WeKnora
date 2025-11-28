@@ -29,7 +29,6 @@ type RankResult struct {
 
 // Handles the RelevanceScore field by checking if RelevanceScore exists first, otherwise falls back to Score field
 func (r *RankResult) UnmarshalJSON(data []byte) error {
-
 	var temp struct {
 		Index          int          `json:"index"`
 		Document       DocumentInfo `json:"document"`

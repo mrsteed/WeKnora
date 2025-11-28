@@ -96,11 +96,6 @@ func getWordNgrams(n int, sentences []string, exclusive bool) *Ngrams {
 	return getNgrams(n, words, exclusive)
 }
 
-func lenLcs(x, y []string) int {
-	table := lcs(x, y)
-	return table[len(x)][len(y)]
-}
-
 func lcs(x, y []string) [][]int {
 	n, m := len(x), len(y)
 	table := make([][]int, n+1)

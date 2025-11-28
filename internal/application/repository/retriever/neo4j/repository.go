@@ -221,11 +221,3 @@ func listI2listS(list []any) []string {
 	}
 	return result
 }
-
-func mapI2mapS(prop map[string]any) map[string]string {
-	attributes := make(map[string]string)
-	for k, v := range prop {
-		attributes[k] = fmt.Sprintf("%v", v)
-	}
-	return attributes
-}

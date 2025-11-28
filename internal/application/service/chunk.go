@@ -58,7 +58,6 @@ func (s *chunkService) GetRepository() interfaces.ChunkRepository {
 // Returns:
 //   - error: Any error encountered during chunk creation
 func (s *chunkService) CreateChunks(ctx context.Context, chunks []*types.Chunk) error {
-
 	err := s.chunkRepository.CreateChunks(ctx, chunks)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{

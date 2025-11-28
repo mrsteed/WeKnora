@@ -638,7 +638,6 @@ func (e *AgentEngine) streamReflectionToEventBus(
 			}
 		},
 	)
-
 	if err != nil {
 		logger.Warnf(ctx, "Reflection failed: %v", err)
 		return "", err
@@ -710,7 +709,6 @@ func (e *AgentEngine) streamThinkingToEventBus(
 			}
 		},
 	)
-
 	if err != nil {
 		logger.Errorf(ctx, "[Agent][Thinking][Iteration-%d] Thinking stream failed: %v", iteration+1, err)
 		return nil, err
@@ -811,7 +809,6 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 			}
 		},
 	)
-
 	if err != nil {
 		logger.Errorf(ctx, "[Agent][FinalAnswer] Final answer generation failed: %v", err)
 		common.PipelineError(ctx, "Agent", "final_answer_stream_failed", map[string]interface{}{

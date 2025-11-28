@@ -190,11 +190,11 @@ func (t *ListKnowledgeChunksTool) buildOutput(
 	builder.WriteString("=== 知识文档分块 ===\n\n")
 
 	if knowledgeTitle != "" {
-		builder.WriteString(fmt.Sprintf("文档: %s (%s)\n", knowledgeTitle, knowledgeID))
+		fmt.Fprintf(builder, "文档: %s (%s)\n", knowledgeTitle, knowledgeID)
 	} else {
-		builder.WriteString(fmt.Sprintf("文档 ID: %s\n", knowledgeID))
+		fmt.Fprintf(builder, "文档 ID: %s\n", knowledgeID)
 	}
-	builder.WriteString(fmt.Sprintf("总分块数: %d\n", total))
+	fmt.Fprintf(builder, "总分块数: %d\n", total)
 
 	if fetched == 0 {
 		builder.WriteString("未找到任何分块，请确认文档是否已完成解析。\n")
@@ -203,14 +203,14 @@ func (t *ListKnowledgeChunksTool) buildOutput(
 		}
 		return builder.String()
 	}
-	builder.WriteString(fmt.Sprintf("本次拉取: %d 条， 检索范围: %d - %d\n\n", fetched, chunks[0].ChunkIndex, chunks[len(chunks)-1].ChunkIndex))
+	fmt.Fprintf(builder, "本次拉取: %d 条， 检索范围: %d - %d\n\n", fetched, chunks[0].ChunkIndex, chunks[len(chunks)-1].ChunkIndex)
 
 	builder.WriteString("=== 分块内容预览 ===\n\n")
 	for idx, c := range chunks {
-		builder.WriteString(fmt.Sprintf("Chunk #%d (Index %d)\n", idx+1, c.ChunkIndex+1))
-		builder.WriteString(fmt.Sprintf("  chunk_id: %s\n", c.ID))
-		builder.WriteString(fmt.Sprintf("  类型: %s\n", c.ChunkType))
-		builder.WriteString(fmt.Sprintf("  内容: %s\n\n", summarizeContent(c.Content)))
+		fmt.Fprintf(builder, "Chunk #%d (Index %d)\n", idx+1, c.ChunkIndex+1)
+		fmt.Fprintf(builder, "  chunk_id: %s\n", c.ID)
+		fmt.Fprintf(builder, "  类型: %s\n", c.ChunkType)
+		fmt.Fprintf(builder, "  内容: %s\n\n", summarizeContent(c.Content))
 	}
 
 	if int64(fetched) < total {

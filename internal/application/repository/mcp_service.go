@@ -30,7 +30,6 @@ func (r *mcpServiceRepository) GetByID(ctx context.Context, tenantID uint64, id 
 	err := r.db.WithContext(ctx).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		First(&service).Error
-
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -48,7 +47,6 @@ func (r *mcpServiceRepository) List(ctx context.Context, tenantID uint64) ([]*ty
 		Where("tenant_id = ?", tenantID).
 		Order("created_at DESC").
 		Find(&services).Error
-
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +61,6 @@ func (r *mcpServiceRepository) ListEnabled(ctx context.Context, tenantID uint64)
 		Where("tenant_id = ? AND enabled = ?", tenantID, true).
 		Order("created_at DESC").
 		Find(&services).Error
-
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +78,6 @@ func (r *mcpServiceRepository) ListByIDs(ctx context.Context, tenantID uint64, i
 	err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND id IN ?", tenantID, ids).
 		Find(&services).Error
-
 	if err != nil {
 		return nil, err
 	}

@@ -864,207 +864,6 @@ func (s *knowledgeService) cloneKnowledge(ctx context.Context, src *types.Knowle
 	return
 }
 
-// processDocument handles asynchronous processing of document files
-func (s *knowledgeService) processDocument(ctx context.Context,
-	kb *types.KnowledgeBase, knowledge *types.Knowledge, file *multipart.FileHeader, enableMultimodel bool,
-) {
-	logger.GetLogger(ctx).Infof("processDocument enableMultimodel: %v", enableMultimodel)
-
-	ctx, span := tracing.ContextWithSpan(ctx, "knowledgeService.processDocument")
-	defer span.End()
-	span.SetAttributes(
-		attribute.String("request_id", ctx.Value(types.RequestIDContextKey).(string)),
-		attribute.String("knowledge_base_id", kb.ID),
-		attribute.Int("tenant_id", int(kb.TenantID)),
-		attribute.String("knowledge_id", knowledge.ID),
-		attribute.String("file_name", knowledge.FileName),
-		attribute.String("file_type", knowledge.FileType),
-		attribute.String("file_path", knowledge.FilePath),
-		attribute.Int64("file_size", knowledge.FileSize),
-		attribute.String("embedding_model", knowledge.EmbeddingModelID),
-		attribute.Bool("enable_multimodal", enableMultimodel),
-	)
-	logger.GetLogger(ctx).Infof("processDocument trace id: %s", span.SpanContext().TraceID().String())
-
-	if !enableMultimodel && IsImageType(knowledge.FileType) {
-		logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
-			WithField("error", ErrImageNotParse).Errorf("processDocument image without enable multimodel")
-		knowledge.ParseStatus = "failed"
-		knowledge.ErrorMessage = ErrImageNotParse.Error()
-		s.repo.UpdateKnowledge(ctx, knowledge)
-		span.RecordError(ErrImageNotParse)
-		return
-	}
-
-	// Update status to processing
-	knowledge.ParseStatus = "processing"
-	knowledge.UpdatedAt = time.Now()
-	if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
-		span.RecordError(err)
-		return
-	}
-
-	// Read and chunk the document
-	f, err := file.Open()
-	if err != nil {
-		logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
-			WithField("error", err).Errorf("processDocument open file failed")
-		knowledge.ParseStatus = "failed"
-		knowledge.ErrorMessage = err.Error()
-		knowledge.UpdatedAt = time.Now()
-		s.repo.UpdateKnowledge(ctx, knowledge)
-		span.RecordError(err)
-		return
-	}
-	defer f.Close()
-
-	span.AddEvent("start read file")
-	contentBytes, err := io.ReadAll(f)
-	if err != nil {
-		knowledge.ParseStatus = "failed"
-		knowledge.ErrorMessage = err.Error()
-		knowledge.UpdatedAt = time.Now()
-		s.repo.UpdateKnowledge(ctx, knowledge)
-		span.RecordError(err)
-		return
-	}
-
-	// Split file into chunks using document reader service
-	logger.GetLogger(ctx).Infof("processDocument split file content size: %d, file name: %s, file type: %s, separators: %v, enable multimodal: %v",
-		len(contentBytes), knowledge.FileName, knowledge.FileType, kb.ChunkingConfig.Separators, enableMultimodel)
-	var vlmConfig *proto.VLMConfig
-	if enableMultimodel {
-		vlmConfig, err = s.getVLMProtoConfig(ctx, kb)
-		if err != nil {
-			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
-				WithField("error", err).Errorf("processDocument build VLM config failed")
-			knowledge.ParseStatus = "failed"
-			knowledge.ErrorMessage = err.Error()
-			knowledge.UpdatedAt = time.Now()
-			s.repo.UpdateKnowledge(ctx, knowledge)
-			span.RecordError(err)
-			return
-		}
-		if vlmConfig == nil {
-			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
-				Error("processDocument enable multimodal but VLM config missing")
-			knowledge.ParseStatus = "failed"
-			knowledge.ErrorMessage = "VLM 配置缺失"
-			knowledge.UpdatedAt = time.Now()
-			s.repo.UpdateKnowledge(ctx, knowledge)
-			span.RecordError(errors.New("vlm config missing"))
-			return
-		}
-	}
-
-	resp, err := s.docReaderClient.ReadFromFile(ctx, &proto.ReadFromFileRequest{
-		FileContent: contentBytes,
-		FileName:    knowledge.FileName,
-		FileType:    knowledge.FileType,
-		ReadConfig: &proto.ReadConfig{
-			ChunkSize:        int32(kb.ChunkingConfig.ChunkSize),
-			ChunkOverlap:     int32(kb.ChunkingConfig.ChunkOverlap),
-			Separators:       kb.ChunkingConfig.Separators,
-			EnableMultimodal: enableMultimodel,
-			StorageConfig: &proto.StorageConfig{
-				Provider:        proto.StorageProvider(proto.StorageProvider_value[strings.ToUpper(kb.StorageConfig.Provider)]),
-				Region:          kb.StorageConfig.Region,
-				BucketName:      kb.StorageConfig.BucketName,
-				AccessKeyId:     kb.StorageConfig.SecretID,
-				SecretAccessKey: kb.StorageConfig.SecretKey,
-				AppId:           kb.StorageConfig.AppID,
-				PathPrefix:      kb.StorageConfig.PathPrefix,
-			},
-			VlmConfig: vlmConfig,
-		},
-		RequestId: ctx.Value(types.RequestIDContextKey).(string),
-	})
-	if err != nil {
-		logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
-			WithField("error", err).Errorf("processDocument read file failed")
-		knowledge.ParseStatus = "failed"
-		knowledge.ErrorMessage = err.Error()
-		knowledge.UpdatedAt = time.Now()
-		s.repo.UpdateKnowledge(ctx, knowledge)
-		span.RecordError(err)
-		return
-	}
-
-	// Process and store chunks
-	span.AddEvent("start process chunks")
-	s.processChunks(ctx, kb, knowledge, resp.Chunks)
-}
-
-// processDocumentFromURL handles asynchronous processing of URL content
-func (s *knowledgeService) processDocumentFromURL(ctx context.Context,
-	kb *types.KnowledgeBase, knowledge *types.Knowledge, url string, enableMultimodel bool,
-) {
-	// Update status to processing
-	knowledge.ParseStatus = "processing"
-	knowledge.UpdatedAt = time.Now()
-	if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
-		return
-	}
-	logger.GetLogger(ctx).Infof("processDocumentFromURL enableMultimodel: %v", enableMultimodel)
-
-	// Fetch and chunk content from URL
-	var vlmConfig *proto.VLMConfig
-	if enableMultimodel {
-		cfg, cfgErr := s.getVLMProtoConfig(ctx, kb)
-		if cfgErr != nil {
-			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
-				WithField("error", cfgErr).Errorf("processDocumentFromURL build VLM config failed")
-			knowledge.ParseStatus = "failed"
-			knowledge.ErrorMessage = cfgErr.Error()
-			knowledge.UpdatedAt = time.Now()
-			s.repo.UpdateKnowledge(ctx, knowledge)
-			return
-		}
-		if cfg == nil {
-			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
-				Error("processDocumentFromURL enable multimodal but VLM config missing")
-			knowledge.ParseStatus = "failed"
-			knowledge.ErrorMessage = "VLM 配置缺失"
-			knowledge.UpdatedAt = time.Now()
-			s.repo.UpdateKnowledge(ctx, knowledge)
-			return
-		}
-		vlmConfig = cfg
-	}
-
-	resp, err := s.docReaderClient.ReadFromURL(ctx, &proto.ReadFromURLRequest{
-		Url:   url,
-		Title: knowledge.Title,
-		ReadConfig: &proto.ReadConfig{
-			ChunkSize:        int32(kb.ChunkingConfig.ChunkSize),
-			ChunkOverlap:     int32(kb.ChunkingConfig.ChunkOverlap),
-			Separators:       kb.ChunkingConfig.Separators,
-			EnableMultimodal: enableMultimodel,
-			StorageConfig: &proto.StorageConfig{
-				Provider:        proto.StorageProvider(proto.StorageProvider_value[strings.ToUpper(kb.StorageConfig.Provider)]),
-				Region:          kb.StorageConfig.Region,
-				BucketName:      kb.StorageConfig.BucketName,
-				AccessKeyId:     kb.StorageConfig.SecretID,
-				SecretAccessKey: kb.StorageConfig.SecretKey,
-				AppId:           kb.StorageConfig.AppID,
-				PathPrefix:      kb.StorageConfig.PathPrefix,
-			},
-			VlmConfig: vlmConfig,
-		},
-		RequestId: ctx.Value(types.RequestIDContextKey).(string),
-	})
-	if err != nil {
-		knowledge.ParseStatus = "failed"
-		knowledge.ErrorMessage = err.Error()
-		knowledge.UpdatedAt = time.Now()
-		s.repo.UpdateKnowledge(ctx, knowledge)
-		return
-	}
-
-	// Process and store chunks
-	s.processChunks(ctx, kb, knowledge, resp.Chunks)
-}
-
 // processDocumentFromPassage handles asynchronous processing of text passages
 func (s *knowledgeService) processDocumentFromPassage(ctx context.Context,
 	kb *types.KnowledgeBase, knowledge *types.Knowledge, passage []string,
@@ -1767,7 +1566,6 @@ func (s *knowledgeService) CloneKnowledgeBase(ctx context.Context, srcID, dstID 
 	batch := 10
 	g, gctx := errgroup.WithContext(ctx)
 	for ids := range slices.Chunk(delKnowledge, batch) {
-		ids = ids
 		g.Go(func() error {
 			err := s.DeleteKnowledgeList(gctx, ids)
 			if err != nil {
@@ -1787,7 +1585,6 @@ func (s *knowledgeService) CloneKnowledgeBase(ctx context.Context, srcID, dstID 
 	g, gctx = errgroup.WithContext(ctx)
 	g.SetLimit(batch)
 	for _, knowledge := range addKnowledge {
-		knowledge = knowledge
 		g.Go(func() error {
 			srcKn, err := s.repo.GetKnowledgeByID(gctx, srcKB.TenantID, knowledge)
 			if err != nil {
@@ -1916,7 +1713,8 @@ func (s *knowledgeService) UpdateImageInfo(ctx context.Context, knowledgeID stri
 		}
 
 		// Mark that we've found chunks for this image
-		if child.ChunkType == types.ChunkTypeImageCaption {
+		switch child.ChunkType {
+		case types.ChunkTypeImageCaption:
 			hasCaptionChunk = true
 			// Update caption if it has changed
 			if image.Caption != cImageInfo[0].Caption {
@@ -1924,7 +1722,7 @@ func (s *knowledgeService) UpdateImageInfo(ctx context.Context, knowledgeID stri
 				child.ImageInfo = imageInfo
 				updateChunk = append(updateChunk, chunkChildren[i])
 			}
-		} else if child.ChunkType == types.ChunkTypeImageOCR {
+		case types.ChunkTypeImageOCR:
 			hasOCRChunk = true
 			// Update OCR if it has changed
 			if image.OCRText != cImageInfo[0].OCRText {
@@ -2240,7 +2038,8 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 
 // calculateAppendOperations 计算Append模式下需要处理的条目，跳过已存在且内容相同的条目
 func (s *knowledgeService) calculateAppendOperations(ctx context.Context,
-	tenantID uint64, knowledgeID string, entries []types.FAQEntryPayload) ([]types.FAQEntryPayload, int, error) {
+	tenantID uint64, knowledgeID string, entries []types.FAQEntryPayload,
+) ([]types.FAQEntryPayload, int, error) {
 	if len(entries) == 0 {
 		return []types.FAQEntryPayload{}, 0, nil
 	}
@@ -2249,7 +2048,8 @@ func (s *knowledgeService) calculateAppendOperations(ctx context.Context,
 
 // calculateReplaceOperations 计算Replace模式下需要删除、创建、更新的条目
 func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
-	tenantID uint64, knowledgeID string, newEntries []types.FAQEntryPayload) ([]types.FAQEntryPayload, []*types.Chunk, int, error) {
+	tenantID uint64, knowledgeID string, newEntries []types.FAQEntryPayload,
+) ([]types.FAQEntryPayload, []*types.Chunk, int, error) {
 	// 计算所有新条目的 content hash，并同时构建 hash 到 entry 的映射
 	type entryWithHash struct {
 		entry types.FAQEntryPayload
@@ -2316,7 +2116,8 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 
 // executeFAQImport 执行实际的FAQ导入逻辑
 func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, kbID string,
-	payload *types.FAQBatchUpsertPayload, tenantID uint64, processedCount int) (err error) {
+	payload *types.FAQBatchUpsertPayload, tenantID uint64, processedCount int,
+) (err error) {
 	// 保存知识库和embedding模型信息，用于清理索引
 	var kb *types.KnowledgeBase
 	var embeddingModel embedding.Embedder
@@ -2364,8 +2165,7 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 
 	if payload.Mode == types.FAQBatchModeReplace {
 		// Replace模式：计算需要删除、创建、更新的条目
-		entriesToProcess, chunksToDelete, skippedCount, err =
-			s.calculateReplaceOperations(ctx, tenantID, faqKnowledge.ID, payload.Entries)
+		entriesToProcess, chunksToDelete, skippedCount, err = s.calculateReplaceOperations(ctx, tenantID, faqKnowledge.ID, payload.Entries)
 		if err != nil {
 			return fmt.Errorf("failed to calculate replace operations: %w", err)
 		}
@@ -3080,13 +2880,15 @@ func (s *knowledgeService) ensureFAQKnowledge(ctx context.Context, tenantID uint
 }
 
 func (s *knowledgeService) updateFAQImportStatus(ctx context.Context, knowledgeID string, status types.FAQImportTaskStatus,
-	progress, total, processed int, errorMsg string) error {
+	progress, total, processed int, errorMsg string,
+) error {
 	return s.updateFAQImportStatusWithRanges(ctx, knowledgeID, status, progress, total, processed, errorMsg)
 }
 
 // updateFAQImportStatusWithRanges 更新FAQ Knowledge的导入任务状态，包含NextChunkIndex
 func (s *knowledgeService) updateFAQImportStatusWithRanges(ctx context.Context, knowledgeID string, status types.FAQImportTaskStatus,
-	progress, total, processed int, errorMsg string) error {
+	progress, total, processed int, errorMsg string,
+) error {
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
 	if err != nil {

@@ -30,4 +30,3 @@ var (
 	// ErrConnectionClosed is returned when connection is closed unexpectedly
 	ErrConnectionClosed = errors.New("connection closed")
 )
-

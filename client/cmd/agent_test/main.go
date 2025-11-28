@@ -277,7 +277,6 @@ func (cli *CLI) askQuestion(query string) {
 
 		return nil
 	})
-
 	if err != nil {
 		fmt.Printf("%s✗ Agent QA failed: %v%s\n", ColorRed, err, ColorReset)
 		return

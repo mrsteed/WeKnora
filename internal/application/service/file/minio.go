@@ -21,7 +21,8 @@ type minioFileService struct {
 
 // NewMinioFileService creates a MinIO file service
 func NewMinioFileService(endpoint,
-	accessKeyID, secretAccessKey, bucketName string, useSSL bool) (interfaces.FileService, error) {
+	accessKeyID, secretAccessKey, bucketName string, useSSL bool,
+) (interfaces.FileService, error) {
 	// Initialize MinIO client
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),

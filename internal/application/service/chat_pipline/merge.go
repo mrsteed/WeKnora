@@ -438,7 +438,6 @@ func (p *PluginMerge) expandShortContextWithNeighbors(ctx context.Context, chatM
 					"neighbor_len":        runeLen(chunk.Content),
 				})
 			}
-
 		}
 	}
 

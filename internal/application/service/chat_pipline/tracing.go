@@ -77,7 +77,7 @@ func (p *PluginTracing) OnEvent(ctx context.Context,
 
 // Search traces search operations in the chat pipeline
 func (p *PluginTracing) Search(ctx context.Context,
-    eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
+	eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
 ) *PluginError {
 	_, span := tracing.ContextWithSpan(ctx, "PluginTracing.Search")
 	defer span.End()
@@ -87,23 +87,23 @@ func (p *PluginTracing) Search(ctx context.Context,
 		attribute.Float64("keyword_threshold", chatManage.KeywordThreshold),
 		attribute.Int("match_count", chatManage.EmbeddingTopK),
 	)
-    err := next()
-    searchResultJson, _ := json.Marshal(chatManage.SearchResult)
-    unique := make(map[string]struct{})
-    for _, r := range chatManage.SearchResult {
-        unique[r.ID] = struct{}{}
-    }
-    span.SetAttributes(
-        attribute.String("hybrid_search", string(searchResultJson)),
-        attribute.String("processed_query", chatManage.ProcessedQuery),
-        attribute.Int("search_unique_count", len(unique)),
-    )
-    return err
+	err := next()
+	searchResultJson, _ := json.Marshal(chatManage.SearchResult)
+	unique := make(map[string]struct{})
+	for _, r := range chatManage.SearchResult {
+		unique[r.ID] = struct{}{}
+	}
+	span.SetAttributes(
+		attribute.String("hybrid_search", string(searchResultJson)),
+		attribute.String("processed_query", chatManage.ProcessedQuery),
+		attribute.Int("search_unique_count", len(unique)),
+	)
+	return err
 }
 
 // Rerank traces rerank operations in the chat pipeline
 func (p *PluginTracing) Rerank(ctx context.Context,
-    eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
+	eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
 ) *PluginError {
 	_, span := tracing.ContextWithSpan(ctx, "PluginTracing.Rerank")
 	defer span.End()
@@ -114,14 +114,14 @@ func (p *PluginTracing) Rerank(ctx context.Context,
 		attribute.Float64("rerank_filter_threshold", chatManage.RerankThreshold),
 		attribute.Int("rerank_filter_topk", chatManage.RerankTopK),
 	)
-    err := next()
-    resultJson, _ := json.Marshal(chatManage.RerankResult)
-    span.SetAttributes(
-        attribute.Int("rerank_resp_count", len(chatManage.RerankResult)),
-        attribute.String("rerank_resp_results", string(resultJson)),
-        attribute.String("query_intent", chatManage.QueryIntent),
-    )
-    return err
+	err := next()
+	resultJson, _ := json.Marshal(chatManage.RerankResult)
+	span.SetAttributes(
+		attribute.Int("rerank_resp_count", len(chatManage.RerankResult)),
+		attribute.String("rerank_resp_results", string(resultJson)),
+		attribute.String("query_intent", chatManage.QueryIntent),
+	)
+	return err
 }
 
 // Merge traces merge operations in the chat pipeline

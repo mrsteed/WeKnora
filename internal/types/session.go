@@ -17,6 +17,7 @@ const (
 	FallbackStrategyModel FallbackStrategy = "model" // Model fallback response
 )
 
+// SummaryConfig represents the summary configuration for a session
 type SummaryConfig struct {
 	// Max tokens
 	MaxTokens int `json:"max_tokens"`
@@ -109,6 +110,7 @@ func (s *Session) BeforeCreate(tx *gorm.DB) (err error) {
 	return nil
 }
 
+// StringArray represents a list of strings
 type StringArray []string
 
 // Value implements the driver.Valuer interface, used to convert StringArray to database value

@@ -183,7 +183,8 @@ func (b *graphBuilder) extractEntities(ctx context.Context, chunk *types.Chunk) 
 // extractRelationships extracts relationships between entities
 // It analyzes semantic connections between multiple entities and establishes relationships
 func (b *graphBuilder) extractRelationships(ctx context.Context,
-	chunks []*types.Chunk, entities []*types.Entity) error {
+	chunks []*types.Chunk, entities []*types.Entity,
+) error {
 	log := logger.GetLogger(ctx)
 	log.Infof("Extracting relationships from %d entities across %d chunks", len(entities), len(chunks))
 
@@ -340,7 +341,7 @@ func (b *graphBuilder) mergeChunkContents(chunks []*types.Chunk) string {
 		return ""
 	}
 
-	var chunkContents = chunks[0].Content
+	chunkContents := chunks[0].Content
 	preChunk := chunks[0]
 
 	for i := 1; i < len(chunks); i++ {
@@ -369,7 +370,7 @@ func (b *graphBuilder) BuildGraph(ctx context.Context, chunks []*types.Chunk) er
 	startTime := time.Now()
 
 	// Concurrently extract entities from each document chunk
-	var chunkEntities = make([][]*types.Entity, len(chunks))
+	chunkEntities := make([][]*types.Entity, len(chunks))
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(MaxConcurrentEntityExtractions) // Limit concurrency
 
@@ -868,7 +869,8 @@ func (b *graphBuilder) getEntityByTitle(title string) *types.Entity {
 // dfs depth-first search to find connected components
 func dfs(entityTitle string,
 	adjacencyList map[string]map[string]*types.Relationship,
-	visited map[string]bool, component *[]string) {
+	visited map[string]bool, component *[]string,
+) {
 	visited[entityTitle] = true
 	*component = append(*component, entityTitle)
 
