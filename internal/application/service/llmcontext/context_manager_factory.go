@@ -22,7 +22,11 @@ const (
 )
 
 // NewContextManagerFromConfig creates a ContextManager based on configuration
-func NewContextManagerFromConfig(contextCfg *types.ContextConfig, storage ContextStorage, chatModel chat.Chat) interfaces.ContextManager {
+func NewContextManagerFromConfig(
+	contextCfg *types.ContextConfig,
+	storage ContextStorage,
+	chatModel chat.Chat,
+) interfaces.ContextManager {
 	// Use default values if config is nil
 	if contextCfg == nil {
 		logger.Info(context.TODO(), "ContextManager config not found, using default memory-based context manager")

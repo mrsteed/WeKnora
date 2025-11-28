@@ -373,7 +373,11 @@ func (t *DatabaseQueryTool) validateAndSecureSQL(sqlQuery string) (string, error
 }
 
 // formatQueryResults formats query results into readable text
-func (t *DatabaseQueryTool) formatQueryResults(columns []string, results []map[string]interface{}, query string) string {
+func (t *DatabaseQueryTool) formatQueryResults(
+	columns []string,
+	results []map[string]interface{},
+	query string,
+) string {
 	output := "=== 查询结果 ===\n\n"
 	output += fmt.Sprintf("执行的SQL: %s\n\n", query)
 	output += fmt.Sprintf("返回 %d 行数据\n\n", len(results))

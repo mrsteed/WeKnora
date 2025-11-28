@@ -11,37 +11,37 @@ import (
 // Tenant represents the tenant
 type Tenant struct {
 	// ID
-	ID uint64 `yaml:"id" json:"id" gorm:"primaryKey"`
+	ID uint64 `yaml:"id"                  json:"id"                  gorm:"primaryKey"`
 	// Name
-	Name string `yaml:"name" json:"name"`
+	Name string `yaml:"name"                json:"name"`
 	// Description
-	Description string `yaml:"description" json:"description"`
+	Description string `yaml:"description"         json:"description"`
 	// API key
-	APIKey string `yaml:"api_key" json:"api_key"`
+	APIKey string `yaml:"api_key"             json:"api_key"`
 	// Status
-	Status string `yaml:"status" json:"status" gorm:"default:'active'"`
+	Status string `yaml:"status"              json:"status"              gorm:"default:'active'"`
 	// Retriever engines
-	RetrieverEngines RetrieverEngines `yaml:"retriever_engines" json:"retriever_engines" gorm:"type:json"`
+	RetrieverEngines RetrieverEngines `yaml:"retriever_engines"   json:"retriever_engines"   gorm:"type:json"`
 	// Business
-	Business string `yaml:"business" json:"business"`
+	Business string `yaml:"business"            json:"business"`
 	// Storage quota (Bytes), default is 10GB, including vector, original file, text, index, etc.
-	StorageQuota int64 `yaml:"storage_quota" json:"storage_quota" gorm:"default:10737418240"`
+	StorageQuota int64 `yaml:"storage_quota"       json:"storage_quota"       gorm:"default:10737418240"`
 	// Storage used (Bytes)
-	StorageUsed int64 `yaml:"storage_used" json:"storage_used" gorm:"default:0"`
+	StorageUsed int64 `yaml:"storage_used"        json:"storage_used"        gorm:"default:0"`
 	// Global Agent configuration for this tenant (default for all sessions)
-	AgentConfig *AgentConfig `yaml:"agent_config" json:"agent_config" gorm:"type:jsonb"`
+	AgentConfig *AgentConfig `yaml:"agent_config"        json:"agent_config"        gorm:"type:jsonb"`
 	// Global Context configuration for this tenant (default for all sessions)
-	ContextConfig *ContextConfig `yaml:"context_config" json:"context_config" gorm:"type:jsonb"`
+	ContextConfig *ContextConfig `yaml:"context_config"      json:"context_config"      gorm:"type:jsonb"`
 	// Global WebSearch configuration for this tenant
-	WebSearchConfig *WebSearchConfig `yaml:"web_search_config" json:"web_search_config" gorm:"type:jsonb"`
+	WebSearchConfig *WebSearchConfig `yaml:"web_search_config"   json:"web_search_config"   gorm:"type:jsonb"`
 	// Global Conversation configuration for this tenant (default for normal mode sessions)
 	ConversationConfig *ConversationConfig `yaml:"conversation_config" json:"conversation_config" gorm:"type:jsonb"`
 	// Creation time
-	CreatedAt time.Time `yaml:"created_at" json:"created_at"`
+	CreatedAt time.Time `yaml:"created_at"          json:"created_at"`
 	// Last updated time
-	UpdatedAt time.Time `yaml:"updated_at" json:"updated_at"`
+	UpdatedAt time.Time `yaml:"updated_at"          json:"updated_at"`
 	// Deletion time
-	DeletedAt gorm.DeletedAt `yaml:"deleted_at" json:"deleted_at" gorm:"index"`
+	DeletedAt gorm.DeletedAt `yaml:"deleted_at"          json:"deleted_at"          gorm:"index"`
 }
 
 // RetrieverEngines represents the retriever engines for a tenant

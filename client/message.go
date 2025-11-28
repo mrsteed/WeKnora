@@ -19,7 +19,7 @@ type Message struct {
 	RequestID           string          `json:"request_id"`
 	Content             string          `json:"content"`
 	Role                string          `json:"role"`
-	KnowledgeReferences []*SearchResult `json:"knowledge_references" `
+	KnowledgeReferences []*SearchResult `json:"knowledge_references"`
 	IsCompleted         bool            `json:"is_completed"`
 	CreatedAt           time.Time       `json:"created_at"`
 	UpdatedAt           time.Time       `json:"updated_at"`
@@ -32,7 +32,12 @@ type MessageListResponse struct {
 }
 
 // LoadMessages loads session messages, supports pagination and time filtering
-func (c *Client) LoadMessages(ctx context.Context, sessionID string, limit int, beforeTime *time.Time) ([]Message, error) {
+func (c *Client) LoadMessages(
+	ctx context.Context,
+	sessionID string,
+	limit int,
+	beforeTime *time.Time,
+) ([]Message, error) {
 	path := fmt.Sprintf("/api/v1/messages/%s/load", sessionID)
 
 	queryParams := url.Values{}
@@ -61,7 +66,12 @@ func (c *Client) GetRecentMessages(ctx context.Context, sessionID string, limit 
 }
 
 // GetMessagesBefore gets messages before a specified time
-func (c *Client) GetMessagesBefore(ctx context.Context, sessionID string, beforeTime time.Time, limit int) ([]Message, error) {
+func (c *Client) GetMessagesBefore(
+	ctx context.Context,
+	sessionID string,
+	beforeTime time.Time,
+	limit int,
+) ([]Message, error) {
 	return c.LoadMessages(ctx, sessionID, limit, &beforeTime)
 }
 

@@ -150,7 +150,11 @@ func (as *AgentSession) Ask(ctx context.Context, query string, callback AgentEve
 }
 
 // AskWithRequest sends a customized agent request for this session.
-func (as *AgentSession) AskWithRequest(ctx context.Context, request *AgentQARequest, callback AgentEventCallback) error {
+func (as *AgentSession) AskWithRequest(
+	ctx context.Context,
+	request *AgentQARequest,
+	callback AgentEventCallback,
+) error {
 	return as.client.AgentQAStreamWithRequest(ctx, as.sessionID, request, callback)
 }
 

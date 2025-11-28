@@ -203,7 +203,13 @@ func (t *ListKnowledgeChunksTool) buildOutput(
 		}
 		return builder.String()
 	}
-	fmt.Fprintf(builder, "本次拉取: %d 条， 检索范围: %d - %d\n\n", fetched, chunks[0].ChunkIndex, chunks[len(chunks)-1].ChunkIndex)
+	fmt.Fprintf(
+		builder,
+		"本次拉取: %d 条， 检索范围: %d - %d\n\n",
+		fetched,
+		chunks[0].ChunkIndex,
+		chunks[len(chunks)-1].ChunkIndex,
+	)
 
 	builder.WriteString("=== 分块内容预览 ===\n\n")
 	for idx, c := range chunks {

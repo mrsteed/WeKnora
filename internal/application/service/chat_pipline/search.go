@@ -299,7 +299,11 @@ func buildContentSignature(content string) string {
 }
 
 // searchKnowledgeBases performs KB searches for rewrite and processed queries across KB IDs
-func (p *PluginSearch) searchKnowledgeBases(ctx context.Context, knowledgeBaseIDs []string, chatManage *types.ChatManage) []*types.SearchResult {
+func (p *PluginSearch) searchKnowledgeBases(
+	ctx context.Context,
+	knowledgeBaseIDs []string,
+	chatManage *types.ChatManage,
+) []*types.SearchResult {
 	// Build base params for rewrite query
 	baseParams := types.SearchParams{
 		QueryText:        strings.TrimSpace(chatManage.RewriteQuery),

@@ -28,13 +28,13 @@ const (
 // and references to the physical file if applicable.
 type Knowledge struct {
 	// Unique identifier of the knowledge
-	ID string `json:"id" gorm:"type:varchar(36);primaryKey"`
+	ID string `json:"id"                 gorm:"type:varchar(36);primaryKey"`
 	// Tenant ID
 	TenantID uint64 `json:"tenant_id"`
 	// ID of the knowledge base
 	KnowledgeBaseID string `json:"knowledge_base_id"`
 	// Optional tag ID for categorization within a knowledge base
-	TagID string `json:"tag_id" gorm:"type:varchar(36);index"`
+	TagID string `json:"tag_id"             gorm:"type:varchar(36);index"`
 	// Type of the knowledge
 	Type string `json:"type"`
 	// Title of the knowledge
@@ -62,7 +62,7 @@ type Knowledge struct {
 	// Storage size of the knowledge
 	StorageSize int64 `json:"storage_size"`
 	// Metadata of the knowledge
-	Metadata JSON `json:"metadata" gorm:"type:json"`
+	Metadata JSON `json:"metadata"           gorm:"type:json"`
 	// Creation time of the knowledge
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time of the knowledge
@@ -72,7 +72,7 @@ type Knowledge struct {
 	// Error message of the knowledge
 	ErrorMessage string `json:"error_message"`
 	// Deletion time of the knowledge
-	DeletedAt gorm.DeletedAt `json:"deleted_at" gorm:"index"`
+	DeletedAt gorm.DeletedAt `json:"deleted_at"         gorm:"index"`
 }
 
 // GetMetadata returns the metadata as a map[string]string.

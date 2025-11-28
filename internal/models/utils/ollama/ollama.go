@@ -186,7 +186,8 @@ func (s *OllamaService) EnsureModelAvailable(ctx context.Context, modelName stri
 	available, err := s.IsModelAvailable(ctx, modelName)
 	if err != nil {
 		if s.isOptional {
-			logger.GetLogger(ctx).Warnf("Failed to check model %s availability, but Ollama is set as optional", modelName)
+			logger.GetLogger(ctx).
+				Warnf("Failed to check model %s availability, but Ollama is set as optional", modelName)
 			return nil
 		}
 		return err

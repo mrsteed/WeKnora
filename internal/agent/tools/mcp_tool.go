@@ -177,7 +177,12 @@ func sanitizeName(name string) string {
 }
 
 // RegisterMCPTools registers MCP tools from given services
-func RegisterMCPTools(ctx context.Context, registry *ToolRegistry, services []*types.MCPService, mcpManager *mcp.MCPManager) error {
+func RegisterMCPTools(
+	ctx context.Context,
+	registry *ToolRegistry,
+	services []*types.MCPService,
+	mcpManager *mcp.MCPManager,
+) error {
 	if len(services) == 0 {
 		return nil
 	}
@@ -239,7 +244,11 @@ func RegisterMCPTools(ctx context.Context, registry *ToolRegistry, services []*t
 }
 
 // GetMCPToolsInfo returns information about available MCP tools
-func GetMCPToolsInfo(ctx context.Context, services []*types.MCPService, mcpManager *mcp.MCPManager) (map[string][]string, error) {
+func GetMCPToolsInfo(
+	ctx context.Context,
+	services []*types.MCPService,
+	mcpManager *mcp.MCPManager,
+) (map[string][]string, error) {
 	result := make(map[string][]string)
 
 	// Use provided context with timeout

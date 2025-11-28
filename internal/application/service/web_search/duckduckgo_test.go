@@ -95,10 +95,12 @@ func TestDuckDuckGoProvider_Search_HTMLSuccess(t *testing.T) {
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
-	if results[0].Title != "Example One" || !strings.HasPrefix(results[0].URL, "https://example.com/") || results[0].Snippet != "Snippet one" {
+	if results[0].Title != "Example One" || !strings.HasPrefix(results[0].URL, "https://example.com/") ||
+		results[0].Snippet != "Snippet one" {
 		t.Fatalf("unexpected first result: %+v", results[0])
 	}
-	if results[1].Title != "Example Two" || !strings.HasPrefix(results[1].URL, "https://example.org/") || results[1].Snippet != "Snippet two" {
+	if results[1].Title != "Example Two" || !strings.HasPrefix(results[1].URL, "https://example.org/") ||
+		results[1].Snippet != "Snippet two" {
 		t.Fatalf("unexpected second result: %+v", results[1])
 	}
 }

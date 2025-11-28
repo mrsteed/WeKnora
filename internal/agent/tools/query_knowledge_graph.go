@@ -369,7 +369,10 @@ func (t *QueryKnowledgeGraphTool) Execute(ctx context.Context, args map[string]i
 }
 
 // buildGraphVisualizationData builds structured data for graph visualization
-func buildGraphVisualizationData(results []*types.SearchResult, graphConfigs map[string]map[string]interface{}) map[string]interface{} {
+func buildGraphVisualizationData(
+	results []*types.SearchResult,
+	graphConfigs map[string]map[string]interface{},
+) map[string]interface{} {
 	// Build a simple graph structure for frontend visualization
 	nodes := make([]map[string]interface{}, 0)
 	edges := make([]map[string]interface{}, 0)

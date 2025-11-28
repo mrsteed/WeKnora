@@ -9,14 +9,14 @@ import (
 
 // VectorEmbedding defines the Elasticsearch document structure for vector embeddings
 type VectorEmbedding struct {
-	Content         string    `json:"content" gorm:"column:content;not null"`            // Text content of the chunk
-	SourceID        string    `json:"source_id" gorm:"column:source_id;not null"`        // ID of the source document
-	SourceType      int       `json:"source_type" gorm:"column:source_type;not null"`    // Type of the source document
-	ChunkID         string    `json:"chunk_id" gorm:"column:chunk_id"`                   // Unique ID of the text chunk
-	KnowledgeID     string    `json:"knowledge_id" gorm:"column:knowledge_id"`           // ID of the knowledge item
-	KnowledgeBaseID string    `json:"knowledge_base_id" gorm:"column:knowledge_base_id"` // ID of the knowledge base
-	Embedding       []float32 `json:"embedding" gorm:"column:embedding;not null"`        // Vector embedding of the content
-	IsEnabled       bool      `json:"is_enabled"`                                        // Whether the chunk is enabled
+	Content         string    `json:"content"           gorm:"column:content;not null"`     // Text content of the chunk
+	SourceID        string    `json:"source_id"         gorm:"column:source_id;not null"`   // ID of the source document
+	SourceType      int       `json:"source_type"       gorm:"column:source_type;not null"` // Type of the source document
+	ChunkID         string    `json:"chunk_id"          gorm:"column:chunk_id"`             // Unique ID of the text chunk
+	KnowledgeID     string    `json:"knowledge_id"      gorm:"column:knowledge_id"`         // ID of the knowledge item
+	KnowledgeBaseID string    `json:"knowledge_base_id" gorm:"column:knowledge_base_id"`    // ID of the knowledge base
+	Embedding       []float32 `json:"embedding"         gorm:"column:embedding;not null"`   // Vector embedding of the content
+	IsEnabled       bool      `json:"is_enabled"`                                           // Whether the chunk is enabled
 }
 
 // VectorEmbeddingWithScore extends VectorEmbedding with similarity score

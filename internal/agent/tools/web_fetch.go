@@ -252,7 +252,10 @@ func (t *WebFetchTool) validateParams(p webFetchParams) error {
 	return nil
 }
 
-func (t *WebFetchTool) executeFetch(ctx context.Context, params webFetchParams) (string, map[string]interface{}, error) {
+func (t *WebFetchTool) executeFetch(
+	ctx context.Context,
+	params webFetchParams,
+) (string, map[string]interface{}, error) {
 	logger.Infof(ctx, "[Tool][WebFetch] Fetching URL: %s", params.URL)
 
 	finalURL := t.normalizeGitHubURL(params.URL)
@@ -375,14 +378,17 @@ func (t *WebFetchTool) fetchHTMLContent(ctx context.Context, targetURL string) (
 func (t *WebFetchTool) fetchWithChromedp(ctx context.Context, targetURL string) (string, error) {
 	logger.Debugf(ctx, "[Tool][WebFetch] Chromedp 抓取开始 url=%s", targetURL)
 
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+	opts := append(
+		chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-setuid-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("disable-features", "VizDisplayCompositor"),
-		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+		chromedp.UserAgent(
+			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		),
 	)
 
 	allocCtx, cancel := chromedp.NewExecAllocator(ctx, opts...)
@@ -435,7 +441,10 @@ func (t *WebFetchTool) fetchWithTimeout(ctx context.Context, targetURL string) (
 	}
 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; WebFetchTool/1.0)")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
+	req.Header.Set(
+		"Accept",
+		"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+	)
 	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 	req.Header.Set("Cache-Control", "no-cache")
 

@@ -152,7 +152,11 @@ func (n *Neo4jRepository) DelGraph(ctx context.Context, namespaces []types.NameS
 	return nil
 }
 
-func (n *Neo4jRepository) SearchNode(ctx context.Context, namespace types.NameSpace, nodes []string) (*types.GraphData, error) {
+func (n *Neo4jRepository) SearchNode(
+	ctx context.Context,
+	namespace types.NameSpace,
+	nodes []string,
+) (*types.GraphData, error) {
 	if n.driver == nil {
 		logger.Warnf(ctx, "NOT SUPPORT RETRIEVE GRAPH")
 		return nil, nil

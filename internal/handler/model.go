@@ -61,11 +61,11 @@ func hideSensitiveInfo(model *types.Model) *types.Model {
 // CreateModelRequest defines the structure for model creation requests
 // Contains all fields required to create a new model in the system
 type CreateModelRequest struct {
-	Name        string                `json:"name" binding:"required"`
-	Type        types.ModelType       `json:"type" binding:"required"`
-	Source      types.ModelSource     `json:"source" binding:"required"`
+	Name        string                `json:"name"        binding:"required"`
+	Type        types.ModelType       `json:"type"        binding:"required"`
+	Source      types.ModelSource     `json:"source"      binding:"required"`
 	Description string                `json:"description"`
-	Parameters  types.ModelParameters `json:"parameters" binding:"required"`
+	Parameters  types.ModelParameters `json:"parameters"  binding:"required"`
 }
 
 // CreateModel handles the HTTP request to create a new model
@@ -109,7 +109,12 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Model created successfully, ID: %s, Name: %s", secutils.SanitizeForLog(model.ID), secutils.SanitizeForLog(model.Name))
+	logger.Infof(
+		ctx,
+		"Model created successfully, ID: %s, Name: %s",
+		secutils.SanitizeForLog(model.ID),
+		secutils.SanitizeForLog(model.Name),
+	)
 
 	// Hide sensitive information for builtin models (though newly created models are unlikely to be builtin)
 	responseModel := hideSensitiveInfo(model)

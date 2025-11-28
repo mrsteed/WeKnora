@@ -38,7 +38,11 @@ func isNoAuthAPI(path string, method string) bool {
 }
 
 // Auth 认证中间件
-func Auth(tenantService interfaces.TenantService, userService interfaces.UserService, cfg *config.Config) gin.HandlerFunc {
+func Auth(
+	tenantService interfaces.TenantService,
+	userService interfaces.UserService,
+	cfg *config.Config,
+) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// ignore OPTIONS request
 		if c.Request.Method == "OPTIONS" {

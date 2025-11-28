@@ -91,7 +91,12 @@ func (p *PluginPreprocess) ActivationEvents() []types.EventType {
 }
 
 // OnEvent Process events
-func (p *PluginPreprocess) OnEvent(ctx context.Context, eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError) *PluginError {
+func (p *PluginPreprocess) OnEvent(
+	ctx context.Context,
+	eventType types.EventType,
+	chatManage *types.ChatManage,
+	next func() *PluginError,
+) *PluginError {
 	rawQuery := strings.TrimSpace(chatManage.RewriteQuery)
 	if rawQuery == "" {
 		return next()
@@ -270,15 +275,30 @@ type intentResp struct {
 
 func (p *PluginPreprocess) detectIntentLLM(ctx context.Context, chatManage *types.ChatManage, text string) string {
 	if p.modelService == nil || chatManage.ChatModelID == "" {
-		pipelineWarn(ctx, "IntentDetect", "skip", map[string]interface{}{"reason": "no_model", "session_id": chatManage.SessionID})
+		pipelineWarn(
+			ctx,
+			"IntentDetect",
+			"skip",
+			map[string]interface{}{"reason": "no_model", "session_id": chatManage.SessionID},
+		)
 		return "general"
 	}
 	chatModel, err := p.modelService.GetChatModel(ctx, chatManage.ChatModelID)
 	if err != nil {
-		pipelineWarn(ctx, "IntentDetect", "get_model_failed", map[string]interface{}{"error": err.Error(), "model_id": chatManage.ChatModelID})
+		pipelineWarn(
+			ctx,
+			"IntentDetect",
+			"get_model_failed",
+			map[string]interface{}{"error": err.Error(), "model_id": chatManage.ChatModelID},
+		)
 		return "general"
 	}
-	pipelineInfo(ctx, "IntentDetect", "start", map[string]interface{}{"session_id": chatManage.SessionID, "model_id": chatManage.ChatModelID})
+	pipelineInfo(
+		ctx,
+		"IntentDetect",
+		"start",
+		map[string]interface{}{"session_id": chatManage.SessionID, "model_id": chatManage.ChatModelID},
+	)
 	sys := "You are a query intent classifier. Classify the user's query into one of: definition, howto, compare, qa, general. Respond ONLY with a JSON object {\"intent\": \"...\", \"confidence\": 0.0 } inside a markdown fenced block."
 	usr := text
 	think := false
@@ -296,7 +316,12 @@ func (p *PluginPreprocess) detectIntentLLM(ctx context.Context, chatManage *type
 		pipelineWarn(ctx, "IntentDetect", "parse_failed", map[string]interface{}{"body": body, "error": err.Error()})
 		return "general"
 	}
-	pipelineInfo(ctx, "IntentDetect", "result", map[string]interface{}{"intent": ir.Intent, "confidence": ir.Confidence})
+	pipelineInfo(
+		ctx,
+		"IntentDetect",
+		"result",
+		map[string]interface{}{"intent": ir.Intent, "confidence": ir.Confidence},
+	)
 	switch strings.ToLower(strings.TrimSpace(ir.Intent)) {
 	case "definition", "howto", "compare", "qa", "general":
 		return strings.ToLower(ir.Intent)

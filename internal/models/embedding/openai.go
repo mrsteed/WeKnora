@@ -103,7 +103,8 @@ func (e *OpenAIEmbedder) doRequestWithRetry(ctx context.Context, jsonData []byte
 			if backoffTime > 10*time.Second {
 				backoffTime = 10 * time.Second
 			}
-			logger.GetLogger(ctx).Infof("OpenAIEmbedder retrying request (%d/%d), waiting %v", i, e.maxRetries, backoffTime)
+			logger.GetLogger(ctx).
+				Infof("OpenAIEmbedder retrying request (%d/%d), waiting %v", i, e.maxRetries, backoffTime)
 
 			select {
 			case <-time.After(backoffTime):

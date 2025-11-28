@@ -212,7 +212,11 @@ func mergeImageInfo(ctx context.Context, target *types.SearchResult, source *typ
 	return nil
 }
 
-func (p *PluginMerge) populateFAQAnswers(ctx context.Context, chatManage *types.ChatManage, results []*types.SearchResult) []*types.SearchResult {
+func (p *PluginMerge) populateFAQAnswers(
+	ctx context.Context,
+	chatManage *types.ChatManage,
+	results []*types.SearchResult,
+) []*types.SearchResult {
 	if len(results) == 0 || p.chunkRepo == nil {
 		return results
 	}
@@ -332,7 +336,11 @@ func buildFAQAnswerContent(meta *types.FAQChunkMetadata) string {
 	return strings.TrimSpace(builder.String())
 }
 
-func (p *PluginMerge) expandShortContextWithNeighbors(ctx context.Context, chatManage *types.ChatManage, results []*types.SearchResult) []*types.SearchResult {
+func (p *PluginMerge) expandShortContextWithNeighbors(
+	ctx context.Context,
+	chatManage *types.ChatManage,
+	results []*types.SearchResult,
+) []*types.SearchResult {
 	const (
 		minLen = 350
 		maxLen = 850
@@ -495,7 +503,8 @@ func (p *PluginMerge) expandShortContextWithNeighbors(ctx context.Context, chatM
 			expanded := false
 			if prevCursor != "" {
 				p.fetchChunksIfMissing(ctx, tenantID, chunkMap, prevCursor)
-				if prevChunk := chunkMap[prevCursor]; prevChunk != nil && prevChunk.KnowledgeID == baseChunk.KnowledgeID {
+				if prevChunk := chunkMap[prevCursor]; prevChunk != nil &&
+					prevChunk.KnowledgeID == baseChunk.KnowledgeID {
 					prevContent = concatNoOverlap(prevChunk.Content, prevContent)
 					prevIDs = append([]string{prevChunk.ID}, prevIDs...)
 					prevCursor = prevChunk.PreChunkID
@@ -512,7 +521,8 @@ func (p *PluginMerge) expandShortContextWithNeighbors(ctx context.Context, chatM
 
 			if nextCursor != "" {
 				p.fetchChunksIfMissing(ctx, tenantID, chunkMap, nextCursor)
-				if nextChunk := chunkMap[nextCursor]; nextChunk != nil && nextChunk.KnowledgeID == baseChunk.KnowledgeID {
+				if nextChunk := chunkMap[nextCursor]; nextChunk != nil &&
+					nextChunk.KnowledgeID == baseChunk.KnowledgeID {
 					nextContent = concatNoOverlap(nextContent, nextChunk.Content)
 					nextIDs = append(nextIDs, nextChunk.ID)
 					nextCursor = nextChunk.NextChunkID
@@ -625,7 +635,12 @@ func containsID(ids []string, target string) bool {
 	return false
 }
 
-func (p *PluginMerge) fetchChunksIfMissing(ctx context.Context, tenantID uint64, chunkMap map[string]*types.Chunk, chunkIDs ...string) {
+func (p *PluginMerge) fetchChunksIfMissing(
+	ctx context.Context,
+	tenantID uint64,
+	chunkMap map[string]*types.Chunk,
+	chunkIDs ...string,
+) {
 	missing := make([]string, 0, len(chunkIDs))
 	for _, id := range chunkIDs {
 		if id == "" {

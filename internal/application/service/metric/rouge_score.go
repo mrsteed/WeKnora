@@ -198,7 +198,10 @@ func unionLcs(evaluatedSentences []string, referenceSentence string, prevUnion *
 	return newLcsCount, lcsUnion
 }
 
-func rougeLSummaryLevel(evaluatedSentences, referenceSentences []string, rawResults, exclusive bool) map[string]float64 {
+func rougeLSummaryLevel(
+	evaluatedSentences, referenceSentences []string,
+	rawResults, exclusive bool,
+) map[string]float64 {
 	referenceNgrams := NewNgrams(exclusive)
 	referenceNgrams.BatchAdd(splitIntoWords(referenceSentences))
 	m := referenceNgrams.Len()

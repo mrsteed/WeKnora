@@ -69,7 +69,13 @@ func (s *knowledgeTagService) ListTags(ctx context.Context, kbID string) ([]*typ
 }
 
 // CreateTag creates a new tag under a KB.
-func (s *knowledgeTagService) CreateTag(ctx context.Context, kbID string, name string, color string, sortOrder int) (*types.KnowledgeTag, error) {
+func (s *knowledgeTagService) CreateTag(
+	ctx context.Context,
+	kbID string,
+	name string,
+	color string,
+	sortOrder int,
+) (*types.KnowledgeTag, error) {
 	name = strings.TrimSpace(name)
 	if kbID == "" || name == "" {
 		return nil, werrors.NewBadRequestError("知识库ID和标签名称不能为空")
@@ -96,7 +102,13 @@ func (s *knowledgeTagService) CreateTag(ctx context.Context, kbID string, name s
 }
 
 // UpdateTag updates tag basic information.
-func (s *knowledgeTagService) UpdateTag(ctx context.Context, id string, name *string, color *string, sortOrder *int) (*types.KnowledgeTag, error) {
+func (s *knowledgeTagService) UpdateTag(
+	ctx context.Context,
+	id string,
+	name *string,
+	color *string,
+	sortOrder *int,
+) (*types.KnowledgeTag, error) {
 	if id == "" {
 		return nil, werrors.NewBadRequestError("标签ID不能为空")
 	}

@@ -52,7 +52,11 @@ type userService struct {
 }
 
 // NewUserService creates a new user service instance
-func NewUserService(userRepo interfaces.UserRepository, tokenRepo interfaces.AuthTokenRepository, tenantService interfaces.TenantService) interfaces.UserService {
+func NewUserService(
+	userRepo interfaces.UserRepository,
+	tokenRepo interfaces.AuthTokenRepository,
+	tenantService interfaces.TenantService,
+) interfaces.UserService {
 	return &userService{
 		userRepo:      userRepo,
 		tokenRepo:     tokenRepo,
@@ -294,7 +298,10 @@ func (s *userService) ValidatePassword(ctx context.Context, userID string, passw
 }
 
 // GenerateTokens generates access and refresh tokens for user
-func (s *userService) GenerateTokens(ctx context.Context, user *types.User) (accessToken, refreshToken string, err error) {
+func (s *userService) GenerateTokens(
+	ctx context.Context,
+	user *types.User,
+) (accessToken, refreshToken string, err error) {
 	// Generate access token (expires in 24 hours)
 	accessClaims := jwt.MapClaims{
 		"user_id":   user.ID,
@@ -385,7 +392,10 @@ func (s *userService) ValidateToken(ctx context.Context, tokenString string) (*t
 }
 
 // RefreshToken refreshes access token using refresh token
-func (s *userService) RefreshToken(ctx context.Context, refreshTokenString string) (accessToken, newRefreshToken string, err error) {
+func (s *userService) RefreshToken(
+	ctx context.Context,
+	refreshTokenString string,
+) (accessToken, newRefreshToken string, err error) {
 	token, err := jwt.Parse(refreshTokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])

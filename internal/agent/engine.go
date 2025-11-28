@@ -71,7 +71,11 @@ func NewAgentEngine(
 
 // Execute executes the agent with conversation history and streaming output
 // All events are emitted to EventBus and handled by subscribers (like Handler layer)
-func (e *AgentEngine) Execute(ctx context.Context, sessionID, messageID, query string, llmContext []chat.Message) (*types.AgentState, error) {
+func (e *AgentEngine) Execute(
+	ctx context.Context,
+	sessionID, messageID, query string,
+	llmContext []chat.Message,
+) (*types.AgentState, error) {
 	logger.Infof(ctx, "========== Agent Execution Started ==========")
 	logger.Infof(ctx, "[Agent] SessionID: %s, MessageID: %s", sessionID, messageID)
 	logger.Infof(ctx, "[Agent] User Query: %s", query)
@@ -92,7 +96,11 @@ func (e *AgentEngine) Execute(ctx context.Context, sessionID, messageID, query s
 	}
 
 	// Build system prompt using progressive RAG prompt
-	systemPrompt := BuildProgressiveRAGSystemPrompt(e.knowledgeBasesInfo, e.config.WebSearchEnabled, e.systemPromptTemplate)
+	systemPrompt := BuildProgressiveRAGSystemPrompt(
+		e.knowledgeBasesInfo,
+		e.config.WebSearchEnabled,
+		e.systemPromptTemplate,
+	)
 	logger.Debugf(ctx, "[Agent] SystemPrompt Length: %d characters", len(systemPrompt))
 	logger.Debugf(ctx, "[Agent] SystemPrompt (stream)\n----\n%s\n----", systemPrompt)
 
@@ -193,7 +201,12 @@ func (e *AgentEngine) executeLoop(
 		// Debug: log finish reason and tool call count from LLM
 		logger.Infof(ctx, "[Agent][Round-%d] LLM response received: finish_reason=%s, tool_calls=%d, content_length=%d",
 			state.CurrentRound+1, response.FinishReason, len(response.ToolCalls), len(response.Content))
-		logger.Debugf(ctx, "[Agent] LLM response finish=%s, toolCalls=%d", response.FinishReason, len(response.ToolCalls))
+		logger.Debugf(
+			ctx,
+			"[Agent] LLM response finish=%s, toolCalls=%d",
+			response.FinishReason,
+			len(response.ToolCalls),
+		)
 		if response.Content != "" {
 			logger.Debugf(ctx, "[Agent][Round-%d] LLM thought content:\n%s", state.CurrentRound+1, response.Content)
 		}
@@ -229,13 +242,23 @@ func (e *AgentEngine) executeLoop(
 					Done:    true,
 				},
 			})
-			logger.Infof(ctx, "[Agent][Round-%d] Duration: %dms", state.CurrentRound+1, time.Since(roundStart).Milliseconds())
+			logger.Infof(
+				ctx,
+				"[Agent][Round-%d] Duration: %dms",
+				state.CurrentRound+1,
+				time.Since(roundStart).Milliseconds(),
+			)
 			break
 		}
 
 		// 3. Act: Execute tool calls if any
 		if len(response.ToolCalls) > 0 {
-			logger.Infof(ctx, "[Agent][Round-%d] Executing %d tool calls...", state.CurrentRound+1, len(response.ToolCalls))
+			logger.Infof(
+				ctx,
+				"[Agent][Round-%d] Executing %d tool calls...",
+				state.CurrentRound+1,
+				len(response.ToolCalls),
+			)
 
 			for i, tc := range response.ToolCalls {
 				logger.Infof(ctx, "[Agent][Round-%d][Tool-%d/%d] Tool: %s, ID: %s",
@@ -483,7 +506,11 @@ func (e *AgentEngine) buildToolsForLLM() []chat.Tool {
 
 // appendToolResults adds tool results to the message history following OpenAI's tool calling format
 // Also writes these messages to the context manager for persistence
-func (e *AgentEngine) appendToolResults(ctx context.Context, messages []chat.Message, step types.AgentStep) []chat.Message {
+func (e *AgentEngine) appendToolResults(
+	ctx context.Context,
+	messages []chat.Message,
+	step types.AgentStep,
+) []chat.Message {
 	// Add assistant message with tool calls (if any)
 	if step.Thought != "" || len(step.ToolCalls) > 0 {
 		assistantMsg := chat.Message{
@@ -744,7 +771,11 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	})
 
 	// Build messages with all context
-	systemPrompt := BuildProgressiveRAGSystemPrompt(e.knowledgeBasesInfo, e.config.WebSearchEnabled, e.systemPromptTemplate)
+	systemPrompt := BuildProgressiveRAGSystemPrompt(
+		e.knowledgeBasesInfo,
+		e.config.WebSearchEnabled,
+		e.systemPromptTemplate,
+	)
 
 	messages := []chat.Message{
 		{Role: "system", Content: systemPrompt},
@@ -837,7 +868,10 @@ func countTotalToolCalls(steps []types.AgentStep) int {
 }
 
 // buildMessagesWithLLMContext builds the message array with LLM context
-func (e *AgentEngine) buildMessagesWithLLMContext(systemPrompt, currentQuery string, llmContext []chat.Message) []chat.Message {
+func (e *AgentEngine) buildMessagesWithLLMContext(
+	systemPrompt, currentQuery string,
+	llmContext []chat.Message,
+) []chat.Message {
 	messages := []chat.Message{
 		{Role: "system", Content: systemPrompt},
 	}

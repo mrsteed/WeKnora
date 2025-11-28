@@ -57,7 +57,10 @@ func NewWebSearchTool(
 **Parameters**:
 - query (required): Search query string
 
-**Returns**: Web search results with title, URL, snippet, and content (up to ` + fmt.Sprintf("%d", maxResults) + ` results)
+**Returns**: Web search results with title, URL, snippet, and content (up to ` + fmt.Sprintf(
+		"%d",
+		maxResults,
+	) + ` results)
 
 ## Examples
 
@@ -80,7 +83,10 @@ func NewWebSearchTool(
 - Use this tool when knowledge bases don't have the information you need
 - Results include URL, title, snippet, and content snippet (may be truncated)
 - **CRITICAL**: If content is truncated or you need full details, use **web_fetch** to fetch complete page content
-- Maximum ` + fmt.Sprintf("%d", maxResults) + ` results will be returned per search`
+- Maximum ` + fmt.Sprintf(
+		"%d",
+		maxResults,
+	) + ` results will be returned per search`
 
 	return &WebSearchTool{
 		BaseTool:             NewBaseTool("web_search", description),
@@ -152,7 +158,12 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 	searchConfig.MaxResults = t.maxResults
 
 	// Perform web search
-	logger.Infof(ctx, "[Tool][WebSearch] Performing web search with provider: %s, maxResults: %d", searchConfig.Provider, searchConfig.MaxResults)
+	logger.Infof(
+		ctx,
+		"[Tool][WebSearch] Performing web search with provider: %s, maxResults: %d",
+		searchConfig.Provider,
+		searchConfig.MaxResults,
+	)
 	webResults, err := t.webSearchService.Search(ctx, &searchConfig, query)
 	if err != nil {
 		logger.Errorf(ctx, "[Tool][WebSearch] Web search failed: %v", err)
@@ -165,7 +176,8 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 	logger.Infof(ctx, "[Tool][WebSearch] Web search returned %d results", len(webResults))
 
 	// Apply RAG compression if configured
-	if len(webResults) > 0 && tenant.WebSearchConfig.CompressionMethod != "none" && tenant.WebSearchConfig.CompressionMethod != "" {
+	if len(webResults) > 0 && tenant.WebSearchConfig.CompressionMethod != "none" &&
+		tenant.WebSearchConfig.CompressionMethod != "" {
 		// Load session-scoped temp KB state from Redis using SessionService
 		tempKBID, seen, ids := t.sessionService.GetWebSearchTempKBState(ctx, t.sessionID)
 

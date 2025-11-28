@@ -155,7 +155,12 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge created successfully, ID: %s, title: %s", secutils.SanitizeForLog(knowledge.ID), secutils.SanitizeForLog(knowledge.Title))
+	logger.Infof(
+		ctx,
+		"Knowledge created successfully, ID: %s, title: %s",
+		secutils.SanitizeForLog(knowledge.ID),
+		secutils.SanitizeForLog(knowledge.Title),
+	)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    knowledge,
@@ -186,7 +191,12 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Received URL request: %s", secutils.SanitizeForLog(req.URL))
-	logger.Infof(ctx, "Creating knowledge from URL, knowledge base ID: %s, URL: %s", secutils.SanitizeForLog(kbID), secutils.SanitizeForLog(req.URL))
+	logger.Infof(
+		ctx,
+		"Creating knowledge from URL, knowledge base ID: %s, URL: %s",
+		secutils.SanitizeForLog(kbID),
+		secutils.SanitizeForLog(req.URL),
+	)
 
 	// Create knowledge entry from the URL
 	knowledge, err := h.kgService.CreateKnowledgeFromURL(ctx, kbID, req.URL, req.EnableMultimodel)
@@ -200,7 +210,12 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge created successfully from URL, ID: %s, title: %s", secutils.SanitizeForLog(knowledge.ID), secutils.SanitizeForLog(knowledge.Title))
+	logger.Infof(
+		ctx,
+		"Knowledge created successfully from URL, ID: %s, title: %s",
+		secutils.SanitizeForLog(knowledge.ID),
+		secutils.SanitizeForLog(knowledge.Title),
+	)
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
 		"data":    knowledge,
@@ -268,7 +283,12 @@ func (h *KnowledgeHandler) GetKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge retrieved successfully, ID: %s, title: %s", secutils.SanitizeForLog(knowledge.ID), secutils.SanitizeForLog(knowledge.Title))
+	logger.Infof(
+		ctx,
+		"Knowledge retrieved successfully, ID: %s, title: %s",
+		secutils.SanitizeForLog(knowledge.ID),
+		secutils.SanitizeForLog(knowledge.Title),
+	)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    knowledge,
@@ -299,8 +319,14 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 
 	tagID := c.Query("tag_id")
 
-	logger.Infof(ctx, "Retrieving knowledge list under knowledge base, knowledge base ID: %s, tag_id: %s, page: %d, page size: %d",
-		secutils.SanitizeForLog(kbID), secutils.SanitizeForLog(tagID), pagination.Page, pagination.PageSize)
+	logger.Infof(
+		ctx,
+		"Retrieving knowledge list under knowledge base, knowledge base ID: %s, tag_id: %s, page: %d, page size: %d",
+		secutils.SanitizeForLog(kbID),
+		secutils.SanitizeForLog(tagID),
+		pagination.Page,
+		pagination.PageSize,
+	)
 
 	// Retrieve paginated knowledge entries
 	result, err := h.kgService.ListPagedKnowledgeByKnowledgeBaseID(ctx, kbID, &pagination, tagID)
@@ -310,7 +336,12 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge list retrieved successfully, knowledge base ID: %s, total: %d", secutils.SanitizeForLog(kbID), result.Total)
+	logger.Infof(
+		ctx,
+		"Knowledge list retrieved successfully, knowledge base ID: %s, total: %d",
+		secutils.SanitizeForLog(kbID),
+		result.Total,
+	)
 	c.JSON(http.StatusOK, gin.H{
 		"success":   true,
 		"data":      result.Data,
@@ -374,7 +405,12 @@ func (h *KnowledgeHandler) DownloadKnowledgeFile(c *gin.Context) {
 	}
 	defer file.Close()
 
-	logger.Infof(ctx, "Knowledge file retrieved successfully, ID: %s, filename: %s", secutils.SanitizeForLog(id), secutils.SanitizeForLog(filename))
+	logger.Infof(
+		ctx,
+		"Knowledge file retrieved successfully, ID: %s, filename: %s",
+		secutils.SanitizeForLog(id),
+		secutils.SanitizeForLog(filename),
+	)
 
 	// Set response headers for file download
 	c.Header("Content-Description", "File Transfer")

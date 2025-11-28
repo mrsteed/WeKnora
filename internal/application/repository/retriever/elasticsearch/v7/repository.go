@@ -1094,7 +1094,10 @@ func (e *elasticsearchRepository) saveCopiedIndices(ctx context.Context, indexIn
 }
 
 // BatchUpdateChunkEnabledStatus updates the enabled status of chunks in batch
-func (e *elasticsearchRepository) BatchUpdateChunkEnabledStatus(ctx context.Context, chunkStatusMap map[string]bool) error {
+func (e *elasticsearchRepository) BatchUpdateChunkEnabledStatus(
+	ctx context.Context,
+	chunkStatusMap map[string]bool,
+) error {
 	log := logger.GetLogger(ctx)
 	if len(chunkStatusMap) == 0 {
 		log.Warnf("[ElasticsearchV7] Chunk status map is empty, skipping update")

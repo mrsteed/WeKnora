@@ -236,7 +236,12 @@ type StreamResponse struct {
 }
 
 // KnowledgeQAStream knowledge Q&A streaming API
-func (c *Client) KnowledgeQAStream(ctx context.Context, sessionID string, query string, callback func(*StreamResponse) error) error {
+func (c *Client) KnowledgeQAStream(
+	ctx context.Context,
+	sessionID string,
+	query string,
+	callback func(*StreamResponse) error,
+) error {
 	path := fmt.Sprintf("/api/v1/knowledge-chat/%s", sessionID)
 	fmt.Printf("Starting KnowledgeQAStream request, session ID: %s, query: %s\n", sessionID, query)
 
@@ -315,7 +320,12 @@ func (c *Client) KnowledgeQAStream(ctx context.Context, sessionID string, query 
 }
 
 // ContinueStream continues to receive an active stream for a session
-func (c *Client) ContinueStream(ctx context.Context, sessionID string, messageID string, callback func(*StreamResponse) error) error {
+func (c *Client) ContinueStream(
+	ctx context.Context,
+	sessionID string,
+	messageID string,
+	callback func(*StreamResponse) error,
+) error {
 	path := fmt.Sprintf("/api/v1/sessions/continue-stream/%s", sessionID)
 
 	queryParams := url.Values{}

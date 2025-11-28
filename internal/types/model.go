@@ -39,46 +39,46 @@ const (
 
 // EmbeddingParameters represents the embedding parameters for a model
 type EmbeddingParameters struct {
-	Dimension            int `yaml:"dimension" json:"dimension"`
+	Dimension            int `yaml:"dimension"              json:"dimension"`
 	TruncatePromptTokens int `yaml:"truncate_prompt_tokens" json:"truncate_prompt_tokens"`
 }
 
 type ModelParameters struct {
-	BaseURL             string              `yaml:"base_url" json:"base_url"`
-	APIKey              string              `yaml:"api_key" json:"api_key"`
-	InterfaceType       string              `yaml:"interface_type" json:"interface_type"`
+	BaseURL             string              `yaml:"base_url"             json:"base_url"`
+	APIKey              string              `yaml:"api_key"              json:"api_key"`
+	InterfaceType       string              `yaml:"interface_type"       json:"interface_type"`
 	EmbeddingParameters EmbeddingParameters `yaml:"embedding_parameters" json:"embedding_parameters"`
-	ParameterSize       string              `yaml:"parameter_size" json:"parameter_size"` // Ollama model parameter size (e.g., "7B", "13B", "70B")
+	ParameterSize       string              `yaml:"parameter_size"       json:"parameter_size"` // Ollama model parameter size (e.g., "7B", "13B", "70B")
 }
 
 // Model represents the AI model
 type Model struct {
 	// Unique identifier of the model
-	ID string `yaml:"id" json:"id" gorm:"type:varchar(36);primaryKey"`
+	ID string `yaml:"id"          json:"id"          gorm:"type:varchar(36);primaryKey"`
 	// Tenant ID
-	TenantID uint64 `yaml:"tenant_id" json:"tenant_id"`
+	TenantID uint64 `yaml:"tenant_id"   json:"tenant_id"`
 	// Name of the model
-	Name string `yaml:"name" json:"name"`
+	Name string `yaml:"name"        json:"name"`
 	// Type of the model
-	Type ModelType `yaml:"type" json:"type"`
+	Type ModelType `yaml:"type"        json:"type"`
 	// Source of the model
-	Source ModelSource `yaml:"source" json:"source"`
+	Source ModelSource `yaml:"source"      json:"source"`
 	// Description of the model
 	Description string `yaml:"description" json:"description"`
 	// Model parameters in JSON format
-	Parameters ModelParameters `yaml:"parameters" json:"parameters" gorm:"type:json"`
+	Parameters ModelParameters `yaml:"parameters"  json:"parameters"  gorm:"type:json"`
 	// Whether the model is the default model
-	IsDefault bool `yaml:"is_default" json:"is_default"`
+	IsDefault bool `yaml:"is_default"  json:"is_default"`
 	// Whether the model is a builtin model (visible to all tenants)
-	IsBuiltin bool `yaml:"is_builtin" json:"is_builtin" gorm:"default:false"`
+	IsBuiltin bool `yaml:"is_builtin"  json:"is_builtin"  gorm:"default:false"`
 	// Model status, default: active, possible: downloading, download_failed
-	Status ModelStatus `yaml:"status" json:"status"`
+	Status ModelStatus `yaml:"status"      json:"status"`
 	// Creation time of the model
-	CreatedAt time.Time `yaml:"created_at" json:"created_at"`
+	CreatedAt time.Time `yaml:"created_at"  json:"created_at"`
 	// Last updated time of the model
-	UpdatedAt time.Time `yaml:"updated_at" json:"updated_at"`
+	UpdatedAt time.Time `yaml:"updated_at"  json:"updated_at"`
 	// Deletion time of the model
-	DeletedAt gorm.DeletedAt `yaml:"deleted_at" json:"deleted_at" gorm:"index"`
+	DeletedAt gorm.DeletedAt `yaml:"deleted_at"  json:"deleted_at"  gorm:"index"`
 }
 
 // Value implements the driver.Valuer interface, used to convert ModelParameters to database value

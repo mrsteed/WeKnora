@@ -55,7 +55,10 @@ func (s *WebSearchService) CompressWithRAG(
 		}
 		createdKB, err = kbSvc.CreateKnowledgeBase(ctx, kb)
 		if err != nil {
-			return nil, tempKBID, seenURLs, knowledgeIDs, fmt.Errorf("failed to create temporary knowledge base: %w", err)
+			return nil, tempKBID, seenURLs, knowledgeIDs, fmt.Errorf(
+				"failed to create temporary knowledge base: %w",
+				err,
+			)
 		}
 		tempKBID = createdKB.ID
 	}
@@ -240,7 +243,11 @@ func stripMarker(content string) string {
 
 // Search performs web search using the specified provider
 // This method implements the interface expected by PluginSearch
-func (s *WebSearchService) Search(ctx context.Context, config *types.WebSearchConfig, query string) ([]*types.WebSearchResult, error) {
+func (s *WebSearchService) Search(
+	ctx context.Context,
+	config *types.WebSearchConfig,
+	query string,
+) ([]*types.WebSearchResult, error) {
 	if config == nil {
 		return nil, fmt.Errorf("web search config is required")
 	}
@@ -310,7 +317,10 @@ func NewWebSearchService(cfg *config.Config) (interfaces.WebSearchService, error
 }
 
 // filterBlacklist filters results based on blacklist rules
-func (s *WebSearchService) filterBlacklist(results []*types.WebSearchResult, blacklist []string) []*types.WebSearchResult {
+func (s *WebSearchService) filterBlacklist(
+	results []*types.WebSearchResult,
+	blacklist []string,
+) []*types.WebSearchResult {
 	if len(blacklist) == 0 {
 		return results
 	}

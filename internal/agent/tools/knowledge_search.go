@@ -246,8 +246,14 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 		minScore = 0.3
 	}
 
-	logger.Infof(ctx, "[Tool][KnowledgeSearch] Search params: top_k=%d, vector_threshold=%.2f, keyword_threshold=%.2f, min_score=%.2f",
-		topK, vectorThreshold, keywordThreshold, minScore)
+	logger.Infof(
+		ctx,
+		"[Tool][KnowledgeSearch] Search params: top_k=%d, vector_threshold=%.2f, keyword_threshold=%.2f, min_score=%.2f",
+		topK,
+		vectorThreshold,
+		keywordThreshold,
+		minScore,
+	)
 
 	// Execute concurrent search (hybrid search handles both vector and keyword)
 	logger.Infof(ctx, "[Tool][KnowledgeSearch] Starting concurrent search across %d KBs", len(kbIDs))
@@ -280,8 +286,13 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 	}
 
 	if t.chatModel != nil && len(deduplicatedBeforeRerank) > 0 && rerankQuery != "" {
-		logger.Infof(ctx, "[Tool][KnowledgeSearch] Applying LLM-based rerank with model: %s, input: %d results, queries: %v",
-			t.chatModel.GetModelName(), len(deduplicatedBeforeRerank), queries)
+		logger.Infof(
+			ctx,
+			"[Tool][KnowledgeSearch] Applying LLM-based rerank with model: %s, input: %d results, queries: %v",
+			t.chatModel.GetModelName(),
+			len(deduplicatedBeforeRerank),
+			queries,
+		)
 		rerankedResults, err := t.rerankResults(ctx, rerankQuery, deduplicatedBeforeRerank)
 		if err != nil {
 			logger.Warnf(ctx, "[Tool][KnowledgeSearch] LLM rerank failed, using original results: %v", err)
@@ -320,7 +331,12 @@ func (t *KnowledgeSearchTool) Execute(ctx context.Context, args map[string]inter
 			mmrK = 1
 		}
 		// Apply MMR with lambda=0.7 (balance between relevance and diversity)
-		logger.Debugf(ctx, "[Tool][KnowledgeSearch] Applying MMR: k=%d, lambda=0.7, input=%d results", mmrK, len(filteredResults))
+		logger.Debugf(
+			ctx,
+			"[Tool][KnowledgeSearch] Applying MMR: k=%d, lambda=0.7, input=%d results",
+			mmrK,
+			len(filteredResults),
+		)
 		mmrResults := t.applyMMR(ctx, filteredResults, mmrK, 0.7)
 		if len(mmrResults) > 0 {
 			filteredResults = mmrResults
@@ -659,7 +675,8 @@ func (t *KnowledgeSearchTool) rerankWithLLM(
 		}
 
 		// Optimized prompt focused on retrieval matching and reranking
-		prompt := fmt.Sprintf(`You are a search result reranking expert. Your task is to evaluate how well each retrieved passage matches the user's search query and information need.
+		prompt := fmt.Sprintf(
+			`You are a search result reranking expert. Your task is to evaluate how well each retrieved passage matches the user's search query and information need.
 
 User Query: %s
 
@@ -690,7 +707,12 @@ Passage 3: X.XX
 ...
 Passage %d: X.XX
 
-Output only the scores, no explanations or additional text.`, query, passagesBuilder.String(), len(batch), len(batch))
+Output only the scores, no explanations or additional text.`,
+			query,
+			passagesBuilder.String(),
+			len(batch),
+			len(batch),
+		)
 
 		messages := []chat.Message{
 			{
@@ -727,8 +749,13 @@ Output only the scores, no explanations or additional text.`, query, passagesBui
 		// Parse scores from response
 		batchScores, err := t.parseScoresFromResponse(response.Content, len(batch))
 		if err != nil {
-			logger.Warnf(ctx, "[Tool][KnowledgeSearch] Failed to parse LLM scores for batch %d-%d: %v, using original scores",
-				batchStart+1, batchEnd, err)
+			logger.Warnf(
+				ctx,
+				"[Tool][KnowledgeSearch] Failed to parse LLM scores for batch %d-%d: %v, using original scores",
+				batchStart+1,
+				batchEnd,
+				err,
+			)
 			// Use original scores for this batch on parsing error
 			for i := batchStart; i < batchEnd; i++ {
 				allScores[i] = results[i].Score
@@ -862,7 +889,12 @@ func (t *KnowledgeSearchTool) rerankWithModel(
 		}
 	}
 
-	logger.Infof(ctx, "[Tool][KnowledgeSearch] Reranked %d results from %d original results", len(reranked), len(results))
+	logger.Infof(
+		ctx,
+		"[Tool][KnowledgeSearch] Reranked %d results from %d original results",
+		len(reranked),
+		len(results),
+	)
 	return reranked, nil
 }
 
@@ -1027,7 +1059,12 @@ func (t *KnowledgeSearchTool) formatOutput(
 		if result.KnowledgeBaseType == types.KnowledgeBaseTypeFAQ {
 			meta, err := t.getFAQMetadata(ctx, result.ID, faqMetadataCache)
 			if err != nil {
-				logger.Warnf(ctx, "[Tool][KnowledgeSearch] Failed to load FAQ metadata for chunk %s: %v", result.ID, err)
+				logger.Warnf(
+					ctx,
+					"[Tool][KnowledgeSearch] Failed to load FAQ metadata for chunk %s: %v",
+					result.ID,
+					err,
+				)
 			} else {
 				faqMeta = meta
 			}
@@ -1055,7 +1092,12 @@ func (t *KnowledgeSearchTool) formatOutput(
 					&types.Pagination{Page: 1, PageSize: 1},
 					[]types.ChunkType{types.ChunkTypeText}, "")
 				if err != nil {
-					logger.Warnf(ctx, "[Tool][KnowledgeSearch] Failed to get total chunks for knowledge %s: %v", result.KnowledgeID, err)
+					logger.Warnf(
+						ctx,
+						"[Tool][KnowledgeSearch] Failed to get total chunks for knowledge %s: %v",
+						result.KnowledgeID,
+						err,
+					)
 					knowledgeTotalMap[result.KnowledgeID] = 0
 				} else {
 					knowledgeTotalMap[result.KnowledgeID] = total
@@ -1065,7 +1107,12 @@ func (t *KnowledgeSearchTool) formatOutput(
 
 		// relevanceLevel := GetRelevanceLevel(result.Score)
 		output += fmt.Sprintf("\nResult #%d:\n", i+1)
-		output += fmt.Sprintf("  [chunk_id: %s][chunk_index: %d]\nContent: %s\n", result.ID, result.ChunkIndex, result.Content)
+		output += fmt.Sprintf(
+			"  [chunk_id: %s][chunk_index: %d]\nContent: %s\n",
+			result.ID,
+			result.ChunkIndex,
+			result.Content,
+		)
 
 		if faqMeta != nil {
 			if faqMeta.StandardQuestion != "" {
@@ -1134,7 +1181,11 @@ func (t *KnowledgeSearchTool) formatOutput(
 
 				if len(missingRanges) == 0 {
 					// No gaps found (shouldn't happen if remaining > 0, but handle it)
-					output += fmt.Sprintf("    - 获取全部内容: list_knowledge_chunks(knowledge_id=\"%s\", offset=0, limit=%d)\n", knowledgeID, totalChunks)
+					output += fmt.Sprintf(
+						"    - 获取全部内容: list_knowledge_chunks(knowledge_id=\"%s\", offset=0, limit=%d)\n",
+						knowledgeID,
+						totalChunks,
+					)
 				} else if len(missingRanges) == 1 && missingRanges[0].start == 0 && missingRanges[0].end == int(totalChunks)-1 {
 					// All chunks are missing (shouldn't happen, but handle it)
 					output += fmt.Sprintf("    - 获取全部内容: list_knowledge_chunks(knowledge_id=\"%s\", offset=0, limit=%d)\n", knowledgeID, totalChunks)
@@ -1284,8 +1335,12 @@ func (t *KnowledgeSearchTool) normalizeKeywordSearchResults(ctx context.Context,
 		for _, r := range keywordResults {
 			r.Score = 1.0
 		}
-		logger.Infof(ctx, "[Tool][KnowledgeSearch] Keyword scores have no variance, all set to 1.0: count=%d, score=%.3f",
-			len(keywordResults), minS)
+		logger.Infof(
+			ctx,
+			"[Tool][KnowledgeSearch] Keyword scores have no variance, all set to 1.0: count=%d, score=%.3f",
+			len(keywordResults),
+			minS,
+		)
 		return
 	}
 
@@ -1336,8 +1391,15 @@ func (t *KnowledgeSearchTool) normalizeKeywordSearchResults(ctx context.Context,
 			r.Score = ns
 		}
 
-		logger.Infof(ctx, "[Tool][KnowledgeSearch] Normalized keyword scores: count=%d, raw_min=%.3f, raw_max=%.3f, normalize_min=%.3f, normalize_max=%.3f",
-			len(keywordResults), minS, maxS, normalizeMin, normalizeMax)
+		logger.Infof(
+			ctx,
+			"[Tool][KnowledgeSearch] Normalized keyword scores: count=%d, raw_min=%.3f, raw_max=%.3f, normalize_min=%.3f, normalize_max=%.3f",
+			len(keywordResults),
+			minS,
+			maxS,
+			normalizeMin,
+			normalizeMax,
+		)
 	} else {
 		// Fallback: all scores are the same after percentile filtering
 		for _, r := range keywordResults {

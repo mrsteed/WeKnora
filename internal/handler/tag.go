@@ -40,7 +40,7 @@ func (h *TagHandler) ListTags(c *gin.Context) {
 }
 
 type createTagRequest struct {
-	Name      string `json:"name" binding:"required"`
+	Name      string `json:"name"       binding:"required"`
 	Color     string `json:"color"`
 	SortOrder int    `json:"sort_order"`
 }

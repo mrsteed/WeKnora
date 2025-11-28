@@ -250,7 +250,12 @@ func (cli *CLI) askQuestion(query string) {
 		case client.AgentResponseTypeReferences:
 			if resp.KnowledgeReferences != nil {
 				references = append(references, resp.KnowledgeReferences...)
-				fmt.Printf("%s📚 Knowledge References:%s Found %d reference(s)\n", ColorCyan, ColorReset, len(resp.KnowledgeReferences))
+				fmt.Printf(
+					"%s📚 Knowledge References:%s Found %d reference(s)\n",
+					ColorCyan,
+					ColorReset,
+					len(resp.KnowledgeReferences),
+				)
 				for i, ref := range resp.KnowledgeReferences {
 					fmt.Printf("   %d. [Score: %.3f] %s\n", i+1, ref.Score, truncateString(ref.Content, 80))
 					fmt.Printf("      Knowledge: %s (Chunk: %d)\n", ref.KnowledgeTitle, ref.ChunkIndex)

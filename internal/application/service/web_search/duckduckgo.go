@@ -38,7 +38,12 @@ func (p *DuckDuckGoProvider) Name() string {
 }
 
 // Search performs a web search using DuckDuckGo HTML endpoint with API fallback
-func (p *DuckDuckGoProvider) Search(ctx context.Context, query string, maxResults int, includeDate bool) ([]*types.WebSearchResult, error) {
+func (p *DuckDuckGoProvider) Search(
+	ctx context.Context,
+	query string,
+	maxResults int,
+	includeDate bool,
+) ([]*types.WebSearchResult, error) {
 	if maxResults <= 0 {
 		maxResults = 5
 	}
@@ -58,7 +63,11 @@ func (p *DuckDuckGoProvider) Search(ctx context.Context, query string, maxResult
 	return nil, fmt.Errorf("duckduckgo API search failed: %w", apiErr)
 }
 
-func (p *DuckDuckGoProvider) searchHTML(ctx context.Context, query string, maxResults int) ([]*types.WebSearchResult, error) {
+func (p *DuckDuckGoProvider) searchHTML(
+	ctx context.Context,
+	query string,
+	maxResults int,
+) ([]*types.WebSearchResult, error) {
 	baseURL := "https://html.duckduckgo.com/html/"
 	params := url.Values{}
 	params.Set("q", query)
@@ -71,10 +80,16 @@ func (p *DuckDuckGoProvider) searchHTML(ctx context.Context, query string, maxRe
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	// Use a realistic UA to avoid blocks
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set(
+		"User-Agent",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+	)
 
 	// print curl of request
-	curlCommand := fmt.Sprintf("curl -X GET '%s' -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'", req.URL.String())
+	curlCommand := fmt.Sprintf(
+		"curl -X GET '%s' -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'",
+		req.URL.String(),
+	)
 	logger.Infof(ctx, "Curl of request: %s", secutils.SanitizeForLog(curlCommand))
 
 	resp, err := p.client.Do(req)
@@ -119,7 +134,11 @@ func (p *DuckDuckGoProvider) searchHTML(ctx context.Context, query string, maxRe
 	return results, nil
 }
 
-func (p *DuckDuckGoProvider) searchAPI(ctx context.Context, query string, maxResults int) ([]*types.WebSearchResult, error) {
+func (p *DuckDuckGoProvider) searchAPI(
+	ctx context.Context,
+	query string,
+	maxResults int,
+) ([]*types.WebSearchResult, error) {
 	baseURL := "https://api.duckduckgo.com/"
 	params := url.Values{}
 	params.Set("q", query)

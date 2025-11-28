@@ -203,7 +203,12 @@ func (t *GrepChunksTool) Execute(ctx context.Context, args map[string]interface{
 		if maxResults > 0 && mmrK > maxResults {
 			mmrK = maxResults
 		}
-		logger.Debugf(ctx, "[Tool][GrepChunks] Applying MMR: k=%d, lambda=0.7, input=%d results", mmrK, len(scoredResults))
+		logger.Debugf(
+			ctx,
+			"[Tool][GrepChunks] Applying MMR: k=%d, lambda=0.7, input=%d results",
+			mmrK,
+			len(scoredResults),
+		)
 		mmrResults := t.applyMMR(ctx, scoredResults, patterns, mmrK, 0.7)
 		if len(mmrResults) > 0 {
 			finalResults = mmrResults
@@ -252,9 +257,9 @@ func (t *GrepChunksTool) Execute(ctx context.Context, args map[string]interface{
 
 type chunkWithTitle struct {
 	types.Chunk
-	KnowledgeTitle  string  `json:"knowledge_title" gorm:"column:knowledge_title"`
-	MatchScore      float64 `json:"match_score" gorm:"column:match_score"` // Score based on match count and position
-	MatchedPatterns int     `json:"matched_patterns"`                      // Number of unique patterns matched
+	KnowledgeTitle  string  `json:"knowledge_title"   gorm:"column:knowledge_title"`
+	MatchScore      float64 `json:"match_score"       gorm:"column:match_score"` // Score based on match count and position
+	MatchedPatterns int     `json:"matched_patterns"`                            // Number of unique patterns matched
 	TotalChunkCount int     `json:"total_chunk_count" gorm:"column:total_chunk_count"`
 }
 
@@ -344,14 +349,16 @@ func (t *GrepChunksTool) formatOutput(
 			patternSummaries = append(patternSummaries, fmt.Sprintf("%s=%d", pattern, count))
 		}
 
-		output.WriteString(fmt.Sprintf("%d) knowledge_id=%s | title=%s | chunk_hits=%d | chunk_total=%d | pattern_hits=[%s]\n",
-			idx+1,
-			result.KnowledgeID,
-			result.KnowledgeTitle,
-			result.ChunkHitCount,
-			result.TotalChunkCount,
-			strings.Join(patternSummaries, ", "),
-		))
+		output.WriteString(
+			fmt.Sprintf("%d) knowledge_id=%s | title=%s | chunk_hits=%d | chunk_total=%d | pattern_hits=[%s]\n",
+				idx+1,
+				result.KnowledgeID,
+				result.KnowledgeTitle,
+				result.ChunkHitCount,
+				result.TotalChunkCount,
+				strings.Join(patternSummaries, ", "),
+			),
+		)
 	}
 	return output.String()
 }
@@ -553,7 +560,11 @@ func (t *GrepChunksTool) buildContentSignature(content string) string {
 }
 
 // scoreChunks calculates match scores for chunks based on pattern matches
-func (t *GrepChunksTool) scoreChunks(ctx context.Context, results []chunkWithTitle, patterns []string) []chunkWithTitle {
+func (t *GrepChunksTool) scoreChunks(
+	ctx context.Context,
+	results []chunkWithTitle,
+	patterns []string,
+) []chunkWithTitle {
 	scored := make([]chunkWithTitle, len(results))
 	for i := range results {
 		scored[i] = results[i]

@@ -70,7 +70,12 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Tenant created successfully, ID: %d, name: %s", createdTenant.ID, secutils.SanitizeForLog(createdTenant.Name))
+	logger.Infof(
+		ctx,
+		"Tenant created successfully, ID: %d, name: %s",
+		createdTenant.ID,
+		secutils.SanitizeForLog(createdTenant.Name),
+	)
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
 		"data":    createdTenant,
@@ -151,7 +156,12 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Tenant updated successfully, ID: %d, Name: %s", updatedTenant.ID, secutils.SanitizeForLog(updatedTenant.Name))
+	logger.Infof(
+		ctx,
+		"Tenant updated successfully, ID: %d, Name: %s",
+		updatedTenant.ID,
+		secutils.SanitizeForLog(updatedTenant.Name),
+	)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    updatedTenant,

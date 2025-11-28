@@ -60,7 +60,11 @@ func (m *MemoryStreamManager) getStream(sessionID, messageID string) *memoryStre
 }
 
 // AppendEvent appends a single event to the stream
-func (m *MemoryStreamManager) AppendEvent(ctx context.Context, sessionID, messageID string, event interfaces.StreamEvent) error {
+func (m *MemoryStreamManager) AppendEvent(
+	ctx context.Context,
+	sessionID, messageID string,
+	event interfaces.StreamEvent,
+) error {
 	stream := m.getOrCreateStream(sessionID, messageID)
 
 	stream.mu.Lock()
@@ -80,7 +84,11 @@ func (m *MemoryStreamManager) AppendEvent(ctx context.Context, sessionID, messag
 
 // GetEvents gets events starting from offset
 // Returns: events slice, next offset, error
-func (m *MemoryStreamManager) GetEvents(ctx context.Context, sessionID, messageID string, fromOffset int) ([]interfaces.StreamEvent, int, error) {
+func (m *MemoryStreamManager) GetEvents(
+	ctx context.Context,
+	sessionID, messageID string,
+	fromOffset int,
+) ([]interfaces.StreamEvent, int, error) {
 	stream := m.getStream(sessionID, messageID)
 	if stream == nil {
 		// Stream doesn't exist yet

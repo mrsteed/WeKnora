@@ -21,13 +21,22 @@ type KnowledgeService interface {
 		customFileName string,
 	) (*types.Knowledge, error)
 	// CreateKnowledgeFromURL creates knowledge from a URL.
-	CreateKnowledgeFromURL(ctx context.Context, kbID string, url string, enableMultimodel *bool) (*types.Knowledge, error)
+	CreateKnowledgeFromURL(
+		ctx context.Context,
+		kbID string,
+		url string,
+		enableMultimodel *bool,
+	) (*types.Knowledge, error)
 	// CreateKnowledgeFromPassage creates knowledge from text passages.
 	CreateKnowledgeFromPassage(ctx context.Context, kbID string, passage []string) (*types.Knowledge, error)
 	// CreateKnowledgeFromPassageSync creates knowledge from text passages and waits until chunks are indexed.
 	CreateKnowledgeFromPassageSync(ctx context.Context, kbID string, passage []string) (*types.Knowledge, error)
 	// CreateKnowledgeFromManual creates or saves manual Markdown knowledge content.
-	CreateKnowledgeFromManual(ctx context.Context, kbID string, payload *types.ManualKnowledgePayload) (*types.Knowledge, error)
+	CreateKnowledgeFromManual(
+		ctx context.Context,
+		kbID string,
+		payload *types.ManualKnowledgePayload,
+	) (*types.Knowledge, error)
 	// GetKnowledgeByID retrieves knowledge by ID.
 	GetKnowledgeByID(ctx context.Context, id string) (*types.Knowledge, error)
 	// GetKnowledgeBatch retrieves a batch of knowledge by IDs.
@@ -49,7 +58,11 @@ type KnowledgeService interface {
 	// UpdateKnowledge updates knowledge information.
 	UpdateKnowledge(ctx context.Context, knowledge *types.Knowledge) error
 	// UpdateManualKnowledge updates manual Markdown knowledge content.
-	UpdateManualKnowledge(ctx context.Context, knowledgeID string, payload *types.ManualKnowledgePayload) (*types.Knowledge, error)
+	UpdateManualKnowledge(
+		ctx context.Context,
+		knowledgeID string,
+		payload *types.ManualKnowledgePayload,
+	) (*types.Knowledge, error)
 	// CloneKnowledgeBase clones knowledge to another knowledge base.
 	CloneKnowledgeBase(ctx context.Context, srcID, dstID string) error
 	// UpdateImageInfo updates image information for a knowledge chunk.

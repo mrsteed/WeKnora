@@ -28,7 +28,11 @@ func (r *knowledgeRepository) CreateKnowledge(ctx context.Context, knowledge *ty
 }
 
 // GetKnowledgeByID gets knowledge
-func (r *knowledgeRepository) GetKnowledgeByID(ctx context.Context, tenantID uint64, id string) (*types.Knowledge, error) {
+func (r *knowledgeRepository) GetKnowledgeByID(
+	ctx context.Context,
+	tenantID uint64,
+	id string,
+) (*types.Knowledge, error) {
 	var knowledge types.Knowledge
 	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).First(&knowledge).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -217,13 +221,22 @@ func (r *knowledgeRepository) AminusB(
 	return knowledgeIDs, err
 }
 
-func (r *knowledgeRepository) UpdateKnowledgeColumn(ctx context.Context, id string, column string, value interface{}) error {
+func (r *knowledgeRepository) UpdateKnowledgeColumn(
+	ctx context.Context,
+	id string,
+	column string,
+	value interface{},
+) error {
 	err := r.db.WithContext(ctx).Model(&types.Knowledge{}).Where("id = ?", id).Update(column, value).Error
 	return err
 }
 
 // CountKnowledgeByKnowledgeBaseID counts the number of knowledge items in a knowledge base
-func (r *knowledgeRepository) CountKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) (int64, error) {
+func (r *knowledgeRepository) CountKnowledgeByKnowledgeBaseID(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&types.Knowledge{}).
 		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).

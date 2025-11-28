@@ -85,7 +85,7 @@ func NewInitializationHandler(
 
 // KBModelConfigRequest 知识库模型配置请求（简化版，只传模型ID）
 type KBModelConfigRequest struct {
-	LLMModelID       string           `json:"llmModelId" binding:"required"`
+	LLMModelID       string           `json:"llmModelId"       binding:"required"`
 	EmbeddingModelID string           `json:"embeddingModelId" binding:"required"`
 	VLMConfig        *types.VLMConfig `json:"vlm_config"`
 
@@ -357,7 +357,12 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
-	logger.Infof(ctx, "Starting knowledge base configuration update, kbId: %s, request: %s", utils.SanitizeForLog(kbIdStr), utils.SanitizeForLog(utils.ToJSON(req)))
+	logger.Infof(
+		ctx,
+		"Starting knowledge base configuration update, kbId: %s, request: %s",
+		utils.SanitizeForLog(kbIdStr),
+		utils.SanitizeForLog(utils.ToJSON(req)),
+	)
 
 	// 获取指定知识库信息
 	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbIdStr)
@@ -1253,7 +1258,7 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 // RemoteModelCheckRequest 远程模型检查请求结构
 type RemoteModelCheckRequest struct {
 	ModelName string `json:"modelName" binding:"required"`
-	BaseURL   string `json:"baseUrl" binding:"required"`
+	BaseURL   string `json:"baseUrl"   binding:"required"`
 	APIKey    string `json:"apiKey"`
 }
 
@@ -1764,8 +1769,8 @@ func (h *InitializationHandler) testMultimodalWithDocReader(
 
 // TextRelationExtractionRequest 文本关系提取请求结构
 type TextRelationExtractionRequest struct {
-	Text      string    `json:"text" binding:"required"`
-	Tags      []string  `json:"tags" binding:"required"`
+	Text      string    `json:"text"      binding:"required"`
+	Tags      []string  `json:"tags"      binding:"required"`
 	LLMConfig LLMConfig `json:"llmConfig"`
 }
 
@@ -1824,7 +1829,12 @@ func (h *InitializationHandler) ExtractTextRelations(c *gin.Context) {
 }
 
 // extractRelationsFromText 从文本中提取关系
-func (h *InitializationHandler) extractRelationsFromText(ctx context.Context, text string, tags []string, llm LLMConfig) (*TextRelationExtractionResponse, error) {
+func (h *InitializationHandler) extractRelationsFromText(
+	ctx context.Context,
+	text string,
+	tags []string,
+	llm LLMConfig,
+) (*TextRelationExtractionResponse, error) {
 	chatModel, err := chat.NewChat(&chat.ChatConfig{
 		ModelID:   "initialization",
 		APIKey:    llm.ApiKey,

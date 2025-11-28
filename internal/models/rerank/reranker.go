@@ -88,7 +88,10 @@ type RerankerConfig struct {
 // NewReranker creates a reranker
 func NewReranker(config *RerankerConfig) (Reranker, error) {
 	// 根据URL判断模型来源，而不是依赖Source字段
-	if strings.Contains(config.BaseURL, "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank") {
+	if strings.Contains(
+		config.BaseURL,
+		"https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank",
+	) {
 		return NewAliyunReranker(config)
 	} else {
 		return NewOpenAIReranker(config)

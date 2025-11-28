@@ -178,9 +178,9 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 
 // UpdateKnowledgeBaseRequest defines the request body structure for updating a knowledge base
 type UpdateKnowledgeBaseRequest struct {
-	Name        string                     `json:"name" binding:"required"`
+	Name        string                     `json:"name"        binding:"required"`
 	Description string                     `json:"description"`
-	Config      *types.KnowledgeBaseConfig `json:"config" binding:"required"`
+	Config      *types.KnowledgeBaseConfig `json:"config"      binding:"required"`
 }
 
 // UpdateKnowledgeBase handles requests to update an existing knowledge base

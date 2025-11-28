@@ -26,5 +26,10 @@ type KnowledgeTagRepository interface {
 	ListByKB(ctx context.Context, tenantID uint64, kbID string) ([]*types.KnowledgeTag, error)
 	Delete(ctx context.Context, tenantID uint64, id string) error
 	// CountReferences returns number of knowledges and chunks that reference the tag.
-	CountReferences(ctx context.Context, tenantID uint64, kbID string, tagID string) (knowledgeCount int64, chunkCount int64, err error)
+	CountReferences(
+		ctx context.Context,
+		tenantID uint64,
+		kbID string,
+		tagID string,
+	) (knowledgeCount int64, chunkCount int64, err error)
 }

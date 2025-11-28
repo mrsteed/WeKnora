@@ -112,7 +112,11 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	return chunks, total, nil
 }
 
-func (r *chunkRepository) ListChunkByParentID(ctx context.Context, tenantID uint64, parentID string) ([]*types.Chunk, error) {
+func (r *chunkRepository) ListChunkByParentID(
+	ctx context.Context,
+	tenantID uint64,
+	parentID string,
+) ([]*types.Chunk, error) {
 	var chunks []*types.Chunk
 	if err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND parent_chunk_id = ?", tenantID, parentID).
@@ -166,7 +170,11 @@ func (r *chunkRepository) DeleteByKnowledgeList(ctx context.Context, tenantID ui
 }
 
 // CountChunksByKnowledgeBaseID counts the number of chunks in a knowledge base
-func (r *chunkRepository) CountChunksByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) (int64, error) {
+func (r *chunkRepository) CountChunksByKnowledgeBaseID(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&types.Chunk{}).
 		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
@@ -175,7 +183,11 @@ func (r *chunkRepository) CountChunksByKnowledgeBaseID(ctx context.Context, tena
 }
 
 // DeleteUnindexedChunks by knowledge id and chunk index range
-func (r *chunkRepository) DeleteUnindexedChunks(ctx context.Context, tenantID uint64, knowledgeID string) ([]*types.Chunk, error) {
+func (r *chunkRepository) DeleteUnindexedChunks(
+	ctx context.Context,
+	tenantID uint64,
+	knowledgeID string,
+) ([]*types.Chunk, error) {
 	var chunks []*types.Chunk
 	if err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND knowledge_id = ? AND status = ?", tenantID, knowledgeID, types.ChunkStatusStored).
@@ -194,7 +206,11 @@ func (r *chunkRepository) DeleteUnindexedChunks(ctx context.Context, tenantID ui
 
 // ListAllFAQChunksByKnowledgeID lists all FAQ chunks for a knowledge ID (only essential fields for efficiency)
 // Uses batch query to handle large datasets
-func (r *chunkRepository) ListAllFAQChunksByKnowledgeID(ctx context.Context, tenantID uint64, knowledgeID string) ([]*types.Chunk, error) {
+func (r *chunkRepository) ListAllFAQChunksByKnowledgeID(
+	ctx context.Context,
+	tenantID uint64,
+	knowledgeID string,
+) ([]*types.Chunk, error) {
 	const batchSize = 1000 // 每批查询1000条
 	var allChunks []*types.Chunk
 	offset := 0

@@ -54,7 +54,11 @@ func (r *RedisStreamManager) buildKey(sessionID, messageID string) string {
 }
 
 // AppendEvent appends a single event to the stream using Redis RPush
-func (r *RedisStreamManager) AppendEvent(ctx context.Context, sessionID, messageID string, event interfaces.StreamEvent) error {
+func (r *RedisStreamManager) AppendEvent(
+	ctx context.Context,
+	sessionID, messageID string,
+	event interfaces.StreamEvent,
+) error {
 	key := r.buildKey(sessionID, messageID)
 
 	// Set timestamp if not already set
@@ -83,7 +87,11 @@ func (r *RedisStreamManager) AppendEvent(ctx context.Context, sessionID, message
 
 // GetEvents gets events starting from offset using Redis LRange
 // Returns: events slice, next offset, error
-func (r *RedisStreamManager) GetEvents(ctx context.Context, sessionID, messageID string, fromOffset int) ([]interfaces.StreamEvent, int, error) {
+func (r *RedisStreamManager) GetEvents(
+	ctx context.Context,
+	sessionID, messageID string,
+	fromOffset int,
+) ([]interfaces.StreamEvent, int, error) {
 	key := r.buildKey(sessionID, messageID)
 
 	// Get all events from offset to end using LRange

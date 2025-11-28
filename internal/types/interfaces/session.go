@@ -40,13 +40,28 @@ type SessionService interface {
 	SearchKnowledge(ctx context.Context, knowledgeBaseID, query string) ([]*types.SearchResult, error)
 	// AgentQA performs agent-based question answering with conversation history and streaming support
 	// eventBus is optional - if nil, uses service's default EventBus
-	AgentQA(ctx context.Context, session *types.Session, query string, assistantMessageID string, eventBus *event.EventBus) error
+	AgentQA(
+		ctx context.Context,
+		session *types.Session,
+		query string,
+		assistantMessageID string,
+		eventBus *event.EventBus,
+	) error
 	// ClearContext clears the LLM context for a session
 	ClearContext(ctx context.Context, sessionID string) error
 	// GetWebSearchTempKBState retrieves the temporary KB state for web search from Redis
-	GetWebSearchTempKBState(ctx context.Context, sessionID string) (tempKBID string, seenURLs map[string]bool, knowledgeIDs []string)
+	GetWebSearchTempKBState(
+		ctx context.Context,
+		sessionID string,
+	) (tempKBID string, seenURLs map[string]bool, knowledgeIDs []string)
 	// SaveWebSearchTempKBState saves the temporary KB state for web search to Redis
-	SaveWebSearchTempKBState(ctx context.Context, sessionID string, tempKBID string, seenURLs map[string]bool, knowledgeIDs []string)
+	SaveWebSearchTempKBState(
+		ctx context.Context,
+		sessionID string,
+		tempKBID string,
+		seenURLs map[string]bool,
+		knowledgeIDs []string,
+	)
 	// DeleteWebSearchTempKBState deletes the temporary KB state for web search from Redis and cleans up associated knowledge base and knowledge items
 	DeleteWebSearchTempKBState(ctx context.Context, sessionID string) error
 }

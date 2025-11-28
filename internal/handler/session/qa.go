@@ -104,7 +104,12 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge QA request, session ID: %s, query: %s", sessionID, secutils.SanitizeForLog(request.Query))
+	logger.Infof(
+		ctx,
+		"Knowledge QA request, session ID: %s, query: %s",
+		sessionID,
+		secutils.SanitizeForLog(request.Query),
+	)
 
 	// Get session to prepare knowledge base IDs
 	session, err := h.sessionService.GetSession(ctx, sessionID)
@@ -118,7 +123,11 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 	knowledgeBaseIDs := request.KnowledgeBaseIDs
 	if len(knowledgeBaseIDs) == 0 && session.KnowledgeBaseID != "" {
 		knowledgeBaseIDs = []string{session.KnowledgeBaseID}
-		logger.Infof(ctx, "No knowledge base IDs in request, using session default: %s", secutils.SanitizeForLog(session.KnowledgeBaseID))
+		logger.Infof(
+			ctx,
+			"No knowledge base IDs in request, using session default: %s",
+			secutils.SanitizeForLog(session.KnowledgeBaseID),
+		)
 	}
 
 	// Use shared function to handle KnowledgeQA request
@@ -284,21 +293,42 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		// If still empty, use session default knowledge base
 		if len(knowledgeBaseIDs) == 0 && session.KnowledgeBaseID != "" {
 			knowledgeBaseIDs = []string{session.KnowledgeBaseID}
-			logger.Infof(ctx, "Using session default knowledge base: %s", secutils.SanitizeForLog(session.KnowledgeBaseID))
+			logger.Infof(
+				ctx,
+				"Using session default knowledge base: %s",
+				secutils.SanitizeForLog(session.KnowledgeBaseID),
+			)
 		}
 
 		// Validate at least one knowledge base is available
 		if len(knowledgeBaseIDs) == 0 {
 			logger.Error(ctx, "No knowledge base available for delegation")
-			c.Error(errors.NewBadRequestError("No knowledge base available. Please configure at least one knowledge base."))
+			c.Error(
+				errors.NewBadRequestError("No knowledge base available. Please configure at least one knowledge base."),
+			)
 			return
 		}
 
-		logger.Infof(ctx, "Delegating to KnowledgeQA with knowledge bases: %s", secutils.SanitizeForLog(fmt.Sprintf("%v", knowledgeBaseIDs)))
+		logger.Infof(
+			ctx,
+			"Delegating to KnowledgeQA with knowledge bases: %s",
+			secutils.SanitizeForLog(fmt.Sprintf("%v", knowledgeBaseIDs)),
+		)
 
 		// Use shared function to handle KnowledgeQA request (no title generation for AgentQA fallback)
-		h.handleKnowledgeQARequest(ctx, c, session, secutils.SanitizeForLog(request.Query),
-			secutils.SanitizeForLogArray(knowledgeBaseIDs), assistantMessage, false, secutils.SanitizeForLog(request.SummaryModelID), request.WebSearchEnabled)
+		h.handleKnowledgeQARequest(
+			ctx,
+			c,
+			session,
+			secutils.SanitizeForLog(request.Query),
+			secutils.SanitizeForLogArray(
+				knowledgeBaseIDs,
+			),
+			assistantMessage,
+			false,
+			secutils.SanitizeForLog(request.SummaryModelID),
+			request.WebSearchEnabled,
+		)
 		return
 	}
 
@@ -369,7 +399,13 @@ func (h *Handler) AgentQA(c *gin.Context) {
 			h.completeAssistantMessage(asyncCtx, assistantMessage)
 			logger.Infof(asyncCtx, "Agent QA service completed for session: %s", sessionID)
 		}()
-		err := h.sessionService.AgentQA(asyncCtx, session, secutils.SanitizeForLog(request.Query), assistantMessage.ID, eventBus)
+		err := h.sessionService.AgentQA(
+			asyncCtx,
+			session,
+			secutils.SanitizeForLog(request.Query),
+			assistantMessage.ID,
+			eventBus,
+		)
 		if err != nil {
 			logger.ErrorWithFields(asyncCtx, err, nil)
 			// Emit error event to dedicated EventBus
@@ -479,10 +515,23 @@ func (h *Handler) handleKnowledgeQARequest(
 			if r := recover(); r != nil {
 				buf := make([]byte, 10240)
 				runtime.Stack(buf, true)
-				logger.ErrorWithFields(asyncCtx, errors.NewInternalServerError(fmt.Sprintf("Knowledge QA service panicked: %v\n%s", r, string(buf))), nil)
+				logger.ErrorWithFields(
+					asyncCtx,
+					errors.NewInternalServerError(fmt.Sprintf("Knowledge QA service panicked: %v\n%s", r, string(buf))),
+					nil,
+				)
 			}
 		}()
-		err := h.sessionService.KnowledgeQA(asyncCtx, session, query, knowledgeBaseIDs, assistantMessage.ID, summaryModelID, webSearchEnabled, eventBus)
+		err := h.sessionService.KnowledgeQA(
+			asyncCtx,
+			session,
+			query,
+			knowledgeBaseIDs,
+			assistantMessage.ID,
+			summaryModelID,
+			webSearchEnabled,
+			eventBus,
+		)
 		if err != nil {
 			logger.ErrorWithFields(asyncCtx, err, nil)
 			// Emit error event to dedicated EventBus

@@ -129,10 +129,10 @@ type FAQEntry struct {
 
 // FAQEntryPayload 用于创建/更新 FAQ 条目的 payload
 type FAQEntryPayload struct {
-	StandardQuestion  string   `json:"standard_question" binding:"required"`
+	StandardQuestion  string   `json:"standard_question"    binding:"required"`
 	SimilarQuestions  []string `json:"similar_questions"`
 	NegativeQuestions []string `json:"negative_questions"`
-	Answers           []string `json:"answers" binding:"required"`
+	Answers           []string `json:"answers"              binding:"required"`
 	TagID             string   `json:"tag_id"`
 	IsEnabled         *bool    `json:"is_enabled,omitempty"`
 }
@@ -144,14 +144,14 @@ const (
 
 // FAQBatchUpsertPayload 批量导入 FAQ 条目
 type FAQBatchUpsertPayload struct {
-	Entries     []FAQEntryPayload `json:"entries" binding:"required"`
-	Mode        string            `json:"mode" binding:"oneof=append replace"`
+	Entries     []FAQEntryPayload `json:"entries"      binding:"required"`
+	Mode        string            `json:"mode"         binding:"oneof=append replace"`
 	KnowledgeID string            `json:"knowledge_id"`
 }
 
 // FAQSearchRequest FAQ检索请求参数
 type FAQSearchRequest struct {
-	QueryText       string  `json:"query_text" binding:"required"`
+	QueryText       string  `json:"query_text"       binding:"required"`
 	VectorThreshold float64 `json:"vector_threshold"`
 	MatchCount      int     `json:"match_count"`
 }

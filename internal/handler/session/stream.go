@@ -290,7 +290,11 @@ func (h *Handler) handleAgentEventsForSSE(
 		select {
 		case <-c.Request.Context().Done():
 			// Connection closed, exit gracefully without panic
-			log.Infof("Client disconnected, stopping SSE streaming for session=%s, message=%s", sessionID, assistantMessageID)
+			log.Infof(
+				"Client disconnected, stopping SSE streaming for session=%s, message=%s",
+				sessionID,
+				assistantMessageID,
+			)
 			return
 
 		case <-ticker.C:

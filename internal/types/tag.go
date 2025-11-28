@@ -7,17 +7,17 @@ import "time"
 // Knowledge (documents) and FAQ Chunks.
 type KnowledgeTag struct {
 	// Unique identifier of the tag (UUID)
-	ID string `json:"id" gorm:"type:varchar(36);primaryKey"`
+	ID string `json:"id"                gorm:"type:varchar(36);primaryKey"`
 	// Tenant ID
 	TenantID uint64 `json:"tenant_id"`
 	// Knowledge base ID that this tag belongs to
 	KnowledgeBaseID string `json:"knowledge_base_id" gorm:"type:varchar(36);index"`
 	// Tag name, unique within the same knowledge base
-	Name string `json:"name" gorm:"type:varchar(128);not null"`
+	Name string `json:"name"              gorm:"type:varchar(128);not null"`
 	// Optional display color
-	Color string `json:"color" gorm:"type:varchar(32)"`
+	Color string `json:"color"             gorm:"type:varchar(32)"`
 	// Sort order within the same knowledge base
-	SortOrder int `json:"sort_order" gorm:"default:0"`
+	SortOrder int `json:"sort_order"        gorm:"default:0"`
 	// Creation time
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time

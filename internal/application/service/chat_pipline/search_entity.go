@@ -77,7 +77,13 @@ func (p *PluginSearchEntity) OnEvent(ctx context.Context,
 				return
 			}
 
-			logger.Infof(ctx, "KB %s entity search result count: %d nodes, %d relations", knowledgeBaseID, len(graph.Node), len(graph.Relation))
+			logger.Infof(
+				ctx,
+				"KB %s entity search result count: %d nodes, %d relations",
+				knowledgeBaseID,
+				len(graph.Node),
+				len(graph.Relation),
+			)
 
 			mu.Lock()
 			allNodes = append(allNodes, graph.Node...)
@@ -109,7 +115,11 @@ func (p *PluginSearchEntity) OnEvent(ctx context.Context,
 	for _, chunk := range chunks {
 		knowledgeIDs = append(knowledgeIDs, chunk.KnowledgeID)
 	}
-	knowledges, err := p.knowledgeRepo.GetKnowledgeBatch(ctx, ctx.Value(types.TenantIDContextKey).(uint64), knowledgeIDs)
+	knowledges, err := p.knowledgeRepo.GetKnowledgeBatch(
+		ctx,
+		ctx.Value(types.TenantIDContextKey).(uint64),
+		knowledgeIDs,
+	)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to list knowledge, session_id: %s, error: %v", chatManage.SessionID, err)
 		return next()
@@ -129,7 +139,12 @@ func (p *PluginSearchEntity) OnEvent(ctx context.Context,
 		logger.Infof(ctx, "No new search result, session_id: %s", chatManage.SessionID)
 		return ErrSearchNothing
 	}
-	logger.Infof(ctx, "search entity result count: %d, session_id: %s", len(chatManage.SearchResult), chatManage.SessionID)
+	logger.Infof(
+		ctx,
+		"search entity result count: %d, session_id: %s",
+		len(chatManage.SearchResult),
+		chatManage.SessionID,
+	)
 	return next()
 }
 

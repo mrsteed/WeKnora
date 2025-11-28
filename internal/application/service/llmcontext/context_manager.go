@@ -18,7 +18,11 @@ type contextManager struct {
 }
 
 // NewContextManager creates a new context manager with the specified storage and compression strategy
-func NewContextManager(storage ContextStorage, compressionStrategy interfaces.CompressionStrategy, maxTokens int) interfaces.ContextManager {
+func NewContextManager(
+	storage ContextStorage,
+	compressionStrategy interfaces.CompressionStrategy,
+	maxTokens int,
+) interfaces.ContextManager {
 	return &contextManager{
 		storage:             storage,
 		compressionStrategy: compressionStrategy,
@@ -27,7 +31,10 @@ func NewContextManager(storage ContextStorage, compressionStrategy interfaces.Co
 }
 
 // NewContextManagerWithMemory creates a context manager with in-memory storage (for backward compatibility)
-func NewContextManagerWithMemory(compressionStrategy interfaces.CompressionStrategy, maxTokens int) interfaces.ContextManager {
+func NewContextManagerWithMemory(
+	compressionStrategy interfaces.CompressionStrategy,
+	maxTokens int,
+) interfaces.ContextManager {
 	return &contextManager{
 		storage:             NewMemoryStorage(),
 		compressionStrategy: compressionStrategy,
@@ -86,7 +93,12 @@ func (cm *contextManager) AddMessage(ctx context.Context, sessionID string, mess
 		return fmt.Errorf("failed to save context: %w", err)
 	}
 
-	logger.Infof(ctx, "[ContextManager][Session-%s] Successfully added message (total: %d messages)", sessionID, len(messages))
+	logger.Infof(
+		ctx,
+		"[ContextManager][Session-%s] Successfully added message (total: %d messages)",
+		sessionID,
+		len(messages),
+	)
 	return nil
 }
 

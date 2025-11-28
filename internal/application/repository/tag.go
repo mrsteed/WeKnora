@@ -35,7 +35,11 @@ func (r *knowledgeTagRepository) GetByID(ctx context.Context, tenantID uint64, i
 	return &tag, nil
 }
 
-func (r *knowledgeTagRepository) ListByKB(ctx context.Context, tenantID uint64, kbID string) ([]*types.KnowledgeTag, error) {
+func (r *knowledgeTagRepository) ListByKB(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+) ([]*types.KnowledgeTag, error) {
 	var tags []*types.KnowledgeTag
 	if err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).

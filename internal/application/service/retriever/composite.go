@@ -62,7 +62,10 @@ func (c *CompositeRetrieveEngine) Retrieve(ctx context.Context,
 }
 
 // NewCompositeRetrieveEngine creates a new composite retrieve engine with the given parameters
-func NewCompositeRetrieveEngine(registry interfaces.RetrieveEngineRegistry, engineParams []types.RetrieverEngineParams) (*CompositeRetrieveEngine, error) {
+func NewCompositeRetrieveEngine(
+	registry interfaces.RetrieveEngineRegistry,
+	engineParams []types.RetrieverEngineParams,
+) (*CompositeRetrieveEngine, error) {
 	engineInfos := make(map[types.RetrieverEngineType]*engineInfo)
 	for _, engineParam := range engineParams {
 		repo, err := registry.GetRetrieveEngineService(engineParam.RetrieverEngineType)
@@ -100,7 +103,10 @@ func (c *CompositeRetrieveEngine) SupportRetriever(r types.RetrieverType) bool {
 }
 
 // BatchUpdateChunkEnabledStatus updates the enabled status of chunks in batch
-func (c *CompositeRetrieveEngine) BatchUpdateChunkEnabledStatus(ctx context.Context, chunkStatusMap map[string]bool) error {
+func (c *CompositeRetrieveEngine) BatchUpdateChunkEnabledStatus(
+	ctx context.Context,
+	chunkStatusMap map[string]bool,
+) error {
 	return c.concurrentExecWithError(ctx, func(ctx context.Context, engineInfo *engineInfo) error {
 		if err := engineInfo.retrieveEngine.BatchUpdateChunkEnabledStatus(ctx, chunkStatusMap); err != nil {
 			return err

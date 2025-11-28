@@ -222,7 +222,13 @@ func compositeScore(sr *types.SearchResult, modelScore, baseScore float64, chatM
 	return composite
 }
 
-func applyMMR(ctx context.Context, results []*types.SearchResult, chatManage *types.ChatManage, k int, lambda float64) []*types.SearchResult {
+func applyMMR(
+	ctx context.Context,
+	results []*types.SearchResult,
+	chatManage *types.ChatManage,
+	k int,
+	lambda float64,
+) []*types.SearchResult {
 	if k <= 0 || len(results) == 0 {
 		return nil
 	}

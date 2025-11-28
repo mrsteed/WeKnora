@@ -196,7 +196,8 @@ func (t *SequentialThinkingTool) Execute(ctx context.Context, args map[string]in
 		branchKeys = append(branchKeys, k)
 	}
 
-	incomplete := thoughtData.NextThoughtNeeded || thoughtData.NeedsMoreThoughts || thoughtData.ThoughtNumber < thoughtData.TotalThoughts
+	incomplete := thoughtData.NextThoughtNeeded || thoughtData.NeedsMoreThoughts ||
+		thoughtData.ThoughtNumber < thoughtData.TotalThoughts
 
 	responseData := map[string]interface{}{
 		"thought_number":         thoughtData.ThoughtNumber,
@@ -209,7 +210,12 @@ func (t *SequentialThinkingTool) Execute(ctx context.Context, args map[string]in
 		"incomplete_steps":       incomplete,
 	}
 
-	logger.Infof(ctx, "[Tool][SequentialThinking] Execute completed - Thought %d/%d", thoughtData.ThoughtNumber, thoughtData.TotalThoughts)
+	logger.Infof(
+		ctx,
+		"[Tool][SequentialThinking] Execute completed - Thought %d/%d",
+		thoughtData.ThoughtNumber,
+		thoughtData.TotalThoughts,
+	)
 
 	outputMsg := "Thought process recorded"
 	if incomplete {

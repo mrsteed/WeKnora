@@ -69,7 +69,11 @@ func (r *ToolRegistry) GetFunctionDefinitions() []types.FunctionDefinition {
 }
 
 // ExecuteTool executes a tool by name with the given arguments
-func (r *ToolRegistry) ExecuteTool(ctx context.Context, name string, args map[string]interface{}) (*types.ToolResult, error) {
+func (r *ToolRegistry) ExecuteTool(
+	ctx context.Context,
+	name string,
+	args map[string]interface{},
+) (*types.ToolResult, error) {
 	common.PipelineInfo(ctx, "AgentTool", "execute_start", map[string]interface{}{
 		"tool": name,
 		"args": args,

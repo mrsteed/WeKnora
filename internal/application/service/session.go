@@ -326,7 +326,12 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 // GenerateTitleAsync generates a title for the session asynchronously
 // This method clones the session and generates the title in a goroutine
 // It emits an event when the title is generated
-func (s *sessionService) GenerateTitleAsync(ctx context.Context, session *types.Session, userQuery string, eventBus *event.EventBus) {
+func (s *sessionService) GenerateTitleAsync(
+	ctx context.Context,
+	session *types.Session,
+	userQuery string,
+	eventBus *event.EventBus,
+) {
 	// Extract values from context before cloning
 	tenantID := ctx.Value(types.TenantIDContextKey)
 	requestID := ctx.Value(types.RequestIDContextKey)
@@ -384,8 +389,23 @@ func (s *sessionService) GenerateTitleAsync(ctx context.Context, session *types.
 
 // KnowledgeQA performs knowledge base question answering with LLM summarization
 // Events are emitted through eventBus (references, answer chunks, completion)
-func (s *sessionService) KnowledgeQA(ctx context.Context, session *types.Session, query string, knowledgeBaseIDs []string, assistantMessageID string, summaryModelID string, webSearchEnabled bool, eventBus *event.EventBus) error {
-	logger.Infof(ctx, "Knowledge base question answering parameters, session ID: %s, query: %s, webSearchEnabled: %v", session.ID, query, webSearchEnabled)
+func (s *sessionService) KnowledgeQA(
+	ctx context.Context,
+	session *types.Session,
+	query string,
+	knowledgeBaseIDs []string,
+	assistantMessageID string,
+	summaryModelID string,
+	webSearchEnabled bool,
+	eventBus *event.EventBus,
+) error {
+	logger.Infof(
+		ctx,
+		"Knowledge base question answering parameters, session ID: %s, query: %s, webSearchEnabled: %v",
+		session.ID,
+		query,
+		webSearchEnabled,
+	)
 
 	// If no knowledge base IDs provided, fall back to session's default
 	if len(knowledgeBaseIDs) == 0 {
@@ -492,7 +512,12 @@ func (s *sessionService) KnowledgeQA(ctx context.Context, session *types.Session
 	}
 
 	// Create chat management object with session settings
-	logger.Infof(ctx, "Creating chat manage object, knowledge base IDs: %v, chat model ID: %s", knowledgeBaseIDs, chatModelID)
+	logger.Infof(
+		ctx,
+		"Creating chat manage object, knowledge base IDs: %v, chat model ID: %s",
+		knowledgeBaseIDs,
+		chatModelID,
+	)
 	chatManage := &types.ChatManage{
 		Query:                query,
 		RewriteQuery:         query,
@@ -563,13 +588,23 @@ func (s *sessionService) KnowledgeQA(ctx context.Context, session *types.Session
 // 3. First knowledge base with a Remote model
 // 4. Session's SummaryModelID (if not Remote)
 // 5. First knowledge base's SummaryModelID
-func (s *sessionService) selectChatModelIDWithOverride(ctx context.Context, session *types.Session, knowledgeBaseIDs []string, summaryModelID string) (string, error) {
+func (s *sessionService) selectChatModelIDWithOverride(
+	ctx context.Context,
+	session *types.Session,
+	knowledgeBaseIDs []string,
+	summaryModelID string,
+) (string, error) {
 	// First, check if request has summaryModelID override
 	if summaryModelID != "" {
 		// Validate that the model exists
 		model, err := s.modelService.GetModelByID(ctx, summaryModelID)
 		if err != nil {
-			logger.Warnf(ctx, "Request provided invalid summary model ID %s: %v, falling back to default selection", summaryModelID, err)
+			logger.Warnf(
+				ctx,
+				"Request provided invalid summary model ID %s: %v, falling back to default selection",
+				summaryModelID,
+				err,
+			)
 		} else if model != nil {
 			logger.Infof(ctx, "Using request's summary model override: %s", summaryModelID)
 			return summaryModelID, nil
@@ -586,7 +621,11 @@ func (s *sessionService) selectChatModelIDWithOverride(ctx context.Context, sess
 // 2. First knowledge base with a Remote model
 // 3. Session's SummaryModelID (if not Remote)
 // 4. First knowledge base's SummaryModelID
-func (s *sessionService) selectChatModelID(ctx context.Context, session *types.Session, knowledgeBaseIDs []string) (string, error) {
+func (s *sessionService) selectChatModelID(
+	ctx context.Context,
+	session *types.Session,
+	knowledgeBaseIDs []string,
+) (string, error) {
 	// First, check if session has a SummaryModelID and if it's a Remote model
 	if session.SummaryModelID != "" {
 		model, err := s.modelService.GetModelByID(ctx, session.SummaryModelID)
@@ -630,7 +669,12 @@ func (s *sessionService) selectChatModelID(ctx context.Context, session *types.S
 			return "", fmt.Errorf("failed to get knowledge base %s: %w", knowledgeBaseIDs[0], err)
 		}
 		if kb != nil && kb.SummaryModelID != "" {
-			logger.Infof(ctx, "Using summary model from first knowledge base %s: %s", knowledgeBaseIDs[0], kb.SummaryModelID)
+			logger.Infof(
+				ctx,
+				"Using summary model from first knowledge base %s: %s",
+				knowledgeBaseIDs[0],
+				kb.SummaryModelID,
+			)
 			return kb.SummaryModelID, nil
 		} else {
 			logger.Errorf(ctx, "Knowledge base %s has no summary model ID", knowledgeBaseIDs[0])
@@ -639,7 +683,9 @@ func (s *sessionService) selectChatModelID(ctx context.Context, session *types.S
 	}
 
 	logger.Error(ctx, "No chat model ID available")
-	return "", errors.New("no chat model ID available: session has no SummaryModelID and knowledge bases have no SummaryModelID")
+	return "", errors.New(
+		"no chat model ID available: session has no SummaryModelID and knowledge bases have no SummaryModelID",
+	)
 }
 
 // KnowledgeQAByEvent processes knowledge QA through a series of events in the pipeline
@@ -674,7 +720,12 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 
 		// Handle case where search returns no results
 		if err == chatpipline.ErrSearchNothing {
-			logger.Warnf(ctx, "Event %v triggered, search result is empty, using fallback response, strategy: %v", eventType, chatManage.FallbackStrategy)
+			logger.Warnf(
+				ctx,
+				"Event %v triggered, search result is empty, using fallback response, strategy: %v",
+				eventType,
+				chatManage.FallbackStrategy,
+			)
 			s.handleFallbackResponse(ctx, chatManage)
 			return nil
 		}
@@ -800,7 +851,13 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 }
 
 // AgentQA performs agent-based question answering with conversation history and streaming support
-func (s *sessionService) AgentQA(ctx context.Context, session *types.Session, query string, assistantMessageID string, eventBus *event.EventBus) error {
+func (s *sessionService) AgentQA(
+	ctx context.Context,
+	session *types.Session,
+	query string,
+	assistantMessageID string,
+	eventBus *event.EventBus,
+) error {
 	sessionID := session.ID
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	sessionJSON, err := json.Marshal(session)
@@ -940,7 +997,16 @@ func (s *sessionService) AgentQA(ctx context.Context, session *types.Session, qu
 
 	// Create agent engine with EventBus and ContextManager
 	logger.Info(ctx, "Creating agent engine")
-	engine, err := s.agentService.CreateAgentEngine(ctx, agentConfig, summaryModel, rerankModel, eventBus, contextManager, session.ID, s)
+	engine, err := s.agentService.CreateAgentEngine(
+		ctx,
+		agentConfig,
+		summaryModel,
+		rerankModel,
+		eventBus,
+		contextManager,
+		session.ID,
+		s,
+	)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to create agent engine: %v", err)
 		return err
@@ -968,7 +1034,11 @@ func (s *sessionService) AgentQA(ctx context.Context, session *types.Session, qu
 
 // getContextManagerForSession creates a context manager for the session based on configuration
 // Returns the configured context manager (tenant-level or session-level) or default
-func (s *sessionService) getContextManagerForSession(ctx context.Context, session *types.Session, chatModel chat.Chat) interfaces.ContextManager {
+func (s *sessionService) getContextManagerForSession(
+	ctx context.Context,
+	session *types.Session,
+	chatModel chat.Chat,
+) interfaces.ContextManager {
 	// Get tenant to access global context configuration
 	tenant, _ := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	// Determine which context config to use: session-specific or tenant-level
@@ -995,7 +1065,11 @@ func (s *sessionService) getContextManagerForSession(ctx context.Context, sessio
 }
 
 // getContextForSession retrieves LLM context for a session
-func (s *sessionService) getContextForSession(ctx context.Context, contextManager interfaces.ContextManager, sessionID string) ([]chat.Message, error) {
+func (s *sessionService) getContextForSession(
+	ctx context.Context,
+	contextManager interfaces.ContextManager,
+	sessionID string,
+) ([]chat.Message, error) {
 	history, err := contextManager.GetContext(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get context: %w", err)
@@ -1019,7 +1093,10 @@ func (s *sessionService) ClearContext(ctx context.Context, sessionID string) err
 }
 
 // GetWebSearchTempKBState retrieves the temporary KB state for web search from Redis
-func (s *sessionService) GetWebSearchTempKBState(ctx context.Context, sessionID string) (tempKBID string, seenURLs map[string]bool, knowledgeIDs []string) {
+func (s *sessionService) GetWebSearchTempKBState(
+	ctx context.Context,
+	sessionID string,
+) (tempKBID string, seenURLs map[string]bool, knowledgeIDs []string) {
 	stateKey := fmt.Sprintf("tempkb:%s", sessionID)
 	if raw, getErr := s.redisClient.Get(ctx, stateKey).Bytes(); getErr == nil && len(raw) > 0 {
 		var state struct {
@@ -1042,7 +1119,13 @@ func (s *sessionService) GetWebSearchTempKBState(ctx context.Context, sessionID 
 }
 
 // SaveWebSearchTempKBState saves the temporary KB state for web search to Redis
-func (s *sessionService) SaveWebSearchTempKBState(ctx context.Context, sessionID string, tempKBID string, seenURLs map[string]bool, knowledgeIDs []string) {
+func (s *sessionService) SaveWebSearchTempKBState(
+	ctx context.Context,
+	sessionID string,
+	tempKBID string,
+	seenURLs map[string]bool,
+	knowledgeIDs []string,
+) {
 	stateKey := fmt.Sprintf("tempkb:%s", sessionID)
 	state := struct {
 		KBID         string          `json:"kbID"`
@@ -1207,7 +1290,11 @@ func (s *sessionService) renderFallbackPrompt(ctx context.Context, chatManage *t
 }
 
 // consumeFallbackStream consumes the streaming response and emits events
-func (s *sessionService) consumeFallbackStream(ctx context.Context, chatManage *types.ChatManage, responseChan <-chan types.StreamResponse) {
+func (s *sessionService) consumeFallbackStream(
+	ctx context.Context,
+	chatManage *types.ChatManage,
+	responseChan <-chan types.StreamResponse,
+) {
 	fallbackID := generateEventID("fallback")
 	eventBus := chatManage.EventBus
 	var finalContent string

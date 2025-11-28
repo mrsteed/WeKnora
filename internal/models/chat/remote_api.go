@@ -263,7 +263,11 @@ func (c *RemoteAPIChat) Chat(ctx context.Context, messages []Message, opts *Chat
 }
 
 // chatWithQwen 使用自定义请求处理 qwen 模型
-func (c *RemoteAPIChat) chatWithQwen(ctx context.Context, messages []Message, opts *ChatOptions) (*types.ChatResponse, error) {
+func (c *RemoteAPIChat) chatWithQwen(
+	ctx context.Context,
+	messages []Message,
+	opts *ChatOptions,
+) (*types.ChatResponse, error) {
 	// 构建 qwen 请求参数
 	req := c.buildQwenChatCompletionRequest(messages, opts, false)
 

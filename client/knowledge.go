@@ -172,7 +172,12 @@ func (c *Client) CreateKnowledgeFromFile(ctx context.Context,
 }
 
 // CreateKnowledgeFromURL creates a knowledge entry from a web URL
-func (c *Client) CreateKnowledgeFromURL(ctx context.Context, knowledgeBaseID string, url string, enableMultimodel *bool) (*Knowledge, error) {
+func (c *Client) CreateKnowledgeFromURL(
+	ctx context.Context,
+	knowledgeBaseID string,
+	url string,
+	enableMultimodel *bool,
+) (*Knowledge, error) {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/knowledge/url", knowledgeBaseID)
 
 	reqBody := struct {

@@ -248,7 +248,10 @@ func (s *knowledgeBaseService) DeleteKnowledgeBase(ctx context.Context, id strin
 		// Delete embeddings from vector store
 		logger.Infof(ctx, "Deleting embeddings from vector store")
 		tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
-		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(
+			s.retrieveEngine,
+			tenantInfo.RetrieverEngines.Engines,
+		)
 		if err != nil {
 			logger.Warnf(ctx, "Failed to create retrieve engine: %v", err)
 		} else {
@@ -489,7 +492,8 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 	}
 
 	// Add keyword retrieval params if supported and not FAQ
-	if retrieveEngine.SupportRetriever(types.KeywordsRetrieverType) && !params.DisableKeywordsMatch && kb.Type != types.KnowledgeBaseTypeFAQ {
+	if retrieveEngine.SupportRetriever(types.KeywordsRetrieverType) && !params.DisableKeywordsMatch &&
+		kb.Type != types.KnowledgeBaseTypeFAQ {
 		logger.Info(ctx, "Keyword retrieval supported, preparing keyword retrieval parameters")
 		retrieveParams = append(retrieveParams, types.RetrieveParams{
 			Query:            params.QueryText,
@@ -537,7 +541,9 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 	logger.Infof(ctx, "Result count before deduplication: %d", len(matchResults))
 
 	// First, try standard deduplication
-	deduplicatedChunks := common.DeduplicateWithScore(func(r *types.IndexWithScore) string { return r.ChunkID }, matchResults...)
+	deduplicatedChunks := common.DeduplicateWithScore(
+		func(r *types.IndexWithScore) string { return r.ChunkID },
+		matchResults...)
 	logger.Infof(ctx, "Result count after deduplication: %d", len(deduplicatedChunks))
 
 	kb.EnsureDefaults()
@@ -549,7 +555,13 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 	if needsIterativeRetrieval {
 		logger.Info(ctx, "Not enough unique chunks, using iterative retrieval for FAQ")
 		// Use iterative retrieval to get more unique chunks (with negative question filtering inside)
-		deduplicatedChunks = s.iterativeRetrieveWithDeduplication(ctx, retrieveEngine, retrieveParams, params.MatchCount, params.QueryText)
+		deduplicatedChunks = s.iterativeRetrieveWithDeduplication(
+			ctx,
+			retrieveEngine,
+			retrieveParams,
+			params.MatchCount,
+			params.QueryText,
+		)
 	} else if kb.Type == types.KnowledgeBaseTypeFAQ {
 		// Filter by negative questions if not using iterative retrieval
 		deduplicatedChunks = s.filterByNegativeQuestions(ctx, deduplicatedChunks, params.QueryText)
@@ -606,7 +618,12 @@ func (s *knowledgeBaseService) iterativeRetrieveWithDeduplication(ctx context.Co
 		// Check if we got fewer results than requested - means no more results available
 		totalRetrieved := len(iterationResults)
 		if totalRetrieved < currentTopK {
-			logger.Infof(ctx, "Retrieved %d results (less than TopK %d), no more results available", totalRetrieved, currentTopK)
+			logger.Infof(
+				ctx,
+				"Retrieved %d results (less than TopK %d), no more results available",
+				totalRetrieved,
+				currentTopK,
+			)
 		}
 
 		// Deduplicate and merge (keep highest score for each chunk)
@@ -631,8 +648,14 @@ func (s *knowledgeBaseService) iterativeRetrieveWithDeduplication(ctx context.Co
 			uniqueChunks[chunk.ChunkID] = chunk
 		}
 
-		logger.Infof(ctx, "After iteration %d: retrieved %d results, found %d unique chunks after filtering (target: %d)",
-			i+1, totalRetrieved, len(uniqueChunks), matchCount)
+		logger.Infof(
+			ctx,
+			"After iteration %d: retrieved %d results, found %d unique chunks after filtering (target: %d)",
+			i+1,
+			totalRetrieved,
+			len(uniqueChunks),
+			matchCount,
+		)
 
 		// Early stop: Check if we have enough unique chunks after deduplication and filtering
 		if len(uniqueChunks) >= matchCount {

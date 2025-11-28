@@ -24,7 +24,11 @@ func NewSlidingWindowStrategy(recentMessageCount int) interfaces.CompressionStra
 
 // Compress implements the sliding window compression
 // Keeps system messages and the most recent N messages
-func (s *slidingWindowStrategy) Compress(ctx context.Context, messages []chat.Message, maxTokens int) ([]chat.Message, error) {
+func (s *slidingWindowStrategy) Compress(
+	ctx context.Context,
+	messages []chat.Message,
+	maxTokens int,
+) ([]chat.Message, error) {
 	if len(messages) <= s.recentMessageCount {
 		return messages, nil
 	}
@@ -83,7 +87,11 @@ type smartCompressionStrategy struct {
 }
 
 // NewSmartCompressionStrategy creates a new smart compression strategy
-func NewSmartCompressionStrategy(recentMessageCount int, chatModel chat.Chat, summarizeThreshold int) interfaces.CompressionStrategy {
+func NewSmartCompressionStrategy(
+	recentMessageCount int,
+	chatModel chat.Chat,
+	summarizeThreshold int,
+) interfaces.CompressionStrategy {
 	return &smartCompressionStrategy{
 		recentMessageCount: recentMessageCount,
 		chatModel:          chatModel,
@@ -93,7 +101,11 @@ func NewSmartCompressionStrategy(recentMessageCount int, chatModel chat.Chat, su
 
 // Compress implements smart compression with LLM summarization
 // Summarizes old messages and keeps recent messages intact
-func (s *smartCompressionStrategy) Compress(ctx context.Context, messages []chat.Message, maxTokens int) ([]chat.Message, error) {
+func (s *smartCompressionStrategy) Compress(
+	ctx context.Context,
+	messages []chat.Message,
+	maxTokens int,
+) ([]chat.Message, error) {
 	if len(messages) <= s.recentMessageCount {
 		return messages, nil
 	}
@@ -156,8 +168,15 @@ func (s *smartCompressionStrategy) Compress(ctx context.Context, messages []chat
 	})
 	result = append(result, recentMessages...)
 
-	logger.Infof(ctx, "[SmartCompression] Compressed %d messages to %d messages (summarized %d old + kept %d recent + %d system)",
-		len(messages), len(result), len(oldMessages), len(recentMessages), len(systemMessages))
+	logger.Infof(
+		ctx,
+		"[SmartCompression] Compressed %d messages to %d messages (summarized %d old + kept %d recent + %d system)",
+		len(messages),
+		len(result),
+		len(oldMessages),
+		len(recentMessages),
+		len(systemMessages),
+	)
 
 	return result, nil
 }

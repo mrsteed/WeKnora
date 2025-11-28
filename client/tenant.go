@@ -24,23 +24,23 @@ type RetrieverEngineParams struct {
 
 // Tenant represents tenant information in the system
 type Tenant struct {
-	ID uint `yaml:"id" json:"id" gorm:"primaryKey"`
+	ID uint `yaml:"id"                json:"id"                gorm:"primaryKey"`
 	// Tenant name
-	Name string `yaml:"name" json:"name"`
+	Name string `yaml:"name"              json:"name"`
 	// Tenant description
-	Description string `yaml:"description" json:"description"`
+	Description string `yaml:"description"       json:"description"`
 	// API key for authentication
-	APIKey string `yaml:"api_key" json:"api_key"`
+	APIKey string `yaml:"api_key"           json:"api_key"`
 	// Tenant status (active, inactive)
-	Status string `yaml:"status" json:"status" gorm:"default:'active'"`
+	Status string `yaml:"status"            json:"status"            gorm:"default:'active'"`
 	// Configured retrieval engines
 	RetrieverEngines RetrieverEngines `yaml:"retriever_engines" json:"retriever_engines" gorm:"type:json"`
 	// Business/department information
-	Business string `yaml:"business" json:"business"`
+	Business string `yaml:"business"          json:"business"`
 	// Creation timestamp
-	CreatedAt time.Time `yaml:"created_at" json:"created_at"`
+	CreatedAt time.Time `yaml:"created_at"        json:"created_at"`
 	// Last update timestamp
-	UpdatedAt time.Time `yaml:"updated_at" json:"updated_at"`
+	UpdatedAt time.Time `yaml:"updated_at"        json:"updated_at"`
 }
 
 // TenantResponse represents the API response structure for tenant operations

@@ -184,7 +184,13 @@ func (s *agentService) registerTools(
 	if tid, ok := ctx.Value(types.TenantIDContextKey).(uint64); ok {
 		tenantID = tid
 	}
-	logger.Infof(ctx, "Registering tools: %v, tenant ID: %d, webSearchEnabled: %v", allowedTools, tenantID, config.WebSearchEnabled)
+	logger.Infof(
+		ctx,
+		"Registering tools: %v, tenant ID: %d, webSearchEnabled: %v",
+		allowedTools,
+		tenantID,
+		config.WebSearchEnabled,
+	)
 
 	// Register each allowed tool
 	for _, toolName := range allowedTools {
@@ -224,7 +230,12 @@ func (s *agentService) registerTools(
 				sessionID,
 				config.WebSearchMaxResults,
 			))
-			logger.Infof(ctx, "Registered web_search tool for session: %s, maxResults: %d", sessionID, config.WebSearchMaxResults)
+			logger.Infof(
+				ctx,
+				"Registered web_search tool for session: %s, maxResults: %d",
+				sessionID,
+				config.WebSearchMaxResults,
+			)
 
 		case "web_fetch":
 			registry.RegisterTool(tools.NewWebFetchTool(chatModel))

@@ -69,7 +69,11 @@ func (r *mcpServiceRepository) ListEnabled(ctx context.Context, tenantID uint64)
 }
 
 // ListByIDs retrieves MCP services by multiple IDs for a tenant
-func (r *mcpServiceRepository) ListByIDs(ctx context.Context, tenantID uint64, ids []string) ([]*types.MCPService, error) {
+func (r *mcpServiceRepository) ListByIDs(
+	ctx context.Context,
+	tenantID uint64,
+	ids []string,
+) ([]*types.MCPService, error) {
 	if len(ids) == 0 {
 		return []*types.MCPService{}, nil
 	}

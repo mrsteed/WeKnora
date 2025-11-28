@@ -307,7 +307,13 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 		// 即使入队失败，也返回knowledge，因为文件已保存
 		return knowledge, nil
 	}
-	logger.Infof(ctx, "Enqueued document process task: id=%s queue=%s knowledge_id=%s", info.ID, info.Queue, knowledge.ID)
+	logger.Infof(
+		ctx,
+		"Enqueued document process task: id=%s queue=%s knowledge_id=%s",
+		info.ID,
+		info.Queue,
+		knowledge.ID,
+	)
 
 	logger.Infof(ctx, "Knowledge from file created successfully, ID: %s", knowledge.ID)
 	return knowledge, nil
@@ -664,7 +670,10 @@ func (s *knowledgeService) DeleteKnowledge(ctx context.Context, id string) error
 	// Delete knowledge embeddings from vector store
 	wg.Go(func() error {
 		tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
-		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(
+			s.retrieveEngine,
+			tenantInfo.RetrieverEngines.Engines,
+		)
 		if err != nil {
 			logger.GetLogger(ctx).WithField("error", err).Errorf("DeleteKnowledge delete knowledge embedding failed")
 			return err
@@ -738,7 +747,10 @@ func (s *knowledgeService) DeleteKnowledgeList(ctx context.Context, ids []string
 	// 2. Delete knowledge embeddings from vector store
 	wg.Go(func() error {
 		tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
-		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(
+			s.retrieveEngine,
+			tenantInfo.RetrieverEngines.Engines,
+		)
 		if err != nil {
 			logger.GetLogger(ctx).WithField("error", err).Errorf("DeleteKnowledge delete knowledge embedding failed")
 			return err
@@ -754,7 +766,9 @@ func (s *knowledgeService) DeleteKnowledgeList(ctx context.Context, ids []string
 				return err
 			}
 			if err := retrieveEngine.DeleteByKnowledgeIDList(ctx, knowledgeList, embeddingModel.GetDimensions()); err != nil {
-				logger.GetLogger(ctx).WithField("error", err).Errorf("DeleteKnowledge delete knowledge embedding failed")
+				logger.GetLogger(ctx).
+					WithField("error", err).
+					Errorf("DeleteKnowledge delete knowledge embedding failed")
 				return err
 			}
 		}
@@ -792,7 +806,10 @@ func (s *knowledgeService) DeleteKnowledgeList(ctx context.Context, ids []string
 	wg.Go(func() error {
 		namespaces := []types.NameSpace{}
 		for _, knowledge := range knowledgeList {
-			namespaces = append(namespaces, types.NameSpace{KnowledgeBase: knowledge.KnowledgeBaseID, Knowledge: knowledge.ID})
+			namespaces = append(
+				namespaces,
+				types.NameSpace{KnowledgeBase: knowledge.KnowledgeBaseID, Knowledge: knowledge.ID},
+			)
 		}
 		if err := s.graphEngine.DelGraph(ctx, namespaces); err != nil {
 			logger.GetLogger(ctx).WithField("error", err).Errorf("DeleteKnowledge delete knowledge graph failed")
@@ -808,7 +825,11 @@ func (s *knowledgeService) DeleteKnowledgeList(ctx context.Context, ids []string
 	return s.repo.DeleteKnowledgeList(ctx, tenantInfo.ID, ids)
 }
 
-func (s *knowledgeService) cloneKnowledge(ctx context.Context, src *types.Knowledge, targetKB *types.KnowledgeBase) (err error) {
+func (s *knowledgeService) cloneKnowledge(
+	ctx context.Context,
+	src *types.Knowledge,
+	targetKB *types.KnowledgeBase,
+) (err error) {
 	if src.ParseStatus != "completed" {
 		logger.GetLogger(ctx).WithField("knowledge_id", src.ID).Errorf("MoveKnowledge parse status is not completed")
 		return nil
@@ -1657,7 +1678,12 @@ func (s *knowledgeService) updateChunkVector(ctx context.Context, kbID string, c
 	return nil
 }
 
-func (s *knowledgeService) UpdateImageInfo(ctx context.Context, knowledgeID string, chunkID string, imageInfo string) error {
+func (s *knowledgeService) UpdateImageInfo(
+	ctx context.Context,
+	knowledgeID string,
+	chunkID string,
+	imageInfo string,
+) error {
 	var images []*types.ImageInfo
 	if err := json.Unmarshal([]byte(imageInfo), &images); err != nil {
 		logger.Errorf(ctx, "Failed to unmarshal image info: %v", err)
@@ -2165,7 +2191,12 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 
 	if payload.Mode == types.FAQBatchModeReplace {
 		// Replace模式：计算需要删除、创建、更新的条目
-		entriesToProcess, chunksToDelete, skippedCount, err = s.calculateReplaceOperations(ctx, tenantID, faqKnowledge.ID, payload.Entries)
+		entriesToProcess, chunksToDelete, skippedCount, err = s.calculateReplaceOperations(
+			ctx,
+			tenantID,
+			faqKnowledge.ID,
+			payload.Entries,
+		)
 		if err != nil {
 			return fmt.Errorf("failed to calculate replace operations: %w", err)
 		}
@@ -2193,7 +2224,14 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 		}
 	}
 
-	logger.Infof(ctx, "FAQ import task %s: total entries: %d, to process: %d, skipped: %d", taskID, len(payload.Entries), len(entriesToProcess), skippedCount)
+	logger.Infof(
+		ctx,
+		"FAQ import task %s: total entries: %d, to process: %d, skipped: %d",
+		taskID,
+		len(payload.Entries),
+		len(entriesToProcess),
+		skippedCount,
+	)
 
 	// 如果没有需要处理的条目，直接返回
 	if len(entriesToProcess) == 0 {
@@ -2206,7 +2244,14 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 	totalStartTime := time.Now()
 	actualProcessed := skippedCount + processedCount
 
-	logger.Infof(ctx, "FAQ import task %s: starting batch processing, remaining entries: %d, total entries: %d, batch size: %d", taskID, remainingEntries, totalEntries, faqImportBatchSize)
+	logger.Infof(
+		ctx,
+		"FAQ import task %s: starting batch processing, remaining entries: %d, total entries: %d, batch size: %d",
+		taskID,
+		remainingEntries,
+		totalEntries,
+		faqImportBatchSize,
+	)
 
 	for i := 0; i < remainingEntries; i += faqImportBatchSize {
 		batchStartTime := time.Now()
@@ -2263,7 +2308,15 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 			return fmt.Errorf("failed to create chunks: %w", err)
 		}
 		createDuration := time.Since(createStartTime)
-		logger.Infof(ctx, "FAQ import task %s: batch %d-%d created %d chunks in %v", taskID, i+1, end, len(chunks), createDuration)
+		logger.Infof(
+			ctx,
+			"FAQ import task %s: batch %d-%d created %d chunks in %v",
+			taskID,
+			i+1,
+			end,
+			len(chunks),
+			createDuration,
+		)
 
 		// 索引chunks
 		indexStartTime := time.Now()
@@ -2272,7 +2325,15 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 			return fmt.Errorf("failed to index chunks: %w", err)
 		}
 		indexDuration := time.Since(indexStartTime)
-		logger.Infof(ctx, "FAQ import task %s: batch %d-%d indexed %d chunks in %v", taskID, i+1, end, len(chunks), indexDuration)
+		logger.Infof(
+			ctx,
+			"FAQ import task %s: batch %d-%d indexed %d chunks in %v",
+			taskID,
+			i+1,
+			end,
+			len(chunks),
+			indexDuration,
+		)
 
 		// 更新chunks的Status为已索引
 		chunksToUpdate := make([]*types.Chunk, 0, len(chunks))
@@ -2292,13 +2353,32 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 		}
 
 		batchDuration := time.Since(batchStartTime)
-		logger.Infof(ctx, "FAQ import task %s: batch %d-%d completed in %v (build: %v, create: %v, index: %v), total progress: %d/%d (%d%%)",
-			taskID, i+1, end, batchDuration, buildDuration, createDuration, indexDuration, actualProcessed, totalEntries, progress)
+		logger.Infof(
+			ctx,
+			"FAQ import task %s: batch %d-%d completed in %v (build: %v, create: %v, index: %v), total progress: %d/%d (%d%%)",
+			taskID,
+			i+1,
+			end,
+			batchDuration,
+			buildDuration,
+			createDuration,
+			indexDuration,
+			actualProcessed,
+			totalEntries,
+			progress,
+		)
 	}
 
 	totalDuration := time.Since(totalStartTime)
-	logger.Infof(ctx, "FAQ import task %s: all batches completed, processed: %d entries (skipped: %d) in %v, avg: %v per entry",
-		taskID, actualProcessed, skippedCount, totalDuration, totalDuration/time.Duration(actualProcessed))
+	logger.Infof(
+		ctx,
+		"FAQ import task %s: all batches completed, processed: %d entries (skipped: %d) in %v, avg: %v per entry",
+		taskID,
+		actualProcessed,
+		skippedCount,
+		totalDuration,
+		totalDuration/time.Duration(actualProcessed),
+	)
 
 	return nil
 }
@@ -2358,7 +2438,10 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 	if isEnabledUpdated {
 		chunkStatusMap := map[string]bool{chunk.ID: chunk.IsEnabled}
 		tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
-		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(
+			s.retrieveEngine,
+			tenantInfo.RetrieverEngines.Engines,
+		)
 		if err != nil {
 			return err
 		}
@@ -2464,7 +2547,10 @@ func (s *knowledgeService) UpdateFAQEntryStatusBatch(ctx context.Context,
 	// Sync update to retriever engines
 	if len(chunkStatusMap) > 0 {
 		tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
-		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(
+			s.retrieveEngine,
+			tenantInfo.RetrieverEngines.Engines,
+		)
 		if err != nil {
 			return err
 		}
@@ -2839,7 +2925,11 @@ func (s *knowledgeService) validateFAQKnowledgeBase(ctx context.Context, kbID st
 	return kb, nil
 }
 
-func (s *knowledgeService) findFAQKnowledge(ctx context.Context, tenantID uint64, kbID string) (*types.Knowledge, error) {
+func (s *knowledgeService) findFAQKnowledge(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+) (*types.Knowledge, error) {
 	knowledges, err := s.repo.ListKnowledgeByKnowledgeBaseID(ctx, tenantID, kbID)
 	if err != nil {
 		return nil, err
@@ -2852,7 +2942,11 @@ func (s *knowledgeService) findFAQKnowledge(ctx context.Context, tenantID uint64
 	return nil, nil
 }
 
-func (s *knowledgeService) ensureFAQKnowledge(ctx context.Context, tenantID uint64, kb *types.KnowledgeBase) (*types.Knowledge, error) {
+func (s *knowledgeService) ensureFAQKnowledge(
+	ctx context.Context,
+	tenantID uint64,
+	kb *types.KnowledgeBase,
+) (*types.Knowledge, error) {
 	existing, err := s.findFAQKnowledge(ctx, tenantID, kb.ID)
 	if err != nil {
 		return nil, err
@@ -2879,15 +2973,23 @@ func (s *knowledgeService) ensureFAQKnowledge(ctx context.Context, tenantID uint
 	return knowledge, nil
 }
 
-func (s *knowledgeService) updateFAQImportStatus(ctx context.Context, knowledgeID string, status types.FAQImportTaskStatus,
-	progress, total, processed int, errorMsg string,
+func (s *knowledgeService) updateFAQImportStatus(
+	ctx context.Context,
+	knowledgeID string,
+	status types.FAQImportTaskStatus,
+	progress, total, processed int,
+	errorMsg string,
 ) error {
 	return s.updateFAQImportStatusWithRanges(ctx, knowledgeID, status, progress, total, processed, errorMsg)
 }
 
 // updateFAQImportStatusWithRanges 更新FAQ Knowledge的导入任务状态，包含NextChunkIndex
-func (s *knowledgeService) updateFAQImportStatusWithRanges(ctx context.Context, knowledgeID string, status types.FAQImportTaskStatus,
-	progress, total, processed int, errorMsg string,
+func (s *knowledgeService) updateFAQImportStatusWithRanges(
+	ctx context.Context,
+	knowledgeID string,
+	status types.FAQImportTaskStatus,
+	progress, total, processed int,
+	errorMsg string,
 ) error {
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
@@ -2925,7 +3027,11 @@ func (s *knowledgeService) updateFAQImportStatusWithRanges(ctx context.Context, 
 }
 
 // getRunningFAQImportTask 获取指定知识库的进行中导入任务
-func (s *knowledgeService) getRunningFAQImportTask(ctx context.Context, kbID string, tenantID uint64) (*types.Knowledge, error) {
+func (s *knowledgeService) getRunningFAQImportTask(
+	ctx context.Context,
+	kbID string,
+	tenantID uint64,
+) (*types.Knowledge, error) {
 	faqKnowledge, err := s.findFAQKnowledge(ctx, tenantID, kbID)
 	if err != nil {
 		return nil, err
@@ -3023,7 +3129,11 @@ func buildFAQIndexContent(meta *types.FAQChunkMetadata, mode types.FAQIndexMode)
 }
 
 // buildFAQIndexInfoList 构建FAQ索引信息列表，支持分别索引模式
-func (s *knowledgeService) buildFAQIndexInfoList(ctx context.Context, kb *types.KnowledgeBase, chunk *types.Chunk) ([]*types.IndexInfo, error) {
+func (s *knowledgeService) buildFAQIndexInfoList(
+	ctx context.Context,
+	kb *types.KnowledgeBase,
+	chunk *types.Chunk,
+) ([]*types.IndexInfo, error) {
 	indexMode := types.FAQIndexModeQuestionAnswer
 	questionIndexMode := types.FAQQuestionIndexModeCombined
 	if kb.FAQConfig != nil {
@@ -3137,7 +3247,13 @@ func (s *knowledgeService) indexFAQChunks(ctx context.Context,
 		chunkIDs = append(chunkIDs, chunk.ID)
 	}
 	buildIndexInfoDuration := time.Since(buildIndexInfoStartTime)
-	logger.Debugf(ctx, "indexFAQChunks: built %d index info entries for %d chunks in %v", len(indexInfo), len(chunks), buildIndexInfoDuration)
+	logger.Debugf(
+		ctx,
+		"indexFAQChunks: built %d index info entries for %d chunks in %v",
+		len(indexInfo),
+		len(chunks),
+		buildIndexInfoDuration,
+	)
 
 	var size int64
 	if adjustStorage {
@@ -3195,8 +3311,16 @@ func (s *knowledgeService) indexFAQChunks(ctx context.Context,
 	}
 
 	totalDuration := time.Since(indexStartTime)
-	logger.Debugf(ctx, "indexFAQChunks: completed indexing %d chunks in %v (build: %v, delete: %v, batchIndex: %v, update: %v)",
-		len(chunks), totalDuration, buildIndexInfoDuration, deleteDuration, batchIndexDuration, updateDuration)
+	logger.Debugf(
+		ctx,
+		"indexFAQChunks: completed indexing %d chunks in %v (build: %v, delete: %v, batchIndex: %v, update: %v)",
+		len(chunks),
+		totalDuration,
+		buildIndexInfoDuration,
+		deleteDuration,
+		batchIndexDuration,
+		updateDuration,
+	)
 
 	return err
 }
@@ -3311,7 +3435,9 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 			Separators:       kb.ChunkingConfig.Separators,
 			EnableMultimodal: enableMultimodel,
 			StorageConfig: &proto.StorageConfig{
-				Provider:        proto.StorageProvider(proto.StorageProvider_value[strings.ToUpper(kb.StorageConfig.Provider)]),
+				Provider: proto.StorageProvider(
+					proto.StorageProvider_value[strings.ToUpper(kb.StorageConfig.Provider)],
+				),
 				Region:          kb.StorageConfig.Region,
 				BucketName:      kb.StorageConfig.BucketName,
 				AccessKeyId:     kb.StorageConfig.SecretID,
@@ -3354,7 +3480,10 @@ func (s *knowledgeService) cleanupKnowledgeResources(ctx context.Context, knowle
 
 	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	if knowledge.EmbeddingModelID != "" {
-		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(
+			s.retrieveEngine,
+			tenantInfo.RetrieverEngines.Engines,
+		)
 		if err != nil {
 			logger.GetLogger(ctx).WithField("error", err).Error("Failed to init retrieve engine during cleanup")
 			cleanupErr = errors.Join(cleanupErr, err)
@@ -3470,12 +3599,18 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 	if knowledge.ParseStatus == "failed" {
 		// 检查是否可恢复（例如：超时、临时错误等）
 		// 对于不可恢复的错误，直接返回
-		logger.Warnf(ctx, "Document processing previously failed: %s, error: %s", payload.KnowledgeID, knowledge.ErrorMessage)
+		logger.Warnf(
+			ctx,
+			"Document processing previously failed: %s, error: %s",
+			payload.KnowledgeID,
+			knowledge.ErrorMessage,
+		)
 		// 这里可以根据错误类型判断是否可恢复，暂时允许重试
 	}
 
 	// 检查是否有部分处理（有chunks但状态不是completed）
-	if knowledge.ParseStatus != "completed" && knowledge.ParseStatus != "pending" && knowledge.ParseStatus != "processing" {
+	if knowledge.ParseStatus != "completed" && knowledge.ParseStatus != "pending" &&
+		knowledge.ParseStatus != "processing" {
 		// 状态异常，记录日志但继续处理
 		logger.Warnf(ctx, "Unexpected parse status: %s for knowledge: %s", knowledge.ParseStatus, payload.KnowledgeID)
 	}
@@ -3546,7 +3681,9 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 				Separators:       kb.ChunkingConfig.Separators,
 				EnableMultimodal: payload.EnableMultimodel,
 				StorageConfig: &proto.StorageConfig{
-					Provider:        proto.StorageProvider(proto.StorageProvider_value[strings.ToUpper(kb.StorageConfig.Provider)]),
+					Provider: proto.StorageProvider(
+						proto.StorageProvider_value[strings.ToUpper(kb.StorageConfig.Provider)],
+					),
 					Region:          kb.StorageConfig.Region,
 					BucketName:      kb.StorageConfig.BucketName,
 					AccessKeyId:     kb.StorageConfig.SecretID,
@@ -3721,7 +3858,10 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 		// 删除索引数据
 		embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
 		if err == nil {
-			retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+			retrieveEngine, err := retriever.NewCompositeRetrieveEngine(
+				s.retrieveEngine,
+				tenantInfo.RetrieverEngines.Engines,
+			)
 			if err == nil {
 				chunkIDs := make([]string, 0, len(chunksDeleted))
 				for _, chunk := range chunksDeleted {
@@ -3740,7 +3880,12 @@ func (s *knowledgeService) ProcessFAQImport(ctx context.Context, t *asynq.Task) 
 			payload.Entries = payload.Entries[processedCount:]
 		}
 		// Replace 模式使用hash去重，不截断payload.Entries
-		logger.Infof(ctx, "Continuing FAQ import from entry %d, remaining: %d entries", processedCount, len(payload.Entries))
+		logger.Infof(
+			ctx,
+			"Continuing FAQ import from entry %d, remaining: %d entries",
+			processedCount,
+			len(payload.Entries),
+		)
 	}
 
 	// 更新任务状态为运行中

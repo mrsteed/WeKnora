@@ -282,7 +282,10 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		if err := database.RunMigrations(migrateDSN); err != nil {
 			// Log warning but don't fail startup - migrations might be handled externally
 			logger.Warnf(context.Background(), "Database migration failed: %v", err)
-			logger.Warnf(context.Background(), "Continuing with application startup. Please run migrations manually if needed.")
+			logger.Warnf(
+				context.Background(),
+				"Continuing with application startup. Please run migrations manually if needed.",
+			)
 		}
 	} else {
 		logger.Infof(context.Background(), "Auto-migration is disabled (AUTO_MIGRATE=false)")

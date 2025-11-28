@@ -189,7 +189,10 @@ func (h *ChunkHandler) validateAndGetChunk(c *gin.Context) (*types.Chunk, string
 		logger.Warnf(
 			ctx,
 			"Tenant has no permission to access chunk, knowledge ID: %s, chunk ID: %s, req tenant: %d, chunk tenant: %d",
-			knowledgeID, id, tenantID, chunk.TenantID,
+			knowledgeID,
+			id,
+			tenantID,
+			chunk.TenantID,
 		)
 		return nil, knowledgeID, errors.NewForbiddenError("No permission to access this chunk")
 	}

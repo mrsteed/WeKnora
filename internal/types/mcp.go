@@ -20,21 +20,21 @@ const (
 
 // MCPService represents an MCP (Model Context Protocol) service configuration
 type MCPService struct {
-	ID             string             `json:"id" gorm:"type:varchar(36);primaryKey"`
-	TenantID       uint64             `json:"tenant_id" gorm:"index"`
-	Name           string             `json:"name" gorm:"type:varchar(255);not null"`
-	Description    string             `json:"description" gorm:"type:text"`
-	Enabled        bool               `json:"enabled" gorm:"default:true;index"`
-	TransportType  MCPTransportType   `json:"transport_type" gorm:"type:varchar(50);not null"`
-	URL            *string            `json:"url,omitempty" gorm:"type:varchar(512)"` // Optional: required for SSE/HTTP Streamable
-	Headers        MCPHeaders         `json:"headers" gorm:"type:json"`
-	AuthConfig     *MCPAuthConfig     `json:"auth_config" gorm:"type:json"`
-	AdvancedConfig *MCPAdvancedConfig `json:"advanced_config" gorm:"type:json"`
+	ID             string             `json:"id"                     gorm:"type:varchar(36);primaryKey"`
+	TenantID       uint64             `json:"tenant_id"              gorm:"index"`
+	Name           string             `json:"name"                   gorm:"type:varchar(255);not null"`
+	Description    string             `json:"description"            gorm:"type:text"`
+	Enabled        bool               `json:"enabled"                gorm:"default:true;index"`
+	TransportType  MCPTransportType   `json:"transport_type"         gorm:"type:varchar(50);not null"`
+	URL            *string            `json:"url,omitempty"          gorm:"type:varchar(512)"` // Optional: required for SSE/HTTP Streamable
+	Headers        MCPHeaders         `json:"headers"                gorm:"type:json"`
+	AuthConfig     *MCPAuthConfig     `json:"auth_config"            gorm:"type:json"`
+	AdvancedConfig *MCPAdvancedConfig `json:"advanced_config"        gorm:"type:json"`
 	StdioConfig    *MCPStdioConfig    `json:"stdio_config,omitempty" gorm:"type:json"` // Required for stdio transport
-	EnvVars        MCPEnvVars         `json:"env_vars,omitempty" gorm:"type:json"`     // Environment variables for stdio
+	EnvVars        MCPEnvVars         `json:"env_vars,omitempty"     gorm:"type:json"` // Environment variables for stdio
 	CreatedAt      time.Time          `json:"created_at"`
 	UpdatedAt      time.Time          `json:"updated_at"`
-	DeletedAt      gorm.DeletedAt     `json:"deleted_at" gorm:"index"`
+	DeletedAt      gorm.DeletedAt     `json:"deleted_at"             gorm:"index"`
 }
 
 // MCPHeaders represents HTTP headers as a map

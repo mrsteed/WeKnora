@@ -189,7 +189,12 @@ func renderPromptPlaceholders(template string, knowledgeBases []*KnowledgeBaseIn
 //   - {{knowledge_bases}}
 //   - {{web_search_status}} -> "Enabled" or "Disabled"
 //   - {{current_time}} -> current time string
-func renderPromptPlaceholdersWithStatus(template string, knowledgeBases []*KnowledgeBaseInfo, webSearchEnabled bool, currentTime string) string {
+func renderPromptPlaceholdersWithStatus(
+	template string,
+	knowledgeBases []*KnowledgeBaseInfo,
+	webSearchEnabled bool,
+	currentTime string,
+) string {
 	result := renderPromptPlaceholders(template, knowledgeBases)
 	status := "Disabled"
 	if webSearchEnabled {
@@ -205,7 +210,10 @@ func renderPromptPlaceholdersWithStatus(template string, knowledgeBases []*Knowl
 }
 
 // BuildProgressiveRAGSystemPromptWithWeb builds the progressive RAG system prompt with web search enabled
-func BuildProgressiveRAGSystemPromptWithWeb(knowledgeBases []*KnowledgeBaseInfo, systemPromptTemplate ...string) string {
+func BuildProgressiveRAGSystemPromptWithWeb(
+	knowledgeBases []*KnowledgeBaseInfo,
+	systemPromptTemplate ...string,
+) string {
 	var template string
 	if len(systemPromptTemplate) > 0 && systemPromptTemplate[0] != "" {
 		template = systemPromptTemplate[0]
@@ -217,7 +225,10 @@ func BuildProgressiveRAGSystemPromptWithWeb(knowledgeBases []*KnowledgeBaseInfo,
 }
 
 // BuildProgressiveRAGSystemPromptWithoutWeb builds the progressive RAG system prompt without web search
-func BuildProgressiveRAGSystemPromptWithoutWeb(knowledgeBases []*KnowledgeBaseInfo, systemPromptTemplate ...string) string {
+func BuildProgressiveRAGSystemPromptWithoutWeb(
+	knowledgeBases []*KnowledgeBaseInfo,
+	systemPromptTemplate ...string,
+) string {
 	var template string
 	if len(systemPromptTemplate) > 0 && systemPromptTemplate[0] != "" {
 		template = systemPromptTemplate[0]
@@ -230,7 +241,11 @@ func BuildProgressiveRAGSystemPromptWithoutWeb(knowledgeBases []*KnowledgeBaseIn
 
 // BuildProgressiveRAGSystemPrompt builds the progressive RAG system prompt based on web search status
 // This is the main function to use - it automatically selects the appropriate version
-func BuildProgressiveRAGSystemPrompt(knowledgeBases []*KnowledgeBaseInfo, webSearchEnabled bool, systemPromptTemplate ...string) string {
+func BuildProgressiveRAGSystemPrompt(
+	knowledgeBases []*KnowledgeBaseInfo,
+	webSearchEnabled bool,
+	systemPromptTemplate ...string,
+) string {
 	if webSearchEnabled {
 		return BuildProgressiveRAGSystemPromptWithWeb(knowledgeBases, systemPromptTemplate...)
 	}
