@@ -4,16 +4,52 @@
 BEGIN;
 
 WITH tenant_source AS (
+    -- 从 knowledge_bases 中取出各模型 ID（embedding / summary）及其 tenant_id
     SELECT 
-        k.id AS model_id,
-        k.tenant_id
-    FROM knowledges k
-    WHERE k.tenant_id IS NOT NULL
+        kb.embedding_model_id AS model_id,
+        kb.tenant_id
+    FROM knowledge_bases kb
+    WHERE kb.tenant_id IS NOT NULL
+      AND kb.embedding_model_id IS NOT NULL
+      AND kb.embedding_model_id <> ''
+
+    UNION
+
+    SELECT 
+        kb.summary_model_id AS model_id,
+        kb.tenant_id
+    FROM knowledge_bases kb
+    WHERE kb.tenant_id IS NOT NULL
+      AND kb.summary_model_id IS NOT NULL
+      AND kb.summary_model_id <> ''
+
+    UNION
+
+    -- rerank 模型
+    SELECT
+        kb.rerank_model_id AS model_id,
+        kb.tenant_id
+    FROM knowledge_bases kb
+    WHERE kb.tenant_id IS NOT NULL
+      AND kb.rerank_model_id IS NOT NULL
+      AND kb.rerank_model_id <> ''
+
+    UNION
+
+    -- VLM 模型（存储在 vlm_config JSON 的 model_id 字段中）
+    SELECT
+        (kb.vlm_config ->> 'model_id') AS model_id,
+        kb.tenant_id
+    FROM knowledge_bases kb
+    WHERE kb.tenant_id IS NOT NULL
+      AND kb.vlm_config ->> 'model_id' IS NOT NULL
+      AND kb.vlm_config ->> 'model_id' <> ''
 )
 UPDATE models m
-JOIN tenant_source ts ON m.id = ts.model_id
-SET m.tenant_id = ts.tenant_id
-WHERE m.tenant_id = 0;
+SET tenant_id = ts.tenant_id
+FROM tenant_source ts
+WHERE m.id = ts.model_id
+  AND m.tenant_id = 0;
 
 COMMIT;
 
