@@ -15,7 +15,7 @@ class ChunkingConfig:
     chunk_overlap: int = 50
 
     # Text separators in order of priority
-    separators: list = field(default_factory=lambda: ["\n\n", "\n", "。"])
+    separators: list[str] = field(default_factory=lambda: ["\n\n", "\n", "。"])
 
     # Whether to enable multimodal processing (text + images)
     enable_multimodal: bool = False
