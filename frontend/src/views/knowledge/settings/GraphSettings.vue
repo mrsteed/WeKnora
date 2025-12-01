@@ -446,7 +446,7 @@ const handleFabriTag = async () => {
   tagFabring.value = true
   try {
     const response = await fabriTag({
-      llmConfig: modelStatus.value.llm.config
+      llm_config: modelStatus.value.llm.config
     })
     localGraphExtract.value.tags = response.tags || []
     handleTagsChange()
@@ -470,7 +470,7 @@ const handleFabriText = async () => {
   try {
     const response = await fabriText({
       tags: localGraphExtract.value.tags,
-      llmConfig: modelStatus.value.llm.config
+      llm_config: modelStatus.value.llm.config
     })
     localGraphExtract.value.text = response.text || ''
     handleTextChange()
@@ -500,7 +500,7 @@ const handleExtract = async () => {
     const response = await extractTextRelations({
       text: localGraphExtract.value.text,
       tags: localGraphExtract.value.tags,
-      llmConfig: modelStatus.value.llm.config
+      llm_config: modelStatus.value.llm.config
     })
     localGraphExtract.value.nodes = response.nodes || []
     localGraphExtract.value.relations = response.relations || []
@@ -555,9 +555,9 @@ const loadModelStatus = async () => {
       modelStatus.value.llm.available = true
       modelStatus.value.llm.config = {
         source: llmModel.source,
-        modelName: llmModel.name,
-        baseUrl: llmModel.parameters?.base_url || '',
-        apiKey: llmModel.parameters?.api_key || ''
+        model_name: llmModel.name,
+        base_url: llmModel.parameters?.base_url || '',
+        api_key: llmModel.parameters?.api_key || ''
       }
     }
   } catch (error: any) {

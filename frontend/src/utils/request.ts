@@ -186,8 +186,8 @@ export function postChat(url: string, data = {}) {
   });
 }
 
-export function post(url: string, data = {}) {
-  return instance.post(url, data);
+export function post(url: string, data = {}, config?: any) {
+  return instance.post(url, data, config);
 }
 
 export function put(url: string, data = {}) {
