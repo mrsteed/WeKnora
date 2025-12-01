@@ -14,9 +14,6 @@ services:
       - postgres-data-dev:/var/lib/postgresql/data
       - ./migrations/paradedb/00-init-db.sql:/docker-entrypoint-initdb.d/00-init-db.sql
       - ./migrations/paradedb/01-migrate-to-paradedb.sql:/docker-entrypoint-initdb.d/01-migrate-to-paradedb.sql
-      - ./migrations/paradedb/02-add-agent-config-if-missing.sql:/docker-entrypoint-initdb.d/02-add-agent-config-if-missing.sql
-      - ./migrations/paradedb/03-cleanup-unreferenced-models.sql:/docker-entrypoint-initdb.d/03-cleanup-unreferenced-models.sql
-      - ./migrations/paradedb/04-add-mcp-services.sql:/docker-entrypoint-initdb.d/04-add-mcp-services.sql
     networks:
       - WeKnora-network-dev
     healthcheck:

@@ -190,9 +190,6 @@
       @update:visible="(val) => val ? null : uiStore.closeKBEditor()"
       @success="handleKBEditorSuccess"
     />
-    
-    <!-- 全局设置模态框 -->
-    <Settings />
   </div>
 </template>
 
@@ -204,7 +201,6 @@ import { listKnowledgeBases, deleteKnowledgeBase } from '@/api/knowledge-base'
 import { formatStringDate } from '@/utils/index'
 import { useUIStore } from '@/stores/ui'
 import KnowledgeBaseEditorModal from './KnowledgeBaseEditorModal.vue'
-import Settings from '@/views/settings/Settings.vue'
 import { useI18n } from 'vue-i18n'
 
 const router = useRouter()

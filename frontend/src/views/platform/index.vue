@@ -6,6 +6,8 @@
             <input type="file" style="display: none" ref="uploadInput" accept=".pdf,.docx,.doc,.txt,.md,.jpg,.jpeg,.png,.csv,.xls,.xlsx" />
             <UploadMask></UploadMask>
         </div>
+        <!-- 全局设置模态框，供所有 platform 子路由使用 -->
+        <Settings />
     </div>
 </template>
 <script setup lang="ts">
@@ -14,6 +16,7 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router'
 import useKnowledgeBase from '@/hooks/useKnowledgeBase'
 import UploadMask from '@/components/upload-mask.vue'
+import Settings from '@/views/settings/Settings.vue'
 import { getKnowledgeBaseById } from '@/api/knowledge-base/index'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'

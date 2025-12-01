@@ -33,17 +33,6 @@ WITH tenant_source AS (
     WHERE kb.tenant_id IS NOT NULL
       AND kb.rerank_model_id IS NOT NULL
       AND kb.rerank_model_id <> ''
-
-    UNION
-
-    -- VLM 模型（存储在 vlm_config JSON 的 model_id 字段中）
-    SELECT
-        (kb.vlm_config ->> 'model_id') AS model_id,
-        kb.tenant_id
-    FROM knowledge_bases kb
-    WHERE kb.tenant_id IS NOT NULL
-      AND kb.vlm_config ->> 'model_id' IS NOT NULL
-      AND kb.vlm_config ->> 'model_id' <> ''
 )
 UPDATE models m
 SET tenant_id = ts.tenant_id
