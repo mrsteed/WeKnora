@@ -14,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/models/rerank"
+	"github.com/Tencent/WeKnora/internal/searchutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -1213,161 +1214,45 @@ type chunkRange struct {
 	end   int
 }
 
-// findMissingChunkRanges finds all continuous ranges of missing chunks
-// retrievedChunks is a set of retrieved chunk indices
-// totalChunks is the total number of chunks
-func (t *KnowledgeSearchTool) findMissingChunkRanges(retrievedChunks map[int]bool, totalChunks int) []chunkRange {
-	if totalChunks <= 0 {
-		return nil
-	}
-
-	var ranges []chunkRange
-	currentStart := -1
-
-	// Iterate through all possible chunk indices (0 to totalChunks-1)
-	for i := 0; i < totalChunks; i++ {
-		if !retrievedChunks[i] {
-			// This chunk is missing
-			if currentStart == -1 {
-				// Start of a new missing range
-				currentStart = i
-			}
-		} else {
-			// This chunk is retrieved
-			if currentStart != -1 {
-				// End of a missing range
-				ranges = append(ranges, chunkRange{
-					start: currentStart,
-					end:   i - 1,
-				})
-				currentStart = -1
-			}
-		}
-	}
-
-	// Handle case where missing chunks extend to the end
-	if currentStart != -1 {
-		ranges = append(ranges, chunkRange{
-			start: currentStart,
-			end:   totalChunks - 1,
-		})
-	}
-
-	return ranges
-}
-
 // normalizeKeywordSearchResults normalizes keyword search result scores into [0,1] globally across all knowledge bases
 // Improvements:
 // 1. Uses robust normalization with percentile-based bounds to handle outliers
 // 2. Handles edge cases: single result, no variance, negative scores
 // 3. Global normalization ensures fair comparison across different knowledge bases
 func (t *KnowledgeSearchTool) normalizeKeywordSearchResults(ctx context.Context, results []*searchResultWithMeta) {
-	// Filter keyword match results
-	keywordResults := make([]*searchResultWithMeta, 0)
-	for _, result := range results {
-		if result.MatchType == types.MatchTypeKeywords {
-			keywordResults = append(keywordResults, result)
-		}
-	}
-
-	if len(keywordResults) == 0 {
-		return
-	}
-
-	// Single result: set to 1.0
-	if len(keywordResults) == 1 {
-		keywordResults[0].Score = 1.0
-		return
-	}
-
-	// Find min and max scores globally
-	minS := keywordResults[0].Score
-	maxS := keywordResults[0].Score
-	for _, r := range keywordResults {
-		if r.Score < minS {
-			minS = r.Score
-		}
-		if r.Score > maxS {
-			maxS = r.Score
-		}
-	}
-
-	// No variance: all scores are the same
-	if maxS <= minS {
-		for _, r := range keywordResults {
-			r.Score = 1.0
-		}
-		logger.Infof(
-			ctx,
-			"[Tool][KnowledgeSearch] Keyword scores have no variance, all set to 1.0: count=%d, score=%.3f",
-			len(keywordResults),
-			minS,
-		)
-		return
-	}
-
-	// Robust normalization: use percentile-based bounds to reduce outlier impact
-	// For small groups, use min/max; for larger groups, use 5th and 95th percentiles
-	normalizeMin := minS
-	normalizeMax := maxS
-
-	if len(keywordResults) >= 10 {
-		// For larger groups, use percentile-based bounds to handle outliers
-		// Sort scores to find percentiles
-		scores := make([]float64, len(keywordResults))
-		for i, r := range keywordResults {
-			scores[i] = r.Score
-		}
-		sort.Float64s(scores)
-
-		// Use 5th and 95th percentiles to reduce outlier impact
-		p5Idx := len(scores) * 5 / 100
-		p95Idx := len(scores) * 95 / 100
-		if p5Idx < len(scores) {
-			normalizeMin = scores[p5Idx]
-		}
-		if p95Idx < len(scores) {
-			normalizeMax = scores[p95Idx]
-		}
-	}
-
-	// Normalize scores with bounds checking
-	rangeSize := normalizeMax - normalizeMin
-	if rangeSize > 0 {
-		for _, r := range keywordResults {
-			// Clamp to [normalizeMin, normalizeMax] before normalization
-			clampedScore := r.Score
-			if clampedScore < normalizeMin {
-				clampedScore = normalizeMin
-			} else if clampedScore > normalizeMax {
-				clampedScore = normalizeMax
-			}
-
-			// Normalize to [0, 1]
-			ns := (clampedScore - normalizeMin) / rangeSize
-			if ns < 0 {
-				ns = 0
-			} else if ns > 1 {
-				ns = 1
-			}
-			r.Score = ns
-		}
-
-		logger.Infof(
-			ctx,
-			"[Tool][KnowledgeSearch] Normalized keyword scores: count=%d, raw_min=%.3f, raw_max=%.3f, normalize_min=%.3f, normalize_max=%.3f",
-			len(keywordResults),
-			minS,
-			maxS,
-			normalizeMin,
-			normalizeMax,
-		)
-	} else {
-		// Fallback: all scores are the same after percentile filtering
-		for _, r := range keywordResults {
-			r.Score = 1.0
-		}
-	}
+	searchutil.NormalizeKeywordScores[*searchResultWithMeta](
+		results,
+		func(r *searchResultWithMeta) bool {
+			return r.MatchType == types.MatchTypeKeywords
+		},
+		func(r *searchResultWithMeta) float64 {
+			return r.Score
+		},
+		func(r *searchResultWithMeta, score float64) {
+			r.Score = score
+		},
+		searchutil.KeywordScoreCallbacks{
+			OnNoVariance: func(count int, score float64) {
+				logger.Infof(
+					ctx,
+					"[Tool][KnowledgeSearch] Keyword scores have no variance, all set to 1.0: count=%d, score=%.3f",
+					count,
+					score,
+				)
+			},
+			OnNormalized: func(count int, rawMin, rawMax, normalizeMin, normalizeMax float64) {
+				logger.Infof(
+					ctx,
+					"[Tool][KnowledgeSearch] Normalized keyword scores: count=%d, raw_min=%.3f, raw_max=%.3f, normalize_min=%.3f, normalize_max=%.3f",
+					count,
+					rawMin,
+					rawMax,
+					normalizeMin,
+					normalizeMax,
+				)
+			},
+		},
+	)
 }
 
 // getEnrichedPassage 合并Content和ImageInfo的文本内容

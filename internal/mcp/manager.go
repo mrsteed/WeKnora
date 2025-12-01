@@ -84,22 +84,8 @@ func (m *MCPManager) GetOrCreateClient(service *types.MCPService) (MCPClient, er
 		return nil, fmt.Errorf("failed to connect to MCP service: %w", err)
 	}
 
-	// Initialize needs a timeout to prevent hanging, but the connection context should remain alive
-	// Use a timeout context only for the initialization request
-	initTimeout := 30 * time.Second
-	if service.AdvancedConfig != nil && service.AdvancedConfig.Timeout > 0 {
-		initTimeout = time.Duration(service.AdvancedConfig.Timeout) * time.Second
-		if initTimeout > 60*time.Second {
-			initTimeout = 60 * time.Second
-		}
-	}
-
-	initCtx, initCancel := context.WithTimeout(m.ctx, initTimeout)
-	defer initCancel() // Safe to cancel after init - it's a one-time operation
-
-	if _, err := client.Initialize(initCtx); err != nil {
-		client.Disconnect()
-		return nil, fmt.Errorf("failed to initialize MCP client: %w", err)
+	if err := m.initializeClient(service, client, "failed to initialize MCP client"); err != nil {
+		return nil, err
 	}
 
 	// Store client (only for non-stdio transports)
@@ -127,7 +113,16 @@ func (m *MCPManager) createStdioClient(service *types.MCPService) (MCPClient, er
 		return nil, fmt.Errorf("failed to connect to stdio MCP service: %w", err)
 	}
 
-	// Initialize needs a timeout to prevent hanging
+	if err := m.initializeClient(service, client, "failed to initialize stdio MCP client"); err != nil {
+		return nil, err
+	}
+
+	logger.GetLogger(m.ctx).Infof("MCP stdio client created and initialized for service: %s", service.Name)
+	return client, nil
+}
+
+// initializeClient handles the shared initialization flow with timeout enforcement.
+func (m *MCPManager) initializeClient(service *types.MCPService, client MCPClient, errPrefix string) error {
 	initTimeout := 30 * time.Second
 	if service.AdvancedConfig != nil && service.AdvancedConfig.Timeout > 0 {
 		initTimeout = time.Duration(service.AdvancedConfig.Timeout) * time.Second
@@ -141,11 +136,13 @@ func (m *MCPManager) createStdioClient(service *types.MCPService) (MCPClient, er
 
 	if _, err := client.Initialize(initCtx); err != nil {
 		client.Disconnect()
-		return nil, fmt.Errorf("failed to initialize stdio MCP client: %w", err)
+		if errPrefix == "" {
+			errPrefix = "failed to initialize MCP client"
+		}
+		return fmt.Errorf("%s: %w", errPrefix, err)
 	}
 
-	logger.GetLogger(m.ctx).Infof("MCP stdio client created and initialized for service: %s", service.Name)
-	return client, nil
+	return nil
 }
 
 // GetClient gets an existing client

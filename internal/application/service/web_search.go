@@ -10,6 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/application/service/web_search"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/searchutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -372,70 +373,8 @@ func (s *WebSearchService) matchesBlacklistRule(url, rule string) bool {
 
 // ConvertWebSearchResults converts WebSearchResult to SearchResult
 func ConvertWebSearchResults(webResults []*types.WebSearchResult) []*types.SearchResult {
-	results := make([]*types.SearchResult, 0, len(webResults))
-
-	for i, webResult := range webResults {
-		if webResult == nil {
-			continue
-		}
-		// Use URL as ChunkID for web search results
-		chunkID := webResult.URL
-		if chunkID == "" {
-			chunkID = fmt.Sprintf("web_search_%d", i)
-		}
-
-		// Combine title and snippet as content
-		content := webResult.Title
-		if webResult.Snippet != "" {
-			if content != "" {
-				content += "\n\n" + webResult.Snippet
-			} else {
-				content = webResult.Snippet
-			}
-		}
-		if webResult.Content != "" {
-			if content != "" {
-				content += "\n\n" + webResult.Content
-			} else {
-				content = webResult.Content
-			}
-		}
-
-		// Set a default score for web search results (0.6, indicating medium relevance)
-		score := 0.6
-
-		result := &types.SearchResult{
-			ID:             chunkID,
-			Content:        content,
-			KnowledgeID:    "", // Web search results don't have knowledge ID
-			ChunkIndex:     0,
-			KnowledgeTitle: webResult.Title,
-			StartAt:        0,
-			EndAt:          len(content),
-			Seq:            i,
-			Score:          score,
-			MatchType:      types.MatchTypeWebSearch,
-			SubChunkID:     []string{},
-			Metadata: map[string]string{
-				"url":     webResult.URL,
-				"source":  webResult.Source,
-				"title":   webResult.Title,
-				"snippet": webResult.Snippet,
-			},
-			ChunkType:         "web_search",
-			ParentChunkID:     "",
-			ImageInfo:         "",
-			KnowledgeFilename: "",
-			KnowledgeSource:   "web_search",
-		}
-
-		// Add published date to metadata if available
-		if webResult.PublishedAt != nil {
-			result.Metadata["published_at"] = webResult.PublishedAt.Format(time.RFC3339)
-		}
-
-		results = append(results, result)
-	}
-
-	return results
+	return searchutil.ConvertWebSearchResults(
+		webResults,
+		searchutil.WithSeqFunc(func(idx int) int { return idx }),
+	)
 }
