@@ -103,7 +103,8 @@ func (h *FAQHandler) UpdateEntryTagBatch(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
 		return
 	}
-	if err := h.knowledgeService.UpdateFAQEntryTagBatch(ctx, secutils.SanitizeForLog(c.Param("id")), req.Updates); err != nil {
+	if err := h.knowledgeService.UpdateFAQEntryTagBatch(ctx,
+		secutils.SanitizeForLog(c.Param("id")), req.Updates); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)
 		return
@@ -122,7 +123,8 @@ func (h *FAQHandler) UpdateEntryStatusBatch(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
 		return
 	}
-	if err := h.knowledgeService.UpdateFAQEntryStatusBatch(ctx, secutils.SanitizeForLog(c.Param("id")), req.Updates); err != nil {
+	if err := h.knowledgeService.UpdateFAQEntryStatusBatch(ctx,
+		secutils.SanitizeForLog(c.Param("id")), req.Updates); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)
 		return

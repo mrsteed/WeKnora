@@ -231,9 +231,9 @@ func TestDuckDuckGoProvider_Search_Real(t *testing.T) {
 	}
 }
 
-// TestDuckDuckGoProvider_Search_Real_Chinese tests the DuckDuckGo provider with Chinese query.
+// TestDuckDuckGo_SearchChinese tests the DuckDuckGo provider with Chinese query.
 // This verifies the Chinese language parameter (kl=cn-zh) works correctly.
-func TestDuckDuckGoProvider_SearchChinese(t *testing.T) {
+func TestDuckDuckGo_SearchChinese(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping real DuckDuckGo integration test in short mode")
 	}
