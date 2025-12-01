@@ -181,17 +181,22 @@ class Caption:
         from parameters or environment variables.
         """
         logger.info("Initializing Caption service")
+        # Default prompt for image captioning in Chinese: "Briefly describe the main content of the image"
         self.prompt = """简单凝炼的描述图片的主要内容"""
+        # API request timeout in seconds
         self.timeout = 30
 
         # Use provided VLM config if available,
         # otherwise fall back to environment variables
         if vlm_config and vlm_config.get("base_url") and vlm_config.get("model_name"):
+            # Build completion URL from provided base URL
             self.completion_url = vlm_config.get("base_url", "") + "/chat/completions"
             self.model = vlm_config.get("model_name", "")
             self.api_key = vlm_config.get("api_key", "")
+            # Interface type: "ollama" or "openai" (default)
             self.interface_type = vlm_config.get("interface_type", "openai").lower()
         else:
+            # Fall back to environment variables if config not provided
             base_url = os.getenv("VLM_MODEL_BASE_URL")
             model_name = os.getenv("VLM_MODEL_NAME")
             if not base_url or not model_name:
@@ -202,7 +207,7 @@ class Caption:
             self.api_key = os.getenv("VLM_MODEL_API_KEY", "")
             self.interface_type = os.getenv("VLM_INTERFACE_TYPE", "openai").lower()
 
-        # 验证接口类型
+        # Validate interface type - must be either "ollama" or "openai"
         if self.interface_type not in ["ollama", "openai"]:
             logger.warning(
                 f"Unknown interface type: {self.interface_type}, defaulting to openai"
@@ -227,7 +232,7 @@ class Caption:
         logger.info("Calling Caption API for image captioning")
         logger.info(f"Processing image data: {image_data[:50]}...")
 
-        # 根据接口类型选择调用方式
+        # Route to appropriate API based on interface type
         if self.interface_type == "ollama":
             return self._call_ollama_api(image_data)
         else:
@@ -236,8 +241,10 @@ class Caption:
     def _call_ollama_api(self, image_base64: str) -> Optional[CaptionChatResp]:
         """Call Ollama API for image captioning using base64 encoded image data."""
 
+        # Extract host URL by removing the chat completions endpoint
         host = self.completion_url.replace("/v1/chat/completions", "")
 
+        # Initialize Ollama client with host and timeout
         client = ollama.Client(
             host=host,
             timeout=self.timeout,
@@ -246,16 +253,17 @@ class Caption:
         try:
             logger.info(f"Calling Ollama API with model: {self.model}")
 
-            # 调用Ollama API，使用images参数传递base64编码的图片
+            # Call Ollama API with base64 encoded image
+            # Prompt: "Briefly describe the main content of the image"
             response = client.generate(
                 model=self.model,
                 prompt="简单凝炼的描述图片的主要内容",
-                images=[image_base64],  # image_base64是base64编码的图片数据
-                options={"temperature": 0.1},
+                images=[image_base64],  # Pass base64 encoded image data
+                options={"temperature": 0.1},  # Low temperature for more deterministic output
                 stream=False,
             )
 
-            # 构造响应对象
+            # Construct response object in standard format
             caption_resp = CaptionChatResp(
                 id="ollama_response",
                 created=int(time.time()),
@@ -277,6 +285,7 @@ class Caption:
         """Call OpenAI-compatible API for image captioning."""
         logger.info(f"Calling OpenAI-compatible API with model: {self.model}")
 
+        # Construct user message with text prompt and base64 encoded image
         user_msg = UserMessage(
             role="user",
             content=[
@@ -290,20 +299,23 @@ class Caption:
             ],
         )
 
+        # Build completion request with model parameters
         gpt_req = CompletionRequest(
             model=self.model,
-            temperature=0.3,
-            top_p=0.8,
+            temperature=0.3,  # Moderate randomness for balanced output
+            top_p=0.8,  # Nucleus sampling parameter
             messages=[user_msg],
             user="abc",
         )
 
+        # Set up HTTP headers for the API request
         headers = {
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
         }
+        # Add authorization header if API key is provided
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
@@ -311,12 +323,14 @@ class Caption:
             logger.info(
                 f"Sending request to OpenAI-compatible API with model: {self.model}"
             )
+            # Send POST request to the API endpoint
             response = requests.post(
                 self.completion_url,
                 data=json.dumps(gpt_req, default=lambda o: o.__dict__, indent=4),
                 headers=headers,
                 timeout=self.timeout,
             )
+            # Check for successful response
             if response.status_code != 200:
                 logger.error(
                     f"OpenAI API returned non-200 status code: {response.status_code}"
@@ -325,6 +339,7 @@ class Caption:
 
             logger.info(f"Received from OpenAI with status: {response.status_code}")
             logger.info("Converting response to CaptionChatResp object")
+            # Parse JSON response into structured object
             caption_resp = CaptionChatResp.from_json(response.json())
 
             if caption_resp.usage:

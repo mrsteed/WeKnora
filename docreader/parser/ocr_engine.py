@@ -52,8 +52,10 @@ class PaddleOCRBackend(OCRBackend):
             os.environ["CUDA_VISIBLE_DEVICES"] = ""
             paddle.device.set_device("cpu")
 
+            # Try to detect if CPU supports AVX instruction set
             # 尝试检测CPU是否支持AVX指令集
             try:
+                # Detect if CPU supports AVX
                 # 检测CPU是否支持AVX
                 if platform.system() == "Linux":
                     try:
@@ -69,6 +71,7 @@ class PaddleOCRBackend(OCRBackend):
                                 "CPU does not support AVX instructions, "
                                 "using compatibility mode"
                             )
+                            # Further restrict instruction set usage
                             # 进一步限制指令集使用
                             os.environ["FLAGS_use_avx2"] = "0"
                             os.environ["FLAGS_use_avx"] = "1"
@@ -96,9 +99,9 @@ class PaddleOCRBackend(OCRBackend):
                 "use_gpu": False,
                 "text_det_limit_type": "max",
                 "text_det_limit_side_len": 960,
-                "use_doc_orientation_classify": True,  # 启用文档方向分类
+                "use_doc_orientation_classify": True,  # Enable document orientation classification / 启用文档方向分类
                 "use_doc_unwarping": False,
-                "use_textline_orientation": True,  # 启用文本行方向检测
+                "use_textline_orientation": True,  # Enable text line orientation detection / 启用文本行方向检测
                 "text_recognition_model_name": "PP-OCRv4_server_rec",
                 "text_detection_model_name": "PP-OCRv4_server_det",
                 "text_det_thresh": 0.3,
@@ -174,13 +177,13 @@ class PaddleOCRBackend(OCRBackend):
             if image.mode != "RGB":
                 image = image.convert("RGB")
 
-            # Convert to numpy array if needed
+            # Convert to numpy array for PaddleOCR processing
             image_array = np.array(image)
 
-            # Perform OCR
+            # Perform OCR recognition
             ocr_result = self.ocr.ocr(image_array, cls=False)
 
-            # Extract text
+            # Extract and concatenate text from OCR results
             ocr_text = ""
             if ocr_result and ocr_result[0]:
                 text = [
@@ -209,6 +212,7 @@ class NanonetsOCRBackend(OCRBackend):
             base_url: Base URL for OpenAI API
             model: Model name
         """
+        # Load configuration from environment variables
         base_url = os.getenv("OCR_API_BASE_URL", "http://localhost:8000/v1")
         api_key = os.getenv("OCR_API_KEY", "123")
         timeout = 30
@@ -218,6 +222,7 @@ class NanonetsOCRBackend(OCRBackend):
         logger.info(f"Nanonets OCR engine initialized with model: {self.model}")
         self.temperature = 0.0
         self.max_tokens = 15000
+        # Prompt for OCR text extraction with specific formatting requirements
         self.prompt = """## 任务说明
 
 请从上传的文档中提取文字内容，严格按自然阅读顺序（从上到下，从左到右）输出，并遵循以下格式规范。
@@ -258,12 +263,12 @@ class NanonetsOCRBackend(OCRBackend):
             return ""
 
         try:
-            # Encode image to base64
+            # Encode image to base64 format for API transmission
             img_base64 = endecode.decode_image(image)
             if not img_base64:
                 return ""
 
-            # Call Nanonets OCR API
+            # Call Nanonets OCR API using OpenAI-compatible format
             logger.info(f"Calling Nanonets OCR API with model: {self.model}")
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -294,13 +299,14 @@ class NanonetsOCRBackend(OCRBackend):
 
 
 class OCREngine:
-    """OCR Engine factory class"""
+    """OCR Engine factory class for managing different OCR backend instances"""
 
+    # Singleton pattern: cache instances for each backend type
     _instance: Dict[str, OCRBackend] = {}
 
     @classmethod
     def get_instance(cls, backend_type: str) -> OCRBackend:
-        """Get OCR engine instance
+        """Get OCR engine instance using factory pattern
 
         Args:
             backend_type: OCR backend type, one of: "paddle", "nanonets"
@@ -310,6 +316,7 @@ class OCREngine:
             OCR engine instance or None if initialization fails
         """
         backend_type = backend_type.lower()
+        # Return cached instance if already initialized
         if cls._instance.get(backend_type):
             return cls._instance[backend_type]
 

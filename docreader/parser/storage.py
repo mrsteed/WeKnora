@@ -244,8 +244,18 @@ class MinioStorage(Storage):
             found = client.bucket_exists(bucket_name)
             if not found:
                 client.make_bucket(bucket_name)
+                # Set public read policy for the bucket
                 policy = (
-                    '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":["*"]},"Action":["s3:GetBucketLocation","s3:ListBucket"],"Resource":["arn:aws:s3:::%s"]},{"Effect":"Allow","Principal":{"AWS":["*"]},"Action":["s3:GetObject"],"Resource":["arn:aws:s3:::%s/*"]}]}'
+                    '{'
+                    '"Version":"2012-10-17",'
+                    '"Statement":['
+                    '{"Effect":"Allow","Principal":{"AWS":["*"]},'
+                    '"Action":["s3:GetBucketLocation","s3:ListBucket"],'
+                    '"Resource":["arn:aws:s3:::%s"]},'
+                    '{"Effect":"Allow","Principal":{"AWS":["*"]},'
+                    '"Action":["s3:GetObject"],'
+                    '"Resource":["arn:aws:s3:::%s/*"]}'
+                    ']}'
                     % (bucket_name, bucket_name)
                 )
                 client.set_bucket_policy(bucket_name, policy)

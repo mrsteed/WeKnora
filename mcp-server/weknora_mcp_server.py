@@ -17,11 +17,11 @@ import mcp.types as types
 from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 
-# Set up logging
+# Set up logging configuration for the MCP server
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration
+# Configuration - Load from environment variables with defaults
 WEKNORA_BASE_URL = os.getenv("WEKNORA_BASE_URL", "http://localhost:8080/api/v1")
 WEKNORA_API_KEY = os.getenv("WEKNORA_API_KEY", "")
 
@@ -29,33 +29,48 @@ class WeKnoraClient:
     """Client for interacting with WeKnora API"""
     
     def __init__(self, base_url: str, api_key: str):
+        """Initialize the WeKnora API client with base URL and authentication"""
         self.base_url = base_url
         self.api_key = api_key
+        # Create a persistent session for connection pooling and performance
         self.session = requests.Session()
+        # Set default headers for all requests
         self.session.headers.update({
-            "X-API-Key": api_key,
-            "Content-Type": "application/json"
+            "X-API-Key": api_key,  # API key for authentication
+            "Content-Type": "application/json"  # Default content type
         })
     
     def _request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
-        """Make a request to the WeKnora API"""
+        """Make a request to the WeKnora API
+        
+        Args:
+            method: HTTP method (GET, POST, PUT, DELETE)
+            endpoint: API endpoint path
+            **kwargs: Additional arguments to pass to requests
+            
+        Returns:
+            JSON response as dictionary
+        """
         url = f"{self.base_url}{endpoint}"
         try:
+            # Execute HTTP request with the specified method
             response = self.session.request(method, url, **kwargs)
+            # Raise exception for HTTP error status codes (4xx, 5xx)
             response.raise_for_status()
+            # Parse and return JSON response
             return response.json()
         except RequestException as e:
             logger.error(f"API request failed: {e}")
             raise
     
-    # Tenant Management
+    # Tenant Management - Methods for managing multi-tenant configurations
     def create_tenant(self, name: str, description: str, business: str, retriever_engines: Dict) -> Dict:
-        """Create a new tenant"""
+        """Create a new tenant with specified configuration"""
         data = {
             "name": name,
             "description": description,
             "business": business,
-            "retriever_engines": retriever_engines
+            "retriever_engines": retriever_engines  # Configuration for search engines
         }
         return self._request("POST", "/tenants", json=data)
     
@@ -67,13 +82,13 @@ class WeKnoraClient:
         """List all tenants"""
         return self._request("GET", "/tenants")
     
-    # Knowledge Base Management
+    # Knowledge Base Management - Methods for managing knowledge bases
     def create_knowledge_base(self, name: str, description: str, config: Dict) -> Dict:
-        """Create a new knowledge base"""
+        """Create a new knowledge base with chunking and model configuration"""
         data = {
             "name": name,
             "description": description,
-            **config
+            **config  # Merge additional configuration (chunking, models, etc.)
         }
         return self._request("POST", "/knowledge-bases", json=data)
     
@@ -94,22 +109,24 @@ class WeKnoraClient:
         return self._request("DELETE", f"/knowledge-bases/{kb_id}")
     
     def hybrid_search(self, kb_id: str, query: str, config: Dict) -> Dict:
-        """Perform hybrid search in knowledge base"""
+        """Perform hybrid search combining vector and keyword search"""
         data = {
             "query_text": query,
-            **config
+            **config  # Include thresholds and match count
         }
         return self._request("GET", f"/knowledge-bases/{kb_id}/hybrid-search", json=data)
     
-    # Knowledge Management
+    # Knowledge Management - Methods for creating and managing knowledge entries
     def create_knowledge_from_file(self, kb_id: str, file_path: str, enable_multimodel: bool = True) -> Dict:
-        """Create knowledge from file"""
+        """Create knowledge from a local file with optional multimodal processing"""
         with open(file_path, 'rb') as f:
             files = {'file': f}
             data = {'enable_multimodel': str(enable_multimodel).lower()}
-            # Temporarily remove Content-Type for multipart request
+            # Temporarily remove Content-Type header for multipart/form-data request
+            # (requests will set it automatically with boundary)
             headers = self.session.headers.copy()
             del headers['Content-Type']
+            # Use requests.post directly instead of session to avoid header conflicts
             response = requests.post(
                 f"{self.base_url}/knowledge-bases/{kb_id}/knowledge/file",
                 headers=headers,
@@ -120,10 +137,10 @@ class WeKnoraClient:
             return response.json()
     
     def create_knowledge_from_url(self, kb_id: str, url: str, enable_multimodel: bool = True) -> Dict:
-        """Create knowledge from URL"""
+        """Create knowledge from a web URL with optional multimodal processing"""
         data = {
-            "url": url,
-            "enable_multimodel": enable_multimodel
+            "url": url,  # Web URL to fetch and process
+            "enable_multimodel": enable_multimodel  # Enable image/multimodal extraction
         }
         return self._request("POST", f"/knowledge-bases/{kb_id}/knowledge/url", json=data)
     
@@ -140,16 +157,16 @@ class WeKnoraClient:
         """Delete knowledge"""
         return self._request("DELETE", f"/knowledge/{knowledge_id}")
     
-    # Model Management
+    # Model Management - Methods for managing AI models (LLM, Embedding, Rerank)
     def create_model(self, name: str, model_type: str, source: str, description: str, parameters: Dict, is_default: bool = False) -> Dict:
-        """Create a new model"""
+        """Create a new AI model configuration"""
         data = {
             "name": name,
-            "type": model_type,
-            "source": source,
+            "type": model_type,  # KnowledgeQA, Embedding, or Rerank
+            "source": source,  # local, openai, etc.
             "description": description,
-            "parameters": parameters,
-            "is_default": is_default
+            "parameters": parameters,  # API keys, base URLs, etc.
+            "is_default": is_default  # Set as default model for this type
         }
         return self._request("POST", "/models", json=data)
     
@@ -161,12 +178,12 @@ class WeKnoraClient:
         """Get model details"""
         return self._request("GET", f"/models/{model_id}")
     
-    # Session Management
+    # Session Management - Methods for managing chat sessions
     def create_session(self, kb_id: str, strategy: Dict) -> Dict:
-        """Create a new chat session"""
+        """Create a new chat session with conversation strategy"""
         data = {
-            "knowledge_base_id": kb_id,
-            "session_strategy": strategy
+            "knowledge_base_id": kb_id,  # Knowledge base to query
+            "session_strategy": strategy  # Conversation settings (max rounds, rewrite, etc.)
         }
         return self._request("POST", "/sessions", json=data)
     
@@ -183,16 +200,17 @@ class WeKnoraClient:
         """Delete session"""
         return self._request("DELETE", f"/sessions/{session_id}")
     
-    # Chat Functionality
+    # Chat Functionality - Methods for conversational interactions
     def chat(self, session_id: str, query: str) -> Dict:
-        """Send a chat message"""
+        """Send a chat message and get AI response"""
         data = {"query": query}
-        # Note: This returns SSE stream, simplified here
+        # Note: The actual API returns Server-Sent Events (SSE) stream
+        # This simplified version returns the complete response
         return self._request("POST", f"/knowledge-chat/{session_id}", json=data)
     
-    # Chunk Management
+    # Chunk Management - Methods for managing knowledge chunks (text segments)
     def list_chunks(self, knowledge_id: str, page: int = 1, page_size: int = 20) -> Dict:
-        """List chunks of knowledge"""
+        """List text chunks of a knowledge entry with pagination"""
         params = {"page": page, "page_size": page_size}
         return self._request("GET", f"/chunks/{knowledge_id}", params=params)
     
@@ -200,14 +218,15 @@ class WeKnoraClient:
         """Delete a chunk"""
         return self._request("DELETE", f"/chunks/{knowledge_id}/{chunk_id}")
 
-# Initialize MCP server
+# Initialize MCP server instance
 app = Server("weknora-server")
+# Initialize WeKnora API client with configuration
 client = WeKnoraClient(WEKNORA_BASE_URL, WEKNORA_API_KEY)
 
-# Tool definitions
+# Tool definitions - Register all available tools for the MCP protocol
 @app.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
-    """List all available WeKnora tools"""
+    """List all available WeKnora tools with their schemas"""
     return [
         # Tenant Management
         types.Tool(
@@ -497,17 +516,27 @@ async def handle_list_tools() -> list[types.Tool]:
 async def handle_call_tool(
     name: str, arguments: dict | None
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-    """Handle tool execution"""
+    """Handle tool execution requests from MCP clients
+    
+    Args:
+        name: Name of the tool to execute
+        arguments: Tool arguments as dictionary
+        
+    Returns:
+        List of content items (text, image, or embedded resources)
+    """
     
     try:
+        # Use empty dict if no arguments provided
         args = arguments or {}
         
-        # Tenant Management
+        # Tenant Management - Route tenant-related operations
         if name == "create_tenant":
             result = client.create_tenant(
                 args["name"],
                 args["description"],
                 args["business"],
+                # Default to postgres-based keyword and vector search if not specified
                 args.get("retriever_engines", {
                     "engines": [
                         {"retriever_type": "keywords", "retriever_engine_type": "postgres"},
@@ -518,14 +547,15 @@ async def handle_call_tool(
         elif name == "list_tenants":
             result = client.list_tenants()
         
-        # Knowledge Base Management
+        # Knowledge Base Management - Route knowledge base operations
         elif name == "create_knowledge_base":
+            # Build configuration with defaults for chunking and models
             config = {
                 "chunking_config": args.get("chunking_config", {
-                    "chunk_size": 1000,
-                    "chunk_overlap": 200,
-                    "separators": ["."],
-                    "enable_multimodal": True
+                    "chunk_size": 1000,  # Default chunk size in characters
+                    "chunk_overlap": 200,  # Default overlap between chunks
+                    "separators": ["."],  # Default text separators
+                    "enable_multimodal": True  # Enable image processing by default
                 }),
                 "embedding_model_id": args.get("embedding_model_id", ""),
                 "summary_model_id": args.get("summary_model_id", "")
@@ -542,10 +572,11 @@ async def handle_call_tool(
         elif name == "delete_knowledge_base":
             result = client.delete_knowledge_base(args["kb_id"])
         elif name == "hybrid_search":
+            # Configure hybrid search with thresholds and result count
             config = {
-                "vector_threshold": args.get("vector_threshold", 0.5),
-                "keyword_threshold": args.get("keyword_threshold", 0.3),
-                "match_count": args.get("match_count", 5)
+                "vector_threshold": args.get("vector_threshold", 0.5),  # Minimum similarity score
+                "keyword_threshold": args.get("keyword_threshold", 0.3),  # Minimum keyword match score
+                "match_count": args.get("match_count", 5)  # Number of results to return
             }
             result = client.hybrid_search(args["kb_id"], args["query"], config)
         
@@ -573,11 +604,12 @@ async def handle_call_tool(
         elif name == "delete_knowledge":
             result = client.delete_knowledge(args["knowledge_id"])
         
-        # Model Management
+        # Model Management - Route model configuration operations
         elif name == "create_model":
+            # Build model parameters (API credentials, endpoints, etc.)
             parameters = {
-                "base_url": args.get("base_url", ""),
-                "api_key": args.get("api_key", "")
+                "base_url": args.get("base_url", ""),  # Model API endpoint
+                "api_key": args.get("api_key", "")  # Model API key
             }
             result = client.create_model(
                 args["name"],
@@ -592,17 +624,18 @@ async def handle_call_tool(
         elif name == "get_model":
             result = client.get_model(args["model_id"])
         
-        # Session Management
+        # Session Management - Route chat session operations
         elif name == "create_session":
+            # Build session strategy with conversation settings
             strategy = {
-                "max_rounds": args.get("max_rounds", 5),
-                "enable_rewrite": args.get("enable_rewrite", True),
-                "fallback_strategy": "FIXED_RESPONSE",
+                "max_rounds": args.get("max_rounds", 5),  # Maximum conversation turns
+                "enable_rewrite": args.get("enable_rewrite", True),  # Enable query rewriting
+                "fallback_strategy": "FIXED_RESPONSE",  # Strategy when no answer found
                 "fallback_response": args.get("fallback_response", "Sorry, I cannot answer this question."),
-                "embedding_top_k": 10,
-                "keyword_threshold": 0.5,
-                "vector_threshold": 0.7,
-                "summary_model_id": args.get("summary_model_id", "")
+                "embedding_top_k": 10,  # Number of chunks to retrieve
+                "keyword_threshold": 0.5,  # Keyword match threshold
+                "vector_threshold": 0.7,  # Vector similarity threshold
+                "summary_model_id": args.get("summary_model_id", "")  # Model for summarization
             }
             result = client.create_session(args["kb_id"], strategy)
         elif name == "get_session":
@@ -630,17 +663,20 @@ async def handle_call_tool(
             result = client.delete_chunk(args["knowledge_id"], args["chunk_id"])
         
         else:
+            # Handle unknown tool names
             return [types.TextContent(
                 type="text",
                 text=f"Unknown tool: {name}"
             )]
         
+        # Return successful result as formatted JSON
         return [types.TextContent(
             type="text",
             text=json.dumps(result, indent=2, ensure_ascii=False)
         )]
         
     except Exception as e:
+        # Log and return error message
         logger.error(f"Tool execution failed: {e}")
         return [types.TextContent(
             type="text",
@@ -648,8 +684,10 @@ async def handle_call_tool(
         )]
 
 async def run():
-    """Run the MCP server"""
+    """Run the MCP server using stdio transport"""
+    # Create stdio streams for communication with MCP client
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+        # Run the server with initialization options
         await app.run(
             read_stream,
             write_stream,
@@ -664,8 +702,9 @@ async def run():
         )
 
 def main():
-    """主函数入口点，用于 console_scripts"""
+    """Main entry point for console_scripts"""
     import asyncio
+    # Run the async server
     asyncio.run(run())
 
 if __name__ == "__main__":
