@@ -1813,14 +1813,14 @@ func (h *InitializationHandler) testMultimodalWithDocReader(
 type TextRelationExtractionRequest struct {
 	Text      string    `json:"text"      binding:"required"`
 	Tags      []string  `json:"tags"      binding:"required"`
-	LLMConfig LLMConfig `json:"llmConfig"`
+	LLMConfig LLMConfig `json:"llm_config"`
 }
 
 type LLMConfig struct {
 	Source    string `json:"source"`
-	ModelName string `json:"modelName"`
-	BaseUrl   string `json:"baseUrl"`
-	ApiKey    string `json:"apiKey"`
+	ModelName string `json:"model_name"`
+	BaseUrl   string `json:"base_url"`
+	ApiKey    string `json:"api_key"`
 }
 
 // TextRelationExtractionResponse 文本关系提取响应结构
@@ -1915,7 +1915,7 @@ func (h *InitializationHandler) extractRelationsFromText(
 // FabriTextRequest is a request for generating example text
 type FabriTextRequest struct {
 	Tags      []string  `json:"tags"`
-	LLMConfig LLMConfig `json:"llmConfig"`
+	LLMConfig LLMConfig `json:"llm_config"`
 }
 
 // FabriTextResponse is a response for generating example text
@@ -1984,7 +1984,7 @@ func (h *InitializationHandler) fabriText(ctx context.Context, tags []string, ll
 
 // FabriTagRequest is a request for generating tags
 type FabriTagRequest struct {
-	LLMConfig LLMConfig `json:"llmConfig"`
+	LLMConfig LLMConfig `json:"llm_config"`
 }
 
 // FabriTagResponse is a response for generating tags

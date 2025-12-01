@@ -397,7 +397,7 @@ export function testMultimodalFunction(testData: {
 export interface TextRelationExtractionRequest {
     text: string;
     tags: string[];
-    llmConfig: LLMConfig;
+    llm_config: LLMConfig;
 }
 
 export interface Node {
@@ -413,9 +413,9 @@ export interface Relation {
 
 export interface LLMConfig {
     source: 'local' | 'remote';
-    modelName: string;
-    baseUrl: string;
-    apiKey: string;
+    model_name: string;
+    base_url: string;
+    api_key: string;
 }
 
 export interface TextRelationExtractionResponse {
@@ -426,7 +426,7 @@ export interface TextRelationExtractionResponse {
 // 文本内容关系提取
 export function extractTextRelations(request: TextRelationExtractionRequest): Promise<TextRelationExtractionResponse> {
     return new Promise((resolve, reject) => {
-        post('/api/v1/initialization/extract/text-relation', request)
+        post('/api/v1/initialization/extract/text-relation', request, { timeout: 60000 })
             .then((response: any) => {
                 resolve(response.data || { nodes: [], relations: [] });
             })
@@ -439,7 +439,7 @@ export function extractTextRelations(request: TextRelationExtractionRequest): Pr
 
 export interface FabriTextRequest {
     tags: string[];
-    llmConfig: LLMConfig;
+    llm_config: LLMConfig;
 }
 
 export interface FabriTextResponse {
@@ -461,7 +461,7 @@ export function fabriText(request: FabriTextRequest): Promise<FabriTextResponse>
 }
 
 export interface FabriTagRequest {
-    llmConfig: LLMConfig; 
+    llm_config: LLMConfig; 
 }
 
 export interface FabriTagResponse {
