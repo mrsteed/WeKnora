@@ -239,6 +239,7 @@ func isInformativeToken(token string) bool {
 	return true
 }
 
+// containsChineseCharacters checks if a string contains Chinese characters
 func containsChineseCharacters(text string) bool {
 	for _, r := range text {
 		if unicode.Is(unicode.Han, r) {
@@ -248,6 +249,7 @@ func containsChineseCharacters(text string) bool {
 	return false
 }
 
+// containsLatinLetters checks if a string contains Latin letters
 func containsLatinLetters(text string) bool {
 	for _, r := range text {
 		if r <= unicode.MaxASCII && unicode.IsLetter(r) {
@@ -257,22 +259,26 @@ func containsLatinLetters(text string) bool {
 	return false
 }
 
+// normalizeWhitespace normalizes whitespace in a string
 func normalizeWhitespace(text string) string {
 	text = strings.TrimSpace(text)
 	return multiSpaceRegex.ReplaceAllString(text, " ")
 }
 
+// normalizeLatinQuery normalizes a Latin query
 func normalizeLatinQuery(text string) string {
 	text = strings.ToLower(text)
 	text = multiSpaceRegex.ReplaceAllString(text, " ")
 	return strings.TrimSpace(text)
 }
 
+// intentResp is a response for intent detection
 type intentResp struct {
 	Intent     string  `json:"intent"`
 	Confidence float64 `json:"confidence"`
 }
 
+// detectIntentLLM detects the intent of a query using an LLM
 func (p *PluginPreprocess) detectIntentLLM(ctx context.Context, chatManage *types.ChatManage, text string) string {
 	if p.modelService == nil || chatManage.ChatModelID == "" {
 		pipelineWarn(
@@ -330,6 +336,7 @@ func (p *PluginPreprocess) detectIntentLLM(ctx context.Context, chatManage *type
 	}
 }
 
+// extractJSONBody extracts a JSON body from a string
 func extractJSONBody(text string) string {
 	t := strings.TrimSpace(text)
 	// Try fenced block first

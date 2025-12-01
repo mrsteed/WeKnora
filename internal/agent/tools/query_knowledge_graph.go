@@ -85,7 +85,7 @@ func (t *QueryKnowledgeGraphTool) Parameters() map[string]interface{} {
 	}
 }
 
-// Execute queries the knowledge graph with concurrent KB processing
+// Execute performs the knowledge graph query with concurrent KB processing
 func (t *QueryKnowledgeGraphTool) Execute(ctx context.Context, args map[string]interface{}) (*types.ToolResult, error) {
 	// Extract knowledge_base_ids array
 	kbIDsRaw, ok := args["knowledge_base_ids"].([]interface{})
@@ -394,14 +394,10 @@ func buildGraphVisualizationData(
 		}
 	}
 
-	// TODO: Extract actual entities and relations when graph extraction is fully implemented
-	// For now, create placeholder structure
-
 	return map[string]interface{}{
-		"nodes":              nodes,
-		"edges":              edges,
-		"total_nodes":        len(nodes),
-		"total_edges":        len(edges),
-		"visualization_note": "完整的图可视化功能开发中，当前显示文档节点",
+		"nodes":       nodes,
+		"edges":       edges,
+		"total_nodes": len(nodes),
+		"total_edges": len(edges),
 	}
 }

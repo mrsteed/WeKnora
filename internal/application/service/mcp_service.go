@@ -193,12 +193,12 @@ func (s *mcpServiceService) UpdateMCPService(ctx context.Context, service *types
 		logger.GetLogger(ctx).Infof("MCP service disabled, connection closed: %s (ID: %s)", name, service.ID)
 	} else if configChanged {
 		s.mcpManager.CloseClient(service.ID)
-		logger.GetLogger(ctx).Infof("MCP service config changed, connection closed for reconnect: %s (ID: %s)", name, service.ID)
+		logger.GetLogger(ctx).Infof("MCP service config changed, connection closed: %s (ID: %s)", name, service.ID)
 	} else if oldEnabled != existing.Enabled && existing.Enabled {
 		// Service was just enabled (was disabled, now enabled)
 		// Close any existing connection to ensure clean state
 		s.mcpManager.CloseClient(service.ID)
-		logger.GetLogger(ctx).Infof("MCP service enabled, existing connection closed for clean state: %s (ID: %s)", name, service.ID)
+		logger.GetLogger(ctx).Infof("MCP service enabled, existing connection closed: %s (ID: %s)", name, service.ID)
 	}
 
 	logger.GetLogger(ctx).Infof("MCP service updated: %s (ID: %s), enabled: %v", name, service.ID, existing.Enabled)

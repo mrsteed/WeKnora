@@ -16,6 +16,7 @@ import (
 	"github.com/hibiken/asynq"
 )
 
+// NewChunkExtractTask creates a new chunk extract task
 func NewChunkExtractTask(
 	ctx context.Context,
 	client *asynq.Client,
@@ -45,6 +46,7 @@ func NewChunkExtractTask(
 	return nil
 }
 
+// ChunkExtractService is a service for extracting chunks
 type ChunkExtractService struct {
 	template          *types.PromptTemplateStructured
 	modelService      interfaces.ModelService
@@ -53,6 +55,7 @@ type ChunkExtractService struct {
 	graphEngine       interfaces.RetrieveGraphRepository
 }
 
+// NewChunkExtractService creates a new chunk extract service
 func NewChunkExtractService(
 	config *config.Config,
 	modelService interfaces.ModelService,
@@ -73,6 +76,7 @@ func NewChunkExtractService(
 	}
 }
 
+// Extract extracts a chunk
 func (s *ChunkExtractService) Extract(ctx context.Context, t *asynq.Task) error {
 	var p types.ExtractChunkPayload
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -137,7 +141,5 @@ func (s *ChunkExtractService) Extract(ctx context.Context, t *asynq.Task) error 
 		logger.Errorf(ctx, "failed to add graph: %v", err)
 		return err
 	}
-	// gg, _ := json.Marshal(graph)
-	// logger.Infof(ctx, "extracted graph: %s", string(gg))
 	return nil
 }

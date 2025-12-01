@@ -52,7 +52,7 @@ func TestDuckDuckGoProvider_Name(t *testing.T) {
 	}
 }
 
-func TestDuckDuckGoProvider_Search_HTMLSuccess(t *testing.T) {
+func TestDuckDuckGoProvider(t *testing.T) {
 	// Minimal HTML page with two results, matching selectors used in searchHTML
 	html := `
 <html>
@@ -105,7 +105,7 @@ func TestDuckDuckGoProvider_Search_HTMLSuccess(t *testing.T) {
 	}
 }
 
-func TestDuckDuckGoProvider_Search_APIFallback(t *testing.T) {
+func TestDuckDuckGoProvider_Fallback(t *testing.T) {
 	// Simulate HTML returning non-OK to force API fallback, then a minimal API JSON
 	apiResp := struct {
 		AbstractText string `json:"AbstractText"`
@@ -233,7 +233,7 @@ func TestDuckDuckGoProvider_Search_Real(t *testing.T) {
 
 // TestDuckDuckGoProvider_Search_Real_Chinese tests the DuckDuckGo provider with Chinese query.
 // This verifies the Chinese language parameter (kl=cn-zh) works correctly.
-func TestDuckDuckGoProvider_Search_Real_Chinese(t *testing.T) {
+func TestDuckDuckGoProvider_SearchChinese(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping real DuckDuckGo integration test in short mode")
 	}

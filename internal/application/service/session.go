@@ -634,7 +634,8 @@ func (s *sessionService) selectChatModelID(
 			return session.SummaryModelID, nil
 		} else if err == nil && model != nil {
 			// Session has a model but it's not Remote, we'll check knowledge bases for Remote models
-			logger.Infof(ctx, "Session has summary model %s but it's not Remote, checking knowledge bases for Remote models", session.SummaryModelID)
+			logger.Infof(ctx, "Session has summary model %s but it's not Remote, "+
+				"checking knowledge bases for Remote models", session.SummaryModelID)
 		}
 	}
 
@@ -952,7 +953,8 @@ func (s *sessionService) AgentQA(
 				len(agentConfig.KnowledgeBases), agentConfig.KnowledgeBases)
 		}
 	} else {
-		logger.Infof(ctx, "Agent configured with %d knowledge base(s): %v", len(agentConfig.KnowledgeBases), agentConfig.KnowledgeBases)
+		logger.Infof(ctx, "Agent configured with %d knowledge base(s): %v",
+			len(agentConfig.KnowledgeBases), agentConfig.KnowledgeBases)
 	}
 
 	summaryModelID := session.SummaryModelID
@@ -1141,7 +1143,8 @@ func (s *sessionService) SaveWebSearchTempKBState(
 	}
 }
 
-// DeleteWebSearchTempKBState deletes the temporary KB state for web search from Redis and cleans up associated knowledge base and knowledge items
+// DeleteWebSearchTempKBState deletes the temporary KB state for web search from Redis
+// and cleans up associated knowledge base and knowledge items.
 func (s *sessionService) DeleteWebSearchTempKBState(ctx context.Context, sessionID string) error {
 	if s.redisClient == nil {
 		return nil

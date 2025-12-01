@@ -176,6 +176,7 @@ func (p *PluginRerank) rerank(ctx context.Context,
 	return rankFilter
 }
 
+// ensureMetadata ensures the metadata is not nil
 func ensureMetadata(m map[string]string) map[string]string {
 	if m == nil {
 		return make(map[string]string)
@@ -183,6 +184,7 @@ func ensureMetadata(m map[string]string) map[string]string {
 	return m
 }
 
+// compositeScore calculates the composite score for a search result
 func compositeScore(sr *types.SearchResult, modelScore, baseScore float64, chatManage *types.ChatManage) float64 {
 	sourceWeight := 1.0
 	switch strings.ToLower(sr.KnowledgeSource) {
@@ -222,6 +224,7 @@ func compositeScore(sr *types.SearchResult, modelScore, baseScore float64, chatM
 	return composite
 }
 
+// applyMMR applies the MMR algorithm to the search results
 func applyMMR(
 	ctx context.Context,
 	results []*types.SearchResult,
@@ -285,6 +288,7 @@ func applyMMR(
 	return selected
 }
 
+// tokenizeSimple tokenizes a text into a set of tokens
 func tokenizeSimple(text string) map[string]struct{} {
 	text = strings.ToLower(text)
 	fields := strings.Fields(text)
@@ -297,6 +301,7 @@ func tokenizeSimple(text string) map[string]struct{} {
 	return set
 }
 
+// jaccard calculates the Jaccard similarity between two sets of tokens
 func jaccard(a, b map[string]struct{}) float64 {
 	if len(a) == 0 && len(b) == 0 {
 		return 0
@@ -314,6 +319,7 @@ func jaccard(a, b map[string]struct{}) float64 {
 	return float64(inter) / float64(union)
 }
 
+// clampFloat clamps a float value between a minimum and maximum value
 func clampFloat(v, minV, maxV float64) float64 {
 	if v < minV {
 		return minV

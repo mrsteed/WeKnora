@@ -168,6 +168,7 @@ func (t *ListKnowledgeChunksTool) Execute(ctx context.Context, args map[string]i
 	}, nil
 }
 
+// lookupKnowledgeTitle looks up the title of a knowledge document
 func (t *ListKnowledgeChunksTool) lookupKnowledgeTitle(ctx context.Context, knowledgeID string) string {
 	if t.knowledgeService == nil {
 		return ""
@@ -179,6 +180,7 @@ func (t *ListKnowledgeChunksTool) lookupKnowledgeTitle(ctx context.Context, know
 	return strings.TrimSpace(knowledge.Title)
 }
 
+// buildOutput builds the output for the list knowledge chunks tool
 func (t *ListKnowledgeChunksTool) buildOutput(
 	knowledgeID string,
 	knowledgeTitle string,
@@ -226,6 +228,7 @@ func (t *ListKnowledgeChunksTool) buildOutput(
 	return builder.String()
 }
 
+// summarizeContent summarizes the content of a chunk
 func summarizeContent(content string) string {
 	cleaned := strings.TrimSpace(content)
 	if cleaned == "" {

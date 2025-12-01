@@ -16,6 +16,7 @@ type PluginSearchEntity struct {
 	knowledgeRepo interfaces.KnowledgeRepository
 }
 
+// NewPluginSearchEntity creates a new plugin search entity
 func NewPluginSearchEntity(
 	eventManager *EventManager,
 	graphRepository interfaces.RetrieveGraphRepository,
@@ -31,12 +32,12 @@ func NewPluginSearchEntity(
 	return res
 }
 
-// ActivationEvents returns the event types this plugin handles
+// ActivationEvents returns the list of event types this plugin responds to
 func (p *PluginSearchEntity) ActivationEvents() []types.EventType {
 	return []types.EventType{types.ENTITY_SEARCH}
 }
 
-// OnEvent handles search events in the chat pipeline
+// OnEvent processes triggered events
 func (p *PluginSearchEntity) OnEvent(ctx context.Context,
 	eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
 ) *PluginError {
@@ -148,6 +149,7 @@ func (p *PluginSearchEntity) OnEvent(ctx context.Context,
 	return next()
 }
 
+// filterSeenChunk filters seen chunks from the graph
 func filterSeenChunk(ctx context.Context, graph *types.GraphData, searchResult []*types.SearchResult) []string {
 	seen := map[string]bool{}
 	for _, chunk := range searchResult {
@@ -169,6 +171,7 @@ func filterSeenChunk(ctx context.Context, graph *types.GraphData, searchResult [
 	return chunkIDs
 }
 
+// chunk2SearchResult converts a chunk to a search result
 func chunk2SearchResult(chunk *types.Chunk, knowledge *types.Knowledge) *types.SearchResult {
 	return &types.SearchResult{
 		ID:                chunk.ID,

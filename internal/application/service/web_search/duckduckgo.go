@@ -63,6 +63,7 @@ func (p *DuckDuckGoProvider) Search(
 	return nil, fmt.Errorf("duckduckgo API search failed: %w", apiErr)
 }
 
+// searchHTML performs a web search using DuckDuckGo HTML endpoint
 func (p *DuckDuckGoProvider) searchHTML(
 	ctx context.Context,
 	query string,
@@ -134,6 +135,7 @@ func (p *DuckDuckGoProvider) searchHTML(
 	return results, nil
 }
 
+// searchAPI performs a web search using DuckDuckGo API endpoint
 func (p *DuckDuckGoProvider) searchAPI(
 	ctx context.Context,
 	query string,
@@ -220,6 +222,7 @@ func (p *DuckDuckGoProvider) searchAPI(
 	return results, nil
 }
 
+// cleanDDGURL cleans the URL from DuckDuckGo HTML endpoint
 func cleanDDGURL(urlStr string) string {
 	if strings.HasPrefix(urlStr, "//duckduckgo.com/l/?uddg=") {
 		trimmed := strings.TrimPrefix(urlStr, "//duckduckgo.com/l/?uddg=")
@@ -241,6 +244,7 @@ func cleanDDGURL(urlStr string) string {
 	return urlStr
 }
 
+// extractTitle extracts the title from the text
 func extractTitle(text string) string {
 	lines := strings.Split(text, "\n")
 	if len(lines) > 0 {

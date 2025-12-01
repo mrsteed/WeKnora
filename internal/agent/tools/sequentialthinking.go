@@ -8,7 +8,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// SequentialThinkingTool implements a dynamic and reflective problem-solving tool
+// SequentialThinkingTool is a dynamic and reflective problem-solving tool
 // This tool helps analyze problems through a flexible thinking process that can adapt and evolve
 type SequentialThinkingTool struct {
 	BaseTool

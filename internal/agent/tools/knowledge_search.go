@@ -1173,44 +1173,6 @@ func (t *KnowledgeSearchTool) formatOutput(
 			output += fmt.Sprintf("  已召回: %d 个 (%.1f%%)\n", retrievedCount, percentage)
 			output += fmt.Sprintf("  未召回: %d 个\n", remaining)
 
-			if remaining > 0 {
-				output += "  建议: 使用 list_knowledge_chunks 工具获取完整内容\n"
-
-				// Find missing chunk ranges (gaps in retrieved chunks)
-				missingRanges := t.findMissingChunkRanges(retrievedChunks, int(totalChunks))
-
-				if len(missingRanges) == 0 {
-					// No gaps found (shouldn't happen if remaining > 0, but handle it)
-					output += fmt.Sprintf(
-						"    - 获取全部内容: list_knowledge_chunks(knowledge_id=\"%s\", offset=0, limit=%d)\n",
-						knowledgeID,
-						totalChunks,
-					)
-				} else if len(missingRanges) == 1 && missingRanges[0].start == 0 && missingRanges[0].end == int(totalChunks)-1 {
-					// All chunks are missing (shouldn't happen, but handle it)
-					output += fmt.Sprintf("    - 获取全部内容: list_knowledge_chunks(knowledge_id=\"%s\", offset=0, limit=%d)\n", knowledgeID, totalChunks)
-				} else {
-					// Suggest getting each missing range
-					for idx, r := range missingRanges {
-						rangeSize := r.end - r.start + 1
-						if rangeSize <= 100 {
-							// Small range, get all at once
-							output += fmt.Sprintf("    - 区间 %d: chunk_index %d-%d (%d 个) → list_knowledge_chunks(knowledge_id=\"%s\", offset=%d, limit=%d)\n",
-								idx+1, r.start, r.end, rangeSize, knowledgeID, r.start, rangeSize)
-						} else {
-							// Large range, suggest getting in batches
-							output += fmt.Sprintf("    - 区间 %d: chunk_index %d-%d (%d 个，建议分批获取):\n",
-								idx+1, r.start, r.end, rangeSize)
-							output += fmt.Sprintf("      首次: list_knowledge_chunks(knowledge_id=\"%s\", offset=%d, limit=100)\n",
-								knowledgeID, r.start)
-							if rangeSize > 100 {
-								output += "      继续: 根据返回结果调整 offset 继续获取剩余内容\n"
-							}
-						}
-					}
-				}
-			}
-			output += "\n"
 		}
 	}
 

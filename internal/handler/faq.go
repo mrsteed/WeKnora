@@ -17,7 +17,7 @@ type FAQHandler struct {
 	knowledgeService interfaces.KnowledgeService
 }
 
-// NewFAQHandler creates a new FAQ handler.
+// NewFAQHandler creates a new FAQ handler
 func NewFAQHandler(knowledgeService interfaces.KnowledgeService) *FAQHandler {
 	return &FAQHandler{knowledgeService: knowledgeService}
 }
@@ -132,14 +132,17 @@ func (h *FAQHandler) UpdateEntryStatusBatch(c *gin.Context) {
 	})
 }
 
+// faqDeleteRequest is a request for deleting FAQ entries in batch
 type faqDeleteRequest struct {
 	IDs []string `json:"ids" binding:"required,min=1,dive,required"`
 }
 
+// faqEntryStatusBatchRequest is a request for updating the enable status of FAQ entries in batch
 type faqEntryStatusBatchRequest struct {
 	Updates map[string]bool `json:"updates" binding:"required,min=1"`
 }
 
+// faqEntryTagBatchRequest is a request for updating tags for FAQ entries in batch
 type faqEntryTagBatchRequest struct {
 	Updates map[string]*string `json:"updates" binding:"required,min=1"`
 }

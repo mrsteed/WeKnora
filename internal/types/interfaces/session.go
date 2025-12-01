@@ -32,7 +32,8 @@ type SessionService interface {
 	// webSearchEnabled: whether to enable web search to supplement knowledge base results
 	// Events are emitted through eventBus (references, answer chunks, completion)
 	KnowledgeQA(ctx context.Context,
-		session *types.Session, query string, knowledgeBaseIDs []string, assistantMessageID string, summaryModelID string, webSearchEnabled bool, eventBus *event.EventBus,
+		session *types.Session, query string, knowledgeBaseIDs []string,
+		assistantMessageID string, summaryModelID string, webSearchEnabled bool, eventBus *event.EventBus,
 	) error
 	// KnowledgeQAByEvent performs knowledge-based question answering by event
 	KnowledgeQAByEvent(ctx context.Context, chatManage *types.ChatManage, eventList []types.EventType) error
@@ -62,7 +63,8 @@ type SessionService interface {
 		seenURLs map[string]bool,
 		knowledgeIDs []string,
 	)
-	// DeleteWebSearchTempKBState deletes the temporary KB state for web search from Redis and cleans up associated knowledge base and knowledge items
+	// DeleteWebSearchTempKBState deletes the temporary KB state for web search from Redis
+	// and cleans up associated knowledge base and knowledge items
 	DeleteWebSearchTempKBState(ctx context.Context, sessionID string) error
 }
 

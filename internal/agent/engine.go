@@ -96,7 +96,7 @@ func (e *AgentEngine) Execute(
 	}
 
 	// Build system prompt using progressive RAG prompt
-	systemPrompt := BuildProgressiveRAGSystemPrompt(
+	systemPrompt := BuildSystemPrompt(
 		e.knowledgeBasesInfo,
 		e.config.WebSearchEnabled,
 		e.systemPromptTemplate,
@@ -771,7 +771,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	})
 
 	// Build messages with all context
-	systemPrompt := BuildProgressiveRAGSystemPrompt(
+	systemPrompt := BuildSystemPrompt(
 		e.knowledgeBasesInfo,
 		e.config.WebSearchEnabled,
 		e.systemPromptTemplate,

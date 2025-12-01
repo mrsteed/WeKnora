@@ -98,6 +98,7 @@ func (t *GetDocumentInfoTool) Execute(ctx context.Context, args map[string]inter
 		}
 	}
 
+	// Check if knowledge IDs are valid
 	if len(knowledgeIDs) == 0 {
 		return &types.ToolResult{
 			Success: false,
@@ -116,6 +117,7 @@ func (t *GetDocumentInfoTool) Execute(ctx context.Context, args map[string]inter
 	var mu sync.Mutex
 	results := make(map[string]*docInfo)
 
+	// Concurrently get info for each knowledge ID
 	for _, knowledgeID := range knowledgeIDs {
 		wg.Add(1)
 		go func(id string) {
@@ -195,10 +197,7 @@ func (t *GetDocumentInfoTool) Execute(ctx context.Context, args map[string]inter
 	for i, doc := range successDocs {
 		k := doc.knowledge
 
-		// Get file type icon
-		typeIcon := getTypeIcon(k.Type, k.FileType)
-
-		output += fmt.Sprintf("【文档 #%d】 %s\n", i+1, typeIcon)
+		output += fmt.Sprintf("【文档 #%d】\n", i+1)
 		output += fmt.Sprintf("  ID:       %s\n", k.ID)
 		output += fmt.Sprintf("  标题:     %s\n", k.Title)
 
@@ -240,7 +239,6 @@ func (t *GetDocumentInfoTool) Execute(ctx context.Context, args map[string]inter
 			"parse_status": k.ParseStatus,
 			"chunk_count":  doc.chunkCount,
 			"metadata":     k.GetMetadata(),
-			"type_icon":    typeIcon,
 		})
 	}
 
@@ -262,36 +260,6 @@ func (t *GetDocumentInfoTool) Execute(ctx context.Context, args map[string]inter
 			"title":        firstTitle, // For frontend summary display
 		},
 	}, nil
-}
-
-// Helper functions
-
-func getTypeIcon(knowledgeType, fileType string) string {
-	switch knowledgeType {
-	case "file":
-		switch fileType {
-		case "pdf", "PDF":
-			return "📄 PDF"
-		case "docx", "doc", "DOCX", "DOC":
-			return "📝 Word"
-		case "txt", "TXT":
-			return "📃 Text"
-		case "md", "MD", "markdown":
-			return "📋 Markdown"
-		case "xlsx", "xls", "XLSX", "XLS":
-			return "📊 Excel"
-		case "pptx", "ppt", "PPTX", "PPT":
-			return "📊 PowerPoint"
-		default:
-			return "📄 File"
-		}
-	case "url":
-		return "🌐 URL"
-	case "passage":
-		return "📝 Passage"
-	default:
-		return "📄 Document"
-	}
 }
 
 func formatSource(knowledgeType, source string) string {

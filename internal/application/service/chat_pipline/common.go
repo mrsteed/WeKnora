@@ -10,31 +10,32 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
+// pipelineInfo logs pipeline info level entries.
 func pipelineInfo(ctx context.Context, stage, action string, fields map[string]interface{}) {
 	common.PipelineInfo(ctx, stage, action, fields)
 }
 
+// pipelineWarn logs pipeline warning level entries.
 func pipelineWarn(ctx context.Context, stage, action string, fields map[string]interface{}) {
 	common.PipelineWarn(ctx, stage, action, fields)
 }
 
+// pipelineError logs pipeline error level entries.
 func pipelineError(ctx context.Context, stage, action string, fields map[string]interface{}) {
 	common.PipelineError(ctx, stage, action, fields)
 }
 
 // prepareChatModel shared logic to prepare chat model and options
+// it gets the chat model and sets up the chat options based on the chat manage.
 func prepareChatModel(ctx context.Context, modelService interfaces.ModelService,
 	chatManage *types.ChatManage,
 ) (chat.Chat, *chat.ChatOptions, error) {
-	logger.Infof(ctx, "Getting chat model, model ID: %s", chatManage.ChatModelID)
-
 	chatModel, err := modelService.GetChatModel(ctx, chatManage.ChatModelID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get chat model: %v", err)
 		return nil, nil, err
 	}
 
-	logger.Info(ctx, "Setting up chat options")
 	opt := &chat.ChatOptions{
 		Temperature:         chatManage.SummaryConfig.Temperature,
 		TopP:                chatManage.SummaryConfig.TopP,

@@ -94,6 +94,7 @@ func (p *PluginExtractEntity) OnEvent(ctx context.Context,
 	return next()
 }
 
+// Extractor is a struct for extracting entities
 type Extractor struct {
 	chat     chat.Chat
 	formater *Formater
@@ -101,6 +102,7 @@ type Extractor struct {
 	chatOpt  *chat.ChatOptions
 }
 
+// NewExtractor creates a new extractor
 func NewExtractor(
 	chatModel chat.Chat,
 	template *types.PromptTemplateStructured,
@@ -118,6 +120,7 @@ func NewExtractor(
 	}
 }
 
+// Extract extracts entities from content
 func (e *Extractor) Extract(ctx context.Context, content string) (*types.GraphData, error) {
 	generator := NewQAPromptGenerator(e.formater, e.template)
 
@@ -139,6 +142,7 @@ func (e *Extractor) Extract(ctx context.Context, content string) (*types.GraphDa
 	return graph, nil
 }
 
+// RemoveUnknownRelation removes unknown relations from graph
 func (e *Extractor) RemoveUnknownRelation(ctx context.Context, graph *types.GraphData) {
 	relationType := make(map[string]bool)
 	for _, tag := range e.template.Tags {
@@ -156,6 +160,7 @@ func (e *Extractor) RemoveUnknownRelation(ctx context.Context, graph *types.Grap
 	graph.Relation = relationNew
 }
 
+// QAPromptGenerator is a struct for generating QA prompts
 type QAPromptGenerator struct {
 	Formater        *Formater
 	Template        *types.PromptTemplateStructured
@@ -165,6 +170,7 @@ type QAPromptGenerator struct {
 	AnswerPrefix    string
 }
 
+// NewQAPromptGenerator creates a new QA prompt generator
 func NewQAPromptGenerator(formater *Formater, template *types.PromptTemplateStructured) *QAPromptGenerator {
 	return &QAPromptGenerator{
 		Formater:        formater,
@@ -176,6 +182,7 @@ func NewQAPromptGenerator(formater *Formater, template *types.PromptTemplateStru
 	}
 }
 
+// System generates a system prompt
 func (qa *QAPromptGenerator) System(ctx context.Context) string {
 	promptLines := []string{}
 
@@ -205,6 +212,7 @@ func (qa *QAPromptGenerator) System(ctx context.Context) string {
 	return strings.Join(promptLines, "\n")
 }
 
+// User generates a user prompt
 func (qa *QAPromptGenerator) User(ctx context.Context, question string) string {
 	promptLines := []string{}
 	promptLines = append(promptLines, qa.QuestionHeading)
@@ -213,6 +221,7 @@ func (qa *QAPromptGenerator) User(ctx context.Context, question string) string {
 	return strings.Join(promptLines, "\n")
 }
 
+// Render renders a prompt
 func (qa *QAPromptGenerator) Render(ctx context.Context, question string) []chat.Message {
 	return []chat.Message{
 		{
@@ -226,10 +235,13 @@ func (qa *QAPromptGenerator) Render(ctx context.Context, question string) []chat
 	}
 }
 
+// FormatType is a type for format types
 type FormatType string
 
 const (
+	// FormatTypeJSON is a format type for JSON
 	FormatTypeJSON FormatType = "json"
+	// FormatTypeYAML is a format type for YAML
 	FormatTypeYAML FormatType = "yaml"
 )
 
@@ -245,6 +257,7 @@ var _FENCE_RE = regexp.MustCompile(
 	_FENCE_START + _LANGUAGE_TAG + _FENCE_NEWLINE + _FENCE_BODY + _FENCE_END,
 )
 
+// Formater is a struct for formatting entities
 type Formater struct {
 	attributeSuffix string
 	formatType      FormatType
@@ -256,6 +269,7 @@ type Formater struct {
 	relationPrefix string
 }
 
+// NewFormater creates a new formater
 func NewFormater() *Formater {
 	return &Formater{
 		attributeSuffix: "_attributes",
@@ -268,6 +282,7 @@ func NewFormater() *Formater {
 	}
 }
 
+// formatExtraction formats extraction
 func (f *Formater) formatExtraction(nodes []*types.GraphNode, relations []*types.GraphRelation) (string, error) {
 	items := make([]map[string]interface{}, 0)
 	for _, node := range nodes {

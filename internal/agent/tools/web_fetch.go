@@ -19,29 +19,31 @@ import (
 )
 
 const (
-	webFetchTimeout  = 60 * time.Second
-	webFetchMaxChars = 100000
+	webFetchTimeout  = 60 * time.Second // timeout for web fetch
+	webFetchMaxChars = 100000           // maximum number of characters to fetch
 )
 
+// webFetchParams is the parameters for the web fetch tool
 type webFetchParams struct {
 	URL    string
 	Prompt string
 }
 
+// webFetchItemResult is the result for a web fetch item
 type webFetchItemResult struct {
 	output string
 	data   map[string]interface{}
 	err    error
 }
 
-// WebFetchTool 拉取网页内容并根据提示执行总结
+// WebFetchTool fetches web page content and summarizes it using an LLM
 type WebFetchTool struct {
 	BaseTool
 	client    *http.Client
 	chatModel chat.Chat
 }
 
-// NewWebFetchTool 创建 web_fetch 工具实例
+// NewWebFetchTool creates a new web_fetch tool instance
 func NewWebFetchTool(chatModel chat.Chat) *WebFetchTool {
 	description := `Fetch detailed web content from previously discovered URLs and analyze it with an LLM.
 
@@ -226,6 +228,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 	}, nil
 }
 
+// parseParams parses the parameters for a web fetch item
 func (t *WebFetchTool) parseParams(item interface{}) webFetchParams {
 	params := webFetchParams{}
 	if m, ok := item.(map[string]interface{}); ok {
@@ -239,6 +242,7 @@ func (t *WebFetchTool) parseParams(item interface{}) webFetchParams {
 	return params
 }
 
+// validateParams validates the parameters for a web fetch item
 func (t *WebFetchTool) validateParams(p webFetchParams) error {
 	if p.URL == "" {
 		return fmt.Errorf("url is required")
@@ -252,6 +256,7 @@ func (t *WebFetchTool) validateParams(p webFetchParams) error {
 	return nil
 }
 
+// executeFetch executes a web fetch item
 func (t *WebFetchTool) executeFetch(
 	ctx context.Context,
 	params webFetchParams,
@@ -294,6 +299,7 @@ func (t *WebFetchTool) executeFetch(
 	return output, resultData, summaryErr
 }
 
+// normalizeGitHubURL normalizes a GitHub URL
 func (t *WebFetchTool) normalizeGitHubURL(source string) string {
 	if strings.Contains(source, "github.com") && strings.Contains(source, "/blob/") {
 		source = strings.Replace(source, "github.com", "raw.githubusercontent.com", 1)
@@ -302,6 +308,7 @@ func (t *WebFetchTool) normalizeGitHubURL(source string) string {
 	return source
 }
 
+// processWithLLM processes the content with an LLM
 func (t *WebFetchTool) processWithLLM(ctx context.Context, params webFetchParams, content string) (string, error) {
 	if t.chatModel == nil {
 		return "", fmt.Errorf("chat model not available for web_fetch")
@@ -336,6 +343,7 @@ func (t *WebFetchTool) processWithLLM(ctx context.Context, params webFetchParams
 	return strings.TrimSpace(response.Content), nil
 }
 
+// buildOutputText builds the output text for a web fetch item
 func (t *WebFetchTool) buildOutputText(params webFetchParams, content string, summary string, summaryErr error) string {
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("URL: %s\n", params.URL))
@@ -354,6 +362,7 @@ func (t *WebFetchTool) buildOutputText(params webFetchParams, content string, su
 	return builder.String()
 }
 
+// fetchHTMLContent fetches the HTML content for a web fetch item
 func (t *WebFetchTool) fetchHTMLContent(ctx context.Context, targetURL string) (string, string, error) {
 	html, err := t.fetchWithChromedp(ctx, targetURL)
 	if err == nil && strings.TrimSpace(html) != "" {
@@ -375,6 +384,7 @@ func (t *WebFetchTool) fetchHTMLContent(ctx context.Context, targetURL string) (
 	return html, "http", nil
 }
 
+// fetchWithChromedp fetches the HTML content with Chromedp
 func (t *WebFetchTool) fetchWithChromedp(ctx context.Context, targetURL string) (string, error) {
 	logger.Debugf(ctx, "[Tool][WebFetch] Chromedp 抓取开始 url=%s", targetURL)
 
@@ -414,6 +424,7 @@ func (t *WebFetchTool) fetchWithChromedp(ctx context.Context, targetURL string) 
 	return html, nil
 }
 
+// fetchWithHTTP fetches the HTML content with HTTP
 func (t *WebFetchTool) fetchWithHTTP(ctx context.Context, targetURL string) (string, error) {
 	resp, err := t.fetchWithTimeout(ctx, targetURL)
 	if err != nil {
@@ -434,6 +445,7 @@ func (t *WebFetchTool) fetchWithHTTP(ctx context.Context, targetURL string) (str
 	return string(htmlBytes), nil
 }
 
+// fetchWithTimeout fetches the HTML content with a timeout
 func (t *WebFetchTool) fetchWithTimeout(ctx context.Context, targetURL string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
 	if err != nil {
@@ -451,6 +463,7 @@ func (t *WebFetchTool) fetchWithTimeout(ctx context.Context, targetURL string) (
 	return t.client.Do(req)
 }
 
+// convertHTMLToText converts the HTML content to text
 func (t *WebFetchTool) convertHTMLToText(html string) string {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
@@ -469,6 +482,7 @@ func (t *WebFetchTool) convertHTMLToText(html string) string {
 	return strings.TrimSpace(result)
 }
 
+// processNode processes a node in the HTML content
 func (t *WebFetchTool) processNode(s *goquery.Selection, markdown *strings.Builder) {
 	s.Contents().Each(func(i int, node *goquery.Selection) {
 		nodeName := goquery.NodeName(node)
@@ -578,6 +592,7 @@ func (t *WebFetchTool) processNode(s *goquery.Selection, markdown *strings.Build
 	})
 }
 
+// basicTextExtraction extracts the text from the HTML content
 func (t *WebFetchTool) basicTextExtraction(html string) string {
 	re := regexp.MustCompile(`<[^>]*>`)
 	text := re.ReplaceAllString(html, " ")

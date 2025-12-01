@@ -51,6 +51,7 @@ func (p *PluginMerge) OnEvent(ctx context.Context,
 		"chunk_cnt": len(searchResult),
 	})
 
+	// If there are no search results, return early
 	if len(searchResult) == 0 {
 		pipelineWarn(ctx, "Merge", "output", map[string]interface{}{
 			"chunk_cnt": 0,
@@ -212,6 +213,7 @@ func mergeImageInfo(ctx context.Context, target *types.SearchResult, source *typ
 	return nil
 }
 
+// populateFAQAnswers populates FAQ answers for the search results
 func (p *PluginMerge) populateFAQAnswers(
 	ctx context.Context,
 	chatManage *types.ChatManage,
@@ -300,6 +302,7 @@ func (p *PluginMerge) populateFAQAnswers(
 	return results
 }
 
+// buildFAQAnswerContent builds the content of a FAQ answer
 func buildFAQAnswerContent(meta *types.FAQChunkMetadata) string {
 	if meta == nil {
 		return ""
@@ -336,6 +339,7 @@ func buildFAQAnswerContent(meta *types.FAQChunkMetadata) string {
 	return strings.TrimSpace(builder.String())
 }
 
+// expandShortContextWithNeighbors expands the short context with neighbors
 func (p *PluginMerge) expandShortContextWithNeighbors(
 	ctx context.Context,
 	chatManage *types.ChatManage,
@@ -580,10 +584,12 @@ func (p *PluginMerge) expandShortContextWithNeighbors(
 	return results
 }
 
+// runeLen returns the length of a string in runes
 func runeLen(s string) int {
 	return len([]rune(s))
 }
 
+// mergeOrderedContent merges ordered content
 func mergeOrderedContent(prev, base, next string, maxLen int) string {
 	content := base
 	if prev != "" {
@@ -599,7 +605,7 @@ func mergeOrderedContent(prev, base, next string, maxLen int) string {
 	return content
 }
 
-// concatNoOverlap concatenates a and b, removing potential overlapping prefix/suffix
+// concatNoOverlap concatenates two strings, removing potential overlapping prefix/suffix
 func concatNoOverlap(a, b string) string {
 	if a == "" {
 		return b

@@ -159,7 +159,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 	if requestJSON, err := json.Marshal(request); err == nil {
 		logger.Infof(ctx, "Agent QA request, request: %s", secutils.SanitizeForLog(string(requestJSON)))
 	} else {
-		logger.Warnf(ctx, "Agent QA request received but failed to marshal for logging: %s", secutils.SanitizeForLog(err.Error()))
+		logger.Warnf(ctx, "failed to marshal for logging: %s", secutils.SanitizeForLog(err.Error()))
 	}
 
 	// Validate query content

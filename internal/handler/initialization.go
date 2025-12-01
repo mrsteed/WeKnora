@@ -351,12 +351,12 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 	ctx := c.Request.Context()
 	kbIdStr := utils.SanitizeForLog(c.Param("kbId"))
 
-	var req InitializationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Error(ctx, "Failed to parse initialization request", err)
-		c.Error(errors.NewBadRequestError(err.Error()))
+	req, err := h.bindInitializationRequest(ctx, c)
+	if err != nil {
+		c.Error(err)
 		return
 	}
+
 	logger.Infof(
 		ctx,
 		"Starting knowledge base configuration update, kbId: %s, request: %s",
@@ -364,94 +364,152 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 		utils.SanitizeForLog(utils.ToJSON(req)),
 	)
 
-	// 获取指定知识库信息
+	kb, err := h.getKnowledgeBaseForInitialization(ctx, kbIdStr)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	if err := h.validateInitializationConfigs(ctx, req); err != nil {
+		c.Error(err)
+		return
+	}
+
+	processedModels, err := h.processInitializationModels(ctx, kb, kbIdStr, req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	h.applyKnowledgeBaseInitialization(kb, req, processedModels)
+
+	if err := h.kbRepository.UpdateKnowledgeBase(ctx, kb); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": utils.SanitizeForLog(kbIdStr)})
+		c.Error(errors.NewInternalServerError("更新知识库配置失败: " + err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "知识库配置更新成功",
+		"data": gin.H{
+			"models":         processedModels,
+			"knowledge_base": kb,
+		},
+	})
+}
+
+func (h *InitializationHandler) bindInitializationRequest(ctx context.Context, c *gin.Context) (*InitializationRequest, error) {
+	var req InitializationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to parse initialization request", err)
+		return nil, errors.NewBadRequestError(err.Error())
+	}
+	return &req, nil
+}
+
+func (h *InitializationHandler) getKnowledgeBaseForInitialization(ctx context.Context, kbIdStr string) (*types.KnowledgeBase, error) {
 	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbIdStr)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": utils.SanitizeForLog(kbIdStr)})
-		c.Error(errors.NewInternalServerError("获取知识库信息失败: " + err.Error()))
-		return
+		return nil, errors.NewInternalServerError("获取知识库信息失败: " + err.Error())
 	}
-
 	if kb == nil {
 		logger.Error(ctx, "Knowledge base not found")
-		c.Error(errors.NewNotFoundError("知识库不存在"))
-		return
+		return nil, errors.NewNotFoundError("知识库不存在")
+	}
+	return kb, nil
+}
+
+func (h *InitializationHandler) validateInitializationConfigs(ctx context.Context, req *InitializationRequest) error {
+	if err := h.validateMultimodalConfig(ctx, req); err != nil {
+		return err
+	}
+	if err := validateRerankConfig(ctx, req); err != nil {
+		return err
+	}
+	return validateNodeExtractConfig(ctx, req)
+}
+
+func (h *InitializationHandler) validateMultimodalConfig(ctx context.Context, req *InitializationRequest) error {
+	if !req.Multimodal.Enabled {
+		return nil
 	}
 
-	// 验证多模态配置（如果启用）
-	if req.Multimodal.Enabled {
-		storageType := strings.ToLower(req.Multimodal.StorageType)
-		if req.Multimodal.VLM == nil {
-			logger.Error(ctx, "Multimodal enabled but missing VLM configuration")
-			c.Error(errors.NewBadRequestError("启用多模态时需要配置VLM信息"))
-			return
-		}
-		if req.Multimodal.VLM.InterfaceType == "ollama" {
-			req.Multimodal.VLM.BaseURL = os.Getenv("OLLAMA_BASE_URL") + "/v1"
-		}
-		if req.Multimodal.VLM.ModelName == "" || req.Multimodal.VLM.BaseURL == "" {
-			logger.Error(ctx, "VLM configuration incomplete")
-			c.Error(errors.NewBadRequestError("VLM配置不完整"))
-			return
-		}
-		switch storageType {
-		case "cos":
-			if req.Multimodal.COS == nil || req.Multimodal.COS.SecretID == "" || req.Multimodal.COS.SecretKey == "" ||
-				req.Multimodal.COS.Region == "" || req.Multimodal.COS.BucketName == "" ||
-				req.Multimodal.COS.AppID == "" {
-				logger.Error(ctx, "COS configuration incomplete")
-				c.Error(errors.NewBadRequestError("COS配置不完整"))
-				return
-			}
-		case "minio":
-			if req.Multimodal.Minio == nil || req.Multimodal.Minio.BucketName == "" ||
-				os.Getenv("MINIO_ACCESS_KEY_ID") == "" || os.Getenv("MINIO_SECRET_ACCESS_KEY") == "" {
-				logger.Error(ctx, "MinIO configuration incomplete")
-				c.Error(errors.NewBadRequestError("MinIO配置不完整"))
-				return
-			}
-		}
+	storageType := strings.ToLower(req.Multimodal.StorageType)
+	if req.Multimodal.VLM == nil {
+		logger.Error(ctx, "Multimodal enabled but missing VLM configuration")
+		return errors.NewBadRequestError("启用多模态时需要配置VLM信息")
+	}
+	if req.Multimodal.VLM.InterfaceType == "ollama" {
+		req.Multimodal.VLM.BaseURL = os.Getenv("OLLAMA_BASE_URL") + "/v1"
+	}
+	if req.Multimodal.VLM.ModelName == "" || req.Multimodal.VLM.BaseURL == "" {
+		logger.Error(ctx, "VLM configuration incomplete")
+		return errors.NewBadRequestError("VLM配置不完整")
 	}
 
-	// 验证Rerank配置（如果启用）
-	if req.Rerank.Enabled {
-		if req.Rerank.ModelName == "" || req.Rerank.BaseURL == "" {
-			logger.Error(ctx, "Rerank configuration incomplete")
-			c.Error(errors.NewBadRequestError("Rerank配置不完整"))
-			return
+	switch storageType {
+	case "cos":
+		if req.Multimodal.COS == nil || req.Multimodal.COS.SecretID == "" || req.Multimodal.COS.SecretKey == "" ||
+			req.Multimodal.COS.Region == "" || req.Multimodal.COS.BucketName == "" ||
+			req.Multimodal.COS.AppID == "" {
+			logger.Error(ctx, "COS configuration incomplete")
+			return errors.NewBadRequestError("COS配置不完整")
+		}
+	case "minio":
+		if req.Multimodal.Minio == nil || req.Multimodal.Minio.BucketName == "" ||
+			os.Getenv("MINIO_ACCESS_KEY_ID") == "" || os.Getenv("MINIO_SECRET_ACCESS_KEY") == "" {
+			logger.Error(ctx, "MinIO configuration incomplete")
+			return errors.NewBadRequestError("MinIO配置不完整")
 		}
 	}
+	return nil
+}
 
-	// 验证Node Extractor配置（如果启用）
-	if strings.ToLower(os.Getenv("NEO4J_ENABLE")) != "true" && req.NodeExtract.Enabled {
+func validateRerankConfig(ctx context.Context, req *InitializationRequest) error {
+	if !req.Rerank.Enabled {
+		return nil
+	}
+	if req.Rerank.ModelName == "" || req.Rerank.BaseURL == "" {
+		logger.Error(ctx, "Rerank configuration incomplete")
+		return errors.NewBadRequestError("Rerank配置不完整")
+	}
+	return nil
+}
+
+func validateNodeExtractConfig(ctx context.Context, req *InitializationRequest) error {
+	if !req.NodeExtract.Enabled {
+		return nil
+	}
+	if strings.ToLower(os.Getenv("NEO4J_ENABLE")) != "true" {
 		logger.Error(ctx, "Node Extractor configuration incomplete")
-		c.Error(errors.NewBadRequestError("请正确配置环境变量NEO4J_ENABLE"))
-		return
+		return errors.NewBadRequestError("请正确配置环境变量NEO4J_ENABLE")
 	}
-	if req.NodeExtract.Enabled {
-		if req.NodeExtract.Text == "" || len(req.NodeExtract.Tags) == 0 {
-			logger.Error(ctx, "Node Extractor configuration incomplete")
-			c.Error(errors.NewBadRequestError("Node Extractor配置不完整"))
-			return
-		}
-		if len(req.NodeExtract.Nodes) == 0 || len(req.NodeExtract.Relations) == 0 {
-			logger.Error(ctx, "Node Extractor configuration incomplete")
-			c.Error(errors.NewBadRequestError("请先提取实体和关系"))
-			return
-		}
+	if req.NodeExtract.Text == "" || len(req.NodeExtract.Tags) == 0 {
+		logger.Error(ctx, "Node Extractor configuration incomplete")
+		return errors.NewBadRequestError("Node Extractor配置不完整")
 	}
+	if len(req.NodeExtract.Nodes) == 0 || len(req.NodeExtract.Relations) == 0 {
+		logger.Error(ctx, "Node Extractor configuration incomplete")
+		return errors.NewBadRequestError("请先提取实体和关系")
+	}
+	return nil
+}
 
-	// 处理模型创建/更新
-	modelsToProcess := []struct {
-		modelType     types.ModelType
-		name          string
-		source        types.ModelSource
-		description   string
-		baseURL       string
-		apiKey        string
-		dimension     int
-		interfaceType string
-	}{
+type modelDescriptor struct {
+	modelType     types.ModelType
+	name          string
+	source        types.ModelSource
+	description   string
+	baseURL       string
+	apiKey        string
+	dimension     int
+	interfaceType string
+}
+
+func buildModelDescriptors(req *InitializationRequest) []modelDescriptor {
+	descriptors := []modelDescriptor{
 		{
 			modelType:   types.ModelTypeKnowledgeQA,
 			name:        utils.SanitizeForLog(req.LLM.ModelName),
@@ -471,18 +529,8 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 		},
 	}
 
-	// 如果启用Rerank，添加Rerank模型
 	if req.Rerank.Enabled {
-		modelsToProcess = append(modelsToProcess, struct {
-			modelType     types.ModelType
-			name          string
-			source        types.ModelSource
-			description   string
-			baseURL       string
-			apiKey        string
-			dimension     int
-			interfaceType string
-		}{
+		descriptors = append(descriptors, modelDescriptor{
 			modelType:   types.ModelTypeRerank,
 			name:        utils.SanitizeForLog(req.Rerank.ModelName),
 			source:      types.ModelSourceRemote,
@@ -492,18 +540,8 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 		})
 	}
 
-	// 如果启用多模态，添加VLM模型
 	if req.Multimodal.Enabled && req.Multimodal.VLM != nil {
-		modelsToProcess = append(modelsToProcess, struct {
-			modelType     types.ModelType
-			name          string
-			source        types.ModelSource
-			description   string
-			baseURL       string
-			apiKey        string
-			dimension     int
-			interfaceType string
-		}{
+		descriptors = append(descriptors, modelDescriptor{
 			modelType:     types.ModelTypeVLLM,
 			name:          utils.SanitizeForLog(req.Multimodal.VLM.ModelName),
 			source:        types.ModelSourceRemote,
@@ -514,113 +552,116 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 		})
 	}
 
-	// 处理模型
+	return descriptors
+}
+
+func (h *InitializationHandler) processInitializationModels(
+	ctx context.Context,
+	kb *types.KnowledgeBase,
+	kbIdStr string,
+	req *InitializationRequest,
+) ([]*types.Model, error) {
+	descriptors := buildModelDescriptors(req)
 	var processedModels []*types.Model
-	for _, modelInfo := range modelsToProcess {
-		model := &types.Model{
-			Type:        modelInfo.modelType,
-			Name:        modelInfo.name,
-			Source:      modelInfo.source,
-			Description: modelInfo.description,
-			Parameters: types.ModelParameters{
-				BaseURL:       modelInfo.baseURL,
-				APIKey:        modelInfo.apiKey,
-				InterfaceType: modelInfo.interfaceType,
-			},
-			IsDefault: false,
-			Status:    types.ModelStatusActive,
-		}
 
-		if modelInfo.modelType == types.ModelTypeEmbedding {
-			model.Parameters.EmbeddingParameters = types.EmbeddingParameters{
-				Dimension: modelInfo.dimension,
-			}
-		}
+	for _, descriptor := range descriptors {
+		model := descriptor.toModel()
+		existingModelID := h.findExistingModelID(kb, descriptor.modelType)
 
-		// 根据模型类型从知识库获取已有的模型ID
-		var existingModelID string
-		switch modelInfo.modelType {
-		case types.ModelTypeEmbedding:
-			existingModelID = kb.EmbeddingModelID
-		case types.ModelTypeKnowledgeQA:
-			existingModelID = kb.SummaryModelID
-		case types.ModelTypeVLLM:
-			existingModelID = kb.VLMConfig.ModelID
-		}
-
-		// 如果知识库中已经有对应类型的模型ID，尝试获取并更新
 		var existingModel *types.Model
 		if existingModelID != "" {
+			var err error
 			existingModel, err = h.modelService.GetModelByID(ctx, existingModelID)
 			if err != nil {
-				// 模型不存在或获取失败，记录日志但继续创建新模型
 				logger.Warnf(ctx, "Failed to get existing model %s: %v, will create new one", existingModelID, err)
 				existingModel = nil
 			}
 		}
 
 		if existingModel != nil {
-			// 更新现有模型
 			existingModel.Name = model.Name
 			existingModel.Source = model.Source
 			existingModel.Description = model.Description
 			existingModel.Parameters = model.Parameters
 			existingModel.UpdatedAt = time.Now()
 
-			err = h.modelService.UpdateModel(ctx, existingModel)
-			if err != nil {
+			if err := h.modelService.UpdateModel(ctx, existingModel); err != nil {
 				logger.ErrorWithFields(ctx, err, map[string]interface{}{
 					"model_id": model.ID,
 					"kb_id":    kbIdStr,
 				})
-				c.Error(errors.NewInternalServerError("更新模型失败: " + err.Error()))
-				return
+				return nil, errors.NewInternalServerError("更新模型失败: " + err.Error())
 			}
 			processedModels = append(processedModels, existingModel)
-		} else {
-			// 创建新模型
-			err = h.modelService.CreateModel(ctx, model)
-			if err != nil {
-				logger.ErrorWithFields(ctx, err, map[string]interface{}{
-					"model_id": model.ID,
-					"kb_id":    kbIdStr,
-				})
-				c.Error(errors.NewInternalServerError("创建模型失败: " + err.Error()))
-				return
-			}
-			processedModels = append(processedModels, model)
-		}
-	}
-
-	// 找到模型ID
-	var embeddingModelID, llmModelID, vlmModelID string
-	for _, model := range processedModels {
-		if model == nil {
 			continue
 		}
-		if model.Type == types.ModelTypeEmbedding {
-			embeddingModelID = model.ID
+
+		if err := h.modelService.CreateModel(ctx, model); err != nil {
+			logger.ErrorWithFields(ctx, err, map[string]interface{}{
+				"model_id": model.ID,
+				"kb_id":    kbIdStr,
+			})
+			return nil, errors.NewInternalServerError("创建模型失败: " + err.Error())
 		}
-		if model.Type == types.ModelTypeKnowledgeQA {
-			llmModelID = model.ID
-		}
-		if model.Type == types.ModelTypeVLLM {
-			vlmModelID = model.ID
+		processedModels = append(processedModels, model)
+	}
+
+	return processedModels, nil
+}
+
+func (descriptor modelDescriptor) toModel() *types.Model {
+	model := &types.Model{
+		Type:        descriptor.modelType,
+		Name:        descriptor.name,
+		Source:      descriptor.source,
+		Description: descriptor.description,
+		Parameters: types.ModelParameters{
+			BaseURL:       descriptor.baseURL,
+			APIKey:        descriptor.apiKey,
+			InterfaceType: descriptor.interfaceType,
+		},
+		IsDefault: false,
+		Status:    types.ModelStatusActive,
+	}
+
+	if descriptor.modelType == types.ModelTypeEmbedding {
+		model.Parameters.EmbeddingParameters = types.EmbeddingParameters{
+			Dimension: descriptor.dimension,
 		}
 	}
 
-	// 更新知识库配置
+	return model
+}
+
+func (h *InitializationHandler) findExistingModelID(kb *types.KnowledgeBase, modelType types.ModelType) string {
+	switch modelType {
+	case types.ModelTypeEmbedding:
+		return kb.EmbeddingModelID
+	case types.ModelTypeKnowledgeQA:
+		return kb.SummaryModelID
+	case types.ModelTypeVLLM:
+		return kb.VLMConfig.ModelID
+	default:
+		return ""
+	}
+}
+
+func (h *InitializationHandler) applyKnowledgeBaseInitialization(
+	kb *types.KnowledgeBase,
+	req *InitializationRequest,
+	processedModels []*types.Model,
+) {
+	embeddingModelID, llmModelID, vlmModelID := extractModelIDs(processedModels)
+
 	kb.SummaryModelID = llmModelID
 	kb.EmbeddingModelID = embeddingModelID
 
-	// 更新文档分割配置
 	kb.ChunkingConfig = types.ChunkingConfig{
 		ChunkSize:    req.DocumentSplitting.ChunkSize,
 		ChunkOverlap: req.DocumentSplitting.ChunkOverlap,
 		Separators:   req.DocumentSplitting.Separators,
 	}
 
-	// 更新多模态配置
 	if req.Multimodal.Enabled {
 		kb.VLMConfig = types.VLMConfig{
 			Enabled: req.Multimodal.Enabled,
@@ -677,22 +718,23 @@ func (h *InitializationHandler) InitializeByKB(c *gin.Context) {
 			})
 		}
 	}
+}
 
-	err = h.kbRepository.UpdateKnowledgeBase(ctx, kb)
-	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kbId": utils.SanitizeForLog(kbIdStr)})
-		c.Error(errors.NewInternalServerError("更新知识库配置失败: " + err.Error()))
-		return
+func extractModelIDs(processedModels []*types.Model) (embeddingModelID, llmModelID, vlmModelID string) {
+	for _, model := range processedModels {
+		if model == nil {
+			continue
+		}
+		switch model.Type {
+		case types.ModelTypeEmbedding:
+			embeddingModelID = model.ID
+		case types.ModelTypeKnowledgeQA:
+			llmModelID = model.ID
+		case types.ModelTypeVLLM:
+			vlmModelID = model.ID
+		}
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "知识库配置更新成功",
-		"data": gin.H{
-			"models":         processedModels,
-			"knowledge_base": kb,
-		},
-	})
+	return
 }
 
 // CheckOllamaStatus 检查Ollama服务状态
@@ -1787,6 +1829,7 @@ type TextRelationExtractionResponse struct {
 	Relations []*types.GraphRelation `json:"relations"`
 }
 
+// ExtractTextRelations extracts text relations from text
 func (h *InitializationHandler) ExtractTextRelations(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -1869,15 +1912,18 @@ func (h *InitializationHandler) extractRelationsFromText(
 	return result, nil
 }
 
+// FabriTextRequest is a request for generating example text
 type FabriTextRequest struct {
 	Tags      []string  `json:"tags"`
 	LLMConfig LLMConfig `json:"llmConfig"`
 }
 
+// FabriTextResponse is a response for generating example text
 type FabriTextResponse struct {
 	Text string `json:"text"`
 }
 
+// FabriText generates example text
 func (h *InitializationHandler) FabriText(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -1901,6 +1947,7 @@ func (h *InitializationHandler) FabriText(c *gin.Context) {
 	})
 }
 
+// fabriText generates example text
 func (h *InitializationHandler) fabriText(ctx context.Context, tags []string, llm LLMConfig) (string, error) {
 	chatModel, err := chat.NewChat(&chat.ChatConfig{
 		ModelID:   "initialization",
@@ -1935,10 +1982,12 @@ func (h *InitializationHandler) fabriText(ctx context.Context, tags []string, ll
 	return result.Content, nil
 }
 
+// FabriTagRequest is a request for generating tags
 type FabriTagRequest struct {
 	LLMConfig LLMConfig `json:"llmConfig"`
 }
 
+// FabriTagResponse is a response for generating tags
 type FabriTagResponse struct {
 	Tags []string `json:"tags"`
 }
@@ -1947,6 +1996,7 @@ var tagOptions = []string{
 	"内容", "文化", "人物", "事件", "时间", "地点", "作品", "作者", "关系", "属性",
 }
 
+// FabriTag generates tags
 func (h *InitializationHandler) FabriTag(c *gin.Context) {
 	tagRandom := RandomSelect(tagOptions, rand.Intn(len(tagOptions)-1)+1)
 	c.JSON(http.StatusOK, gin.H{
@@ -1955,6 +2005,7 @@ func (h *InitializationHandler) FabriTag(c *gin.Context) {
 	})
 }
 
+// RandomSelect selects random strings
 func RandomSelect(strs []string, n int) []string {
 	if n <= 0 {
 		return []string{}

@@ -43,7 +43,8 @@ type ChunkRepository interface {
 	CountChunksByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) (int64, error)
 	// DeleteUnindexedChunks deletes unindexed chunks by knowledge id and chunk index range
 	DeleteUnindexedChunks(ctx context.Context, tenantID uint64, knowledgeID string) ([]*types.Chunk, error)
-	// ListAllFAQChunksByKnowledgeID lists all FAQ chunks for a knowledge ID (only ID and ContentHash fields for efficiency)
+	// ListAllFAQChunksByKnowledgeID lists all FAQ chunks for a knowledge ID
+	// only ID and ContentHash fields for efficiency
 	ListAllFAQChunksByKnowledgeID(ctx context.Context, tenantID uint64, knowledgeID string) ([]*types.Chunk, error)
 }
 

@@ -431,7 +431,7 @@ func (h *TenantHandler) UpdateTenantKV(c *gin.Context) {
 		h.updateTenantWebSearchConfigInternal(c)
 		return
 	case "conversation-config":
-		h.updateTenantConversationConfigInternal(c)
+		h.updateTenantConversationInternal(c)
 		return
 	default:
 		logger.Info(ctx, "KV key not supported", "key", key)
@@ -664,9 +664,9 @@ func (h *TenantHandler) GetTenantConversationConfig(c *gin.Context) {
 	})
 }
 
-// updateTenantConversationConfigInternal updates the conversation configuration for a tenant
+// updateTenantConversationInternal updates the conversation configuration for a tenant
 // This sets the global conversation configuration for normal mode sessions in this tenant
-func (h *TenantHandler) updateTenantConversationConfigInternal(c *gin.Context) {
+func (h *TenantHandler) updateTenantConversationInternal(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger.Info(ctx, "Start updating tenant conversation config")
 

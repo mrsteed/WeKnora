@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// knowledgeTagRepository is a repository for knowledge tags
 type knowledgeTagRepository struct {
 	db *gorm.DB
 }
@@ -17,14 +18,17 @@ func NewKnowledgeTagRepository(db *gorm.DB) interfaces.KnowledgeTagRepository {
 	return &knowledgeTagRepository{db: db}
 }
 
+// Create creates a new knowledge tag
 func (r *knowledgeTagRepository) Create(ctx context.Context, tag *types.KnowledgeTag) error {
 	return r.db.WithContext(ctx).Create(tag).Error
 }
 
+// Update updates a knowledge tag
 func (r *knowledgeTagRepository) Update(ctx context.Context, tag *types.KnowledgeTag) error {
 	return r.db.WithContext(ctx).Save(tag).Error
 }
 
+// GetByID gets a knowledge tag by ID
 func (r *knowledgeTagRepository) GetByID(ctx context.Context, tenantID uint64, id string) (*types.KnowledgeTag, error) {
 	var tag types.KnowledgeTag
 	if err := r.db.WithContext(ctx).
@@ -35,6 +39,7 @@ func (r *knowledgeTagRepository) GetByID(ctx context.Context, tenantID uint64, i
 	return &tag, nil
 }
 
+// ListByKB lists knowledge tags by knowledge base ID
 func (r *knowledgeTagRepository) ListByKB(
 	ctx context.Context,
 	tenantID uint64,
@@ -50,13 +55,14 @@ func (r *knowledgeTagRepository) ListByKB(
 	return tags, nil
 }
 
+// Delete deletes a knowledge tag
 func (r *knowledgeTagRepository) Delete(ctx context.Context, tenantID uint64, id string) error {
 	return r.db.WithContext(ctx).
 		Where("tenant_id = ? AND id = ?", tenantID, id).
 		Delete(&types.KnowledgeTag{}).Error
 }
 
-// CountReferences returns how many knowledges and chunks reference this tag.
+// CountReferences returns the number of knowledges and chunks that reference this tag
 func (r *knowledgeTagRepository) CountReferences(
 	ctx context.Context,
 	tenantID uint64,

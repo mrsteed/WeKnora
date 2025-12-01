@@ -209,8 +209,8 @@ func renderPromptPlaceholdersWithStatus(
 	return result
 }
 
-// BuildProgressiveRAGSystemPromptWithWeb builds the progressive RAG system prompt with web search enabled
-func BuildProgressiveRAGSystemPromptWithWeb(
+// BuildSystemPromptWithWeb builds the progressive RAG system prompt with web search enabled
+func BuildSystemPromptWithWeb(
 	knowledgeBases []*KnowledgeBaseInfo,
 	systemPromptTemplate ...string,
 ) string {
@@ -224,8 +224,8 @@ func BuildProgressiveRAGSystemPromptWithWeb(
 	return renderPromptPlaceholdersWithStatus(template, knowledgeBases, true, currentTime)
 }
 
-// BuildProgressiveRAGSystemPromptWithoutWeb builds the progressive RAG system prompt without web search
-func BuildProgressiveRAGSystemPromptWithoutWeb(
+// BuildSystemPromptWithoutWeb builds the progressive RAG system prompt without web search
+func BuildSystemPromptWithoutWeb(
 	knowledgeBases []*KnowledgeBaseInfo,
 	systemPromptTemplate ...string,
 ) string {
@@ -241,15 +241,15 @@ func BuildProgressiveRAGSystemPromptWithoutWeb(
 
 // BuildProgressiveRAGSystemPrompt builds the progressive RAG system prompt based on web search status
 // This is the main function to use - it automatically selects the appropriate version
-func BuildProgressiveRAGSystemPrompt(
+func BuildSystemPrompt(
 	knowledgeBases []*KnowledgeBaseInfo,
 	webSearchEnabled bool,
 	systemPromptTemplate ...string,
 ) string {
 	if webSearchEnabled {
-		return BuildProgressiveRAGSystemPromptWithWeb(knowledgeBases, systemPromptTemplate...)
+		return BuildSystemPromptWithWeb(knowledgeBases, systemPromptTemplate...)
 	}
-	return BuildProgressiveRAGSystemPromptWithoutWeb(knowledgeBases, systemPromptTemplate...)
+	return BuildSystemPromptWithoutWeb(knowledgeBases, systemPromptTemplate...)
 }
 
 // ProgressiveRAGSystemPromptWithWeb is the progressive RAG system prompt template with web search enabled
