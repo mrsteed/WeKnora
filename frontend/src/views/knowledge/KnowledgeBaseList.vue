@@ -143,6 +143,11 @@
                   <t-icon name="image" size="14px" />
                 </div>
               </t-tooltip>
+              <t-tooltip v-if="kb.question_generation_config?.enabled" :content="$t('knowledgeList.features.questionGeneration')" placement="top">
+                <div class="feature-badge question">
+                  <t-icon name="help-circle" size="14px" />
+                </div>
+              </t-tooltip>
             </div>
           </div>
           <span class="card-time">{{ kb.updated_at }}</span>
@@ -220,6 +225,7 @@ interface KB {
   vlm_config?: { enabled?: boolean; model_id?: string };
   extract_config?: { enabled?: boolean };
   cos_config?: { provider?: string; bucket_name?: string };
+  question_generation_config?: { enabled?: boolean; question_count?: number };
   knowledge_count?: number;
   chunk_count?: number;
   isProcessing?: boolean; // 是否有正在处理的导入任务
@@ -931,6 +937,16 @@ const handleUploadFinishedEvent = (event: Event) => {
 
     &:hover {
       background: rgba(255, 152, 0, 0.15);
+    }
+  }
+
+  &.question {
+    background: rgba(0, 150, 136, 0.1);
+    color: #009688;
+    border: 1px solid rgba(0, 150, 136, 0.2);
+
+    &:hover {
+      background: rgba(0, 150, 136, 0.15);
     }
   }
 

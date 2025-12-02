@@ -807,7 +807,8 @@ export default {
     },
     features: {
       knowledgeGraph: 'Knowledge Graph Enabled',
-      multimodal: 'Multimodal Enabled'
+      multimodal: 'Multimodal Enabled',
+      questionGeneration: 'Question Generation Enabled'
     },
     processing: 'Processing import task',
     processingDocuments: 'Processing {count} documents',

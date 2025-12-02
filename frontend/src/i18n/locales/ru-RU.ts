@@ -904,7 +904,8 @@ export default {
     },
     features: {
       knowledgeGraph: 'Граф знаний включен',
-      multimodal: 'Мультимодальность включена'
+      multimodal: 'Мультимодальность включена',
+      questionGeneration: 'Генерация вопросов включена'
     },
     processing: 'Обработка задачи импорта',
     processingDocuments: 'Обработка {count} документов',
