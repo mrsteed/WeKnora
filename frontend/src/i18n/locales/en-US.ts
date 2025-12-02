@@ -905,6 +905,7 @@ export default {
       noNegative: 'No negative examples',
       emptyTitle: 'No FAQ entries',
       emptyDesc: 'Click "Create FAQ Entry" above to get started',
+      searchPlaceholder: 'Search standard questions...',
       searchTest: 'Search Test',
       searchTestTitle: 'FAQ Search Test',
       queryLabel: 'Query',
@@ -1150,6 +1151,7 @@ export default {
   tenant: {
     title: 'Tenant Information',
     currentTenant: 'Current Tenant',
+    switchTenant: 'Switch Tenant',
     sectionDescription: 'View detailed configuration for the tenant',
     apiDocument: 'API Document',
     name: 'Tenant Name',

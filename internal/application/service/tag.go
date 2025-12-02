@@ -30,10 +30,19 @@ func NewKnowledgeTagService(
 }
 
 // ListTags lists all tags for a knowledge base with usage stats.
-func (s *knowledgeTagService) ListTags(ctx context.Context, kbID string) ([]*types.KnowledgeTagWithStats, error) {
+func (s *knowledgeTagService) ListTags(
+	ctx context.Context,
+	kbID string,
+	page *types.Pagination,
+	keyword string,
+) (*types.PageResult, error) {
 	if kbID == "" {
 		return nil, werrors.NewBadRequestError("知识库ID不能为空")
 	}
+	if page == nil {
+		page = &types.Pagination{}
+	}
+	keyword = strings.TrimSpace(keyword)
 	// Ensure KB exists and belongs to current tenant
 	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, kbID)
 	if err != nil {
@@ -41,7 +50,7 @@ func (s *knowledgeTagService) ListTags(ctx context.Context, kbID string) ([]*typ
 	}
 	tenantID := kb.TenantID
 
-	tags, err := s.repo.ListByKB(ctx, tenantID, kbID)
+	tags, total, err := s.repo.ListByKB(ctx, tenantID, kbID, page, keyword)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +74,7 @@ func (s *knowledgeTagService) ListTags(ctx context.Context, kbID string) ([]*typ
 			ChunkCount:     cCount,
 		})
 	}
-	return results, nil
+	return types.NewPageResult(total, page, results), nil
 }
 
 // CreateTag creates a new tag under a KB.

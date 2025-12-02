@@ -4,6 +4,9 @@
             <img class="logo" src="@/assets/img/weknora.png" alt="">
         </div>
         
+        <!-- 租户选择器：仅在用户可切换租户时显示 -->
+        <TenantSelector v-if="canAccessAllTenants" />
+        
         <!-- 上半部分：知识库和对话 -->
         <div class="menu_top">
             <div v-if="showKbActions" class="kb-action-wrapper">
@@ -161,7 +164,6 @@
         
         <!-- 下半部分：用户菜单 -->
         <div class="menu_bottom">
-            <TenantSelector />
             <UserMenu />
         </div>
         
@@ -217,6 +219,9 @@ const hasMore = computed(() => currentPage.value < totalPages.value);
 type MenuItem = { title: string; icon: string; path: string; childrenPath?: string; children?: any[] };
 const { menuArr } = storeToRefs(usemenuStore);
 let activeSubmenu = ref<string>('');
+
+// 是否可以访问所有租户
+const canAccessAllTenants = computed(() => authStore.canAccessAllTenants);
 
 // 是否处于知识库详情页（不包括全局聊天）
 const isInKnowledgeBase = computed<boolean>(() => {

@@ -641,6 +641,7 @@ export default {
   tenant: {
     title: 'Информация об арендаторе',
     currentTenant: 'Текущий арендатор',
+    switchTenant: 'Сменить арендатора',
     sectionDescription: 'Просмотр детальной конфигурации арендатора',
     apiDocument: 'Документация API',
     name: 'Имя арендатора',
@@ -1001,6 +1002,7 @@ export default {
       noNegative: 'Нет негативных примеров',
       emptyTitle: 'Нет записей FAQ',
       emptyDesc: 'Нажмите "Создать FAQ запись" выше, чтобы начать',
+      searchPlaceholder: 'Поиск стандартных вопросов...',
       searchTest: 'Тест поиска',
       searchTestTitle: 'Тест поиска FAQ',
       queryLabel: 'Запрос',

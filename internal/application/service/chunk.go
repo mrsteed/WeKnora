@@ -145,6 +145,7 @@ func (s *chunkService) ListPagedChunksByKnowledgeID(ctx context.Context,
 		page,
 		chunkType,
 		"",
+		"",
 	)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{

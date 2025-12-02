@@ -9,7 +9,7 @@ import (
 // KnowledgeTagService defines operations on knowledge base scoped tags.
 type KnowledgeTagService interface {
 	// ListTags lists all tags under a knowledge base with associated statistics.
-	ListTags(ctx context.Context, kbID string) ([]*types.KnowledgeTagWithStats, error)
+	ListTags(ctx context.Context, kbID string, page *types.Pagination, keyword string) (*types.PageResult, error)
 	// CreateTag creates a new tag under a knowledge base.
 	CreateTag(ctx context.Context, kbID string, name string, color string, sortOrder int) (*types.KnowledgeTag, error)
 	// UpdateTag updates tag basic information.
@@ -23,7 +23,13 @@ type KnowledgeTagRepository interface {
 	Create(ctx context.Context, tag *types.KnowledgeTag) error
 	Update(ctx context.Context, tag *types.KnowledgeTag) error
 	GetByID(ctx context.Context, tenantID uint64, id string) (*types.KnowledgeTag, error)
-	ListByKB(ctx context.Context, tenantID uint64, kbID string) ([]*types.KnowledgeTag, error)
+	ListByKB(
+		ctx context.Context,
+		tenantID uint64,
+		kbID string,
+		page *types.Pagination,
+		keyword string,
+	) ([]*types.KnowledgeTag, int64, error)
 	Delete(ctx context.Context, tenantID uint64, id string) error
 	// CountReferences returns number of knowledges and chunks that reference the tag.
 	CountReferences(

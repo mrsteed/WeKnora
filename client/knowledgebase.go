@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"time"
 )
 
@@ -17,39 +16,87 @@ type KnowledgeBase struct {
 	ID                    string                `json:"id"`
 	Name                  string                `json:"name"` // Name must be unique within the same tenant
 	Type                  string                `json:"type"`
+	IsTemporary           bool                  `json:"is_temporary"`
 	Description           string                `json:"description"`
-	TenantID              uint                  `json:"tenant_id"` // Changed to uint type
+	TenantID              uint64                `json:"tenant_id"`
 	ChunkingConfig        ChunkingConfig        `json:"chunking_config"`
 	ImageProcessingConfig ImageProcessingConfig `json:"image_processing_config"`
 	FAQConfig             *FAQConfig            `json:"faq_config"`
 	EmbeddingModelID      string                `json:"embedding_model_id"`
-	SummaryModelID        string                `json:"summary_model_id"` // Summary model ID
+	SummaryModelID        string                `json:"summary_model_id"`
+	VLMConfig             VLMConfig             `json:"vlm_config"`
+	StorageConfig         StorageConfig         `json:"cos_config"`
+	ExtractConfig         *ExtractConfig        `json:"extract_config"`
 	CreatedAt             time.Time             `json:"created_at"`
 	UpdatedAt             time.Time             `json:"updated_at"`
+	// Computed fields (not stored in database)
+	KnowledgeCount  int64 `json:"knowledge_count"`
+	ChunkCount      int64 `json:"chunk_count"`
+	IsProcessing    bool  `json:"is_processing"`
+	ProcessingCount int64 `json:"processing_count"`
 }
 
 // KnowledgeBaseConfig represents knowledge base configuration
 type KnowledgeBaseConfig struct {
 	ChunkingConfig        ChunkingConfig        `json:"chunking_config"`
 	ImageProcessingConfig ImageProcessingConfig `json:"image_processing_config"`
+	FAQConfig             *FAQConfig            `json:"faq_config"`
 }
 
 // ChunkingConfig represents document chunking configuration
 type ChunkingConfig struct {
-	ChunkSize        int      `json:"chunk_size"`        // Chunk size
-	ChunkOverlap     int      `json:"chunk_overlap"`     // Overlap size
-	Separators       []string `json:"separators"`        // Separators
-	EnableMultimodal bool     `json:"enable_multimodal"` // Whether to enable multimodal processing
+	ChunkSize    int      `json:"chunk_size"`    // Chunk size
+	ChunkOverlap int      `json:"chunk_overlap"` // Overlap size
+	Separators   []string `json:"separators"`    // Separators
 }
 
 // FAQConfig represents faq-specific configuration
 type FAQConfig struct {
-	IndexMode string `json:"index_mode"`
+	IndexMode         string `json:"index_mode"`
+	QuestionIndexMode string `json:"question_index_mode"`
 }
 
 // ImageProcessingConfig represents image processing configuration
 type ImageProcessingConfig struct {
 	ModelID string `json:"model_id"` // Multimodal model ID
+}
+
+// VLMConfig represents the VLM configuration
+type VLMConfig struct {
+	Enabled bool   `json:"enabled"`
+	ModelID string `json:"model_id"`
+}
+
+// StorageConfig represents the storage configuration
+type StorageConfig struct {
+	SecretID   string `json:"secret_id"`
+	SecretKey  string `json:"secret_key"`
+	Region     string `json:"region"`
+	BucketName string `json:"bucket_name"`
+	AppID      string `json:"app_id"`
+	PathPrefix string `json:"path_prefix"`
+	Provider   string `json:"provider"`
+}
+
+// ExtractConfig represents the extract configuration for a knowledge base
+type ExtractConfig struct {
+	Enabled   bool             `json:"enabled"`
+	Text      string           `json:"text,omitempty"`
+	Tags      []string         `json:"tags,omitempty"`
+	Nodes     []*GraphNode     `json:"nodes,omitempty"`
+	Relations []*GraphRelation `json:"relations,omitempty"`
+}
+
+// GraphNode represents a node in the graph extraction configuration
+type GraphNode struct {
+	Name string `json:"name"`
+}
+
+// GraphRelation represents a relation in the graph extraction configuration
+type GraphRelation struct {
+	Node1 string `json:"node1"`
+	Node2 string `json:"node2"`
+	Type  string `json:"type"`
 }
 
 // KnowledgeBaseResponse knowledge base response
@@ -181,14 +228,23 @@ func (c *Client) DeleteKnowledgeBase(ctx context.Context, knowledgeBaseID string
 	return parseResponse(resp, &response)
 }
 
+// SearchParams represents the search parameters for hybrid search
+type SearchParams struct {
+	QueryText            string  `json:"query_text"`
+	VectorThreshold      float64 `json:"vector_threshold"`
+	KeywordThreshold     float64 `json:"keyword_threshold"`
+	MatchCount           int     `json:"match_count"`
+	DisableKeywordsMatch bool    `json:"disable_keywords_match"`
+	DisableVectorMatch   bool    `json:"disable_vector_match"`
+}
+
 // HybridSearch performs hybrid search
-func (c *Client) HybridSearch(ctx context.Context, knowledgeBaseID string, query string) ([]*SearchResult, error) {
+// Note: The backend route is GET but expects JSON body, which is non-standard.
+// This client uses POST with JSON body for better compatibility.
+func (c *Client) HybridSearch(ctx context.Context, knowledgeBaseID string, params *SearchParams) ([]*SearchResult, error) {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/hybrid-search", knowledgeBaseID)
 
-	queryParams := url.Values{}
-	queryParams.Add("query", query)
-
-	resp, err := c.doRequest(ctx, http.MethodGet, path, nil, queryParams)
+	resp, err := c.doRequest(ctx, http.MethodGet, path, params, nil)
 	if err != nil {
 		return nil, err
 	}

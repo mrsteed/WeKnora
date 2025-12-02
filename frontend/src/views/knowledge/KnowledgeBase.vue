@@ -51,6 +51,12 @@ const tagList = ref<any[]>([]);
 const tagLoading = ref(false);
 const overallKnowledgeTotal = ref(0);
 const tagSearchQuery = ref('');
+const TAG_PAGE_SIZE = 50;
+const tagPage = ref(1);
+const tagHasMore = ref(false);
+const tagLoadingMore = ref(false);
+const tagTotal = ref(0);
+let tagSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 type TagInputInstance = ComponentPublicInstance<{ focus: () => void; select: () => void }>;
 const tagDropdownOptions = computed(() => {
   const options = [
@@ -146,22 +152,57 @@ const loadKnowledgeFiles = (kbIdValue: string) => {
   );
 };
 
-const loadTags = async (kbIdValue: string) => {
+const loadTags = async (kbIdValue: string, reset = false) => {
   if (!kbIdValue) {
     tagList.value = [];
+    tagTotal.value = 0;
+    tagHasMore.value = false;
+    tagPage.value = 1;
     return;
   }
-  tagLoading.value = true;
+
+  if (reset) {
+    tagPage.value = 1;
+    tagList.value = [];
+    tagTotal.value = 0;
+    tagHasMore.value = false;
+  }
+
+  const currentPage = tagPage.value || 1;
+  tagLoading.value = currentPage === 1;
+  tagLoadingMore.value = currentPage > 1;
+
   try {
-    const res: any = await listKnowledgeTags(kbIdValue);
-    tagList.value = (res?.data || []).map((tag: any) => ({
+    const res: any = await listKnowledgeTags(kbIdValue, {
+      page: currentPage,
+      page_size: TAG_PAGE_SIZE,
+      keyword: tagSearchQuery.value || undefined,
+    });
+    const pageData = (res?.data || {}) as {
+      data?: any[];
+      total?: number;
+    };
+    const pageTags = (pageData.data || []).map((tag: any) => ({
       ...tag,
       id: String(tag.id),
     }));
+
+    if (currentPage === 1) {
+      tagList.value = pageTags;
+    } else {
+      tagList.value = [...tagList.value, ...pageTags];
+    }
+
+    tagTotal.value = pageData.total || tagList.value.length;
+    tagHasMore.value = tagList.value.length < tagTotal.value;
+    if (tagHasMore.value) {
+      tagPage.value = currentPage + 1;
+    }
   } catch (error) {
     console.error('Failed to load tags', error);
   } finally {
     tagLoading.value = false;
+    tagLoadingMore.value = false;
   }
 };
 
@@ -345,7 +386,7 @@ const loadKnowledgeBaseInfo = async (targetKbId: string) => {
       cardList.value = [];
       total.value = 0;
     }
-    loadTags(targetKbId);
+    loadTags(targetKbId, true);
     overallKnowledgeTotal.value = total.value;
   } catch (error) {
     console.error('Failed to load knowledge base info:', error);
@@ -371,6 +412,8 @@ const loadKnowledgeList = async () => {
 // 监听路由参数变化，重新获取知识库内容
 watch(() => kbId.value, (newKbId, oldKbId) => {
   if (newKbId && newKbId !== oldKbId) {
+    tagSearchQuery.value = '';
+    tagPage.value = 1;
     loadKnowledgeBaseInfo(newKbId);
   }
 }, { immediate: false });
@@ -386,6 +429,18 @@ watch(total, (val) => {
   if (selectedTagId.value === '') {
     overallKnowledgeTotal.value = val || 0;
   }
+});
+
+watch(tagSearchQuery, (newVal, oldVal) => {
+  if (newVal === oldVal) return;
+  if (tagSearchDebounce) {
+    clearTimeout(tagSearchDebounce);
+  }
+  tagSearchDebounce = window.setTimeout(() => {
+    if (kbId.value) {
+      loadTags(kbId.value, true);
+    }
+  }, 300);
 });
 
 // 监听文件上传事件
@@ -1033,6 +1088,16 @@ async function createNewSession(value: string): Promise<void> {
               <div v-else class="tag-empty-state">
                 {{ $t('knowledgeBase.tagEmptyResult') }}
               </div>
+              <div v-if="tagHasMore" class="tag-load-more">
+                <t-button
+                  variant="text"
+                  size="small"
+                  :loading="tagLoadingMore"
+                  @click.stop="kbId && loadTags(kbId)"
+                >
+                  {{ $t('tenant.loadMore') }}
+                </t-button>
+              </div>
             </div>
           </t-loading>
         </aside>
@@ -1321,6 +1386,8 @@ async function createNewSession(value: string): Promise<void> {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  max-height: 100%;
+  min-height: 0;
 
   .sidebar-header {
     display: flex;
@@ -1387,7 +1454,21 @@ async function createNewSession(value: string): Promise<void> {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    overflow: auto;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+
+    .tag-load-more {
+      padding: 8px 0 0;
+      display: flex;
+      justify-content: center;
+
+      :deep(.t-button) {
+        padding: 0;
+        font-size: 12px;
+        color: #00a870;
+      }
+    }
 
     .tag-list-item {
       display: flex;

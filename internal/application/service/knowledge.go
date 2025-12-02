@@ -1875,6 +1875,7 @@ func (s *knowledgeService) CloneChunk(ctx context.Context, src, dst *types.Knowl
 			},
 			chunkType,
 			"",
+			"",
 		)
 		chunkPage++
 		if err != nil {
@@ -1949,11 +1950,12 @@ func (s *knowledgeService) CloneChunk(ctx context.Context, src, dst *types.Knowl
 
 // ListFAQEntries lists FAQ entries under a FAQ knowledge base.
 func (s *knowledgeService) ListFAQEntries(ctx context.Context,
-	kbID string, page *types.Pagination, tagID string,
+	kbID string, page *types.Pagination, tagID string, keyword string,
 ) (*types.PageResult, error) {
 	if page == nil {
 		page = &types.Pagination{}
 	}
+	keyword = strings.TrimSpace(keyword)
 	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
 	if err != nil {
 		return nil, err
@@ -1968,7 +1970,7 @@ func (s *knowledgeService) ListFAQEntries(ctx context.Context,
 	}
 	chunkType := []types.ChunkType{types.ChunkTypeFAQ}
 	chunks, total, err := s.chunkRepo.ListPagedChunksByKnowledgeID(
-		ctx, tenantID, faqKnowledge.ID, page, chunkType, tagID,
+		ctx, tenantID, faqKnowledge.ID, page, chunkType, tagID, keyword,
 	)
 	if err != nil {
 		return nil, err

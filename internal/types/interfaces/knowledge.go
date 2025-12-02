@@ -69,7 +69,13 @@ type KnowledgeService interface {
 	UpdateImageInfo(ctx context.Context, knowledgeID string, chunkID string, imageInfo string) error
 	// ListFAQEntries lists FAQ entries under a FAQ knowledge base.
 	// When tagID is non-empty, results are filtered by tag_id on FAQ chunks.
-	ListFAQEntries(ctx context.Context, kbID string, page *types.Pagination, tagID string) (*types.PageResult, error)
+	ListFAQEntries(
+		ctx context.Context,
+		kbID string,
+		page *types.Pagination,
+		tagID string,
+		keyword string,
+	) (*types.PageResult, error)
 	// UpsertFAQEntries imports or appends FAQ entries asynchronously.
 	// Returns task ID (Knowledge ID) for tracking import progress.
 	UpsertFAQEntries(ctx context.Context, kbID string, payload *types.FAQBatchUpsertPayload) (string, error)

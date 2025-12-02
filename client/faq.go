@@ -113,7 +113,7 @@ type faqSimpleResponse struct {
 
 // ListFAQEntries returns paginated FAQ entries under a knowledge base.
 func (c *Client) ListFAQEntries(ctx context.Context,
-	knowledgeBaseID string, page, pageSize int, tagID string,
+	knowledgeBaseID string, page, pageSize int, tagID string, keyword string,
 ) (*FAQEntriesPage, error) {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/faq/entries", knowledgeBaseID)
 	query := url.Values{}
@@ -125,6 +125,9 @@ func (c *Client) ListFAQEntries(ctx context.Context,
 	}
 	if tagID != "" {
 		query.Add("tag_id", tagID)
+	}
+	if keyword != "" {
+		query.Add("keyword", keyword)
 	}
 
 	resp, err := c.doRequest(ctx, http.MethodGet, path, nil, query)

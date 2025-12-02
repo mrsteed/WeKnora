@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -76,16 +77,26 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	page *types.Pagination,
 	chunkType []types.ChunkType,
 	tagID string,
+	keyword string,
 ) ([]*types.Chunk, int64, error) {
 	var chunks []*types.Chunk
 	var total int64
+	keyword = strings.TrimSpace(keyword)
 
-	query := r.db.WithContext(ctx).Model(&types.Chunk{}).
-		Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?) AND status in (?)",
+	baseFilter := func(db *gorm.DB) *gorm.DB {
+		db = db.Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?) AND status in (?)",
 			tenantID, knowledgeID, chunkType, []types.ChunkStatus{types.ChunkStatusIndexed, types.ChunkStatusDefault})
-	if tagID != "" {
-		query = query.Where("tag_id = ?", tagID)
+		if tagID != "" {
+			db = db.Where("tag_id = ?", tagID)
+		}
+		if keyword != "" {
+			like := "%" + keyword + "%"
+			db = db.Where("(content LIKE ? OR metadata::text LIKE ?)", like, like)
+		}
+		return db
 	}
+
+	query := baseFilter(r.db.WithContext(ctx).Model(&types.Chunk{}))
 
 	// First query the total count
 	if err := query.Count(&total).Error; err != nil {
@@ -93,13 +104,10 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	}
 
 	// Then query the paginated data
-	dataQuery := r.db.WithContext(ctx).
-		Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info, metadata, tag_id")
-	dataQuery = dataQuery.Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?) AND status in (?)",
-		tenantID, knowledgeID, chunkType, []types.ChunkStatus{types.ChunkStatusIndexed, types.ChunkStatusDefault})
-	if tagID != "" {
-		dataQuery = dataQuery.Where("tag_id = ?", tagID)
-	}
+	dataQuery := baseFilter(
+		r.db.WithContext(ctx).
+			Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info, metadata, tag_id"),
+	)
 
 	if err := dataQuery.
 		Order("chunk_index ASC").

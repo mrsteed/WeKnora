@@ -1091,7 +1091,8 @@ func (t *KnowledgeSearchTool) formatOutput(
 				_, total, err := t.chunkService.GetRepository().ListPagedChunksByKnowledgeID(ctx,
 					t.tenantID, result.KnowledgeID,
 					&types.Pagination{Page: 1, PageSize: 1},
-					[]types.ChunkType{types.ChunkTypeText}, "")
+					[]types.ChunkType{types.ChunkTypeText}, "", "",
+				)
 				if err != nil {
 					logger.Warnf(
 						ctx,

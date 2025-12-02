@@ -95,8 +95,12 @@ export function getChunkByIdOnly(chunkId: string) {
   return get(`/api/v1/chunks/by-id/${chunkId}`);
 }
 
-export function listKnowledgeTags(kbId: string) {
-  return get(`/api/v1/knowledge-bases/${kbId}/tags`);
+export function listKnowledgeTags(
+  kbId: string,
+  params?: { page?: number; page_size?: number; keyword?: string },
+) {
+  const query = buildQuery(params);
+  return get(`/api/v1/knowledge-bases/${kbId}/tags${query}`);
 }
 
 export function createKnowledgeBaseTag(
@@ -138,7 +142,10 @@ const buildQuery = (params?: Record<string, any>) => {
   return queryString ? `?${queryString}` : '';
 };
 
-export function listFAQEntries(kbId: string, params?: { page?: number; page_size?: number; tag_id?: string }) {
+export function listFAQEntries(
+  kbId: string,
+  params?: { page?: number; page_size?: number; tag_id?: string; keyword?: string },
+) {
   const query = buildQuery(params);
   return get(`/api/v1/knowledge-bases/${kbId}/faq/entries${query}`);
 }

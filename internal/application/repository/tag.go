@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -39,20 +40,46 @@ func (r *knowledgeTagRepository) GetByID(ctx context.Context, tenantID uint64, i
 	return &tag, nil
 }
 
-// ListByKB lists knowledge tags by knowledge base ID
+// ListByKB lists knowledge tags by knowledge base ID with pagination and optional keyword filtering.
 func (r *knowledgeTagRepository) ListByKB(
 	ctx context.Context,
 	tenantID uint64,
 	kbID string,
-) ([]*types.KnowledgeTag, error) {
-	var tags []*types.KnowledgeTag
-	if err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
-		Order("sort_order ASC, created_at ASC").
-		Find(&tags).Error; err != nil {
-		return nil, err
+	page *types.Pagination,
+	keyword string,
+) ([]*types.KnowledgeTag, int64, error) {
+	if page == nil {
+		page = &types.Pagination{}
 	}
-	return tags, nil
+	keyword = strings.TrimSpace(keyword)
+
+	var total int64
+	baseQuery := r.db.WithContext(ctx).Model(&types.KnowledgeTag{}).
+		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID)
+	if keyword != "" {
+		baseQuery = baseQuery.Where("name LIKE ?", "%"+keyword+"%")
+	}
+
+	if err := baseQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	dataQuery := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID)
+	if keyword != "" {
+		dataQuery = dataQuery.Where("name LIKE ?", "%"+keyword+"%")
+	}
+
+	var tags []*types.KnowledgeTag
+	if err := dataQuery.
+		Order("sort_order ASC, created_at ASC").
+		Offset(page.Offset()).
+		Limit(page.Limit()).
+		Find(&tags).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return tags, total, nil
 }
 
 // Delete deletes a knowledge tag

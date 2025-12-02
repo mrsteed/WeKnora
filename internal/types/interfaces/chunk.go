@@ -25,6 +25,7 @@ type ChunkRepository interface {
 		page *types.Pagination,
 		chunkType []types.ChunkType,
 		tagID string,
+		keyword string,
 	) ([]*types.Chunk, int64, error)
 	ListChunkByParentID(ctx context.Context, tenantID uint64, parentID string) ([]*types.Chunk, error)
 	// UpdateChunk updates a chunk

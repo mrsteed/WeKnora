@@ -33,8 +33,9 @@ func (h *FAQHandler) ListEntries(c *gin.Context) {
 	}
 
 	tagID := secutils.SanitizeForLog(c.Query("tag_id"))
+	keyword := secutils.SanitizeForLog(c.Query("keyword"))
 
-	result, err := h.knowledgeService.ListFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), &page, tagID)
+	result, err := h.knowledgeService.ListFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), &page, tagID, keyword)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

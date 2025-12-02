@@ -1,66 +1,78 @@
 <template>
-  <div class="tenant-selector">
-    <div v-if="canAccessAllTenants" class="tenant-selector-wrapper">
-      <div class="tenant-menu-item" @click="toggleDropdown" ref="triggerRef">
-        <div class="tenant-item-box">
-          <div class="tenant-icon">
-            <t-icon name="usergroup" size="16px" />
-          </div>
-          <span class="tenant-title">{{ currentTenantName }}</span>
+  <div class="tenant-selector" ref="selectorRef">
+    <div class="tenant-trigger" @click="toggleDropdown">
+      <div class="tenant-info">
+        <div class="tenant-label">{{ $t('tenant.currentTenant') }}</div>
+        <div class="tenant-name-row">
+          <span class="tenant-name">{{ currentTenantName }}</span>
+          <t-icon name="swap" class="tenant-switch-icon" />
         </div>
-        <t-icon name="chevron-up" class="tenant-arrow" :class="{ rotated: showDropdown }" />
       </div>
-      <div v-if="showDropdown" class="tenant-overlay" @click="close">
-        <div class="tenant-dropdown" @click.stop :style="dropdownStyle">
-          <div class="tenant-list" ref="tenantList">
+    </div>
+
+    <Transition name="dropdown">
+      <div v-if="showDropdown" class="tenant-dropdown" @click.stop>
+        <div class="dropdown-header">
+          <span class="dropdown-title">{{ $t('tenant.switchTenant') }}</span>
+          <div class="search-box">
+            <t-icon name="search" class="search-icon" />
+            <input
+              ref="searchInput"
+              v-model="searchQuery"
+              type="text"
+              :placeholder="$t('tenant.searchPlaceholder')"
+              class="search-input"
+              @keydown.esc="closeDropdown"
+              @input="handleSearchInput"
+            />
+            <t-icon 
+              v-if="searchQuery" 
+              name="close-circle-filled" 
+              class="clear-icon" 
+              @click="clearSearch"
+            />
+          </div>
+        </div>
+        
+        <div class="tenant-list" ref="tenantListRef" @scroll="handleScroll">
+          <div v-if="loading && tenants.length === 0" class="tenant-loading">
+            <t-loading size="small" />
+            <span>{{ $t('tenant.loading') }}</span>
+          </div>
+          
+          <template v-else-if="tenants.length > 0">
             <div
               v-for="tenant in tenants"
               :key="tenant.id"
               :class="['tenant-item', { selected: isSelected(tenant.id) }]"
               @click="selectTenant(tenant.id)"
             >
-              <div class="tenant-item-info">
-                <span class="tenant-item-name">{{ tenant.name }}</span>
-                <span v-if="tenant.description" class="tenant-item-desc">{{ tenant.description }}</span>
-                <span class="tenant-item-id">ID: {{ tenant.id }}</span>
+              <div class="tenant-item-content">
+                <div class="tenant-item-avatar" :class="{ active: isSelected(tenant.id) }">
+                  {{ tenant.name.charAt(0).toUpperCase() }}
+                </div>
+                <div class="tenant-item-info">
+                  <span class="tenant-item-name">{{ tenant.name }}</span>
+                  <span class="tenant-item-id">ID: {{ tenant.id }}</span>
+                </div>
               </div>
-              <t-icon v-if="isSelected(tenant.id)" name="check" size="16px" class="tenant-check-icon" />
+              <t-icon v-if="isSelected(tenant.id)" name="check" size="16px" class="check-icon" />
             </div>
-            <div v-if="tenants.length === 0 && !loading" class="tenant-empty">
-              {{ $t('tenant.noMatch') }}
-            </div>
-            <div v-if="loading" class="tenant-loading">
-              {{ $t('tenant.loading') }}
-            </div>
-            <div v-if="hasMore && !loading" class="tenant-load-more" @click="loadMore">
-              {{ $t('tenant.loadMore') }}
-            </div>
+          </template>
+          
+          <div v-else class="tenant-empty">
+            <span>{{ $t('tenant.noMatch') }}</span>
           </div>
-          <div class="tenant-search">
-            <input
-              ref="searchInput"
-              v-model="searchQuery"
-              type="text"
-              :placeholder="$t('tenant.searchPlaceholder')"
-              class="tenant-search-input"
-              @keydown.esc="closeDropdown"
-              @input="handleSearchInput"
-            />
-            <div class="tenant-search-hint">
-              {{ $t('tenant.searchHint') }}
-            </div>
+          
+          <div v-if="loading && tenants.length > 0" class="tenant-loading-more">
+            <t-loading size="small" />
           </div>
         </div>
       </div>
-    </div>
-    <div v-else class="tenant-menu-item readonly">
-      <div class="tenant-item-box">
-        <div class="tenant-icon">
-          <t-icon name="usergroup" size="16px" />
-        </div>
-        <span class="tenant-title">{{ currentTenantName }}</span>
-      </div>
-    </div>
+    </Transition>
+    
+    <!-- 遮罩层 -->
+    <div v-if="showDropdown" class="tenant-overlay" @click="closeDropdown"></div>
   </div>
 </template>
 
@@ -77,10 +89,9 @@ const authStore = useAuthStore()
 const showDropdown = ref(false)
 const searchQuery = ref('')
 const tenants = ref<TenantInfo[]>([])
-const triggerRef = ref<HTMLElement | null>(null)
-const tenantList = ref<HTMLElement | null>(null)
+const selectorRef = ref<HTMLElement | null>(null)
+const tenantListRef = ref<HTMLElement | null>(null)
 const searchInput = ref<HTMLInputElement | null>(null)
-const dropdownStyle = ref<Record<string, string>>({})
 
 // 分页相关
 const currentPage = ref(1)
@@ -89,7 +100,6 @@ const total = ref(0)
 const loading = ref(false)
 const searchTimer = ref<number | null>(null)
 
-const canAccessAllTenants = computed(() => authStore.canAccessAllTenants)
 const selectedTenantId = computed(() => authStore.selectedTenantId)
 const defaultTenantId = computed(() => authStore.tenant?.id ? Number(authStore.tenant.id) : null)
 
@@ -112,48 +122,15 @@ const isSelected = (tenantId: number) => {
   return currentTenantId.value === tenantId
 }
 
-const updateDropdownPosition = () => {
-  if (!triggerRef.value) return
-  
-  const rect = triggerRef.value.getBoundingClientRect()
-  const dropdownMaxHeight = 400 // max-height
-  const spaceAbove = rect.top
-  const padding = 16
-  
-  // 计算可用高度，确保有足够空间显示搜索框
-  const availableHeight = Math.min(dropdownMaxHeight, spaceAbove - padding)
-  
-  // 确保最小高度（至少能显示搜索框和一些列表项）
-  const minHeight = 200
-  const finalHeight = Math.max(minHeight, availableHeight)
-  
-  // 向上弹出，确保不遮挡用户头像
-  dropdownStyle.value = {
-    bottom: `${window.innerHeight - rect.top + 8}px`,
-    left: `${rect.left}px`,
-    width: '280px',
-    height: `${finalHeight}px`,
-    maxHeight: `${finalHeight}px`
-  }
-}
-
 const toggleDropdown = () => {
-  if (!canAccessAllTenants.value) return
   showDropdown.value = !showDropdown.value
   if (showDropdown.value) {
     if (tenants.value.length === 0) {
       loadTenants()
     }
     nextTick(() => {
-      updateDropdownPosition()
       searchInput.value?.focus()
     })
-  } else {
-    // 关闭时重置搜索
-    searchQuery.value = ''
-    currentPage.value = 1
-    tenants.value = []
-    total.value = 0
   }
 }
 
@@ -161,30 +138,27 @@ const closeDropdown = () => {
   showDropdown.value = false
   searchQuery.value = ''
   currentPage.value = 1
-  tenants.value = []
-  total.value = 0
   if (searchTimer.value) {
     clearTimeout(searchTimer.value)
     searchTimer.value = null
   }
 }
 
-const close = (event: MouseEvent) => {
-  const target = event.target as HTMLElement
-  if (!target.closest('.tenant-dropdown') && !target.closest('.tenant-menu-item')) {
-    closeDropdown()
-  }
+const clearSearch = () => {
+  searchQuery.value = ''
+  currentPage.value = 1
+  tenants.value = []
+  total.value = 0
+  loadTenants()
 }
 
 const selectTenant = (tenantId: number) => {
-  // 如果选择的是默认租户，清除选择
   if (tenantId === defaultTenantId.value) {
     authStore.setSelectedTenant(null)
   } else {
     authStore.setSelectedTenant(tenantId)
   }
   closeDropdown()
-  // 触发页面刷新以加载新租户的数据
   MessagePlugin.success(t('tenant.switchSuccess'))
   setTimeout(() => {
     window.location.reload()
@@ -196,14 +170,12 @@ const loadTenants = async (append = false) => {
   
   loading.value = true
   try {
-    // 解析搜索关键词，判断是否是租户ID
     let keyword = searchQuery.value.trim()
     let tenantID: number | undefined = undefined
     
-    // 如果搜索关键词是纯数字，尝试作为租户ID查询
     if (keyword && /^\d+$/.test(keyword)) {
       tenantID = Number(keyword)
-      keyword = '' // 清空关键词，使用租户ID查询
+      keyword = ''
     }
     
     const response = await searchTenants({
@@ -233,7 +205,6 @@ const loadTenants = async (append = false) => {
 }
 
 const handleSearchInput = () => {
-  // 防抖处理，延迟500ms后搜索
   if (searchTimer.value) {
     clearTimeout(searchTimer.value)
   }
@@ -243,50 +214,27 @@ const handleSearchInput = () => {
     tenants.value = []
     total.value = 0
     loadTenants()
-  }, 500)
+  }, 300)
 }
 
-const loadMore = () => {
-  if (hasMore.value && !loading.value) {
+const handleScroll = () => {
+  if (!tenantListRef.value) return
+  
+  const { scrollTop, scrollHeight, clientHeight } = tenantListRef.value
+  const isNearBottom = scrollHeight - scrollTop - clientHeight < 50
+  
+  if (isNearBottom && hasMore.value && !loading.value) {
     currentPage.value++
     loadTenants(true)
   }
 }
 
-const handleClickOutside = (event: MouseEvent) => {
-  const target = event.target as HTMLElement
-  if (!target.closest('.tenant-selector-wrapper')) {
-    closeDropdown()
-  }
-}
-
-const handleResize = () => {
-  if (showDropdown.value) {
-    updateDropdownPosition()
-  }
-}
-
-watch(showDropdown, (newVal) => {
-  if (newVal) {
-    document.addEventListener('click', handleClickOutside)
-    window.addEventListener('resize', handleResize)
-    window.addEventListener('scroll', handleResize, true)
-    updateDropdownPosition()
-  } else {
-    document.removeEventListener('click', handleClickOutside)
-    window.removeEventListener('resize', handleResize)
-    window.removeEventListener('scroll', handleResize, true)
-  }
-})
-
 onMounted(() => {
-  // 不再自动加载，等用户打开下拉框时再加载
+  // 预加载租户列表
+  loadTenants()
 })
 
 onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
-  window.removeEventListener('resize', handleResize)
-  window.removeEventListener('scroll', handleResize, true)
   if (searchTimer.value) {
     clearTimeout(searchTimer.value)
   }
@@ -295,84 +243,59 @@ onUnmounted(() => {
 
 <style scoped lang="less">
 .tenant-selector {
-  width: 100%;
-  margin-bottom: 4px;
-}
-
-.tenant-selector-wrapper {
-  width: 100%;
   position: relative;
+  margin: 0 8px 12px;
 }
 
-.tenant-menu-item {
-  cursor: pointer;
+.tenant-trigger {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: 48px;
-  padding: 13px 8px 13px 16px;
-  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
   transition: all 0.2s;
+  background: #f8faf9;
+  border: 1px solid #e8ebe9;
 
   &:hover {
-    border-radius: 4px;
-    background: #30323605;
-    color: #00000099;
-
-    .tenant-icon,
-    .tenant-title {
-      color: #00000099;
-    }
-  }
-
-  &.readonly {
-    cursor: default;
-    
-    &:hover {
-      background: transparent;
-    }
+    background: #f0f5f2;
+    border-color: #d0d8d3;
   }
 }
 
-.tenant-item-box {
-  display: flex;
-  align-items: center;
+.tenant-info {
   flex: 1;
   min-width: 0;
 }
 
-.tenant-icon {
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 12px;
-  color: #00000099;
-  flex-shrink: 0;
+.tenant-label {
+  font-size: 11px;
+  color: #8b9196;
+  margin-bottom: 2px;
+  font-weight: 500;
 }
 
-.tenant-title {
+.tenant-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tenant-name {
   font-size: 14px;
-  font-weight: 400;
-  color: #000000e6;
+  font-weight: 600;
+  color: #1a1a1a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
-  min-width: 0;
 }
 
-.tenant-arrow {
-  font-size: 16px;
-  color: #00000066;
+.tenant-switch-icon {
+  font-size: 14px;
+  color: #07c05f;
   flex-shrink: 0;
-  margin-left: 8px;
-  transition: transform 0.2s;
-
-  &.rotated {
-    transform: rotate(180deg);
-  }
 }
 
 .tenant-overlay {
@@ -385,72 +308,123 @@ onUnmounted(() => {
 }
 
 .tenant-dropdown {
-  position: fixed;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
   background: #fff;
   border: 1px solid #e7e9eb;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
   z-index: 1000;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
-  transform-origin: bottom left;
-  box-sizing: border-box;
 }
 
-.tenant-search {
-  padding: 8px;
-  border-top: 1px solid #f0f0f0;
-  background: #fafafa;
-  flex-shrink: 0;
-  box-sizing: border-box;
+.dropdown-header {
+  padding: 12px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
-.tenant-search-input {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid #e7e9eb;
-  border-radius: 4px;
-  font-size: 14px;
-  outline: none;
-  background: #fff;
-  color: #333;
-  transition: border-color 0.2s;
-  box-sizing: border-box;
+.dropdown-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 8px;
+}
 
-  &:focus {
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+
+  &:focus-within {
+    background: #fff;
     border-color: #07c05f;
+    box-shadow: 0 0 0 2px rgba(7, 192, 95, 0.1);
   }
+}
+
+.search-icon {
+  font-size: 14px;
+  color: #999;
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: #333;
+  min-width: 0;
 
   &::placeholder {
     color: #999;
   }
 }
 
+.clear-icon {
+  font-size: 14px;
+  color: #999;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.2s;
+
+  &:hover {
+    color: #666;
+  }
+}
+
 .tenant-list {
-  flex: 1;
+  max-height: 280px;
   overflow-y: auto;
-  overflow-x: hidden;
-  padding: 4px 0;
-  min-height: 0;
-  max-height: 100%;
-  box-sizing: border-box;
+  padding: 6px;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #e0e0e0;
+    border-radius: 2px;
+
+    &:hover {
+      background: #ccc;
+    }
+  }
 }
 
 .tenant-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: 8px 10px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.15s;
+  margin-bottom: 2px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
 
   &:hover {
     background: #f5f7fa;
   }
 
   &.selected {
-    background: #07c05f1a;
+    background: rgba(7, 192, 95, 0.08);
 
     .tenant-item-name {
       color: #07c05f;
@@ -459,26 +433,45 @@ onUnmounted(() => {
   }
 }
 
-.tenant-item-info {
-  flex: 1;
+.tenant-item-content {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
   min-width: 0;
 }
 
-.tenant-item-name {
-  font-size: 14px;
-  color: #333;
-  font-weight: 400;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.tenant-item-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #666;
+  flex-shrink: 0;
+  transition: all 0.2s;
+
+  &.active {
+    background: linear-gradient(135deg, #07C05F 0%, #05A34E 100%);
+    color: #fff;
+  }
 }
 
-.tenant-item-desc {
-  font-size: 12px;
-  color: #999;
+.tenant-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tenant-item-name {
+  font-size: 13px;
+  color: #333;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -487,48 +480,46 @@ onUnmounted(() => {
 .tenant-item-id {
   font-size: 11px;
   color: #999;
-  margin-top: 2px;
 }
 
-.tenant-loading {
-  padding: 16px;
-  text-align: center;
-  color: #999;
-  font-size: 14px;
-}
-
-.tenant-load-more {
-  padding: 12px;
-  text-align: center;
-  color: #07c05f;
-  font-size: 14px;
-  cursor: pointer;
-  border-top: 1px solid #f0f0f0;
-  transition: background 0.2s;
-
-  &:hover {
-    background: #f5f7fa;
-  }
-}
-
-.tenant-search-hint {
-  font-size: 11px;
-  color: #999;
-  margin-top: 4px;
-  padding: 0 2px;
-}
-
-.tenant-check-icon {
+.check-icon {
   color: #07c05f;
   flex-shrink: 0;
-  margin-left: 8px;
 }
 
+.tenant-loading,
 .tenant-empty {
-  padding: 16px;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 12px;
+  gap: 8px;
   color: #999;
-  font-size: 14px;
+  font-size: 13px;
+}
+
+.tenant-loading-more {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+}
+
+// 下拉动画
+.dropdown-enter-active,
+.dropdown-leave-active {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dropdown-enter-from,
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.dropdown-enter-to,
+.dropdown-leave-from {
+  opacity: 1;
+  transform: translateY(0);
 }
 </style>
-

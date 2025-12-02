@@ -7,6 +7,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
@@ -26,7 +27,16 @@ func (h *TagHandler) ListTags(c *gin.Context) {
 	ctx := c.Request.Context()
 	kbID := secutils.SanitizeForLog(c.Param("id"))
 
-	tags, err := h.tagService.ListTags(ctx, kbID)
+	var page types.Pagination
+	if err := c.ShouldBindQuery(&page); err != nil {
+		logger.Error(ctx, "Failed to bind pagination query", err)
+		c.Error(errors.NewBadRequestError("分页参数不合法").WithDetails(err.Error()))
+		return
+	}
+
+	keyword := secutils.SanitizeForLog(c.Query("keyword"))
+
+	tags, err := h.tagService.ListTags(ctx, kbID, &page, keyword)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

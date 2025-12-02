@@ -58,36 +58,40 @@
       <div v-if="importState.taskId && importState.taskStatus" class="faq-import-progress-bar">
         <div class="progress-bar-content">
           <div class="progress-bar-header">
-            <t-icon 
-              :name="importState.taskStatus.status === 'running' ? 'loading' : 
-                     importState.taskStatus.status === 'success' ? 'check-circle' : 
-                     importState.taskStatus.status === 'failed' ? 'error-circle' : 'time'"
-              size="16px" 
-              class="progress-icon"
-              :class="{
-                'icon-loading': importState.taskStatus.status === 'running',
-                'icon-success': importState.taskStatus.status === 'success',
-                'icon-error': importState.taskStatus.status === 'failed'
-              }"
-            />
-            <span class="progress-title">
-              {{ importState.taskStatus.status === 'running' ? '导入中...' : 
-                 importState.taskStatus.status === 'success' ? '导入完成' : 
-                 importState.taskStatus.status === 'failed' ? '导入失败' : '等待中...' }}
-            </span>
-            <span class="progress-count">
-              {{ importState.taskStatus.processed }}/{{ importState.taskStatus.total }}
-            </span>
-            <t-button
-              v-if="importState.taskStatus.status === 'success' || importState.taskStatus.status === 'failed'"
-              variant="text"
-              theme="default"
-              size="small"
-              class="progress-close-btn"
-              @click="handleCloseProgress"
-            >
-              <t-icon name="close" size="14px" />
-            </t-button>
+            <div class="progress-left">
+              <t-icon 
+                :name="importState.taskStatus.status === 'running' ? 'loading' : 
+                       importState.taskStatus.status === 'success' ? 'check-circle' : 
+                       importState.taskStatus.status === 'failed' ? 'error-circle' : 'time'"
+                size="18px" 
+                class="progress-icon"
+                :class="{
+                  'icon-loading': importState.taskStatus.status === 'running',
+                  'icon-success': importState.taskStatus.status === 'success',
+                  'icon-error': importState.taskStatus.status === 'failed'
+                }"
+              />
+              <span class="progress-title">
+                {{ importState.taskStatus.status === 'running' ? '导入中...' : 
+                   importState.taskStatus.status === 'success' ? '导入完成' : 
+                   importState.taskStatus.status === 'failed' ? '导入失败' : '等待中...' }}
+              </span>
+            </div>
+            <div class="progress-right">
+              <span class="progress-count">
+                {{ importState.taskStatus.processed }}/{{ importState.taskStatus.total }} 条
+              </span>
+              <t-button
+                v-if="importState.taskStatus.status === 'success' || importState.taskStatus.status === 'failed'"
+                variant="text"
+                theme="default"
+                size="small"
+                class="progress-close-btn"
+                @click="handleCloseProgress"
+              >
+                <t-icon name="close" size="14px" />
+              </t-button>
+            </div>
           </div>
           <t-progress
             :percentage="importState.taskStatus.progress"
@@ -103,7 +107,7 @@
       </div>
 
       <div class="faq-main">
-          <aside class="faq-tag-panel">
+        <aside class="faq-tag-panel">
           <div class="sidebar-header">
             <div class="sidebar-title">
               <span>{{ $t('knowledgeBase.faqCategoryTitle') }}</span>
@@ -135,7 +139,7 @@
             </t-input>
           </div>
           <t-loading :loading="tagLoading" size="small">
-            <div class="faq-tag-list">
+            <div ref="tagListRef" class="faq-tag-list" @scroll="handleTagListScroll">
               <div
                 class="faq-tag-item"
                 :class="{ active: selectedTagId === '' }"
@@ -260,11 +264,28 @@
               <div v-else class="tag-empty-state">
                 {{ $t('knowledgeBase.tagEmptyResult') }}
               </div>
+              <div v-if="tagLoadingMore" class="tag-loading-more">
+                <t-loading size="small" />
+              </div>
             </div>
           </t-loading>
         </aside>
 
         <div class="faq-card-area">
+          <!-- 搜索栏 -->
+          <div class="faq-search-bar">
+            <t-input
+              v-model.trim="entrySearchKeyword"
+              :placeholder="$t('knowledgeEditor.faq.searchPlaceholder')"
+              clearable
+              @clear="loadEntries()"
+              @keydown.enter="loadEntries()"
+            >
+              <template #prefix-icon>
+                <t-icon name="search" size="16px" />
+              </template>
+            </t-input>
+          </div>
           <!-- Card List Container with Scroll -->
           <div ref="scrollContainer" class="faq-scroll-container" @scroll="handleScroll">
           <t-loading :loading="loading && entries.length === 0" size="medium">
@@ -1132,13 +1153,22 @@ const cardListRef = ref<HTMLElement | null>(null)
 const hasMore = ref(true)
 const pageSize = 20
 let currentPage = 1
+const entrySearchKeyword = ref('')
+let entrySearchDebounce: ReturnType<typeof setTimeout> | null = null
 type TagInputInstance = ComponentPublicInstance<{ focus: () => void; select: () => void }>
 
 const tagList = ref<any[]>([])
 const tagLoading = ref(false)
+const tagListRef = ref<HTMLElement | null>(null)
 const selectedTagId = ref<string>('')
 const overallFAQTotal = ref(0)
 const tagSearchQuery = ref('')
+const TAG_PAGE_SIZE = 20
+const tagPage = ref(1)
+const tagHasMore = ref(false)
+const tagLoadingMore = ref(false)
+const tagTotal = ref(0)
+let tagSearchDebounce: ReturnType<typeof setTimeout> | null = null
 const editingTagInputRefs = new Map<string, TagInputInstance | null>()
 const setEditingTagInputRef = (el: TagInputInstance | null, tagId: string) => {
   if (el) {
@@ -1338,22 +1368,70 @@ const handleToolbarAction = (data: { value: string }) => {
   }
 }
 
-const loadTags = async () => {
+// 标签列表滚动加载更多
+const handleTagListScroll = () => {
+  const container = tagListRef.value
+  if (!container) return
+  if (tagLoadingMore.value || !tagHasMore.value) return
+  
+  const { scrollTop, scrollHeight, clientHeight } = container
+  // 距离底部 50px 时触发加载
+  if (scrollTop + clientHeight >= scrollHeight - 50) {
+    loadTags()
+  }
+}
+
+const loadTags = async (reset = false) => {
   if (!props.kbId) {
     tagList.value = []
+    tagTotal.value = 0
+    tagHasMore.value = false
+    tagPage.value = 1
     return
   }
-  tagLoading.value = true
+
+  if (reset) {
+    tagPage.value = 1
+    tagList.value = []
+    tagTotal.value = 0
+    tagHasMore.value = false
+  }
+
+  const currentPage = tagPage.value || 1
+  tagLoading.value = currentPage === 1
+  tagLoadingMore.value = currentPage > 1
+
   try {
-    const res: any = await listKnowledgeTags(props.kbId)
-    tagList.value = (res?.data || []).map((tag: any) => ({
+    const res: any = await listKnowledgeTags(props.kbId, {
+      page: currentPage,
+      page_size: TAG_PAGE_SIZE,
+      keyword: tagSearchQuery.value || undefined,
+    })
+    const pageData = (res?.data || {}) as {
+      data?: any[]
+      total?: number
+    }
+    const pageTags = (pageData.data || []).map((tag: any) => ({
       ...tag,
       id: String(tag.id),
     }))
+
+    if (currentPage === 1) {
+      tagList.value = pageTags
+    } else {
+      tagList.value = [...tagList.value, ...pageTags]
+    }
+
+    tagTotal.value = pageData.total || tagList.value.length
+    tagHasMore.value = tagList.value.length < tagTotal.value
+    if (tagHasMore.value) {
+      tagPage.value = currentPage + 1
+    }
   } catch (error: any) {
     MessagePlugin.error(error?.message || t('common.operationFailed'))
   } finally {
     tagLoading.value = false
+    tagLoadingMore.value = false
   }
 }
 
@@ -1645,6 +1723,7 @@ const loadEntries = async (append = false) => {
       page: currentPage,
       page_size: pageSize,
       tag_id: selectedTagId.value || undefined,
+      keyword: entrySearchKeyword.value ? entrySearchKeyword.value.trim() : undefined,
     })
     const pageData = (res.data || {}) as {
       data: FAQEntry[]
@@ -1653,7 +1732,7 @@ const loadEntries = async (append = false) => {
     const newEntries = (pageData.data || []).map(entry => ({
       ...entry,
       showMore: false,
-      similarCollapsed: false, // 相似问默认展开
+      similarCollapsed: true,  // 相似问默认折叠
       negativeCollapsed: true,  // 反例默认折叠
       answersCollapsed: true,   // 答案默认折叠
       tag_id: entry.tag_id ? String(entry.tag_id) : '',
@@ -1680,6 +1759,12 @@ const loadEntries = async (append = false) => {
   } finally {
     loading.value = false
     loadingMore.value = false
+    
+    // 检查是否需要继续加载以填满可视区域
+    // 延迟执行以确保 arrangeCards 的 requestAnimationFrame 完成
+    setTimeout(() => {
+      checkAndLoadMore()
+    }, 350)
   }
 }
 
@@ -1693,6 +1778,22 @@ const handleScroll = () => {
 
   // 当滚动到距离底部 200px 时加载更多
   if (scrollTop + clientHeight >= scrollHeight - 200) {
+    loadEntries(true)
+  }
+}
+
+// 检查内容是否填满可视区域，如果没有且还有更多数据，继续加载
+const checkAndLoadMore = () => {
+  if (!scrollContainer.value) return
+  if (loadingMore.value || loading.value) return
+  if (!hasMore.value) return
+  
+  const container = scrollContainer.value
+  const scrollHeight = container.scrollHeight
+  const clientHeight = container.clientHeight
+  
+  // 如果内容高度小于容器高度 + 50px 的缓冲，说明可能没有滚动条或接近底部，需要继续加载
+  if (scrollHeight <= clientHeight + 50) {
     loadEntries(true)
   }
 }
@@ -2097,6 +2198,9 @@ const startPolling = (taskId: string) => {
   // 保存taskId到localStorage，以便刷新后恢复
   saveTaskIdToStorage(taskId)
   
+  // 记录上次已处理数量，用于判断是否需要刷新列表
+  let lastProcessed = 0
+  
   importState.pollingInterval = setInterval(async () => {
     try {
       const res: any = await getKnowledgeDetails(taskId)
@@ -2124,6 +2228,12 @@ const startPolling = (taskId: string) => {
           total: total,
           processed: processed,
           error: error,
+        }
+
+        // 进度更新时刷新FAQ列表（每增加一些条目就刷新一次）
+        if (processed > lastProcessed) {
+          lastProcessed = processed
+          await loadEntries()
         }
 
         // 任务完成或失败，停止轮询（但不自动关闭进度条，让用户手动关闭）
@@ -2477,7 +2587,7 @@ watch(
     }
 
     loadEntries()
-    loadTags()
+    loadTags(true)
     // 恢复导入任务状态（如果存在）
     await restoreImportTask()
   },
@@ -2492,6 +2602,27 @@ watch(selectedTagId, (newVal, oldVal) => {
     selectedRowKeys.value = []
     loadEntries()
   }
+})
+
+watch(tagSearchQuery, (newVal, oldVal) => {
+  if (newVal === oldVal) return
+  if (tagSearchDebounce) {
+    clearTimeout(tagSearchDebounce)
+  }
+  tagSearchDebounce = window.setTimeout(() => {
+    loadTags(true)
+  }, 300)
+})
+
+// 监听FAQ搜索关键词变化
+watch(entrySearchKeyword, (newVal, oldVal) => {
+  if (newVal === oldVal) return
+  if (entrySearchDebounce) {
+    clearTimeout(entrySearchDebounce)
+  }
+  entrySearchDebounce = window.setTimeout(() => {
+    loadEntries()
+  }, 300)
 })
 
 const handleSearch = async () => {
@@ -2510,7 +2641,7 @@ const handleSearch = async () => {
     })
     const results = (res.data || []).map((entry: FAQEntry) => ({
       ...entry,
-      similarCollapsed: false, // 相似问默认展开
+      similarCollapsed: true,  // 相似问默认折叠
       negativeCollapsed: true,  // 反例默认折叠
       answersCollapsed: true,   // 答案默认折叠
       expanded: false,
@@ -2656,6 +2787,10 @@ const handleResize = () => {
   }
   resizeTimer = setTimeout(() => {
     arrangeCards()
+    // 窗口变大时可能需要加载更多，延迟执行确保布局完成
+    setTimeout(() => {
+      checkAndLoadMore()
+    }, 350)
     resizeTimer = null
   }, 150)
 }
@@ -2832,6 +2967,19 @@ watch(() => entries.value.map(e => ({
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+
+  // t-loading 包裹容器需要撑满剩余空间
+  > .t-loading__parent,
+  > .t-loading {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
 
   .sidebar-header {
     display: flex;
@@ -2913,7 +3061,17 @@ watch(() => entries.value.map(e => ({
     display: flex;
     flex-direction: column;
     gap: 6px;
-    overflow: auto;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    .tag-loading-more {
+      padding: 12px 0;
+      display: flex;
+      justify-content: center;
+      flex-shrink: 0;
+    }
 
     .faq-tag-item {
       display: flex;
@@ -3144,6 +3302,25 @@ watch(() => entries.value.map(e => ({
   flex-direction: column;
 }
 
+.faq-search-bar {
+  padding: 0px 0px 10px 0px;
+  flex-shrink: 0;
+
+  :deep(.t-input) {
+    font-size: 13px;
+    background-color: #f7f9fc;
+    border-color: #e5e9f2;
+    border-radius: 6px;
+
+    &:hover,
+    &:focus,
+    &.t-is-focused {
+      background-color: #fff;
+      border-color: #00a870;
+    }
+  }
+}
+
 :deep(.tag-menu) {
   display: flex;
   flex-direction: column;
@@ -3199,24 +3376,36 @@ watch(() => entries.value.map(e => ({
 // 导入进度条样式（显示在列表页面顶部）
 .faq-import-progress-bar {
   margin-bottom: 16px;
-  background: #fff;
-  border: 1px solid #e7ebf0;
-  border-radius: 8px;
-  padding: 12px 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  background: linear-gradient(135deg, #f8fffe 0%, #f5fff9 100%);
+  border: 1px solid #d4f0e0;
+  border-radius: 10px;
+  padding: 14px 18px;
+  box-shadow: 0 2px 12px rgba(0, 168, 112, 0.08);
 
   .progress-bar-content {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
   }
 
   .progress-bar-header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: space-between;
     font-size: 14px;
     color: #000000e6;
+
+    .progress-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .progress-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
 
     .progress-icon {
       flex-shrink: 0;
@@ -3236,19 +3425,29 @@ watch(() => entries.value.map(e => ({
     }
 
     .progress-title {
-      font-weight: 500;
-      flex: 1;
+      font-weight: 600;
+      font-size: 14px;
+      color: #1d2129;
     }
 
     .progress-count {
-      color: #86909c;
+      color: #4e5969;
       font-size: 13px;
+      font-weight: 500;
+      background: rgba(0, 168, 112, 0.1);
+      padding: 2px 10px;
+      border-radius: 12px;
     }
 
     .progress-close-btn {
       flex-shrink: 0;
       padding: 4px;
-      margin-left: 8px;
+      margin-left: 4px;
+      border-radius: 4px;
+      
+      &:hover {
+        background: rgba(0, 0, 0, 0.06);
+      }
     }
   }
 
@@ -3262,6 +3461,13 @@ watch(() => entries.value.map(e => ({
     
     :deep(.t-progress__bar) {
       width: 100%;
+      height: 8px;
+      border-radius: 4px;
+      background: rgba(0, 168, 112, 0.15);
+    }
+    
+    :deep(.t-progress__inner) {
+      border-radius: 4px;
     }
   }
 
@@ -3270,6 +3476,9 @@ watch(() => entries.value.map(e => ({
     font-size: 13px;
     color: #fa5151;
     line-height: 1.5;
+    background: rgba(250, 81, 81, 0.08);
+    padding: 8px 12px;
+    border-radius: 6px;
   }
 }
 
