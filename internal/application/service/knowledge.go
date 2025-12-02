@@ -24,7 +24,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
-	"github.com/Tencent/WeKnora/internal/models/utils"
 	"github.com/Tencent/WeKnora/internal/tracing"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -283,14 +282,26 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 		enableMultimodelValue = kb.VLMConfig.Enabled
 	}
 
+	// Check question generation config
+	enableQuestionGeneration := false
+	questionCount := 3 // default
+	if kb.QuestionGenerationConfig != nil && kb.QuestionGenerationConfig.Enabled {
+		enableQuestionGeneration = true
+		if kb.QuestionGenerationConfig.QuestionCount > 0 {
+			questionCount = kb.QuestionGenerationConfig.QuestionCount
+		}
+	}
+
 	taskPayload := types.DocumentProcessPayload{
-		TenantID:         tenantID,
-		KnowledgeID:      knowledge.ID,
-		KnowledgeBaseID:  kbID,
-		FilePath:         filePath,
-		FileName:         safeFilename,
-		FileType:         getFileType(safeFilename),
-		EnableMultimodel: enableMultimodelValue,
+		TenantID:                 tenantID,
+		KnowledgeID:              knowledge.ID,
+		KnowledgeBaseID:          kbID,
+		FilePath:                 filePath,
+		FileName:                 safeFilename,
+		FileType:                 getFileType(safeFilename),
+		EnableMultimodel:         enableMultimodelValue,
+		EnableQuestionGeneration: enableQuestionGeneration,
+		QuestionCount:            questionCount,
 	}
 
 	payloadBytes, err := json.Marshal(taskPayload)
@@ -405,12 +416,24 @@ func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
 		enableMultimodelValue = kb.VLMConfig.Enabled
 	}
 
+	// Check question generation config
+	enableQuestionGeneration := false
+	questionCount := 3 // default
+	if kb.QuestionGenerationConfig != nil && kb.QuestionGenerationConfig.Enabled {
+		enableQuestionGeneration = true
+		if kb.QuestionGenerationConfig.QuestionCount > 0 {
+			questionCount = kb.QuestionGenerationConfig.QuestionCount
+		}
+	}
+
 	taskPayload := types.DocumentProcessPayload{
-		TenantID:         tenantID,
-		KnowledgeID:      knowledge.ID,
-		KnowledgeBaseID:  kbID,
-		URL:              url,
-		EnableMultimodel: enableMultimodelValue,
+		TenantID:                 tenantID,
+		KnowledgeID:              knowledge.ID,
+		KnowledgeBaseID:          kbID,
+		URL:                      url,
+		EnableMultimodel:         enableMultimodelValue,
+		EnableQuestionGeneration: enableQuestionGeneration,
+		QuestionCount:            questionCount,
 	}
 
 	payloadBytes, err := json.Marshal(taskPayload)
@@ -595,12 +618,25 @@ func (s *knowledgeService) createKnowledgeFromPassageInternal(ctx context.Contex
 		// Enqueue passage processing task to Asynq
 		logger.Info(ctx, "Enqueuing passage processing task to Asynq")
 		tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+
+		// Check question generation config
+		enableQuestionGeneration := false
+		questionCount := 3 // default
+		if kb.QuestionGenerationConfig != nil && kb.QuestionGenerationConfig.Enabled {
+			enableQuestionGeneration = true
+			if kb.QuestionGenerationConfig.QuestionCount > 0 {
+				questionCount = kb.QuestionGenerationConfig.QuestionCount
+			}
+		}
+
 		taskPayload := types.DocumentProcessPayload{
-			TenantID:         tenantID,
-			KnowledgeID:      knowledge.ID,
-			KnowledgeBaseID:  kbID,
-			Passages:         safePassages,
-			EnableMultimodel: false, // 文本段落不支持多模态
+			TenantID:                 tenantID,
+			KnowledgeID:              knowledge.ID,
+			KnowledgeBaseID:          kbID,
+			Passages:                 safePassages,
+			EnableMultimodel:         false, // 文本段落不支持多模态
+			EnableQuestionGeneration: enableQuestionGeneration,
+			QuestionCount:            questionCount,
 		}
 
 		payloadBytes, err := json.Marshal(taskPayload)
@@ -917,10 +953,23 @@ func (s *knowledgeService) processDocumentFromPassage(ctx context.Context,
 	s.processChunks(ctx, kb, knowledge, chunks)
 }
 
+// ProcessChunksOptions contains options for processing chunks
+type ProcessChunksOptions struct {
+	EnableQuestionGeneration bool
+	QuestionCount            int
+}
+
 // processChunks processes chunks and creates embeddings for knowledge content
 func (s *knowledgeService) processChunks(ctx context.Context,
 	kb *types.KnowledgeBase, knowledge *types.Knowledge, chunks []*proto.Chunk,
+	opts ...ProcessChunksOptions,
 ) {
+	// Get options
+	var options ProcessChunksOptions
+	if len(opts) > 0 {
+		options = opts[0]
+	}
+
 	ctx, span := tracing.ContextWithSpan(ctx, "knowledgeService.processChunks")
 	defer span.End()
 	span.SetAttributes(
@@ -968,14 +1017,6 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	}
 
 	logger.Infof(ctx, "Cleanup completed, starting to process new chunks")
-
-	// Generate document summary - 只使用文本类型的 Chunk
-	chatModel, err := s.modelService.GetChatModel(ctx, kb.SummaryModelID)
-	if err != nil {
-		logger.GetLogger(ctx).WithField("error", err).Errorf("processChunks get summary model failed")
-		span.RecordError(err)
-		return
-	}
 
 	// Create chunk objects from proto chunks
 	maxSeq := 0
@@ -1118,52 +1159,19 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		}
 	}
 
-	span.AddEvent("extract summary")
-	summary, err := s.getSummary(ctx, chatModel, knowledge, textChunks)
-	if err != nil {
-		logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
-			WithField("error", err).Errorf("processChunks get summary failed, use first chunk as description")
-		if len(textChunks) > 0 {
-			knowledge.Description = textChunks[0].Content
-		}
-	} else {
-		knowledge.Description = summary
-	}
-	span.SetAttributes(attribute.String("summary", knowledge.Description))
-
-	// 批量索引
-	if strings.TrimSpace(knowledge.Description) != "" && len(textChunks) > 0 {
-		sChunk := &types.Chunk{
-			ID:              uuid.New().String(),
-			TenantID:        knowledge.TenantID,
-			KnowledgeID:     knowledge.ID,
-			KnowledgeBaseID: knowledge.KnowledgeBaseID,
-			Content:         fmt.Sprintf("# 文档名称\n%s\n\n# 摘要\n%s", knowledge.FileName, knowledge.Description),
-			ChunkIndex:      maxSeq + 3, // 使用不冲突的索引方式
-			IsEnabled:       true,
-			CreatedAt:       time.Now(),
-			UpdatedAt:       time.Now(),
-			StartAt:         0,
-			EndAt:           0,
-			ChunkType:       types.ChunkTypeSummary,
-			ParentChunkID:   textChunks[0].ID,
-		}
-		logger.GetLogger(ctx).Infof("Created summary chunk for %s with index %d",
-			sChunk.ParentChunkID, sChunk.ChunkIndex)
-		insertChunks = append(insertChunks, sChunk)
-	}
-
-	// Create index information for each chunk
-	indexInfoList := utils.MapSlice(insertChunks, func(chunk *types.Chunk) *types.IndexInfo {
-		return &types.IndexInfo{
+	// Create index information for each chunk (without generated questions for now)
+	indexInfoList := make([]*types.IndexInfo, 0, len(insertChunks))
+	for _, chunk := range insertChunks {
+		// Add original chunk content to index
+		indexInfoList = append(indexInfoList, &types.IndexInfo{
 			Content:         chunk.Content,
 			SourceID:        chunk.ID,
 			SourceType:      types.ChunkSourceType,
 			ChunkID:         chunk.ID,
 			KnowledgeID:     knowledge.ID,
 			KnowledgeBaseID: knowledge.KnowledgeBaseID,
-		}
-	})
+		})
+	}
 
 	// Initialize retrieval engine
 
@@ -1247,6 +1255,23 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	knowledge.UpdatedAt = now
 	if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
 		logger.GetLogger(ctx).WithField("error", err).Errorf("processChunks update knowledge failed")
+	}
+
+	// Enqueue question generation task if enabled (async, non-blocking)
+	if options.EnableQuestionGeneration && len(textChunks) > 0 {
+		questionCount := options.QuestionCount
+		if questionCount <= 0 {
+			questionCount = 3
+		}
+		if questionCount > 10 {
+			questionCount = 10
+		}
+		s.enqueueQuestionGenerationTask(ctx, knowledge.KnowledgeBaseID, knowledge.ID, questionCount)
+	}
+
+	// Enqueue summary generation task (async, non-blocking)
+	if len(textChunks) > 0 {
+		s.enqueueSummaryGenerationTask(ctx, knowledge.KnowledgeBaseID, knowledge.ID)
 	}
 
 	// Update tenant's storage usage
@@ -1353,6 +1378,471 @@ func (s *knowledgeService) getSummary(ctx context.Context,
 	logger.GetLogger(ctx).WithField("summary", summary.Content).Infof("GetSummary success")
 	return summary.Content, nil
 }
+
+// enqueueQuestionGenerationTask enqueues an async task for question generation
+func (s *knowledgeService) enqueueQuestionGenerationTask(ctx context.Context,
+	kbID, knowledgeID string, questionCount int,
+) {
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+	payload := types.QuestionGenerationPayload{
+		TenantID:        tenantID,
+		KnowledgeBaseID: kbID,
+		KnowledgeID:     knowledgeID,
+		QuestionCount:   questionCount,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to marshal question generation payload: %v", err)
+		return
+	}
+
+	task := asynq.NewTask(types.TypeQuestionGeneration, payloadBytes, asynq.Queue("low"), asynq.MaxRetry(3))
+	info, err := s.task.Enqueue(task)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to enqueue question generation task: %v", err)
+		return
+	}
+	logger.Infof(ctx, "Enqueued question generation task: %s for knowledge: %s", info.ID, knowledgeID)
+}
+
+// enqueueSummaryGenerationTask enqueues an async task for summary generation
+func (s *knowledgeService) enqueueSummaryGenerationTask(ctx context.Context,
+	kbID, knowledgeID string,
+) {
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+	payload := types.SummaryGenerationPayload{
+		TenantID:        tenantID,
+		KnowledgeBaseID: kbID,
+		KnowledgeID:     knowledgeID,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to marshal summary generation payload: %v", err)
+		return
+	}
+
+	task := asynq.NewTask(types.TypeSummaryGeneration, payloadBytes, asynq.Queue("low"), asynq.MaxRetry(3))
+	info, err := s.task.Enqueue(task)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to enqueue summary generation task: %v", err)
+		return
+	}
+	logger.Infof(ctx, "Enqueued summary generation task: %s for knowledge: %s", info.ID, knowledgeID)
+}
+
+// ProcessSummaryGeneration handles async summary generation task
+func (s *knowledgeService) ProcessSummaryGeneration(ctx context.Context, t *asynq.Task) error {
+	var payload types.SummaryGenerationPayload
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		logger.Errorf(ctx, "Failed to unmarshal summary generation payload: %v", err)
+		return nil // Don't retry on unmarshal error
+	}
+
+	logger.Infof(ctx, "Processing summary generation for knowledge: %s", payload.KnowledgeID)
+
+	// Set tenant context
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, payload.TenantID)
+
+	// Get knowledge base
+	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, payload.KnowledgeBaseID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get knowledge base: %v", err)
+		return nil
+	}
+
+	// Get knowledge
+	knowledge, err := s.repo.GetKnowledgeByID(ctx, payload.TenantID, payload.KnowledgeID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get knowledge: %v", err)
+		return nil
+	}
+
+	// Get text chunks for this knowledge
+	chunks, err := s.chunkService.ListChunksByKnowledgeID(ctx, payload.KnowledgeID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get chunks: %v", err)
+		return nil
+	}
+
+	// Filter text chunks only
+	textChunks := make([]*types.Chunk, 0)
+	for _, chunk := range chunks {
+		if chunk.ChunkType == types.ChunkTypeText {
+			textChunks = append(textChunks, chunk)
+		}
+	}
+
+	if len(textChunks) == 0 {
+		logger.Infof(ctx, "No text chunks found for knowledge: %s", payload.KnowledgeID)
+		return nil
+	}
+
+	// Sort chunks by ChunkIndex for proper ordering
+	sort.Slice(textChunks, func(i, j int) bool {
+		return textChunks[i].ChunkIndex < textChunks[j].ChunkIndex
+	})
+
+	// Initialize chat model for summary
+	chatModel, err := s.modelService.GetChatModel(ctx, kb.SummaryModelID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get chat model: %v", err)
+		return fmt.Errorf("failed to get chat model: %w", err)
+	}
+
+	// Generate summary
+	summary, err := s.getSummary(ctx, chatModel, knowledge, textChunks)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to generate summary for knowledge %s: %v", payload.KnowledgeID, err)
+		// Use first chunk content as fallback
+		if len(textChunks) > 0 {
+			summary = textChunks[0].Content
+			if len(summary) > 500 {
+				summary = summary[:500]
+			}
+		}
+	}
+
+	// Update knowledge description
+	knowledge.Description = summary
+	knowledge.UpdatedAt = time.Now()
+	if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
+		logger.Errorf(ctx, "Failed to update knowledge description: %v", err)
+		return fmt.Errorf("failed to update knowledge: %w", err)
+	}
+
+	// Create summary chunk and index it
+	if strings.TrimSpace(summary) != "" {
+		// Get max chunk index
+		maxChunkIndex := 0
+		for _, chunk := range chunks {
+			if chunk.ChunkIndex > maxChunkIndex {
+				maxChunkIndex = chunk.ChunkIndex
+			}
+		}
+
+		summaryChunk := &types.Chunk{
+			ID:              uuid.New().String(),
+			TenantID:        knowledge.TenantID,
+			KnowledgeID:     knowledge.ID,
+			KnowledgeBaseID: knowledge.KnowledgeBaseID,
+			Content:         fmt.Sprintf("# 文档名称\n%s\n\n# 摘要\n%s", knowledge.FileName, summary),
+			ChunkIndex:      maxChunkIndex + 1,
+			IsEnabled:       true,
+			CreatedAt:       time.Now(),
+			UpdatedAt:       time.Now(),
+			StartAt:         0,
+			EndAt:           0,
+			ChunkType:       types.ChunkTypeSummary,
+			ParentChunkID:   textChunks[0].ID,
+		}
+
+		// Save summary chunk
+		if err := s.chunkService.CreateChunks(ctx, []*types.Chunk{summaryChunk}); err != nil {
+			logger.Errorf(ctx, "Failed to create summary chunk: %v", err)
+			return fmt.Errorf("failed to create summary chunk: %w", err)
+		}
+
+		// Index summary chunk
+		tenantInfo, err := s.tenantRepo.GetTenantByID(ctx, payload.TenantID)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to get tenant info: %v", err)
+			return fmt.Errorf("failed to get tenant info: %w", err)
+		}
+		ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenantInfo)
+
+		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to init retrieve engine: %v", err)
+			return fmt.Errorf("failed to init retrieve engine: %w", err)
+		}
+
+		embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to get embedding model: %v", err)
+			return fmt.Errorf("failed to get embedding model: %w", err)
+		}
+
+		indexInfo := []*types.IndexInfo{{
+			Content:         summaryChunk.Content,
+			SourceID:        summaryChunk.ID,
+			SourceType:      types.ChunkSourceType,
+			ChunkID:         summaryChunk.ID,
+			KnowledgeID:     knowledge.ID,
+			KnowledgeBaseID: knowledge.KnowledgeBaseID,
+		}}
+
+		if err := retrieveEngine.BatchIndex(ctx, embeddingModel, indexInfo); err != nil {
+			logger.Errorf(ctx, "Failed to index summary chunk: %v", err)
+			return fmt.Errorf("failed to index summary chunk: %w", err)
+		}
+
+		logger.Infof(ctx, "Successfully created and indexed summary chunk for knowledge: %s", payload.KnowledgeID)
+	}
+
+	logger.Infof(ctx, "Successfully generated summary for knowledge: %s", payload.KnowledgeID)
+	return nil
+}
+
+// ProcessQuestionGeneration handles async question generation task
+func (s *knowledgeService) ProcessQuestionGeneration(ctx context.Context, t *asynq.Task) error {
+	ctx, span := tracing.ContextWithSpan(ctx, "knowledgeService.ProcessQuestionGeneration")
+	defer span.End()
+
+	var payload types.QuestionGenerationPayload
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		logger.Errorf(ctx, "Failed to unmarshal question generation payload: %v", err)
+		return nil // Don't retry on unmarshal error
+	}
+
+	logger.Infof(ctx, "Processing question generation for knowledge: %s", payload.KnowledgeID)
+
+	// Set tenant context
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, payload.TenantID)
+
+	// Get knowledge base
+	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, payload.KnowledgeBaseID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get knowledge base: %v", err)
+		return nil
+	}
+
+	// Get knowledge
+	knowledge, err := s.repo.GetKnowledgeByID(ctx, payload.TenantID, payload.KnowledgeID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get knowledge: %v", err)
+		return nil
+	}
+
+	// Get text chunks for this knowledge
+	chunks, err := s.chunkService.ListChunksByKnowledgeID(ctx, payload.KnowledgeID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get chunks: %v", err)
+		return nil
+	}
+
+	// Filter text chunks only
+	textChunks := make([]*types.Chunk, 0)
+	for _, chunk := range chunks {
+		if chunk.ChunkType == types.ChunkTypeText {
+			textChunks = append(textChunks, chunk)
+		}
+	}
+
+	if len(textChunks) == 0 {
+		logger.Infof(ctx, "No text chunks found for knowledge: %s", payload.KnowledgeID)
+		return nil
+	}
+
+	// Sort chunks by StartAt for context building
+	sort.Slice(textChunks, func(i, j int) bool {
+		return textChunks[i].StartAt < textChunks[j].StartAt
+	})
+
+	// Initialize chat model
+	chatModel, err := s.modelService.GetChatModel(ctx, kb.SummaryModelID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get chat model: %v", err)
+		return fmt.Errorf("failed to get chat model: %w", err)
+	}
+
+	// Initialize embedding model and retrieval engine
+	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get embedding model: %v", err)
+		return fmt.Errorf("failed to get embedding model: %w", err)
+	}
+
+	tenantInfo, err := s.tenantRepo.GetTenantByID(ctx, payload.TenantID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get tenant info: %v", err)
+		return fmt.Errorf("failed to get tenant info: %w", err)
+	}
+	ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenantInfo)
+
+	retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to init retrieve engine: %v", err)
+		return fmt.Errorf("failed to init retrieve engine: %w", err)
+	}
+
+	questionCount := payload.QuestionCount
+	if questionCount <= 0 {
+		questionCount = 3
+	}
+	if questionCount > 10 {
+		questionCount = 10
+	}
+
+	// Generate questions for each chunk with context
+	var indexInfoList []*types.IndexInfo
+	for i, chunk := range textChunks {
+		// Build context from adjacent chunks
+		var prevContent, nextContent string
+		if i > 0 {
+			prevContent = textChunks[i-1].Content
+			// Limit context size
+			if len(prevContent) > 500 {
+				prevContent = prevContent[len(prevContent)-500:]
+			}
+		}
+		if i < len(textChunks)-1 {
+			nextContent = textChunks[i+1].Content
+			// Limit context size
+			if len(nextContent) > 500 {
+				nextContent = nextContent[:500]
+			}
+		}
+
+		questions, err := s.generateQuestionsWithContext(ctx, chatModel, chunk.Content, prevContent, nextContent, knowledge.Title, questionCount)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to generate questions for chunk %s: %v", chunk.ID, err)
+			continue
+		}
+
+		if len(questions) == 0 {
+			continue
+		}
+
+		// Update chunk metadata
+		meta := &types.DocumentChunkMetadata{
+			GeneratedQuestions: questions,
+		}
+		if err := chunk.SetDocumentMetadata(meta); err != nil {
+			logger.Warnf(ctx, "Failed to set document metadata for chunk %s: %v", chunk.ID, err)
+			continue
+		}
+
+		// Update chunk in database
+		if err := s.chunkService.UpdateChunk(ctx, chunk); err != nil {
+			logger.Warnf(ctx, "Failed to update chunk %s: %v", chunk.ID, err)
+			continue
+		}
+
+		// Create index entries for generated questions
+		for j, question := range questions {
+			sourceID := fmt.Sprintf("%s-q%d", chunk.ID, j)
+			indexInfoList = append(indexInfoList, &types.IndexInfo{
+				Content:         question,
+				SourceID:        sourceID,
+				SourceType:      types.ChunkSourceType,
+				ChunkID:         chunk.ID,
+				KnowledgeID:     knowledge.ID,
+				KnowledgeBaseID: knowledge.KnowledgeBaseID,
+			})
+		}
+		logger.Debugf(ctx, "Generated %d questions for chunk %s", len(questions), chunk.ID)
+	}
+
+	// Index generated questions
+	if len(indexInfoList) > 0 {
+		if err := retrieveEngine.BatchIndex(ctx, embeddingModel, indexInfoList); err != nil {
+			logger.Errorf(ctx, "Failed to index generated questions: %v", err)
+			return fmt.Errorf("failed to index questions: %w", err)
+		}
+		logger.Infof(ctx, "Successfully indexed %d generated questions for knowledge: %s", len(indexInfoList), payload.KnowledgeID)
+	}
+
+	return nil
+}
+
+// generateQuestionsWithContext generates questions for a chunk with surrounding context
+func (s *knowledgeService) generateQuestionsWithContext(ctx context.Context,
+	chatModel chat.Chat, content, prevContent, nextContent, docName string, questionCount int,
+) ([]string, error) {
+	if content == "" || questionCount <= 0 {
+		return nil, nil
+	}
+
+	// Build prompt with context
+	prompt := s.config.Conversation.GenerateQuestionsPrompt
+	if prompt == "" {
+		prompt = defaultQuestionGenerationPrompt
+	}
+
+	// Build context section
+	var contextSection string
+	if prevContent != "" || nextContent != "" {
+		contextSection = "## 上下文信息（仅供参考，帮助理解主要内容）\n"
+		if prevContent != "" {
+			contextSection += fmt.Sprintf("【前文】%s\n", prevContent)
+		}
+		if nextContent != "" {
+			contextSection += fmt.Sprintf("【后文】%s\n", nextContent)
+		}
+		contextSection += "\n"
+	}
+
+	// Replace placeholders
+	prompt = strings.ReplaceAll(prompt, "{{.QuestionCount}}", fmt.Sprintf("%d", questionCount))
+	prompt = strings.ReplaceAll(prompt, "{{.Content}}", content)
+	prompt = strings.ReplaceAll(prompt, "{{.Context}}", contextSection)
+	prompt = strings.ReplaceAll(prompt, "{{.DocName}}", docName)
+
+	thinking := false
+	response, err := chatModel.Chat(ctx, []chat.Message{
+		{
+			Role:    "user",
+			Content: prompt,
+		},
+	}, &chat.ChatOptions{
+		Temperature: 0.7,
+		MaxTokens:   512,
+		Thinking:    &thinking,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate questions: %w", err)
+	}
+
+	// Parse response
+	lines := strings.Split(response.Content, "\n")
+	questions := make([]string, 0, questionCount)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		line = strings.TrimLeft(line, "0123456789.-*) ")
+		line = strings.TrimSpace(line)
+		if line != "" && len(line) > 5 {
+			questions = append(questions, line)
+			if len(questions) >= questionCount {
+				break
+			}
+		}
+	}
+
+	return questions, nil
+}
+
+// Default prompt for question generation with context support
+const defaultQuestionGenerationPrompt = `你是一个专业的问题生成助手。你的任务是根据给定的【主要内容】生成用户可能会问的相关问题。
+
+{{.Context}}
+## 主要内容（请基于此内容生成问题）
+文档名称：{{.DocName}}
+文档内容：
+{{.Content}}
+
+## 核心要求
+- 生成的问题必须与【主要内容】直接相关
+- 问题中禁止使用任何代词或指代词（如"它"、"这个"、"该文档"、"本文"、"文中"、"其"等），必须用具体名称替代
+- 问题必须是完整独立的，脱离上下文也能被理解
+- 问题应该是用户在实际场景中可能会提出的自然问题
+- 问题应该多样化，覆盖内容的不同方面
+- 每个问题应该简洁明了，长度控制在30字以内
+- 生成的问题数量为 {{.QuestionCount}} 个
+
+## 问题类型建议
+- 定义类：什么是...？...是什么？
+- 原因类：为什么...？...的原因是什么？
+- 方法类：如何...？怎样...？
+- 比较类：...和...有什么区别？
+- 应用类：...可以用于什么场景？
+
+## 输出格式
+直接输出问题列表，每行一个问题，不要有序号或其他前缀。`
 
 // GetKnowledgeFile retrieves the physical file associated with a knowledge entry
 func (s *knowledgeService) GetKnowledgeFile(ctx context.Context, id string) (io.ReadCloser, string, error) {
@@ -4051,7 +4541,10 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 	}
 
 	// 处理chunks（这会更新状态为completed）
-	s.processChunks(ctx, kb, knowledge, chunks)
+	s.processChunks(ctx, kb, knowledge, chunks, ProcessChunksOptions{
+		EnableQuestionGeneration: payload.EnableQuestionGeneration,
+		QuestionCount:            payload.QuestionCount,
+	})
 
 	return nil
 }

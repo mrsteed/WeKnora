@@ -65,6 +65,8 @@ type KnowledgeBase struct {
 	ExtractConfig *ExtractConfig `yaml:"extract_config"          json:"extract_config"          gorm:"column:extract_config;type:json"`
 	// FAQConfig stores FAQ specific configuration such as indexing strategy
 	FAQConfig *FAQConfig `yaml:"faq_config"              json:"faq_config"              gorm:"column:faq_config;type:json"`
+	// QuestionGenerationConfig stores question generation configuration for document knowledge bases
+	QuestionGenerationConfig *QuestionGenerationConfig `yaml:"question_generation_config" json:"question_generation_config" gorm:"column:question_generation_config;type:json"`
 	// Creation time of the knowledge base
 	CreatedAt time.Time `yaml:"created_at"              json:"created_at"`
 	// Last updated time of the knowledge base
@@ -178,6 +180,32 @@ func (c *ImageProcessingConfig) Scan(value interface{}) error {
 type VLMConfig struct {
 	Enabled bool   `yaml:"enabled"  json:"enabled"`
 	ModelID string `yaml:"model_id" json:"model_id"`
+}
+
+// QuestionGenerationConfig represents the question generation configuration for document knowledge bases
+// When enabled, the system will use LLM to generate questions for each chunk during document parsing
+// These generated questions will be indexed separately to improve recall
+type QuestionGenerationConfig struct {
+	Enabled bool `yaml:"enabled"  json:"enabled"`
+	// Number of questions to generate per chunk (default: 3, max: 10)
+	QuestionCount int `yaml:"question_count" json:"question_count"`
+}
+
+// Value implements the driver.Valuer interface
+func (c QuestionGenerationConfig) Value() (driver.Value, error) {
+	return json.Marshal(c)
+}
+
+// Scan implements the sql.Scanner interface
+func (c *QuestionGenerationConfig) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return json.Unmarshal(b, c)
 }
 
 // Value implements the driver.Valuer interface, used to convert VLMConfig to database value

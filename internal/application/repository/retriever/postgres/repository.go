@@ -291,7 +291,7 @@ func (g *pgRepository) VectorRetrieve(ctx context.Context,
 			ORDER BY embedding::halfvec(%d) <=> $1::halfvec
 			LIMIT $%d
 		) AS candidates
-		WHERE distance < $%d
+		WHERE distance <= $%d
 		ORDER BY distance ASC
 		LIMIT $%d
 	`, dimension, whereClause, dimension, subqueryLimitParam, thresholdParam, finalLimitParam)

@@ -19,6 +19,43 @@ type FAQChunkMetadata struct {
 	Source            string   `json:"source,omitempty"`
 }
 
+// DocumentChunkMetadata 定义文档 Chunk 的元数据结构
+// 用于存储AI生成的问题等增强信息
+type DocumentChunkMetadata struct {
+	// GeneratedQuestions 存储AI为该Chunk生成的相关问题
+	// 这些问题会被独立索引以提高召回率
+	GeneratedQuestions []string `json:"generated_questions,omitempty"`
+}
+
+// DocumentMetadata 解析 Chunk 中的文档元数据
+func (c *Chunk) DocumentMetadata() (*DocumentChunkMetadata, error) {
+	if c == nil || len(c.Metadata) == 0 {
+		return nil, nil
+	}
+	var meta DocumentChunkMetadata
+	if err := json.Unmarshal(c.Metadata, &meta); err != nil {
+		return nil, err
+	}
+	return &meta, nil
+}
+
+// SetDocumentMetadata 设置 Chunk 的文档元数据
+func (c *Chunk) SetDocumentMetadata(meta *DocumentChunkMetadata) error {
+	if c == nil {
+		return nil
+	}
+	if meta == nil {
+		c.Metadata = nil
+		return nil
+	}
+	bytes, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	c.Metadata = JSON(bytes)
+	return nil
+}
+
 // Normalize 清理空白与重复项
 func (m *FAQChunkMetadata) Normalize() {
 	if m == nil {

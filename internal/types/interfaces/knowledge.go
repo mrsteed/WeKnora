@@ -99,6 +99,10 @@ type KnowledgeService interface {
 	ProcessDocument(ctx context.Context, t *asynq.Task) error
 	// ProcessFAQImport handles Asynq FAQ import tasks
 	ProcessFAQImport(ctx context.Context, t *asynq.Task) error
+	// ProcessQuestionGeneration handles Asynq question generation tasks
+	ProcessQuestionGeneration(ctx context.Context, t *asynq.Task) error
+	// ProcessSummaryGeneration handles Asynq summary generation tasks
+	ProcessSummaryGeneration(ctx context.Context, t *asynq.Task) error
 }
 
 // KnowledgeRepository defines the interface for knowledge repositories.

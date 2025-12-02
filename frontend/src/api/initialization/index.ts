@@ -107,6 +107,10 @@ export interface KBModelConfigRequest {
         nodes: Node[]
         relations: Relation[]
     }
+    questionGeneration?: {
+        enabled: boolean
+        questionCount: number
+    }
 }
 
 export function updateKBConfig(kbId: string, config: KBModelConfigRequest): Promise<any> {

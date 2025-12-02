@@ -185,6 +185,32 @@ const getChunkMeta = (item: any) => {
   return parts.join(' · ');
 };
 
+// 解析生成的问题
+const getGeneratedQuestions = (item: any): string[] => {
+  if (!item || !item.metadata) return [];
+  try {
+    const metadata = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
+    return metadata.generated_questions || [];
+  } catch {
+    return [];
+  }
+};
+
+// 展开状态管理
+const expandedChunks = ref<Set<number>>(new Set());
+
+const toggleQuestions = (index: number) => {
+  if (expandedChunks.value.has(index)) {
+    expandedChunks.value.delete(index);
+  } else {
+    expandedChunks.value.add(index);
+  }
+  // 触发响应式更新
+  expandedChunks.value = new Set(expandedChunks.value);
+};
+
+const isExpanded = (index: number) => expandedChunks.value.has(index);
+
 const downloadFile = () => {
   downKnowledgeDetails(props.details.id)
     .then((result) => {
@@ -272,17 +298,44 @@ const handleDetailsScroll = () => {
       
       <div v-if="details.md.length == 0" class="no_content">{{ $t('common.noData') }}</div>
       <div v-else class="chunk-list">
-        <div 
-          class="chunk-item" 
+        <div class="chunk-item" 
           v-for="(item, index) in details.md" 
           :key="index"
           :class="getChunkClass(index)"
         >
           <div class="chunk-header">
             <span class="chunk-index">{{ $t('knowledgeBase.segment') || '片段' }} {{ index + 1 }}</span>
-            <span class="chunk-meta">{{ getChunkMeta(item) }}</span>
+            <div class="chunk-header-right">
+              <t-tag 
+                v-if="getGeneratedQuestions(item).length > 0" 
+                size="small" 
+                theme="success" 
+                variant="light"
+              >
+                {{ $t('knowledgeBase.questions') || '问题' }} {{ getGeneratedQuestions(item).length }}
+              </t-tag>
+              <span class="chunk-meta">{{ getChunkMeta(item) }}</span>
+            </div>
           </div>
           <div class="md-content" v-html="processMarkdown(item.content)"></div>
+          
+          <!-- 生成的问题展示 -->
+          <div v-if="getGeneratedQuestions(item).length > 0" class="questions-section">
+            <div class="questions-toggle" @click="toggleQuestions(index)">
+              <t-icon :name="isExpanded(index) ? 'chevron-down' : 'chevron-right'" size="14px" />
+              <span>{{ $t('knowledgeBase.generatedQuestions') || '生成的问题' }} ({{ getGeneratedQuestions(item).length }})</span>
+            </div>
+            <div v-show="isExpanded(index)" class="questions-list">
+              <div 
+                v-for="(question, qIndex) in getGeneratedQuestions(item)" 
+                :key="qIndex" 
+                class="question-item"
+              >
+                <t-icon name="help-circle" size="14px" class="question-icon" />
+                <span>{{ question }}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -493,9 +546,62 @@ const handleDetailsScroll = () => {
     letter-spacing: 0.5px;
   }
   
+  .chunk-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
   .chunk-meta {
     color: #00000066;
     font-size: 11px;
+  }
+}
+
+// 生成的问题样式
+.questions-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #e0e0e0;
+}
+
+.questions-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: #059669;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 0;
+  transition: color 0.2s ease;
+  
+  &:hover {
+    color: #07c05f;
+  }
+}
+
+.questions-list {
+  margin-top: 8px;
+  padding-left: 4px;
+}
+
+.question-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  background: #f0fdf4;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #1d2129;
+  line-height: 1.5;
+  
+  .question-icon {
+    color: #059669;
+    flex-shrink: 0;
+    margin-top: 2px;
   }
 }
 

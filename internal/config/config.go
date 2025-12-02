@@ -57,6 +57,8 @@ type ConversationConfig struct {
 	SimplifyQueryPromptUser    string         `yaml:"simplify_query_prompt_user"    json:"simplify_query_prompt_user"`
 	ExtractEntitiesPrompt      string         `yaml:"extract_entities_prompt"       json:"extract_entities_prompt"`
 	ExtractRelationshipsPrompt string         `yaml:"extract_relationships_prompt"  json:"extract_relationships_prompt"`
+	// GenerateQuestionsPrompt is used to generate questions for document chunks to improve recall
+	GenerateQuestionsPrompt string `yaml:"generate_questions_prompt" json:"generate_questions_prompt"`
 }
 
 // SummaryConfig 摘要配置

@@ -60,7 +60,6 @@ func (r *chunkRepository) ListChunksByKnowledgeID(
 ) ([]*types.Chunk, error) {
 	var chunks []*types.Chunk
 	if err := r.db.WithContext(ctx).
-		Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info").
 		Where("tenant_id = ? AND knowledge_id = ? and chunk_type = ?", tenantID, knowledgeID, "text").
 		Order("chunk_index ASC").
 		Find(&chunks).Error; err != nil {
@@ -85,7 +84,7 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 
 	baseFilter := func(db *gorm.DB) *gorm.DB {
 		db = db.Where("tenant_id = ? AND knowledge_id = ? AND chunk_type IN (?) AND status in (?)",
-			tenantID, knowledgeID, chunkType, []types.ChunkStatus{types.ChunkStatusIndexed, types.ChunkStatusDefault})
+			tenantID, knowledgeID, chunkType, []int{int(types.ChunkStatusIndexed), int(types.ChunkStatusDefault)})
 		if tagID != "" {
 			db = db.Where("tag_id = ?", tagID)
 		}
@@ -106,7 +105,7 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	// Then query the paginated data
 	dataQuery := baseFilter(
 		r.db.WithContext(ctx).
-			Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info, metadata, tag_id"),
+			Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info, metadata, tag_id, status"),
 	)
 
 	if err := dataQuery.

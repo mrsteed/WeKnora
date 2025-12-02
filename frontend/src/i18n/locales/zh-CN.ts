@@ -91,6 +91,8 @@ export default {
     createTime: "创建时间",
     characters: "字符",
     segment: "片段",
+    questions: "问题",
+    generatedQuestions: "生成的问题",
     docActionUnsupported: "当前知识库类型不支持该操作",
     notInitialized:
       "该知识库尚未完成初始化配置，请先前往设置页面配置模型信息后再上传文件",
@@ -1334,7 +1336,13 @@ export default {
     },
     advanced: {
       title: "高级设置",
-      description: "配置多模态等高级功能",
+      description: "配置问题生成、多模态等高级功能",
+      questionGeneration: {
+        label: "AI 问题生成",
+        description: "解析文档时调用大模型为每个分块生成相关问题，提高检索召回率。启用后会增加文档解析耗时。",
+        countLabel: "生成问题数量",
+        countDescription: "每个文档分块生成的问题数量（1-10）",
+      },
       multimodal: {
         label: "多模态功能",
         description: "启用图片、视频等多模态内容的理解能力",

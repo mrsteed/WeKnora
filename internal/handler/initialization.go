@@ -123,6 +123,12 @@ type KBModelConfigRequest struct {
 		Nodes     []types.GraphNode     `json:"nodes"`
 		Relations []types.GraphRelation `json:"relations"`
 	} `json:"nodeExtract"`
+
+	// 问题生成配置
+	QuestionGeneration struct {
+		Enabled       bool `json:"enabled"`
+		QuestionCount int  `json:"questionCount"`
+	} `json:"questionGeneration"`
 }
 
 // InitializationRequest 初始化请求结构
@@ -192,6 +198,11 @@ type InitializationRequest struct {
 			Type  string `json:"type"`
 		} `json:"relations"`
 	} `json:"nodeExtract"`
+
+	QuestionGeneration struct {
+		Enabled       bool `json:"enabled"`
+		QuestionCount int  `json:"questionCount"`
+	} `json:"questionGeneration"`
 }
 
 // UpdateKBConfig 根据知识库ID和模型ID更新配置（简化版）
@@ -331,6 +342,23 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		logger.Error(ctx, "Invalid extract configuration", err)
 		c.Error(err)
 		return
+	}
+
+	// 更新问题生成配置
+	if req.QuestionGeneration.Enabled {
+		questionCount := req.QuestionGeneration.QuestionCount
+		if questionCount <= 0 {
+			questionCount = 3
+		}
+		if questionCount > 10 {
+			questionCount = 10
+		}
+		kb.QuestionGenerationConfig = &types.QuestionGenerationConfig{
+			Enabled:       true,
+			QuestionCount: questionCount,
+		}
+	} else {
+		kb.QuestionGenerationConfig = &types.QuestionGenerationConfig{Enabled: false}
 	}
 
 	// 保存更新后的知识库

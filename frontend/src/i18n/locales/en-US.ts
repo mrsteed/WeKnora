@@ -92,6 +92,8 @@ export default {
     createTime: 'Create Time',
     characters: 'chars',
     segment: 'Segment',
+    questions: 'Questions',
+    generatedQuestions: 'Generated Questions',
     notInitialized: 'Knowledge base is not initialized. Please configure models in settings before uploading files',
     getInfoFailed: 'Failed to get knowledge base information, file upload is not possible',
     missingId: 'Knowledge base ID is missing',
@@ -1001,7 +1003,13 @@ export default {
     },
     advanced: {
       title: 'Advanced Settings',
-      description: 'Configure multimodal features',
+      description: 'Configure question generation, multimodal features',
+      questionGeneration: {
+        label: 'AI Question Generation',
+        description: 'Generate related questions for each chunk using LLM during document parsing to improve retrieval recall. Enabling this will increase document parsing time.',
+        countLabel: 'Question Count',
+        countDescription: 'Number of questions to generate per document chunk (1-10)',
+      },
       multimodal: {
         label: 'Multimodal Feature',
         description: 'Enable understanding of multimodal content such as images and videos',

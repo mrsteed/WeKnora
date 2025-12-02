@@ -144,8 +144,10 @@
                     ref="advancedSettingsRef"
                     v-if="formData"
                     :multimodal="formData.multimodalConfig"
+                    :question-generation="formData.questionGenerationConfig"
                     :all-models="allModels"
                     @update:multimodal="handleMultimodalUpdate"
+                    @update:question-generation="handleQuestionGenerationUpdate"
                   />
                 </div>
               </div>
@@ -296,6 +298,10 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
         type: string
       }>
     },
+    questionGenerationConfig: {
+      enabled: false,
+      questionCount: 3
+    },
   }
 }
 
@@ -377,6 +383,10 @@ const loadKBData = async () => {
         })),
         relations: kb.extract_config?.relations || []
       },
+      questionGenerationConfig: {
+        enabled: kb.question_generation_config?.enabled || false,
+        questionCount: kb.question_generation_config?.question_count || 3
+      },
     }
   } catch (error) {
     console.error('Failed to load knowledge base data:', error)
@@ -403,6 +413,12 @@ const handleChunkingConfigUpdate = (config: any) => {
 const handleMultimodalUpdate = (config: any) => {
   if (formData.value) {
     formData.value.multimodalConfig = { ...config }
+  }
+}
+
+const handleQuestionGenerationUpdate = (config: any) => {
+  if (formData.value) {
+    formData.value.questionGenerationConfig = { ...config }
   }
 }
 
@@ -514,6 +530,14 @@ const buildSubmitData = () => {
     }
   }
 
+  // 添加问题生成配置
+  if (formData.value.questionGenerationConfig?.enabled) {
+    data.question_generation_config = {
+      enabled: true,
+      question_count: formData.value.questionGenerationConfig.questionCount || 3
+    }
+  }
+
   if (formData.value.type === 'faq') {
     data.faq_config = {
       index_mode: formData.value.faqConfig?.indexMode || 'question_only',
@@ -598,6 +622,10 @@ const handleSubmit = async () => {
           tags: data.extract_config?.tags || [],
           nodes: data.extract_config?.nodes || [],
           relations: data.extract_config?.relations || []
+        },
+        questionGeneration: {
+          enabled: data.question_generation_config?.enabled || false,
+          questionCount: data.question_generation_config?.question_count || 3
         }
       }
 

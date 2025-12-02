@@ -6,6 +6,42 @@
     </div>
 
     <div class="settings-group">
+      <!-- Question Generation feature -->
+      <div class="setting-row">
+        <div class="setting-info">
+          <label>{{ $t('knowledgeEditor.advanced.questionGeneration.label') }}</label>
+          <p class="desc">{{ $t('knowledgeEditor.advanced.questionGeneration.description') }}</p>
+        </div>
+        <div class="setting-control">
+          <t-switch
+            v-model="localQuestionGeneration.enabled"
+            @change="handleQuestionGenerationToggle"
+            size="large"
+          />
+        </div>
+      </div>
+
+      <!-- Question Generation configuration -->
+      <div v-if="localQuestionGeneration.enabled" class="subsection">
+        <div class="setting-row">
+          <div class="setting-info">
+            <label>{{ $t('knowledgeEditor.advanced.questionGeneration.countLabel') }}</label>
+            <p class="desc">{{ $t('knowledgeEditor.advanced.questionGeneration.countDescription') }}</p>
+          </div>
+          <div class="setting-control">
+            <t-input-number
+              v-model="localQuestionGeneration.questionCount"
+              :min="1"
+              :max="10"
+              :step="1"
+              theme="normal"
+              @change="handleQuestionGenerationChange"
+              style="width: 120px;"
+            />
+          </div>
+        </div>
+      </div>
+
       <!-- Multimodal feature -->
       <div class="setting-row">
         <div class="setting-info">
@@ -241,8 +277,14 @@ interface MultimodalConfig {
   }
 }
 
+interface QuestionGenerationConfig {
+  enabled: boolean
+  questionCount: number
+}
+
 interface Props {
   multimodal: MultimodalConfig
+  questionGeneration?: QuestionGenerationConfig
   allModels?: any[]
 }
 
@@ -250,9 +292,13 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<{
   'update:multimodal': [value: MultimodalConfig]
+  'update:questionGeneration': [value: QuestionGenerationConfig]
 }>()
 
 const localMultimodal = ref<MultimodalConfig>({ ...props.multimodal })
+const localQuestionGeneration = ref<QuestionGenerationConfig>(
+  props.questionGeneration || { enabled: false, questionCount: 3 }
+)
 
 const vllmSelectorRef = ref()
 const isMinioEnabled = ref(false)
@@ -286,6 +332,25 @@ onMounted(async () => {
 watch(() => props.multimodal, (newVal) => {
   localMultimodal.value = { ...newVal }
 }, { deep: true })
+
+watch(() => props.questionGeneration, (newVal) => {
+  if (newVal) {
+    localQuestionGeneration.value = { ...newVal }
+  }
+}, { deep: true })
+
+// Handle question generation toggle
+const handleQuestionGenerationToggle = () => {
+  if (!localQuestionGeneration.value.enabled) {
+    localQuestionGeneration.value.questionCount = 3
+  }
+  emit('update:questionGeneration', localQuestionGeneration.value)
+}
+
+// Handle question generation config change
+const handleQuestionGenerationChange = () => {
+  emit('update:questionGeneration', localQuestionGeneration.value)
+}
 
 // Handle multimodal toggle
 const handleMultimodalToggle = () => {

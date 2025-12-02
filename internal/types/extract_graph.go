@@ -1,9 +1,11 @@
 package types
 
 const (
-	TypeChunkExtract    = "chunk:extract"
-	TypeDocumentProcess = "document:process" // 文档处理任务
-	TypeFAQImport       = "faq:import"       // FAQ导入任务
+	TypeChunkExtract        = "chunk:extract"
+	TypeDocumentProcess     = "document:process"     // 文档处理任务
+	TypeFAQImport           = "faq:import"           // FAQ导入任务
+	TypeQuestionGeneration  = "question:generation"  // 问题生成任务
+	TypeSummaryGeneration   = "summary:generation"   // 摘要生成任务
 )
 
 // ExtractChunkPayload represents the extract chunk task payload
@@ -15,16 +17,18 @@ type ExtractChunkPayload struct {
 
 // DocumentProcessPayload represents the document process task payload
 type DocumentProcessPayload struct {
-	RequestId        string   `json:"request_id"`
-	TenantID         uint64   `json:"tenant_id"`
-	KnowledgeID      string   `json:"knowledge_id"`
-	KnowledgeBaseID  string   `json:"knowledge_base_id"`
-	FilePath         string   `json:"file_path,omitempty"` // 文件路径（文件导入时使用）
-	FileName         string   `json:"file_name,omitempty"` // 文件名（文件导入时使用）
-	FileType         string   `json:"file_type,omitempty"` // 文件类型（文件导入时使用）
-	URL              string   `json:"url,omitempty"`       // URL（URL导入时使用）
-	Passages         []string `json:"passages,omitempty"`  // 文本段落（文本导入时使用）
-	EnableMultimodel bool     `json:"enable_multimodel"`
+	RequestId                string   `json:"request_id"`
+	TenantID                 uint64   `json:"tenant_id"`
+	KnowledgeID              string   `json:"knowledge_id"`
+	KnowledgeBaseID          string   `json:"knowledge_base_id"`
+	FilePath                 string   `json:"file_path,omitempty"`  // 文件路径（文件导入时使用）
+	FileName                 string   `json:"file_name,omitempty"`  // 文件名（文件导入时使用）
+	FileType                 string   `json:"file_type,omitempty"`  // 文件类型（文件导入时使用）
+	URL                      string   `json:"url,omitempty"`        // URL（URL导入时使用）
+	Passages                 []string `json:"passages,omitempty"`   // 文本段落（文本导入时使用）
+	EnableMultimodel         bool     `json:"enable_multimodel"`
+	EnableQuestionGeneration bool     `json:"enable_question_generation"` // 是否启用问题生成
+	QuestionCount            int      `json:"question_count,omitempty"`   // 每个chunk生成的问题数量
 }
 
 // FAQImportPayload represents the FAQ import task payload
@@ -35,6 +39,29 @@ type FAQImportPayload struct {
 	KnowledgeID string            `json:"knowledge_id"`
 	Entries     []FAQEntryPayload `json:"entries"`
 	Mode        string            `json:"mode"`
+}
+
+// QuestionGenerationPayload represents the question generation task payload
+type QuestionGenerationPayload struct {
+	TenantID        uint64 `json:"tenant_id"`
+	KnowledgeBaseID string `json:"knowledge_base_id"`
+	KnowledgeID     string `json:"knowledge_id"`
+	QuestionCount   int    `json:"question_count"`
+}
+
+// SummaryGenerationPayload represents the summary generation task payload
+type SummaryGenerationPayload struct {
+	TenantID        uint64 `json:"tenant_id"`
+	KnowledgeBaseID string `json:"knowledge_base_id"`
+	KnowledgeID     string `json:"knowledge_id"`
+}
+
+// ChunkContext represents chunk content with surrounding context
+type ChunkContext struct {
+	ChunkID      string `json:"chunk_id"`
+	Content      string `json:"content"`
+	PrevContent  string `json:"prev_content,omitempty"`  // Previous chunk content for context
+	NextContent  string `json:"next_content,omitempty"`  // Next chunk content for context
 }
 
 // PromptTemplateStructured represents the prompt template structured

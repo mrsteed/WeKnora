@@ -67,6 +67,12 @@ func RunAsynqServer(params AsynqTaskParams) *asynq.ServeMux {
 	// Register FAQ import handler
 	mux.HandleFunc(types.TypeFAQImport, params.KnowledgeService.ProcessFAQImport)
 
+	// Register question generation handler
+	mux.HandleFunc(types.TypeQuestionGeneration, params.KnowledgeService.ProcessQuestionGeneration)
+
+	// Register summary generation handler
+	mux.HandleFunc(types.TypeSummaryGeneration, params.KnowledgeService.ProcessSummaryGeneration)
+
 	go func() {
 		// Start the server
 		if err := params.Server.Run(mux); err != nil {
