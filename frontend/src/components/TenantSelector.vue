@@ -109,8 +109,14 @@ const currentTenantId = computed(() => {
 
 const currentTenantName = computed(() => {
   if (!currentTenantId.value) return t('tenant.unknown')
+  // 首先从当前加载的租户列表中查找
   const tenant = tenants.value.find(t => t.id === currentTenantId.value)
   if (tenant) return tenant.name
+  // 如果是选中的租户，使用保存的租户名称
+  if (selectedTenantId.value && authStore.selectedTenantName) {
+    return authStore.selectedTenantName
+  }
+  // 最后使用默认租户名称
   return authStore.tenant?.name || t('tenant.unknown')
 })
 
@@ -153,10 +159,13 @@ const clearSearch = () => {
 }
 
 const selectTenant = (tenantId: number) => {
+  // 找到选中的租户信息
+  const selectedTenant = tenants.value.find(t => t.id === tenantId)
+  
   if (tenantId === defaultTenantId.value) {
-    authStore.setSelectedTenant(null)
+    authStore.setSelectedTenant(null, null)
   } else {
-    authStore.setSelectedTenant(tenantId)
+    authStore.setSelectedTenant(tenantId, selectedTenant?.name || null)
   }
   closeDropdown()
   MessagePlugin.success(t('tenant.switchSuccess'))

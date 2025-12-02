@@ -13,6 +13,7 @@ export const useAuthStore = defineStore('auth', () => {
   const knowledgeBases = ref<KnowledgeBaseInfo[]>([])
   const currentKnowledgeBase = ref<KnowledgeBaseInfo | null>(null)
   const selectedTenantId = ref<number | null>(null)
+  const selectedTenantName = ref<string | null>(null)
   const allTenants = ref<TenantInfoFromAPI[]>([])
 
   // 计算属性
@@ -79,12 +80,17 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  const setSelectedTenant = (tenantId: number | null) => {
+  const setSelectedTenant = (tenantId: number | null, tenantName: string | null = null) => {
     selectedTenantId.value = tenantId
+    selectedTenantName.value = tenantName
     if (tenantId !== null) {
       localStorage.setItem('weknora_selected_tenant_id', String(tenantId))
+      if (tenantName) {
+        localStorage.setItem('weknora_selected_tenant_name', tenantName)
+      }
     } else {
       localStorage.removeItem('weknora_selected_tenant_id')
+      localStorage.removeItem('weknora_selected_tenant_name')
     }
   }
 
@@ -106,6 +112,7 @@ export const useAuthStore = defineStore('auth', () => {
     knowledgeBases.value = []
     currentKnowledgeBase.value = null
     selectedTenantId.value = null
+    selectedTenantName.value = null
     allTenants.value = []
 
     // 清空localStorage
@@ -115,6 +122,8 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('weknora_refresh_token')
     localStorage.removeItem('weknora_knowledge_bases')
     localStorage.removeItem('weknora_current_kb')
+    localStorage.removeItem('weknora_selected_tenant_id')
+    localStorage.removeItem('weknora_selected_tenant_name')
 
   }
 
@@ -127,6 +136,7 @@ export const useAuthStore = defineStore('auth', () => {
     const storedKnowledgeBases = localStorage.getItem('weknora_knowledge_bases')
     const storedCurrentKb = localStorage.getItem('weknora_current_kb')
     const storedSelectedTenantId = localStorage.getItem('weknora_selected_tenant_id')
+    const storedSelectedTenantName = localStorage.getItem('weknora_selected_tenant_name')
 
     if (storedUser) {
       try {
@@ -173,9 +183,13 @@ export const useAuthStore = defineStore('auth', () => {
     if (storedSelectedTenantId) {
       try {
         selectedTenantId.value = Number(storedSelectedTenantId)
+        if (storedSelectedTenantName) {
+          selectedTenantName.value = storedSelectedTenantName
+        }
       } catch (e) {
         console.error('Failed to parse selected tenant ID', e)
         selectedTenantId.value = null
+        selectedTenantName.value = null
       }
     }
   }
@@ -192,6 +206,7 @@ export const useAuthStore = defineStore('auth', () => {
     knowledgeBases,
     currentKnowledgeBase,
     selectedTenantId,
+    selectedTenantName,
     allTenants,
     
     // 计算属性
