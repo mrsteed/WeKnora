@@ -105,6 +105,14 @@ type FAQSearchResponse struct {
 	Code    string     `json:"code,omitempty"`
 }
 
+// FAQEntryResponse wraps the single FAQ entry creation response.
+type FAQEntryResponse struct {
+	Success bool      `json:"success"`
+	Data    *FAQEntry `json:"data"`
+	Message string    `json:"message,omitempty"`
+	Code    string    `json:"code,omitempty"`
+}
+
 type faqSimpleResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message,omitempty"`
@@ -163,6 +171,23 @@ func (c *Client) UpsertFAQEntries(ctx context.Context,
 		return "", fmt.Errorf("missing task information in response")
 	}
 	return response.Data.TaskID, nil
+}
+
+// CreateFAQEntry creates a single FAQ entry synchronously.
+func (c *Client) CreateFAQEntry(ctx context.Context,
+	knowledgeBaseID string, payload *FAQEntryPayload,
+) (*FAQEntry, error) {
+	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/faq/entry", knowledgeBaseID)
+	resp, err := c.doRequest(ctx, http.MethodPost, path, payload, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response FAQEntryResponse
+	if err := parseResponse(resp, &response); err != nil {
+		return nil, err
+	}
+	return response.Data, nil
 }
 
 // UpdateFAQEntry updates a single FAQ entry.

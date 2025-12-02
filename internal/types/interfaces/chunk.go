@@ -47,6 +47,9 @@ type ChunkRepository interface {
 	// ListAllFAQChunksByKnowledgeID lists all FAQ chunks for a knowledge ID
 	// only ID and ContentHash fields for efficiency
 	ListAllFAQChunksByKnowledgeID(ctx context.Context, tenantID uint64, knowledgeID string) ([]*types.Chunk, error)
+	// ListAllFAQChunksWithMetadataByKnowledgeBaseID lists all FAQ chunks for a knowledge base ID
+	// returns ID and Metadata fields for duplicate question checking
+	ListAllFAQChunksWithMetadataByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) ([]*types.Chunk, error)
 }
 
 // ChunkService defines the interface for chunk service operations

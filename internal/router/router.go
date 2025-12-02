@@ -162,6 +162,7 @@ func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler) {
 	{
 		faq.GET("/entries", handler.ListEntries)
 		faq.POST("/entries", handler.UpsertEntries)
+		faq.POST("/entry", handler.CreateEntry)
 		faq.PUT("/entries/:entry_id", handler.UpdateEntry)
 		faq.PUT("/entries/status", handler.UpdateEntryStatusBatch)
 		faq.PUT("/entries/tags", handler.UpdateEntryTagBatch)

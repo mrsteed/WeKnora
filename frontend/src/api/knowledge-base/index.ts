@@ -154,6 +154,10 @@ export function upsertFAQEntries(kbId: string, data: { entries: any[]; mode: 'ap
   return post(`/api/v1/knowledge-bases/${kbId}/faq/entries`, data);
 }
 
+export function createFAQEntry(kbId: string, data: any) {
+  return post(`/api/v1/knowledge-bases/${kbId}/faq/entry`, data);
+}
+
 export function updateFAQEntry(kbId: string, entryId: string, data: any) {
   return put(`/api/v1/knowledge-bases/${kbId}/faq/entries/${entryId}`, data);
 }

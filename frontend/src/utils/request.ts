@@ -168,7 +168,16 @@ instance.interceptors.response.use(
     
     const { status, data } = error.response;
     // 将HTTP状态码一并抛出，方便上层判断401等场景
-    return Promise.reject({ status, ...(typeof data === 'object' ? data : { message: data }) });
+    // 后端返回格式: { success: false, error: { code, message, details } }
+    // 提取 error.message 作为顶层 message，方便前端使用 error?.message 获取
+    const errorMessage = typeof data === 'object' && data?.error?.message 
+      ? data.error.message 
+      : (typeof data === 'object' ? data?.message : data);
+    return Promise.reject({ 
+      status, 
+      message: errorMessage,
+      ...(typeof data === 'object' ? data : {}) 
+    });
   }
 );
 

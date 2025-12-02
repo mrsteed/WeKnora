@@ -79,6 +79,8 @@ type KnowledgeService interface {
 	// UpsertFAQEntries imports or appends FAQ entries asynchronously.
 	// Returns task ID (Knowledge ID) for tracking import progress.
 	UpsertFAQEntries(ctx context.Context, kbID string, payload *types.FAQBatchUpsertPayload) (string, error)
+	// CreateFAQEntry creates a single FAQ entry synchronously.
+	CreateFAQEntry(ctx context.Context, kbID string, payload *types.FAQEntryPayload) (*types.FAQEntry, error)
 	// UpdateFAQEntry updates a single FAQ entry.
 	UpdateFAQEntry(ctx context.Context, kbID string, entryID string, payload *types.FAQEntryPayload) error
 	// UpdateFAQEntryStatusBatch updates enable status for FAQ entries in batch.

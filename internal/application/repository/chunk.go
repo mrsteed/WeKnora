@@ -251,3 +251,45 @@ func (r *chunkRepository) ListAllFAQChunksByKnowledgeID(
 
 	return allChunks, nil
 }
+
+// ListAllFAQChunksWithMetadataByKnowledgeBaseID lists all FAQ chunks for a knowledge base ID
+// Returns ID and Metadata fields for duplicate question checking
+// Uses batch query to handle large datasets
+func (r *chunkRepository) ListAllFAQChunksWithMetadataByKnowledgeBaseID(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+) ([]*types.Chunk, error) {
+	const batchSize = 1000 // 每批查询1000条
+	var allChunks []*types.Chunk
+	offset := 0
+
+	for {
+		var batchChunks []*types.Chunk
+		if err := r.db.WithContext(ctx).
+			Select("id, metadata").
+			Where("tenant_id = ? AND knowledge_base_id = ? AND chunk_type = ? AND status = ?",
+				tenantID, kbID, types.ChunkTypeFAQ, types.ChunkStatusIndexed).
+			Offset(offset).
+			Limit(batchSize).
+			Find(&batchChunks).Error; err != nil {
+			return nil, err
+		}
+
+		// 如果没有查询到数据，说明已经查询完毕
+		if len(batchChunks) == 0 {
+			break
+		}
+
+		allChunks = append(allChunks, batchChunks...)
+
+		// 如果返回的数据少于批次大小，说明已经是最后一批
+		if len(batchChunks) < batchSize {
+			break
+		}
+
+		offset += batchSize
+	}
+
+	return allChunks, nil
+}

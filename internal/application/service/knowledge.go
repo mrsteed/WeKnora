@@ -2065,16 +2065,88 @@ func (s *knowledgeService) UpsertFAQEntries(ctx context.Context,
 }
 
 // calculateAppendOperations 计算Append模式下需要处理的条目，跳过已存在且内容相同的条目
+// 同时过滤掉标准问或相似问与同批次或已有知识库中重复的条目
 func (s *knowledgeService) calculateAppendOperations(ctx context.Context,
-	tenantID uint64, knowledgeID string, entries []types.FAQEntryPayload,
+	tenantID uint64, kbID string, entries []types.FAQEntryPayload,
 ) ([]types.FAQEntryPayload, int, error) {
 	if len(entries) == 0 {
 		return []types.FAQEntryPayload{}, 0, nil
 	}
-	return entries, 0, nil
+
+	// 1. 查询知识库中已有的所有FAQ chunks的metadata
+	existingChunks, err := s.chunkRepo.ListAllFAQChunksWithMetadataByKnowledgeBaseID(ctx, tenantID, kbID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list existing FAQ chunks: %w", err)
+	}
+
+	// 2. 构建已存在的标准问和相似问集合
+	existingQuestions := make(map[string]bool)
+	for _, chunk := range existingChunks {
+		meta, err := chunk.FAQMetadata()
+		if err != nil || meta == nil {
+			continue
+		}
+		// 添加标准问
+		if meta.StandardQuestion != "" {
+			existingQuestions[meta.StandardQuestion] = true
+		}
+		// 添加相似问
+		for _, q := range meta.SimilarQuestions {
+			if q != "" {
+				existingQuestions[q] = true
+			}
+		}
+	}
+
+	// 3. 构建当前批次的标准问和相似问集合（用于批次内去重）
+	batchQuestions := make(map[string]bool)
+	entriesToProcess := make([]types.FAQEntryPayload, 0, len(entries))
+	skippedCount := 0
+
+	for _, entry := range entries {
+		meta, err := sanitizeFAQEntryPayload(&entry)
+		if err != nil {
+			// 跳过无效条目
+			skippedCount++
+			logger.Warnf(ctx, "Skipping invalid FAQ entry: %v", err)
+			continue
+		}
+
+		// 检查标准问是否重复（与已有或同批次）
+		if existingQuestions[meta.StandardQuestion] || batchQuestions[meta.StandardQuestion] {
+			skippedCount++
+			logger.Infof(ctx, "Skipping FAQ entry with duplicate standard question: %s", meta.StandardQuestion)
+			continue
+		}
+
+		// 检查相似问是否有重复（与已有或同批次）
+		hasDuplicateSimilar := false
+		for _, q := range meta.SimilarQuestions {
+			if existingQuestions[q] || batchQuestions[q] {
+				hasDuplicateSimilar = true
+				logger.Infof(ctx, "Skipping FAQ entry with duplicate similar question: %s (standard: %s)", q, meta.StandardQuestion)
+				break
+			}
+		}
+		if hasDuplicateSimilar {
+			skippedCount++
+			continue
+		}
+
+		// 将当前条目的标准问和相似问加入批次集合
+		batchQuestions[meta.StandardQuestion] = true
+		for _, q := range meta.SimilarQuestions {
+			batchQuestions[q] = true
+		}
+
+		entriesToProcess = append(entriesToProcess, entry)
+	}
+
+	return entriesToProcess, skippedCount, nil
 }
 
 // calculateReplaceOperations 计算Replace模式下需要删除、创建、更新的条目
+// 同时过滤掉同批次内标准问或相似问重复的条目
 func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 	tenantID uint64, knowledgeID string, newEntries []types.FAQEntryPayload,
 ) ([]types.FAQEntryPayload, []*types.Chunk, int, error) {
@@ -2082,18 +2154,52 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 	type entryWithHash struct {
 		entry types.FAQEntryPayload
 		hash  string
+		meta  *types.FAQChunkMetadata
 	}
 	entriesWithHash := make([]entryWithHash, 0, len(newEntries))
 	newHashSet := make(map[string]bool)
+	// 用于批次内标准问和相似问去重
+	batchQuestions := make(map[string]bool)
+	batchSkippedCount := 0
 
 	for _, entry := range newEntries {
 		meta, err := sanitizeFAQEntryPayload(&entry)
 		if err != nil {
-			return nil, nil, 0, fmt.Errorf("failed to sanitize entry: %w", err)
+			batchSkippedCount++
+			logger.Warnf(ctx, "Skipping invalid FAQ entry in replace mode: %v", err)
+			continue
 		}
+
+		// 检查标准问是否在同批次中重复
+		if batchQuestions[meta.StandardQuestion] {
+			batchSkippedCount++
+			logger.Infof(ctx, "Skipping FAQ entry with duplicate standard question in batch: %s", meta.StandardQuestion)
+			continue
+		}
+
+		// 检查相似问是否在同批次中重复
+		hasDuplicateSimilar := false
+		for _, q := range meta.SimilarQuestions {
+			if batchQuestions[q] {
+				hasDuplicateSimilar = true
+				logger.Infof(ctx, "Skipping FAQ entry with duplicate similar question in batch: %s (standard: %s)", q, meta.StandardQuestion)
+				break
+			}
+		}
+		if hasDuplicateSimilar {
+			batchSkippedCount++
+			continue
+		}
+
+		// 将当前条目的标准问和相似问加入批次集合
+		batchQuestions[meta.StandardQuestion] = true
+		for _, q := range meta.SimilarQuestions {
+			batchQuestions[q] = true
+		}
+
 		hash := types.CalculateFAQContentHash(meta)
 		if hash != "" {
-			entriesWithHash = append(entriesWithHash, entryWithHash{entry: entry, hash: hash})
+			entriesWithHash = append(entriesWithHash, entryWithHash{entry: entry, hash: hash, meta: meta})
 			newHashSet[hash] = true
 		}
 	}
@@ -2126,7 +2232,7 @@ func (s *knowledgeService) calculateReplaceOperations(ctx context.Context,
 
 	// 计算需要创建的条目（利用已经计算好的hash，避免重复计算）
 	entriesToProcess := make([]types.FAQEntryPayload, 0, len(entriesWithHash))
-	skippedCount := 0
+	skippedCount := batchSkippedCount
 
 	for _, ewh := range entriesWithHash {
 		if existingHashMap[ewh.hash] != nil {
@@ -2220,7 +2326,7 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 		}
 	} else {
 		// Append模式：查询已存在的条目，跳过未变化的
-		entriesToProcess, skippedCount, err = s.calculateAppendOperations(ctx, tenantID, faqKnowledge.ID, payload.Entries)
+		entriesToProcess, skippedCount, err = s.calculateAppendOperations(ctx, tenantID, kb.ID, payload.Entries)
 		if err != nil {
 			return fmt.Errorf("failed to calculate append operations: %w", err)
 		}
@@ -2385,6 +2491,100 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 	return nil
 }
 
+// CreateFAQEntry creates a single FAQ entry synchronously.
+func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
+	kbID string, payload *types.FAQEntryPayload,
+) (*types.FAQEntry, error) {
+	if payload == nil {
+		return nil, werrors.NewBadRequestError("请求体不能为空")
+	}
+
+	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return nil, err
+	}
+	kb.EnsureDefaults()
+
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+
+	// 验证并清理输入
+	meta, err := sanitizeFAQEntryPayload(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	// 检查标准问和相似问是否与其他条目重复
+	if err := s.checkFAQQuestionDuplicate(ctx, tenantID, kb.ID, "", meta); err != nil {
+		return nil, err
+	}
+
+	// 确保FAQ Knowledge存在
+	faqKnowledge, err := s.ensureFAQKnowledge(ctx, tenantID, kb)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ensure FAQ knowledge: %w", err)
+	}
+
+	// 获取索引模式
+	indexMode := types.FAQIndexModeQuestionOnly
+	if kb.FAQConfig != nil && kb.FAQConfig.IndexMode != "" {
+		indexMode = kb.FAQConfig.IndexMode
+	}
+
+	// 获取embedding模型
+	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get embedding model: %w", err)
+	}
+
+	// 创建chunk
+	isEnabled := true
+	if payload.IsEnabled != nil {
+		isEnabled = *payload.IsEnabled
+	}
+
+	chunk := &types.Chunk{
+		ID:              uuid.New().String(),
+		TenantID:        tenantID,
+		KnowledgeID:     faqKnowledge.ID,
+		KnowledgeBaseID: kb.ID,
+		Content:         buildFAQChunkContent(meta, indexMode),
+		IsEnabled:       isEnabled,
+		ChunkType:       types.ChunkTypeFAQ,
+		TagID:           payload.TagID,
+		Status:          int(types.ChunkStatusStored),
+	}
+
+	if err := chunk.SetFAQMetadata(meta); err != nil {
+		return nil, fmt.Errorf("failed to set FAQ metadata: %w", err)
+	}
+
+	// 保存chunk
+	if err := s.chunkService.CreateChunks(ctx, []*types.Chunk{chunk}); err != nil {
+		return nil, fmt.Errorf("failed to create chunk: %w", err)
+	}
+
+	// 索引chunk
+	if err := s.indexFAQChunks(ctx, kb, faqKnowledge, []*types.Chunk{chunk}, embeddingModel, true, false); err != nil {
+		// 如果索引失败，删除已创建的chunk
+		_ = s.chunkService.DeleteChunk(ctx, chunk.ID)
+		return nil, fmt.Errorf("failed to index chunk: %w", err)
+	}
+
+	// 更新chunk状态为已索引
+	chunk.Status = int(types.ChunkStatusIndexed)
+	if err := s.chunkService.UpdateChunk(ctx, chunk); err != nil {
+		return nil, fmt.Errorf("failed to update chunk status: %w", err)
+	}
+
+	// 转换为FAQEntry返回
+	entry, err := s.chunkToFAQEntry(chunk, kb)
+	if err != nil {
+		return nil, err
+	}
+
+	return entry, nil
+}
+
 // UpdateFAQEntry updates a single FAQ entry.
 func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 	kbID string, entryID string, payload *types.FAQEntryPayload,
@@ -2412,6 +2612,12 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 	if err != nil {
 		return err
 	}
+
+	// 检查标准问和相似问是否与其他条目重复
+	if err := s.checkFAQQuestionDuplicate(ctx, tenantID, kb.ID, entryID, meta); err != nil {
+		return err
+	}
+
 	if existing, err := chunk.FAQMetadata(); err == nil && existing != nil {
 		meta.Version = existing.Version + 1
 	}
@@ -3093,6 +3299,65 @@ func buildFAQChunkContent(meta *types.FAQChunkMetadata, mode types.FAQIndexMode)
 		}
 	}
 	return builder.String()
+}
+
+// checkFAQQuestionDuplicate 检查标准问和相似问是否与知识库中其他条目重复
+// excludeChunkID 用于排除当前正在编辑的条目（更新时使用）
+func (s *knowledgeService) checkFAQQuestionDuplicate(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+	excludeChunkID string,
+	meta *types.FAQChunkMetadata,
+) error {
+	// 查询知识库中已有的所有FAQ chunks的metadata
+	existingChunks, err := s.chunkRepo.ListAllFAQChunksWithMetadataByKnowledgeBaseID(ctx, tenantID, kbID)
+	if err != nil {
+		return fmt.Errorf("failed to list existing FAQ chunks: %w", err)
+	}
+
+	// 构建已存在的标准问和相似问集合
+	for _, chunk := range existingChunks {
+		// 排除当前正在编辑的条目
+		if chunk.ID == excludeChunkID {
+			continue
+		}
+
+		existingMeta, err := chunk.FAQMetadata()
+		if err != nil || existingMeta == nil {
+			continue
+		}
+
+		// 检查标准问是否重复
+		if existingMeta.StandardQuestion == meta.StandardQuestion {
+			return werrors.NewBadRequestError(fmt.Sprintf("标准问「%s」已存在", meta.StandardQuestion))
+		}
+
+		// 检查当前标准问是否与已有相似问重复
+		for _, q := range existingMeta.SimilarQuestions {
+			if q == meta.StandardQuestion {
+				return werrors.NewBadRequestError(fmt.Sprintf("标准问「%s」与已有相似问重复", meta.StandardQuestion))
+			}
+		}
+
+		// 检查当前相似问是否与已有标准问重复
+		for _, q := range meta.SimilarQuestions {
+			if q == existingMeta.StandardQuestion {
+				return werrors.NewBadRequestError(fmt.Sprintf("相似问「%s」与已有标准问重复", q))
+			}
+		}
+
+		// 检查当前相似问是否与已有相似问重复
+		for _, q := range meta.SimilarQuestions {
+			for _, existingQ := range existingMeta.SimilarQuestions {
+				if q == existingQ {
+					return werrors.NewBadRequestError(fmt.Sprintf("相似问「%s」已存在", q))
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func sanitizeFAQEntryPayload(payload *types.FAQEntryPayload) (*types.FAQChunkMetadata, error) {

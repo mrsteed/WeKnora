@@ -1535,6 +1535,7 @@ curl --location --request DELETE 'http://localhost:8080/api/v1/knowledge-bases/k
 | ------ | ------------------------------------------- | ------------------------ |
 | GET    | `/knowledge-bases/:id/faq/entries`          | 获取FAQ条目列表          |
 | POST   | `/knowledge-bases/:id/faq/entries`          | 批量导入FAQ条目          |
+| POST   | `/knowledge-bases/:id/faq/entry`            | 创建单个FAQ条目          |
 | PUT    | `/knowledge-bases/:id/faq/entries/:entry_id`| 更新单个FAQ条目          |
 | PUT    | `/knowledge-bases/:id/faq/entries/status`   | 批量更新FAQ启用状态      |
 | PUT    | `/knowledge-bases/:id/faq/entries/tags`     | 批量更新FAQ标签          |
@@ -1630,6 +1631,69 @@ curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/en
 ```
 
 注：批量导入为异步操作，返回任务ID用于追踪进度。
+
+#### POST `/knowledge-bases/:id/faq/entry` - 创建单个FAQ条目
+
+同步创建单个FAQ条目，适用于单条录入场景。会自动检查标准问和相似问是否与已有FAQ重复。
+
+**请求参数**:
+- `standard_question`: 标准问（必填）
+- `similar_questions`: 相似问数组（可选）
+- `negative_questions`: 反例问题数组（可选）
+- `answers`: 答案数组（必填）
+- `tag_id`: 标签ID（可选）
+- `is_enabled`: 是否启用（可选，默认true）
+
+**请求**:
+
+```curl
+curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entry' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json' \
+--data '{
+    "standard_question": "如何联系客服？",
+    "similar_questions": ["客服电话", "在线客服"],
+    "answers": ["您可以通过拨打400-xxx-xxxx联系我们的客服。"],
+    "tag_id": "tag-00000001",
+    "is_enabled": true
+}'
+```
+
+**响应**:
+
+```json
+{
+    "data": {
+        "id": "faq-00000001",
+        "chunk_id": "chunk-00000001",
+        "knowledge_id": "knowledge-00000001",
+        "knowledge_base_id": "kb-00000001",
+        "tag_id": "tag-00000001",
+        "is_enabled": true,
+        "standard_question": "如何联系客服？",
+        "similar_questions": ["客服电话", "在线客服"],
+        "negative_questions": [],
+        "answers": ["您可以通过拨打400-xxx-xxxx联系我们的客服。"],
+        "index_mode": "hybrid",
+        "chunk_type": "faq",
+        "created_at": "2025-08-12T10:00:00+08:00",
+        "updated_at": "2025-08-12T10:00:00+08:00"
+    },
+    "success": true
+}
+```
+
+**错误响应**（标准问或相似问重复时）:
+
+```json
+{
+    "success": false,
+    "error": {
+        "code": "BAD_REQUEST",
+        "message": "标准问与已有FAQ重复"
+    }
+}
+```
 
 #### PUT `/knowledge-bases/:id/faq/entries/:entry_id` - 更新单个FAQ条目
 

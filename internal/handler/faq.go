@@ -73,6 +73,29 @@ func (h *FAQHandler) UpsertEntries(c *gin.Context) {
 	})
 }
 
+// CreateEntry creates a single FAQ entry synchronously.
+func (h *FAQHandler) CreateEntry(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req types.FAQEntryPayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to bind FAQ entry payload", err)
+		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		return
+	}
+
+	entry, err := h.knowledgeService.CreateFAQEntry(ctx, secutils.SanitizeForLog(c.Param("id")), &req)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    entry,
+	})
+}
+
 // UpdateEntry updates a single FAQ entry.
 func (h *FAQHandler) UpdateEntry(c *gin.Context) {
 	ctx := c.Request.Context()

@@ -1087,6 +1087,7 @@ import { useRouter } from 'vue-router'
 import {
   listFAQEntries,
   upsertFAQEntries,
+  createFAQEntry,
   updateFAQEntry,
   updateFAQEntryStatusBatch,
   deleteFAQEntries,
@@ -1908,10 +1909,7 @@ const handleSubmitEntry = async () => {
       tag_id: editorForm.tag_id || '',
     }
     if (editorMode.value === 'create') {
-      await upsertFAQEntries(props.kbId, {
-        entries: [payload],
-        mode: 'append',
-      })
+      await createFAQEntry(props.kbId, payload)
       MessagePlugin.success(t('knowledgeEditor.messages.createSuccess'))
     } else if (currentEntryId.value) {
       await updateFAQEntry(props.kbId, currentEntryId.value, payload)
