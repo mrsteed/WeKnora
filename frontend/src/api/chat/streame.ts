@@ -46,6 +46,22 @@ export function useStream() {
       return;
     }
 
+    // 获取跨租户访问请求头
+    const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
+    const defaultTenantId = localStorage.getItem('weknora_tenant');
+    let tenantIdHeader: string | null = null;
+    if (selectedTenantId) {
+      try {
+        const defaultTenant = defaultTenantId ? JSON.parse(defaultTenantId) : null;
+        const defaultId = defaultTenant?.id ? String(defaultTenant.id) : null;
+        if (selectedTenantId !== defaultId) {
+          tenantIdHeader = selectedTenantId;
+        }
+      } catch (e) {
+        console.error('Failed to parse tenant info', e);
+      }
+    }
+
     // Validate knowledge_base_ids for agent-chat requests
     // Note: knowledge_base_ids can be empty if user hasn't selected any, but we allow it
     // The backend will handle the case when no knowledge bases are selected
@@ -88,6 +104,7 @@ export function useStream() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
           "X-Request-ID": `${generateRandomString(12)}`,
+          ...(tenantIdHeader ? { "X-Tenant-ID": tenantIdHeader } : {}),
         },
         body:
           params.method == "POST"

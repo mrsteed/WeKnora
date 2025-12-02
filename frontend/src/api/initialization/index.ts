@@ -376,6 +376,21 @@ export function testMultimodalFunction(testData: {
             headers['Authorization'] = `Bearer ${token}`;
         }
 
+        // 添加跨租户访问请求头（如果选择了其他租户）
+        const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
+        const defaultTenantId = localStorage.getItem('weknora_tenant');
+        if (selectedTenantId) {
+            try {
+                const defaultTenant = defaultTenantId ? JSON.parse(defaultTenantId) : null;
+                const defaultId = defaultTenant?.id ? String(defaultTenant.id) : null;
+                if (selectedTenantId !== defaultId) {
+                    headers['X-Tenant-ID'] = selectedTenantId;
+                }
+            } catch (e) {
+                console.error('Failed to parse tenant info', e);
+            }
+        }
+
         // 使用原生fetch因为需要发送FormData
         fetch('/api/v1/initialization/multimodal/test', {
             method: 'POST',
