@@ -1311,12 +1311,14 @@ curl --location 'http://localhost:8080/api/v1/chunks/4c4e7c1a-09cf-485b-a7b5-24b
     "data": [
         {
             "id": "df10b37d-cd05-4b14-ba8a-e1bd0eb3bbd7",
-            "tenant_id": 0,
+            "tenant_id": 1,
             "knowledge_id": "4c4e7c1a-09cf-485b-a7b5-24b8cdc5acf5",
             "knowledge_base_id": "kb-00000001",
+            "tag_id": "",
             "content": "彗星xxxx",
             "chunk_index": 0,
             "is_enabled": true,
+            "status": 2,
             "start_at": 0,
             "end_at": 964,
             "pre_chunk_id": "",
@@ -1325,9 +1327,11 @@ curl --location 'http://localhost:8080/api/v1/chunks/4c4e7c1a-09cf-485b-a7b5-24b
             "parent_chunk_id": "",
             "relation_chunks": null,
             "indirect_relation_chunks": null,
+            "metadata": null,
+            "content_hash": "",
             "image_info": "",
-            "created_at": "0001-01-01T00:00:00Z",
-            "updated_at": "0001-01-01T00:00:00Z",
+            "created_at": "2025-08-12T11:52:36.168632+08:00",
+            "updated_at": "2025-08-12T11:52:53.376871+08:00",
             "deleted_at": null
         }
     ],
@@ -1928,6 +1932,8 @@ curl --location 'http://localhost:8080/api/v1/sessions' \
             "seed": 0,
             "max_completion_tokens": 2048
         },
+        "agent_config": null,
+        "context_config": null,
         "created_at": "2025-08-12T12:26:19.611616669+08:00",
         "updated_at": "2025-08-12T12:26:19.611616919+08:00",
         "deleted_at": null
@@ -1981,6 +1987,8 @@ curl --location 'http://localhost:8080/api/v1/sessions/ceb9babb-1e30-41d7-817d-f
             "seed": 0,
             "max_completion_tokens": 2048
         },
+        "agent_config": null,
+        "context_config": null,
         "created_at": "2025-08-12T10:24:38.308596+08:00",
         "updated_at": "2025-08-12T10:25:41.317761+08:00",
         "deleted_at": null
@@ -2322,6 +2330,7 @@ curl --location --request GET 'http://localhost:8080/api/v1/messages/ceb9babb-1e
                     "knowledge_source": ""
                 }
             ],
+            "agent_steps": [],
             "is_completed": true,
             "created_at": "2025-08-12T10:24:38.370548+08:00",
             "updated_at": "2025-08-12T10:25:40.416382+08:00",
@@ -2334,6 +2343,7 @@ curl --location --request GET 'http://localhost:8080/api/v1/messages/ceb9babb-1e
             "content": "彗尾的形状",
             "role": "user",
             "knowledge_references": [],
+            "agent_steps": [],
             "is_completed": true,
             "created_at": "2025-08-12T14:30:39.732246+08:00",
             "updated_at": "2025-08-12T14:30:39.733277+08:00",
@@ -2389,6 +2399,7 @@ curl --location --request GET 'http://localhost:8080/api/v1/messages/ceb9babb-1e
                     "knowledge_source": ""
                 }
             ],
+            "agent_steps": [],
             "is_completed": true,
             "created_at": "2025-08-12T14:30:39.735108+08:00",
             "updated_at": "2025-08-12T14:31:17.829926+08:00",

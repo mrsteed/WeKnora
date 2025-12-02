@@ -24,7 +24,7 @@ type RetrieverEngineParams struct {
 
 // Tenant represents tenant information in the system
 type Tenant struct {
-	ID uint `yaml:"id"                json:"id"                gorm:"primaryKey"`
+	ID uint64 `yaml:"id"                json:"id"                gorm:"primaryKey"`
 	// Tenant name
 	Name string `yaml:"name"              json:"name"`
 	// Tenant description
@@ -37,6 +37,10 @@ type Tenant struct {
 	RetrieverEngines RetrieverEngines `yaml:"retriever_engines" json:"retriever_engines" gorm:"type:json"`
 	// Business/department information
 	Business string `yaml:"business"          json:"business"`
+	// Storage quota (Bytes), default is 10GB
+	StorageQuota int64 `yaml:"storage_quota"     json:"storage_quota"     gorm:"default:10737418240"`
+	// Storage used (Bytes)
+	StorageUsed int64 `yaml:"storage_used"      json:"storage_used"      gorm:"default:0"`
 	// Creation timestamp
 	CreatedAt time.Time `yaml:"created_at"        json:"created_at"`
 	// Last update timestamp

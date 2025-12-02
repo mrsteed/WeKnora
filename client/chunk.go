@@ -14,23 +14,28 @@ import (
 // Chunk represents the information about a document chunk
 // Chunks are the basic units of storage and indexing in the knowledge base
 type Chunk struct {
-	ID              string    `json:"id"`               // Unique identifier of the chunk
-	KnowledgeID     string    `json:"knowledge_id"`     // Identifier of the parent knowledge
-	TenantID        uint      `json:"tenant_id"`        // Tenant ID
-	Content         string    `json:"content"`          // Text content of the chunk
-	Embedding       []float32 `json:"embedding"`        // Vector embedding representation
-	ChunkIndex      int       `json:"chunk_index"`      // Index position of chunk in the document
-	TotalChunks     int       `json:"total_chunks"`     // Total number of chunks in the document
-	IsEnabled       bool      `json:"is_enabled"`       // Whether this chunk is enabled
-	StartAt         int       `json:"start_at"`         // Starting position in original text
-	EndAt           int       `json:"end_at"`           // Ending position in original text
-	VectorStoreID   string    `json:"vector_store_id"`  // Vector storage ID
-	KeywordStoreID  string    `json:"keyword_store_id"` // Keyword storage ID
-	EmbeddingStatus int       `json:"embedding_status"` // Embedding status: 0-unprocessed, 1-processing, 2-completed
-	ChunkType       string    `json:"chunk_type"`
-	ImageInfo       string    `json:"image_info"`
-	CreatedAt       string    `json:"created_at"` // Creation time
-	UpdatedAt       string    `json:"updated_at"` // Last update time
+	ID                     string `json:"id"`                        // Unique identifier of the chunk
+	KnowledgeID            string `json:"knowledge_id"`              // Identifier of the parent knowledge
+	KnowledgeBaseID        string `json:"knowledge_base_id"`         // ID of the knowledge base
+	TenantID               uint64 `json:"tenant_id"`                 // Tenant ID
+	TagID                  string `json:"tag_id"`                    // Optional tag ID for categorization
+	Content                string `json:"content"`                   // Text content of the chunk
+	ChunkIndex             int    `json:"chunk_index"`               // Index position of chunk in the document
+	IsEnabled              bool   `json:"is_enabled"`                // Whether this chunk is enabled
+	Status                 int    `json:"status"`                    // Status of the chunk
+	StartAt                int    `json:"start_at"`                  // Starting position in original text
+	EndAt                  int    `json:"end_at"`                    // Ending position in original text
+	PreChunkID             string `json:"pre_chunk_id"`              // Previous chunk ID
+	NextChunkID            string `json:"next_chunk_id"`             // Next chunk ID
+	ChunkType              string `json:"chunk_type"`                // Chunk type (text, image_ocr, etc.)
+	ParentChunkID          string `json:"parent_chunk_id"`           // Parent chunk ID
+	RelationChunks         any    `json:"relation_chunks"`           // Relation chunk IDs
+	IndirectRelationChunks any    `json:"indirect_relation_chunks"`  // Indirect relation chunk IDs
+	Metadata               any    `json:"metadata"`                  // Metadata for the chunk
+	ContentHash            string `json:"content_hash"`              // Content hash for quick matching
+	ImageInfo              string `json:"image_info"`                // Image information
+	CreatedAt              string `json:"created_at"`                // Creation time
+	UpdatedAt              string `json:"updated_at"`                // Last update time
 }
 
 // ChunkResponse represents the response for a single chunk
@@ -59,6 +64,7 @@ type UpdateChunkRequest struct {
 	IsEnabled  bool      `json:"is_enabled"`  // Whether enabled
 	StartAt    int       `json:"start_at"`    // Start position
 	EndAt      int       `json:"end_at"`      // End position
+	ImageInfo  string    `json:"image_info"`  // Image information
 }
 
 // ListKnowledgeChunks lists all chunks under a knowledge document

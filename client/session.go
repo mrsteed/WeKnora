@@ -49,41 +49,52 @@ type SummaryConfig struct {
 	MaxCompletionTokens int     `json:"max_completion_tokens"`
 }
 
-// AgentConfig defines session-level agent configuration (matches server struct).
-type AgentConfig struct {
+// SessionAgentConfig defines session-level agent configuration (matches server struct).
+// Sessions only store Enabled and KnowledgeBases; other configs are read from Tenant at runtime
+type SessionAgentConfig struct {
 	AgentModeEnabled bool     `json:"agent_mode_enabled"` // Whether agent mode is enabled for this session
 	WebSearchEnabled bool     `json:"web_search_enabled"` // Whether web search is enabled for this session
-	KnowledgeBases   []string `json:"knowledge_bases"`    // Accessible knowledge base IDs
+	KnowledgeBases   []string `json:"knowledge_bases"`    // Accessible knowledge base IDs for this session
 }
 
 // CreateSessionRequest session creation request
 type CreateSessionRequest struct {
-	KnowledgeBaseID string           `json:"knowledge_base_id"` // Associated knowledge base ID (optional in agent mode)
-	SessionStrategy *SessionStrategy `json:"session_strategy"`  // Session strategy
-	AgentConfig     *AgentConfig     `json:"agent_config"`      // Agent configuration (optional, for agent mode)
+	KnowledgeBaseID string              `json:"knowledge_base_id"` // Associated knowledge base ID (optional in agent mode)
+	SessionStrategy *SessionStrategy    `json:"session_strategy"`  // Session strategy
+	AgentConfig     *SessionAgentConfig `json:"agent_config"`      // Agent configuration (optional, for agent mode)
+}
+
+// ContextConfig configures LLM context management
+type ContextConfig struct {
+	MaxTokens           int    `json:"max_tokens"`            // Maximum tokens allowed in LLM context
+	CompressionStrategy string `json:"compression_strategy"`  // Compression strategy: "sliding_window" or "smart"
+	RecentMessageCount  int    `json:"recent_message_count"`  // Number of recent messages to keep
+	SummarizeThreshold  int    `json:"summarize_threshold"`   // Number of messages before summarization
 }
 
 // Session session information
 type Session struct {
-	ID                string         `json:"id"`
-	TenantID          uint           `json:"tenant_id"`
-	KnowledgeBaseID   string         `json:"knowledge_base_id"`
-	Title             string         `json:"title"`
-	MaxRounds         int            `json:"max_rounds"`
-	EnableRewrite     bool           `json:"enable_rewrite"`
-	FallbackStrategy  string         `json:"fallback_strategy"`
-	FallbackResponse  string         `json:"fallback_response"`
-	EmbeddingTopK     int            `json:"embedding_top_k"`
-	KeywordThreshold  float64        `json:"keyword_threshold"`
-	VectorThreshold   float64        `json:"vector_threshold"`
-	RerankModelID     string         `json:"rerank_model_id"`
-	RerankTopK        int            `json:"rerank_top_k"`
-	RerankThreshold   float64        `json:"reranking_threshold"` // Reranking threshold
-	SummaryModelID    string         `json:"summary_model_id"`
-	SummaryParameters *SummaryConfig `json:"summary_parameters"`
-	AgentConfig       *AgentConfig   `json:"agent_config"` // Agent configuration (optional)
-	CreatedAt         string         `json:"created_at"`
-	UpdatedAt         string         `json:"updated_at"`
+	ID                string              `json:"id"`
+	TenantID          uint64              `json:"tenant_id"`
+	KnowledgeBaseID   string              `json:"knowledge_base_id"`
+	Title             string              `json:"title"`
+	Description       string              `json:"description"`
+	MaxRounds         int                 `json:"max_rounds"`
+	EnableRewrite     bool                `json:"enable_rewrite"`
+	FallbackStrategy  string              `json:"fallback_strategy"`
+	FallbackResponse  string              `json:"fallback_response"`
+	EmbeddingTopK     int                 `json:"embedding_top_k"`
+	KeywordThreshold  float64             `json:"keyword_threshold"`
+	VectorThreshold   float64             `json:"vector_threshold"`
+	RerankModelID     string              `json:"rerank_model_id"`
+	RerankTopK        int                 `json:"rerank_top_k"`
+	RerankThreshold   float64             `json:"rerank_threshold"` // Reranking threshold
+	SummaryModelID    string              `json:"summary_model_id"`
+	SummaryParameters *SummaryConfig      `json:"summary_parameters"`
+	AgentConfig       *SessionAgentConfig `json:"agent_config"`   // Agent configuration (optional)
+	ContextConfig     *ContextConfig      `json:"context_config"` // Context management configuration (optional)
+	CreatedAt         string              `json:"created_at"`
+	UpdatedAt         string              `json:"updated_at"`
 }
 
 // SessionResponse session response
