@@ -253,7 +253,7 @@ onUnmounted(() => {
 <style scoped lang="less">
 .tenant-selector {
   position: relative;
-  margin: 0 8px 12px;
+  margin: 0 0 12px;
 }
 
 .tenant-trigger {
