@@ -1149,6 +1149,7 @@ export default {
   },
   tenant: {
     title: 'Tenant Information',
+    currentTenant: 'Current Tenant',
     sectionDescription: 'View detailed configuration for the tenant',
     apiDocument: 'API Document',
     name: 'Tenant Name',
@@ -1195,6 +1196,13 @@ export default {
     apiKeyCopied: 'API Key copied to clipboard',
     unknown: 'Unknown',
     formatError: 'Format error',
+    searchPlaceholder: 'Search by name or enter tenant ID...',
+    searchHint: 'Search by name or enter tenant ID directly',
+    noMatch: 'No matching tenants found',
+    switchSuccess: 'Tenant switched successfully',
+    loadTenantsFailed: 'Failed to load tenant list',
+    loading: 'Loading...',
+    loadMore: 'Load more',
     details: {
       idLabel: 'Tenant ID',
       idDescription: 'Unique identifier of your tenant',

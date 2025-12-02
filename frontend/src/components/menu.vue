@@ -161,6 +161,7 @@
         
         <!-- 下半部分：用户菜单 -->
         <div class="menu_bottom">
+            <TenantSelector />
             <UserMenu />
         </div>
         
@@ -194,6 +195,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useUIStore } from '@/stores/ui';
 import { MessagePlugin } from "tdesign-vue-next";
 import UserMenu from '@/components/UserMenu.vue';
+import TenantSelector from '@/components/TenantSelector.vue';
 import { useI18n } from 'vue-i18n';
 import { kbFileTypeVerification } from '@/utils';
 

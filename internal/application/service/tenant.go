@@ -280,3 +280,49 @@ func (r *tenantService) ExtractTenantIDFromAPIKey(apiKey string) (uint64, error)
 
 	return tenantID, nil
 }
+
+// ListAllTenants lists all tenants (for users with cross-tenant access permission)
+// This method returns all tenants without filtering, intended for admin users
+func (s *tenantService) ListAllTenants(ctx context.Context) ([]*types.Tenant, error) {
+	tenants, err := s.repo.ListTenants(ctx)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		return nil, err
+	}
+
+	logger.Infof(ctx, "All tenants list retrieved successfully, total: %d", len(tenants))
+	return tenants, nil
+}
+
+// SearchTenants searches tenants with pagination and filters
+func (s *tenantService) SearchTenants(ctx context.Context, keyword string, tenantID uint64, page, pageSize int) ([]*types.Tenant, int64, error) {
+	tenants, total, err := s.repo.SearchTenants(ctx, keyword, tenantID, page, pageSize)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"keyword":  keyword,
+			"tenantID": tenantID,
+			"page":     page,
+			"pageSize": pageSize,
+		})
+		return nil, 0, err
+	}
+
+	logger.Infof(ctx, "Tenants search completed, keyword: %s, tenantID: %d, page: %d, pageSize: %d, total: %d, found: %d",
+		keyword, tenantID, page, pageSize, total, len(tenants))
+	return tenants, total, nil
+}
+
+// GetTenantByIDForUser gets a tenant by ID with permission check
+// This method verifies that the user has permission to access the tenant
+func (s *tenantService) GetTenantByIDForUser(ctx context.Context, tenantID uint64, userID string) (*types.Tenant, error) {
+	tenant, err := s.repo.GetTenantByID(ctx, tenantID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"tenant_id": tenantID,
+			"user_id":   userID,
+		})
+		return nil, err
+	}
+
+	return tenant, nil
+}

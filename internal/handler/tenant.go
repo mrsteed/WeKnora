@@ -20,20 +20,23 @@ import (
 // Provides functionality for creating, retrieving, updating, and deleting tenants
 // through the REST API endpoints
 type TenantHandler struct {
-	service interfaces.TenantService
-	config  *config.Config
+	service     interfaces.TenantService
+	userService interfaces.UserService
+	config      *config.Config
 }
 
 // NewTenantHandler creates a new tenant handler instance with the provided service
 // Parameters:
 //   - service: An implementation of the TenantService interface for business logic
+//   - userService: An implementation of the UserService interface for user operations
 //   - config: Application configuration
 //
 // Returns a pointer to the newly created TenantHandler
-func NewTenantHandler(service interfaces.TenantService, config *config.Config) *TenantHandler {
+func NewTenantHandler(service interfaces.TenantService, userService interfaces.UserService, config *config.Config) *TenantHandler {
 	return &TenantHandler{
-		service: service,
-		config:  config,
+		service:     service,
+		userService: userService,
+		config:      config,
 	}
 }
 
@@ -230,6 +233,139 @@ func (h *TenantHandler) ListTenants(c *gin.Context) {
 		"success": true,
 		"data": gin.H{
 			"items": tenants,
+		},
+	})
+}
+
+// ListAllTenants handles the HTTP request for retrieving a list of all tenants
+// This endpoint requires cross-tenant access permission
+// Parameters:
+//   - c: Gin context for the HTTP request
+func (h *TenantHandler) ListAllTenants(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	// Get current user from context
+	user, err := h.userService.GetCurrentUser(ctx)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get current user: %v", err)
+		c.Error(errors.NewUnauthorizedError("Failed to get user information").WithDetails(err.Error()))
+		return
+	}
+
+	// Check if cross-tenant access is enabled
+	if h.config == nil || h.config.Tenant == nil || !h.config.Tenant.EnableCrossTenantAccess {
+		logger.Warnf(ctx, "Cross-tenant access is disabled, user: %s", user.ID)
+		c.Error(errors.NewForbiddenError("Cross-tenant access is disabled"))
+		return
+	}
+
+	// Check if user has permission
+	if !user.CanAccessAllTenants {
+		logger.Warnf(ctx, "User %s attempted to list all tenants without permission", user.ID)
+		c.Error(errors.NewForbiddenError("Insufficient permissions to access all tenants"))
+		return
+	}
+
+	tenants, err := h.service.ListAllTenants(ctx)
+	if err != nil {
+		// Check if this is an application-specific error
+		if appErr, ok := errors.IsAppError(err); ok {
+			logger.Error(ctx, "Failed to retrieve all tenants list: application error", appErr)
+			c.Error(appErr)
+		} else {
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(errors.NewInternalServerError("Failed to retrieve all tenants list").WithDetails(err.Error()))
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"items": tenants,
+		},
+	})
+}
+
+// SearchTenants handles the HTTP request for searching tenants with pagination
+// This endpoint requires cross-tenant access permission
+// Query parameters:
+//   - keyword: search keyword (optional)
+//   - tenant_id: filter by tenant ID (optional)
+//   - page: page number (default: 1)
+//   - page_size: page size (default: 20)
+func (h *TenantHandler) SearchTenants(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	// Get current user from context
+	user, err := h.userService.GetCurrentUser(ctx)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get current user: %v", err)
+		c.Error(errors.NewUnauthorizedError("Failed to get user information").WithDetails(err.Error()))
+		return
+	}
+
+	// Check if cross-tenant access is enabled
+	if h.config == nil || h.config.Tenant == nil || !h.config.Tenant.EnableCrossTenantAccess {
+		logger.Warnf(ctx, "Cross-tenant access is disabled, user: %s", user.ID)
+		c.Error(errors.NewForbiddenError("Cross-tenant access is disabled"))
+		return
+	}
+
+	// Check if user has permission
+	if !user.CanAccessAllTenants {
+		logger.Warnf(ctx, "User %s attempted to search tenants without permission", user.ID)
+		c.Error(errors.NewForbiddenError("Insufficient permissions to access all tenants"))
+		return
+	}
+
+	// Parse query parameters
+	keyword := c.Query("keyword")
+	tenantIDStr := c.Query("tenant_id")
+	pageStr := c.DefaultQuery("page", "1")
+	pageSizeStr := c.DefaultQuery("page_size", "20")
+
+	var tenantID uint64
+	if tenantIDStr != "" {
+		parsedID, err := strconv.ParseUint(tenantIDStr, 10, 64)
+		if err == nil {
+			tenantID = parsedID
+		}
+	}
+
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(pageSizeStr)
+	if err != nil || pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100 // Limit max page size
+	}
+
+	tenants, total, err := h.service.SearchTenants(ctx, keyword, tenantID, page, pageSize)
+	if err != nil {
+		// Check if this is an application-specific error
+		if appErr, ok := errors.IsAppError(err); ok {
+			logger.Error(ctx, "Failed to search tenants: application error", appErr)
+			c.Error(appErr)
+		} else {
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(errors.NewInternalServerError("Failed to search tenants").WithDetails(err.Error()))
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"items":     tenants,
+			"total":     total,
+			"page":      page,
+			"page_size": pageSize,
 		},
 	})
 }

@@ -205,10 +205,33 @@ const loadUserInfo = async () => {
   try {
     const response = await getCurrentUser()
     if (response.success && response.data && response.data.user) {
+      const user = response.data.user
       userInfo.value = {
-        username: response.data.user.username || t('common.info'),
-        email: response.data.user.email || 'user@example.com',
-        avatar: response.data.user.avatar || ''
+        username: user.username || t('common.info'),
+        email: user.email || 'user@example.com',
+        avatar: user.avatar || ''
+      }
+      // 同时更新 authStore 中的用户信息，确保包含 can_access_all_tenants 字段
+      authStore.setUser({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        avatar: user.avatar,
+        tenant_id: user.tenant_id,
+        can_access_all_tenants: user.can_access_all_tenants || false,
+        created_at: user.created_at,
+        updated_at: user.updated_at
+      })
+      // 如果返回了租户信息，也更新租户信息
+      if (response.data.tenant) {
+        authStore.setTenant({
+          id: String(response.data.tenant.id),
+          name: response.data.tenant.name,
+          api_key: response.data.tenant.api_key || '',
+          owner_id: user.id,
+          created_at: response.data.tenant.created_at,
+          updated_at: response.data.tenant.updated_at
+        })
       }
     }
   } catch (error) {

@@ -102,6 +102,8 @@ type TenantConfig struct {
 	DefaultSessionName        string `yaml:"default_session_name"        json:"default_session_name"`
 	DefaultSessionTitle       string `yaml:"default_session_title"       json:"default_session_title"`
 	DefaultSessionDescription string `yaml:"default_session_description" json:"default_session_description"`
+	// EnableCrossTenantAccess enables cross-tenant access for users with permission
+	EnableCrossTenantAccess bool `yaml:"enable_cross_tenant_access" json:"enable_cross_tenant_access"`
 }
 
 // ModelConfig 模型配置

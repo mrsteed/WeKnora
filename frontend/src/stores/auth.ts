@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { UserInfo, TenantInfo, KnowledgeBaseInfo } from '@/api/auth'
+import type { TenantInfo as TenantInfoFromAPI } from '@/api/tenant'
 import i18n from '@/i18n'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -11,6 +12,8 @@ export const useAuthStore = defineStore('auth', () => {
   const refreshToken = ref<string>('')
   const knowledgeBases = ref<KnowledgeBaseInfo[]>([])
   const currentKnowledgeBase = ref<KnowledgeBaseInfo | null>(null)
+  const selectedTenantId = ref<number | null>(null)
+  const allTenants = ref<TenantInfoFromAPI[]>([])
 
   // 计算属性
   const isLoggedIn = computed(() => {
@@ -27,6 +30,15 @@ export const useAuthStore = defineStore('auth', () => {
 
   const currentUserId = computed(() => {
     return user.value?.id || ''
+  })
+
+  const canAccessAllTenants = computed(() => {
+    return user.value?.can_access_all_tenants || false
+  })
+
+  const effectiveTenantId = computed(() => {
+    // 如果选择了其他租户，使用选择的租户ID，否则使用用户默认租户ID
+    return selectedTenantId.value || (tenant.value?.id ? Number(tenant.value.id) : null)
   })
 
   // 操作方法
@@ -67,6 +79,23 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  const setSelectedTenant = (tenantId: number | null) => {
+    selectedTenantId.value = tenantId
+    if (tenantId !== null) {
+      localStorage.setItem('weknora_selected_tenant_id', String(tenantId))
+    } else {
+      localStorage.removeItem('weknora_selected_tenant_id')
+    }
+  }
+
+  const setAllTenants = (tenants: TenantInfoFromAPI[]) => {
+    allTenants.value = tenants
+  }
+
+  const getSelectedTenant = () => {
+    return selectedTenantId.value
+  }
+
 
   const logout = () => {
     // 清空状态
@@ -76,6 +105,8 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken.value = ''
     knowledgeBases.value = []
     currentKnowledgeBase.value = null
+    selectedTenantId.value = null
+    allTenants.value = []
 
     // 清空localStorage
     localStorage.removeItem('weknora_user')
@@ -95,6 +126,7 @@ export const useAuthStore = defineStore('auth', () => {
     const storedRefreshToken = localStorage.getItem('weknora_refresh_token')
     const storedKnowledgeBases = localStorage.getItem('weknora_knowledge_bases')
     const storedCurrentKb = localStorage.getItem('weknora_current_kb')
+    const storedSelectedTenantId = localStorage.getItem('weknora_selected_tenant_id')
 
     if (storedUser) {
       try {
@@ -137,6 +169,15 @@ export const useAuthStore = defineStore('auth', () => {
         console.error(i18n.global.t('authStore.errors.parseCurrentKnowledgeBaseFailed'), e)
       }
     }
+
+    if (storedSelectedTenantId) {
+      try {
+        selectedTenantId.value = Number(storedSelectedTenantId)
+      } catch (e) {
+        console.error('Failed to parse selected tenant ID', e)
+        selectedTenantId.value = null
+      }
+    }
   }
 
   // 初始化时从localStorage恢复状态
@@ -150,12 +191,16 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken,
     knowledgeBases,
     currentKnowledgeBase,
+    selectedTenantId,
+    allTenants,
     
     // 计算属性
     isLoggedIn,
     hasValidTenant,
     currentTenantId,
     currentUserId,
+    canAccessAllTenants,
+    effectiveTenantId,
     
     // 方法
     setUser,
@@ -164,6 +209,9 @@ export const useAuthStore = defineStore('auth', () => {
     setRefreshToken,
     setKnowledgeBases,
     setCurrentKnowledgeBase,
+    setSelectedTenant,
+    setAllTenants,
+    getSelectedTenant,
     logout,
     initFromStorage
   }

@@ -25,6 +25,22 @@ instance.interceptors.request.use(
       config.headers["Authorization"] = `Bearer ${token}`;
     }
     
+    // 添加跨租户访问请求头（如果选择了其他租户）
+    const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
+    const defaultTenantId = localStorage.getItem('weknora_tenant');
+    if (selectedTenantId) {
+      try {
+        const defaultTenant = defaultTenantId ? JSON.parse(defaultTenantId) : null;
+        const defaultId = defaultTenant?.id ? String(defaultTenant.id) : null;
+        // 如果选择的租户ID与默认租户ID不同，添加请求头
+        if (selectedTenantId !== defaultId) {
+          config.headers["X-Tenant-ID"] = selectedTenantId;
+        }
+      } catch (e) {
+        console.error('Failed to parse tenant info', e);
+      }
+    }
+    
     config.headers["X-Request-ID"] = `${generateRandomString(12)}`;
     return config;
   },

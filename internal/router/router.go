@@ -256,6 +256,10 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
 
 // RegisterTenantRoutes 注册租户相关的路由
 func RegisterTenantRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
+	// 添加获取所有租户的路由（需要跨租户权限）
+	r.GET("/tenants/all", handler.ListAllTenants)
+	// 添加搜索租户的路由（需要跨租户权限，支持分页和搜索）
+	r.GET("/tenants/search", handler.SearchTenants)
 	// 租户路由组
 	tenantRoutes := r.Group("/tenants")
 	{

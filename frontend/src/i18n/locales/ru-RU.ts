@@ -640,6 +640,7 @@ export default {
   },
   tenant: {
     title: 'Информация об арендаторе',
+    currentTenant: 'Текущий арендатор',
     sectionDescription: 'Просмотр детальной конфигурации арендатора',
     apiDocument: 'Документация API',
     name: 'Имя арендатора',
@@ -686,6 +687,13 @@ export default {
     apiKeyCopied: 'API Key скопирован в буфер обмена',
     unknown: 'Неизвестно',
     formatError: 'Ошибка формата',
+    searchPlaceholder: 'Поиск по имени или введите ID арендатора...',
+    searchHint: 'Поиск по имени или введите ID арендатора напрямую',
+    noMatch: 'Не найдено подходящих арендаторов',
+    switchSuccess: 'Арендатор успешно переключен',
+    loadTenantsFailed: 'Не удалось загрузить список арендаторов',
+    loading: 'Загрузка...',
+    loadMore: 'Загрузить еще',
     details: {
       idLabel: 'ID арендатора',
       idDescription: 'Уникальный идентификатор вашего арендатора',

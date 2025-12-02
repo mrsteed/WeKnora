@@ -22,6 +22,8 @@ type User struct {
 	TenantID uint64 `json:"tenant_id"  gorm:"index"`
 	// Whether the user is active
 	IsActive bool `json:"is_active"  gorm:"default:true"`
+	// Whether the user can access all tenants (cross-tenant access)
+	CanAccessAllTenants bool `json:"can_access_all_tenants" gorm:"default:false"`
 	// Creation time of the user
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time of the user
@@ -89,26 +91,28 @@ type RegisterResponse struct {
 
 // UserInfo represents user information for API responses
 type UserInfo struct {
-	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	Email     string    `json:"email"`
-	Avatar    string    `json:"avatar"`
-	TenantID  uint64    `json:"tenant_id"`
-	IsActive  bool      `json:"is_active"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                  string    `json:"id"`
+	Username            string    `json:"username"`
+	Email               string    `json:"email"`
+	Avatar              string    `json:"avatar"`
+	TenantID            uint64    `json:"tenant_id"`
+	IsActive            bool      `json:"is_active"`
+	CanAccessAllTenants bool      `json:"can_access_all_tenants"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // ToUserInfo converts User to UserInfo (without sensitive data)
 func (u *User) ToUserInfo() *UserInfo {
 	return &UserInfo{
-		ID:        u.ID,
-		Username:  u.Username,
-		Email:     u.Email,
-		Avatar:    u.Avatar,
-		TenantID:  u.TenantID,
-		IsActive:  u.IsActive,
-		CreatedAt: u.CreatedAt,
-		UpdatedAt: u.UpdatedAt,
+		ID:                  u.ID,
+		Username:            u.Username,
+		Email:               u.Email,
+		Avatar:              u.Avatar,
+		TenantID:            u.TenantID,
+		IsActive:            u.IsActive,
+		CanAccessAllTenants: u.CanAccessAllTenants,
+		CreatedAt:           u.CreatedAt,
+		UpdatedAt:           u.UpdatedAt,
 	}
 }

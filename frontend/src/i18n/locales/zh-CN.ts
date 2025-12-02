@@ -732,6 +732,7 @@ export default {
   },
   tenant: {
     title: "租户信息",
+    currentTenant: "当前租户",
     sectionDescription: "查看租户的详细配置信息",
     apiDocument: "API文档",
     name: "租户名称",
@@ -777,6 +778,13 @@ export default {
     apiKeyCopied: "API密钥已复制到剪贴板",
     unknown: "未知",
     formatError: "格式错误",
+    searchPlaceholder: "搜索租户名称或输入租户ID...",
+    searchHint: "支持按名称搜索或直接输入租户ID",
+    noMatch: "未找到匹配的租户",
+    switchSuccess: "租户切换成功",
+    loadTenantsFailed: "加载租户列表失败",
+    loading: "加载中...",
+    loadMore: "加载更多",
     details: {
       idLabel: "租户 ID",
       idDescription: "您所属租户的唯一标识",
