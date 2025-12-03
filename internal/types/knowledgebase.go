@@ -101,6 +101,8 @@ type ChunkingConfig struct {
 	ChunkOverlap int `yaml:"chunk_overlap" json:"chunk_overlap"`
 	// Separators
 	Separators []string `yaml:"separators"    json:"separators"`
+	// EnableMultimodal (deprecated, kept for backward compatibility with old data)
+	EnableMultimodal bool `yaml:"enable_multimodal,omitempty" json:"enable_multimodal,omitempty"`
 }
 
 // COSConfig represents the COS configuration
@@ -324,4 +326,22 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 	if kb.FAQConfig.QuestionIndexMode == "" {
 		kb.FAQConfig.QuestionIndexMode = FAQQuestionIndexModeCombined
 	}
+}
+
+// IsMultimodalEnabled 判断多模态是否启用（兼容新老版本配置）
+// 新版本：VLMConfig.IsEnabled()
+// 老版本：ChunkingConfig.EnableMultimodal
+func (kb *KnowledgeBase) IsMultimodalEnabled() bool {
+	if kb == nil {
+		return false
+	}
+	// 新版本配置优先
+	if kb.VLMConfig.IsEnabled() {
+		return true
+	}
+	// 兼容老版本：chunking_config 中的 enable_multimodal 字段
+	if kb.ChunkingConfig.EnableMultimodal {
+		return true
+	}
+	return false
 }

@@ -279,7 +279,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	if enableMultimodel != nil {
 		enableMultimodelValue = *enableMultimodel
 	} else {
-		enableMultimodelValue = kb.VLMConfig.IsEnabled()
+		enableMultimodelValue = kb.IsMultimodalEnabled()
 	}
 
 	// Check question generation config
@@ -413,7 +413,7 @@ func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
 	if enableMultimodel != nil {
 		enableMultimodelValue = *enableMultimodel
 	} else {
-		enableMultimodelValue = kb.VLMConfig.IsEnabled()
+		enableMultimodelValue = kb.IsMultimodalEnabled()
 	}
 
 	// Check question generation config
@@ -4155,7 +4155,7 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 	fileType := "md"
 
 	// 检查是否需要启用多模态（对于手动内容通常不需要，但保持一致性）
-	enableMultimodel := kb.VLMConfig.IsEnabled() && kb.StorageConfig.Provider != ""
+	enableMultimodel := kb.IsMultimodalEnabled() && kb.StorageConfig.Provider != ""
 
 	var vlmConfig *proto.VLMConfig
 	if enableMultimodel {
@@ -4411,20 +4411,10 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		if err != nil {
 			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
 				WithField("error", err).Errorf("processDocument build VLM config failed")
-			knowledge.ParseStatus = "failed"
-			knowledge.ErrorMessage = err.Error()
-			knowledge.UpdatedAt = time.Now()
-			s.repo.UpdateKnowledge(ctx, knowledge)
-			return nil
 		}
 		if vlmConfig == nil {
 			logger.GetLogger(ctx).WithField("knowledge_id", knowledge.ID).
-				Error("processDocument enable multimodal but VLM config missing")
-			knowledge.ParseStatus = "failed"
-			knowledge.ErrorMessage = "VLM 配置缺失"
-			knowledge.UpdatedAt = time.Now()
-			s.repo.UpdateKnowledge(ctx, knowledge)
-			return nil
+				Warn("processDocument enable multimodal but VLM config missing")
 		}
 	}
 
