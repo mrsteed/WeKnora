@@ -30,6 +30,20 @@ const (
 	ParseStatusDeleting = "deleting"
 )
 
+// Summary status constants for async summary generation
+const (
+	// SummaryStatusNone indicates no summary task is needed
+	SummaryStatusNone = "none"
+	// SummaryStatusPending indicates the summary task is waiting to be processed
+	SummaryStatusPending = "pending"
+	// SummaryStatusProcessing indicates the summary is being generated
+	SummaryStatusProcessing = "processing"
+	// SummaryStatusCompleted indicates the summary has been generated successfully
+	SummaryStatusCompleted = "completed"
+	// SummaryStatusFailed indicates the summary generation failed
+	SummaryStatusFailed = "failed"
+)
+
 // ManualKnowledgeFormat represents the format of the manual knowledge
 const (
 	ManualKnowledgeFormatMarkdown = "markdown"
@@ -59,6 +73,8 @@ type Knowledge struct {
 	Source string `json:"source"`
 	// Parse status of the knowledge
 	ParseStatus string `json:"parse_status"`
+	// Summary status for async summary generation
+	SummaryStatus string `json:"summary_status"     gorm:"type:varchar(32);default:none"`
 	// Enable status of the knowledge
 	EnableStatus string `json:"enable_status"`
 	// ID of the embedding model

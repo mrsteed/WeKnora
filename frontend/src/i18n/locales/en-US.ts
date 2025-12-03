@@ -142,6 +142,7 @@ export default {
     deleteDocument: 'Delete Document',
     parsingFailed: 'Parsing failed',
     parsingInProgress: 'Parsing...',
+    generatingSummary: 'Generating summary...',
     deleteConfirmation: 'Delete Confirmation',
     confirmDeleteDocument: 'Confirm deletion of document "{fileName}", recovery will be impossible after deletion',
     cancel: 'Cancel',

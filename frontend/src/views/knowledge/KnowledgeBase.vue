@@ -482,8 +482,12 @@ onUnmounted(() => {
 watch(() => cardList.value, (newValue) => {
   if (isFAQ.value) return;
   let analyzeList = [];
+  // Filter items that need polling: parsing in progress OR summary generation in progress
   analyzeList = newValue.filter(item => {
-    return item.parse_status == 'pending' || item.parse_status == 'processing';
+    const isParsing = item.parse_status == 'pending' || item.parse_status == 'processing';
+    const isSummaryPending = item.parse_status == 'completed' && 
+      (item.summary_status == 'pending' || item.summary_status == 'processing');
+    return isParsing || isSummaryPending;
   })
   if (timeout !== null) {
     clearInterval(timeout);
@@ -498,6 +502,7 @@ type KnowledgeCard = {
   id: string;
   knowledge_base_id?: string;
   parse_status: string;
+  summary_status?: string;
   description?: string;
   file_name?: string;
   original_file_name?: string;
@@ -520,13 +525,13 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
     batchQueryKnowledge(query).then((result: any) => {
       if (result.success && result.data) {
         (result.data as KnowledgeCard[]).forEach((item: KnowledgeCard) => {
-          if (item.parse_status == 'failed' || item.parse_status == 'completed') {
-            let index = cardList.value.findIndex(card => card.id == item.id);
-            if (index != -1) {
-              cardList.value[index].parse_status = item.parse_status;
-              cardList.value[index].description = item.description;
-            }
-          }
+          const index = cardList.value.findIndex(card => card.id == item.id);
+          if (index == -1) return;
+          
+          // Always update the card data
+          cardList.value[index].parse_status = item.parse_status;
+          cardList.value[index].summary_status = item.summary_status;
+          cardList.value[index].description = item.description;
         });
       }
     }).catch((_err) => {
@@ -1169,6 +1174,13 @@ async function createNewSession(value: string): Promise<void> {
                       <div v-else-if="item.parse_status === 'draft'" class="card-draft">
                         <t-tag size="small" theme="warning" variant="light-outline">{{ t('knowledgeBase.draft') }}</t-tag>
                         <span class="card-draft-tip">{{ t('knowledgeBase.draftTip') }}</span>
+                      </div>
+                      <div 
+                        v-else-if="item.parse_status === 'completed' && (item.summary_status === 'pending' || item.summary_status === 'processing')" 
+                        class="card-analyze"
+                      >
+                        <t-icon name="loading" class="card-analyze-loading"></t-icon>
+                        <span class="card-analyze-txt">{{ t('knowledgeBase.generatingSummary') }}</span>
                       </div>
                       <div v-else-if="item.parse_status === 'completed'" class="card-content-txt">
                         {{ item.description }}

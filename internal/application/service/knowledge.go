@@ -1332,6 +1332,14 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 	now := time.Now()
 	knowledge.ProcessedAt = &now
 	knowledge.UpdatedAt = now
+
+	// Set summary status based on whether summary generation will be triggered
+	if len(textChunks) > 0 {
+		knowledge.SummaryStatus = types.SummaryStatusPending
+	} else {
+		knowledge.SummaryStatus = types.SummaryStatusNone
+	}
+
 	if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
 		logger.GetLogger(ctx).WithField("error", err).Errorf("processChunks update knowledge failed")
 	}
@@ -1538,10 +1546,27 @@ func (s *knowledgeService) ProcessSummaryGeneration(ctx context.Context, t *asyn
 		return nil
 	}
 
+	// Update summary status to processing
+	knowledge.SummaryStatus = types.SummaryStatusProcessing
+	knowledge.UpdatedAt = time.Now()
+	if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
+		logger.Warnf(ctx, "Failed to update summary status to processing: %v", err)
+	}
+
+	// Helper function to mark summary as failed
+	markSummaryFailed := func() {
+		knowledge.SummaryStatus = types.SummaryStatusFailed
+		knowledge.UpdatedAt = time.Now()
+		if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
+			logger.Warnf(ctx, "Failed to update summary status to failed: %v", err)
+		}
+	}
+
 	// Get text chunks for this knowledge
 	chunks, err := s.chunkService.ListChunksByKnowledgeID(ctx, payload.KnowledgeID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get chunks: %v", err)
+		markSummaryFailed()
 		return nil
 	}
 
@@ -1555,6 +1580,10 @@ func (s *knowledgeService) ProcessSummaryGeneration(ctx context.Context, t *asyn
 
 	if len(textChunks) == 0 {
 		logger.Infof(ctx, "No text chunks found for knowledge: %s", payload.KnowledgeID)
+		// Mark as completed since there's nothing to summarize
+		knowledge.SummaryStatus = types.SummaryStatusCompleted
+		knowledge.UpdatedAt = time.Now()
+		s.repo.UpdateKnowledge(ctx, knowledge)
 		return nil
 	}
 
@@ -1567,6 +1596,7 @@ func (s *knowledgeService) ProcessSummaryGeneration(ctx context.Context, t *asyn
 	chatModel, err := s.modelService.GetChatModel(ctx, kb.SummaryModelID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get chat model: %v", err)
+		markSummaryFailed()
 		return fmt.Errorf("failed to get chat model: %w", err)
 	}
 
@@ -1585,6 +1615,7 @@ func (s *knowledgeService) ProcessSummaryGeneration(ctx context.Context, t *asyn
 
 	// Update knowledge description
 	knowledge.Description = summary
+	knowledge.SummaryStatus = types.SummaryStatusCompleted
 	knowledge.UpdatedAt = time.Now()
 	if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
 		logger.Errorf(ctx, "Failed to update knowledge description: %v", err)

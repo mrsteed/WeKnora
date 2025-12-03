@@ -142,6 +142,7 @@ export default {
     deleteDocument: 'Удалить документ',
     parsingFailed: 'Парсинг не удался',
     parsingInProgress: 'Парсинг...',
+    generatingSummary: 'Генерация резюме...',
     deleteConfirmation: 'Подтверждение удаления',
     confirmDeleteDocument: 'Подтвердить удаление документа "{fileName}", после удаления восстановление невозможно',
     cancel: 'Отмена',
