@@ -19,12 +19,30 @@ type FAQChunkMetadata struct {
 	Source            string   `json:"source,omitempty"`
 }
 
+// GeneratedQuestion 表示AI生成的单个问题
+type GeneratedQuestion struct {
+	ID       string `json:"id"`       // 唯一标识，用于构造 source_id
+	Question string `json:"question"` // 问题内容
+}
+
 // DocumentChunkMetadata 定义文档 Chunk 的元数据结构
 // 用于存储AI生成的问题等增强信息
 type DocumentChunkMetadata struct {
 	// GeneratedQuestions 存储AI为该Chunk生成的相关问题
 	// 这些问题会被独立索引以提高召回率
-	GeneratedQuestions []string `json:"generated_questions,omitempty"`
+	GeneratedQuestions []GeneratedQuestion `json:"generated_questions,omitempty"`
+}
+
+// GetQuestionStrings 返回问题内容字符串列表（兼容旧代码）
+func (m *DocumentChunkMetadata) GetQuestionStrings() []string {
+	if m == nil || len(m.GeneratedQuestions) == 0 {
+		return nil
+	}
+	result := make([]string, len(m.GeneratedQuestions))
+	for i, q := range m.GeneratedQuestions {
+		result[i] = q.Question
+	}
+	return result
 }
 
 // DocumentMetadata 解析 Chunk 中的文档元数据

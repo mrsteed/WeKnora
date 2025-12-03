@@ -32,6 +32,8 @@ type RetrieveEngineRepository interface {
 
 	// DeleteByChunkIDList deletes the index info by chunk id list
 	DeleteByChunkIDList(ctx context.Context, indexIDList []string, dimension int) error
+	// DeleteBySourceIDList deletes the index info by source id list
+	DeleteBySourceIDList(ctx context.Context, sourceIDList []string, dimension int) error
 	// 复制索引数据
 	// sourceKnowledgeBaseID: 源知识库ID
 	// sourceToTargetChunkIDMap: 源分块ID到目标分块ID的映射关系
@@ -104,6 +106,9 @@ type RetrieveEngineService interface {
 
 	// DeleteByChunkIDList deletes the index info by chunk id list
 	DeleteByChunkIDList(ctx context.Context, indexIDList []string, dimension int) error
+
+	// DeleteBySourceIDList deletes the index info by source id list
+	DeleteBySourceIDList(ctx context.Context, sourceIDList []string, dimension int) error
 
 	// DeleteByKnowledgeIDList deletes the index info by knowledge id list
 	DeleteByKnowledgeIDList(ctx context.Context, knowledgeIDList []string, dimension int) error

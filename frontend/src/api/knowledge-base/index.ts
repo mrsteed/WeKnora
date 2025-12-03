@@ -101,6 +101,11 @@ export function getChunkByIdOnly(chunkId: string) {
   return get(`/api/v1/chunks/by-id/${chunkId}`);
 }
 
+// Delete a single generated question from a chunk by question ID
+export function deleteGeneratedQuestion(chunkId: string, questionId: string) {
+  return del(`/api/v1/chunks/by-id/${chunkId}/questions`, { question_id: questionId });
+}
+
 export function listKnowledgeTags(
   kbId: string,
   params?: { page?: number; page_size?: number; keyword?: string },

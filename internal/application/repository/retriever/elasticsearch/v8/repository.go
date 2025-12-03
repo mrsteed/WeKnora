@@ -184,6 +184,29 @@ func (e *elasticsearchRepository) DeleteByChunkIDList(ctx context.Context, chunk
 	return nil
 }
 
+// DeleteBySourceIDList removes documents from the index based on source IDs
+// Returns an error if the delete operation fails
+func (e *elasticsearchRepository) DeleteBySourceIDList(ctx context.Context, sourceIDList []string, dimension int) error {
+	log := logger.GetLogger(ctx)
+	if len(sourceIDList) == 0 {
+		log.Warn("[Elasticsearch] Empty source ID list provided for deletion, skipping")
+		return nil
+	}
+
+	log.Infof("[Elasticsearch] Deleting indices by source IDs, count: %d", len(sourceIDList))
+	// Use DeleteByQuery to delete all documents matching the source IDs
+	_, err := e.client.DeleteByQuery(e.index).Query(&types.Query{
+		Terms: &types.TermsQuery{TermsQuery: map[string]types.TermsQueryField{"source_id.keyword": sourceIDList}},
+	}).Do(ctx)
+	if err != nil {
+		log.Errorf("[Elasticsearch] Failed to delete by source IDs: %v", err)
+		return fmt.Errorf("failed to delete by query: %w", err)
+	}
+
+	log.Infof("[Elasticsearch] Successfully deleted documents by source IDs")
+	return nil
+}
+
 // DeleteByKnowledgeIDList removes documents from the index based on knowledge IDs
 // Returns an error if the delete operation fails
 func (e *elasticsearchRepository) DeleteByKnowledgeIDList(ctx context.Context,

@@ -291,6 +291,11 @@ func (e *elasticsearchRepository) DeleteByChunkIDList(ctx context.Context, chunk
 	return e.deleteByFieldList(ctx, "chunk_id.keyword", chunkIDList)
 }
 
+// DeleteBySourceIDList Delete indices by source ID list
+func (e *elasticsearchRepository) DeleteBySourceIDList(ctx context.Context, sourceIDList []string, dimension int) error {
+	return e.deleteByFieldList(ctx, "source_id.keyword", sourceIDList)
+}
+
 // DeleteByKnowledgeIDList Delete indices by knowledge ID list
 func (e *elasticsearchRepository) DeleteByKnowledgeIDList(ctx context.Context,
 	knowledgeIDList []string, dimension int,

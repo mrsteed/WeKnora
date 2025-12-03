@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { marked } from "marked";
 import { onMounted, ref, nextTick, onUnmounted, onUpdated, watch } from "vue";
-import { downKnowledgeDetails } from "@/api/knowledge-base/index";
-import { MessagePlugin } from "tdesign-vue-next";
+import { downKnowledgeDetails, deleteGeneratedQuestion } from "@/api/knowledge-base/index";
+import { MessagePlugin, DialogPlugin } from "tdesign-vue-next";
 import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL } from '@/utils/security';
 import { useI18n } from 'vue-i18n';
 
@@ -52,7 +52,7 @@ renderer.image = function (href, title, text) {
             </figure>`;
 };
 const props = defineProps(["visible", "details", "knowledgeType", "sourceInfo"]);
-const emit = defineEmits(["closeDoc", "getDoc"]);
+const emit = defineEmits(["closeDoc", "getDoc", "questionDeleted"]);
 watch(() => props.details.md, (newVal) => {
   nextTick(async () => {
     const images = mdContentWrap.value.querySelectorAll('img.markdown-image');
@@ -185,12 +185,26 @@ const getChunkMeta = (item: any) => {
   return parts.join(' · ');
 };
 
+// 生成的问题类型
+interface GeneratedQuestion {
+  id: string;
+  question: string;
+}
+
 // 解析生成的问题
-const getGeneratedQuestions = (item: any): string[] => {
+const getGeneratedQuestions = (item: any): GeneratedQuestion[] => {
   if (!item || !item.metadata) return [];
   try {
     const metadata = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
-    return metadata.generated_questions || [];
+    const questions = metadata.generated_questions || [];
+    // 兼容旧格式（字符串数组）和新格式（对象数组）
+    return questions.map((q: string | GeneratedQuestion, index: number) => {
+      if (typeof q === 'string') {
+        // 旧格式：字符串，生成临时ID
+        return { id: `legacy-${index}`, question: q };
+      }
+      return q;
+    });
   } catch {
     return [];
   }
@@ -210,6 +224,63 @@ const toggleQuestions = (index: number) => {
 };
 
 const isExpanded = (index: number) => expandedChunks.value.has(index);
+
+// 删除中的状态
+const deletingQuestion = ref<{ chunkIndex: number; questionId: string } | null>(null);
+
+// 删除生成的问题
+const handleDeleteQuestion = async (item: any, chunkIndex: number, question: GeneratedQuestion) => {
+  if (!item || !item.id) {
+    MessagePlugin.error(t('common.error') || '操作失败');
+    return;
+  }
+
+  // 检查是否是旧格式数据（无法删除）
+  if (question.id.startsWith('legacy-')) {
+    MessagePlugin.warning(t('knowledgeBase.legacyQuestionCannotDelete') || '旧格式问题无法删除，请重新生成问题');
+    return;
+  }
+
+  const confirmDialog = DialogPlugin.confirm({
+    header: t('common.confirmDelete') || '确认删除',
+    body: t('knowledgeBase.confirmDeleteQuestion') || '确定要删除这个问题吗？删除后将同时移除对应的向量索引。',
+    confirmBtn: t('common.confirm') || '确认',
+    cancelBtn: t('common.cancel') || '取消',
+    onConfirm: async () => {
+      confirmDialog.hide();
+      deletingQuestion.value = { chunkIndex, questionId: question.id };
+      try {
+        await deleteGeneratedQuestion(item.id, question.id);
+        MessagePlugin.success(t('common.deleteSuccess') || '删除成功');
+        
+        // 更新本地数据
+        const metadata = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
+        if (metadata && metadata.generated_questions) {
+          const idx = metadata.generated_questions.findIndex((q: GeneratedQuestion) => q.id === question.id);
+          if (idx > -1) {
+            metadata.generated_questions.splice(idx, 1);
+          }
+          item.metadata = typeof item.metadata === 'string' ? JSON.stringify(metadata) : metadata;
+        }
+        
+        // 通知父组件刷新数据
+        emit('questionDeleted', { chunkId: item.id, questionId: question.id });
+      } catch (error: any) {
+        MessagePlugin.error(error?.message || t('common.deleteFailed') || '删除失败');
+      } finally {
+        deletingQuestion.value = null;
+      }
+    },
+    onClose: () => {
+      confirmDialog.hide();
+    }
+  });
+};
+
+// 检查是否正在删除某个问题
+const isDeleting = (chunkIndex: number, questionId: string) => {
+  return deletingQuestion.value?.chunkIndex === chunkIndex && deletingQuestion.value?.questionId === questionId;
+};
 
 const downloadFile = () => {
   downKnowledgeDetails(props.details.id)
@@ -327,12 +398,24 @@ const handleDetailsScroll = () => {
             </div>
             <div v-show="isExpanded(index)" class="questions-list">
               <div 
-                v-for="(question, qIndex) in getGeneratedQuestions(item)" 
-                :key="qIndex" 
+                v-for="question in getGeneratedQuestions(item)" 
+                :key="question.id" 
                 class="question-item"
               >
                 <t-icon name="help-circle" size="14px" class="question-icon" />
-                <span>{{ question }}</span>
+                <span class="question-text">{{ question.question }}</span>
+                <t-button 
+                  theme="default" 
+                  variant="text" 
+                  size="small"
+                  class="delete-question-btn"
+                  :loading="isDeleting(index, question.id)"
+                  @click.stop="handleDeleteQuestion(item, index, question)"
+                >
+                  <template #icon>
+                    <t-icon name="delete" size="14px" />
+                  </template>
+                </t-button>
               </div>
             </div>
           </div>
@@ -597,11 +680,36 @@ const handleDetailsScroll = () => {
   font-size: 13px;
   color: #1d2129;
   line-height: 1.5;
+  transition: background-color 0.2s ease;
+  
+  &:hover {
+    background: #e6f7ed;
+    
+    .delete-question-btn {
+      opacity: 1;
+    }
+  }
   
   .question-icon {
     color: #059669;
     flex-shrink: 0;
     margin-top: 2px;
+  }
+  
+  .question-text {
+    flex: 1;
+    word-break: break-word;
+  }
+  
+  .delete-question-btn {
+    opacity: 0;
+    flex-shrink: 0;
+    color: #999;
+    transition: opacity 0.2s ease, color 0.2s ease;
+    
+    &:hover {
+      color: #e34d59;
+    }
   }
 }
 

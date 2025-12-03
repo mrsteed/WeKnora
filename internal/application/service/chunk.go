@@ -5,7 +5,9 @@ package service
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -18,6 +20,7 @@ type chunkService struct {
 	chunkRepository interfaces.ChunkRepository // Repository for chunk data persistence
 	kbRepository    interfaces.KnowledgeBaseRepository
 	modelService    interfaces.ModelService
+	retrieveEngine  interfaces.RetrieveEngineRegistry
 }
 
 // NewChunkService creates a new chunk service
@@ -31,11 +34,13 @@ func NewChunkService(
 	chunkRepository interfaces.ChunkRepository,
 	kbRepository interfaces.KnowledgeBaseRepository,
 	modelService interfaces.ModelService,
+	retrieveEngine interfaces.RetrieveEngineRegistry,
 ) interfaces.ChunkService {
 	return &chunkService{
 		chunkRepository: chunkRepository,
 		kbRepository:    kbRepository,
 		modelService:    modelService,
+		retrieveEngine:  retrieveEngine,
 	}
 }
 
@@ -325,4 +330,108 @@ func (s *chunkService) ListChunkByParentID(
 
 	logger.Info(ctx, "Chunk listed successfully")
 	return chunks, nil
+}
+
+// DeleteGeneratedQuestion deletes a single generated question from a chunk by question ID
+// This updates the chunk metadata and removes the corresponding vector index
+func (s *chunkService) DeleteGeneratedQuestion(ctx context.Context, chunkID string, questionID string) error {
+	logger.Infof(ctx, "Deleting generated question, chunk ID: %s, question ID: %s", chunkID, questionID)
+
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+
+	// 1. Get the chunk
+	chunk, err := s.chunkRepository.GetChunkByID(ctx, tenantID, chunkID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"chunk_id":  chunkID,
+			"tenant_id": tenantID,
+		})
+		return fmt.Errorf("failed to get chunk: %w", err)
+	}
+
+	// 2. Parse the metadata
+	meta, err := chunk.DocumentMetadata()
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"chunk_id": chunkID,
+		})
+		return fmt.Errorf("failed to parse chunk metadata: %w", err)
+	}
+
+	if meta == nil || len(meta.GeneratedQuestions) == 0 {
+		return fmt.Errorf("no generated questions found for chunk %s", chunkID)
+	}
+
+	// 3. Find the question by ID
+	questionIndex := -1
+	for i, q := range meta.GeneratedQuestions {
+		if q.ID == questionID {
+			questionIndex = i
+			break
+		}
+	}
+
+	if questionIndex == -1 {
+		return fmt.Errorf("question with ID %s not found in chunk %s", questionID, chunkID)
+	}
+
+	// 4. Get knowledge base to get embedding model
+	kb, err := s.kbRepository.GetKnowledgeBaseByID(ctx, chunk.KnowledgeBaseID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"knowledge_base_id": chunk.KnowledgeBaseID,
+		})
+		return fmt.Errorf("failed to get knowledge base: %w", err)
+	}
+
+	// 5. Delete the vector index for this question
+	// The source_id format is: {chunk_id}-{question_id}
+	sourceID := fmt.Sprintf("%s-%s", chunkID, questionID)
+
+	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"chunk_id": chunkID,
+		})
+		return fmt.Errorf("failed to create retrieve engine: %w", err)
+	}
+
+	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"embedding_model_id": kb.EmbeddingModelID,
+		})
+		return fmt.Errorf("failed to get embedding model: %w", err)
+	}
+
+	// Delete the vector index by source ID
+	if err := retrieveEngine.DeleteBySourceIDList(ctx, []string{sourceID}, embeddingModel.GetDimensions()); err != nil {
+		logger.Warnf(ctx, "Failed to delete vector index for question (may not exist): %v", err)
+		// Continue even if vector deletion fails - the question might not have been indexed
+	}
+
+	// 6. Remove the question from metadata
+	newQuestions := make([]types.GeneratedQuestion, 0, len(meta.GeneratedQuestions)-1)
+	for i, q := range meta.GeneratedQuestions {
+		if i != questionIndex {
+			newQuestions = append(newQuestions, q)
+		}
+	}
+
+	// 7. Update chunk metadata
+	meta.GeneratedQuestions = newQuestions
+	if err := chunk.SetDocumentMetadata(meta); err != nil {
+		return fmt.Errorf("failed to set chunk metadata: %w", err)
+	}
+
+	if err := s.chunkRepository.UpdateChunk(ctx, chunk); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"chunk_id": chunkID,
+		})
+		return fmt.Errorf("failed to update chunk: %w", err)
+	}
+
+	logger.Infof(ctx, "Successfully deleted generated question %s from chunk %s", questionID, chunkID)
+	return nil
 }

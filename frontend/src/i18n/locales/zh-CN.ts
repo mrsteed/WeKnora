@@ -93,6 +93,8 @@ export default {
     segment: "片段",
     questions: "问题",
     generatedQuestions: "生成的问题",
+    confirmDeleteQuestion: "确定要删除这个问题吗？删除后将同时移除对应的向量索引。",
+    legacyQuestionCannotDelete: "旧格式问题无法删除，请重新生成问题",
     docActionUnsupported: "当前知识库类型不支持该操作",
     notInitialized:
       "该知识库尚未完成初始化配置，请先前往设置页面配置模型信息后再上传文件",
@@ -722,6 +724,8 @@ export default {
     off: "关闭",
     resetToDefault: "恢复默认",
     confirmDelete: "确认删除",
+    deleteSuccess: "删除成功",
+    deleteFailed: "删除失败",
   },
   file: {
     upload: "上传文件",

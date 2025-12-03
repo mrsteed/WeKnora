@@ -94,6 +94,8 @@ export default {
     segment: 'Segment',
     questions: 'Questions',
     generatedQuestions: 'Generated Questions',
+    confirmDeleteQuestion: 'Are you sure you want to delete this question? The corresponding vector index will also be removed.',
+    legacyQuestionCannotDelete: 'Legacy format questions cannot be deleted. Please regenerate questions.',
     notInitialized: 'Knowledge base is not initialized. Please configure models in settings before uploading files',
     getInfoFailed: 'Failed to get knowledge base information, file upload is not possible',
     missingId: 'Knowledge base ID is missing',
@@ -628,7 +630,9 @@ export default {
     on: 'On',
     off: 'Off',
     resetToDefault: 'Reset to default',
-    confirmDelete: 'Confirm Delete'
+    confirmDelete: 'Confirm Delete',
+    deleteSuccess: 'Deleted successfully',
+    deleteFailed: 'Delete failed',
   },
   file: {
     upload: 'Upload File',

@@ -118,6 +118,21 @@ func (g *pgRepository) DeleteByChunkIDList(ctx context.Context, chunkIDList []st
 	return nil
 }
 
+// DeleteBySourceIDList deletes indices by source IDs
+func (g *pgRepository) DeleteBySourceIDList(ctx context.Context, sourceIDList []string, dimension int) error {
+	if len(sourceIDList) == 0 {
+		return nil
+	}
+	logger.GetLogger(ctx).Infof("[Postgres] Deleting indices by source IDs, count: %d", len(sourceIDList))
+	result := g.db.WithContext(ctx).Where("source_id IN ?", sourceIDList).Delete(&pgVector{})
+	if result.Error != nil {
+		logger.GetLogger(ctx).Errorf("[Postgres] Failed to delete indices by source IDs: %v", result.Error)
+		return result.Error
+	}
+	logger.GetLogger(ctx).Infof("[Postgres] Successfully deleted %d indices by source IDs", result.RowsAffected)
+	return nil
+}
+
 // DeleteByKnowledgeIDList deletes indices by knowledge IDs
 func (g *pgRepository) DeleteByKnowledgeIDList(ctx context.Context, knowledgeIDList []string, dimension int) error {
 	logger.GetLogger(ctx).Infof("[Postgres] Deleting indices by knowledge IDs, count: %d", len(knowledgeIDList))

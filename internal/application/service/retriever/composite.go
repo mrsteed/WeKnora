@@ -246,6 +246,20 @@ func (c *CompositeRetrieveEngine) DeleteByChunkIDList(ctx context.Context,
 	})
 }
 
+// DeleteBySourceIDList deletes vector embeddings by source ID list from all registered repositories
+func (c *CompositeRetrieveEngine) DeleteBySourceIDList(ctx context.Context,
+	sourceIDList []string, dimension int,
+) error {
+	return c.concurrentExecWithError(ctx, func(ctx context.Context, engineInfo *engineInfo) error {
+		if err := engineInfo.retrieveEngine.DeleteBySourceIDList(ctx, sourceIDList, dimension); err != nil {
+			logger.GetLogger(ctx).Errorf("Repository %s failed to delete source ID list: %v",
+				engineInfo.retrieveEngine.EngineType(), err)
+			return err
+		}
+		return nil
+	})
+}
+
 // CopyIndices copies indices from a source knowledge base to a target knowledge base
 func (c *CompositeRetrieveEngine) CopyIndices(
 	ctx context.Context,

@@ -113,6 +113,8 @@ func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler) {
 		chunks.DELETE("/:knowledge_id", handler.DeleteChunksByKnowledgeID)
 		// 更新分块信息
 		chunks.PUT("/:knowledge_id/:id", handler.UpdateChunk)
+		// 删除单个生成的问题（通过问题ID）
+		chunks.DELETE("/by-id/:id/questions", handler.DeleteGeneratedQuestion)
 	}
 }
 

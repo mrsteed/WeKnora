@@ -116,6 +116,13 @@ func (v *KeywordsVectorHybridRetrieveEngineService) DeleteByChunkIDList(ctx cont
 	return v.indexRepository.DeleteByChunkIDList(ctx, indexIDList, dimension)
 }
 
+// DeleteBySourceIDList deletes vectors by their source IDs
+func (v *KeywordsVectorHybridRetrieveEngineService) DeleteBySourceIDList(ctx context.Context,
+	sourceIDList []string, dimension int,
+) error {
+	return v.indexRepository.DeleteBySourceIDList(ctx, sourceIDList, dimension)
+}
+
 // DeleteByKnowledgeIDList deletes vectors by their knowledge IDs
 func (v *KeywordsVectorHybridRetrieveEngineService) DeleteByKnowledgeIDList(ctx context.Context,
 	knowledgeIDList []string, dimension int,

@@ -288,3 +288,66 @@ func (h *ChunkHandler) DeleteChunksByKnowledgeID(c *gin.Context) {
 		"message": "All chunks under knowledge deleted",
 	})
 }
+
+// DeleteGeneratedQuestion deletes a generated question by its ID
+func (h *ChunkHandler) DeleteGeneratedQuestion(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Info(ctx, "Start deleting generated question from chunk")
+
+	chunkID := secutils.SanitizeForLog(c.Param("id"))
+	if chunkID == "" {
+		logger.Error(ctx, "Chunk ID is empty")
+		c.Error(errors.NewBadRequestError("Chunk ID cannot be empty"))
+		return
+	}
+
+	var req struct {
+		QuestionID string `json:"question_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Errorf(ctx, "Failed to parse request parameters: %s", secutils.SanitizeForLog(err.Error()))
+		c.Error(errors.NewBadRequestError("Question ID is required"))
+		return
+	}
+
+	// Get tenant ID from context
+	tenantID, exists := c.Get(types.TenantIDContextKey.String())
+	if !exists {
+		logger.Error(ctx, "Failed to get tenant ID")
+		c.Error(errors.NewUnauthorizedError("Unauthorized"))
+		return
+	}
+
+	// Verify chunk exists and belongs to tenant
+	chunk, err := h.service.GetChunkByID(ctx, chunkID)
+	if err != nil {
+		if err == service.ErrChunkNotFound {
+			logger.Warnf(ctx, "Chunk not found, chunk ID: %s", chunkID)
+			c.Error(errors.NewNotFoundError("Chunk not found"))
+			return
+		}
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	if chunk.TenantID != tenantID.(uint64) {
+		logger.Warnf(ctx, "Tenant has no permission to access chunk, chunk ID: %s", chunkID)
+		c.Error(errors.NewForbiddenError("No permission to access this chunk"))
+		return
+	}
+
+	// Delete the generated question by ID
+	if err := h.service.DeleteGeneratedQuestion(ctx, chunkID, req.QuestionID); err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
+	logger.Infof(ctx, "Generated question deleted successfully, chunk ID: %s, question ID: %s",
+		secutils.SanitizeForLog(chunkID), secutils.SanitizeForLog(req.QuestionID))
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Generated question deleted",
+	})
+}

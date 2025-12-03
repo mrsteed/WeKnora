@@ -1815,9 +1815,17 @@ func (s *knowledgeService) ProcessQuestionGeneration(ctx context.Context, t *asy
 			continue
 		}
 
-		// Update chunk metadata
+		// Update chunk metadata with unique IDs for each question
+		generatedQuestions := make([]types.GeneratedQuestion, len(questions))
+		for j, question := range questions {
+			questionID := fmt.Sprintf("q%d", time.Now().UnixNano()+int64(j))
+			generatedQuestions[j] = types.GeneratedQuestion{
+				ID:       questionID,
+				Question: question,
+			}
+		}
 		meta := &types.DocumentChunkMetadata{
-			GeneratedQuestions: questions,
+			GeneratedQuestions: generatedQuestions,
 		}
 		if err := chunk.SetDocumentMetadata(meta); err != nil {
 			logger.Warnf(ctx, "Failed to set document metadata for chunk %s: %v", chunk.ID, err)
@@ -1831,10 +1839,10 @@ func (s *knowledgeService) ProcessQuestionGeneration(ctx context.Context, t *asy
 		}
 
 		// Create index entries for generated questions
-		for j, question := range questions {
-			sourceID := fmt.Sprintf("%s-q%d", chunk.ID, j)
+		for _, gq := range generatedQuestions {
+			sourceID := fmt.Sprintf("%s-%s", chunk.ID, gq.ID)
 			indexInfoList = append(indexInfoList, &types.IndexInfo{
-				Content:         question,
+				Content:         gq.Question,
 				SourceID:        sourceID,
 				SourceType:      types.ChunkSourceType,
 				ChunkID:         chunk.ID,
