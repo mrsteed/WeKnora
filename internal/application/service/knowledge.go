@@ -117,6 +117,21 @@ func (s *knowledgeService) GetRepository() interfaces.KnowledgeRepository {
 	return s.repo
 }
 
+// isKnowledgeDeleting checks if a knowledge entry is being deleted.
+// This is used to prevent async tasks from conflicting with deletion operations.
+func (s *knowledgeService) isKnowledgeDeleting(ctx context.Context, tenantID uint64, knowledgeID string) bool {
+	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
+	if err != nil {
+		// If we can't find the knowledge, assume it's deleted
+		logger.Warnf(ctx, "Failed to check knowledge deletion status (assuming deleted): %v", err)
+		return true
+	}
+	if knowledge == nil {
+		return true
+	}
+	return knowledge.ParseStatus == types.ParseStatusDeleting
+}
+
 // CreateKnowledgeFromFile creates a knowledge entry from an uploaded file
 func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	kbID string, file *multipart.FileHeader, metadata map[string]string, enableMultimodel *bool, customFileName string,
@@ -702,6 +717,19 @@ func (s *knowledgeService) DeleteKnowledge(ctx context.Context, id string) error
 	if err != nil {
 		return err
 	}
+
+	// Mark as deleting first to prevent async task conflicts
+	// This ensures that any running async tasks will detect the deletion and abort
+	originalStatus := knowledge.ParseStatus
+	knowledge.ParseStatus = types.ParseStatusDeleting
+	knowledge.UpdatedAt = time.Now()
+	if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
+		logger.GetLogger(ctx).WithField("error", err).Errorf("DeleteKnowledge failed to mark as deleting")
+		// Continue with deletion even if marking fails
+	} else {
+		logger.Infof(ctx, "Marked knowledge %s as deleting (previous status: %s)", id, originalStatus)
+	}
+
 	wg := errgroup.Group{}
 	// Delete knowledge embeddings from vector store
 	wg.Go(func() error {
@@ -767,7 +795,7 @@ func (s *knowledgeService) DeleteKnowledge(ctx context.Context, id string) error
 	return s.repo.DeleteKnowledge(ctx, ctx.Value(types.TenantIDContextKey).(uint64), id)
 }
 
-// DeleteKnowledge deletes a knowledge entry and all related resources
+// DeleteKnowledgeList deletes a knowledge entry and all related resources
 func (s *knowledgeService) DeleteKnowledgeList(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
@@ -778,6 +806,18 @@ func (s *knowledgeService) DeleteKnowledgeList(ctx context.Context, ids []string
 	if err != nil {
 		return err
 	}
+
+	// Mark all as deleting first to prevent async task conflicts
+	for _, knowledge := range knowledgeList {
+		knowledge.ParseStatus = types.ParseStatusDeleting
+		knowledge.UpdatedAt = time.Now()
+		if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
+			logger.GetLogger(ctx).WithField("error", err).WithField("knowledge_id", knowledge.ID).
+				Errorf("DeleteKnowledgeList failed to mark as deleting")
+			// Continue with deletion even if marking fails
+		}
+	}
+	logger.Infof(ctx, "Marked %d knowledge entries as deleting", len(knowledgeList))
 
 	wg := errgroup.Group{}
 	// 2. Delete knowledge embeddings from vector store
@@ -979,6 +1019,13 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		attribute.String("embedding_model_id", kb.EmbeddingModelID),
 		attribute.Int("chunk_count", len(chunks)),
 	)
+
+	// Check if knowledge is being deleted before processing
+	if s.isKnowledgeDeleting(ctx, knowledge.TenantID, knowledge.ID) {
+		logger.Infof(ctx, "Knowledge is being deleted, aborting chunk processing: %s", knowledge.ID)
+		span.AddEvent("aborted: knowledge is being deleted")
+		return
+	}
 
 	// Get embedding model for vectorization
 	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
@@ -1182,7 +1229,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		// Re-fetch tenant storage information
 		tenantInfo, err = s.tenantRepo.GetTenantByID(ctx, tenantInfo.ID)
 		if err != nil {
-			knowledge.ParseStatus = "failed"
+			knowledge.ParseStatus = types.ParseStatusFailed
 			knowledge.ErrorMessage = err.Error()
 			knowledge.UpdatedAt = time.Now()
 			s.repo.UpdateKnowledge(ctx, knowledge)
@@ -1191,7 +1238,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		}
 		// Check if there's enough storage quota available
 		if tenantInfo.StorageUsed+totalStorageSize > tenantInfo.StorageQuota {
-			knowledge.ParseStatus = "failed"
+			knowledge.ParseStatus = types.ParseStatusFailed
 			knowledge.ErrorMessage = "存储空间不足"
 			knowledge.UpdatedAt = time.Now()
 			s.repo.UpdateKnowledge(ctx, knowledge)
@@ -1200,10 +1247,17 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		}
 	}
 
+	// Check again if knowledge is being deleted before writing to database
+	if s.isKnowledgeDeleting(ctx, knowledge.TenantID, knowledge.ID) {
+		logger.Infof(ctx, "Knowledge is being deleted, aborting before saving chunks: %s", knowledge.ID)
+		span.AddEvent("aborted: knowledge is being deleted before saving")
+		return
+	}
+
 	// Save chunks to database
 	span.AddEvent("create chunks")
 	if err := s.chunkService.CreateChunks(ctx, insertChunks); err != nil {
-		knowledge.ParseStatus = "failed"
+		knowledge.ParseStatus = types.ParseStatusFailed
 		knowledge.ErrorMessage = err.Error()
 		knowledge.UpdatedAt = time.Now()
 		s.repo.UpdateKnowledge(ctx, knowledge)
@@ -1211,10 +1265,21 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		return
 	}
 
+	// Check again before batch indexing (this is a heavy operation)
+	if s.isKnowledgeDeleting(ctx, knowledge.TenantID, knowledge.ID) {
+		logger.Infof(ctx, "Knowledge is being deleted, cleaning up and aborting before indexing: %s", knowledge.ID)
+		// Clean up the chunks we just created
+		if err := s.chunkService.DeleteChunksByKnowledgeID(ctx, knowledge.ID); err != nil {
+			logger.Warnf(ctx, "Failed to cleanup chunks after deletion detected: %v", err)
+		}
+		span.AddEvent("aborted: knowledge is being deleted before indexing")
+		return
+	}
+
 	span.AddEvent("batch index")
 	err = retrieveEngine.BatchIndex(ctx, embeddingModel, indexInfoList)
 	if err != nil {
-		knowledge.ParseStatus = "failed"
+		knowledge.ParseStatus = types.ParseStatusFailed
 		knowledge.ErrorMessage = err.Error()
 		knowledge.UpdatedAt = time.Now()
 		s.repo.UpdateKnowledge(ctx, knowledge)
@@ -1246,8 +1311,22 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		}
 	}
 
+	// Final check before marking as completed - if deleted during processing, don't update status
+	if s.isKnowledgeDeleting(ctx, knowledge.TenantID, knowledge.ID) {
+		logger.Infof(ctx, "Knowledge was deleted during processing, skipping completion update: %s", knowledge.ID)
+		// Clean up the data we just created since the knowledge is being deleted
+		if err := s.chunkService.DeleteChunksByKnowledgeID(ctx, knowledge.ID); err != nil {
+			logger.Warnf(ctx, "Failed to cleanup chunks after deletion detected: %v", err)
+		}
+		if err := retrieveEngine.DeleteByKnowledgeIDList(ctx, []string{knowledge.ID}, embeddingModel.GetDimensions()); err != nil {
+			logger.Warnf(ctx, "Failed to cleanup index after deletion detected: %v", err)
+		}
+		span.AddEvent("aborted: knowledge was deleted during processing")
+		return
+	}
+
 	// Update knowledge status to completed
-	knowledge.ParseStatus = "completed"
+	knowledge.ParseStatus = types.ParseStatusCompleted
 	knowledge.EnableStatus = "enabled"
 	knowledge.StorageSize = totalStorageSize
 	now := time.Now()
@@ -4361,13 +4440,19 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		return nil
 	}
 
+	// 检查是否正在删除 - 如果是则直接退出，避免与删除操作冲突
+	if knowledge.ParseStatus == types.ParseStatusDeleting {
+		logger.Infof(ctx, "Knowledge is being deleted, aborting processing: %s", payload.KnowledgeID)
+		return nil
+	}
+
 	// 检查任务状态 - 幂等性处理
-	if knowledge.ParseStatus == "completed" {
+	if knowledge.ParseStatus == types.ParseStatusCompleted {
 		logger.Infof(ctx, "Document already completed, skipping: %s", payload.KnowledgeID)
 		return nil // 幂等：已完成的任务直接返回
 	}
 
-	if knowledge.ParseStatus == "failed" {
+	if knowledge.ParseStatus == types.ParseStatusFailed {
 		// 检查是否可恢复（例如：超时、临时错误等）
 		// 对于不可恢复的错误，直接返回
 		logger.Warnf(

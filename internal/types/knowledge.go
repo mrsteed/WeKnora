@@ -16,6 +16,20 @@ const (
 	KnowledgeTypeFAQ = "faq"
 )
 
+// Knowledge parse status constants
+const (
+	// ParseStatusPending indicates the knowledge is waiting to be processed
+	ParseStatusPending = "pending"
+	// ParseStatusProcessing indicates the knowledge is being processed
+	ParseStatusProcessing = "processing"
+	// ParseStatusCompleted indicates the knowledge has been processed successfully
+	ParseStatusCompleted = "completed"
+	// ParseStatusFailed indicates the knowledge processing failed
+	ParseStatusFailed = "failed"
+	// ParseStatusDeleting indicates the knowledge is being deleted (used to prevent async task conflicts)
+	ParseStatusDeleting = "deleting"
+)
+
 // ManualKnowledgeFormat represents the format of the manual knowledge
 const (
 	ManualKnowledgeFormatMarkdown = "markdown"
