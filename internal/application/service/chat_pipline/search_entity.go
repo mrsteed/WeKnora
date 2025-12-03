@@ -190,5 +190,6 @@ func chunk2SearchResult(chunk *types.Chunk, knowledge *types.Knowledge) *types.S
 		ImageInfo:         chunk.ImageInfo,
 		KnowledgeFilename: knowledge.FileName,
 		KnowledgeSource:   knowledge.Source,
+		ChunkMetadata:     chunk.Metadata,
 	}
 }

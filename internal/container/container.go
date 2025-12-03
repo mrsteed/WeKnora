@@ -140,10 +140,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(chatpipline.NewPluginChatCompletionStream))
 	must(container.Invoke(chatpipline.NewPluginStreamFilter))
 	must(container.Invoke(chatpipline.NewPluginFilterTopK))
-	must(container.Invoke(chatpipline.NewPluginPreprocess))
 	must(container.Invoke(chatpipline.NewPluginRewrite))
 	must(container.Invoke(chatpipline.NewPluginExtractEntity))
 	must(container.Invoke(chatpipline.NewPluginSearchEntity))
+	must(container.Invoke(chatpipline.NewPluginSearchParallel))
 
 	// HTTP handlers layer
 	must(container.Provide(handler.NewTenantHandler))

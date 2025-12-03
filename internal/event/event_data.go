@@ -5,7 +5,6 @@ package event
 // QueryData represents query-related event data
 type QueryData struct {
 	OriginalQuery  string                 `json:"original_query"`
-	ProcessedQuery string                 `json:"processed_query,omitempty"`
 	RewrittenQuery string                 `json:"rewritten_query,omitempty"`
 	SessionID      string                 `json:"session_id"`
 	UserID         string                 `json:"user_id,omitempty"`

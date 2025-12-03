@@ -800,11 +800,10 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 
 	// Use specific event list, only including retrieval-related events, not LLM summarization
 	searchEvents := []types.EventType{
-		types.PREPROCESS_QUERY, // Preprocess query
-		types.CHUNK_SEARCH,     // Vector search
-		types.CHUNK_RERANK,     // Rerank search results
-		types.CHUNK_MERGE,      // Merge search results
-		types.FILTER_TOP_K,     // Filter top K results
+		types.CHUNK_SEARCH,  // Vector search
+		types.CHUNK_RERANK,  // Rerank search results
+		types.CHUNK_MERGE,   // Merge search results
+		types.FILTER_TOP_K,  // Filter top K results
 	}
 
 	ctx, span := tracing.ContextWithSpan(ctx, "SessionService.SearchKnowledge")

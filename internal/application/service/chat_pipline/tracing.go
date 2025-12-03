@@ -34,7 +34,7 @@ func (p *PluginTracing) ActivationEvents() []types.EventType {
 		types.CHAT_COMPLETION_STREAM,
 		types.FILTER_TOP_K,
 		types.REWRITE_QUERY,
-		types.PREPROCESS_QUERY,
+		types.CHUNK_SEARCH_PARALLEL,
 	}
 }
 
@@ -69,8 +69,8 @@ func (p *PluginTracing) OnEvent(ctx context.Context,
 		return p.FilterTopK(ctx, eventType, chatManage, next)
 	case types.REWRITE_QUERY:
 		return p.RewriteQuery(ctx, eventType, chatManage, next)
-	case types.PREPROCESS_QUERY:
-		return p.PreprocessQuery(ctx, eventType, chatManage, next)
+	case types.CHUNK_SEARCH_PARALLEL:
+		return p.SearchParallel(ctx, eventType, chatManage, next)
 	}
 	return next()
 }
@@ -95,7 +95,6 @@ func (p *PluginTracing) Search(ctx context.Context,
 	}
 	span.SetAttributes(
 		attribute.String("hybrid_search", string(searchResultJson)),
-		attribute.String("processed_query", chatManage.ProcessedQuery),
 		attribute.Int("search_unique_count", len(unique)),
 	)
 	return err
@@ -119,7 +118,6 @@ func (p *PluginTracing) Rerank(ctx context.Context,
 	span.SetAttributes(
 		attribute.Int("rerank_resp_count", len(chatManage.RerankResult)),
 		attribute.String("rerank_resp_results", string(resultJson)),
-		attribute.String("query_intent", chatManage.QueryIntent),
 	)
 	return err
 }
@@ -266,22 +264,20 @@ func (p *PluginTracing) RewriteQuery(ctx context.Context,
 	return err
 }
 
-// PreprocessQuery traces query preprocessing operations
-func (p *PluginTracing) PreprocessQuery(ctx context.Context,
+// SearchParallel traces parallel search operations (chunk + entity)
+func (p *PluginTracing) SearchParallel(ctx context.Context,
 	eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
 ) *PluginError {
-	_, span := tracing.ContextWithSpan(ctx, "PluginTracing.PreprocessQuery")
+	_, span := tracing.ContextWithSpan(ctx, "PluginTracing.SearchParallel")
 	defer span.End()
-
 	span.SetAttributes(
 		attribute.String("query", chatManage.Query),
+		attribute.String("rewrite_query", chatManage.RewriteQuery),
+		attribute.Int("entity_count", len(chatManage.Entity)),
 	)
-
 	err := next()
-
 	span.SetAttributes(
-		attribute.String("processed_query", chatManage.ProcessedQuery),
+		attribute.Int("search_result_count", len(chatManage.SearchResult)),
 	)
-
 	return err
 }

@@ -3,12 +3,10 @@ package types
 // ChatManage represents the configuration and state for a chat session
 // including query processing, search parameters, and model configurations
 type ChatManage struct {
-	SessionID      string     `json:"session_id"`                // Unique identifier for the chat session
-	Query          string     `json:"query,omitempty"`           // Original user query
-	ProcessedQuery string     `json:"processed_query,omitempty"` // Query after preprocessing
-	RewriteQuery   string     `json:"rewrite_query,omitempty"`   // Query after rewriting for better retrieval
-	QueryIntent    string     `json:"query_intent,omitempty"`    // Parsed intent: definition/howto/compare/qa/general
-	History        []*History `json:"history,omitempty"`         // Chat history for context
+	SessionID    string     `json:"session_id"`              // Unique identifier for the chat session
+	Query        string     `json:"query,omitempty"`         // Original user query
+	RewriteQuery string     `json:"rewrite_query,omitempty"` // Query after rewriting for better retrieval
+	History      []*History `json:"history,omitempty"`       // Chat history for context
 
 	KnowledgeBaseID  string   `json:"knowledge_base_id"`  // ID of the knowledge base to search against (deprecated, use KnowledgeBaseIDs)
 	KnowledgeBaseIDs []string `json:"knowledge_base_ids"` // IDs of knowledge bases to search (multi-KB support)
@@ -60,9 +58,7 @@ func (c *ChatManage) Clone() *ChatManage {
 
 	return &ChatManage{
 		Query:            c.Query,
-		ProcessedQuery:   c.ProcessedQuery,
 		RewriteQuery:     c.RewriteQuery,
-		QueryIntent:      c.QueryIntent,
 		SessionID:        c.SessionID,
 		KnowledgeBaseID:  c.KnowledgeBaseID,
 		KnowledgeBaseIDs: knowledgeBaseIDs,
@@ -103,9 +99,9 @@ func (c *ChatManage) Clone() *ChatManage {
 type EventType string
 
 const (
-	PREPROCESS_QUERY       EventType = "preprocess_query"       // Query preprocessing stage
 	REWRITE_QUERY          EventType = "rewrite_query"          // Query rewriting for better retrieval
 	CHUNK_SEARCH           EventType = "chunk_search"           // Search for relevant chunks
+	CHUNK_SEARCH_PARALLEL  EventType = "chunk_search_parallel"  // Parallel search: chunks + entities
 	ENTITY_SEARCH          EventType = "entity_search"          // Search for relevant entities
 	CHUNK_RERANK           EventType = "chunk_rerank"           // Rerank search results
 	CHUNK_MERGE            EventType = "chunk_merge"            // Merge similar chunks
@@ -134,9 +130,7 @@ var Pipline = map[string][]EventType{
 	},
 	"rag_stream": { // Streaming Retrieval Augmented Generation
 		REWRITE_QUERY,
-		PREPROCESS_QUERY,
-		CHUNK_SEARCH,
-		ENTITY_SEARCH,
+		CHUNK_SEARCH_PARALLEL, // Parallel: CHUNK_SEARCH + ENTITY_SEARCH
 		CHUNK_RERANK,
 		CHUNK_MERGE,
 		FILTER_TOP_K,

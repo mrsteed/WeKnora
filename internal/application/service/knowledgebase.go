@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
-	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -523,35 +522,113 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 
 	// Collect all results from different retrievers and deduplicate by chunk ID
 	logger.Infof(ctx, "Processing retrieval results")
-	matchResults := []*types.IndexWithScore{}
+
+	// Separate results by retriever type for RRF fusion
+	var vectorResults []*types.IndexWithScore
+	var keywordResults []*types.IndexWithScore
 	for _, retrieveResult := range retrieveResults {
 		logger.Infof(ctx, "Retrieval results, engine: %v, retriever: %v, count: %v",
 			retrieveResult.RetrieverEngineType,
 			retrieveResult.RetrieverType,
 			len(retrieveResult.Results),
 		)
-		matchResults = append(matchResults, retrieveResult.Results...)
+		if retrieveResult.RetrieverType == types.VectorRetrieverType {
+			vectorResults = append(vectorResults, retrieveResult.Results...)
+		} else {
+			keywordResults = append(keywordResults, retrieveResult.Results...)
+		}
 	}
 
 	// Early return if no results
-	if len(matchResults) == 0 {
+	if len(vectorResults) == 0 && len(keywordResults) == 0 {
 		logger.Info(ctx, "No search results found")
 		return nil, nil
 	}
-	logger.Infof(ctx, "Result count before deduplication: %d", len(matchResults))
+	logger.Infof(ctx, "Result count before RRF fusion: vector=%d, keyword=%d", len(vectorResults), len(keywordResults))
 
-	// First, try standard deduplication
-	deduplicatedChunks := common.DeduplicateWithScore(
-		func(r *types.IndexWithScore) string { return r.ChunkID },
-		matchResults...)
-	logger.Infof(ctx, "Result count after deduplication: %d", len(deduplicatedChunks))
+	// Use RRF (Reciprocal Rank Fusion) to merge results
+	// RRF score = sum(1 / (k + rank)) for each retriever where the chunk appears
+	// k=60 is a common choice that works well in practice
+	const rrfK = 60
+
+	// Build rank maps for each retriever (already sorted by score from retriever)
+	vectorRanks := make(map[string]int)
+	for i, r := range vectorResults {
+		if _, exists := vectorRanks[r.ChunkID]; !exists {
+			vectorRanks[r.ChunkID] = i + 1 // 1-indexed rank
+		}
+	}
+	keywordRanks := make(map[string]int)
+	for i, r := range keywordResults {
+		if _, exists := keywordRanks[r.ChunkID]; !exists {
+			keywordRanks[r.ChunkID] = i + 1 // 1-indexed rank
+		}
+	}
+
+	// Collect all unique chunks and compute RRF scores
+	chunkInfoMap := make(map[string]*types.IndexWithScore)
+	rrfScores := make(map[string]float64)
+
+	// Process vector results
+	for _, r := range vectorResults {
+		if _, exists := chunkInfoMap[r.ChunkID]; !exists {
+			chunkInfoMap[r.ChunkID] = r
+		}
+	}
+	// Process keyword results
+	for _, r := range keywordResults {
+		if _, exists := chunkInfoMap[r.ChunkID]; !exists {
+			chunkInfoMap[r.ChunkID] = r
+		}
+	}
+
+	// Compute RRF scores
+	for chunkID := range chunkInfoMap {
+		rrfScore := 0.0
+		if rank, ok := vectorRanks[chunkID]; ok {
+			rrfScore += 1.0 / float64(rrfK+rank)
+		}
+		if rank, ok := keywordRanks[chunkID]; ok {
+			rrfScore += 1.0 / float64(rrfK+rank)
+		}
+		rrfScores[chunkID] = rrfScore
+	}
+
+	// Convert to slice and sort by RRF score
+	deduplicatedChunks := make([]*types.IndexWithScore, 0, len(chunkInfoMap))
+	for chunkID, info := range chunkInfoMap {
+		// Store RRF score in the Score field for downstream processing
+		info.Score = rrfScores[chunkID]
+		deduplicatedChunks = append(deduplicatedChunks, info)
+	}
+	slices.SortFunc(deduplicatedChunks, func(a, b *types.IndexWithScore) int {
+		if a.Score > b.Score {
+			return -1
+		} else if a.Score < b.Score {
+			return 1
+		}
+		return 0
+	})
+
+	logger.Infof(ctx, "Result count after RRF fusion: %d", len(deduplicatedChunks))
+
+	// Log top results after RRF fusion for debugging
+	for i, chunk := range deduplicatedChunks {
+		if i < 15 {
+			vRank, vOk := vectorRanks[chunk.ChunkID]
+			kRank, kOk := keywordRanks[chunk.ChunkID]
+			logger.Debugf(ctx, "RRF rank %d: chunk_id=%s, rrf_score=%.6f, vector_rank=%v(%v), keyword_rank=%v(%v)",
+				i, chunk.ChunkID, chunk.Score, vRank, vOk, kRank, kOk)
+		}
+	}
 
 	kb.EnsureDefaults()
 
 	// Check if we need iterative retrieval for FAQ with separate indexing
 	// Only use iterative retrieval if we don't have enough unique chunks after first deduplication
+	totalRetrieved := len(vectorResults) + len(keywordResults)
 	needsIterativeRetrieval := len(deduplicatedChunks) < params.MatchCount &&
-		kb.Type == types.KnowledgeBaseTypeFAQ && len(matchResults) == matchCount
+		kb.Type == types.KnowledgeBaseTypeFAQ && totalRetrieved == matchCount*2
 	if needsIterativeRetrieval {
 		logger.Info(ctx, "Not enough unique chunks, using iterative retrieval for FAQ")
 		// Use iterative retrieval to get more unique chunks (with negative question filtering inside)
@@ -891,10 +968,38 @@ func (s *knowledgeBaseService) processSearchResults(ctx context.Context,
 		}
 	}
 
-	// Build final search results
+	// Build final search results - preserve original order from input chunks
 	var searchResults []*types.SearchResult
-	for chunkID, chunk := range chunkMap {
+	addedChunkIDs := make(map[string]bool)
+
+	// First pass: Add results in the original order from input chunks
+	for _, inputChunk := range chunks {
+		chunk, exists := chunkMap[inputChunk.ChunkID]
+		if !exists {
+			logger.Debugf(ctx, "Chunk not found in chunkMap: %s", inputChunk.ChunkID)
+			continue
+		}
 		if !s.isValidTextChunk(chunk) {
+			logger.Debugf(ctx, "Chunk is not valid text chunk: %s, type: %s", chunk.ID, chunk.ChunkType)
+			continue
+		}
+		if addedChunkIDs[chunk.ID] {
+			continue
+		}
+
+		score := chunkScores[chunk.ID]
+		if knowledge, ok := knowledgeMap[chunk.KnowledgeID]; ok {
+			matchType := chunkMatchTypes[chunk.ID]
+			searchResults = append(searchResults, s.buildSearchResult(chunk, knowledge, score, matchType))
+			addedChunkIDs[chunk.ID] = true
+		} else {
+			logger.Warnf(ctx, "Knowledge not found for chunk: %s, knowledge_id: %s", chunk.ID, chunk.KnowledgeID)
+		}
+	}
+
+	// Second pass: Add additional chunks (parent, nearby, relation) that weren't in original input
+	for chunkID, chunk := range chunkMap {
+		if addedChunkIDs[chunkID] || !s.isValidTextChunk(chunk) {
 			continue
 		}
 
@@ -959,6 +1064,7 @@ func (s *knowledgeBaseService) buildSearchResult(chunk *types.Chunk,
 		ImageInfo:         chunk.ImageInfo,
 		KnowledgeFilename: knowledge.FileName,
 		KnowledgeSource:   knowledge.Source,
+		ChunkMetadata:     chunk.Metadata,
 	}
 }
 

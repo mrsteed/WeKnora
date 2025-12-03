@@ -46,6 +46,9 @@ type SearchResult struct {
 	// Knowledge source
 	// Used to indicate the source of the knowledge, such as "url"
 	KnowledgeSource string `json:"knowledge_source"`
+
+	// ChunkMetadata stores chunk-level metadata (e.g., generated questions)
+	ChunkMetadata JSON `json:"chunk_metadata,omitempty"`
 }
 
 // SearchParams represents the search parameters

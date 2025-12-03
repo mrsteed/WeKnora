@@ -2,13 +2,14 @@ package chatpipline
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/Tencent/WeKnora/internal/config"
-	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/searchutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -18,7 +19,6 @@ import (
 type PluginSearch struct {
 	knowledgeBaseService interfaces.KnowledgeBaseService
 	knowledgeService     interfaces.KnowledgeService
-	modelService         interfaces.ModelService
 	config               *config.Config
 	webSearchService     interfaces.WebSearchService
 	tenantService        interfaces.TenantService
@@ -28,7 +28,6 @@ type PluginSearch struct {
 func NewPluginSearch(eventManager *EventManager,
 	knowledgeBaseService interfaces.KnowledgeBaseService,
 	knowledgeService interfaces.KnowledgeService,
-	modelService interfaces.ModelService,
 	config *config.Config,
 	webSearchService interfaces.WebSearchService,
 	tenantService interfaces.TenantService,
@@ -37,7 +36,6 @@ func NewPluginSearch(eventManager *EventManager,
 	res := &PluginSearch{
 		knowledgeBaseService: knowledgeBaseService,
 		knowledgeService:     knowledgeService,
-		modelService:         modelService,
 		config:               config,
 		webSearchService:     webSearchService,
 		tenantService:        tenantService,
@@ -75,12 +73,11 @@ func (p *PluginSearch) OnEvent(ctx context.Context,
 	}
 
 	pipelineInfo(ctx, "Search", "input", map[string]interface{}{
-		"session_id":      chatManage.SessionID,
-		"rewrite_query":   chatManage.RewriteQuery,
-		"processed_query": chatManage.ProcessedQuery,
-		"kb_ids":          strings.Join(knowledgeBaseIDs, ","),
-		"tenant_id":       chatManage.TenantID,
-		"web_enabled":     chatManage.WebSearchEnabled,
+		"session_id":    chatManage.SessionID,
+		"rewrite_query": chatManage.RewriteQuery,
+		"kb_ids":        strings.Join(knowledgeBaseIDs, ","),
+		"tenant_id":     chatManage.TenantID,
+		"web_enabled":   chatManage.WebSearchEnabled,
 	})
 
 	// Run KB search and web search concurrently
@@ -120,6 +117,16 @@ func (p *PluginSearch) OnEvent(ctx context.Context,
 	wg.Wait()
 
 	chatManage.SearchResult = allResults
+
+	// Log all search results with scores before any processing
+	for i, r := range chatManage.SearchResult {
+		pipelineInfo(ctx, "Search", "result_score_before_normalize", map[string]interface{}{
+			"index":      i,
+			"chunk_id":   r.ID,
+			"score":      fmt.Sprintf("%.4f", r.Score),
+			"match_type": r.MatchType,
+		})
+	}
 
 	// If recall is low, attempt query expansion with keyword-focused search
 	if chatManage.EnableQueryExpansion && len(chatManage.SearchResult) < max(1, chatManage.EmbeddingTopK/2) {
@@ -189,6 +196,7 @@ func (p *PluginSearch) OnEvent(ctx context.Context,
 			}
 			wgExp.Wait()
 			if len(expResults) > 0 {
+				// Scores already normalized in HybridSearch
 				pipelineInfo(ctx, "Search", "expansion_done", map[string]interface{}{
 					"added": len(expResults),
 				})
@@ -214,6 +222,16 @@ func (p *PluginSearch) OnEvent(ctx context.Context,
 		"before": before,
 		"after":  len(chatManage.SearchResult),
 	})
+
+	// Log final scores after all processing
+	for i, r := range chatManage.SearchResult {
+		pipelineInfo(ctx, "Search", "final_score", map[string]interface{}{
+			"index":      i,
+			"chunk_id":   r.ID,
+			"score":      fmt.Sprintf("%.4f", r.Score),
+			"match_type": r.MatchType,
+		})
+	}
 
 	// Return if we have results
 	if len(chatManage.SearchResult) != 0 {
@@ -250,32 +268,33 @@ func (p *PluginSearch) getSearchResultFromHistory(chatManage *types.ChatManage) 
 
 func removeDuplicateResults(results []*types.SearchResult) []*types.SearchResult {
 	seen := make(map[string]bool)
-	contentSig := make(map[string]bool)
+	contentSig := make(map[string]string) // sig -> first chunk ID
 	var uniqueResults []*types.SearchResult
 	for _, r := range results {
 		keys := []string{r.ID}
 		if r.ParentChunkID != "" {
 			keys = append(keys, "parent:"+r.ParentChunkID)
 		}
-		if r.KnowledgeID != "" {
-			keys = append(keys, fmt.Sprintf("kb:%s#%d", r.KnowledgeID, r.ChunkIndex))
-		}
 		dup := false
+		dupKey := ""
 		for _, k := range keys {
 			if seen[k] {
 				dup = true
+				dupKey = k
 				break
 			}
 		}
 		if dup {
+			logger.Debugf(context.Background(), "Dedup: chunk %s removed due to key: %s", r.ID, dupKey)
 			continue
 		}
 		sig := buildContentSignature(r.Content)
 		if sig != "" {
-			if contentSig[sig] {
+			if firstChunk, exists := contentSig[sig]; exists {
+				logger.Debugf(context.Background(), "Dedup: chunk %s removed due to content signature (dup of %s, sig prefix: %.50s...)", r.ID, firstChunk, sig)
 				continue
 			}
-			contentSig[sig] = true
+			contentSig[sig] = r.ID
 		}
 		for _, k := range keys {
 			seen[k] = true
@@ -286,24 +305,16 @@ func removeDuplicateResults(results []*types.SearchResult) []*types.SearchResult
 }
 
 func buildContentSignature(content string) string {
-	c := strings.ToLower(strings.TrimSpace(content))
-	if c == "" {
-		return ""
-	}
-	c = strings.Join(strings.Fields(c), " ")
-	if len(c) > 128 {
-		c = c[:128]
-	}
-	return c
+	return searchutil.BuildContentSignature(content)
 }
 
-// searchKnowledgeBases performs KB searches for rewrite and processed queries across KB IDs
+// searchKnowledgeBases performs KB searches across KB IDs using RewriteQuery only
 func (p *PluginSearch) searchKnowledgeBases(
 	ctx context.Context,
 	knowledgeBaseIDs []string,
 	chatManage *types.ChatManage,
 ) []*types.SearchResult {
-	// Build base params for rewrite query
+	// Build params for rewrite query
 	baseParams := types.SearchParams{
 		QueryText:        strings.TrimSpace(chatManage.RewriteQuery),
 		VectorThreshold:  chatManage.VectorThreshold,
@@ -315,7 +326,7 @@ func (p *PluginSearch) searchKnowledgeBases(
 	var mu sync.Mutex
 	var results []*types.SearchResult
 
-	// Search with rewrite query
+	// Search with rewrite query only (removed duplicate ProcessedQuery search)
 	for _, kbID := range knowledgeBaseIDs {
 		wg.Add(1)
 		go func(knowledgeBaseID string) {
@@ -323,16 +334,14 @@ func (p *PluginSearch) searchKnowledgeBases(
 			res, err := p.knowledgeBaseService.HybridSearch(ctx, knowledgeBaseID, baseParams)
 			if err != nil {
 				pipelineWarn(ctx, "Search", "kb_search_error", map[string]interface{}{
-					"kb_id":    knowledgeBaseID,
-					"query":    baseParams.QueryText,
-					"error":    err.Error(),
-					"query_ty": "rewrite",
+					"kb_id": knowledgeBaseID,
+					"query": baseParams.QueryText,
+					"error": err.Error(),
 				})
 				return
 			}
 			pipelineInfo(ctx, "Search", "kb_result", map[string]interface{}{
 				"kb_id":     knowledgeBaseID,
-				"query_ty":  "rewrite",
 				"hit_count": len(res),
 			})
 			mu.Lock()
@@ -342,45 +351,6 @@ func (p *PluginSearch) searchKnowledgeBases(
 	}
 
 	wg.Wait()
-
-	// If processed query differs, search again
-	if chatManage.RewriteQuery != chatManage.ProcessedQuery {
-		paramsProcessed := baseParams
-		paramsProcessed.QueryText = strings.TrimSpace(chatManage.ProcessedQuery)
-		pipelineInfo(ctx, "Search", "processed_query_search", map[string]interface{}{
-			"query": paramsProcessed.QueryText,
-		})
-
-		wg = sync.WaitGroup{}
-		for _, kbID := range knowledgeBaseIDs {
-			wg.Add(1)
-			go func(knowledgeBaseID string) {
-				defer wg.Done()
-				res, err := p.knowledgeBaseService.HybridSearch(ctx, knowledgeBaseID, paramsProcessed)
-				if err != nil {
-					pipelineWarn(ctx, "Search", "kb_search_error", map[string]interface{}{
-						"kb_id":    knowledgeBaseID,
-						"query":    paramsProcessed.QueryText,
-						"error":    err.Error(),
-						"query_ty": "processed",
-					})
-					return
-				}
-				pipelineInfo(ctx, "Search", "kb_result", map[string]interface{}{
-					"kb_id":     knowledgeBaseID,
-					"query_ty":  "processed",
-					"hit_count": len(res),
-				})
-				mu.Lock()
-				results = append(results, res...)
-				mu.Unlock()
-			}(kbID)
-		}
-		wg.Wait()
-	}
-
-	// Normalize keyword retriever scores after collecting all results from multiple knowledge bases
-	normalizeKeywordSearchResults(ctx, results)
 
 	pipelineInfo(ctx, "Search", "kb_result_summary", map[string]interface{}{
 		"total_hits": len(results),
@@ -413,11 +383,8 @@ func (p *PluginSearch) searchWebIfEnabled(ctx context.Context, chatManage *types
 		})
 		return nil
 	}
-	// Build questions (rewrite + processed if different)
+	// Build questions using RewriteQuery only
 	questions := []string{strings.TrimSpace(chatManage.RewriteQuery)}
-	if chatManage.ProcessedQuery != "" && chatManage.ProcessedQuery != chatManage.RewriteQuery {
-		questions = append(questions, strings.TrimSpace(chatManage.ProcessedQuery))
-	}
 	// Load session-scoped temp KB state from Redis using SessionService
 	tempKBID, seen, ids := p.sessionService.GetWebSearchTempKBState(ctx, chatManage.SessionID)
 	compressed, kbID, newSeen, newIDs, err := p.webSearchService.CompressWithRAG(
@@ -440,119 +407,155 @@ func (p *PluginSearch) searchWebIfEnabled(ctx context.Context, chatManage *types
 	return res
 }
 
-// expandQueries generates paraphrases and synonyms using chat model to improve keyword recall
+// expandQueries generates query variants locally without LLM to improve keyword recall
+// Uses simple techniques: word reordering, stopword removal, key phrase extraction
 func (p *PluginSearch) expandQueries(ctx context.Context, chatManage *types.ChatManage) []string {
-	if p.modelService == nil || chatManage.ChatModelID == "" {
-		pipelineWarn(ctx, "Search", "expansion_skip", map[string]interface{}{
-			"reason": "no_model",
-		})
+	query := strings.TrimSpace(chatManage.RewriteQuery)
+	if query == "" {
 		return nil
 	}
-	model, err := p.modelService.GetChatModel(ctx, chatManage.ChatModelID)
-	if err != nil {
-		pipelineWarn(ctx, "Search", "expansion_get_model_failed", map[string]interface{}{
-			"error": err.Error(),
-		})
-		return nil
+
+	expansions := make([]string, 0, 5)
+	seen := make(map[string]struct{})
+	seen[strings.ToLower(query)] = struct{}{}
+	if q := strings.ToLower(chatManage.Query); q != "" {
+		seen[q] = struct{}{}
 	}
-	sys := "Generate up to 5 diverse paraphrases or keyword variants for the user query to improve keyword-based search recall. Respond ONLY with a JSON array of strings inside a fenced code block."
-	usr := chatManage.RewriteQuery
-	think := false
-	resp, err := model.Chat(ctx, []chat.Message{
-		{Role: "system", Content: sys},
-		{Role: "user", Content: usr},
-	}, &chat.ChatOptions{Temperature: 0.2, MaxCompletionTokens: 200, Thinking: &think})
-	if err != nil || resp.Content == "" {
-		pipelineWarn(ctx, "Search", "expansion_model_call_failed", map[string]interface{}{
-			"error": err,
-		})
-		return nil
-	}
-	body := extractJSONBlock(resp.Content)
-	var arr []string
-	if err := json.Unmarshal([]byte(body), &arr); err != nil || len(arr) == 0 {
-		// Fallback: split lines
-		lines := strings.Split(resp.Content, "\n")
-		for _, l := range lines {
-			l = strings.TrimSpace(l)
-			if l != "" {
-				arr = append(arr, l)
-			}
-		}
-	}
-	uniq := make(map[string]struct{})
-	base := []string{chatManage.Query, chatManage.RewriteQuery, chatManage.ProcessedQuery}
-	for _, b := range base {
-		if s := strings.TrimSpace(b); s != "" {
-			uniq[strings.ToLower(s)] = struct{}{}
-		}
-	}
-	expansions := make([]string, 0, len(arr))
-	for _, a := range arr {
-		s := strings.TrimSpace(a)
-		if s == "" {
-			continue
+
+	addIfNew := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" || len(s) < 3 {
+			return
 		}
 		key := strings.ToLower(s)
-		if _, ok := uniq[key]; ok {
-			continue
+		if _, ok := seen[key]; ok {
+			return
 		}
-		uniq[key] = struct{}{}
+		seen[key] = struct{}{}
 		expansions = append(expansions, s)
-		if len(expansions) >= 5 {
-			break
+	}
+
+	// 1. Remove common stopwords and create keyword-only variant
+	keywords := extractKeywords(query)
+	if len(keywords) >= 2 {
+		addIfNew(strings.Join(keywords, " "))
+	}
+
+	// 2. Extract quoted phrases or key segments
+	phrases := extractPhrases(query)
+	for _, phrase := range phrases {
+		addIfNew(phrase)
+	}
+
+	// 3. Split by common delimiters and use longest segment
+	segments := splitByDelimiters(query)
+	for _, seg := range segments {
+		if len(seg) > 5 {
+			addIfNew(seg)
 		}
 	}
-	pipelineInfo(ctx, "Search", "expansion_result", map[string]interface{}{
+
+	// 4. Remove question words (什么/如何/怎么/为什么/哪个 etc.)
+	cleaned := removeQuestionWords(query)
+	if cleaned != query {
+		addIfNew(cleaned)
+	}
+
+	// Limit to 5 expansions
+	if len(expansions) > 5 {
+		expansions = expansions[:5]
+	}
+
+	pipelineInfo(ctx, "Search", "local_expansion_result", map[string]interface{}{
 		"variants": len(expansions),
 	})
 	return expansions
 }
 
-func extractJSONBlock(text string) string {
-	t := strings.TrimSpace(text)
-	if i := strings.Index(t, "["); i >= 0 {
-		j := strings.LastIndex(t, "]")
-		if j > i {
-			return t[i : j+1]
-		}
-	}
-	return "[]"
+// Common Chinese and English stopwords
+var stopwords = map[string]struct{}{
+	"的": {}, "是": {}, "在": {}, "了": {}, "和": {}, "与": {}, "或": {},
+	"a": {}, "an": {}, "the": {}, "is": {}, "are": {}, "was": {}, "were": {},
+	"be": {}, "been": {}, "being": {}, "have": {}, "has": {}, "had": {},
+	"do": {}, "does": {}, "did": {}, "will": {}, "would": {}, "could": {},
+	"should": {}, "may": {}, "might": {}, "must": {}, "can": {},
+	"to": {}, "of": {}, "in": {}, "for": {}, "on": {}, "with": {}, "at": {},
+	"by": {}, "from": {}, "as": {}, "into": {}, "through": {}, "about": {},
+	"what": {}, "how": {}, "why": {}, "when": {}, "where": {}, "which": {},
+	"who": {}, "whom": {}, "whose": {},
 }
 
-// normalizeKeywordSearchResults normalizes keyword search result scores into [0,1] globally across all knowledge bases
-// Improvements:
-// 1. Uses robust normalization with percentile-based bounds to handle outliers
-// 2. Handles edge cases: single result, no variance, negative scores
-// 3. Global normalization ensures fair comparison across different knowledge bases
-func normalizeKeywordSearchResults(ctx context.Context, results []*types.SearchResult) {
-	searchutil.NormalizeKeywordScores[*types.SearchResult](
-		results,
-		func(r *types.SearchResult) bool {
-			return r.MatchType == types.MatchTypeKeywords
-		},
-		func(r *types.SearchResult) float64 {
-			return r.Score
-		},
-		func(r *types.SearchResult, score float64) {
-			r.Score = score
-		},
-		searchutil.KeywordScoreCallbacks{
-			OnNoVariance: func(count int, score float64) {
-				pipelineInfo(ctx, "Search", "keyword_scores_no_variance", map[string]interface{}{
-					"count": count,
-					"score": score,
-				})
-			},
-			OnNormalized: func(count int, rawMin, rawMax, normalizeMin, normalizeMax float64) {
-				pipelineInfo(ctx, "Search", "normalize_keyword_scores", map[string]interface{}{
-					"count":         count,
-					"raw_min":       rawMin,
-					"raw_max":       rawMax,
-					"normalize_min": normalizeMin,
-					"normalize_max": normalizeMax,
-				})
-			},
-		},
-	)
+// Question words in Chinese
+var questionWords = regexp.MustCompile(`^(什么是|什么|如何|怎么|怎样|为什么|为何|哪个|哪些|谁|何时|何地|请问|请告诉我|帮我|我想知道|我想了解)`)
+
+func extractKeywords(text string) []string {
+	words := tokenize(text)
+	keywords := make([]string, 0, len(words))
+	for _, w := range words {
+		lower := strings.ToLower(w)
+		if _, isStop := stopwords[lower]; !isStop && len(w) > 1 {
+			keywords = append(keywords, w)
+		}
+	}
+	return keywords
+}
+
+func extractPhrases(text string) []string {
+	// Extract quoted content
+	var phrases []string
+	re := regexp.MustCompile(`["'"'「」『』]([^"'"'「」『』]+)["'"'「」『』]`)
+	matches := re.FindAllStringSubmatch(text, -1)
+	for _, m := range matches {
+		if len(m) > 1 && len(m[1]) > 2 {
+			phrases = append(phrases, m[1])
+		}
+	}
+	return phrases
+}
+
+func splitByDelimiters(text string) []string {
+	// Split by common delimiters
+	re := regexp.MustCompile(`[,，;；、。！？!?\s]+`)
+	parts := re.Split(text, -1)
+	var result []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+func removeQuestionWords(text string) string {
+	return strings.TrimSpace(questionWords.ReplaceAllString(text, ""))
+}
+
+func tokenize(text string) []string {
+	var tokens []string
+	var current strings.Builder
+
+	for _, r := range text {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			current.WriteRune(r)
+		} else if unicode.Is(unicode.Han, r) {
+			// Flush current token
+			if current.Len() > 0 {
+				tokens = append(tokens, current.String())
+				current.Reset()
+			}
+			// Chinese character as single token
+			tokens = append(tokens, string(r))
+		} else {
+			// Delimiter
+			if current.Len() > 0 {
+				tokens = append(tokens, current.String())
+				current.Reset()
+			}
+		}
+	}
+	if current.Len() > 0 {
+		tokens = append(tokens, current.String())
+	}
+	return tokens
 }

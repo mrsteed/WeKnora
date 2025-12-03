@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/searchutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/gorm"
 )
@@ -546,17 +547,7 @@ func (t *GrepChunksTool) deduplicateChunks(ctx context.Context, results []chunkW
 
 // buildContentSignature creates a normalized signature for content to detect near-duplicates
 func (t *GrepChunksTool) buildContentSignature(content string) string {
-	c := strings.ToLower(strings.TrimSpace(content))
-	if c == "" {
-		return ""
-	}
-	// Normalize whitespace
-	c = strings.Join(strings.Fields(c), " ")
-	// Use first 128 characters as signature
-	if len(c) > 128 {
-		c = c[:128]
-	}
-	return c
+	return searchutil.BuildContentSignature(content)
 }
 
 // scoreChunks calculates match scores for chunks based on pattern matches
@@ -693,36 +684,10 @@ func (t *GrepChunksTool) applyMMR(
 
 // tokenizeSimple tokenizes text into a set of words (simple whitespace-based)
 func (t *GrepChunksTool) tokenizeSimple(text string) map[string]struct{} {
-	text = strings.ToLower(text)
-	fields := strings.Fields(text)
-	set := make(map[string]struct{}, len(fields))
-	for _, f := range fields {
-		if len(f) > 1 {
-			set[f] = struct{}{}
-		}
-	}
-	return set
+	return searchutil.TokenizeSimple(text)
 }
 
 // jaccard calculates Jaccard similarity between two token sets
 func (t *GrepChunksTool) jaccard(a, b map[string]struct{}) float64 {
-	if len(a) == 0 && len(b) == 0 {
-		return 0
-	}
-
-	// Calculate intersection
-	inter := 0
-	for k := range a {
-		if _, ok := b[k]; ok {
-			inter++
-		}
-	}
-
-	// Calculate union
-	union := len(a) + len(b) - inter
-	if union == 0 {
-		return 0
-	}
-
-	return float64(inter) / float64(union)
+	return searchutil.Jaccard(a, b)
 }
