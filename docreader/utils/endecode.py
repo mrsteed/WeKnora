@@ -7,6 +7,7 @@ with a focus on image and text data conversion:
 - Text encoding/decoding (multiple character sets)
 - Bytes conversion utilities
 """
+
 import base64
 import binascii
 import io
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 def decode_image(image: Union[str, bytes, Image.Image, np.ndarray]) -> str:
     """Convert image to base64 encoded string.
-    
+
     This function handles multiple image input formats and converts them
     to a base64 encoded string representation, which is useful for embedding
     images in JSON, HTML, or other text-based formats.
@@ -38,7 +39,7 @@ def decode_image(image: Union[str, bytes, Image.Image, np.ndarray]) -> str:
 
     Raises:
         ValueError: If the image type is not supported
-        
+
     Example:
         >>> # From file path
         >>> base64_str = decode_image("/path/to/image.png")
@@ -59,7 +60,9 @@ def decode_image(image: Union[str, bytes, Image.Image, np.ndarray]) -> str:
     elif isinstance(image, Image.Image):
         # Handle PIL Image: save to buffer then encode
         buffer = io.BytesIO()
-        image.save(buffer, format=image.format)
+        # Use original format if available, otherwise default to PNG
+        img_format = image.format if image.format else "PNG"
+        image.save(buffer, format=img_format)
         return base64.b64encode(buffer.getvalue()).decode()
 
     elif isinstance(image, np.ndarray):
@@ -74,7 +77,7 @@ def decode_image(image: Union[str, bytes, Image.Image, np.ndarray]) -> str:
 
 def encode_image(image: str, errors="strict") -> bytes:
     """Decode a base64 encoded image string back to bytes.
-    
+
     This function converts a base64 encoded string representation of an image
     back into its original binary bytes format.
 
@@ -84,13 +87,13 @@ def encode_image(image: str, errors="strict") -> bytes:
             - 'strict' (default): Raise binascii.Error on decoding errors
             - 'ignore': Return empty bytes on decoding errors
             - Any other name registered with codecs.register_error
-            
+
     Returns:
         bytes: Decoded image bytes, or empty bytes if errors='ignore' and decoding fails
 
     Raises:
         binascii.Error: If decoding fails and errors='strict'
-        
+
     Example:
         >>> base64_str = "iVBORw0KGgoAAAANSUhEUgAAAAUA..."
         >>> image_bytes = encode_image(base64_str)
@@ -111,13 +114,13 @@ def encode_image(image: str, errors="strict") -> bytes:
 
 def encode_bytes(content: str) -> bytes:
     """Convert a string to bytes using UTF-8 encoding.
-    
+
     Args:
         content: String to be encoded
-        
+
     Returns:
         bytes: UTF-8 encoded bytes representation of the string
-        
+
     Example:
         >>> text = "Hello, 世界"
         >>> encoded = encode_bytes(text)
@@ -140,15 +143,15 @@ def decode_bytes(
     ],
 ) -> str:
     """Decode bytes to string with automatic encoding detection.
-    
+
     This function attempts to decode bytes using multiple encoding formats
     in order of priority. It's particularly useful for handling text files
     with unknown or mixed encodings, especially for Chinese text.
-    
+
     The function tries encodings in the provided order and returns the first
     successful decode. If all encodings fail, it falls back to latin-1 with
     error replacement to ensure a result is always returned.
-    
+
     Args:
         content: Bytes content to be decoded
         encodings: List of encoding formats to try, in order of priority.
@@ -157,15 +160,15 @@ def decode_bytes(
             - gb18030, gb2312, gbk: Chinese encodings (Simplified)
             - big5: Chinese encoding (Traditional)
             - ascii, latin-1: Western encodings
-            
+
     Returns:
         str: Decoded string content
-        
+
     Note:
         - If all encodings fail, latin-1 with error='replace' is used as fallback
         - The fallback may result in character replacement (�) for invalid bytes
         - A warning is logged when fallback encoding is used
-        
+
     Example:
         >>> # Decode with default encodings
         >>> text = decode_bytes(b"\\xe4\\xb8\\xad\\xe6\\x96\\x87")  # UTF-8 Chinese
