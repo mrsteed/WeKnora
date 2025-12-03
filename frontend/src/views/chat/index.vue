@@ -437,7 +437,7 @@ onChunk((data) => {
     
     // 原有的知识库 QA 处理逻辑
     fullContent.value += data.content;
-    let obj = { ...data, content: '', role: 'assistant', showThink: false };
+    let obj = { ...data, content: '', role: 'assistant', showThink: false, is_completed: false };
 
     if (fullContent.value.includes('<think>') && !fullContent.value.includes('<\/think>')) {
         obj.thinking = true;
@@ -466,6 +466,8 @@ onChunk((data) => {
     }
     
     if (data.done) {
+        // 标记消息已完成
+        obj.is_completed = true;
         // 标题生成已改为异步事件推送，不再需要在这里手动调用
         // 如果标题还未生成，前端会通过 SSE 事件接收
         isReplying.value = false;
@@ -765,6 +767,10 @@ const updateAssistantSession = (payload) => {
         message.thinkContent = payload.thinkContent;
         message.showThink = payload.showThink;
         message.knowledge_references = message.knowledge_references ? message.knowledge_references : payload.knowledge_references;
+        // 更新完成状态
+        if (payload.is_completed) {
+            message.is_completed = true;
+        }
     } else {
         messagesList.push(payload);
     }

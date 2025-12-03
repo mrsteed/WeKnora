@@ -19,6 +19,15 @@
             <div class="content-wrapper">
                 <div class="ai-markdown-template markdown-content" v-html="processMarkdown(content || session.content)"></div>
             </div>
+            <!-- 复制和添加到知识库按钮 - 非 Agent 模式下显示 -->
+            <div v-if="session.is_completed && (content || session.content)" class="answer-toolbar">
+                <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer" :title="$t('agent.copy')">
+                    <t-icon name="copy" />
+                </t-button>
+                <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge" :title="$t('agent.addToKnowledgeBase')">
+                    <t-icon name="add" />
+                </t-button>
+            </div>
             <div v-if="isImgLoading" class="img_loading"><t-loading size="small"></t-loading><span>{{ $t('common.loading') }}</span></div>
         </div>
         <picturePreview :reviewImg="reviewImg" :reviewUrl="reviewUrl" @closePreImg="closePreImg"></picturePreview>
@@ -33,6 +42,8 @@ import AgentStreamDisplay from './AgentStreamDisplay.vue';
 import picturePreview from '@/components/picture-preview.vue';
 import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL } from '@/utils/security';
 import { useI18n } from 'vue-i18n';
+import { MessagePlugin } from 'tdesign-vue-next';
+import { useUIStore } from '@/stores/ui';
 
 marked.use({
     mangle: false,
@@ -41,6 +52,7 @@ marked.use({
 });
 const emit = defineEmits(['scroll-bottom'])
 const { t } = useI18n()
+const uiStore = useUIStore();
 const renderer = new marked.Renderer();
 let parentMd = ref()
 let reviewUrl = ref('')
@@ -196,6 +208,80 @@ const myMarkdown = (res) => {
     return marked.parse(res, { renderer })
 }
 
+// 获取实际内容
+const getActualContent = () => {
+    return (props.content || props.session?.content || '').trim();
+};
+
+// 格式化标题
+const formatManualTitle = (question) => {
+    if (!question) {
+        return '会话摘录';
+    }
+    const condensed = question.replace(/\s+/g, ' ').trim();
+    if (!condensed) {
+        return '会话摘录';
+    }
+    return condensed.length > 40 ? `${condensed.slice(0, 40)}...` : condensed;
+};
+
+// 构建手动添加的 Markdown 内容
+const buildManualMarkdown = (question, answer) => {
+    const safeAnswer = answer?.trim() || '（无回答内容）';
+    return `${safeAnswer}`;
+};
+
+// 复制回答内容
+const handleCopyAnswer = async () => {
+    const content = getActualContent();
+    if (!content) {
+        MessagePlugin.warning(t('chat.emptyContentWarning') || '当前回答为空，无法复制');
+        return;
+    }
+
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(content);
+            MessagePlugin.success(t('chat.copySuccess') || '已复制到剪贴板');
+        } else {
+            const textArea = document.createElement('textarea');
+            textArea.value = content;
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            MessagePlugin.success(t('chat.copySuccess') || '已复制到剪贴板');
+        }
+    } catch (err) {
+        console.error('复制失败:', err);
+        MessagePlugin.error(t('chat.copyFailed') || '复制失败，请手动复制');
+    }
+};
+
+// 添加到知识库
+const handleAddToKnowledge = () => {
+    const content = getActualContent();
+    if (!content) {
+        MessagePlugin.warning(t('chat.emptyContentWarning') || '当前回答为空，无法保存到知识库');
+        return;
+    }
+
+    const question = (props.userQuery || '').trim();
+    const manualContent = buildManualMarkdown(question, content);
+    const manualTitle = formatManualTitle(question);
+
+    uiStore.openManualEditor({
+        mode: 'create',
+        title: manualTitle,
+        content: manualContent,
+        status: 'draft',
+    });
+
+    MessagePlugin.info(t('chat.editorOpened') || '已打开编辑器，请选择知识库后保存');
+};
+
 onMounted(async () => {
     processedMarkdown.value = splitMarkdownByImages(props.content);
     removeImg()
@@ -204,14 +290,14 @@ onMounted(async () => {
 <style lang="less" scoped>
 @import '../../../components/css/markdown.less';
 
-// 内容包装器 - 与 thinking 样式一致
+// 内容包装器 - 与 Agent 模式的 answer 样式一致
 .content-wrapper {
     background: #ffffff;
-    border-radius: 8px;
-    padding: 1px 14px;
-    box-shadow: 0 2px 4px rgba(7, 192, 95, 0.08);
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    animation: fadeInUp 0.3s ease-out;
+    border-radius: 6px;
+    padding: 8px 12px;
+    border: 1px solid #07c05f;
+    box-shadow: 0 1px 3px rgba(7, 192, 95, 0.06);
+    transition: all 0.2s ease;
 }
 
 @keyframes fadeInUp {
@@ -226,33 +312,31 @@ onMounted(async () => {
 }
 
 .ai-markdown-template {
-    font-size: 14px;
-    color: #333333;
+    font-size: 13px;
+    color: #374151;
     line-height: 1.6;
-    /* 确保换行符正确显示 */
-    // white-space: pre-line;  /* 保留换行符，但合并多个空格 */
 }
 
 .markdown-content {
     :deep(p) {
-        margin: 8px 0;
+        margin: 6px 0;
         line-height: 1.6;
     }
 
     :deep(code) {
-        background: #f0f0f0;
-        padding: 2px 6px;
+        background: #f3f4f6;
+        padding: 2px 5px;
         border-radius: 3px;
-        font-family: 'Monaco', 'Courier New', monospace;
-        font-size: 12px;
+        font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+        font-size: 11px;
     }
 
     :deep(pre) {
-        background: #f5f5f5;
-        padding: 12px;
+        background: #f9fafb;
+        padding: 10px;
         border-radius: 4px;
         overflow-x: auto;
-        margin: 8px 0;
+        margin: 6px 0;
 
         code {
             background: none;
@@ -261,25 +345,25 @@ onMounted(async () => {
     }
 
     :deep(ul), :deep(ol) {
-        margin: 8px 0;
-        padding-left: 24px;
+        margin: 6px 0;
+        padding-left: 20px;
     }
 
     :deep(li) {
-        margin: 4px 0;
+        margin: 3px 0;
     }
 
     :deep(blockquote) {
-        border-left: 3px solid #07c05f;
-        padding-left: 12px;
-        margin: 8px 0;
-        color: #666;
+        border-left: 2px solid #07c05f;
+        padding-left: 10px;
+        margin: 6px 0;
+        color: #6b7280;
     }
 
     :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
-        margin: 12px 0 8px 0;
+        margin: 10px 0 6px 0;
         font-weight: 600;
-        color: #333;
+        color: #374151;
     }
 
     :deep(a) {
@@ -293,18 +377,18 @@ onMounted(async () => {
 
     :deep(table) {
         border-collapse: collapse;
-        margin: 8px 0;
-        font-size: 12px;
+        margin: 6px 0;
+        font-size: 11px;
         width: 100%;
 
         th, td {
             border: 1px solid #e5e7eb;
-            padding: 6px 10px;
+            padding: 5px 8px;
             text-align: left;
-    }
+        }
 
         th {
-            background: #f5f5f5;
+            background: #f9fafb;
             font-weight: 600;
         }
 
@@ -380,6 +464,81 @@ onMounted(async () => {
     }
     30% {
         transform: translateY(-8px);
+    }
+}
+
+// 复制和添加到知识库按钮工具栏
+.answer-toolbar {
+    display: flex;
+    justify-content: flex-start;
+    gap: 6px;
+    margin-top: 8px;
+    min-height: 32px;
+
+    :deep(.t-button) {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: auto;
+        width: auto;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #666;
+        transition: all 0.2s ease;
+        
+        .t-button__content {
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+        }
+        
+        .t-button__text {
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+        }
+        
+        .t-icon {
+            display: inline-flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            color: #666;
+        }
+        
+        .t-icon svg {
+            display: block !important;
+            width: 16px;
+            height: 16px;
+        }
+        
+        .t-button__text > :not(.t-icon) {
+            display: none;
+        }
+        
+        &:hover:not(:disabled) {
+            background: rgba(7, 192, 95, 0.08);
+            border-color: rgba(7, 192, 95, 0.3);
+            color: #07c05f;
+            
+            .t-icon {
+                color: #07c05f;
+            }
+        }
+        
+        &:active:not(:disabled) {
+            background: rgba(7, 192, 95, 0.12);
+            border-color: rgba(7, 192, 95, 0.4);
+            transform: translateY(0.5px);
+        }
     }
 }
 
