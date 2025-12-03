@@ -753,12 +753,15 @@ onBeforeRouteUpdate((to, from, next) => {
             v-else
             width="18" 
             height="18" 
-            viewBox="0 0 16 16" 
-            fill="currentColor"
+            viewBox="0 0 24 24" 
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
             class="control-icon normal-mode-icon"
           >
-            <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zM1.5 8a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0z"/>
-            <path d="M8 4.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM6 8a2 2 0 1 1 4 0 2 2 0 0 1-4 0z"/>
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
           </svg>
           <span class="agent-mode-text">
             {{ isAgentEnabled ? $t('input.agentMode') : $t('input.normalMode') }}
