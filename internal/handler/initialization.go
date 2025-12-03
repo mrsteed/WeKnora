@@ -1251,7 +1251,7 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 	}
 
 	// 判断多模态是否启用：有VLM模型ID或有存储配置
-	hasMultimodal := ((kb.VLMConfig.Enabled && kb.VLMConfig.ModelID != "") ||
+	hasMultimodal := (kb.VLMConfig.IsEnabled() ||
 		kb.StorageConfig.SecretID != "" || kb.StorageConfig.BucketName != "")
 	if config["multimodal"] == nil {
 		config["multimodal"] = map[string]interface{}{

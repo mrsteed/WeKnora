@@ -279,7 +279,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	if enableMultimodel != nil {
 		enableMultimodelValue = *enableMultimodel
 	} else {
-		enableMultimodelValue = kb.VLMConfig.Enabled
+		enableMultimodelValue = kb.VLMConfig.IsEnabled()
 	}
 
 	// Check question generation config
@@ -413,7 +413,7 @@ func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
 	if enableMultimodel != nil {
 		enableMultimodelValue = *enableMultimodel
 	} else {
-		enableMultimodelValue = kb.VLMConfig.Enabled
+		enableMultimodelValue = kb.VLMConfig.IsEnabled()
 	}
 
 	// Check question generation config
@@ -4155,7 +4155,7 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 	fileType := "md"
 
 	// 检查是否需要启用多模态（对于手动内容通常不需要，但保持一致性）
-	enableMultimodel := kb.VLMConfig.Enabled && kb.StorageConfig.Provider != ""
+	enableMultimodel := kb.VLMConfig.IsEnabled() && kb.StorageConfig.Provider != ""
 
 	var vlmConfig *proto.VLMConfig
 	if enableMultimodel {
@@ -4285,7 +4285,21 @@ func (s *knowledgeService) cleanupKnowledgeResources(ctx context.Context, knowle
 }
 
 func (s *knowledgeService) getVLMProtoConfig(ctx context.Context, kb *types.KnowledgeBase) (*proto.VLMConfig, error) {
-	if kb == nil || !kb.VLMConfig.Enabled || kb.VLMConfig.ModelID == "" {
+	if kb == nil {
+		return nil, nil
+	}
+	// 兼容老版本：直接使用 ModelName 和 BaseURL
+	if kb.VLMConfig.ModelName != "" && kb.VLMConfig.BaseURL != "" {
+		return &proto.VLMConfig{
+			ModelName:     kb.VLMConfig.ModelName,
+			BaseUrl:       kb.VLMConfig.BaseURL,
+			ApiKey:        kb.VLMConfig.APIKey,
+			InterfaceType: kb.VLMConfig.InterfaceType,
+		}, nil
+	}
+
+	// 新版本：未启用或无模型ID时返回nil
+	if !kb.VLMConfig.Enabled || kb.VLMConfig.ModelID == "" {
 		return nil, nil
 	}
 

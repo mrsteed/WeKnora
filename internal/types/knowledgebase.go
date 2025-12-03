@@ -180,6 +180,31 @@ func (c *ImageProcessingConfig) Scan(value interface{}) error {
 type VLMConfig struct {
 	Enabled bool   `yaml:"enabled"  json:"enabled"`
 	ModelID string `yaml:"model_id" json:"model_id"`
+
+	// 兼容老版本
+	// Model Name
+	ModelName string `yaml:"model_name" json:"model_name"`
+	// Base URL
+	BaseURL string `yaml:"base_url" json:"base_url"`
+	// API Key
+	APIKey string `yaml:"api_key" json:"api_key"`
+	// Interface Type: "ollama" or "openai"
+	InterfaceType string `yaml:"interface_type" json:"interface_type"`
+}
+
+// IsEnabled 判断多模态是否启用（兼容新老版本）
+// 新版本：Enabled && ModelID != ""
+// 老版本：ModelName != "" && BaseURL != ""
+func (c VLMConfig) IsEnabled() bool {
+	// 新版本配置
+	if c.Enabled && c.ModelID != "" {
+		return true
+	}
+	// 兼容老版本配置
+	if c.ModelName != "" && c.BaseURL != "" {
+		return true
+	}
+	return false
 }
 
 // QuestionGenerationConfig represents the question generation configuration for document knowledge bases
