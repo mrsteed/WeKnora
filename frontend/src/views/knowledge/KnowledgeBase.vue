@@ -59,6 +59,17 @@ const tagTotal = ref(0);
 let tagSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 let docSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 const docSearchKeyword = ref('');
+const selectedFileType = ref('');
+const fileTypeOptions = computed(() => [
+  { content: t('knowledgeBase.allFileTypes') || '全部类型', value: '' },
+  { content: 'PDF', value: 'pdf' },
+  { content: 'DOCX', value: 'docx' },
+  { content: 'DOC', value: 'doc' },
+  { content: 'TXT', value: 'txt' },
+  { content: 'MD', value: 'md' },
+  { content: 'URL', value: 'url' },
+  { content: t('knowledgeBase.typeManual') || '手动创建', value: 'manual' },
+]);
 type TagInputInstance = ComponentPublicInstance<{ focus: () => void; select: () => void }>;
 const tagDropdownOptions = computed(() => {
   const options = [
@@ -150,6 +161,7 @@ const loadKnowledgeFiles = (kbIdValue: string) => {
       page_size: pageSize,
       tag_id: selectedTagId.value || undefined,
       keyword: docSearchKeyword.value ? docSearchKeyword.value.trim() : undefined,
+      file_type: selectedFileType.value || undefined,
     },
     kbIdValue,
   );
@@ -458,6 +470,15 @@ watch(docSearchKeyword, (newVal, oldVal) => {
       loadKnowledgeFiles(kbId.value);
     }
   }, 300);
+});
+
+// 监听文件类型筛选变化
+watch(selectedFileType, (newVal, oldVal) => {
+  if (newVal === oldVal) return;
+  if (kbId.value) {
+    page = 1;
+    loadKnowledgeFiles(kbId.value);
+  }
 });
 
 // 监听文件上传事件
@@ -836,7 +857,7 @@ const handleScroll = () => {
     if (scrollTop + clientHeight >= scrollHeight) {
       page++;
       if (cardList.value.length < total.value && page <= pageNum) {
-        getKnowled({ page, page_size: pageSize, tag_id: selectedTagId.value || undefined, keyword: docSearchKeyword.value ? docSearchKeyword.value.trim() : undefined });
+        getKnowled({ page, page_size: pageSize, tag_id: selectedTagId.value || undefined, keyword: docSearchKeyword.value ? docSearchKeyword.value.trim() : undefined, file_type: selectedFileType.value || undefined });
       }
     }
   }
@@ -1125,12 +1146,13 @@ async function createNewSession(value: string): Promise<void> {
         </aside>
         <div class="tag-content">
           <div class="doc-card-area">
-            <!-- 搜索栏 -->
-            <div class="doc-search-bar">
+            <!-- 搜索栏和筛选 -->
+            <div class="doc-filter-bar">
               <t-input
                 v-model.trim="docSearchKeyword"
                 :placeholder="$t('knowledgeBase.docSearchPlaceholder')"
                 clearable
+                class="doc-search-input"
                 @clear="loadKnowledgeFiles(kbId)"
                 @keydown.enter="loadKnowledgeFiles(kbId)"
               >
@@ -1138,6 +1160,13 @@ async function createNewSession(value: string): Promise<void> {
                   <t-icon name="search" size="16px" />
                 </template>
               </t-input>
+              <t-select
+                v-model="selectedFileType"
+                :options="fileTypeOptions"
+                :placeholder="$t('knowledgeBase.fileTypeFilter')"
+                class="doc-type-select"
+                clearable
+              />
             </div>
             <div
               class="doc-scroll-container"
@@ -1781,9 +1810,21 @@ async function createNewSession(value: string): Promise<void> {
   min-height: 0;
 }
 
-.doc-search-bar {
+.doc-filter-bar {
   padding: 0px 0px 10px 0px;
   flex-shrink: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+
+  .doc-search-input {
+    flex: 1;
+  }
+
+  .doc-type-select {
+    width: 140px;
+    flex-shrink: 0;
+  }
 
   :deep(.t-input) {
     font-size: 13px;
@@ -1796,6 +1837,21 @@ async function createNewSession(value: string): Promise<void> {
     &.t-is-focused {
       border-color: #4080ff;
       background-color: #fff;
+    }
+  }
+
+  :deep(.t-select) {
+    .t-input {
+      font-size: 13px;
+      background-color: #f7f9fc;
+      border-color: #e5e9f2;
+      border-radius: 6px;
+
+      &:hover,
+      &.t-is-focused {
+        border-color: #4080ff;
+        background-color: #fff;
+      }
     }
   }
 }

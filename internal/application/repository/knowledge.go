@@ -63,6 +63,7 @@ func (r *knowledgeRepository) ListPagedKnowledgeByKnowledgeBaseID(
 	page *types.Pagination,
 	tagID string,
 	keyword string,
+	fileType string,
 ) ([]*types.Knowledge, int64, error) {
 	var knowledges []*types.Knowledge
 	var total int64
@@ -74,6 +75,15 @@ func (r *knowledgeRepository) ListPagedKnowledgeByKnowledgeBaseID(
 	}
 	if keyword != "" {
 		query = query.Where("file_name LIKE ?", "%"+keyword+"%")
+	}
+	if fileType != "" {
+		if fileType == "manual" {
+			query = query.Where("type = ?", "manual")
+		} else if fileType == "url" {
+			query = query.Where("type = ?", "url")
+		} else {
+			query = query.Where("file_type = ?", fileType)
+		}
 	}
 
 	// Query total count first
@@ -89,6 +99,15 @@ func (r *knowledgeRepository) ListPagedKnowledgeByKnowledgeBaseID(
 	}
 	if keyword != "" {
 		dataQuery = dataQuery.Where("file_name LIKE ?", "%"+keyword+"%")
+	}
+	if fileType != "" {
+		if fileType == "manual" {
+			dataQuery = dataQuery.Where("type = ?", "manual")
+		} else if fileType == "url" {
+			dataQuery = dataQuery.Where("type = ?", "url")
+		} else {
+			dataQuery = dataQuery.Where("file_type = ?", fileType)
+		}
 	}
 
 	if err := dataQuery.

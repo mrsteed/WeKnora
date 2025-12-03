@@ -183,6 +183,8 @@ export default {
     dragFileNotText: 'Пожалуйста, перетащите файлы, а не текст или ссылки',
     searchPlaceholder: 'Поиск по базам знаний...',
     docSearchPlaceholder: 'Поиск документов...',
+    fileTypeFilter: 'Тип файла',
+    allFileTypes: 'Все типы',
     noMatch: 'Совпадающих баз знаний не найдено',
     noKnowledge: 'Нет доступных баз знаний',
     loadingFailed: 'Не удалось загрузить базы знаний'

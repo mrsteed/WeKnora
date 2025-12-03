@@ -46,12 +46,14 @@ type KnowledgeService interface {
 	// ListPagedKnowledgeByKnowledgeBaseID lists all knowledge under a knowledge base with pagination.
 	// When tagID is non-empty, results are filtered by tag_id.
 	// When keyword is non-empty, results are filtered by file_name.
+	// When fileType is non-empty, results are filtered by file_type or type.
 	ListPagedKnowledgeByKnowledgeBaseID(
 		ctx context.Context,
 		kbID string,
 		page *types.Pagination,
 		tagID string,
 		keyword string,
+		fileType string,
 	) (*types.PageResult, error)
 	// DeleteKnowledge deletes knowledge by ID.
 	DeleteKnowledge(ctx context.Context, id string) error
@@ -115,8 +117,9 @@ type KnowledgeRepository interface {
 	// ListPagedKnowledgeByKnowledgeBaseID lists all knowledge in a knowledge base with pagination.
 	// When tagID is non-empty, results are filtered by tag_id.
 	// When keyword is non-empty, results are filtered by file_name.
+	// When fileType is non-empty, results are filtered by file_type or type.
 	ListPagedKnowledgeByKnowledgeBaseID(ctx context.Context,
-		tenantID uint64, kbID string, page *types.Pagination, tagID string, keyword string,
+		tenantID uint64, kbID string, page *types.Pagination, tagID string, keyword string, fileType string,
 	) ([]*types.Knowledge, int64, error)
 	UpdateKnowledge(ctx context.Context, knowledge *types.Knowledge) error
 	// UpdateKnowledgeBatch updates knowledge items in batch

@@ -28,7 +28,7 @@ export default function (knowledgeBaseId?: string) {
     file_type: ""
   });
   const getKnowled = (
-    query: { page: number; page_size: number; tag_id?: string; keyword?: string } = { page: 1, page_size: 35 },
+    query: { page: number; page_size: number; tag_id?: string; keyword?: string; file_type?: string } = { page: 1, page_size: 35 },
     kbId?: string,
   ) => {
     const targetKbId = kbId || knowledgeBaseId;

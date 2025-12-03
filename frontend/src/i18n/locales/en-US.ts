@@ -183,6 +183,8 @@ export default {
     dragFileNotText: 'Please drag files instead of text or links',
     searchPlaceholder: 'Search knowledge bases...',
     docSearchPlaceholder: 'Search document names...',
+    fileTypeFilter: 'File Type',
+    allFileTypes: 'All Types',
     noMatch: 'No matching knowledge base found',
     noKnowledge: 'No knowledge bases available',
     loadingFailed: 'Failed to load knowledge bases'

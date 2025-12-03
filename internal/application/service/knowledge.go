@@ -699,10 +699,10 @@ func (s *knowledgeService) ListKnowledgeByKnowledgeBaseID(ctx context.Context,
 
 // ListPagedKnowledgeByKnowledgeBaseID returns paginated knowledge entries in a knowledge base
 func (s *knowledgeService) ListPagedKnowledgeByKnowledgeBaseID(ctx context.Context,
-	kbID string, page *types.Pagination, tagID string, keyword string,
+	kbID string, page *types.Pagination, tagID string, keyword string, fileType string,
 ) (*types.PageResult, error) {
 	knowledges, total, err := s.repo.ListPagedKnowledgeByKnowledgeBaseID(ctx,
-		ctx.Value(types.TenantIDContextKey).(uint64), kbID, page, tagID, keyword)
+		ctx.Value(types.TenantIDContextKey).(uint64), kbID, page, tagID, keyword, fileType)
 	if err != nil {
 		return nil, err
 	}
