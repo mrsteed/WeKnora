@@ -3,5 +3,4 @@
 -- When enabled, the system generates questions for document chunks to improve recall
 
 ALTER TABLE knowledge_bases 
-ADD COLUMN IF NOT EXISTS question_generation_config JSON NULL 
-COMMENT 'Question generation configuration for document knowledge bases';
+ADD COLUMN IF NOT EXISTS question_generation_config JSONB NULL ;

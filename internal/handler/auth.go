@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -19,6 +20,7 @@ import (
 type AuthHandler struct {
 	userService   interfaces.UserService
 	tenantService interfaces.TenantService
+	configInfo    *config.Config
 }
 
 // NewAuthHandler creates a new auth handler instance with the provided services
@@ -27,8 +29,10 @@ type AuthHandler struct {
 //   - tenantService: An implementation of the TenantService interface for tenant management
 //
 // Returns a pointer to the newly created AuthHandler
-func NewAuthHandler(userService interfaces.UserService, tenantService interfaces.TenantService) *AuthHandler {
+func NewAuthHandler(configInfo *config.Config,
+	userService interfaces.UserService, tenantService interfaces.TenantService) *AuthHandler {
 	return &AuthHandler{
+		configInfo:    configInfo,
 		userService:   userService,
 		tenantService: tenantService,
 	}
@@ -241,11 +245,12 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 			// Don't fail the request if tenant info is not available
 		}
 	}
-
+	userInfo := user.ToUserInfo()
+	userInfo.CanAccessAllTenants = user.CanAccessAllTenants && h.configInfo.Tenant.EnableCrossTenantAccess
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"user":   user.ToUserInfo(),
+			"user":   userInfo,
 			"tenant": tenant,
 		},
 	})
