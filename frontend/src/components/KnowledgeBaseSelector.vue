@@ -31,9 +31,19 @@
                 <path d="M10 3L4.5 8.5L2 6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </div>
+            <div class="kb-icon" :class="{ 'faq': kb.type === 'faq' }">
+              <svg v-if="kb.type === 'faq'" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M9 9C9 7.89543 9.89543 7 11 7H13C14.1046 7 15 7.89543 15 9C15 10.1046 14.1046 11 13 11H12V14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="12" cy="17" r="1" fill="currentColor"/>
+              </svg>
+              <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M22 19C22 19.5304 21.7893 20.0391 21.4142 20.4142C21.0391 20.7893 20.5304 21 20 21H4C3.46957 21 2.96086 20.7893 2.58579 20.4142C2.21071 20.0391 2 19.5304 2 19V5C2 4.46957 2.21071 3.96086 2.58579 3.58579C2.96086 3.21071 3.46957 3 4 3H9L11 6H20C20.5304 6 21.0391 6.21071 21.4142 6.58579C21.7893 6.96086 22 7.46957 22 8V19Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
             <div class="kb-name-wrap">
               <span class="kb-name">{{ kb.name }}</span>
-              <span class="kb-docs" v-if="kb.docsCount !== undefined">{{ kb.docsCount }} {{ $t('knowledgeBase.documents') }}</span>
+              <span class="kb-docs">({{ kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0) }})</span>
             </div>
           </div>
         </div>
@@ -61,7 +71,9 @@ import { useI18n } from 'vue-i18n'
 interface KnowledgeBase {
   id: string
   name: string
-  docsCount?: number
+  type?: 'document' | 'faq'
+  knowledge_count?: number
+  chunk_count?: number
   embedding_model_id?: string
   summary_model_id?: string
 }
@@ -438,9 +450,22 @@ watch(() => props.visible, async (v) => {
   width: 10px;
   height: 10px;
 }
-.kb-name-wrap { display:flex; flex-direction: column; min-width: 0; }
+.kb-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #059669;
+  
+  &.faq {
+    color: #0052d9;
+  }
+}
+.kb-name-wrap { display:flex; flex-direction: row; align-items: center; gap: 4px; min-width: 0; }
 .kb-name { font-size: 12px; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
-.kb-docs { font-size: 11px; color: #8b9196; margin-top: 1px; }
+.kb-docs { font-size: 11px; color: #8b9196; flex-shrink: 0; }
 
 .kb-empty { padding: 20px 8px; text-align: center; color: #9aa0a6; font-size: 12px; }
 
