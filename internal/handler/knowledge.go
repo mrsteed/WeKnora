@@ -318,18 +318,20 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 	}
 
 	tagID := c.Query("tag_id")
+	keyword := c.Query("keyword")
 
 	logger.Infof(
 		ctx,
-		"Retrieving knowledge list under knowledge base, knowledge base ID: %s, tag_id: %s, page: %d, page size: %d",
+		"Retrieving knowledge list under knowledge base, knowledge base ID: %s, tag_id: %s, keyword: %s, page: %d, page size: %d",
 		secutils.SanitizeForLog(kbID),
 		secutils.SanitizeForLog(tagID),
+		secutils.SanitizeForLog(keyword),
 		pagination.Page,
 		pagination.PageSize,
 	)
 
 	// Retrieve paginated knowledge entries
-	result, err := h.kgService.ListPagedKnowledgeByKnowledgeBaseID(ctx, kbID, &pagination, tagID)
+	result, err := h.kgService.ListPagedKnowledgeByKnowledgeBaseID(ctx, kbID, &pagination, tagID, keyword)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))

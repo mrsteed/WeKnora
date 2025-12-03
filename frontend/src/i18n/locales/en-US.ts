@@ -182,6 +182,7 @@ export default {
     textMarkdownFormat: 'text, markdown format files, max 200K',
     dragFileNotText: 'Please drag files instead of text or links',
     searchPlaceholder: 'Search knowledge bases...',
+    docSearchPlaceholder: 'Search document names...',
     noMatch: 'No matching knowledge base found',
     noKnowledge: 'No knowledge bases available',
     loadingFailed: 'Failed to load knowledge bases'

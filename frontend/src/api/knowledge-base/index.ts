@@ -54,13 +54,16 @@ export function createManualKnowledge(kbId: string, data: { title: string; conte
 
 export function listKnowledgeFiles(
   kbId: string,
-  params: { page: number; page_size: number; tag_id?: string },
+  params: { page: number; page_size: number; tag_id?: string; keyword?: string },
 ) {
   const query = new URLSearchParams();
   query.append('page', String(params.page));
   query.append('page_size', String(params.page_size));
   if (params.tag_id) {
     query.append('tag_id', params.tag_id);
+  }
+  if (params.keyword) {
+    query.append('keyword', params.keyword);
   }
   const qs = query.toString();
   return get(`/api/v1/knowledge-bases/${kbId}/knowledge?${qs}`);

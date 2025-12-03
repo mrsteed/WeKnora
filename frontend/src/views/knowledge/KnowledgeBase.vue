@@ -57,6 +57,8 @@ const tagHasMore = ref(false);
 const tagLoadingMore = ref(false);
 const tagTotal = ref(0);
 let tagSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+let docSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+const docSearchKeyword = ref('');
 type TagInputInstance = ComponentPublicInstance<{ focus: () => void; select: () => void }>;
 const tagDropdownOptions = computed(() => {
   const options = [
@@ -147,6 +149,7 @@ const loadKnowledgeFiles = (kbIdValue: string) => {
       page: 1,
       page_size: pageSize,
       tag_id: selectedTagId.value || undefined,
+      keyword: docSearchKeyword.value ? docSearchKeyword.value.trim() : undefined,
     },
     kbIdValue,
   );
@@ -439,6 +442,20 @@ watch(tagSearchQuery, (newVal, oldVal) => {
   tagSearchDebounce = window.setTimeout(() => {
     if (kbId.value) {
       loadTags(kbId.value, true);
+    }
+  }, 300);
+});
+
+// 监听文档搜索关键词变化
+watch(docSearchKeyword, (newVal, oldVal) => {
+  if (newVal === oldVal) return;
+  if (docSearchDebounce) {
+    clearTimeout(docSearchDebounce);
+  }
+  docSearchDebounce = window.setTimeout(() => {
+    if (kbId.value) {
+      page = 1;
+      loadKnowledgeFiles(kbId.value);
     }
   }, 300);
 });
@@ -819,7 +836,7 @@ const handleScroll = () => {
     if (scrollTop + clientHeight >= scrollHeight) {
       page++;
       if (cardList.value.length < total.value && page <= pageNum) {
-        getKnowled({ page, page_size: pageSize, tag_id: selectedTagId.value || undefined });
+        getKnowled({ page, page_size: pageSize, tag_id: selectedTagId.value || undefined, keyword: docSearchKeyword.value ? docSearchKeyword.value.trim() : undefined });
       }
     }
   }
@@ -1108,6 +1125,20 @@ async function createNewSession(value: string): Promise<void> {
         </aside>
         <div class="tag-content">
           <div class="doc-card-area">
+            <!-- 搜索栏 -->
+            <div class="doc-search-bar">
+              <t-input
+                v-model.trim="docSearchKeyword"
+                :placeholder="$t('knowledgeBase.docSearchPlaceholder')"
+                clearable
+                @clear="loadKnowledgeFiles(kbId)"
+                @keydown.enter="loadKnowledgeFiles(kbId)"
+              >
+                <template #prefix-icon>
+                  <t-icon name="search" size="16px" />
+                </template>
+              </t-input>
+            </div>
             <div
               class="doc-scroll-container"
               :class="{ 'is-empty': !cardList.length }"
@@ -1748,6 +1779,25 @@ async function createNewSession(value: string): Promise<void> {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+.doc-search-bar {
+  padding: 0px 0px 10px 0px;
+  flex-shrink: 0;
+
+  :deep(.t-input) {
+    font-size: 13px;
+    background-color: #f7f9fc;
+    border-color: #e5e9f2;
+    border-radius: 6px;
+
+    &:hover,
+    &:focus,
+    &.t-is-focused {
+      border-color: #4080ff;
+      background-color: #fff;
+    }
+  }
 }
 
 .doc-scroll-container {

@@ -182,6 +182,7 @@ export default {
     textMarkdownFormat: 'Файлы text, markdown формата, не более 200 КБ',
     dragFileNotText: 'Пожалуйста, перетащите файлы, а не текст или ссылки',
     searchPlaceholder: 'Поиск по базам знаний...',
+    docSearchPlaceholder: 'Поиск документов...',
     noMatch: 'Совпадающих баз знаний не найдено',
     noKnowledge: 'Нет доступных баз знаний',
     loadingFailed: 'Не удалось загрузить базы знаний'

@@ -185,6 +185,7 @@ export default {
     textMarkdownFormat: "text、markdown格式文件，不超过200K",
     dragFileNotText: "请拖拽文件而不是文本或链接",
     searchPlaceholder: "搜索知识库...",
+    docSearchPlaceholder: "搜索文档名称...",
     noMatch: "未找到匹配的知识库",
     noKnowledge: "暂无可用知识库",
     loadingFailed: "加载知识库失败",

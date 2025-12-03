@@ -62,6 +62,7 @@ func (r *knowledgeRepository) ListPagedKnowledgeByKnowledgeBaseID(
 	kbID string,
 	page *types.Pagination,
 	tagID string,
+	keyword string,
 ) ([]*types.Knowledge, int64, error) {
 	var knowledges []*types.Knowledge
 	var total int64
@@ -70,6 +71,9 @@ func (r *knowledgeRepository) ListPagedKnowledgeByKnowledgeBaseID(
 		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID)
 	if tagID != "" {
 		query = query.Where("tag_id = ?", tagID)
+	}
+	if keyword != "" {
+		query = query.Where("file_name LIKE ?", "%"+keyword+"%")
 	}
 
 	// Query total count first
@@ -82,6 +86,9 @@ func (r *knowledgeRepository) ListPagedKnowledgeByKnowledgeBaseID(
 		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID)
 	if tagID != "" {
 		dataQuery = dataQuery.Where("tag_id = ?", tagID)
+	}
+	if keyword != "" {
+		dataQuery = dataQuery.Where("file_name LIKE ?", "%"+keyword+"%")
 	}
 
 	if err := dataQuery.
