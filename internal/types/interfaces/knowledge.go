@@ -26,6 +26,7 @@ type KnowledgeService interface {
 		kbID string,
 		url string,
 		enableMultimodel *bool,
+		title string,
 	) (*types.Knowledge, error)
 	// CreateKnowledgeFromPassage creates knowledge from text passages.
 	CreateKnowledgeFromPassage(ctx context.Context, kbID string, passage []string) (*types.Knowledge, error)

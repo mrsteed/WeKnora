@@ -193,15 +193,18 @@ func (c *Client) CreateKnowledgeFromURL(
 	knowledgeBaseID string,
 	url string,
 	enableMultimodel *bool,
+	title string,
 ) (*Knowledge, error) {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/knowledge/url", knowledgeBaseID)
 
 	reqBody := struct {
 		URL              string `json:"url"`
 		EnableMultimodel *bool  `json:"enable_multimodel"`
+		Title            string `json:"title"`
 	}{
 		URL:              url,
 		EnableMultimodel: enableMultimodel,
+		Title:            title,
 	}
 
 	resp, err := c.doRequest(ctx, http.MethodPost, path, reqBody, nil)

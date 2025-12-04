@@ -347,7 +347,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 
 // CreateKnowledgeFromURL creates a knowledge entry from a URL source
 func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
-	kbID string, url string, enableMultimodel *bool,
+	kbID string, url string, enableMultimodel *bool, title string,
 ) (*types.Knowledge, error) {
 	logger.Info(ctx, "Start creating knowledge from URL")
 	logger.Infof(ctx, "Knowledge base ID: %s, URL: %s", kbID, url)
@@ -406,6 +406,7 @@ func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
 		TenantID:         tenantID,
 		KnowledgeBaseID:  kbID,
 		Type:             "url",
+		Title:            title,
 		Source:           url,
 		FileHash:         fileHash,
 		ParseStatus:      "pending",
