@@ -275,6 +275,16 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	// Auto-migrate database tables
+	err = db.AutoMigrate(
+		&types.User{},
+		&types.AuthToken{},
+		&types.KnowledgeBase{},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to auto-migrate database tables: %v", err)
+	}
+
 	// Run database migrations automatically (optional, can be disabled via env var)
 	// To disable auto-migration, set AUTO_MIGRATE=false
 	if os.Getenv("AUTO_MIGRATE") != "false" {
@@ -289,16 +299,6 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		}
 	} else {
 		logger.Infof(context.Background(), "Auto-migration is disabled (AUTO_MIGRATE=false)")
-	}
-
-	// Auto-migrate database tables
-	err = db.AutoMigrate(
-		&types.User{},
-		&types.AuthToken{},
-		&types.KnowledgeBase{},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to auto-migrate database tables: %v", err)
 	}
 
 	// Get underlying SQL DB object
