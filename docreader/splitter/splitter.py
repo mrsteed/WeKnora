@@ -30,14 +30,14 @@ logger = logging.getLogger(__name__)
 
 class TextSplitter(BaseModel, Generic[T]):
     """Text splitter with support for protected patterns and header tracking.
-    
+
     This class splits text into chunks while:
     - Respecting chunk size and overlap constraints
     - Preserving protected patterns (formulas, tables, code blocks)
     - Tracking headers for context preservation
     - Maintaining text integrity with smart merging
     """
-    
+
     chunk_size: int = Field(description="The token chunk size for each chunk.")
     chunk_overlap: int = Field(
         description="The token overlap of each chunk when splitting."
@@ -84,14 +84,14 @@ class TextSplitter(BaseModel, Generic[T]):
         length_function: Callable[[str], int] = lambda x: len(x),
     ):
         """Initialize with parameters.
-        
+
         Args:
             chunk_size: Maximum size of each chunk
             chunk_overlap: Number of tokens to overlap between chunks
             separators: List of separators to use for splitting (in priority order)
             protected_regex: Regex patterns for content that should be kept intact
             length_function: Function to calculate text length (default: character count)
-        
+
         Raises:
             ValueError: If chunk_overlap is larger than chunk_size
         """
@@ -115,10 +115,10 @@ class TextSplitter(BaseModel, Generic[T]):
 
     def split_text(self, text: str) -> List[Tuple[int, int, str]]:
         """Split text into chunks with overlap and protected pattern handling.
-        
+
         Args:
             text: The input text to split
-            
+
         Returns:
             List of tuples (start_pos, end_pos, chunk_text) representing each chunk
         """
@@ -141,16 +141,16 @@ class TextSplitter(BaseModel, Generic[T]):
 
     def _split(self, text: str) -> List[str]:
         """Break text into splits that are smaller than chunk size.
-        
+
         This method recursively splits text using separators in priority order.
         It tries each separator until it finds one that can split the text,
         then recursively processes any splits that are still too large.
 
         NOTE: the splits contain the separators.
-        
+
         Args:
             text: The text to split
-            
+
         Returns:
             List of text splits, each smaller than chunk_size
         """
@@ -184,12 +184,12 @@ class TextSplitter(BaseModel, Generic[T]):
 
         When we start a new chunk, we pop off the first element of the previous
         chunk until the total length is less than the chunk size.
-        
+
         Headers are tracked and prepended to chunks for context preservation.
-        
+
         Args:
             splits: List of text splits to merge
-            
+
         Returns:
             List of tuples (start_pos, end_pos, chunk_text) representing merged chunks
         """
@@ -203,12 +203,12 @@ class TextSplitter(BaseModel, Generic[T]):
         cur_headers, cur_len = "", 0
         # Track position in original text
         cur_start, cur_end = 0, 0
-        
+
         for split in splits:
             # Calculate position of current split in original text
             cur_end = cur_start + len(split)
             split_len = self.len_function(split)
-            
+
             # Warn if a single split exceeds chunk size (shouldn't happen after _split)
             if split_len > self.chunk_size:
                 logger.error(
@@ -263,14 +263,11 @@ class TextSplitter(BaseModel, Generic[T]):
                     and split_len + cur_headers_len < self.chunk_size
                     and cur_headers not in split
                 ):
-                    cur_chunk.insert(
-                        0,
-                        (
-                            cur_chunk[0][0] if cur_chunk else cur_start,
-                            cur_chunk[0][1] if cur_chunk else cur_end,
-                            cur_headers,
-                        ),
-                    )
+                    next_start = cur_chunk[0][0] if cur_chunk else cur_start
+                    header_start = max(0, next_start - cur_headers_len)
+                    header_end = cur_end
+
+                    cur_chunk.insert(0, (header_start, header_end, cur_headers))
                     cur_len += cur_headers_len
 
             # Add current split to the chunk
@@ -292,10 +289,10 @@ class TextSplitter(BaseModel, Generic[T]):
 
     def _split_protected(self, text: str) -> List[Tuple[int, str]]:
         """Extract protected content from text based on regex patterns.
-        
+
         Args:
             text: The input text to scan for protected patterns
-            
+
         Returns:
             List of tuples (start_position, protected_text) for each protected match
         """
@@ -328,7 +325,7 @@ class TextSplitter(BaseModel, Generic[T]):
 
     def _join(self, splits: List[str], protect: List[Tuple[int, str]]) -> List[str]:
         """Merge splits with protected content to ensure protected patterns remain intact.
-        
+
         Merges and splits elements in splits array based on protected substrings.
 
         The function processes the input splits to ensure all protected substrings
@@ -342,11 +339,11 @@ class TextSplitter(BaseModel, Generic[T]):
         2. Separates protected substrings from any adjacent non-protected content
         3. Maintains the original sequence of all content
         4. Handles cases where protected substrings are partially concatenated
-        
+
         Args:
             splits: List of text splits from _split()
             protect: List of (position, text) tuples for protected content
-            
+
         Returns:
             List of text splits with protected content properly isolated
         """
@@ -360,7 +357,7 @@ class TextSplitter(BaseModel, Generic[T]):
 
             # Get the portion of split starting from current point
             cur = split[point - start :]
-            
+
             # Process all protected content that overlaps with current split
             while j < len(protect):
                 p_start, p_content = protect[j]
