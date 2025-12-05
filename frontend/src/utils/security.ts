@@ -182,9 +182,7 @@ export function isValidImageURL(url: string): boolean {
     return false;
   }
   
-  // 检查是否为图片文件
-  const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)(\?.*)?$/i;
-  return imageExtensions.test(url);
+  return true;
 }
 
 /**
