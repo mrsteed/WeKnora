@@ -454,6 +454,8 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_knowledge_base_id
 
 COMMIT;
 
+REINDEX INDEX embeddings_search_idx;
+
 BEGIN;
 
 -- Add status field to track chunk processing state
