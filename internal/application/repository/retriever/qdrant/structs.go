@@ -15,6 +15,7 @@ type QdrantVectorEmbedding struct {
 	KnowledgeID     string    `json:"knowledge_id"`
 	KnowledgeBaseID string    `json:"knowledge_base_id"`
 	Embedding       []float32 `json:"embedding"`
+	IsEnabled       bool      `json:"is_enabled"`
 }
 
 type QdrantVectorEmbeddingWithScore struct {
