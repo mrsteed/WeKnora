@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
-	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -21,10 +21,14 @@ var ErrInvalidTenantID = errors.New("invalid tenant ID")
 
 // knowledgeBaseService implements the knowledge base service interface
 type knowledgeBaseService struct {
-	repo         interfaces.KnowledgeBaseRepository
-	kgRepo       interfaces.KnowledgeRepository
-	chunkRepo    interfaces.ChunkRepository
-	modelService interfaces.ModelService
+	repo           interfaces.KnowledgeBaseRepository
+	kgRepo         interfaces.KnowledgeRepository
+	chunkRepo      interfaces.ChunkRepository
+	modelService   interfaces.ModelService
+	retrieveEngine interfaces.RetrieveEngineRegistry
+	tenantRepo     interfaces.TenantRepository
+	fileSvc        interfaces.FileService
+	graphEngine    interfaces.RetrieveGraphRepository
 }
 
 // NewKnowledgeBaseService creates a new knowledge base service
@@ -32,13 +36,31 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 	kgRepo interfaces.KnowledgeRepository,
 	chunkRepo interfaces.ChunkRepository,
 	modelService interfaces.ModelService,
+	retrieveEngine interfaces.RetrieveEngineRegistry,
+	tenantRepo interfaces.TenantRepository,
+	fileSvc interfaces.FileService,
+	graphEngine interfaces.RetrieveGraphRepository,
 ) interfaces.KnowledgeBaseService {
 	return &knowledgeBaseService{
-		repo:         repo,
-		kgRepo:       kgRepo,
-		chunkRepo:    chunkRepo,
-		modelService: modelService,
+		repo:           repo,
+		kgRepo:         kgRepo,
+		chunkRepo:      chunkRepo,
+		modelService:   modelService,
+		retrieveEngine: retrieveEngine,
+		tenantRepo:     tenantRepo,
+		fileSvc:        fileSvc,
+		graphEngine:    graphEngine,
 	}
+}
+
+// GetRepository gets the knowledge base repository
+// Parameters:
+//   - ctx: Context with authentication and request information
+//
+// Returns:
+//   - interfaces.KnowledgeBaseRepository: Knowledge base repository
+func (s *knowledgeBaseService) GetRepository() interfaces.KnowledgeBaseRepository {
+	return s.repo
 }
 
 // CreateKnowledgeBase creates a new knowledge base
@@ -50,8 +72,9 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		kb.ID = uuid.New().String()
 	}
 	kb.CreatedAt = time.Now()
-	kb.TenantID = ctx.Value(types.TenantIDContextKey).(uint)
+	kb.TenantID = ctx.Value(types.TenantIDContextKey).(uint64)
 	kb.UpdatedAt = time.Now()
+	kb.EnsureDefaults()
 
 	logger.Infof(ctx, "Creating knowledge base, ID: %s, tenant ID: %d, name: %s", kb.ID, kb.TenantID, kb.Name)
 
@@ -74,8 +97,6 @@ func (s *knowledgeBaseService) GetKnowledgeBaseByID(ctx context.Context, id stri
 		return nil, errors.New("knowledge base ID cannot be empty")
 	}
 
-	logger.Infof(ctx, "Retrieving knowledge base, ID: %s", id)
-
 	kb, err := s.repo.GetKnowledgeBaseByID(ctx, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -84,29 +105,63 @@ func (s *knowledgeBaseService) GetKnowledgeBaseByID(ctx context.Context, id stri
 		return nil, err
 	}
 
-	logger.Infof(ctx, "Knowledge base retrieved successfully, ID: %s, name: %s", kb.ID, kb.Name)
+	kb.EnsureDefaults()
 	return kb, nil
 }
 
 // ListKnowledgeBases returns all knowledge bases for a tenant
 func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types.KnowledgeBase, error) {
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
-	logger.Infof(ctx, "Retrieving knowledge base list for tenant, tenant ID: %d", tenantID)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
 	kbs, err := s.repo.ListKnowledgeBasesByTenantID(ctx, tenantID)
 	if err != nil {
+		for _, kb := range kbs {
+			kb.EnsureDefaults()
+		}
+
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenantID,
 		})
 		return nil, err
 	}
 
-	logger.Infof(
-		ctx,
-		"Knowledge base list retrieved successfully, tenant ID: %d, knowledge base count: %d",
-		tenantID,
-		len(kbs),
-	)
+	// Query knowledge count and chunk count for each knowledge base
+	for _, kb := range kbs {
+		kb.EnsureDefaults()
+
+		// Get knowledge count
+		switch kb.Type {
+		case types.KnowledgeBaseTypeDocument:
+			knowledgeCount, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, tenantID, kb.ID)
+			if err != nil {
+				logger.Warnf(ctx, "Failed to get knowledge count for knowledge base %s: %v", kb.ID, err)
+			} else {
+				kb.KnowledgeCount = knowledgeCount
+			}
+		case types.KnowledgeBaseTypeFAQ:
+			// Get chunk count
+			chunkCount, err := s.chunkRepo.CountChunksByKnowledgeBaseID(ctx, tenantID, kb.ID)
+			if err != nil {
+				logger.Warnf(ctx, "Failed to get chunk count for knowledge base %s: %v", kb.ID, err)
+			} else {
+				kb.ChunkCount = chunkCount
+			}
+		}
+
+		// Check if there is a processing import task
+		processingCount, err := s.kgRepo.CountKnowledgeByStatus(
+			ctx,
+			tenantID,
+			kb.ID,
+			[]string{"pending", "processing"},
+		)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to check processing status for knowledge base %s: %v", kb.ID, err)
+		} else {
+			kb.IsProcessing = processingCount > 0
+			kb.ProcessingCount = processingCount
+		}
+	}
 	return kbs, nil
 }
 
@@ -138,7 +193,12 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	kb.Description = description
 	kb.ChunkingConfig = config.ChunkingConfig
 	kb.ImageProcessingConfig = config.ImageProcessingConfig
+	// Update FAQ config if provided
+	if config.FAQConfig != nil {
+		kb.FAQConfig = config.FAQConfig
+	}
 	kb.UpdatedAt = time.Now()
+	kb.EnsureDefaults()
 
 	logger.Info(ctx, "Saving knowledge base update")
 	if err := s.repo.UpdateKnowledgeBase(ctx, kb); err != nil {
@@ -161,7 +221,110 @@ func (s *knowledgeBaseService) DeleteKnowledgeBase(ctx context.Context, id strin
 
 	logger.Infof(ctx, "Deleting knowledge base, ID: %s", id)
 
-	err := s.repo.DeleteKnowledgeBase(ctx, id)
+	// Get tenant ID from context
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+
+	// Step 1: Get all knowledge entries in this knowledge base
+	logger.Infof(ctx, "Fetching all knowledge entries in knowledge base, ID: %s", id)
+	knowledgeList, err := s.kgRepo.ListKnowledgeByKnowledgeBaseID(ctx, tenantID, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"knowledge_base_id": id,
+		})
+		return err
+	}
+	logger.Infof(ctx, "Found %d knowledge entries to delete", len(knowledgeList))
+
+	// Step 2: Delete all knowledge entries and their resources
+	if len(knowledgeList) > 0 {
+		knowledgeIDs := make([]string, 0, len(knowledgeList))
+		for _, knowledge := range knowledgeList {
+			knowledgeIDs = append(knowledgeIDs, knowledge.ID)
+		}
+
+		logger.Infof(ctx, "Deleting all knowledge entries and their resources")
+
+		// Delete embeddings from vector store
+		logger.Infof(ctx, "Deleting embeddings from vector store")
+		tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(
+			s.retrieveEngine,
+			tenantInfo.RetrieverEngines.Engines,
+		)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to create retrieve engine: %v", err)
+		} else {
+			// Group knowledge by embedding model
+			embeddingGroups := make(map[string][]string)
+			for _, knowledge := range knowledgeList {
+				embeddingGroups[knowledge.EmbeddingModelID] = append(embeddingGroups[knowledge.EmbeddingModelID], knowledge.ID)
+			}
+
+			for embeddingModelID, knowledgeGroup := range embeddingGroups {
+				embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, embeddingModelID)
+				if err != nil {
+					logger.Warnf(ctx, "Failed to get embedding model %s: %v", embeddingModelID, err)
+					continue
+				}
+				if err := retrieveEngine.DeleteByKnowledgeIDList(ctx, knowledgeGroup, embeddingModel.GetDimensions()); err != nil {
+					logger.Warnf(ctx, "Failed to delete embeddings for model %s: %v", embeddingModelID, err)
+				}
+			}
+		}
+
+		// Delete all chunks
+		logger.Infof(ctx, "Deleting all chunks in knowledge base")
+		for _, knowledgeID := range knowledgeIDs {
+			if err := s.chunkRepo.DeleteChunksByKnowledgeID(ctx, tenantID, knowledgeID); err != nil {
+				logger.Warnf(ctx, "Failed to delete chunks for knowledge %s: %v", knowledgeID, err)
+			}
+		}
+
+		// Delete physical files and adjust storage
+		logger.Infof(ctx, "Deleting physical files")
+		storageAdjust := int64(0)
+		for _, knowledge := range knowledgeList {
+			if knowledge.FilePath != "" {
+				if err := s.fileSvc.DeleteFile(ctx, knowledge.FilePath); err != nil {
+					logger.Warnf(ctx, "Failed to delete file %s: %v", knowledge.FilePath, err)
+				}
+			}
+			storageAdjust -= knowledge.StorageSize
+		}
+		if storageAdjust != 0 {
+			if err := s.tenantRepo.AdjustStorageUsed(ctx, tenantID, storageAdjust); err != nil {
+				logger.Warnf(ctx, "Failed to adjust tenant storage: %v", err)
+			}
+		}
+
+		// Delete knowledge graph data
+		logger.Infof(ctx, "Deleting knowledge graph data")
+		namespaces := make([]types.NameSpace, 0, len(knowledgeList))
+		for _, knowledge := range knowledgeList {
+			namespaces = append(namespaces, types.NameSpace{
+				KnowledgeBase: knowledge.KnowledgeBaseID,
+				Knowledge:     knowledge.ID,
+			})
+		}
+		if s.graphEngine != nil && len(namespaces) > 0 {
+			if err := s.graphEngine.DelGraph(ctx, namespaces); err != nil {
+				logger.Warnf(ctx, "Failed to delete knowledge graph: %v", err)
+			}
+		}
+
+		// Delete all knowledge entries from database
+		logger.Infof(ctx, "Deleting knowledge entries from database")
+		if err := s.kgRepo.DeleteKnowledgeList(ctx, tenantID, knowledgeIDs); err != nil {
+			logger.ErrorWithFields(ctx, err, map[string]interface{}{
+				"knowledge_base_id": id,
+			})
+			return err
+		}
+	}
+
+	// Step 3: Delete the knowledge base itself
+	logger.Infof(ctx, "Deleting knowledge base from database")
+	err = s.repo.DeleteKnowledgeBase(ctx, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"knowledge_base_id": id,
@@ -229,7 +392,8 @@ func (s *knowledgeBaseService) CopyKnowledgeBase(ctx context.Context,
 		logger.Errorf(ctx, "Get source knowledge base failed: %v", err)
 		return nil, nil, err
 	}
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	sourceKB.EnsureDefaults()
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	var targetKB *types.KnowledgeBase
 	if dstKB != "" {
 		targetKB, err = s.repo.GetKnowledgeBaseByID(ctx, dstKB)
@@ -237,19 +401,26 @@ func (s *knowledgeBaseService) CopyKnowledgeBase(ctx context.Context,
 			return nil, nil, err
 		}
 	} else {
+		var faqConfig *types.FAQConfig
+		if sourceKB.FAQConfig != nil {
+			cfg := *sourceKB.FAQConfig
+			faqConfig = &cfg
+		}
 		targetKB = &types.KnowledgeBase{
 			ID:                    uuid.New().String(),
 			Name:                  sourceKB.Name,
+			Type:                  sourceKB.Type,
 			Description:           sourceKB.Description,
 			TenantID:              tenantID,
 			ChunkingConfig:        sourceKB.ChunkingConfig,
 			ImageProcessingConfig: sourceKB.ImageProcessingConfig,
 			EmbeddingModelID:      sourceKB.EmbeddingModelID,
 			SummaryModelID:        sourceKB.SummaryModelID,
-			RerankModelID:         sourceKB.RerankModelID,
-			VLMModelID:            sourceKB.VLMModelID,
+			VLMConfig:             sourceKB.VLMConfig,
 			StorageConfig:         sourceKB.StorageConfig,
+			FAQConfig:             faqConfig,
 		}
+		targetKB.EnsureDefaults()
 		if err := s.repo.CreateKnowledgeBase(ctx, targetKB); err != nil {
 			return nil, nil, err
 		}
@@ -265,10 +436,9 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 	logger.Infof(ctx, "Hybrid search parameters, knowledge base ID: %s, query text: %s", id, params.QueryText)
 
 	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
-	logger.Infof(ctx, "Creating composite retrieval engine, tenant ID: %d", tenantInfo.ID)
 
 	// Create a composite retrieval engine with tenant's configured retrievers
-	retrieveEngine, err := retriever.NewCompositeRetrieveEngine(tenantInfo.RetrieverEngines.Engines)
+	retrieveEngine, err := retriever.NewCompositeRetrieveEngine(s.retrieveEngine, tenantInfo.RetrieverEngines.Engines)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to create retrieval engine: %v", err)
 		return nil, err
@@ -278,17 +448,19 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 	var embeddingModel embedding.Embedder
 	var kb *types.KnowledgeBase
 
-	// Add vector retrieval params if supported
-	if retrieveEngine.SupportRetriever(types.VectorRetrieverType) {
-		logger.Info(ctx, "Vector retrieval supported, preparing vector retrieval parameters")
+	kb, err = s.repo.GetKnowledgeBaseByID(ctx, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"knowledge_base_id": id,
+		})
+		return nil, err
+	}
 
-		kb, err = s.repo.GetKnowledgeBaseByID(ctx, id)
-		if err != nil {
-			logger.ErrorWithFields(ctx, err, map[string]interface{}{
-				"knowledge_base_id": id,
-			})
-			return nil, err
-		}
+	matchCount := params.MatchCount * 3
+
+	// Add vector retrieval params if supported
+	if retrieveEngine.SupportRetriever(types.VectorRetrieverType) && !params.DisableVectorMatch {
+		logger.Info(ctx, "Vector retrieval supported, preparing vector retrieval parameters")
 
 		logger.Infof(ctx, "Getting embedding model, model ID: %s", kb.EmbeddingModelID)
 		embeddingModel, err = s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
@@ -311,20 +483,21 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 			Query:            params.QueryText,
 			Embedding:        queryEmbedding,
 			KnowledgeBaseIDs: []string{id},
-			TopK:             params.MatchCount,
+			TopK:             matchCount,
 			Threshold:        params.VectorThreshold,
 			RetrieverType:    types.VectorRetrieverType,
 		})
 		logger.Info(ctx, "Vector retrieval parameters setup completed")
 	}
 
-	// Add keyword retrieval params if supported
-	if retrieveEngine.SupportRetriever(types.KeywordsRetrieverType) {
+	// Add keyword retrieval params if supported and not FAQ
+	if retrieveEngine.SupportRetriever(types.KeywordsRetrieverType) && !params.DisableKeywordsMatch &&
+		kb.Type != types.KnowledgeBaseTypeFAQ {
 		logger.Info(ctx, "Keyword retrieval supported, preparing keyword retrieval parameters")
 		retrieveParams = append(retrieveParams, types.RetrieveParams{
 			Query:            params.QueryText,
 			KnowledgeBaseIDs: []string{id},
-			TopK:             params.MatchCount,
+			TopK:             matchCount,
 			Threshold:        params.KeywordThreshold,
 			RetrieverType:    types.KeywordsRetrieverType,
 		})
@@ -349,28 +522,345 @@ func (s *knowledgeBaseService) HybridSearch(ctx context.Context,
 
 	// Collect all results from different retrievers and deduplicate by chunk ID
 	logger.Infof(ctx, "Processing retrieval results")
-	matchResults := []*types.IndexWithScore{}
+
+	// Separate results by retriever type for RRF fusion
+	var vectorResults []*types.IndexWithScore
+	var keywordResults []*types.IndexWithScore
 	for _, retrieveResult := range retrieveResults {
 		logger.Infof(ctx, "Retrieval results, engine: %v, retriever: %v, count: %v",
 			retrieveResult.RetrieverEngineType,
 			retrieveResult.RetrieverType,
 			len(retrieveResult.Results),
 		)
-		matchResults = append(matchResults, retrieveResult.Results...)
+		if retrieveResult.RetrieverType == types.VectorRetrieverType {
+			vectorResults = append(vectorResults, retrieveResult.Results...)
+		} else {
+			keywordResults = append(keywordResults, retrieveResult.Results...)
+		}
 	}
 
 	// Early return if no results
-	if len(matchResults) == 0 {
+	if len(vectorResults) == 0 && len(keywordResults) == 0 {
 		logger.Info(ctx, "No search results found")
 		return nil, nil
 	}
+	logger.Infof(ctx, "Result count before RRF fusion: vector=%d, keyword=%d", len(vectorResults), len(keywordResults))
 
-	// Deduplicate results by chunk ID
-	logger.Infof(ctx, "Result count before deduplication: %d", len(matchResults))
-	deduplicatedChunks := common.Deduplicate(func(r *types.IndexWithScore) string { return r.ChunkID }, matchResults...)
-	logger.Infof(ctx, "Result count after deduplication: %d", len(deduplicatedChunks))
+	// Use RRF (Reciprocal Rank Fusion) to merge results
+	// RRF score = sum(1 / (k + rank)) for each retriever where the chunk appears
+	// k=60 is a common choice that works well in practice
+	const rrfK = 60
+
+	// Build rank maps for each retriever (already sorted by score from retriever)
+	vectorRanks := make(map[string]int)
+	for i, r := range vectorResults {
+		if _, exists := vectorRanks[r.ChunkID]; !exists {
+			vectorRanks[r.ChunkID] = i + 1 // 1-indexed rank
+		}
+	}
+	keywordRanks := make(map[string]int)
+	for i, r := range keywordResults {
+		if _, exists := keywordRanks[r.ChunkID]; !exists {
+			keywordRanks[r.ChunkID] = i + 1 // 1-indexed rank
+		}
+	}
+
+	// Collect all unique chunks and compute RRF scores
+	chunkInfoMap := make(map[string]*types.IndexWithScore)
+	rrfScores := make(map[string]float64)
+
+	// Process vector results
+	for _, r := range vectorResults {
+		if _, exists := chunkInfoMap[r.ChunkID]; !exists {
+			chunkInfoMap[r.ChunkID] = r
+		}
+	}
+	// Process keyword results
+	for _, r := range keywordResults {
+		if _, exists := chunkInfoMap[r.ChunkID]; !exists {
+			chunkInfoMap[r.ChunkID] = r
+		}
+	}
+
+	// Compute RRF scores
+	for chunkID := range chunkInfoMap {
+		rrfScore := 0.0
+		if rank, ok := vectorRanks[chunkID]; ok {
+			rrfScore += 1.0 / float64(rrfK+rank)
+		}
+		if rank, ok := keywordRanks[chunkID]; ok {
+			rrfScore += 1.0 / float64(rrfK+rank)
+		}
+		rrfScores[chunkID] = rrfScore
+	}
+
+	// Convert to slice and sort by RRF score
+	deduplicatedChunks := make([]*types.IndexWithScore, 0, len(chunkInfoMap))
+	for chunkID, info := range chunkInfoMap {
+		// Store RRF score in the Score field for downstream processing
+		info.Score = rrfScores[chunkID]
+		deduplicatedChunks = append(deduplicatedChunks, info)
+	}
+	slices.SortFunc(deduplicatedChunks, func(a, b *types.IndexWithScore) int {
+		if a.Score > b.Score {
+			return -1
+		} else if a.Score < b.Score {
+			return 1
+		}
+		return 0
+	})
+
+	logger.Infof(ctx, "Result count after RRF fusion: %d", len(deduplicatedChunks))
+
+	// Log top results after RRF fusion for debugging
+	for i, chunk := range deduplicatedChunks {
+		if i < 15 {
+			vRank, vOk := vectorRanks[chunk.ChunkID]
+			kRank, kOk := keywordRanks[chunk.ChunkID]
+			logger.Debugf(ctx, "RRF rank %d: chunk_id=%s, rrf_score=%.6f, vector_rank=%v(%v), keyword_rank=%v(%v)",
+				i, chunk.ChunkID, chunk.Score, vRank, vOk, kRank, kOk)
+		}
+	}
+
+	kb.EnsureDefaults()
+
+	// Check if we need iterative retrieval for FAQ with separate indexing
+	// Only use iterative retrieval if we don't have enough unique chunks after first deduplication
+	totalRetrieved := len(vectorResults) + len(keywordResults)
+	needsIterativeRetrieval := len(deduplicatedChunks) < params.MatchCount &&
+		kb.Type == types.KnowledgeBaseTypeFAQ && totalRetrieved == matchCount*2
+	if needsIterativeRetrieval {
+		logger.Info(ctx, "Not enough unique chunks, using iterative retrieval for FAQ")
+		// Use iterative retrieval to get more unique chunks (with negative question filtering inside)
+		deduplicatedChunks = s.iterativeRetrieveWithDeduplication(
+			ctx,
+			retrieveEngine,
+			retrieveParams,
+			params.MatchCount,
+			params.QueryText,
+		)
+	} else if kb.Type == types.KnowledgeBaseTypeFAQ {
+		// Filter by negative questions if not using iterative retrieval
+		deduplicatedChunks = s.filterByNegativeQuestions(ctx, deduplicatedChunks, params.QueryText)
+		logger.Infof(ctx, "Result count after negative question filtering: %d", len(deduplicatedChunks))
+	}
+
+	// Limit to MatchCount
+	if len(deduplicatedChunks) > params.MatchCount {
+		deduplicatedChunks = deduplicatedChunks[:params.MatchCount]
+	}
 
 	return s.processSearchResults(ctx, deduplicatedChunks)
+}
+
+// iterativeRetrieveWithDeduplication performs iterative retrieval until enough unique chunks are found
+// This is used for FAQ knowledge bases with separate indexing mode
+// Negative question filtering is applied after each iteration to ensure we have enough valid chunks
+func (s *knowledgeBaseService) iterativeRetrieveWithDeduplication(ctx context.Context,
+	retrieveEngine *retriever.CompositeRetrieveEngine,
+	retrieveParams []types.RetrieveParams,
+	matchCount int,
+	queryText string,
+) []*types.IndexWithScore {
+	maxIterations := 5
+	currentTopK := matchCount
+	uniqueChunks := make(map[string]*types.IndexWithScore)
+
+	for i := 0; i < maxIterations; i++ {
+		// Update TopK in retrieve params
+		updatedParams := make([]types.RetrieveParams, len(retrieveParams))
+		for j := range retrieveParams {
+			updatedParams[j] = retrieveParams[j]
+			updatedParams[j].TopK = currentTopK
+		}
+
+		// Execute retrieval
+		retrieveResults, err := retrieveEngine.Retrieve(ctx, updatedParams)
+		if err != nil {
+			logger.Warnf(ctx, "Iterative retrieval failed at iteration %d: %v", i+1, err)
+			break
+		}
+
+		// Collect results
+		iterationResults := []*types.IndexWithScore{}
+		for _, retrieveResult := range retrieveResults {
+			iterationResults = append(iterationResults, retrieveResult.Results...)
+		}
+
+		if len(iterationResults) == 0 {
+			logger.Infof(ctx, "No results found at iteration %d", i+1)
+			break
+		}
+
+		// Check if we got fewer results than requested - means no more results available
+		totalRetrieved := len(iterationResults)
+		if totalRetrieved < currentTopK {
+			logger.Infof(
+				ctx,
+				"Retrieved %d results (less than TopK %d), no more results available",
+				totalRetrieved,
+				currentTopK,
+			)
+		}
+
+		// Deduplicate and merge (keep highest score for each chunk)
+		// Multiple similar questions hitting the same chunk will keep the highest score
+		for _, result := range iterationResults {
+			if existing, ok := uniqueChunks[result.ChunkID]; !ok || result.Score > existing.Score {
+				uniqueChunks[result.ChunkID] = result
+			}
+		}
+
+		// Convert to slice for filtering
+		chunksSlice := make([]*types.IndexWithScore, 0, len(uniqueChunks))
+		for _, chunk := range uniqueChunks {
+			chunksSlice = append(chunksSlice, chunk)
+		}
+
+		// Filter by negative questions
+		chunksSlice = s.filterByNegativeQuestions(ctx, chunksSlice, queryText)
+		// Update uniqueChunks map with filtered results
+		uniqueChunks = make(map[string]*types.IndexWithScore, len(chunksSlice))
+		for _, chunk := range chunksSlice {
+			uniqueChunks[chunk.ChunkID] = chunk
+		}
+
+		logger.Infof(
+			ctx,
+			"After iteration %d: retrieved %d results, found %d unique chunks after filtering (target: %d)",
+			i+1,
+			totalRetrieved,
+			len(uniqueChunks),
+			matchCount,
+		)
+
+		// Early stop: Check if we have enough unique chunks after deduplication and filtering
+		if len(uniqueChunks) >= matchCount {
+			logger.Infof(ctx, "Found enough unique chunks after %d iterations", i+1)
+			break
+		}
+
+		// Early stop: If we got fewer results than TopK, there are no more results to retrieve
+		if totalRetrieved < currentTopK {
+			logger.Infof(ctx, "No more results available, stopping iteration")
+			break
+		}
+
+		// Increase TopK for next iteration
+		currentTopK *= 2
+	}
+
+	// Convert map to slice and sort by score
+	result := make([]*types.IndexWithScore, 0, len(uniqueChunks))
+	for _, chunk := range uniqueChunks {
+		result = append(result, chunk)
+	}
+
+	// Sort by score descending
+	slices.SortFunc(result, func(a, b *types.IndexWithScore) int {
+		if a.Score > b.Score {
+			return -1
+		} else if a.Score < b.Score {
+			return 1
+		}
+		return 0
+	})
+
+	logger.Infof(ctx, "Iterative retrieval completed: %d unique chunks found after filtering", len(result))
+	return result
+}
+
+// filterByNegativeQuestions filters out chunks that match negative questions for FAQ knowledge bases.
+func (s *knowledgeBaseService) filterByNegativeQuestions(ctx context.Context,
+	chunks []*types.IndexWithScore,
+	queryText string,
+) []*types.IndexWithScore {
+	if len(chunks) == 0 {
+		return chunks
+	}
+
+	queryTextLower := strings.ToLower(strings.TrimSpace(queryText))
+	if queryTextLower == "" {
+		return chunks
+	}
+
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+
+	// Collect chunk IDs
+	chunkIDs := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		chunkIDs = append(chunkIDs, chunk.ChunkID)
+	}
+
+	// Batch fetch chunks to get negative questions
+	allChunks, err := s.chunkRepo.ListChunksByID(ctx, tenantID, chunkIDs)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to fetch chunks for negative question filtering: %v", err)
+		// If we can't fetch chunks, return original results
+		return chunks
+	}
+
+	// Build chunk map for quick lookup
+	chunkMap := make(map[string]*types.Chunk, len(allChunks))
+	for _, chunk := range allChunks {
+		chunkMap[chunk.ID] = chunk
+	}
+
+	// Filter out chunks that match negative questions
+	filteredChunks := make([]*types.IndexWithScore, 0, len(chunks))
+	for _, chunk := range chunks {
+		chunkData, ok := chunkMap[chunk.ChunkID]
+		if !ok {
+			// If chunk not found, keep it (shouldn't happen, but be safe)
+			filteredChunks = append(filteredChunks, chunk)
+			continue
+		}
+
+		// Only filter FAQ type chunks
+		if chunkData.ChunkType != types.ChunkTypeFAQ {
+			filteredChunks = append(filteredChunks, chunk)
+			continue
+		}
+
+		// Get FAQ metadata and check negative questions
+		meta, err := chunkData.FAQMetadata()
+		if err != nil || meta == nil {
+			// If we can't parse metadata, keep the chunk
+			filteredChunks = append(filteredChunks, chunk)
+			continue
+		}
+
+		// Check if query matches any negative question
+		if s.matchesNegativeQuestions(queryTextLower, meta.NegativeQuestions) {
+			logger.Debugf(ctx, "Filtered FAQ chunk %s due to negative question match", chunk.ChunkID)
+			continue
+		}
+
+		// Keep the chunk
+		filteredChunks = append(filteredChunks, chunk)
+	}
+
+	return filteredChunks
+}
+
+// matchesNegativeQuestions checks if the query text matches any negative questions.
+// Returns true if the query matches any negative question, false otherwise.
+func (s *knowledgeBaseService) matchesNegativeQuestions(queryTextLower string, negativeQuestions []string) bool {
+	if len(negativeQuestions) == 0 {
+		return false
+	}
+
+	for _, negativeQ := range negativeQuestions {
+		negativeQLower := strings.ToLower(strings.TrimSpace(negativeQ))
+		if negativeQLower == "" {
+			continue
+		}
+		// Check if query text is exactly the same as the negative question
+		if queryTextLower == negativeQLower {
+			return true
+		}
+	}
+	return false
 }
 
 // processSearchResults handles the processing of search results, optimizing database queries
@@ -381,7 +871,7 @@ func (s *knowledgeBaseService) processSearchResults(ctx context.Context,
 		return nil, nil
 	}
 
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint)
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
 	// Prepare data structures for efficient processing
 	var knowledgeIDs []string
@@ -419,6 +909,7 @@ func (s *knowledgeBaseService) processSearchResults(ctx context.Context,
 		})
 		return nil, err
 	}
+	logger.Infof(ctx, "Chunk data fetched successfully, count: %d", len(allChunks))
 
 	// Build chunk map and collect additional IDs to fetch
 	chunkMap := make(map[string]*types.Chunk, len(allChunks))
@@ -477,10 +968,38 @@ func (s *knowledgeBaseService) processSearchResults(ctx context.Context,
 		}
 	}
 
-	// Build final search results
+	// Build final search results - preserve original order from input chunks
 	var searchResults []*types.SearchResult
-	for chunkID, chunk := range chunkMap {
+	addedChunkIDs := make(map[string]bool)
+
+	// First pass: Add results in the original order from input chunks
+	for _, inputChunk := range chunks {
+		chunk, exists := chunkMap[inputChunk.ChunkID]
+		if !exists {
+			logger.Debugf(ctx, "Chunk not found in chunkMap: %s", inputChunk.ChunkID)
+			continue
+		}
 		if !s.isValidTextChunk(chunk) {
+			logger.Debugf(ctx, "Chunk is not valid text chunk: %s, type: %s", chunk.ID, chunk.ChunkType)
+			continue
+		}
+		if addedChunkIDs[chunk.ID] {
+			continue
+		}
+
+		score := chunkScores[chunk.ID]
+		if knowledge, ok := knowledgeMap[chunk.KnowledgeID]; ok {
+			matchType := chunkMatchTypes[chunk.ID]
+			searchResults = append(searchResults, s.buildSearchResult(chunk, knowledge, score, matchType))
+			addedChunkIDs[chunk.ID] = true
+		} else {
+			logger.Warnf(ctx, "Knowledge not found for chunk: %s, knowledge_id: %s", chunk.ID, chunk.KnowledgeID)
+		}
+	}
+
+	// Second pass: Add additional chunks (parent, nearby, relation) that weren't in original input
+	for chunkID, chunk := range chunkMap {
+		if addedChunkIDs[chunkID] || !s.isValidTextChunk(chunk) {
 			continue
 		}
 
@@ -545,6 +1064,7 @@ func (s *knowledgeBaseService) buildSearchResult(chunk *types.Chunk,
 		ImageInfo:         chunk.ImageInfo,
 		KnowledgeFilename: knowledge.FileName,
 		KnowledgeSource:   knowledge.Source,
+		ChunkMetadata:     chunk.Metadata,
 	}
 }
 
@@ -552,12 +1072,13 @@ func (s *knowledgeBaseService) buildSearchResult(chunk *types.Chunk,
 func (s *knowledgeBaseService) isValidTextChunk(chunk *types.Chunk) bool {
 	return slices.Contains([]types.ChunkType{
 		types.ChunkTypeText, types.ChunkTypeSummary,
+		types.ChunkTypeFAQ,
 	}, chunk.ChunkType)
 }
 
 // fetchKnowledgeData gets knowledge data in batch
 func (s *knowledgeBaseService) fetchKnowledgeData(ctx context.Context,
-	tenantID uint,
+	tenantID uint64,
 	knowledgeIDs []string,
 ) (map[string]*types.Knowledge, error) {
 	knowledges, err := s.kgRepo.GetKnowledgeBatch(ctx, tenantID, knowledgeIDs)

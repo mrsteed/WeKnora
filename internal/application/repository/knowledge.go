@@ -28,7 +28,11 @@ func (r *knowledgeRepository) CreateKnowledge(ctx context.Context, knowledge *ty
 }
 
 // GetKnowledgeByID gets knowledge
-func (r *knowledgeRepository) GetKnowledgeByID(ctx context.Context, tenantID uint, id string) (*types.Knowledge, error) {
+func (r *knowledgeRepository) GetKnowledgeByID(
+	ctx context.Context,
+	tenantID uint64,
+	id string,
+) (*types.Knowledge, error) {
 	var knowledge types.Knowledge
 	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).First(&knowledge).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -41,7 +45,7 @@ func (r *knowledgeRepository) GetKnowledgeByID(ctx context.Context, tenantID uin
 
 // ListKnowledgeByKnowledgeBaseID lists all knowledge in a knowledge base
 func (r *knowledgeRepository) ListKnowledgeByKnowledgeBaseID(
-	ctx context.Context, tenantID uint, kbID string,
+	ctx context.Context, tenantID uint64, kbID string,
 ) ([]*types.Knowledge, error) {
 	var knowledges []*types.Knowledge
 	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
@@ -54,23 +58,59 @@ func (r *knowledgeRepository) ListKnowledgeByKnowledgeBaseID(
 // ListPagedKnowledgeByKnowledgeBaseID lists all knowledge in a knowledge base with pagination
 func (r *knowledgeRepository) ListPagedKnowledgeByKnowledgeBaseID(
 	ctx context.Context,
-	tenantID uint,
+	tenantID uint64,
 	kbID string,
 	page *types.Pagination,
+	tagID string,
+	keyword string,
+	fileType string,
 ) ([]*types.Knowledge, int64, error) {
 	var knowledges []*types.Knowledge
 	var total int64
 
+	query := r.db.WithContext(ctx).Model(&types.Knowledge{}).
+		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID)
+	if tagID != "" {
+		query = query.Where("tag_id = ?", tagID)
+	}
+	if keyword != "" {
+		query = query.Where("file_name LIKE ?", "%"+keyword+"%")
+	}
+	if fileType != "" {
+		if fileType == "manual" {
+			query = query.Where("type = ?", "manual")
+		} else if fileType == "url" {
+			query = query.Where("type = ?", "url")
+		} else {
+			query = query.Where("file_type = ?", fileType)
+		}
+	}
+
 	// Query total count first
-	if err := r.db.WithContext(ctx).Model(&types.Knowledge{}).
-		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
-		Count(&total).Error; err != nil {
+	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	// Then query paginated data
-	if err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
+	dataQuery := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID)
+	if tagID != "" {
+		dataQuery = dataQuery.Where("tag_id = ?", tagID)
+	}
+	if keyword != "" {
+		dataQuery = dataQuery.Where("file_name LIKE ?", "%"+keyword+"%")
+	}
+	if fileType != "" {
+		if fileType == "manual" {
+			dataQuery = dataQuery.Where("type = ?", "manual")
+		} else if fileType == "url" {
+			dataQuery = dataQuery.Where("type = ?", "url")
+		} else {
+			dataQuery = dataQuery.Where("file_type = ?", fileType)
+		}
+	}
+
+	if err := dataQuery.
 		Order("created_at DESC").
 		Offset(page.Offset()).
 		Limit(page.Limit()).
@@ -87,19 +127,27 @@ func (r *knowledgeRepository) UpdateKnowledge(ctx context.Context, knowledge *ty
 	return err
 }
 
+// UpdateKnowledgeBatch updates knowledge items in batch
+func (r *knowledgeRepository) UpdateKnowledgeBatch(ctx context.Context, knowledgeList []*types.Knowledge) error {
+	if len(knowledgeList) == 0 {
+		return nil
+	}
+	return r.db.Debug().WithContext(ctx).Save(knowledgeList).Error
+}
+
 // DeleteKnowledge deletes knowledge
-func (r *knowledgeRepository) DeleteKnowledge(ctx context.Context, tenantID uint, id string) error {
+func (r *knowledgeRepository) DeleteKnowledge(ctx context.Context, tenantID uint64, id string) error {
 	return r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).Delete(&types.Knowledge{}).Error
 }
 
 // DeleteKnowledge deletes knowledge
-func (r *knowledgeRepository) DeleteKnowledgeList(ctx context.Context, tenantID uint, ids []string) error {
+func (r *knowledgeRepository) DeleteKnowledgeList(ctx context.Context, tenantID uint64, ids []string) error {
 	return r.db.WithContext(ctx).Where("tenant_id = ? AND id in ?", tenantID, ids).Delete(&types.Knowledge{}).Error
 }
 
 // GetKnowledgeBatch gets knowledge in batch
 func (r *knowledgeRepository) GetKnowledgeBatch(
-	ctx context.Context, tenantID uint, ids []string,
+	ctx context.Context, tenantID uint64, ids []string,
 ) ([]*types.Knowledge, error) {
 	var knowledge []*types.Knowledge
 	if err := r.db.WithContext(ctx).Debug().
@@ -113,14 +161,15 @@ func (r *knowledgeRepository) GetKnowledgeBatch(
 // CheckKnowledgeExists checks if knowledge already exists
 func (r *knowledgeRepository) CheckKnowledgeExists(
 	ctx context.Context,
-	tenantID uint,
+	tenantID uint64,
 	kbID string,
 	params *types.KnowledgeCheckParams,
 ) (bool, *types.Knowledge, error) {
 	query := r.db.WithContext(ctx).Model(&types.Knowledge{}).
 		Where("tenant_id = ? AND knowledge_base_id = ? AND parse_status <> ?", tenantID, kbID, "failed")
 
-	if params.Type == "file" {
+	switch params.Type {
+	case "file":
 		// If file hash exists, prioritize exact match using hash
 		if params.FileHash != "" {
 			var knowledge types.Knowledge
@@ -149,7 +198,7 @@ func (r *knowledgeRepository) CheckKnowledgeExists(
 			}
 			return true, &knowledge, nil
 		}
-	} else if params.Type == "url" {
+	case "url":
 		// If file hash exists, prioritize exact match using hash
 		if params.FileHash != "" {
 			var knowledge types.Knowledge
@@ -181,8 +230,8 @@ func (r *knowledgeRepository) CheckKnowledgeExists(
 
 func (r *knowledgeRepository) AminusB(
 	ctx context.Context,
-	Atenant uint, A string,
-	Btenant uint, B string,
+	Atenant uint64, A string,
+	Btenant uint64, B string,
 ) ([]string, error) {
 	knowledgeIDs := []string{}
 	subQuery := r.db.Model(&types.Knowledge{}).
@@ -198,7 +247,48 @@ func (r *knowledgeRepository) AminusB(
 	return knowledgeIDs, err
 }
 
-func (r *knowledgeRepository) UpdateKnowledgeColumn(ctx context.Context, id string, column string, value interface{}) error {
+func (r *knowledgeRepository) UpdateKnowledgeColumn(
+	ctx context.Context,
+	id string,
+	column string,
+	value interface{},
+) error {
 	err := r.db.WithContext(ctx).Model(&types.Knowledge{}).Where("id = ?", id).Update(column, value).Error
 	return err
+}
+
+// CountKnowledgeByKnowledgeBaseID counts the number of knowledge items in a knowledge base
+func (r *knowledgeRepository) CountKnowledgeByKnowledgeBaseID(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&types.Knowledge{}).
+		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
+		Count(&count).Error
+	return count, err
+}
+
+// CountKnowledgeByStatus counts the number of knowledge items with the specified parse status
+func (r *knowledgeRepository) CountKnowledgeByStatus(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+	parseStatuses []string,
+) (int64, error) {
+	if len(parseStatuses) == 0 {
+		return 0, nil
+	}
+
+	var count int64
+	query := r.db.WithContext(ctx).Model(&types.Knowledge{}).
+		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
+		Where("parse_status IN ?", parseStatuses)
+
+	if err := query.Count(&count).Error; err != nil {
+		return 0, err
+	}
+
+	return count, nil
 }

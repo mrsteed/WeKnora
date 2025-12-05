@@ -3,7 +3,6 @@ package chatpipline
 import (
 	"context"
 
-	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -34,7 +33,12 @@ func (p *PluginChatCompletion) ActivationEvents() []types.EventType {
 func (p *PluginChatCompletion) OnEvent(
 	ctx context.Context, eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
 ) *PluginError {
-	logger.Info(ctx, "Starting chat completion")
+	pipelineInfo(ctx, "Completion", "input", map[string]interface{}{
+		"session_id":     chatManage.SessionID,
+		"user_question":  chatManage.UserContent,
+		"history_rounds": len(chatManage.History),
+		"chat_model":     chatManage.ChatModelID,
+	})
 
 	// Prepare chat model and options
 	chatModel, opt, err := prepareChatModel(ctx, p.modelService, chatManage)
@@ -43,18 +47,30 @@ func (p *PluginChatCompletion) OnEvent(
 	}
 
 	// Prepare messages including conversation history
-	logger.Info(ctx, "Preparing chat messages with history")
+	pipelineInfo(ctx, "Completion", "messages_ready", map[string]interface{}{
+		"message_count": len(chatManage.History) + 2,
+	})
 	chatMessages := prepareMessagesWithHistory(chatManage)
 
 	// Call the chat model to generate response
-	logger.Info(ctx, "Calling chat model")
+	pipelineInfo(ctx, "Completion", "model_call", map[string]interface{}{
+		"chat_model": chatManage.ChatModelID,
+	})
 	chatResponse, err := chatModel.Chat(ctx, chatMessages, opt)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to call chat model: %v", err)
+		pipelineError(ctx, "Completion", "model_call", map[string]interface{}{
+			"chat_model": chatManage.ChatModelID,
+			"error":      err.Error(),
+		})
 		return ErrModelCall.WithError(err)
 	}
 
-	logger.Info(ctx, "Chat completion successful")
+	pipelineInfo(ctx, "Completion", "output", map[string]interface{}{
+		"answer_preview":    chatResponse.Content,
+		"finish_reason":     chatResponse.FinishReason,
+		"completion_tokens": chatResponse.Usage.CompletionTokens,
+		"prompt_tokens":     chatResponse.Usage.PromptTokens,
+	})
 	chatManage.ChatResponse = chatResponse
 	return next()
 }

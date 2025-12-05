@@ -30,6 +30,12 @@ const (
 	ErrTenantNameRequired  ErrorCode = 2003
 	ErrTenantInvalidStatus ErrorCode = 2004
 
+	// Agent related error codes (2100-2199)
+	ErrAgentMissingThinkingModel ErrorCode = 2100
+	ErrAgentMissingAllowedTools  ErrorCode = 2101
+	ErrAgentInvalidMaxIterations ErrorCode = 2102
+	ErrAgentInvalidTemperature   ErrorCode = 2103
+
 	// Add more error codes here
 )
 
@@ -142,6 +148,39 @@ func NewTenantInactiveError() *AppError {
 		Code:     ErrTenantInactive,
 		Message:  "租户已停用",
 		HTTPCode: http.StatusForbidden,
+	}
+}
+
+// Agent related errors
+func NewAgentMissingThinkingModelError() *AppError {
+	return &AppError{
+		Code:     ErrAgentMissingThinkingModel,
+		Message:  "启用Agent模式前，请先选择思考模型",
+		HTTPCode: http.StatusBadRequest,
+	}
+}
+
+func NewAgentMissingAllowedToolsError() *AppError {
+	return &AppError{
+		Code:     ErrAgentMissingAllowedTools,
+		Message:  "至少需要选择一个允许的工具",
+		HTTPCode: http.StatusBadRequest,
+	}
+}
+
+func NewAgentInvalidMaxIterationsError() *AppError {
+	return &AppError{
+		Code:     ErrAgentInvalidMaxIterations,
+		Message:  "最大迭代次数必须在1-20之间",
+		HTTPCode: http.StatusBadRequest,
+	}
+}
+
+func NewAgentInvalidTemperatureError() *AppError {
+	return &AppError{
+		Code:     ErrAgentInvalidTemperature,
+		Message:  "温度参数必须在0-2之间",
+		HTTPCode: http.StatusBadRequest,
 	}
 }
 

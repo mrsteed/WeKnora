@@ -25,6 +25,7 @@ const (
 	fieldKnowledgeID      = "knowledge_id"
 	fieldKnowledgeBaseID  = "knowledge_base_id"
 	fieldEmbedding        = "embedding"
+	fieldIsEnabled        = "is_enabled"
 )
 
 // NewQdrantRetrieveEngineRepository creates and initializes a new Qdrant repository
@@ -208,9 +209,103 @@ func (q *qdrantRepository) DeleteByKnowledgeIDList(ctx context.Context,
 	return nil
 }
 
+// DeleteBySourceIDList removes points from the collection based on source IDs
+func (q *qdrantRepository) DeleteBySourceIDList(ctx context.Context,
+	sourceIDList []string, dimension int,
+) error {
+	log := logger.GetLogger(ctx)
+	if len(sourceIDList) == 0 {
+		log.Warn("[Qdrant] Empty source ID list provided for deletion, skipping")
+		return nil
+	}
+
+	log.Infof("[Qdrant] Deleting indices by source IDs, count: %d", len(sourceIDList))
+
+	_, err := q.client.Delete(ctx, &qdrant.DeletePoints{
+		CollectionName: q.collectionName,
+		Points: qdrant.NewPointsSelectorFilter(&qdrant.Filter{
+			Must: []*qdrant.Condition{
+				qdrant.NewMatchKeywords(fieldSourceID, sourceIDList...),
+			},
+		}),
+	})
+	if err != nil {
+		log.Errorf("[Qdrant] Failed to delete by source IDs: %v", err)
+		return fmt.Errorf("failed to delete by source IDs: %w", err)
+	}
+
+	log.Infof("[Qdrant] Successfully deleted documents by source IDs")
+	return nil
+}
+
+// BatchUpdateChunkEnabledStatus updates the enabled status of chunks in batch
+func (q *qdrantRepository) BatchUpdateChunkEnabledStatus(ctx context.Context, chunkStatusMap map[string]bool) error {
+	log := logger.GetLogger(ctx)
+	if len(chunkStatusMap) == 0 {
+		log.Warn("[Qdrant] Empty chunk status map provided, skipping")
+		return nil
+	}
+
+	log.Infof("[Qdrant] Batch updating chunk enabled status, count: %d", len(chunkStatusMap))
+
+	// Group chunks by enabled status for batch updates
+	enabledChunkIDs := make([]string, 0)
+	disabledChunkIDs := make([]string, 0)
+
+	for chunkID, enabled := range chunkStatusMap {
+		if enabled {
+			enabledChunkIDs = append(enabledChunkIDs, chunkID)
+		} else {
+			disabledChunkIDs = append(disabledChunkIDs, chunkID)
+		}
+	}
+
+	// Update enabled chunks
+	if len(enabledChunkIDs) > 0 {
+		_, err := q.client.SetPayload(ctx, &qdrant.SetPayloadPoints{
+			CollectionName: q.collectionName,
+			Payload:        qdrant.NewValueMap(map[string]any{fieldIsEnabled: true}),
+			PointsSelector: qdrant.NewPointsSelectorFilter(&qdrant.Filter{
+				Must: []*qdrant.Condition{
+					qdrant.NewMatchKeywords(fieldChunkID, enabledChunkIDs...),
+				},
+			}),
+		})
+		if err != nil {
+			log.Errorf("[Qdrant] Failed to update enabled chunks: %v", err)
+			return fmt.Errorf("failed to update enabled chunks: %w", err)
+		}
+		log.Infof("[Qdrant] Successfully enabled %d chunks", len(enabledChunkIDs))
+	}
+
+	// Update disabled chunks
+	if len(disabledChunkIDs) > 0 {
+		_, err := q.client.SetPayload(ctx, &qdrant.SetPayloadPoints{
+			CollectionName: q.collectionName,
+			Payload:        qdrant.NewValueMap(map[string]any{fieldIsEnabled: false}),
+			PointsSelector: qdrant.NewPointsSelectorFilter(&qdrant.Filter{
+				Must: []*qdrant.Condition{
+					qdrant.NewMatchKeywords(fieldChunkID, disabledChunkIDs...),
+				},
+			}),
+		})
+		if err != nil {
+			log.Errorf("[Qdrant] Failed to update disabled chunks: %v", err)
+			return fmt.Errorf("failed to update disabled chunks: %w", err)
+		}
+		log.Infof("[Qdrant] Successfully disabled %d chunks", len(disabledChunkIDs))
+	}
+
+	log.Infof("[Qdrant] Batch update chunk enabled status completed")
+	return nil
+}
+
 func (q *qdrantRepository) getBaseFilter(params typesLocal.RetrieveParams) *qdrant.Filter {
 	must := make([]*qdrant.Condition, 0)
 	mustNot := make([]*qdrant.Condition, 0)
+
+	// Only retrieve enabled chunks
+	must = append(must, qdrant.NewMatchBool(fieldIsEnabled, true))
 
 	if len(params.KnowledgeBaseIDs) > 0 {
 		must = append(must, qdrant.NewMatchKeywords(fieldKnowledgeBaseID, params.KnowledgeBaseIDs...))
@@ -488,6 +583,7 @@ func createPayload(embedding *QdrantVectorEmbedding) map[string]*qdrant.Value {
 		fieldChunkID:         embedding.ChunkID,
 		fieldKnowledgeID:     embedding.KnowledgeID,
 		fieldKnowledgeBaseID: embedding.KnowledgeBaseID,
+		fieldIsEnabled:       embedding.IsEnabled,
 	}
 	return qdrant.NewValueMap(payload)
 }
@@ -544,6 +640,7 @@ func toQdrantVectorEmbedding(embedding *types.IndexInfo, additionalParams map[st
 		ChunkID:         embedding.ChunkID,
 		KnowledgeID:     embedding.KnowledgeID,
 		KnowledgeBaseID: embedding.KnowledgeBaseID,
+		IsEnabled:       true, // Default to enabled
 	}
 	if additionalParams != nil && slices.Contains(slices.Collect(maps.Keys(additionalParams)), fieldEmbedding) {
 		if embeddingMap, ok := additionalParams[fieldEmbedding].(map[string][]float32); ok {

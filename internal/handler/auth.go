@@ -6,10 +6,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 // AuthHandler implements HTTP request handlers for user authentication
@@ -18,6 +20,7 @@ import (
 type AuthHandler struct {
 	userService   interfaces.UserService
 	tenantService interfaces.TenantService
+	configInfo    *config.Config
 }
 
 // NewAuthHandler creates a new auth handler instance with the provided services
@@ -26,8 +29,10 @@ type AuthHandler struct {
 //   - tenantService: An implementation of the TenantService interface for tenant management
 //
 // Returns a pointer to the newly created AuthHandler
-func NewAuthHandler(userService interfaces.UserService, tenantService interfaces.TenantService) *AuthHandler {
+func NewAuthHandler(configInfo *config.Config,
+	userService interfaces.UserService, tenantService interfaces.TenantService) *AuthHandler {
 	return &AuthHandler{
+		configInfo:    configInfo,
 		userService:   userService,
 		tenantService: tenantService,
 	}
@@ -50,6 +55,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		c.Error(appErr)
 		return
 	}
+	req.Username = secutils.SanitizeForLog(req.Username)
+	req.Email = secutils.SanitizeForLog(req.Email)
+	req.Password = secutils.SanitizeForLog(req.Password)
 
 	// Validate required fields
 	if req.Username == "" || req.Email == "" || req.Password == "" {
@@ -58,7 +66,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		c.Error(appErr)
 		return
 	}
-
+	req.Username = secutils.SanitizeForLog(req.Username)
+	req.Email = secutils.SanitizeForLog(req.Email)
 	// Call service to register user
 	user, err := h.userService.Register(ctx, &req)
 	if err != nil {
@@ -75,7 +84,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		User:    user,
 	}
 
-	logger.Infof(ctx, "User registered successfully: %s", user.Email)
+	logger.Infof(ctx, "User registered successfully: %s", secutils.SanitizeForLog(user.Email))
 	c.JSON(http.StatusCreated, response)
 }
 
@@ -96,6 +105,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.Error(appErr)
 		return
 	}
+	email := secutils.SanitizeForLog(req.Email)
 
 	// Validate required fields
 	if req.Email == "" || req.Password == "" {
@@ -123,7 +133,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	// User is already in the correct format from service
 
-	logger.Infof(ctx, "User logged in successfully: %s", req.Email)
+	logger.Infof(ctx, "User logged in successfully, email: %s", email)
 	c.JSON(http.StatusOK, response)
 }
 
@@ -217,8 +227,6 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	logger.Debugf(ctx, "Get current user info")
-
 	// Get current user from service (which extracts from context)
 	user, err := h.userService.GetCurrentUser(ctx)
 	if err != nil {
@@ -235,16 +243,14 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		if err != nil {
 			logger.Warnf(ctx, "Failed to get tenant info for user %s, tenant ID %d: %v", user.Email, user.TenantID, err)
 			// Don't fail the request if tenant info is not available
-		} else {
-			logger.Debugf(ctx, "Retrieved tenant info for user %s: %s", user.Email, tenant.Name)
 		}
 	}
-
-	logger.Debugf(ctx, "Retrieved current user info: %s", user.Email)
+	userInfo := user.ToUserInfo()
+	userInfo.CanAccessAllTenants = user.CanAccessAllTenants && h.configInfo.Tenant.EnableCrossTenantAccess
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"user":   user.ToUserInfo(),
+			"user":   userInfo,
 			"tenant": tenant,
 		},
 	})

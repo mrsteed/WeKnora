@@ -31,8 +31,12 @@ const router = createRouter({
       children: [
         {
           path: "tenant",
-          name: "tenant",
-          component: () => import("../views/tenant/TenantInfo.vue"),
+          redirect: "/platform/settings"
+        },
+        {
+          path: "settings",
+          name: "settings",
+          component: () => import("../views/settings/Settings.vue"),
           meta: { requiresInit: true, requiresAuth: true }
         },
         {
@@ -48,20 +52,19 @@ const router = createRouter({
           meta: { requiresInit: true, requiresAuth: true }
         },
         {
+          path: "creatChat",
+          name: "globalCreatChat",
+          component: () => import("../views/creatChat/creatChat.vue"),
+          meta: { requiresInit: true, requiresAuth: true }
+        },
+        {
           path: "knowledge-bases/:kbId/creatChat",
           name: "kbCreatChat",
           component: () => import("../views/creatChat/creatChat.vue"),
           meta: { requiresInit: true, requiresAuth: true }
         },
         {
-          path: "knowledge-bases/:kbId/settings",
-          name: "knowledgeBaseSettings",
-          component: () => import("../views/initialization/InitializationContent.vue"),
-          props: { isKbSettings: true },
-          meta: { requiresInit: true, requiresAuth: true }
-        },
-        {
-          path: "chat/:kbId/:chatid",
+          path: "chat/:chatid",
           name: "chat",
           component: () => import("../views/chat/index.vue"),
           meta: { requiresInit: true, requiresAuth: true }

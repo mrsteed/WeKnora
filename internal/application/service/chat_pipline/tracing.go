@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/event"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/tracing"
 	"github.com/Tencent/WeKnora/internal/types"
 	"go.opentelemetry.io/otel/attribute"
@@ -32,7 +34,7 @@ func (p *PluginTracing) ActivationEvents() []types.EventType {
 		types.CHAT_COMPLETION_STREAM,
 		types.FILTER_TOP_K,
 		types.REWRITE_QUERY,
-		types.PREPROCESS_QUERY,
+		types.CHUNK_SEARCH_PARALLEL,
 	}
 }
 
@@ -67,8 +69,8 @@ func (p *PluginTracing) OnEvent(ctx context.Context,
 		return p.FilterTopK(ctx, eventType, chatManage, next)
 	case types.REWRITE_QUERY:
 		return p.RewriteQuery(ctx, eventType, chatManage, next)
-	case types.PREPROCESS_QUERY:
-		return p.PreprocessQuery(ctx, eventType, chatManage, next)
+	case types.CHUNK_SEARCH_PARALLEL:
+		return p.SearchParallel(ctx, eventType, chatManage, next)
 	}
 	return next()
 }
@@ -87,9 +89,13 @@ func (p *PluginTracing) Search(ctx context.Context,
 	)
 	err := next()
 	searchResultJson, _ := json.Marshal(chatManage.SearchResult)
+	unique := make(map[string]struct{})
+	for _, r := range chatManage.SearchResult {
+		unique[r.ID] = struct{}{}
+	}
 	span.SetAttributes(
 		attribute.String("hybrid_search", string(searchResultJson)),
-		attribute.String("processed_query", chatManage.ProcessedQuery),
+		attribute.Int("search_unique_count", len(unique)),
 	)
 	return err
 }
@@ -187,28 +193,37 @@ func (p *PluginTracing) ChatCompletionStream(ctx context.Context,
 	)
 
 	responseBuilder := &strings.Builder{}
-	oldStream := chatManage.ResponseChan
-	newStream := make(chan types.StreamResponse)
-	chatManage.ResponseChan = newStream
 
-	go func(ctx context.Context) {
-		for resp := range oldStream {
-			if resp.ResponseType == types.ResponseTypeAnswer {
-				responseBuilder.WriteString(resp.Content)
+	// EventBus is required
+	if chatManage.EventBus == nil {
+		logger.Warn(ctx, "Tracing: EventBus not available, skipping metrics collection")
+		return next()
+	}
+	eventBus := chatManage.EventBus
+
+	// Subscribe to events and collect metrics
+	logger.Info(ctx, "Tracing: Subscribing to answer events for metrics collection")
+
+	eventBus.On(types.EventType(event.EventAgentFinalAnswer), func(ctx context.Context, evt types.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		if ok {
+			responseBuilder.WriteString(data.Content)
+
+			// If this is the final chunk, record metrics
+			if data.Done {
+				elapsedMS := time.Since(startTime).Milliseconds()
+				span.SetAttributes(
+					attribute.Bool("chat_completion_success", true),
+					attribute.Int64("response_time_ms", elapsedMS),
+					attribute.String("chat_response", responseBuilder.String()),
+					attribute.Int("final_response_length", responseBuilder.Len()),
+					attribute.Float64("tokens_per_second", float64(responseBuilder.Len())/float64(elapsedMS)*1000),
+				)
+				span.End()
 			}
-			newStream <- resp
 		}
-		elapsedMS := time.Since(startTime).Milliseconds()
-		span.SetAttributes(
-			attribute.Bool("chat_completion_success", true),
-			attribute.Int64("response_time_ms", elapsedMS),
-			attribute.String("chat_response", responseBuilder.String()),
-			attribute.Int("final_response_length", responseBuilder.Len()),
-			attribute.Float64("tokens_per_second", float64(responseBuilder.Len())/float64(elapsedMS)*1000),
-		)
-		span.End()
-		close(newStream)
-	}(ctx)
+		return nil
+	})
 
 	return next()
 }
@@ -249,22 +264,20 @@ func (p *PluginTracing) RewriteQuery(ctx context.Context,
 	return err
 }
 
-// PreprocessQuery traces query preprocessing operations
-func (p *PluginTracing) PreprocessQuery(ctx context.Context,
+// SearchParallel traces parallel search operations (chunk + entity)
+func (p *PluginTracing) SearchParallel(ctx context.Context,
 	eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
 ) *PluginError {
-	_, span := tracing.ContextWithSpan(ctx, "PluginTracing.PreprocessQuery")
+	_, span := tracing.ContextWithSpan(ctx, "PluginTracing.SearchParallel")
 	defer span.End()
-
 	span.SetAttributes(
 		attribute.String("query", chatManage.Query),
+		attribute.String("rewrite_query", chatManage.RewriteQuery),
+		attribute.Int("entity_count", len(chatManage.Entity)),
 	)
-
 	err := next()
-
 	span.SetAttributes(
-		attribute.String("processed_query", chatManage.ProcessedQuery),
+		attribute.Int("search_result_count", len(chatManage.SearchResult)),
 	)
-
 	return err
 }

@@ -291,6 +291,11 @@ func (e *elasticsearchRepository) DeleteByChunkIDList(ctx context.Context, chunk
 	return e.deleteByFieldList(ctx, "chunk_id.keyword", chunkIDList)
 }
 
+// DeleteBySourceIDList Delete indices by source ID list
+func (e *elasticsearchRepository) DeleteBySourceIDList(ctx context.Context, sourceIDList []string, dimension int) error {
+	return e.deleteByFieldList(ctx, "source_id.keyword", sourceIDList)
+}
+
 // DeleteByKnowledgeIDList Delete indices by knowledge ID list
 func (e *elasticsearchRepository) DeleteByKnowledgeIDList(ctx context.Context,
 	knowledgeIDList []string, dimension int,
@@ -330,7 +335,7 @@ func (e *elasticsearchRepository) deleteByFieldList(ctx context.Context, field s
 	if resp.IsError() {
 		errMsg := fmt.Sprintf("failed to delete by query: %s", resp.String())
 		log.Errorf("[ElasticsearchV7] %s", errMsg)
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("failed to delete by query: %s", resp.String())
 	}
 
 	// Try to extract deletion count from response
@@ -353,35 +358,70 @@ func (e *elasticsearchRepository) deleteByFieldList(ctx context.Context, field s
 // Returns a JSON string representing the query conditions
 func (e *elasticsearchRepository) getBaseConds(params typesLocal.RetrieveParams) string {
 	// Build MUST conditions (positive filters)
-	must := make([]string, 0)
+	must := make([]map[string]interface{}, 0)
 	if len(params.KnowledgeBaseIDs) > 0 {
-		ids, _ := json.Marshal(params.KnowledgeBaseIDs)
-		must = append(must, fmt.Sprintf(`{"terms": {"knowledge_base_id.keyword": %s}}`, ids))
+		must = append(must, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"knowledge_base_id.keyword": params.KnowledgeBaseIDs,
+			},
+		})
 	}
 
 	// Build MUST_NOT conditions (negative filters)
-	mustNot := make([]string, 0)
+	mustNot := make([]map[string]interface{}, 0)
+	// Exclude disabled chunks (is_enabled = false)
+	// Note: Historical data without is_enabled field will be included (not matching must_not)
+	mustNot = append(mustNot, map[string]interface{}{
+		"term": map[string]interface{}{
+			"is_enabled": false,
+		},
+	})
 	if len(params.ExcludeKnowledgeIDs) > 0 {
-		ids, _ := json.Marshal(params.ExcludeKnowledgeIDs)
-		mustNot = append(mustNot, fmt.Sprintf(`{"terms": {"knowledge_id.keyword": %s}}`, ids))
+		mustNot = append(mustNot, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"knowledge_id.keyword": params.ExcludeKnowledgeIDs,
+			},
+		})
 	}
 	if len(params.ExcludeChunkIDs) > 0 {
-		ids, _ := json.Marshal(params.ExcludeChunkIDs)
-		mustNot = append(mustNot, fmt.Sprintf(`{"terms": {"chunk_id.keyword": %s}}`, ids))
+		mustNot = append(mustNot, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"chunk_id.keyword": params.ExcludeChunkIDs,
+			},
+		})
 	}
 
 	// Combine conditions based on presence
-	switch {
-	case len(must) == 0 && len(mustNot) == 0:
-		return "{}" // Empty query if no conditions
-	case len(must) == 0:
-		return fmt.Sprintf(`{"bool": {"must_not": [%s]}}`, strings.Join(mustNot, ","))
-	case len(mustNot) == 0:
-		return fmt.Sprintf(`{"bool": {"must": [%s]}}`, strings.Join(must, ","))
-	default:
-		return fmt.Sprintf(`{"bool": {"must": [%s], "must_not": [%s]}}`,
-			strings.Join(must, ","), strings.Join(mustNot, ","))
+	var query map[string]interface{}
+	if len(must) == 0 && len(mustNot) == 0 {
+		query = map[string]interface{}{}
+	} else if len(must) == 0 {
+		query = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must_not": mustNot,
+			},
+		}
+	} else if len(mustNot) == 0 {
+		query = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": must,
+			},
+		}
+	} else {
+		query = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must":     must,
+				"must_not": mustNot,
+			},
+		}
 	}
+
+	// Marshal to JSON string
+	jsonBytes, err := json.Marshal(query)
+	if err != nil {
+		return "{}"
+	}
+	return string(jsonBytes)
 }
 
 func (e *elasticsearchRepository) Retrieve(ctx context.Context,
@@ -436,26 +476,43 @@ func (e *elasticsearchRepository) buildVectorSearchQuery(ctx context.Context,
 ) (string, error) {
 	log := logger.GetLogger(ctx)
 
-	filter := e.getBaseConds(params)
-
-	// Serialize the query vector
-	queryVectorJSON, err := json.Marshal(params.Embedding)
-	if err != nil {
-		log.Errorf("[ElasticsearchV7] Failed to marshal query vector: %v", err)
-		return "", fmt.Errorf("failed to marshal query embedding: %w", err)
+	// Parse filter conditions
+	var filterQuery map[string]interface{}
+	filterJSON := e.getBaseConds(params)
+	if err := json.Unmarshal([]byte(filterJSON), &filterQuery); err != nil {
+		log.Errorf("[ElasticsearchV7] Failed to unmarshal filter: %v", err)
+		filterQuery = map[string]interface{}{}
 	}
 
-	// Construct the script_score query
-	query := fmt.Sprintf(
-		`{"query":{"script_score":{"query":{"bool":{"filter":[%s]}},
-			"script":{"source":"cosineSimilarity(params.query_vector,'embedding')",
-			"params":{"query_vector":%s}},"min_score":%f}},"size":%d}`,
-		filter,
-		string(queryVectorJSON),
-		params.Threshold,
-		params.TopK,
-	)
+	// Construct the script_score query using structured objects
+	queryObj := map[string]interface{}{
+		"query": map[string]interface{}{
+			"script_score": map[string]interface{}{
+				"query": map[string]interface{}{
+					"bool": map[string]interface{}{
+						"filter": []interface{}{filterQuery},
+					},
+				},
+				"script": map[string]interface{}{
+					"source": "cosineSimilarity(params.query_vector,'embedding')",
+					"params": map[string]interface{}{
+						"query_vector": params.Embedding,
+					},
+				},
+				"min_score": params.Threshold,
+			},
+		},
+		"size": params.TopK,
+	}
 
+	// Marshal to JSON string
+	queryBytes, err := json.Marshal(queryObj)
+	if err != nil {
+		log.Errorf("[ElasticsearchV7] Failed to marshal query: %v", err)
+		return "", fmt.Errorf("failed to marshal query: %w", err)
+	}
+
+	query := string(queryBytes)
 	log.Debugf("[ElasticsearchV7] Executing vector search with query: %s", query)
 	return query, nil
 }
@@ -833,18 +890,30 @@ func (e *elasticsearchRepository) querySourceBatch(ctx context.Context,
 ) ([]interface{}, error) {
 	log := logger.GetLogger(ctx)
 
-	// Build query request
-	filter := e.getBaseConds(retrieveParams)
-	query := fmt.Sprintf(`{
-		"query": %s,
-		"from": %d,
-		"size": %d
-	}`, filter, from, batchSize)
+	// Build query request safely
+	filterJSON := e.getBaseConds(retrieveParams)
+	var filter map[string]interface{}
+	if err := json.Unmarshal([]byte(filterJSON), &filter); err != nil {
+		log.Errorf("[ElasticsearchV7] Failed to parse base conditions: %v", err)
+		filter = map[string]interface{}{}
+	}
+
+	queryBody := map[string]interface{}{
+		"query": filter,
+		"from":  from,
+		"size":  batchSize,
+	}
+
+	queryBytes, err := json.Marshal(queryBody)
+	if err != nil {
+		log.Errorf("[ElasticsearchV7] Failed to marshal query body: %v", err)
+		return nil, err
+	}
 
 	// Execute query
 	response, err := e.client.Search(
 		e.client.Search.WithIndex(e.index),
-		e.client.Search.WithBody(strings.NewReader(query)),
+		e.client.Search.WithBody(strings.NewReader(string(queryBytes))),
 		e.client.Search.WithContext(ctx),
 	)
 	if err != nil {
@@ -1026,5 +1095,104 @@ func (e *elasticsearchRepository) saveCopiedIndices(ctx context.Context, indexIn
 	}
 
 	log.Infof("[ElasticsearchV7] Successfully saved %d indices", len(indexInfoList))
+	return nil
+}
+
+// BatchUpdateChunkEnabledStatus updates the enabled status of chunks in batch
+func (e *elasticsearchRepository) BatchUpdateChunkEnabledStatus(
+	ctx context.Context,
+	chunkStatusMap map[string]bool,
+) error {
+	log := logger.GetLogger(ctx)
+	if len(chunkStatusMap) == 0 {
+		log.Warnf("[ElasticsearchV7] Chunk status map is empty, skipping update")
+		return nil
+	}
+
+	log.Infof("[ElasticsearchV7] Batch updating chunk enabled status, count: %d", len(chunkStatusMap))
+
+	// Group chunks by enabled status for batch updates
+	enabledChunkIDs := make([]string, 0)
+	disabledChunkIDs := make([]string, 0)
+
+	for chunkID, enabled := range chunkStatusMap {
+		if enabled {
+			enabledChunkIDs = append(enabledChunkIDs, chunkID)
+		} else {
+			disabledChunkIDs = append(disabledChunkIDs, chunkID)
+		}
+	}
+
+	// Batch update enabled chunks using update_by_query
+	if len(enabledChunkIDs) > 0 {
+		query := map[string]interface{}{
+			"query": map[string]interface{}{
+				"terms": map[string]interface{}{
+					"chunk_id.keyword": enabledChunkIDs,
+				},
+			},
+			"script": map[string]interface{}{
+				"source": "ctx._source.is_enabled = true",
+				"lang":   "painless",
+			},
+		}
+		queryJSON, _ := json.Marshal(query)
+		res, err := esapi.UpdateByQueryRequest{
+			Index: []string{e.index},
+			Body:  strings.NewReader(string(queryJSON)),
+		}.Do(ctx, e.client)
+		if err != nil {
+			log.Errorf("[ElasticsearchV7] Failed to update enabled chunks: %v", err)
+			return err
+		}
+		defer res.Body.Close()
+		if res.IsError() {
+			var e map[string]interface{}
+			if err := json.NewDecoder(res.Body).Decode(&e); err != nil {
+				log.Errorf("[ElasticsearchV7] Error parsing the response body: %v", err)
+			} else {
+				log.Errorf("[ElasticsearchV7] Error updating enabled chunks: %v", e["error"])
+			}
+			return fmt.Errorf("elasticsearch update_by_query failed with status: %d", res.StatusCode)
+		}
+		log.Infof("[ElasticsearchV7] Updated %d chunks to enabled", len(enabledChunkIDs))
+	}
+
+	// Batch update disabled chunks using update_by_query
+	if len(disabledChunkIDs) > 0 {
+		query := map[string]interface{}{
+			"query": map[string]interface{}{
+				"terms": map[string]interface{}{
+					"chunk_id.keyword": disabledChunkIDs,
+				},
+			},
+			"script": map[string]interface{}{
+				"source": "ctx._source.is_enabled = false",
+				"lang":   "painless",
+			},
+		}
+		queryJSON, _ := json.Marshal(query)
+		res, err := esapi.UpdateByQueryRequest{
+			Index: []string{e.index},
+			Body:  strings.NewReader(string(queryJSON)),
+		}.Do(ctx, e.client)
+		if err != nil {
+			log.Errorf("[ElasticsearchV7] Failed to update disabled chunks: %v", err)
+			return err
+		}
+		defer res.Body.Close()
+		if res.IsError() {
+			var e map[string]interface{}
+			if err := json.NewDecoder(res.Body).Decode(&e); err != nil {
+				log.Errorf("[ElasticsearchV7] Error parsing the response body: %v", err)
+			} else {
+				log.Errorf("[ElasticsearchV7] Error updating disabled chunks: %v", e["error"])
+			}
+			return fmt.Errorf("elasticsearch update_by_query failed with status: %d", res.StatusCode)
+		}
+		log.Infof("[ElasticsearchV7] Updated %d chunks to disabled", len(disabledChunkIDs))
+	}
+
+	log.Infof("[ElasticsearchV7] Successfully batch updated chunk enabled status")
 	return nil
 }

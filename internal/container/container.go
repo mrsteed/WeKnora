@@ -6,6 +6,7 @@ package container
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 	"github.com/panjf2000/ants/v2"
 	"github.com/qdrant/go-client/qdrant"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/dig"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -31,10 +33,15 @@ import (
 	"github.com/Tencent/WeKnora/internal/application/service"
 	chatpipline "github.com/Tencent/WeKnora/internal/application/service/chat_pipline"
 	"github.com/Tencent/WeKnora/internal/application/service/file"
+	"github.com/Tencent/WeKnora/internal/application/service/llmcontext"
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/database"
+	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/handler"
+	"github.com/Tencent/WeKnora/internal/handler/session"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/mcp"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/models/utils/ollama"
 	"github.com/Tencent/WeKnora/internal/router"
@@ -61,7 +68,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(initTracer))
 	must(container.Provide(initDatabase))
 	must(container.Provide(initFileService))
+	must(container.Provide(initRedisClient))
 	must(container.Provide(initAntsPool))
+	must(container.Provide(initContextStorage))
 
 	// Register goroutine pool cleanup handler
 	must(container.Invoke(registerPoolCleanup))
@@ -80,26 +89,47 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewKnowledgeBaseRepository))
 	must(container.Provide(repository.NewKnowledgeRepository))
 	must(container.Provide(repository.NewChunkRepository))
+	must(container.Provide(repository.NewKnowledgeTagRepository))
 	must(container.Provide(repository.NewSessionRepository))
 	must(container.Provide(repository.NewMessageRepository))
 	must(container.Provide(repository.NewModelRepository))
 	must(container.Provide(repository.NewUserRepository))
 	must(container.Provide(repository.NewAuthTokenRepository))
 	must(container.Provide(neo4jRepo.NewNeo4jRepository))
+	must(container.Provide(repository.NewMCPServiceRepository))
+
+	// MCP manager for managing MCP client connections
+	must(container.Provide(mcp.NewMCPManager))
 
 	// Business service layer
 	must(container.Provide(service.NewTenantService))
 	must(container.Provide(service.NewKnowledgeBaseService))
 	must(container.Provide(service.NewKnowledgeService))
-	must(container.Provide(service.NewSessionService))
-	must(container.Provide(service.NewMessageService))
 	must(container.Provide(service.NewChunkService))
+	must(container.Provide(service.NewKnowledgeTagService))
 	must(container.Provide(embedding.NewBatchEmbedder))
 	must(container.Provide(service.NewModelService))
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
 	must(container.Provide(service.NewUserService))
 	must(container.Provide(service.NewChunkExtractService))
+	must(container.Provide(service.NewMessageService))
+	must(container.Provide(service.NewMCPServiceService))
+
+	// Web search service (needed by AgentService)
+	must(container.Provide(service.NewWebSearchService))
+
+	// Agent service layer (requires event bus, web search service)
+	// SessionService is passed as parameter to CreateAgentEngine method when creating AgentService
+	must(container.Provide(event.NewEventBus))
+	must(container.Provide(service.NewAgentService))
+
+	// Session service (depends on agent service)
+	// SessionService is created after AgentService and passes itself to AgentService.CreateAgentEngine when needed
+	must(container.Provide(service.NewSessionService))
+
+	must(container.Provide(router.NewAsyncqClient))
+	must(container.Provide(router.NewAsynqServer))
 
 	// Chat pipeline components for processing chat requests
 	must(container.Provide(chatpipline.NewEventManager))
@@ -112,28 +142,30 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(chatpipline.NewPluginChatCompletionStream))
 	must(container.Invoke(chatpipline.NewPluginStreamFilter))
 	must(container.Invoke(chatpipline.NewPluginFilterTopK))
-	must(container.Invoke(chatpipline.NewPluginPreprocess))
 	must(container.Invoke(chatpipline.NewPluginRewrite))
 	must(container.Invoke(chatpipline.NewPluginExtractEntity))
 	must(container.Invoke(chatpipline.NewPluginSearchEntity))
+	must(container.Invoke(chatpipline.NewPluginSearchParallel))
 
 	// HTTP handlers layer
 	must(container.Provide(handler.NewTenantHandler))
 	must(container.Provide(handler.NewKnowledgeBaseHandler))
 	must(container.Provide(handler.NewKnowledgeHandler))
 	must(container.Provide(handler.NewChunkHandler))
-	must(container.Provide(handler.NewSessionHandler))
+	must(container.Provide(handler.NewFAQHandler))
+	must(container.Provide(handler.NewTagHandler))
+	must(container.Provide(session.NewHandler))
 	must(container.Provide(handler.NewMessageHandler))
 	must(container.Provide(handler.NewModelHandler))
 	must(container.Provide(handler.NewEvaluationHandler))
 	must(container.Provide(handler.NewInitializationHandler))
 	must(container.Provide(handler.NewAuthHandler))
 	must(container.Provide(handler.NewSystemHandler))
+	must(container.Provide(handler.NewMCPServiceHandler))
+	must(container.Provide(handler.NewWebSearchHandler))
 
 	// Router configuration
 	must(container.Provide(router.NewRouter))
-	must(container.Provide(router.NewAsyncqClient))
-	must(container.Provide(router.NewAsynqServer))
 	must(container.Invoke(router.RunAsynqServer))
 
 	return container
@@ -161,6 +193,35 @@ func initTracer() (*tracing.Tracer, error) {
 	return tracing.InitTracer()
 }
 
+func initRedisClient() (*redis.Client, error) {
+	db, err := strconv.Atoi(os.Getenv("REDIS_DB"))
+	if err != nil {
+		return nil, err
+	}
+
+	client := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDIS_ADDR"),
+		Password: os.Getenv("REDIS_PASSWORD"),
+		DB:       db,
+	})
+
+	// 验证连接
+	_, err = client.Ping(context.Background()).Result()
+	if err != nil {
+		return nil, fmt.Errorf("连接Redis失败: %w", err)
+	}
+
+	return client, nil
+}
+
+func initContextStorage(redisClient *redis.Client) (llmcontext.ContextStorage, error) {
+	storage, err := llmcontext.NewRedisStorage(redisClient, 24*time.Hour, "context:")
+	if err != nil {
+		return nil, err
+	}
+	return storage, nil
+}
+
 // initDatabase initializes database connection
 // Creates and configures database connection based on environment configuration
 // Supports multiple database backends (PostgreSQL)
@@ -172,9 +233,11 @@ func initTracer() (*tracing.Tracer, error) {
 //   - Error if connection fails
 func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	var dialector gorm.Dialector
+	var migrateDSN string
 	switch os.Getenv("DB_DRIVER") {
 	case "postgres":
-		dsn := fmt.Sprintf(
+		// DSN for GORM (key-value format)
+		gormDSN := fmt.Sprintf(
 			"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 			os.Getenv("DB_HOST"),
 			os.Getenv("DB_PORT"),
@@ -183,7 +246,29 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 			os.Getenv("DB_NAME"),
 			"disable",
 		)
-		dialector = postgres.Open(dsn)
+		dialector = postgres.Open(gormDSN)
+
+		// DSN for golang-migrate (URL format)
+		// URL-encode password to handle special characters like !@#
+		dbPassword := os.Getenv("DB_PASSWORD")
+		encodedPassword := url.QueryEscape(dbPassword)
+
+		migrateDSN = fmt.Sprintf(
+			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			os.Getenv("DB_USER"),
+			encodedPassword, // Use encoded password
+			os.Getenv("DB_HOST"),
+			os.Getenv("DB_PORT"),
+			os.Getenv("DB_NAME"),
+		)
+
+		// Debug log (don't log password)
+		logger.Infof(context.Background(), "DB Config: user=%s host=%s port=%s dbname=%s",
+			os.Getenv("DB_USER"),
+			os.Getenv("DB_HOST"),
+			os.Getenv("DB_PORT"),
+			os.Getenv("DB_NAME"),
+		)
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", os.Getenv("DB_DRIVER"))
 	}
@@ -192,14 +277,20 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	// Auto-migrate database tables
-	err = db.AutoMigrate(
-		&types.User{},
-		&types.AuthToken{},
-		&types.KnowledgeBase{},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to auto-migrate database tables: %v", err)
+	// Run database migrations automatically (optional, can be disabled via env var)
+	// To disable auto-migration, set AUTO_MIGRATE=false
+	if os.Getenv("AUTO_MIGRATE") != "false" {
+		logger.Infof(context.Background(), "Running database migrations...")
+		if err := database.RunMigrations(migrateDSN); err != nil {
+			// Log warning but don't fail startup - migrations might be handled externally
+			logger.Warnf(context.Background(), "Database migration failed: %v", err)
+			logger.Warnf(
+				context.Background(),
+				"Continuing with application startup. Please run migrations manually if needed.",
+			)
+		}
+	} else {
+		logger.Infof(context.Background(), "Auto-migration is disabled (AUTO_MIGRATE=false)")
 	}
 
 	// Get underlying SQL DB object

@@ -13,6 +13,8 @@
   - [知识管理 API](#知识管理api)
   - [模型管理 API](#模型管理api)
   - [分块管理 API](#分块管理api)
+  - [标签管理 API](#标签管理api)
+  - [FAQ管理 API](#faq管理api)
   - [会话管理 API](#会话管理api)
   - [聊天功能 API](#聊天功能api)
   - [消息管理 API](#消息管理api)
@@ -72,10 +74,12 @@ WeKnora API 按功能分为以下几类：
 3. **知识管理**：上传、检索和管理知识内容
 4. **模型管理**：配置和管理各种AI模型
 5. **分块管理**：管理知识的分块内容
-6. **会话管理**：创建和管理对话会话
-7. **聊天功能**：基于知识库进行问答
-8. **消息管理**：获取和管理对话消息
-9. **评估功能**：评估模型性能
+6. **标签管理**：管理知识库的标签分类
+7. **FAQ管理**：管理FAQ问答对
+8. **会话管理**：创建和管理对话会话
+9. **聊天功能**：基于知识库进行问答
+10. **消息管理**：获取和管理对话消息
+11. **评估功能**：评估模型性能
 
 ## API 详细说明
 
@@ -335,6 +339,7 @@ curl --location 'http://localhost:8080/api/v1/tenants' \
 | PUT    | `/knowledge-bases/:id`               | 更新知识库               |
 | DELETE | `/knowledge-bases/:id`               | 删除知识库               |
 | POST   | `/knowledge-bases/copy`              | 拷贝知识库               |
+| GET    | `/knowledge-bases/:id/hybrid-search` | 混合搜索（向量+关键词）  |
 
 #### POST `/knowledge-bases` - 创建知识库
 
@@ -361,12 +366,9 @@ curl --location 'http://localhost:8080/api/v1/knowledge-bases' \
     "embedding_model_id": "dff7bc94-7885-4dd1-bfd5-bd96e4df2fc3",
     "summary_model_id": "8aea788c-bb30-4898-809e-e40c14ffb48c",
     "rerank_model_id": "b30171a1-787b-426e-a293-735cd5ac16c0",
-    "vlm_model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e",
     "vlm_config": {
-        "model_name": "qwen2.5vl:3b",
-        "interface_type": "ollama",
-        "base_url": "",
-        "api_key": ""
+        "enabled": true,
+        "model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e"
     },
     "cos_config": {
         "secret_id": "",
@@ -402,12 +404,9 @@ curl --location 'http://localhost:8080/api/v1/knowledge-bases' \
         "embedding_model_id": "dff7bc94-7885-4dd1-bfd5-bd96e4df2fc3",
         "summary_model_id": "8aea788c-bb30-4898-809e-e40c14ffb48c",
         "rerank_model_id": "b30171a1-787b-426e-a293-735cd5ac16c0",
-        "vlm_model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e",
         "vlm_config": {
-            "model_name": "qwen2.5vl:3b",
-            "base_url": "",
-            "api_key": "",
-            "interface_type": "ollama"
+            "enabled": true,
+            "model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e"
         },
         "cos_config": {
             "secret_id": "",
@@ -465,12 +464,9 @@ curl --location 'http://localhost:8080/api/v1/knowledge-bases' \
             "embedding_model_id": "dff7bc94-7885-4dd1-bfd5-bd96e4df2fc3",
             "summary_model_id": "8aea788c-bb30-4898-809e-e40c14ffb48c",
             "rerank_model_id": "b30171a1-787b-426e-a293-735cd5ac16c0",
-            "vlm_model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e",
             "vlm_config": {
-                "model_name": "qwen2.5vl:3b",
-                "base_url": "http://host.docker.internal:11435/v1",
-                "api_key": "",
-                "interface_type": "ollama"
+                "enabled": true,
+                "model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e"
             },
             "cos_config": {
                 "secret_id": "",
@@ -528,12 +524,9 @@ curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001' \
         "embedding_model_id": "dff7bc94-7885-4dd1-bfd5-bd96e4df2fc3",
         "summary_model_id": "8aea788c-bb30-4898-809e-e40c14ffb48c",
         "rerank_model_id": "b30171a1-787b-426e-a293-735cd5ac16c0",
-        "vlm_model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e",
         "vlm_config": {
-            "model_name": "qwen2.5vl:3b",
-            "base_url": "http://host.docker.internal:11435/v1",
-            "api_key": "",
-            "interface_type": "ollama"
+            "enabled": true,
+            "model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e"
         },
         "cos_config": {
             "secret_id": "",
@@ -613,12 +606,9 @@ curl --location --request PUT 'http://localhost:8080/api/v1/knowledge-bases/b582
         "embedding_model_id": "dff7bc94-7885-4dd1-bfd5-bd96e4df2fc3",
         "summary_model_id": "8aea788c-bb30-4898-809e-e40c14ffb48c",
         "rerank_model_id": "b30171a1-787b-426e-a293-735cd5ac16c0",
-        "vlm_model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e",
         "vlm_config": {
-            "model_name": "qwen2.5vl:3b",
-            "base_url": "",
-            "api_key": "",
-            "interface_type": "ollama"
+            "enabled": true,
+            "model_id": "f2083ad7-63e3-486d-a610-e6c56e58d72e"
         },
         "cos_config": {
             "secret_id": "",
@@ -655,6 +645,59 @@ curl --location --request DELETE 'http://localhost:8080/api/v1/knowledge-bases/b
 }
 ```
 
+#### GET `/knowledge-bases/:id/hybrid-search` - 混合搜索
+
+执行向量搜索和关键词搜索的混合检索。
+
+**注意**：此接口使用 GET 方法但需要 JSON 请求体。
+
+**请求参数**：
+- `query_text`: 搜索查询文本（必填）
+- `vector_threshold`: 向量相似度阈值（0-1，可选）
+- `keyword_threshold`: 关键词匹配阈值（可选）
+- `match_count`: 返回结果数量（可选）
+- `disable_keywords_match`: 是否禁用关键词匹配（可选）
+- `disable_vector_match`: 是否禁用向量匹配（可选）
+
+**请求**:
+
+```curl
+curl --location --request GET 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/hybrid-search' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json' \
+--data '{
+    "query_text": "如何使用知识库",
+    "vector_threshold": 0.5,
+    "match_count": 10
+}'
+```
+
+**响应**:
+
+```json
+{
+    "data": [
+        {
+            "id": "chunk-00000001",
+            "content": "知识库是用于存储和检索知识的系统...",
+            "knowledge_id": "knowledge-00000001",
+            "chunk_index": 0,
+            "knowledge_title": "知识库使用指南",
+            "start_at": 0,
+            "end_at": 500,
+            "seq": 1,
+            "score": 0.95,
+            "chunk_type": "text",
+            "image_info": "",
+            "metadata": {},
+            "knowledge_filename": "guide.pdf",
+            "knowledge_source": "file"
+        }
+    ],
+    "success": true
+}
+```
+
 <div align="right"><a href="#weknora-api-文档">返回顶部 ↑</a></div>
 
 ### 知识管理API
@@ -663,15 +706,24 @@ curl --location --request DELETE 'http://localhost:8080/api/v1/knowledge-bases/b
 | ------ | ------------------------------------- | ------------------------ |
 | POST   | `/knowledge-bases/:id/knowledge/file` | 从文件创建知识           |
 | POST   | `/knowledge-bases/:id/knowledge/url`  | 从 URL 创建知识          |
+| POST   | `/knowledge-bases/:id/knowledge/manual` | 创建手工 Markdown 知识 |
 | GET    | `/knowledge-bases/:id/knowledge`      | 获取知识库下的知识列表   |
 | GET    | `/knowledge/:id`                      | 获取知识详情             |
 | DELETE | `/knowledge/:id`                      | 删除知识                 |
 | GET    | `/knowledge/:id/download`             | 下载知识文件             |
 | PUT    | `/knowledge/:id`                      | 更新知识                 |
+| PUT    | `/knowledge/manual/:id`               | 更新手工 Markdown 知识   |
 | PUT    | `/knowledge/image/:id/:chunk_id`      | 更新图像分块信息         |
+| PUT    | `/knowledge/tags`                     | 批量更新知识标签         |
 | GET    | `/knowledge/batch`                    | 批量获取知识             |
 
 #### POST `/knowledge-bases/:id/knowledge/file` - 从文件创建知识
+
+**表单参数**：
+- `file`: 上传的文件（必填）
+- `metadata`: JSON 格式的元数据（可选）
+- `enable_multimodel`: 是否启用多模态处理（可选，true/false）
+- `fileName`: 自定义文件名，用于文件夹上传时保留路径（可选）
 
 **请求**:
 
@@ -761,12 +813,17 @@ curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/knowle
 }
 ```
 
-#### GET `/knowledge-bases/:id/knowledge?page=&page_size` - 获取知识库下的知识列表
+#### GET `/knowledge-bases/:id/knowledge` - 获取知识库下的知识列表
+
+**查询参数**：
+- `page`: 页码（默认 1）
+- `page_size`: 每页条数（默认 20）
+- `tag_id`: 按标签ID筛选（可选）
 
 **请求**:
 
 ```curl
-curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/knowledge?page_size=1&page=1' \
+curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/knowledge?page_size=1&page=1&tag_id=tag-00000001' \
 --header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
 --header 'Content-Type: application/json'
 ```
@@ -1254,12 +1311,14 @@ curl --location 'http://localhost:8080/api/v1/chunks/4c4e7c1a-09cf-485b-a7b5-24b
     "data": [
         {
             "id": "df10b37d-cd05-4b14-ba8a-e1bd0eb3bbd7",
-            "tenant_id": 0,
+            "tenant_id": 1,
             "knowledge_id": "4c4e7c1a-09cf-485b-a7b5-24b8cdc5acf5",
             "knowledge_base_id": "kb-00000001",
+            "tag_id": "",
             "content": "彗星xxxx",
             "chunk_index": 0,
             "is_enabled": true,
+            "status": 2,
             "start_at": 0,
             "end_at": 964,
             "pre_chunk_id": "",
@@ -1268,9 +1327,11 @@ curl --location 'http://localhost:8080/api/v1/chunks/4c4e7c1a-09cf-485b-a7b5-24b
             "parent_chunk_id": "",
             "relation_chunks": null,
             "indirect_relation_chunks": null,
+            "metadata": null,
+            "content_hash": "",
             "image_info": "",
-            "created_at": "0001-01-01T00:00:00Z",
-            "updated_at": "0001-01-01T00:00:00Z",
+            "created_at": "2025-08-12T11:52:36.168632+08:00",
+            "updated_at": "2025-08-12T11:52:53.376871+08:00",
             "deleted_at": null
         }
     ],
@@ -1315,6 +1376,468 @@ curl --location --request DELETE 'http://localhost:8080/api/v1/chunks/4c4e7c1a-0
 ```json
 {
     "message": "All chunks under knowledge deleted",
+    "success": true
+}
+```
+
+<div align="right"><a href="#weknora-api-文档">返回顶部 ↑</a></div>
+
+### 标签管理API
+
+| 方法   | 路径                                  | 描述                     |
+| ------ | ------------------------------------- | ------------------------ |
+| GET    | `/knowledge-bases/:id/tags`           | 获取知识库标签列表       |
+| POST   | `/knowledge-bases/:id/tags`           | 创建标签                 |
+| PUT    | `/knowledge-bases/:id/tags/:tag_id`   | 更新标签                 |
+| DELETE | `/knowledge-bases/:id/tags/:tag_id`   | 删除标签                 |
+
+#### GET `/knowledge-bases/:id/tags` - 获取知识库标签列表
+
+**查询参数**:
+- `page`: 页码（默认 1）
+- `page_size`: 每页条数（默认 20）
+- `keyword`: 标签名称关键字搜索（可选）
+
+**请求**:
+
+```curl
+curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/tags?page=1&page_size=10' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json'
+```
+
+**响应**:
+
+```json
+{
+    "data": {
+        "total": 2,
+        "page": 1,
+        "page_size": 10,
+        "data": [
+            {
+                "id": "tag-00000001",
+                "tenant_id": 1,
+                "knowledge_base_id": "kb-00000001",
+                "name": "技术文档",
+                "color": "#1890ff",
+                "sort_order": 1,
+                "created_at": "2025-08-12T10:00:00+08:00",
+                "updated_at": "2025-08-12T10:00:00+08:00",
+                "knowledge_count": 5,
+                "chunk_count": 120
+            },
+            {
+                "id": "tag-00000002",
+                "tenant_id": 1,
+                "knowledge_base_id": "kb-00000001",
+                "name": "常见问题",
+                "color": "#52c41a",
+                "sort_order": 2,
+                "created_at": "2025-08-12T10:00:00+08:00",
+                "updated_at": "2025-08-12T10:00:00+08:00",
+                "knowledge_count": 3,
+                "chunk_count": 45
+            }
+        ]
+    },
+    "success": true
+}
+```
+
+#### POST `/knowledge-bases/:id/tags` - 创建标签
+
+**请求**:
+
+```curl
+curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/tags' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json' \
+--data '{
+    "name": "产品手册",
+    "color": "#faad14",
+    "sort_order": 3
+}'
+```
+
+**响应**:
+
+```json
+{
+    "data": {
+        "id": "tag-00000003",
+        "tenant_id": 1,
+        "knowledge_base_id": "kb-00000001",
+        "name": "产品手册",
+        "color": "#faad14",
+        "sort_order": 3,
+        "created_at": "2025-08-12T11:00:00+08:00",
+        "updated_at": "2025-08-12T11:00:00+08:00"
+    },
+    "success": true
+}
+```
+
+#### PUT `/knowledge-bases/:id/tags/:tag_id` - 更新标签
+
+**请求**:
+
+```curl
+curl --location --request PUT 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/tags/tag-00000003' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json' \
+--data '{
+    "name": "产品手册更新",
+    "color": "#ff4d4f"
+}'
+```
+
+**响应**:
+
+```json
+{
+    "data": {
+        "id": "tag-00000003",
+        "tenant_id": 1,
+        "knowledge_base_id": "kb-00000001",
+        "name": "产品手册更新",
+        "color": "#ff4d4f",
+        "sort_order": 3,
+        "created_at": "2025-08-12T11:00:00+08:00",
+        "updated_at": "2025-08-12T11:30:00+08:00"
+    },
+    "success": true
+}
+```
+
+#### DELETE `/knowledge-bases/:id/tags/:tag_id` - 删除标签
+
+**查询参数**:
+- `force`: 设置为 `true` 时强制删除（即使标签被引用）
+
+**请求**:
+
+```curl
+curl --location --request DELETE 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/tags/tag-00000003?force=true' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json'
+```
+
+**响应**:
+
+```json
+{
+    "success": true
+}
+```
+
+<div align="right"><a href="#weknora-api-文档">返回顶部 ↑</a></div>
+
+### FAQ管理API
+
+| 方法   | 路径                                        | 描述                     |
+| ------ | ------------------------------------------- | ------------------------ |
+| GET    | `/knowledge-bases/:id/faq/entries`          | 获取FAQ条目列表          |
+| POST   | `/knowledge-bases/:id/faq/entries`          | 批量导入FAQ条目          |
+| POST   | `/knowledge-bases/:id/faq/entry`            | 创建单个FAQ条目          |
+| PUT    | `/knowledge-bases/:id/faq/entries/:entry_id`| 更新单个FAQ条目          |
+| PUT    | `/knowledge-bases/:id/faq/entries/status`   | 批量更新FAQ启用状态      |
+| PUT    | `/knowledge-bases/:id/faq/entries/tags`     | 批量更新FAQ标签          |
+| DELETE | `/knowledge-bases/:id/faq/entries`          | 批量删除FAQ条目          |
+| POST   | `/knowledge-bases/:id/faq/search`           | 混合搜索FAQ              |
+
+#### GET `/knowledge-bases/:id/faq/entries` - 获取FAQ条目列表
+
+**查询参数**:
+- `page`: 页码（默认 1）
+- `page_size`: 每页条数（默认 20）
+- `tag_id`: 按标签ID筛选（可选）
+- `keyword`: 关键字搜索（可选）
+
+**请求**:
+
+```curl
+curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entries?page=1&page_size=10' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json'
+```
+
+**响应**:
+
+```json
+{
+    "data": {
+        "total": 100,
+        "page": 1,
+        "page_size": 10,
+        "data": [
+            {
+                "id": "faq-00000001",
+                "chunk_id": "chunk-00000001",
+                "knowledge_id": "knowledge-00000001",
+                "knowledge_base_id": "kb-00000001",
+                "tag_id": "tag-00000001",
+                "is_enabled": true,
+                "standard_question": "如何重置密码？",
+                "similar_questions": ["忘记密码怎么办", "密码找回"],
+                "negative_questions": ["如何修改用户名"],
+                "answers": ["您可以通过点击登录页面的'忘记密码'链接来重置密码。"],
+                "index_mode": "hybrid",
+                "chunk_type": "faq",
+                "created_at": "2025-08-12T10:00:00+08:00",
+                "updated_at": "2025-08-12T10:00:00+08:00"
+            }
+        ]
+    },
+    "success": true
+}
+```
+
+#### POST `/knowledge-bases/:id/faq/entries` - 批量导入FAQ条目
+
+**请求参数**:
+- `mode`: 导入模式，`append`（追加）或 `replace`（替换）
+- `entries`: FAQ条目数组
+- `knowledge_id`: 关联的知识ID（可选）
+
+**请求**:
+
+```curl
+curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entries' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json' \
+--data '{
+    "mode": "append",
+    "entries": [
+        {
+            "standard_question": "如何联系客服？",
+            "similar_questions": ["客服电话", "在线客服"],
+            "answers": ["您可以通过拨打400-xxx-xxxx联系我们的客服。"],
+            "tag_id": "tag-00000001"
+        },
+        {
+            "standard_question": "退款政策是什么？",
+            "answers": ["我们提供7天无理由退款服务。"]
+        }
+    ]
+}'
+```
+
+**响应**:
+
+```json
+{
+    "data": {
+        "task_id": "task-00000001"
+    },
+    "success": true
+}
+```
+
+注：批量导入为异步操作，返回任务ID用于追踪进度。
+
+#### POST `/knowledge-bases/:id/faq/entry` - 创建单个FAQ条目
+
+同步创建单个FAQ条目，适用于单条录入场景。会自动检查标准问和相似问是否与已有FAQ重复。
+
+**请求参数**:
+- `standard_question`: 标准问（必填）
+- `similar_questions`: 相似问数组（可选）
+- `negative_questions`: 反例问题数组（可选）
+- `answers`: 答案数组（必填）
+- `tag_id`: 标签ID（可选）
+- `is_enabled`: 是否启用（可选，默认true）
+
+**请求**:
+
+```curl
+curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entry' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json' \
+--data '{
+    "standard_question": "如何联系客服？",
+    "similar_questions": ["客服电话", "在线客服"],
+    "answers": ["您可以通过拨打400-xxx-xxxx联系我们的客服。"],
+    "tag_id": "tag-00000001",
+    "is_enabled": true
+}'
+```
+
+**响应**:
+
+```json
+{
+    "data": {
+        "id": "faq-00000001",
+        "chunk_id": "chunk-00000001",
+        "knowledge_id": "knowledge-00000001",
+        "knowledge_base_id": "kb-00000001",
+        "tag_id": "tag-00000001",
+        "is_enabled": true,
+        "standard_question": "如何联系客服？",
+        "similar_questions": ["客服电话", "在线客服"],
+        "negative_questions": [],
+        "answers": ["您可以通过拨打400-xxx-xxxx联系我们的客服。"],
+        "index_mode": "hybrid",
+        "chunk_type": "faq",
+        "created_at": "2025-08-12T10:00:00+08:00",
+        "updated_at": "2025-08-12T10:00:00+08:00"
+    },
+    "success": true
+}
+```
+
+**错误响应**（标准问或相似问重复时）:
+
+```json
+{
+    "success": false,
+    "error": {
+        "code": "BAD_REQUEST",
+        "message": "标准问与已有FAQ重复"
+    }
+}
+```
+
+#### PUT `/knowledge-bases/:id/faq/entries/:entry_id` - 更新单个FAQ条目
+
+**请求**:
+
+```curl
+curl --location --request PUT 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entries/faq-00000001' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json' \
+--data '{
+    "standard_question": "如何重置账户密码？",
+    "similar_questions": ["忘记密码怎么办", "密码找回", "重置密码"],
+    "answers": ["您可以通过以下步骤重置密码：1. 点击登录页面的"忘记密码" 2. 输入注册邮箱 3. 查收重置邮件"],
+    "is_enabled": true
+}'
+```
+
+**响应**:
+
+```json
+{
+    "success": true
+}
+```
+
+#### PUT `/knowledge-bases/:id/faq/entries/status` - 批量更新FAQ启用状态
+
+**请求**:
+
+```curl
+curl --location --request PUT 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entries/status' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json' \
+--data '{
+    "updates": {
+        "faq-00000001": true,
+        "faq-00000002": false,
+        "faq-00000003": true
+    }
+}'
+```
+
+**响应**:
+
+```json
+{
+    "success": true
+}
+```
+
+#### PUT `/knowledge-bases/:id/faq/entries/tags` - 批量更新FAQ标签
+
+**请求**:
+
+```curl
+curl --location --request PUT 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entries/tags' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json' \
+--data '{
+    "updates": {
+        "faq-00000001": "tag-00000001",
+        "faq-00000002": "tag-00000002",
+        "faq-00000003": null
+    }
+}'
+```
+
+注：设置为 `null` 可清除标签关联。
+
+**响应**:
+
+```json
+{
+    "success": true
+}
+```
+
+#### DELETE `/knowledge-bases/:id/faq/entries` - 批量删除FAQ条目
+
+**请求**:
+
+```curl
+curl --location --request DELETE 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entries' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json' \
+--data '{
+    "ids": ["faq-00000001", "faq-00000002"]
+}'
+```
+
+**响应**:
+
+```json
+{
+    "success": true
+}
+```
+
+#### POST `/knowledge-bases/:id/faq/search` - 混合搜索FAQ
+
+**请求参数**:
+- `query_text`: 搜索查询文本
+- `vector_threshold`: 向量相似度阈值（0-1）
+- `match_count`: 返回结果数量（最大200）
+
+**请求**:
+
+```curl
+curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/search' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
+--header 'Content-Type: application/json' \
+--data '{
+    "query_text": "如何重置密码",
+    "vector_threshold": 0.5,
+    "match_count": 10
+}'
+```
+
+**响应**:
+
+```json
+{
+    "data": [
+        {
+            "id": "faq-00000001",
+            "chunk_id": "chunk-00000001",
+            "knowledge_id": "knowledge-00000001",
+            "knowledge_base_id": "kb-00000001",
+            "tag_id": "tag-00000001",
+            "is_enabled": true,
+            "standard_question": "如何重置密码？",
+            "similar_questions": ["忘记密码怎么办", "密码找回"],
+            "answers": ["您可以通过点击登录页面的'忘记密码'链接来重置密码。"],
+            "chunk_type": "faq",
+            "score": 0.95,
+            "match_type": "vector",
+            "created_at": "2025-08-12T10:00:00+08:00",
+            "updated_at": "2025-08-12T10:00:00+08:00"
+        }
+    ],
     "success": true
 }
 ```
@@ -1409,6 +1932,8 @@ curl --location 'http://localhost:8080/api/v1/sessions' \
             "seed": 0,
             "max_completion_tokens": 2048
         },
+        "agent_config": null,
+        "context_config": null,
         "created_at": "2025-08-12T12:26:19.611616669+08:00",
         "updated_at": "2025-08-12T12:26:19.611616919+08:00",
         "deleted_at": null
@@ -1462,6 +1987,8 @@ curl --location 'http://localhost:8080/api/v1/sessions/ceb9babb-1e30-41d7-817d-f
             "seed": 0,
             "max_completion_tokens": 2048
         },
+        "agent_config": null,
+        "context_config": null,
         "created_at": "2025-08-12T10:24:38.308596+08:00",
         "updated_at": "2025-08-12T10:25:41.317761+08:00",
         "deleted_at": null
@@ -1803,6 +2330,7 @@ curl --location --request GET 'http://localhost:8080/api/v1/messages/ceb9babb-1e
                     "knowledge_source": ""
                 }
             ],
+            "agent_steps": [],
             "is_completed": true,
             "created_at": "2025-08-12T10:24:38.370548+08:00",
             "updated_at": "2025-08-12T10:25:40.416382+08:00",
@@ -1815,6 +2343,7 @@ curl --location --request GET 'http://localhost:8080/api/v1/messages/ceb9babb-1e
             "content": "彗尾的形状",
             "role": "user",
             "knowledge_references": [],
+            "agent_steps": [],
             "is_completed": true,
             "created_at": "2025-08-12T14:30:39.732246+08:00",
             "updated_at": "2025-08-12T14:30:39.733277+08:00",
@@ -1870,6 +2399,7 @@ curl --location --request GET 'http://localhost:8080/api/v1/messages/ceb9babb-1e
                     "knowledge_source": ""
                 }
             ],
+            "agent_steps": [],
             "is_completed": true,
             "created_at": "2025-08-12T14:30:39.735108+08:00",
             "updated_at": "2025-08-12T14:31:17.829926+08:00",

@@ -31,7 +31,7 @@ func (r *sessionRepository) Create(ctx context.Context, session *types.Session) 
 }
 
 // Get retrieves a session by ID
-func (r *sessionRepository) Get(ctx context.Context, tenantID uint, id string) (*types.Session, error) {
+func (r *sessionRepository) Get(ctx context.Context, tenantID uint64, id string) (*types.Session, error) {
 	var session types.Session
 	err := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID).First(&session, "id = ?", id).Error
 	if err != nil {
@@ -41,7 +41,7 @@ func (r *sessionRepository) Get(ctx context.Context, tenantID uint, id string) (
 }
 
 // GetByTenantID retrieves all sessions for a tenant
-func (r *sessionRepository) GetByTenantID(ctx context.Context, tenantID uint) ([]*types.Session, error) {
+func (r *sessionRepository) GetByTenantID(ctx context.Context, tenantID uint64) ([]*types.Session, error) {
 	var sessions []*types.Session
 	err := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Order("created_at DESC").Find(&sessions).Error
 	if err != nil {
@@ -52,7 +52,7 @@ func (r *sessionRepository) GetByTenantID(ctx context.Context, tenantID uint) ([
 
 // GetPagedByTenantID retrieves sessions for a tenant with pagination
 func (r *sessionRepository) GetPagedByTenantID(
-	ctx context.Context, tenantID uint, page *types.Pagination,
+	ctx context.Context, tenantID uint64, page *types.Pagination,
 ) ([]*types.Session, int64, error) {
 	var sessions []*types.Session
 	var total int64
@@ -84,6 +84,6 @@ func (r *sessionRepository) Update(ctx context.Context, session *types.Session) 
 }
 
 // Delete deletes a session
-func (r *sessionRepository) Delete(ctx context.Context, tenantID uint, id string) error {
+func (r *sessionRepository) Delete(ctx context.Context, tenantID uint64, id string) error {
 	return r.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Delete(&types.Session{}, "id = ?", id).Error
 }

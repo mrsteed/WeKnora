@@ -32,7 +32,7 @@ func (r *tenantRepository) CreateTenant(ctx context.Context, tenant *types.Tenan
 }
 
 // GetTenantByID gets tenant by ID
-func (r *tenantRepository) GetTenantByID(ctx context.Context, id uint) (*types.Tenant, error) {
+func (r *tenantRepository) GetTenantByID(ctx context.Context, id uint64) (*types.Tenant, error) {
 	var tenant types.Tenant
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&tenant).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -52,17 +52,56 @@ func (r *tenantRepository) ListTenants(ctx context.Context) ([]*types.Tenant, er
 	return tenants, nil
 }
 
+// SearchTenants searches tenants with pagination and filters
+func (r *tenantRepository) SearchTenants(ctx context.Context, keyword string, tenantID uint64, page, pageSize int) ([]*types.Tenant, int64, error) {
+	var tenants []*types.Tenant
+	var total int64
+
+	query := r.db.WithContext(ctx).Model(&types.Tenant{})
+
+	// Filter by tenant ID if provided
+	if tenantID > 0 {
+		query = query.Where("id = ?", tenantID)
+	}
+
+	// Filter by keyword if provided (search in name and description)
+	if keyword != "" {
+		query = query.Where("name LIKE ? OR description LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+	}
+
+	// Count total
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Apply pagination
+	if page > 0 && pageSize > 0 {
+		offset := (page - 1) * pageSize
+		query = query.Offset(offset).Limit(pageSize)
+	}
+
+	// Order by created_at DESC
+	query = query.Order("created_at DESC")
+
+	// Execute query
+	if err := query.Find(&tenants).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return tenants, total, nil
+}
+
 // UpdateTenant updates tenant
 func (r *tenantRepository) UpdateTenant(ctx context.Context, tenant *types.Tenant) error {
 	return r.db.WithContext(ctx).Model(&types.Tenant{}).Where("id = ?", tenant.ID).Updates(tenant).Error
 }
 
 // DeleteTenant deletes tenant
-func (r *tenantRepository) DeleteTenant(ctx context.Context, id uint) error {
+func (r *tenantRepository) DeleteTenant(ctx context.Context, id uint64) error {
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.Tenant{}).Error
 }
 
-func (r *tenantRepository) AdjustStorageUsed(ctx context.Context, tenantID uint, delta int64) error {
+func (r *tenantRepository) AdjustStorageUsed(ctx context.Context, tenantID uint64, delta int64) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var tenant types.Tenant
 		// 使用悲观锁确保并发安全

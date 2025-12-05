@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/config"
@@ -37,8 +38,30 @@ func isNoAuthAPI(path string, method string) bool {
 	return false
 }
 
+// canAccessTenant checks if a user can access a target tenant
+func canAccessTenant(user *types.User, targetTenantID uint64, cfg *config.Config) bool {
+	// 1. 检查功能是否启用
+	if cfg == nil || cfg.Tenant == nil || !cfg.Tenant.EnableCrossTenantAccess {
+		return false
+	}
+	// 2. 检查用户权限
+	if !user.CanAccessAllTenants {
+		return false
+	}
+	// 3. 如果目标租户是用户自己的租户，允许访问
+	if user.TenantID == targetTenantID {
+		return true
+	}
+	// 4. 用户有跨租户权限，允许访问（具体验证在中间件中完成）
+	return true
+}
+
 // Auth 认证中间件
-func Auth(tenantService interfaces.TenantService, userService interfaces.UserService, cfg *config.Config) gin.HandlerFunc {
+func Auth(
+	tenantService interfaces.TenantService,
+	userService interfaces.UserService,
+	cfg *config.Config,
+) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// ignore OPTIONS request
 		if c.Request.Method == "OPTIONS" {
@@ -59,10 +82,44 @@ func Auth(tenantService interfaces.TenantService, userService interfaces.UserSer
 			user, err := userService.ValidateToken(c.Request.Context(), token)
 			if err == nil && user != nil {
 				// JWT Token认证成功
-				// 获取租户信息
-				tenant, err := tenantService.GetTenantByID(c.Request.Context(), user.TenantID)
+				// 检查是否有跨租户访问请求
+				targetTenantID := user.TenantID
+				tenantHeader := c.GetHeader("X-Tenant-ID")
+				if tenantHeader != "" {
+					// 解析目标租户ID
+					parsedTenantID, err := strconv.ParseUint(tenantHeader, 10, 64)
+					if err == nil {
+						// 检查用户是否有跨租户访问权限
+						if canAccessTenant(user, parsedTenantID, cfg) {
+							// 验证目标租户是否存在
+							targetTenant, err := tenantService.GetTenantByID(c.Request.Context(), parsedTenantID)
+							if err == nil && targetTenant != nil {
+								targetTenantID = parsedTenantID
+								log.Printf("User %s switching to tenant %d", user.ID, targetTenantID)
+							} else {
+								log.Printf("Error getting target tenant by ID: %v, tenantID: %d", err, parsedTenantID)
+								c.JSON(http.StatusBadRequest, gin.H{
+									"error": "Invalid target tenant ID",
+								})
+								c.Abort()
+								return
+							}
+						} else {
+							// 用户没有权限访问目标租户
+							log.Printf("User %s attempted to access tenant %d without permission", user.ID, parsedTenantID)
+							c.JSON(http.StatusForbidden, gin.H{
+								"error": "Forbidden: insufficient permissions to access target tenant",
+							})
+							c.Abort()
+							return
+						}
+					}
+				}
+
+				// 获取租户信息（使用目标租户ID）
+				tenant, err := tenantService.GetTenantByID(c.Request.Context(), targetTenantID)
 				if err != nil {
-					log.Printf("Error getting tenant by ID: %v, tenantID: %d, userID: %s", err, user.TenantID, user.ID)
+					log.Printf("Error getting tenant by ID: %v, tenantID: %d, userID: %s", err, targetTenantID, user.ID)
 					c.JSON(http.StatusUnauthorized, gin.H{
 						"error": "Unauthorized: invalid tenant",
 					})
@@ -71,13 +128,13 @@ func Auth(tenantService interfaces.TenantService, userService interfaces.UserSer
 				}
 
 				// 存储用户和租户信息到上下文
-				c.Set(types.TenantIDContextKey.String(), user.TenantID)
+				c.Set(types.TenantIDContextKey.String(), targetTenantID)
 				c.Set(types.TenantInfoContextKey.String(), tenant)
 				c.Set("user", user)
 				c.Request = c.Request.WithContext(
 					context.WithValue(
 						context.WithValue(
-							context.WithValue(c.Request.Context(), types.TenantIDContextKey, user.TenantID),
+							context.WithValue(c.Request.Context(), types.TenantIDContextKey, targetTenantID),
 							types.TenantInfoContextKey, tenant,
 						),
 						"user", user,
@@ -104,7 +161,7 @@ func Auth(tenantService interfaces.TenantService, userService interfaces.UserSer
 			// Verify API key validity (matches the one in database)
 			t, err := tenantService.GetTenantByID(c.Request.Context(), tenantID)
 			if err != nil {
-				log.Printf("Error getting tenant by ID: %v, tenantID: %d, apiKey: %s", err, tenantID, apiKey)
+				log.Printf("Error getting tenant by ID: %v, tenantID: %d", err, tenantID)
 				c.JSON(http.StatusUnauthorized, gin.H{
 					"error": "Unauthorized: invalid API key",
 				})
@@ -140,8 +197,8 @@ func Auth(tenantService interfaces.TenantService, userService interfaces.UserSer
 }
 
 // GetTenantIDFromContext helper function to get tenant ID from context
-func GetTenantIDFromContext(ctx context.Context) (uint, error) {
-	tenantID, ok := ctx.Value("tenantID").(uint)
+func GetTenantIDFromContext(ctx context.Context) (uint64, error) {
+	tenantID, ok := ctx.Value("tenantID").(uint64)
 	if !ok {
 		return 0, errors.New("tenant ID not found in context")
 	}

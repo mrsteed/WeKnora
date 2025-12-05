@@ -3,7 +3,6 @@ package chatpipline
 import (
 	"context"
 
-	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -27,12 +26,20 @@ func (p *PluginFilterTopK) ActivationEvents() []types.EventType {
 func (p *PluginFilterTopK) OnEvent(ctx context.Context,
 	eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
 ) *PluginError {
-	logger.Info(ctx, "Starting filter top-K process")
-	logger.Infof(ctx, "Filter configuration: top-K = %d", chatManage.RerankTopK)
+	pipelineInfo(ctx, "FilterTopK", "input", map[string]interface{}{
+		"session_id": chatManage.SessionID,
+		"top_k":      chatManage.RerankTopK,
+		"merge_cnt":  len(chatManage.MergeResult),
+		"rerank_cnt": len(chatManage.RerankResult),
+		"search_cnt": len(chatManage.SearchResult),
+	})
 
 	filterTopK := func(searchResult []*types.SearchResult, topK int) []*types.SearchResult {
 		if topK > 0 && len(searchResult) > topK {
-			logger.Infof(ctx, "Filtering results: before=%d, after=%d", len(searchResult), topK)
+			pipelineInfo(ctx, "FilterTopK", "filter", map[string]interface{}{
+				"before": len(searchResult),
+				"after":  topK,
+			})
 			searchResult = searchResult[:topK]
 		}
 		return searchResult
@@ -45,9 +52,15 @@ func (p *PluginFilterTopK) OnEvent(ctx context.Context,
 	} else if len(chatManage.SearchResult) > 0 {
 		chatManage.SearchResult = filterTopK(chatManage.SearchResult, chatManage.RerankTopK)
 	} else {
-		logger.Info(ctx, "No results to filter")
+		pipelineWarn(ctx, "FilterTopK", "skip", map[string]interface{}{
+			"reason": "no_results",
+		})
 	}
 
-	logger.Info(ctx, "Filter top-K process completed")
+	pipelineInfo(ctx, "FilterTopK", "output", map[string]interface{}{
+		"merge_cnt":  len(chatManage.MergeResult),
+		"rerank_cnt": len(chatManage.RerankResult),
+		"search_cnt": len(chatManage.SearchResult),
+	})
 	return next()
 }

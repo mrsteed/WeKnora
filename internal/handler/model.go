@@ -8,6 +8,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -27,15 +28,44 @@ func NewModelHandler(service interfaces.ModelService) *ModelHandler {
 	return &ModelHandler{service: service}
 }
 
+// hideSensitiveInfo hides sensitive information (APIKey, BaseURL) for builtin models
+// Returns a copy of the model with sensitive fields cleared if it's a builtin model
+func hideSensitiveInfo(model *types.Model) *types.Model {
+	if !model.IsBuiltin {
+		return model
+	}
+
+	// Create a copy with sensitive information hidden
+	return &types.Model{
+		ID:          model.ID,
+		TenantID:    model.TenantID,
+		Name:        model.Name,
+		Type:        model.Type,
+		Source:      model.Source,
+		Description: model.Description,
+		Parameters: types.ModelParameters{
+			// Hide APIKey and BaseURL for builtin models
+			BaseURL: "",
+			APIKey:  "",
+			// Keep other parameters like embedding dimensions
+			EmbeddingParameters: model.Parameters.EmbeddingParameters,
+			ParameterSize:       model.Parameters.ParameterSize,
+		},
+		IsBuiltin: model.IsBuiltin,
+		Status:    model.Status,
+		CreatedAt: model.CreatedAt,
+		UpdatedAt: model.UpdatedAt,
+	}
+}
+
 // CreateModelRequest defines the structure for model creation requests
 // Contains all fields required to create a new model in the system
 type CreateModelRequest struct {
-	Name        string                `json:"name" binding:"required"`
-	Type        types.ModelType       `json:"type" binding:"required"`
-	Source      types.ModelSource     `json:"source" binding:"required"`
+	Name        string                `json:"name"        binding:"required"`
+	Type        types.ModelType       `json:"type"        binding:"required"`
+	Source      types.ModelSource     `json:"source"      binding:"required"`
 	Description string                `json:"description"`
-	Parameters  types.ModelParameters `json:"parameters" binding:"required"`
-	IsDefault   bool                  `json:"is_default"`
+	Parameters  types.ModelParameters `json:"parameters"  binding:"required"`
 }
 
 // CreateModel handles the HTTP request to create a new model
@@ -54,8 +84,7 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
-
-	tenantID := c.GetUint(types.TenantIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
 		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
@@ -63,16 +92,15 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Creating model, Tenant ID: %d, Model name: %s, Model type: %s",
-		tenantID, req.Name, req.Type)
+		tenantID, secutils.SanitizeForLog(req.Name), secutils.SanitizeForLog(string(req.Type)))
 
 	model := &types.Model{
 		TenantID:    tenantID,
-		Name:        req.Name,
-		Type:        req.Type,
+		Name:        secutils.SanitizeForLog(req.Name),
+		Type:        types.ModelType(secutils.SanitizeForLog(string(req.Type))),
 		Source:      req.Source,
-		Description: req.Description,
+		Description: secutils.SanitizeForLog(req.Description),
 		Parameters:  req.Parameters,
-		IsDefault:   req.IsDefault,
 	}
 
 	if err := h.service.CreateModel(ctx, model); err != nil {
@@ -81,10 +109,19 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Model created successfully, ID: %s, Name: %s", model.ID, model.Name)
+	logger.Infof(
+		ctx,
+		"Model created successfully, ID: %s, Name: %s",
+		secutils.SanitizeForLog(model.ID),
+		secutils.SanitizeForLog(model.Name),
+	)
+
+	// Hide sensitive information for builtin models (though newly created models are unlikely to be builtin)
+	responseModel := hideSensitiveInfo(model)
+
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
-		"data":    model,
+		"data":    responseModel,
 	})
 }
 
@@ -98,7 +135,7 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 
 	logger.Info(ctx, "Start retrieving model")
 
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Model ID is empty")
 		c.Error(errors.NewBadRequestError("Model ID cannot be empty"))
@@ -119,9 +156,16 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Retrieved model successfully, ID: %s, Name: %s", model.ID, model.Name)
+
+	// Hide sensitive information for builtin models
+	responseModel := hideSensitiveInfo(model)
+	if model.IsBuiltin {
+		logger.Infof(ctx, "Builtin model detected, hiding sensitive information for model: %s", model.ID)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    model,
+		"data":    responseModel,
 	})
 }
 
@@ -134,14 +178,13 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 
 	logger.Info(ctx, "Start retrieving model list")
 
-	tenantID := c.GetUint(types.TenantIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
 		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving model list, Tenant ID: %d", tenantID)
 	models, err := h.service.ListModels(ctx)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -150,9 +193,19 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Retrieved model list successfully, Tenant ID: %d, Total: %d models", tenantID, len(models))
+
+	// Hide sensitive information for builtin models in the list
+	responseModels := make([]*types.Model, len(models))
+	for i, model := range models {
+		responseModels[i] = hideSensitiveInfo(model)
+		if model.IsBuiltin {
+			logger.Infof(ctx, "Builtin model detected in list, hiding sensitive information for model: %s", model.ID)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    models,
+		"data":    responseModels,
 	})
 }
 
@@ -162,7 +215,8 @@ type UpdateModelRequest struct {
 	Name        string                `json:"name"`
 	Description string                `json:"description"`
 	Parameters  types.ModelParameters `json:"parameters"`
-	IsDefault   bool                  `json:"is_default"`
+	Source      types.ModelSource     `json:"source"`
+	Type        types.ModelType       `json:"type"`
 }
 
 // UpdateModel handles the HTTP request to update an existing model
@@ -175,7 +229,7 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 
 	logger.Info(ctx, "Start updating model")
 
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Model ID is empty")
 		c.Error(errors.NewBadRequestError("Model ID cannot be empty"))
@@ -206,13 +260,12 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 	if req.Name != "" {
 		model.Name = req.Name
 	}
-	if req.Description != "" {
-		model.Description = req.Description
-	}
+	model.Description = req.Description
 	if req.Parameters != (types.ModelParameters{}) {
 		model.Parameters = req.Parameters
 	}
-	model.IsDefault = req.IsDefault
+	model.Source = req.Source
+	model.Type = req.Type
 
 	logger.Infof(ctx, "Updating model, ID: %s, Name: %s", id, model.Name)
 	if err := h.service.UpdateModel(ctx, model); err != nil {
@@ -222,9 +275,13 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Model updated successfully, ID: %s", id)
+
+	// Hide sensitive information for builtin models (though builtin models cannot be updated)
+	responseModel := hideSensitiveInfo(model)
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    model,
+		"data":    responseModel,
 	})
 }
 
@@ -238,7 +295,7 @@ func (h *ModelHandler) DeleteModel(c *gin.Context) {
 
 	logger.Info(ctx, "Start deleting model")
 
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Model ID is empty")
 		c.Error(errors.NewBadRequestError("Model ID cannot be empty"))

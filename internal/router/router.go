@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/handler"
+	"github.com/Tencent/WeKnora/internal/handler/session"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -31,13 +32,17 @@ type RouterParams struct {
 	TenantHandler         *handler.TenantHandler
 	TenantService         interfaces.TenantService
 	ChunkHandler          *handler.ChunkHandler
-	SessionHandler        *handler.SessionHandler
+	SessionHandler        *session.Handler
 	MessageHandler        *handler.MessageHandler
 	ModelHandler          *handler.ModelHandler
 	EvaluationHandler     *handler.EvaluationHandler
 	AuthHandler           *handler.AuthHandler
 	InitializationHandler *handler.InitializationHandler
 	SystemHandler         *handler.SystemHandler
+	MCPServiceHandler     *handler.MCPServiceHandler
+	WebSearchHandler      *handler.WebSearchHandler
+	FAQHandler            *handler.FAQHandler
+	TagHandler            *handler.TagHandler
 }
 
 // NewRouter 创建新的路由
@@ -75,7 +80,9 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterAuthRoutes(v1, params.AuthHandler)
 		RegisterTenantRoutes(v1, params.TenantHandler)
 		RegisterKnowledgeBaseRoutes(v1, params.KBHandler)
+		RegisterKnowledgeTagRoutes(v1, params.TagHandler)
 		RegisterKnowledgeRoutes(v1, params.KnowledgeHandler)
+		RegisterFAQRoutes(v1, params.FAQHandler)
 		RegisterChunkRoutes(v1, params.ChunkHandler)
 		RegisterSessionRoutes(v1, params.SessionHandler)
 		RegisterChatRoutes(v1, params.SessionHandler)
@@ -84,6 +91,8 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterEvaluationRoutes(v1, params.EvaluationHandler)
 		RegisterInitializationRoutes(v1, params.InitializationHandler)
 		RegisterSystemRoutes(v1, params.SystemHandler)
+		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler)
+		RegisterWebSearchRoutes(v1, params.WebSearchHandler)
 	}
 
 	return r
@@ -96,12 +105,16 @@ func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler) {
 	{
 		// 获取分块列表
 		chunks.GET("/:knowledge_id", handler.ListKnowledgeChunks)
+		// 通过chunk_id获取单个chunk（不需要knowledge_id）
+		chunks.GET("/by-id/:id", handler.GetChunkByIDOnly)
 		// 删除分块
 		chunks.DELETE("/:knowledge_id/:id", handler.DeleteChunk)
 		// 删除知识下的所有分块
 		chunks.DELETE("/:knowledge_id", handler.DeleteChunksByKnowledgeID)
 		// 更新分块信息
 		chunks.PUT("/:knowledge_id/:id", handler.UpdateChunk)
+		// 删除单个生成的问题（通过问题ID）
+		chunks.DELETE("/by-id/:id/questions", handler.DeleteGeneratedQuestion)
 	}
 }
 
@@ -114,6 +127,8 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		kb.POST("/file", handler.CreateKnowledgeFromFile)
 		// 从URL创建知识
 		kb.POST("/url", handler.CreateKnowledgeFromURL)
+		// 手工 Markdown 录入
+		kb.POST("/manual", handler.CreateManualKnowledge)
 		// 获取知识库下的知识列表
 		kb.GET("", handler.ListKnowledge)
 	}
@@ -129,10 +144,32 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		k.DELETE("/:id", handler.DeleteKnowledge)
 		// 更新知识
 		k.PUT("/:id", handler.UpdateKnowledge)
+		// 更新手工 Markdown 知识
+		k.PUT("/manual/:id", handler.UpdateManualKnowledge)
 		// 获取知识文件
 		k.GET("/:id/download", handler.DownloadKnowledgeFile)
 		// 更新图像分块信息
 		k.PUT("/image/:id/:chunk_id", handler.UpdateImageInfo)
+		// 批量更新知识标签
+		k.PUT("/tags", handler.UpdateKnowledgeTagBatch)
+	}
+}
+
+// RegisterFAQRoutes 注册 FAQ 相关路由
+func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler) {
+	if handler == nil {
+		return
+	}
+	faq := r.Group("/knowledge-bases/:id/faq")
+	{
+		faq.GET("/entries", handler.ListEntries)
+		faq.POST("/entries", handler.UpsertEntries)
+		faq.POST("/entry", handler.CreateEntry)
+		faq.PUT("/entries/:entry_id", handler.UpdateEntry)
+		faq.PUT("/entries/status", handler.UpdateEntryStatusBatch)
+		faq.PUT("/entries/tags", handler.UpdateEntryTagBatch)
+		faq.DELETE("/entries", handler.DeleteEntries)
+		faq.POST("/search", handler.SearchFAQ)
 	}
 }
 
@@ -158,6 +195,20 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 	}
 }
 
+// RegisterKnowledgeTagRoutes 注册知识库标签相关路由
+func RegisterKnowledgeTagRoutes(r *gin.RouterGroup, tagHandler *handler.TagHandler) {
+	if tagHandler == nil {
+		return
+	}
+	kbTags := r.Group("/knowledge-bases/:id/tags")
+	{
+		kbTags.GET("", tagHandler.ListTags)
+		kbTags.POST("", tagHandler.CreateTag)
+		kbTags.PUT("/:tag_id", tagHandler.UpdateTag)
+		kbTags.DELETE("/:tag_id", tagHandler.DeleteTag)
+	}
+}
+
 // RegisterMessageRoutes 注册消息相关的路由
 func RegisterMessageRoutes(r *gin.RouterGroup, handler *handler.MessageHandler) {
 	// 消息路由组
@@ -171,7 +222,7 @@ func RegisterMessageRoutes(r *gin.RouterGroup, handler *handler.MessageHandler) 
 }
 
 // RegisterSessionRoutes 注册路由
-func RegisterSessionRoutes(r *gin.RouterGroup, handler *handler.SessionHandler) {
+func RegisterSessionRoutes(r *gin.RouterGroup, handler *session.Handler) {
 	sessions := r.Group("/sessions")
 	{
 		sessions.POST("", handler.CreateSession)
@@ -180,16 +231,23 @@ func RegisterSessionRoutes(r *gin.RouterGroup, handler *handler.SessionHandler) 
 		sessions.PUT("/:id", handler.UpdateSession)
 		sessions.DELETE("/:id", handler.DeleteSession)
 		sessions.POST("/:session_id/generate_title", handler.GenerateTitle)
+		sessions.POST("/:session_id/stop", handler.StopSession)
 		// 继续接收活跃流
 		sessions.GET("/continue-stream/:session_id", handler.ContinueStream)
 	}
 }
 
 // RegisterChatRoutes 注册路由
-func RegisterChatRoutes(r *gin.RouterGroup, handler *handler.SessionHandler) {
+func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
 	knowledgeChat := r.Group("/knowledge-chat")
 	{
 		knowledgeChat.POST("/:session_id", handler.KnowledgeQA)
+	}
+
+	// Agent-based chat
+	agentChat := r.Group("/agent-chat")
+	{
+		agentChat.POST("/:session_id", handler.AgentQA)
 	}
 
 	// 新增知识检索接口，不需要session_id
@@ -201,6 +259,10 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *handler.SessionHandler) {
 
 // RegisterTenantRoutes 注册租户相关的路由
 func RegisterTenantRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
+	// 添加获取所有租户的路由（需要跨租户权限）
+	r.GET("/tenants/all", handler.ListAllTenants)
+	// 添加搜索租户的路由（需要跨租户权限，支持分页和搜索）
+	r.GET("/tenants/search", handler.SearchTenants)
 	// 租户路由组
 	tenantRoutes := r.Group("/tenants")
 	{
@@ -209,6 +271,11 @@ func RegisterTenantRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
 		tenantRoutes.PUT("/:id", handler.UpdateTenant)
 		tenantRoutes.DELETE("/:id", handler.DeleteTenant)
 		tenantRoutes.GET("", handler.ListTenants)
+
+		// Generic KV configuration management (tenant-level)
+		// Tenant ID is obtained from authentication context
+		tenantRoutes.GET("/kv/:key", handler.GetTenantKV)
+		tenantRoutes.PUT("/kv/:key", handler.UpdateTenantKV)
 	}
 }
 
@@ -253,6 +320,7 @@ func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.Initializ
 	// 初始化接口
 	r.GET("/initialization/config/:kbId", handler.GetCurrentConfigByKB)
 	r.POST("/initialization/initialize/:kbId", handler.InitializeByKB)
+	r.PUT("/initialization/config/:kbId", handler.UpdateKBConfig) // 新的简化版接口，只传模型ID
 
 	// Ollama相关接口
 	r.GET("/initialization/ollama/status", handler.CheckOllamaStatus)
@@ -278,5 +346,38 @@ func RegisterSystemRoutes(r *gin.RouterGroup, handler *handler.SystemHandler) {
 	systemRoutes := r.Group("/system")
 	{
 		systemRoutes.GET("/info", handler.GetSystemInfo)
+	}
+}
+
+// RegisterMCPServiceRoutes registers MCP service routes
+func RegisterMCPServiceRoutes(r *gin.RouterGroup, handler *handler.MCPServiceHandler) {
+	mcpServices := r.Group("/mcp-services")
+	{
+		// Create MCP service
+		mcpServices.POST("", handler.CreateMCPService)
+		// List MCP services
+		mcpServices.GET("", handler.ListMCPServices)
+		// Get MCP service by ID
+		mcpServices.GET("/:id", handler.GetMCPService)
+		// Update MCP service
+		mcpServices.PUT("/:id", handler.UpdateMCPService)
+		// Delete MCP service
+		mcpServices.DELETE("/:id", handler.DeleteMCPService)
+		// Test MCP service connection
+		mcpServices.POST("/:id/test", handler.TestMCPService)
+		// Get MCP service tools
+		mcpServices.GET("/:id/tools", handler.GetMCPServiceTools)
+		// Get MCP service resources
+		mcpServices.GET("/:id/resources", handler.GetMCPServiceResources)
+	}
+}
+
+// RegisterWebSearchRoutes registers web search routes
+func RegisterWebSearchRoutes(r *gin.RouterGroup, webSearchHandler *handler.WebSearchHandler) {
+	// Web search providers
+	webSearch := r.Group("/web-search")
+	{
+		// Get available providers
+		webSearch.GET("/providers", webSearchHandler.GetProviders)
 	}
 }

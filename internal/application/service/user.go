@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -15,10 +18,31 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
-// JWT secret key - in production this should be from environment variable
-var jwtSecret = []byte("your-secret-key")
+var (
+	jwtSecretOnce sync.Once
+	jwtSecret     string
+)
+
+// getJwtSecret retrieves the JWT secret from the environment, falling back to a securely generated random secret.
+func getJwtSecret() string {
+	jwtSecretOnce.Do(func() {
+		if envSecret := strings.TrimSpace(os.Getenv("JWT_SECRET")); envSecret != "" {
+			jwtSecret = envSecret
+			return
+		}
+
+		randomBytes := make([]byte, 32)
+		if _, err := rand.Read(randomBytes); err != nil {
+			panic(fmt.Sprintf("failed to generate JWT secret: %v", err))
+		}
+		jwtSecret = base64.StdEncoding.EncodeToString(randomBytes)
+	})
+
+	return jwtSecret
+}
 
 // userService implements the UserService interface
 type userService struct {
@@ -28,7 +52,11 @@ type userService struct {
 }
 
 // NewUserService creates a new user service instance
-func NewUserService(userRepo interfaces.UserRepository, tokenRepo interfaces.AuthTokenRepository, tenantService interfaces.TenantService) interfaces.UserService {
+func NewUserService(
+	userRepo interfaces.UserRepository,
+	tokenRepo interfaces.AuthTokenRepository,
+	tenantService interfaces.TenantService,
+) interfaces.UserService {
 	return &userService{
 		userRepo:      userRepo,
 		tokenRepo:     tokenRepo,
@@ -99,11 +127,11 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 		}
 	}
 	egs = uniqueRetrieverEngine(egs)
-	logger.Debugf(ctx, "user register retriever engines: %v", egs)
+	logger.Debug(ctx, "user register retriever engines")
 
 	// Create default tenant for the user
 	tenant := &types.Tenant{
-		Name:             fmt.Sprintf("%s's Workspace", req.Username),
+		Name:             fmt.Sprintf("%s's Workspace", secutils.SanitizeForLog(req.Username)),
 		Description:      "Default workspace",
 		Status:           "active",
 		RetrieverEngines: types.RetrieverEngines{Engines: egs},
@@ -111,7 +139,7 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 
 	createdTenant, err := s.tenantService.CreateTenant(ctx, tenant)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to create tenant: %v", err)
+		logger.Errorf(ctx, "Failed to create tenant")
 		return nil, errors.New("failed to create workspace")
 	}
 
@@ -133,36 +161,33 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 		return nil, errors.New("failed to create user")
 	}
 
-	logger.Infof(ctx, "User registered successfully: %s", user.Email)
+	logger.Info(ctx, "User registered successfully")
 	return user, nil
 }
 
 // Login authenticates a user and returns tokens
 func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*types.LoginResponse, error) {
-	logger.Infof(ctx, "Start user login for email: %s", req.Email)
-
+	logger.Info(ctx, "Start user login")
 	// Get user by email
 	user, err := s.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get user by email %s: %v", req.Email, err)
+		logger.Errorf(ctx, "Failed to get user by email: %v", err)
 		return &types.LoginResponse{
 			Success: false,
 			Message: "Invalid email or password",
 		}, nil
 	}
 	if user == nil {
-		logger.Warnf(ctx, "User not found for email: %s", req.Email)
+		logger.Warn(ctx, "User not found for email")
 		return &types.LoginResponse{
 			Success: false,
 			Message: "Invalid email or password",
 		}, nil
 	}
 
-	logger.Infof(ctx, "Found user: ID=%s, Email=%s, IsActive=%t", user.ID, user.Email, user.IsActive)
-
 	// Check if user is active
 	if !user.IsActive {
-		logger.Warnf(ctx, "User account is disabled for email: %s", req.Email)
+		logger.Warn(ctx, "User account is disabled")
 		return &types.LoginResponse{
 			Success: false,
 			Message: "Account is disabled",
@@ -170,39 +195,37 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 	}
 
 	// Verify password
-	logger.Infof(ctx, "Verifying password for user: %s", user.Email)
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
 	if err != nil {
-		logger.Warnf(ctx, "Password verification failed for user %s: %v", user.Email, err)
+		logger.Warn(ctx, "Password verification failed")
 		return &types.LoginResponse{
 			Success: false,
 			Message: "Invalid email or password",
 		}, nil
 	}
-	logger.Infof(ctx, "Password verification successful for user: %s", user.Email)
+	logger.Info(ctx, "Password verification successful")
 
 	// Generate tokens
-	logger.Infof(ctx, "Generating tokens for user: %s", user.Email)
+	logger.Info(ctx, "Generating tokens")
 	accessToken, refreshToken, err := s.GenerateTokens(ctx, user)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to generate tokens for user %s: %v", user.Email, err)
+		logger.Errorf(ctx, "Failed to generate tokens: %v", err)
 		return &types.LoginResponse{
 			Success: false,
 			Message: "Login failed",
 		}, nil
 	}
-	logger.Infof(ctx, "Tokens generated successfully for user: %s", user.Email)
+	logger.Info(ctx, "Tokens generated successfully")
 
 	// Get tenant information
-	logger.Infof(ctx, "Getting tenant information for user %s, tenant ID: %s", user.Email, user.TenantID)
 	tenant, err := s.tenantService.GetTenantByID(ctx, user.TenantID)
 	if err != nil {
-		logger.Warnf(ctx, "Failed to get tenant info for user %s, tenant ID %s: %v", user.Email, user.TenantID, err)
+		logger.Warn(ctx, "Failed to get tenant info")
 	} else {
-		logger.Infof(ctx, "Tenant information retrieved successfully for user: %s", user.Email)
+		logger.Info(ctx, "Tenant information retrieved successfully")
 	}
 
-	logger.Infof(ctx, "User logged in successfully: %s", user.Email)
+	logger.Info(ctx, "User logged in successfully")
 	return &types.LoginResponse{
 		Success:      true,
 		Message:      "Login successful",
@@ -275,7 +298,10 @@ func (s *userService) ValidatePassword(ctx context.Context, userID string, passw
 }
 
 // GenerateTokens generates access and refresh tokens for user
-func (s *userService) GenerateTokens(ctx context.Context, user *types.User) (accessToken, refreshToken string, err error) {
+func (s *userService) GenerateTokens(
+	ctx context.Context,
+	user *types.User,
+) (accessToken, refreshToken string, err error) {
 	// Generate access token (expires in 24 hours)
 	accessClaims := jwt.MapClaims{
 		"user_id":   user.ID,
@@ -287,7 +313,7 @@ func (s *userService) GenerateTokens(ctx context.Context, user *types.User) (acc
 	}
 
 	accessTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-	accessToken, err = accessTokenObj.SignedString(jwtSecret)
+	accessToken, err = accessTokenObj.SignedString([]byte(getJwtSecret()))
 	if err != nil {
 		return "", "", err
 	}
@@ -301,7 +327,7 @@ func (s *userService) GenerateTokens(ctx context.Context, user *types.User) (acc
 	}
 
 	refreshTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	refreshToken, err = refreshTokenObj.SignedString(jwtSecret)
+	refreshToken, err = refreshTokenObj.SignedString([]byte(getJwtSecret()))
 	if err != nil {
 		return "", "", err
 	}
@@ -339,7 +365,7 @@ func (s *userService) ValidateToken(ctx context.Context, tokenString string) (*t
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return jwtSecret, nil
+		return []byte(getJwtSecret()), nil
 	})
 
 	if err != nil || !token.Valid {
@@ -366,12 +392,15 @@ func (s *userService) ValidateToken(ctx context.Context, tokenString string) (*t
 }
 
 // RefreshToken refreshes access token using refresh token
-func (s *userService) RefreshToken(ctx context.Context, refreshTokenString string) (accessToken, newRefreshToken string, err error) {
+func (s *userService) RefreshToken(
+	ctx context.Context,
+	refreshTokenString string,
+) (accessToken, newRefreshToken string, err error) {
 	token, err := jwt.Parse(refreshTokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return jwtSecret, nil
+		return []byte(getJwtSecret()), nil
 	})
 
 	if err != nil || !token.Valid {

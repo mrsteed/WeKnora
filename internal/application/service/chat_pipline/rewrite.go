@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/config"
-	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -58,10 +57,28 @@ func (p *PluginRewrite) OnEvent(ctx context.Context,
 	// Initialize rewritten query as original query
 	chatManage.RewriteQuery = chatManage.Query
 
+	if !chatManage.EnableRewrite {
+		pipelineInfo(ctx, "Rewrite", "skip", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+			"reason":     "rewrite_disabled",
+		})
+		return next()
+	}
+
+	pipelineInfo(ctx, "Rewrite", "input", map[string]interface{}{
+		"session_id":     chatManage.SessionID,
+		"tenant_id":      chatManage.TenantID,
+		"user_query":     chatManage.Query,
+		"enable_rewrite": chatManage.EnableRewrite,
+	})
+
 	// Get conversation history
 	history, err := p.messageService.GetRecentMessagesBySession(ctx, chatManage.SessionID, 20)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get conversation history, session_id: %s, error: %v", chatManage.SessionID, err)
+		pipelineWarn(ctx, "Rewrite", "history_fetch", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+			"error":      err.Error(),
+		})
 	}
 
 	// Convert historical messages to conversation history structure
@@ -99,22 +116,52 @@ func (p *PluginRewrite) OnEvent(ctx context.Context,
 	})
 
 	// Limit the number of historical records
-	if len(historyList) > p.config.Conversation.MaxRounds {
-		historyList = historyList[:p.config.Conversation.MaxRounds]
+	maxRounds := p.config.Conversation.MaxRounds
+	if chatManage.MaxRounds > 0 {
+		maxRounds = chatManage.MaxRounds
+	}
+	if len(historyList) > maxRounds {
+		historyList = historyList[:maxRounds]
 	}
 
 	// Reverse to chronological order
 	slices.Reverse(historyList)
 	chatManage.History = historyList
-
-	userTmpl, err := template.New("rewriteContent").Parse(p.config.Conversation.RewritePromptUser)
-	if err != nil {
-		logger.Errorf(ctx, "Failed to execute template, session_id: %s, error: %v", chatManage.SessionID, err)
+	if len(historyList) == 0 {
+		pipelineInfo(ctx, "Rewrite", "skip", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+			"reason":     "empty_history",
+		})
 		return next()
 	}
-	systemTmpl, err := template.New("rewriteContent").Parse(p.config.Conversation.RewritePromptSystem)
+	pipelineInfo(ctx, "Rewrite", "history_ready", map[string]interface{}{
+		"session_id":     chatManage.SessionID,
+		"history_rounds": len(historyList),
+		"max_rounds":     maxRounds,
+	})
+
+	userPrompt := p.config.Conversation.RewritePromptUser
+	if chatManage.RewritePromptUser != "" {
+		userPrompt = chatManage.RewritePromptUser
+	}
+	userTmpl, err := template.New("rewriteContent").Parse(userPrompt)
 	if err != nil {
-		logger.GetLogger(ctx).Errorf("Failed to execute template, session_id: %s, error: %v", chatManage.SessionID, err)
+		pipelineError(ctx, "Rewrite", "parse_user_template", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+			"error":      err.Error(),
+		})
+		return next()
+	}
+	systemPrompt := p.config.Conversation.RewritePromptSystem
+	if chatManage.RewritePromptSystem != "" {
+		systemPrompt = chatManage.RewritePromptSystem
+	}
+	systemTmpl, err := template.New("rewriteContent").Parse(systemPrompt)
+	if err != nil {
+		pipelineError(ctx, "Rewrite", "parse_system_template", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+			"error":      err.Error(),
+		})
 		return next()
 	}
 	currentTime := time.Now().Format("2006-01-02 15:04:05")
@@ -126,7 +173,10 @@ func (p *PluginRewrite) OnEvent(ctx context.Context,
 		"Conversation": historyList,
 	})
 	if err != nil {
-		logger.GetLogger(ctx).Errorf("Failed to execute template, session_id: %s, error: %v", chatManage.SessionID, err)
+		pipelineError(ctx, "Rewrite", "render_user_template", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+			"error":      err.Error(),
+		})
 		return next()
 	}
 	err = systemTmpl.Execute(&systemContent, map[string]interface{}{
@@ -136,12 +186,19 @@ func (p *PluginRewrite) OnEvent(ctx context.Context,
 		"Conversation": historyList,
 	})
 	if err != nil {
-		logger.Errorf(ctx, "Failed to execute template, session_id: %s, error: %v", chatManage.SessionID, err)
+		pipelineError(ctx, "Rewrite", "render_system_template", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+			"error":      err.Error(),
+		})
 		return next()
 	}
 	rewriteModel, err := p.modelService.GetChatModel(ctx, chatManage.ChatModelID)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get model, session_id: %s, error: %v", chatManage.SessionID, err)
+		pipelineError(ctx, "Rewrite", "get_model", map[string]interface{}{
+			"session_id":    chatManage.SessionID,
+			"chat_model_id": chatManage.ChatModelID,
+			"error":         err.Error(),
+		})
 		return next()
 	}
 
@@ -162,7 +219,10 @@ func (p *PluginRewrite) OnEvent(ctx context.Context,
 		Thinking:            &thinking,
 	})
 	if err != nil {
-		logger.Errorf(ctx, "Failed to execute model, session_id: %s, error: %v", chatManage.SessionID, err)
+		pipelineError(ctx, "Rewrite", "model_call", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+			"error":      err.Error(),
+		})
 		return next()
 	}
 
@@ -170,7 +230,9 @@ func (p *PluginRewrite) OnEvent(ctx context.Context,
 		// Update rewritten query
 		chatManage.RewriteQuery = response.Content
 	}
-	logger.GetLogger(ctx).Infof("Rewritten query, session_id: %s, rewrite_query: %s",
-		chatManage.SessionID, chatManage.RewriteQuery)
+	pipelineInfo(ctx, "Rewrite", "output", map[string]interface{}{
+		"session_id":    chatManage.SessionID,
+		"rewrite_query": chatManage.RewriteQuery,
+	})
 	return next()
 }

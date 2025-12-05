@@ -3,11 +3,13 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,7 +34,7 @@ func (h *KnowledgeBaseHandler) HybridSearch(c *gin.Context) {
 	logger.Info(ctx, "Start hybrid search")
 
 	// Validate knowledge base ID
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge base ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge base ID cannot be empty"))
@@ -47,7 +49,8 @@ func (h *KnowledgeBaseHandler) HybridSearch(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Executing hybrid search, knowledge base ID: %s, query: %s", id, req.QueryText)
+	logger.Infof(ctx, "Executing hybrid search, knowledge base ID: %s, query: %s",
+		secutils.SanitizeForLog(id), secutils.SanitizeForLog(req.QueryText))
 
 	// Execute hybrid search with default search parameters
 	results, err := h.service.HybridSearch(ctx, id, req)
@@ -57,7 +60,8 @@ func (h *KnowledgeBaseHandler) HybridSearch(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Hybrid search completed, knowledge base ID: %s, result count: %d", id, len(results))
+	logger.Infof(ctx, "Hybrid search completed, knowledge base ID: %s, result count: %d",
+		secutils.SanitizeForLog(id), len(results))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    results,
@@ -77,8 +81,13 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
 		return
 	}
+	if err := validateExtractConfig(req.ExtractConfig); err != nil {
+		logger.Error(ctx, "Invalid extract configuration", err)
+		c.Error(err)
+		return
+	}
 
-	logger.Infof(ctx, "Creating knowledge base, name: %s", req.Name)
+	logger.Infof(ctx, "Creating knowledge base, name: %s", secutils.SanitizeForLog(req.Name))
 	// Create knowledge base using the service
 	kb, err := h.service.CreateKnowledgeBase(ctx, &req)
 	if err != nil {
@@ -87,7 +96,8 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge base created successfully, ID: %s, name: %s", kb.ID, kb.Name)
+	logger.Infof(ctx, "Knowledge base created successfully, ID: %s, name: %s",
+		secutils.SanitizeForLog(kb.ID), secutils.SanitizeForLog(kb.Name))
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
 		"data":    kb,
@@ -107,13 +117,11 @@ func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(c *gin.Context) (*typ
 	}
 
 	// Get knowledge base ID from URL parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge base ID is empty")
 		return nil, "", errors.NewBadRequestError("Knowledge base ID cannot be empty")
 	}
-
-	logger.Infof(ctx, "Retrieving knowledge base, ID: %s", id)
 
 	// Verify tenant has permission to access this knowledge base
 	kb, err := h.service.GetKnowledgeBaseByID(ctx, id)
@@ -123,12 +131,12 @@ func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(c *gin.Context) (*typ
 	}
 
 	// Verify tenant ownership
-	if kb.TenantID != tenantID.(uint) {
+	if kb.TenantID != tenantID.(uint64) {
 		logger.Warnf(
 			ctx,
 			"Tenant has no permission to access this knowledge base, knowledge base ID: %s, "+
 				"request tenant ID: %d, knowledge base tenant ID: %d",
-			id, tenantID.(uint), kb.TenantID,
+			id, tenantID.(uint64), kb.TenantID,
 		)
 		return nil, id, errors.NewForbiddenError("No permission to operate")
 	}
@@ -138,17 +146,12 @@ func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(c *gin.Context) (*typ
 
 // GetKnowledgeBase handles requests to retrieve a knowledge base by ID
 func (h *KnowledgeBaseHandler) GetKnowledgeBase(c *gin.Context) {
-	ctx := c.Request.Context()
-	logger.Info(ctx, "Start retrieving knowledge base")
-
 	// Validate and get the knowledge base
-	kb, id, err := h.validateAndGetKnowledgeBase(c)
+	kb, _, err := h.validateAndGetKnowledgeBase(c)
 	if err != nil {
 		c.Error(err)
 		return
 	}
-
-	logger.Infof(ctx, "Retrieved knowledge base successfully, ID: %s, name: %s", id, kb.Name)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    kb,
@@ -159,18 +162,6 @@ func (h *KnowledgeBaseHandler) GetKnowledgeBase(c *gin.Context) {
 func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	logger.Info(ctx, "Start retrieving knowledge base list")
-
-	// Get tenant ID from context
-	tenantID, exists := c.Get(types.TenantIDContextKey.String())
-	if !exists {
-		logger.Error(ctx, "Failed to get tenant ID")
-		c.Error(errors.NewUnauthorizedError("Unauthorized"))
-		return
-	}
-
-	logger.Infof(ctx, "Retrieving knowledge base list for tenant, tenant ID: %d", tenantID.(uint))
-
 	// Get all knowledge bases for this tenant
 	kbs, err := h.service.ListKnowledgeBases(ctx)
 	if err != nil {
@@ -179,11 +170,6 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(
-		ctx,
-		"Retrieved knowledge base list successfully, tenant ID: %d, total: %d knowledge bases",
-		tenantID.(uint), len(kbs),
-	)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    kbs,
@@ -192,9 +178,9 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 
 // UpdateKnowledgeBaseRequest defines the request body structure for updating a knowledge base
 type UpdateKnowledgeBaseRequest struct {
-	Name        string                     `json:"name" binding:"required"`
+	Name        string                     `json:"name"        binding:"required"`
 	Description string                     `json:"description"`
-	Config      *types.KnowledgeBaseConfig `json:"config" binding:"required"`
+	Config      *types.KnowledgeBaseConfig `json:"config"      binding:"required"`
 }
 
 // UpdateKnowledgeBase handles requests to update an existing knowledge base
@@ -217,7 +203,8 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Updating knowledge base, ID: %s, name: %s", id, req.Name)
+	logger.Infof(ctx, "Updating knowledge base, ID: %s, name: %s",
+		secutils.SanitizeForLog(id), secutils.SanitizeForLog(req.Name))
 
 	// Update the knowledge base
 	kb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config)
@@ -227,7 +214,8 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge base updated successfully, ID: %s", id)
+	logger.Infof(ctx, "Knowledge base updated successfully, ID: %s",
+		secutils.SanitizeForLog(id))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    kb,
@@ -246,7 +234,8 @@ func (h *KnowledgeBaseHandler) DeleteKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Deleting knowledge base, ID: %s, name: %s", id, kb.Name)
+	logger.Infof(ctx, "Deleting knowledge base, ID: %s, name: %s",
+		secutils.SanitizeForLog(id), secutils.SanitizeForLog(kb.Name))
 
 	// Delete the knowledge base
 	if err := h.service.DeleteKnowledgeBase(ctx, id); err != nil {
@@ -255,7 +244,8 @@ func (h *KnowledgeBaseHandler) DeleteKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge base deleted successfully, ID: %s", id)
+	logger.Infof(ctx, "Knowledge base deleted successfully, ID: %s",
+		secutils.SanitizeForLog(id))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Knowledge base deleted successfully",
@@ -269,8 +259,6 @@ type CopyKnowledgeBaseRequest struct {
 
 func (h *KnowledgeBaseHandler) CopyKnowledgeBase(c *gin.Context) {
 	ctx := c.Request.Context()
-	logger.Info(ctx, "Start copy knowledge base")
-
 	var req CopyKnowledgeBaseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to parse request parameters", err)
@@ -278,20 +266,86 @@ func (h *KnowledgeBaseHandler) CopyKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Copy knowledge base, ID: %s to ID: %s", req.SourceID, req.TargetID)
-
 	go func(ctx context.Context) {
 		err := h.knowledgeService.CloneKnowledgeBase(ctx, req.SourceID, req.TargetID)
 		if err != nil {
-			logger.Errorf(ctx, "Failed to copy knowledge base, ID: %s to ID: %s", req.SourceID, req.TargetID)
+			logger.Errorf(ctx, "Failed to copy knowledge base, ID: %s to ID: %s",
+				secutils.SanitizeForLog(req.SourceID), secutils.SanitizeForLog(req.TargetID))
 			return
 		}
-		logger.Infof(ctx, "Knowledge base copy from ID: %s to ID: %s successfully", req.SourceID, req.TargetID)
+		logger.Infof(ctx, "Knowledge base copy from ID: %s to ID: %s successfully",
+			secutils.SanitizeForLog(req.SourceID), secutils.SanitizeForLog(req.TargetID))
 	}(logger.CloneContext(ctx))
 
-	logger.Infof(ctx, "Knowledge base start copy from ID: %s to ID: %s", req.SourceID, req.TargetID)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Knowledge base copy successfully",
 	})
+}
+
+// validateExtractConfig validates the graph configuration parameters
+func validateExtractConfig(config *types.ExtractConfig) error {
+	logger.Errorf(context.Background(), "Validating extract configuration: %+v", config)
+	if config == nil {
+		return nil
+	}
+	if !config.Enabled {
+		*config = types.ExtractConfig{Enabled: false}
+		return nil
+	}
+	// Validate text field
+	if config.Text == "" {
+		return errors.NewBadRequestError("text cannot be empty")
+	}
+
+	// Validate tags field
+	if len(config.Tags) == 0 {
+		return errors.NewBadRequestError("tags cannot be empty")
+	}
+	for i, tag := range config.Tags {
+		if tag == "" {
+			return errors.NewBadRequestError("tag cannot be empty at index " + strconv.Itoa(i))
+		}
+	}
+
+	// Validate nodes
+	if len(config.Nodes) == 0 {
+		return errors.NewBadRequestError("nodes cannot be empty")
+	}
+	nodeNames := make(map[string]bool)
+	for i, node := range config.Nodes {
+		if node.Name == "" {
+			return errors.NewBadRequestError("node name cannot be empty at index " + strconv.Itoa(i))
+		}
+		// Check for duplicate node names
+		if nodeNames[node.Name] {
+			return errors.NewBadRequestError("duplicate node name: " + node.Name)
+		}
+		nodeNames[node.Name] = true
+	}
+
+	if len(config.Relations) == 0 {
+		return errors.NewBadRequestError("relations cannot be empty")
+	}
+	// Validate relations
+	for i, relation := range config.Relations {
+		if relation.Node1 == "" {
+			return errors.NewBadRequestError("relation node1 cannot be empty at index " + strconv.Itoa(i))
+		}
+		if relation.Node2 == "" {
+			return errors.NewBadRequestError("relation node2 cannot be empty at index " + strconv.Itoa(i))
+		}
+		if relation.Type == "" {
+			return errors.NewBadRequestError("relation type cannot be empty at index " + strconv.Itoa(i))
+		}
+		// Check if referenced nodes exist
+		if !nodeNames[relation.Node1] {
+			return errors.NewBadRequestError("relation references non-existent node1: " + relation.Node1)
+		}
+		if !nodeNames[relation.Node2] {
+			return errors.NewBadRequestError("relation references non-existent node2: " + relation.Node2)
+		}
+	}
+
+	return nil
 }

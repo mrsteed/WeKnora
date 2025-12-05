@@ -22,7 +22,7 @@ func NewDummyFileService() interfaces.FileService {
 // SaveFile pretends to save a file but just returns a random UUID
 // This is useful for testing without actual file operations
 func (s *DummyFileService) SaveFile(ctx context.Context,
-	file *multipart.FileHeader, tenantID uint, knowledgeID string,
+	file *multipart.FileHeader, tenantID uint64, knowledgeID string,
 ) (string, error) {
 	return uuid.New().String(), nil
 }

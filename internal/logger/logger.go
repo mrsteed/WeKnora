@@ -32,6 +32,9 @@ const (
 	colorBlue   = "\033[34m"
 	colorPurple = "\033[35m"
 	colorCyan   = "\033[36m"
+	colorWhite  = "\033[37m"
+	colorGray   = "\033[90m"
+	colorBold   = "\033[1m"
 	colorReset  = "\033[0m"
 )
 
@@ -74,7 +77,12 @@ func (f *CustomFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 
 	// request_id 优先输出
 	if v, ok := entry.Data["request_id"]; ok {
-		fields += fmt.Sprintf("request_id=%v ", v)
+		if f.ForceColor {
+			fields += fmt.Sprintf("%srequest_id%s=%s%v%s ",
+				colorCyan, colorReset, colorBlue, v, colorReset)
+		} else {
+			fields += fmt.Sprintf("request_id=%v ", v)
+		}
 	}
 
 	// 其余字段排序后输出
@@ -86,14 +94,34 @@ func (f *CustomFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		fields += fmt.Sprintf("%s=%v ", k, entry.Data[k])
+		if f.ForceColor {
+			val := fmt.Sprintf("%v", entry.Data[k])
+			coloredVal := fmt.Sprintf("%s%s%s", colorWhite, val, colorReset)
+			if k == "error" {
+				coloredVal = fmt.Sprintf("%s%s%s", colorRed, val, colorReset)
+			}
+			fields += fmt.Sprintf("%s%s%s=%s ",
+				colorCyan, k, colorReset, coloredVal)
+		} else {
+			fields += fmt.Sprintf("%s=%v ", k, entry.Data[k])
+		}
 	}
 
 	fields = strings.TrimSpace(fields)
 
 	// 拼接最终输出内容，添加颜色
-	return []byte(fmt.Sprintf("%s%-5s%s[%s] [%s] %-20s | %s\n",
-		levelColor, level, resetColor, timestamp, fields, caller, entry.Message)), nil
+	if f.ForceColor {
+		coloredTimestamp := fmt.Sprintf("%s%s%s", colorGray, timestamp, resetColor)
+		coloredCaller := caller
+		if caller != "" {
+			coloredCaller = fmt.Sprintf("%s%s%s", colorPurple, caller, resetColor)
+		}
+		return []byte(fmt.Sprintf("%s%-5s%s[%s] [%s] %-20s | %s\n",
+			levelColor, level, resetColor, coloredTimestamp, fields, coloredCaller, entry.Message)), nil
+	}
+
+	return []byte(fmt.Sprintf("%-5s[%s] [%s] %-20s | %s\n",
+		level, timestamp, fields, caller, entry.Message)), nil
 }
 
 // 初始化全局日志设置

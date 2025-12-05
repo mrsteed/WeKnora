@@ -11,10 +11,10 @@
                 <template #header>
                     <div class="deep-title">
                         <div v-if="deepSession.thinking" class="thinking">
-                            <img class="img_gif" src="@/assets/img/think.gif" :alt="$t('chat.thinking')">
+                            <img class="img_gif" src="@/assets/img/think.gif" :alt="$t('chat.thinkingAlt')">{{ $t('chat.thinking') }}
                         </div>
                         <div v-else class="done">
-                            <img class="icon deep_icon" src="@/assets/img/Frame3718.svg" :alt="$t('chat.deepThinking')">
+                            <img class="icon deep_icon" src="@/assets/img/Frame3718.svg" :alt="$t('chat.deepThoughtAlt')"></img>{{ $t('chat.deepThoughtCompleted') }}
                         </div>
                     </div>
                 </template>
@@ -29,11 +29,11 @@
 </template>
 <script setup>
 import { onMounted, watch, computed, ref, reactive, defineProps } from 'vue';
-import { useI18n } from 'vue-i18n';
 import { sanitizeHTML } from '@/utils/security';
-const { t } = useI18n();
+import { useI18n } from 'vue-i18n';
 
 const isFold = ref(true)
+const { t } = useI18n()
 const props = defineProps({
     // 必填项
     deepSession: {

@@ -16,6 +16,7 @@ CREATE TABLE tenants (
     business VARCHAR(255) NOT NULL,
     storage_quota BIGINT NOT NULL DEFAULT 10737418240,
     storage_used BIGINT NOT NULL DEFAULT 0,
+    agent_config JSON DEFAULT NULL COMMENT 'Tenant-level agent configuration in JSON format',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL
@@ -48,7 +49,6 @@ CREATE TABLE knowledge_bases (
     embedding_model_id VARCHAR(64) NOT NULL,
     summary_model_id VARCHAR(64) NOT NULL,
     rerank_model_id VARCHAR(64) NOT NULL,
-    vlm_model_id VARCHAR(64) NOT NULL,
     cos_config JSON NOT NULL,
     vlm_config JSON NOT NULL,
     extract_config JSON NULL,
@@ -104,6 +104,8 @@ CREATE TABLE sessions (
     rerank_threshold FLOAT NOT NULL DEFAULT 0.65,
     summary_model_id VARCHAR(64),
     summary_parameters JSON NOT NULL,
+    agent_config JSON DEFAULT NULL COMMENT 'Session-level agent configuration in JSON format',
+    context_config JSON DEFAULT NULL COMMENT 'LLM context management configuration (separate from message storage)',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL
@@ -118,6 +120,7 @@ CREATE TABLE messages (
     role VARCHAR(50) NOT NULL,
     content TEXT NOT NULL,
     knowledge_references JSON NOT NULL,
+    agent_steps JSON DEFAULT NULL COMMENT 'Agent execution steps (reasoning process and tool calls)',
     is_completed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

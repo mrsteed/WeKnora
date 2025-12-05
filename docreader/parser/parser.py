@@ -24,13 +24,15 @@ class Parser:
     """
 
     def __init__(self):
-        # Initialize all parser types
+        # Initialize all parser types - maps file extensions to their corresponding parser classes
         self.parsers: Dict[str, Type[BaseParser]] = {
+            # Document formats
             "docx": Docx2Parser,
             "doc": DocParser,
             "pdf": PDFParser,
             "md": MarkdownParser,
             "txt": TextParser,
+            # Image formats - all use the same ImageParser
             "jpg": ImageParser,
             "jpeg": ImageParser,
             "png": ImageParser,
@@ -38,7 +40,9 @@ class Parser:
             "bmp": ImageParser,
             "tiff": ImageParser,
             "webp": ImageParser,
+            # Alternative markdown extension
             "markdown": MarkdownParser,
+            # Spreadsheet formats
             "csv": CSVParser,
             "xlsx": ExcelParser,
             "xls": ExcelParser,
@@ -59,8 +63,10 @@ class Parser:
         Returns:
             Parser class for the file type, or None if unsupported
         """
+        # Look up parser by file type (case-insensitive)
         parser = self.parsers.get(file_type.lower())
         if not parser:
+            # Raise error if file type is not supported
             raise ValueError(f"Unsupported file type: {file_type}")
         return parser
 
@@ -90,31 +96,34 @@ class Parser:
             f"multimodal={config.enable_multimodal}"
         )
 
-        # Get appropriate parser for file type
+        # Get appropriate parser class for the file type
         cls = self.get_parser(file_type)
 
-        # Parse file content
+        # Create parser instance with configuration
         logger.info(f"Creating parser instance for {file_type} file")
         parser = cls(
             file_name=file_name,
             file_type=file_type,
-            chunk_size=config.chunk_size,
-            chunk_overlap=config.chunk_overlap,
-            separators=config.separators,
-            enable_multimodal=config.enable_multimodal,
-            max_image_size=1920,  # Limit image size to 1920px
-            max_concurrent_tasks=5,  # Limit concurrent tasks to 5
-            chunking_config=config,  # Pass the entire chunking config
+            chunk_size=config.chunk_size,  # Size of each text chunk
+            chunk_overlap=config.chunk_overlap,  # Overlap between consecutive chunks
+            separators=config.separators,  # Text separators for chunking
+            enable_multimodal=config.enable_multimodal,  # Enable image/multimodal processing
+            max_image_size=1920,  # Limit image size to 1920px for performance
+            max_concurrent_tasks=5,  # Limit concurrent tasks to 5 to avoid resource exhaustion
+            chunking_config=config,  # Pass the entire chunking config for advanced options
         )
 
         logger.info(f"Starting to parse file content, size: {len(content)} bytes")
+        # Execute the parsing process
         result = parser.parse(content)
 
+        # Validate parsing results and log warnings if needed
         if not result.content:
             logger.warning(f"Parser returned empty content for file: {file_name}")
         elif not result.chunks:
             logger.warning(f"Parser returned empty chunks for file: {file_name}")
         elif result.chunks[0]:
+            # Log first chunk size for debugging
             logger.info(f"First chunk content length: {len(result.chunks[0].content)}")
         logger.info(f"Parsed file {file_name}, with {len(result.chunks)} chunks")
         return result
@@ -137,27 +146,30 @@ class Parser:
             f"overlap={config.chunk_overlap}, multimodal={config.enable_multimodal}"
         )
 
-        # Create web parser instance
+        # Create web parser instance with configuration
         logger.info("Creating WebParser instance")
         parser = WebParser(
-            title=title,
-            chunk_size=config.chunk_size,
-            chunk_overlap=config.chunk_overlap,
-            separators=config.separators,
-            enable_multimodal=config.enable_multimodal,
-            max_image_size=1920,  # Limit image size
-            max_concurrent_tasks=5,  # Limit concurrent tasks
-            chunking_config=config,
+            title=title,  # Webpage title for metadata
+            chunk_size=config.chunk_size,  # Size of each text chunk
+            chunk_overlap=config.chunk_overlap,  # Overlap between consecutive chunks
+            separators=config.separators,  # Text separators for chunking
+            enable_multimodal=config.enable_multimodal,  # Enable image/multimodal processing
+            max_image_size=1920,  # Limit image size to 1920px for performance
+            max_concurrent_tasks=5,  # Limit concurrent tasks to avoid resource exhaustion
+            chunking_config=config,  # Pass the entire chunking config
         )
 
         logger.info("Starting to parse URL content")
+        # Parse URL content (encode URL string to bytes as required by parser interface)
         result = parser.parse(url.encode())
 
+        # Validate parsing results and log warnings if needed
         if not result.content:
             logger.warning(f"Parser returned empty content for url: {url}")
         elif not result.chunks:
             logger.warning(f"Parser returned empty chunks for url: {url}")
         elif result.chunks[0]:
+            # Log first chunk size for debugging
             logger.info(f"First chunk content length: {len(result.chunks[0].content)}")
         logger.info(f"Parsed url {url}, with {len(result.chunks)} chunks")
         return result

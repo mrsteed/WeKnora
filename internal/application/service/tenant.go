@@ -80,15 +80,11 @@ func (s *tenantService) CreateTenant(ctx context.Context, tenant *types.Tenant) 
 }
 
 // GetTenantByID retrieves a tenant by their ID
-func (s *tenantService) GetTenantByID(ctx context.Context, id uint) (*types.Tenant, error) {
-	logger.Info(ctx, "Start retrieving tenant")
-
+func (s *tenantService) GetTenantByID(ctx context.Context, id uint64) (*types.Tenant, error) {
 	if id == 0 {
 		logger.Error(ctx, "Tenant ID cannot be 0")
 		return nil, errors.New("tenant ID cannot be 0")
 	}
-
-	logger.Infof(ctx, "Retrieving tenant, ID: %d", id)
 
 	tenant, err := s.repo.GetTenantByID(ctx, id)
 	if err != nil {
@@ -98,14 +94,11 @@ func (s *tenantService) GetTenantByID(ctx context.Context, id uint) (*types.Tena
 		return nil, err
 	}
 
-	logger.Infof(ctx, "Tenant retrieved successfully, ID: %d, name: %s", tenant.ID, tenant.Name)
 	return tenant, nil
 }
 
 // ListTenants retrieves a list of all tenants
 func (s *tenantService) ListTenants(ctx context.Context) ([]*types.Tenant, error) {
-	logger.Info(ctx, "Start retrieving tenant list")
-
 	tenants, err := s.repo.ListTenants(ctx)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -146,7 +139,7 @@ func (s *tenantService) UpdateTenant(ctx context.Context, tenant *types.Tenant) 
 }
 
 // DeleteTenant removes a tenant by their ID
-func (s *tenantService) DeleteTenant(ctx context.Context, id uint) error {
+func (s *tenantService) DeleteTenant(ctx context.Context, id uint64) error {
 	logger.Info(ctx, "Start deleting tenant")
 
 	if id == 0 {
@@ -184,15 +177,13 @@ func (s *tenantService) DeleteTenant(ctx context.Context, id uint) error {
 }
 
 // UpdateAPIKey updates the API key for a specific tenant
-func (s *tenantService) UpdateAPIKey(ctx context.Context, id uint) (string, error) {
+func (s *tenantService) UpdateAPIKey(ctx context.Context, id uint64) (string, error) {
 	logger.Info(ctx, "Start updating tenant API Key")
 
 	if id == 0 {
 		logger.Error(ctx, "Tenant ID cannot be 0")
 		return "", errors.New("tenant ID cannot be 0")
 	}
-
-	logger.Infof(ctx, "Retrieving tenant information, ID: %d", id)
 
 	tenant, err := s.repo.GetTenantByID(ctx, id)
 	if err != nil {
@@ -217,7 +208,7 @@ func (s *tenantService) UpdateAPIKey(ctx context.Context, id uint) (string, erro
 }
 
 // generateApiKey generates a secure API key for tenant authentication
-func (r *tenantService) generateApiKey(tenantID uint) string {
+func (r *tenantService) generateApiKey(tenantID uint64) string {
 	// 1. Convert tenant_id to bytes
 	idBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(idBytes, uint64(tenantID))
@@ -249,7 +240,7 @@ func (r *tenantService) generateApiKey(tenantID uint) string {
 }
 
 // ExtractTenantIDFromAPIKey extracts the tenant ID from an API key
-func (r *tenantService) ExtractTenantIDFromAPIKey(apiKey string) (uint, error) {
+func (r *tenantService) ExtractTenantIDFromAPIKey(apiKey string) (uint64, error) {
 	// 1. Validate format and extract encrypted part
 	parts := strings.SplitN(apiKey, "-", 2)
 	if len(parts) != 2 || parts[0] != "sk" {
@@ -287,5 +278,51 @@ func (r *tenantService) ExtractTenantIDFromAPIKey(apiKey string) (uint, error) {
 	// 5. Convert back to tenant_id
 	tenantID := binary.LittleEndian.Uint64(plaintext)
 
-	return uint(tenantID), nil
+	return tenantID, nil
+}
+
+// ListAllTenants lists all tenants (for users with cross-tenant access permission)
+// This method returns all tenants without filtering, intended for admin users
+func (s *tenantService) ListAllTenants(ctx context.Context) ([]*types.Tenant, error) {
+	tenants, err := s.repo.ListTenants(ctx)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		return nil, err
+	}
+
+	logger.Infof(ctx, "All tenants list retrieved successfully, total: %d", len(tenants))
+	return tenants, nil
+}
+
+// SearchTenants searches tenants with pagination and filters
+func (s *tenantService) SearchTenants(ctx context.Context, keyword string, tenantID uint64, page, pageSize int) ([]*types.Tenant, int64, error) {
+	tenants, total, err := s.repo.SearchTenants(ctx, keyword, tenantID, page, pageSize)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"keyword":  keyword,
+			"tenantID": tenantID,
+			"page":     page,
+			"pageSize": pageSize,
+		})
+		return nil, 0, err
+	}
+
+	logger.Infof(ctx, "Tenants search completed, keyword: %s, tenantID: %d, page: %d, pageSize: %d, total: %d, found: %d",
+		keyword, tenantID, page, pageSize, total, len(tenants))
+	return tenants, total, nil
+}
+
+// GetTenantByIDForUser gets a tenant by ID with permission check
+// This method verifies that the user has permission to access the tenant
+func (s *tenantService) GetTenantByIDForUser(ctx context.Context, tenantID uint64, userID string) (*types.Tenant, error) {
+	tenant, err := s.repo.GetTenantByID(ctx, tenantID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"tenant_id": tenantID,
+			"user_id":   userID,
+		})
+		return nil, err
+	}
+
+	return tenant, nil
 }

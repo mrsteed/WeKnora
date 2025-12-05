@@ -1,4 +1,4 @@
-import { get, post } from '../../utils/request';
+import { get, post, put } from '../../utils/request';
 
 // 初始化配置数据类型
 export interface InitializationConfig {
@@ -70,7 +70,65 @@ export interface DownloadTask {
     endTime?: string;
 }
 
-// 根据知识库ID执行配置更新
+// 简化版知识库配置更新接口（只传模型ID）
+export interface KBModelConfigRequest {
+    llmModelId: string
+    embeddingModelId: string
+    vlm_config?: {
+        enabled: boolean
+        model_id?: string
+    }
+    documentSplitting: {
+        chunkSize: number
+        chunkOverlap: number
+        separators: string[]
+    }
+    multimodal: {
+        enabled: boolean
+        storageType?: 'cos' | 'minio'
+        cos?: {
+            secretId: string
+            secretKey: string
+            region: string
+            bucketName: string
+            appId: string
+            pathPrefix: string
+        }
+        minio?: {
+            bucketName: string
+            useSSL: boolean
+            pathPrefix: string
+        }
+    }
+    nodeExtract: {
+        enabled: boolean
+        text: string
+        tags: string[]
+        nodes: Node[]
+        relations: Relation[]
+    }
+    questionGeneration?: {
+        enabled: boolean
+        questionCount: number
+    }
+}
+
+export function updateKBConfig(kbId: string, config: KBModelConfigRequest): Promise<any> {
+    return new Promise((resolve, reject) => {
+        console.log('开始知识库配置更新（简化版）...', kbId, config);
+        put(`/api/v1/initialization/config/${kbId}`, config)
+            .then((response: any) => {
+                console.log('知识库配置更新完成', response);
+                resolve(response);
+            })
+            .catch((error: any) => {
+                console.error('知识库配置更新失败:', error);
+                reject(error.error || error);
+            });
+    });
+}
+
+// 根据知识库ID执行配置更新（旧版，保留兼容性）
 export function initializeSystemByKB(kbId: string, config: InitializationConfig): Promise<any> {
     return new Promise((resolve, reject) => {
         console.log('开始知识库配置更新...', kbId, config);
@@ -100,8 +158,16 @@ export function checkOllamaStatus(): Promise<{ available: boolean; version?: str
     });
 }
 
-// 列出已安装的 Ollama 模型
-export function listOllamaModels(): Promise<string[]> {
+// Ollama 模型详细信息接口
+export interface OllamaModelInfo {
+    name: string;
+    size: number;
+    digest: string;
+    modified_at: string;
+}
+
+// 列出已安装的 Ollama 模型（详细信息）
+export function listOllamaModels(): Promise<OllamaModelInfo[]> {
     return new Promise((resolve, reject) => {
         get('/api/v1/initialization/ollama/models')
             .then((response: any) => {
@@ -310,6 +376,21 @@ export function testMultimodalFunction(testData: {
             headers['Authorization'] = `Bearer ${token}`;
         }
 
+        // 添加跨租户访问请求头（如果选择了其他租户）
+        const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
+        const defaultTenantId = localStorage.getItem('weknora_tenant');
+        if (selectedTenantId) {
+            try {
+                const defaultTenant = defaultTenantId ? JSON.parse(defaultTenantId) : null;
+                const defaultId = defaultTenant?.id ? String(defaultTenant.id) : null;
+                if (selectedTenantId !== defaultId) {
+                    headers['X-Tenant-ID'] = selectedTenantId;
+                }
+            } catch (e) {
+                console.error('Failed to parse tenant info', e);
+            }
+        }
+
         // 使用原生fetch因为需要发送FormData
         fetch('/api/v1/initialization/multimodal/test', {
             method: 'POST',
@@ -335,7 +416,7 @@ export function testMultimodalFunction(testData: {
 export interface TextRelationExtractionRequest {
     text: string;
     tags: string[];
-    llmConfig: LLMConfig;
+    llm_config: LLMConfig;
 }
 
 export interface Node {
@@ -351,9 +432,9 @@ export interface Relation {
 
 export interface LLMConfig {
     source: 'local' | 'remote';
-    modelName: string;
-    baseUrl: string;
-    apiKey: string;
+    model_name: string;
+    base_url: string;
+    api_key: string;
 }
 
 export interface TextRelationExtractionResponse {
@@ -364,7 +445,7 @@ export interface TextRelationExtractionResponse {
 // 文本内容关系提取
 export function extractTextRelations(request: TextRelationExtractionRequest): Promise<TextRelationExtractionResponse> {
     return new Promise((resolve, reject) => {
-        post('/api/v1/initialization/extract/text-relation', request)
+        post('/api/v1/initialization/extract/text-relation', request, { timeout: 60000 })
             .then((response: any) => {
                 resolve(response.data || { nodes: [], relations: [] });
             })
@@ -377,7 +458,7 @@ export function extractTextRelations(request: TextRelationExtractionRequest): Pr
 
 export interface FabriTextRequest {
     tags: string[];
-    llmConfig: LLMConfig;
+    llm_config: LLMConfig;
 }
 
 export interface FabriTextResponse {
@@ -399,7 +480,7 @@ export function fabriText(request: FabriTextRequest): Promise<FabriTextResponse>
 }
 
 export interface FabriTagRequest {
-    llmConfig: LLMConfig; 
+    llm_config: LLMConfig; 
 }
 
 export interface FabriTagResponse {

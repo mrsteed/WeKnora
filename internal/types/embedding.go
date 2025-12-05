@@ -20,6 +20,7 @@ const (
 	MatchTypeParentChunk   // 父Chunk匹配类型
 	MatchTypeRelationChunk // 关系Chunk匹配类型
 	MatchTypeGraph
+	MatchTypeWebSearch // 网络搜索匹配类型
 )
 
 // IndexInfo contains information about indexed content

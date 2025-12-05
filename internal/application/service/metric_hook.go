@@ -83,7 +83,6 @@ func (m *MetricList) Avg() *types.MetricResult {
 
 // HookMetric tracks evaluation metrics for QA pairs
 type HookMetric struct {
-	task             *types.EvaluationTask
 	qaPairMetricList []*qaPairMetric // Per-QA pair metrics
 	metricResults    *MetricList     // Aggregated results
 	mu               *sync.RWMutex   // Thread safety

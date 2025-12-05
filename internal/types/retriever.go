@@ -49,7 +49,7 @@ type RetrieverEngineParams struct {
 	// Retriever engine type
 	RetrieverEngineType RetrieverEngineType `yaml:"retriever_engine_type" json:"retriever_engine_type"`
 	// Retriever type
-	RetrieverType RetrieverType `yaml:"retriever_type" json:"retriever_type"`
+	RetrieverType RetrieverType `yaml:"retriever_type"        json:"retriever_type"`
 }
 
 // IndexWithScore represents the index with score
@@ -72,6 +72,11 @@ type IndexWithScore struct {
 	Score float64
 	// Match type
 	MatchType MatchType
+}
+
+// GetScore returns the score for ScoreComparable interface
+func (i *IndexWithScore) GetScore() float64 {
+	return i.Score
 }
 
 // RetrieveResult represents the result of retrieval

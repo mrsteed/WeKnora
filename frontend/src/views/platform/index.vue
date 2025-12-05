@@ -6,24 +6,26 @@
             <input type="file" style="display: none" ref="uploadInput" accept=".pdf,.docx,.doc,.txt,.md,.jpg,.jpeg,.png,.csv,.xls,.xlsx" />
             <UploadMask></UploadMask>
         </div>
+        <!-- 全局设置模态框，供所有 platform 子路由使用 -->
+        <Settings />
     </div>
 </template>
 <script setup lang="ts">
 import Menu from '@/components/menu.vue'
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router'
-import { useI18n } from 'vue-i18n'
 import useKnowledgeBase from '@/hooks/useKnowledgeBase'
 import UploadMask from '@/components/upload-mask.vue'
+import Settings from '@/views/settings/Settings.vue'
 import { getKnowledgeBaseById } from '@/api/knowledge-base/index'
 import { MessagePlugin } from 'tdesign-vue-next'
-
-const { t } = useI18n()
+import { useI18n } from 'vue-i18n'
 
 let { requestMethod } = useKnowledgeBase()
 const route = useRoute();
 let ismask = ref(false)
 let uploadInput = ref();
+const { t } = useI18n();
 
 // 获取当前知识库ID
 const getCurrentKbId = (): string | null => {

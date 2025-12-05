@@ -14,6 +14,7 @@ import (
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
+	"github.com/elastic/go-elasticsearch/v8/typedapi/types/enums/scriptlanguage"
 )
 
 // elasticsearchRepository implements the RetrieveEngineRepository interface for Elasticsearch v8
@@ -183,6 +184,29 @@ func (e *elasticsearchRepository) DeleteByChunkIDList(ctx context.Context, chunk
 	return nil
 }
 
+// DeleteBySourceIDList removes documents from the index based on source IDs
+// Returns an error if the delete operation fails
+func (e *elasticsearchRepository) DeleteBySourceIDList(ctx context.Context, sourceIDList []string, dimension int) error {
+	log := logger.GetLogger(ctx)
+	if len(sourceIDList) == 0 {
+		log.Warn("[Elasticsearch] Empty source ID list provided for deletion, skipping")
+		return nil
+	}
+
+	log.Infof("[Elasticsearch] Deleting indices by source IDs, count: %d", len(sourceIDList))
+	// Use DeleteByQuery to delete all documents matching the source IDs
+	_, err := e.client.DeleteByQuery(e.index).Query(&types.Query{
+		Terms: &types.TermsQuery{TermsQuery: map[string]types.TermsQueryField{"source_id.keyword": sourceIDList}},
+	}).Do(ctx)
+	if err != nil {
+		log.Errorf("[Elasticsearch] Failed to delete by source IDs: %v", err)
+		return fmt.Errorf("failed to delete by query: %w", err)
+	}
+
+	log.Infof("[Elasticsearch] Successfully deleted documents by source IDs")
+	return nil
+}
+
 // DeleteByKnowledgeIDList removes documents from the index based on knowledge IDs
 // Returns an error if the delete operation fails
 func (e *elasticsearchRepository) DeleteByKnowledgeIDList(ctx context.Context,
@@ -220,6 +244,11 @@ func (e *elasticsearchRepository) getBaseConds(params typesLocal.RetrieveParams)
 		}})
 	}
 	mustNot := make([]types.Query, 0)
+	// Exclude disabled chunks (is_enabled = false)
+	// Note: Historical data without is_enabled field will be included (not matching must_not)
+	mustNot = append(mustNot, types.Query{Term: map[string]types.TermQuery{
+		"is_enabled": {Value: false},
+	}})
 	if len(params.ExcludeKnowledgeIDs) > 0 {
 		mustNot = append(mustNot, types.Query{Terms: &types.TermsQuery{
 			TermsQuery: map[string]types.TermsQueryField{"knowledge_id.keyword": params.ExcludeKnowledgeIDs},
@@ -537,5 +566,86 @@ func (e *elasticsearchRepository) CopyIndices(ctx context.Context,
 	}
 
 	log.Infof("[Elasticsearch] Index copy completed, total copied: %d", totalCopied)
+	return nil
+}
+
+// BatchUpdateChunkEnabledStatus updates the enabled status of chunks in batch
+func (e *elasticsearchRepository) BatchUpdateChunkEnabledStatus(
+	ctx context.Context,
+	chunkStatusMap map[string]bool,
+) error {
+	log := logger.GetLogger(ctx)
+	if len(chunkStatusMap) == 0 {
+		log.Warnf("[Elasticsearch] Chunk status map is empty, skipping update")
+		return nil
+	}
+
+	log.Infof("[Elasticsearch] Batch updating chunk enabled status, count: %d", len(chunkStatusMap))
+
+	// Group chunks by enabled status for batch updates
+	enabledChunkIDs := make([]string, 0)
+	disabledChunkIDs := make([]string, 0)
+
+	for chunkID, enabled := range chunkStatusMap {
+		if enabled {
+			enabledChunkIDs = append(enabledChunkIDs, chunkID)
+		} else {
+			disabledChunkIDs = append(disabledChunkIDs, chunkID)
+		}
+	}
+
+	// Batch update enabled chunks using update_by_query
+	if len(enabledChunkIDs) > 0 {
+		query := types.NewQuery()
+		query.Bool = &types.BoolQuery{
+			Must: []types.Query{
+				{Terms: &types.TermsQuery{
+					TermsQuery: map[string]types.TermsQueryField{
+						"chunk_id.keyword": enabledChunkIDs,
+					},
+				}},
+			},
+		}
+		source := "ctx._source.is_enabled = true"
+		lang := scriptlanguage.Painless
+		script := types.Script{
+			Source: &source,
+			Lang:   &lang,
+		}
+		_, err := e.client.UpdateByQuery(e.index).Query(query).Script(&script).Do(ctx)
+		if err != nil {
+			log.Errorf("[Elasticsearch] Failed to update enabled chunks: %v", err)
+			return err
+		}
+		log.Infof("[Elasticsearch] Updated %d chunks to enabled", len(enabledChunkIDs))
+	}
+
+	// Batch update disabled chunks using update_by_query
+	if len(disabledChunkIDs) > 0 {
+		query := types.NewQuery()
+		query.Bool = &types.BoolQuery{
+			Must: []types.Query{
+				{Terms: &types.TermsQuery{
+					TermsQuery: map[string]types.TermsQueryField{
+						"chunk_id.keyword": disabledChunkIDs,
+					},
+				}},
+			},
+		}
+		source := "ctx._source.is_enabled = false"
+		lang := scriptlanguage.Painless
+		script := types.Script{
+			Source: &source,
+			Lang:   &lang,
+		}
+		_, err := e.client.UpdateByQuery(e.index).Query(query).Script(&script).Do(ctx)
+		if err != nil {
+			log.Errorf("[Elasticsearch] Failed to update disabled chunks: %v", err)
+			return err
+		}
+		log.Infof("[Elasticsearch] Updated %d chunks to disabled", len(disabledChunkIDs))
+	}
+
+	log.Infof("[Elasticsearch] Successfully batch updated chunk enabled status")
 	return nil
 }

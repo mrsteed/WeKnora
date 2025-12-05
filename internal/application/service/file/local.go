@@ -29,7 +29,7 @@ func NewLocalFileService(baseDir string) interfaces.FileService {
 // The file is stored in a directory structure: baseDir/tenantID/knowledgeID/filename
 // Returns the full file path or an error if saving fails
 func (s *localFileService) SaveFile(ctx context.Context,
-	file *multipart.FileHeader, tenantID uint, knowledgeID string,
+	file *multipart.FileHeader, tenantID uint64, knowledgeID string,
 ) (string, error) {
 	logger.Info(ctx, "Starting to save file locally")
 	logger.Infof(ctx, "File information: name=%s, size=%d, tenant ID=%d, knowledge ID=%s",

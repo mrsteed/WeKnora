@@ -169,3 +169,51 @@ func SanitizeForDisplay(input string) string {
 
 	return escaped
 }
+
+// SanitizeForLog 清理日志输入,防止日志注入攻击
+// 日志注入攻击是指攻击者通过在输入中插入换行符和其他控制字符,
+// 伪造日志条目,可能导致日志分析工具误判或隐藏恶意活动
+func SanitizeForLog(input string) string {
+	if input == "" {
+		return ""
+	}
+
+	// 替换换行符(LF, CR, CRLF)为空格,防止日志注入
+	sanitized := strings.ReplaceAll(input, "\n", " ")
+	sanitized = strings.ReplaceAll(sanitized, "\r", " ")
+
+	// 替换制表符为空格
+	sanitized = strings.ReplaceAll(sanitized, "\t", " ")
+
+	// 移除其他控制字符(ASCII 0-31,除了空格已处理的)
+	var builder strings.Builder
+	for _, r := range sanitized {
+		// 保留可打印字符和常用Unicode字符
+		if r >= 32 || r == ' ' {
+			builder.WriteRune(r)
+		}
+	}
+
+	sanitized = builder.String()
+
+	// 限制长度,防止日志溢出
+	if len(sanitized) > 1000 {
+		sanitized = sanitized[:1000] + "...[truncated]"
+	}
+
+	return sanitized
+}
+
+// SanitizeForLogArray 清理日志输入数组,防止日志注入攻击
+func SanitizeForLogArray(input []string) []string {
+	if len(input) == 0 {
+		return []string{}
+	}
+
+	sanitized := make([]string, 0, len(input))
+	for _, item := range input {
+		sanitized = append(sanitized, SanitizeForLog(item))
+	}
+
+	return sanitized
+}

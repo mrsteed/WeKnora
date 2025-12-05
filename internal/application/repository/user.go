@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
@@ -28,7 +27,6 @@ func NewUserRepository(db *gorm.DB) interfaces.UserRepository {
 
 // CreateUser creates a user
 func (r *userRepository) CreateUser(ctx context.Context, user *types.User) error {
-	logger.Infof(ctx, "Creating user in database: %s", user.Email)
 	return r.db.WithContext(ctx).Create(user).Error
 }
 

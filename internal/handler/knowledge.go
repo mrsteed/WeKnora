@@ -11,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -34,7 +35,7 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccess(c *gin.Context) (*types.K
 	ctx := c.Request.Context()
 
 	// Get knowledge base ID from URL path parameter
-	kbID := c.Param("id")
+	kbID := secutils.SanitizeForLog(c.Param("id"))
 	if kbID == "" {
 		logger.Error(ctx, "Knowledge base ID is empty")
 		return nil, "", errors.NewBadRequestError("Knowledge base ID cannot be empty")
@@ -48,12 +49,12 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccess(c *gin.Context) (*types.K
 	}
 
 	// Verify tenant permissions
-	if kb.TenantID != c.GetUint(types.TenantIDContextKey.String()) {
+	if kb.TenantID != c.GetUint64(types.TenantIDContextKey.String()) {
 		logger.Warnf(
 			ctx,
 			"Permission denied to access this knowledge base, tenant ID mismatch, "+
 				"requested tenant ID: %d, knowledge base tenant ID: %d",
-			c.GetUint(types.TenantIDContextKey.String()),
+			c.GetUint64(types.TenantIDContextKey.String()),
 			kb.TenantID,
 		)
 		return nil, kbID, errors.NewForbiddenError("Permission denied to access this knowledge base")
@@ -69,7 +70,7 @@ func (h *KnowledgeHandler) handleDuplicateKnowledgeError(c *gin.Context,
 ) bool {
 	if dupErr, ok := err.(*types.DuplicateKnowledgeError); ok {
 		ctx := c.Request.Context()
-		logger.Warnf(ctx, "Detected duplicate %s: %s", duplicateType, dupErr.Error())
+		logger.Warnf(ctx, "Detected duplicate %s: %s", duplicateType, secutils.SanitizeForLog(dupErr.Error()))
 		c.JSON(http.StatusConflict, gin.H{
 			"success": false,
 			"message": dupErr.Error(),
@@ -101,8 +102,18 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "File upload successful, filename: %s, size: %.2f KB", file.Filename, float64(file.Size)/1024)
-	logger.Infof(ctx, "Creating knowledge, knowledge base ID: %s, filename: %s", kbID, file.Filename)
+	// Get custom filename if provided (for folder uploads with path)
+	customFileName := c.PostForm("fileName")
+	customFileName = secutils.SanitizeForLog(customFileName)
+	displayFileName := file.Filename
+	displayFileName = secutils.SanitizeForLog(displayFileName)
+	if customFileName != "" {
+		displayFileName = customFileName
+		logger.Infof(ctx, "Using custom filename: %s (original: %s)", customFileName, displayFileName)
+	}
+
+	logger.Infof(ctx, "File upload successful, filename: %s, size: %.2f KB", displayFileName, float64(file.Size)/1024)
+	logger.Infof(ctx, "Creating knowledge, knowledge base ID: %s, filename: %s", kbID, displayFileName)
 
 	// Parse metadata if provided
 	var metadata map[string]string
@@ -113,7 +124,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 			c.Error(errors.NewBadRequestError("Invalid metadata format").WithDetails(err.Error()))
 			return
 		}
-		logger.Infof(ctx, "Received file metadata: %v", metadata)
+		logger.Infof(ctx, "Received file metadata: %s", secutils.SanitizeForLog(fmt.Sprintf("%v", metadata)))
 	}
 
 	enableMultimodelForm := c.PostForm("enable_multimodel")
@@ -129,7 +140,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 	}
 
 	// Create knowledge entry from the file
-	knowledge, err := h.kgService.CreateKnowledgeFromFile(ctx, kbID, file, metadata, enableMultimodel)
+	knowledge, err := h.kgService.CreateKnowledgeFromFile(ctx, kbID, file, metadata, enableMultimodel, customFileName)
 	// Check for duplicate knowledge error
 	if err != nil {
 		if h.handleDuplicateKnowledgeError(c, err, knowledge, "file") {
@@ -144,7 +155,12 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge created successfully, ID: %s, title: %s", knowledge.ID, knowledge.Title)
+	logger.Infof(
+		ctx,
+		"Knowledge created successfully, ID: %s, title: %s",
+		secutils.SanitizeForLog(knowledge.ID),
+		secutils.SanitizeForLog(knowledge.Title),
+	)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    knowledge,
@@ -167,6 +183,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 	var req struct {
 		URL              string `json:"url" binding:"required"`
 		EnableMultimodel *bool  `json:"enable_multimodel"`
+		Title            string `json:"title"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to parse URL request", err)
@@ -174,11 +191,16 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Received URL request: %s", req.URL)
-	logger.Infof(ctx, "Creating knowledge from URL, knowledge base ID: %s, URL: %s", kbID, req.URL)
+	logger.Infof(ctx, "Received URL request: %s", secutils.SanitizeForLog(req.URL))
+	logger.Infof(
+		ctx,
+		"Creating knowledge from URL, knowledge base ID: %s, URL: %s",
+		secutils.SanitizeForLog(kbID),
+		secutils.SanitizeForLog(req.URL),
+	)
 
 	// Create knowledge entry from the URL
-	knowledge, err := h.kgService.CreateKnowledgeFromURL(ctx, kbID, req.URL, req.EnableMultimodel)
+	knowledge, err := h.kgService.CreateKnowledgeFromURL(ctx, kbID, req.URL, req.EnableMultimodel, req.Title)
 	// Check for duplicate knowledge error
 	if err != nil {
 		if h.handleDuplicateKnowledgeError(c, err, knowledge, "url") {
@@ -189,8 +211,52 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge created successfully from URL, ID: %s, title: %s", knowledge.ID, knowledge.Title)
+	logger.Infof(
+		ctx,
+		"Knowledge created successfully from URL, ID: %s, title: %s",
+		secutils.SanitizeForLog(knowledge.ID),
+		secutils.SanitizeForLog(knowledge.Title),
+	)
 	c.JSON(http.StatusCreated, gin.H{
+		"success": true,
+		"data":    knowledge,
+	})
+}
+
+// CreateManualKnowledge handles manual Markdown knowledge creation
+func (h *KnowledgeHandler) CreateManualKnowledge(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Info(ctx, "Start creating manual knowledge")
+
+	_, kbID, err := h.validateKnowledgeBaseAccess(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	var req types.ManualKnowledgePayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to parse manual knowledge request", err)
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
+	knowledge, err := h.kgService.CreateKnowledgeFromManual(ctx, kbID, &req)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"kb_id": kbID,
+		})
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	logger.Infof(ctx, "Manual knowledge created successfully, knowledge ID: %s",
+		secutils.SanitizeForLog(knowledge.ID))
+	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    knowledge,
 	})
@@ -203,14 +269,14 @@ func (h *KnowledgeHandler) GetKnowledge(c *gin.Context) {
 	logger.Info(ctx, "Start retrieving knowledge")
 
 	// Get knowledge ID from URL path parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving knowledge, ID: %s", id)
+	logger.Infof(ctx, "Retrieving knowledge, ID: %s", secutils.SanitizeForLog(id))
 	knowledge, err := h.kgService.GetKnowledgeByID(ctx, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -218,7 +284,12 @@ func (h *KnowledgeHandler) GetKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge retrieved successfully, ID: %s, title: %s", knowledge.ID, knowledge.Title)
+	logger.Infof(
+		ctx,
+		"Knowledge retrieved successfully, ID: %s, title: %s",
+		secutils.SanitizeForLog(knowledge.ID),
+		secutils.SanitizeForLog(knowledge.Title),
+	)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    knowledge,
@@ -232,7 +303,7 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 	logger.Info(ctx, "Start retrieving knowledge list")
 
 	// Get knowledge base ID from URL path parameter
-	kbID := c.Param("id")
+	kbID := secutils.SanitizeForLog(c.Param("id"))
 	if kbID == "" {
 		logger.Error(ctx, "Knowledge base ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge base ID cannot be empty"))
@@ -247,18 +318,35 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving knowledge list under knowledge base, knowledge base ID: %s, page: %d, page size: %d",
-		kbID, pagination.Page, pagination.PageSize)
+	tagID := c.Query("tag_id")
+	keyword := c.Query("keyword")
+	fileType := c.Query("file_type")
+
+	logger.Infof(
+		ctx,
+		"Retrieving knowledge list under knowledge base, knowledge base ID: %s, tag_id: %s, keyword: %s, file_type: %s, page: %d, page size: %d",
+		secutils.SanitizeForLog(kbID),
+		secutils.SanitizeForLog(tagID),
+		secutils.SanitizeForLog(keyword),
+		secutils.SanitizeForLog(fileType),
+		pagination.Page,
+		pagination.PageSize,
+	)
 
 	// Retrieve paginated knowledge entries
-	result, err := h.kgService.ListPagedKnowledgeByKnowledgeBaseID(ctx, kbID, &pagination)
+	result, err := h.kgService.ListPagedKnowledgeByKnowledgeBaseID(ctx, kbID, &pagination, tagID, keyword, fileType)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge list retrieved successfully, knowledge base ID: %s, total: %d", kbID, result.Total)
+	logger.Infof(
+		ctx,
+		"Knowledge list retrieved successfully, knowledge base ID: %s, total: %d",
+		secutils.SanitizeForLog(kbID),
+		result.Total,
+	)
 	c.JSON(http.StatusOK, gin.H{
 		"success":   true,
 		"data":      result.Data,
@@ -275,14 +363,14 @@ func (h *KnowledgeHandler) DeleteKnowledge(c *gin.Context) {
 	logger.Info(ctx, "Start deleting knowledge")
 
 	// Get knowledge ID from URL path parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
 		return
 	}
 
-	logger.Infof(ctx, "Deleting knowledge, ID: %s", id)
+	logger.Infof(ctx, "Deleting knowledge, ID: %s", secutils.SanitizeForLog(id))
 	err := h.kgService.DeleteKnowledge(ctx, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -290,7 +378,7 @@ func (h *KnowledgeHandler) DeleteKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge deleted successfully, ID: %s", id)
+	logger.Infof(ctx, "Knowledge deleted successfully, ID: %s", secutils.SanitizeForLog(id))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Deleted successfully",
@@ -304,14 +392,14 @@ func (h *KnowledgeHandler) DownloadKnowledgeFile(c *gin.Context) {
 	logger.Info(ctx, "Start downloading knowledge file")
 
 	// Get knowledge ID from URL path parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
 		return
 	}
 
-	logger.Infof(ctx, "Retrieving knowledge file, ID: %s", id)
+	logger.Infof(ctx, "Retrieving knowledge file, ID: %s", secutils.SanitizeForLog(id))
 
 	// Get file content and filename
 	file, filename, err := h.kgService.GetKnowledgeFile(ctx, id)
@@ -322,7 +410,12 @@ func (h *KnowledgeHandler) DownloadKnowledgeFile(c *gin.Context) {
 	}
 	defer file.Close()
 
-	logger.Infof(ctx, "Knowledge file retrieved successfully, ID: %s, filename: %s", id, filename)
+	logger.Infof(
+		ctx,
+		"Knowledge file retrieved successfully, ID: %s, filename: %s",
+		secutils.SanitizeForLog(id),
+		secutils.SanitizeForLog(filename),
+	)
 
 	// Set response headers for file download
 	c.Header("Content-Description", "File Transfer")
@@ -353,8 +446,6 @@ type GetKnowledgeBatchRequest struct {
 func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	logger.Info(ctx, "Start batch retrieving knowledge")
-
 	// Get tenant ID from context
 	tenantID, ok := c.Get(types.TenantIDContextKey.String())
 	if !ok {
@@ -374,11 +465,11 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 	logger.Infof(
 		ctx,
 		"Batch retrieving knowledge, tenant ID: %d, number of knowledge IDs: %d",
-		tenantID.(uint), len(req.IDs),
+		tenantID, len(req.IDs),
 	)
 
 	// Retrieve knowledge entries in batch
-	knowledges, err := h.kgService.GetKnowledgeBatch(ctx, tenantID.(uint), req.IDs)
+	knowledges, err := h.kgService.GetKnowledgeBatch(ctx, tenantID.(uint64), req.IDs)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError("Failed to retrieve knowledge list").WithDetails(err.Error()))
@@ -400,10 +491,8 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 
 func (h *KnowledgeHandler) UpdateKnowledge(c *gin.Context) {
 	ctx := c.Request.Context()
-	logger.Info(ctx, "Start Update knowledge")
-
 	// Get knowledge ID from URL path parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
@@ -423,10 +512,72 @@ func (h *KnowledgeHandler) UpdateKnowledge(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge updated successfully, knowledge ID: %s", knowledge.ID)
+	logger.Infof(ctx, "Knowledge updated successfully, knowledge ID: %s", id)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Knowledge chunk updated successfully",
+	})
+}
+
+// UpdateManualKnowledge handles manual Markdown knowledge updates
+func (h *KnowledgeHandler) UpdateManualKnowledge(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Info(ctx, "Start updating manual knowledge")
+
+	id := secutils.SanitizeForLog(c.Param("id"))
+	if id == "" {
+		logger.Error(ctx, "Knowledge ID is empty")
+		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
+		return
+	}
+
+	var req types.ManualKnowledgePayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to parse manual knowledge update request", err)
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
+	knowledge, err := h.kgService.UpdateManualKnowledge(ctx, id, &req)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"knowledge_id": id,
+		})
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	logger.Infof(ctx, "Manual knowledge updated successfully, knowledge ID: %s", id)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    knowledge,
+	})
+}
+
+type knowledgeTagBatchRequest struct {
+	Updates map[string]*string `json:"updates" binding:"required,min=1"`
+}
+
+// UpdateKnowledgeTagBatch updates tags for knowledge items in batch.
+func (h *KnowledgeHandler) UpdateKnowledgeTagBatch(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req knowledgeTagBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to parse knowledge tag batch request", err)
+		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
+		return
+	}
+	if err := h.kgService.UpdateKnowledgeTagBatch(ctx, req.Updates); err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
 	})
 }
 
@@ -436,14 +587,14 @@ func (h *KnowledgeHandler) UpdateImageInfo(c *gin.Context) {
 	logger.Info(ctx, "Start updating image info")
 
 	// Get knowledge ID from URL path parameter
-	id := c.Param("id")
+	id := secutils.SanitizeForLog(c.Param("id"))
 	if id == "" {
 		logger.Error(ctx, "Knowledge ID is empty")
 		c.Error(errors.NewBadRequestError("Knowledge ID cannot be empty"))
 		return
 	}
-	chunkID := c.Param("chunk_id")
-	if id == "" {
+	chunkID := secutils.SanitizeForLog(c.Param("chunk_id"))
+	if chunkID == "" {
 		logger.Error(ctx, "Chunk ID is empty")
 		c.Error(errors.NewBadRequestError("Chunk ID cannot be empty"))
 		return
@@ -461,7 +612,7 @@ func (h *KnowledgeHandler) UpdateImageInfo(c *gin.Context) {
 
 	// Update chunk properties
 	logger.Infof(ctx, "Updating knowledge chunk, knowledge ID: %s, chunk ID: %s", id, chunkID)
-	err := h.kgService.UpdateImageInfo(ctx, id, chunkID, request.ImageInfo)
+	err := h.kgService.UpdateImageInfo(ctx, id, chunkID, secutils.SanitizeForLog(request.ImageInfo))
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))

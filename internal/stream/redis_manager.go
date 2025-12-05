@@ -6,30 +6,18 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/redis/go-redis/v9"
 )
 
-// redisStreamInfo Redis存储的流信息
-type redisStreamInfo struct {
-	SessionID           string           `json:"session_id"`
-	RequestID           string           `json:"request_id"`
-	Query               string           `json:"query"`
-	Content             string           `json:"content"`
-	KnowledgeReferences types.References `json:"knowledge_references"`
-	LastUpdated         time.Time        `json:"last_updated"`
-	IsCompleted         bool             `json:"is_completed"`
-}
-
-// RedisStreamManager 基于Redis的流管理器实现
+// RedisStreamManager implements StreamManager using Redis Lists for append-only event streaming
 type RedisStreamManager struct {
 	client *redis.Client
-	ttl    time.Duration // 流数据在Redis中的过期时间
-	prefix string        // Redis键前缀
+	ttl    time.Duration // TTL for stream data in Redis
+	prefix string        // Redis key prefix
 }
 
-// NewRedisStreamManager 创建一个新的Redis流管理器
+// NewRedisStreamManager creates a new Redis-based stream manager
 func NewRedisStreamManager(redisAddr, redisPassword string,
 	redisDB int, prefix string, ttl time.Duration,
 ) (*RedisStreamManager, error) {
@@ -39,18 +27,18 @@ func NewRedisStreamManager(redisAddr, redisPassword string,
 		DB:       redisDB,
 	})
 
-	// 验证连接
+	// Verify connection
 	_, err := client.Ping(context.Background()).Result()
 	if err != nil {
-		return nil, fmt.Errorf("连接Redis失败: %w", err)
+		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
 	if ttl == 0 {
-		ttl = 24 * time.Hour // 默认TTL为24小时
+		ttl = 24 * time.Hour // Default TTL: 24 hours
 	}
 
 	if prefix == "" {
-		prefix = "stream:" // 默认前缀
+		prefix = "stream:events" // Default prefix
 	}
 
 	return &RedisStreamManager{
@@ -60,133 +48,89 @@ func NewRedisStreamManager(redisAddr, redisPassword string,
 	}, nil
 }
 
-// 构建Redis键
-func (r *RedisStreamManager) buildKey(sessionID, requestID string) string {
-	return fmt.Sprintf("%s:%s:%s", r.prefix, sessionID, requestID)
+// buildKey builds the Redis key for event list
+func (r *RedisStreamManager) buildKey(sessionID, messageID string) string {
+	return fmt.Sprintf("%s:%s:%s", r.prefix, sessionID, messageID)
 }
 
-// RegisterStream 注册一个新的流
-func (r *RedisStreamManager) RegisterStream(ctx context.Context, sessionID, requestID, query string) error {
-	info := &redisStreamInfo{
-		SessionID:   sessionID,
-		RequestID:   requestID,
-		Query:       query,
-		LastUpdated: time.Now(),
+// AppendEvent appends a single event to the stream using Redis RPush
+func (r *RedisStreamManager) AppendEvent(
+	ctx context.Context,
+	sessionID, messageID string,
+	event interfaces.StreamEvent,
+) error {
+	key := r.buildKey(sessionID, messageID)
+
+	// Set timestamp if not already set
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
 	}
 
-	data, err := json.Marshal(info)
+	// Serialize event to JSON
+	eventJSON, err := json.Marshal(event)
 	if err != nil {
-		return fmt.Errorf("序列化流信息失败: %w", err)
+		return fmt.Errorf("failed to marshal event: %w", err)
 	}
 
-	key := r.buildKey(sessionID, requestID)
-	return r.client.Set(ctx, key, data, r.ttl).Err()
+	// Append to Redis list with RPush (O(1) operation)
+	if err := r.client.RPush(ctx, key, eventJSON).Err(); err != nil {
+		return fmt.Errorf("failed to append event to Redis: %w", err)
+	}
+
+	// Set/refresh TTL on the key
+	if err := r.client.Expire(ctx, key, r.ttl).Err(); err != nil {
+		return fmt.Errorf("failed to set TTL: %w", err)
+	}
+
+	return nil
 }
 
-// UpdateStream 更新流内容
-func (r *RedisStreamManager) UpdateStream(ctx context.Context, sessionID, requestID string, content string, references types.References) error {
-	key := r.buildKey(sessionID, requestID)
+// GetEvents gets events starting from offset using Redis LRange
+// Returns: events slice, next offset, error
+func (r *RedisStreamManager) GetEvents(
+	ctx context.Context,
+	sessionID, messageID string,
+	fromOffset int,
+) ([]interfaces.StreamEvent, int, error) {
+	key := r.buildKey(sessionID, messageID)
 
-	// 获取当前数据
-	data, err := r.client.Get(ctx, key).Bytes()
+	// Get all events from offset to end using LRange
+	// LRange is inclusive, so fromOffset to -1 gets all remaining elements
+	results, err := r.client.LRange(ctx, key, int64(fromOffset), -1).Result()
 	if err != nil {
 		if err == redis.Nil {
-			return nil // 键不存在，可能已过期
+			// Key doesn't exist - return empty slice
+			return []interfaces.StreamEvent{}, fromOffset, nil
 		}
-		return fmt.Errorf("获取流数据失败: %w", err)
+		return nil, fromOffset, fmt.Errorf("failed to get events from Redis: %w", err)
 	}
 
-	var info redisStreamInfo
-	if err := json.Unmarshal(data, &info); err != nil {
-		return fmt.Errorf("解析流数据失败: %w", err)
+	// No new events
+	if len(results) == 0 {
+		return []interfaces.StreamEvent{}, fromOffset, nil
 	}
 
-	// 更新数据
-	info.Content += content
-	if len(references) > 0 {
-		info.KnowledgeReferences = references
-	}
-	info.LastUpdated = time.Now()
-
-	// 保存回Redis
-	updatedData, err := json.Marshal(info)
-	if err != nil {
-		return fmt.Errorf("序列化更新的流信息失败: %w", err)
+	// Unmarshal events
+	events := make([]interfaces.StreamEvent, 0, len(results))
+	for _, result := range results {
+		var event interfaces.StreamEvent
+		if err := json.Unmarshal([]byte(result), &event); err != nil {
+			// Log error but continue with other events
+			continue
+		}
+		events = append(events, event)
 	}
 
-	return r.client.Set(ctx, key, updatedData, r.ttl).Err()
+	// Calculate next offset
+	nextOffset := fromOffset + len(results)
+
+	return events, nextOffset, nil
 }
 
-// CompleteStream 完成流
-func (r *RedisStreamManager) CompleteStream(ctx context.Context, sessionID, requestID string) error {
-	key := r.buildKey(sessionID, requestID)
-
-	// 获取当前数据
-	data, err := r.client.Get(ctx, key).Bytes()
-	if err != nil {
-		if err == redis.Nil {
-			return nil // 键不存在，可能已过期
-		}
-		return fmt.Errorf("获取流数据失败: %w", err)
-	}
-
-	var info redisStreamInfo
-	if err := json.Unmarshal(data, &info); err != nil {
-		return fmt.Errorf("解析流数据失败: %w", err)
-	}
-
-	// 标记为完成
-	info.IsCompleted = true
-	info.LastUpdated = time.Now()
-
-	// 保存回Redis
-	updatedData, err := json.Marshal(info)
-	if err != nil {
-		return fmt.Errorf("序列化更新的流信息失败: %w", err)
-	}
-
-	// 30s 后删除流
-	go func() {
-		time.Sleep(30 * time.Second)
-		r.client.Del(ctx, key)
-	}()
-	return r.client.Set(ctx, key, updatedData, r.ttl).Err()
-}
-
-// GetStream 获取特定流
-func (r *RedisStreamManager) GetStream(ctx context.Context, sessionID, requestID string) (*interfaces.StreamInfo, error) {
-	key := r.buildKey(sessionID, requestID)
-
-	// 获取数据
-	data, err := r.client.Get(ctx, key).Bytes()
-	if err != nil {
-		if err == redis.Nil {
-			return nil, nil // 键不存在
-		}
-		return nil, fmt.Errorf("获取流数据失败: %w", err)
-	}
-
-	var info redisStreamInfo
-	if err := json.Unmarshal(data, &info); err != nil {
-		return nil, fmt.Errorf("解析流数据失败: %w", err)
-	}
-
-	// 转换为接口结构
-	return &interfaces.StreamInfo{
-		SessionID:           info.SessionID,
-		RequestID:           info.RequestID,
-		Query:               info.Query,
-		Content:             info.Content,
-		KnowledgeReferences: info.KnowledgeReferences,
-		LastUpdated:         info.LastUpdated,
-		IsCompleted:         info.IsCompleted,
-	}, nil
-}
-
-// Close 关闭Redis连接
+// Close closes the Redis connection
 func (r *RedisStreamManager) Close() error {
 	return r.client.Close()
 }
 
-// 确保实现了接口
+// Ensure RedisStreamManager implements StreamManager interface
 var _ interfaces.StreamManager = (*RedisStreamManager)(nil)

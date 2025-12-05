@@ -15,7 +15,14 @@ from docreader.models.read_config import ChunkingConfig
 from docreader.parser import Parser
 from docreader.parser.ocr_engine import OCREngine
 from docreader.proto import docreader_pb2_grpc
-from docreader.proto.docreader_pb2 import Chunk, Image, ReadResponse
+from docreader.proto.docreader_pb2 import (
+    Chunk,
+    Image,
+    ReadConfig,
+    ReadFromFileRequest,
+    ReadFromURLRequest,
+    ReadResponse,
+)
 from docreader.utils.request import init_logging_request_id, request_id_context
 
 # Surrogate range U+D800..U+DFFF are invalid Unicode scalar values
@@ -57,12 +64,75 @@ MAX_MESSAGE_LENGTH = 50 * 1024 * 1024
 parser = Parser()
 
 
+def create_chunking_config(read_config: ReadConfig):
+    """Create ChunkingConfig from ReadConfig request.
+
+    Args:
+        read_config: The read_config from the gRPC request
+
+    Returns:
+        ChunkingConfig: Configured chunking configuration object
+    """
+    # Extract chunking parameters
+    chunk_size = read_config.chunk_size or 512
+    chunk_overlap = read_config.chunk_overlap or 50
+    # Convert protobuf RepeatedScalarFieldContainer to list for type compatibility
+    separators = (
+        list(read_config.separators) if read_config.separators else ["\n\n", "\n", "。"]
+    )
+    enable_multimodal = read_config.enable_multimodal or False
+
+    logger.info(
+        f"Using chunking config: size={chunk_size}, "
+        f"overlap={chunk_overlap}, multimodal={enable_multimodal}"
+    )
+
+    # Extract storage config
+    sc = read_config.storage_config
+    storage_config = {
+        "provider": "minio" if sc.provider == 2 else "cos",
+        "region": sc.region,
+        "bucket_name": sc.bucket_name,
+        "access_key_id": sc.access_key_id,
+        "secret_access_key": sc.secret_access_key,
+        "app_id": sc.app_id,
+        "path_prefix": sc.path_prefix,
+    }
+    logger.info(
+        f"Using Storage config: provider={storage_config.get('provider')}, "
+        f"bucket={storage_config['bucket_name']}"
+    )
+
+    # Extract VLM config
+    vlm_config = {
+        "model_name": read_config.vlm_config.model_name,
+        "base_url": read_config.vlm_config.base_url,
+        "api_key": read_config.vlm_config.api_key or "",
+        "interface_type": read_config.vlm_config.interface_type or "openai",
+    }
+    logger.info(
+        f"Using VLM config: model={vlm_config['model_name']}, "
+        f"base_url={vlm_config['base_url']}, "
+        f"interface_type={vlm_config['interface_type']}"
+    )
+
+    # Create and return ChunkingConfig
+    return ChunkingConfig(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        separators=separators,
+        enable_multimodal=enable_multimodal,
+        storage_config=storage_config,
+        vlm_config=vlm_config,
+    )
+
+
 class DocReaderServicer(docreader_pb2_grpc.DocReaderServicer):
     def __init__(self):
         super().__init__()
         self.parser = Parser()
 
-    def ReadFromFile(self, request, context):
+    def ReadFromFile(self, request: ReadFromFileRequest, context):
         # Get or generate request ID
         request_id = (
             request.request_id
@@ -83,57 +153,7 @@ class DocReaderServicer(docreader_pb2_grpc.DocReaderServicer):
                 logger.info(f"File content size: {len(request.file_content)} bytes")
 
                 # Create chunking config
-                chunk_size = request.read_config.chunk_size or 512
-                chunk_overlap = request.read_config.chunk_overlap or 50
-                separators = request.read_config.separators or ["\n\n", "\n", "。"]
-                enable_multimodal = request.read_config.enable_multimodal or False
-
-                logger.info(
-                    f"Using chunking config: size={chunk_size}, "
-                    f"overlap={chunk_overlap}, multimodal={enable_multimodal}"
-                )
-
-                # Get Storage and VLM config from request
-                storage_config = None
-                vlm_config = None
-
-                sc = request.read_config.storage_config
-                # Keep parser-side key name as cos_config for backward compatibility
-                storage_config = {
-                    "provider": "minio" if sc.provider == 2 else "cos",
-                    "region": sc.region,
-                    "bucket_name": sc.bucket_name,
-                    "access_key_id": sc.access_key_id,
-                    "secret_access_key": sc.secret_access_key,
-                    "app_id": sc.app_id,
-                    "path_prefix": sc.path_prefix,
-                }
-                logger.info(
-                    f"Using Storage config: provider={storage_config.get('provider')}, "
-                    f"bucket={storage_config['bucket_name']}"
-                )
-
-                vlm_config = {
-                    "model_name": request.read_config.vlm_config.model_name,
-                    "base_url": request.read_config.vlm_config.base_url,
-                    "api_key": request.read_config.vlm_config.api_key or "",
-                    "interface_type": request.read_config.vlm_config.interface_type
-                    or "openai",
-                }
-                logger.info(
-                    f"Using VLM config: model={vlm_config['model_name']}, "
-                    f"base_url={vlm_config['base_url']}, "
-                    f"interface_type={vlm_config['interface_type']}"
-                )
-
-                chunking_config = ChunkingConfig(
-                    chunk_size=chunk_size,
-                    chunk_overlap=chunk_overlap,
-                    separators=separators,
-                    enable_multimodal=enable_multimodal,
-                    storage_config=storage_config,
-                    vlm_config=vlm_config,
-                )
+                chunking_config = create_chunking_config(request.read_config)
 
                 # Parse file
                 logger.info("Starting file parsing process")
@@ -170,7 +190,7 @@ class DocReaderServicer(docreader_pb2_grpc.DocReaderServicer):
                 context.set_details(str(e))
                 return ReadResponse(error=str(e))
 
-    def ReadFromURL(self, request, context):
+    def ReadFromURL(self, request: ReadFromURLRequest, context):
         # Get or generate request ID
         request_id = (
             request.request_id
@@ -184,56 +204,7 @@ class DocReaderServicer(docreader_pb2_grpc.DocReaderServicer):
                 logger.info(f"Received ReadFromURL request for URL: {request.url}")
 
                 # Create chunking config
-                chunk_size = request.read_config.chunk_size or 512
-                chunk_overlap = request.read_config.chunk_overlap or 50
-                separators = request.read_config.separators or ["\n\n", "\n", "。"]
-                enable_multimodal = request.read_config.enable_multimodal or False
-
-                logger.info(
-                    f"Using chunking config: size={chunk_size}, "
-                    f"overlap={chunk_overlap}, multimodal={enable_multimodal}"
-                )
-
-                # Get Storage and VLM config from request
-                storage_config = None
-                vlm_config = None
-
-                sc = request.read_config.storage_config
-                storage_config = {
-                    "provider": "minio" if sc.provider == 2 else "cos",
-                    "region": sc.region,
-                    "bucket_name": sc.bucket_name,
-                    "access_key_id": sc.access_key_id,
-                    "secret_access_key": sc.secret_access_key,
-                    "app_id": sc.app_id,
-                    "path_prefix": sc.path_prefix,
-                }
-                logger.info(
-                    f"Using Storage config: provider={storage_config.get('provider')}, "
-                    f"bucket={storage_config['bucket_name']}"
-                )
-
-                vlm_config = {
-                    "model_name": request.read_config.vlm_config.model_name,
-                    "base_url": request.read_config.vlm_config.base_url,
-                    "api_key": request.read_config.vlm_config.api_key or "",
-                    "interface_type": request.read_config.vlm_config.interface_type
-                    or "openai",
-                }
-                logger.info(
-                    f"Using VLM config: model={vlm_config['model_name']}, "
-                    f"base_url={vlm_config['base_url']}, "
-                    f"interface_type={vlm_config['interface_type']}"
-                )
-
-                chunking_config = ChunkingConfig(
-                    chunk_size=chunk_size,
-                    chunk_overlap=chunk_overlap,
-                    separators=separators,
-                    enable_multimodal=enable_multimodal,
-                    storage_config=storage_config,
-                    vlm_config=vlm_config,
-                )
+                chunking_config = create_chunking_config(request.read_config)
 
                 # Parse URL
                 logger.info("Starting URL parsing process")

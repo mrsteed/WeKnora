@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { UserInfo, TenantInfo, KnowledgeBaseInfo } from '@/api/auth'
+import type { TenantInfo as TenantInfoFromAPI } from '@/api/tenant'
+import i18n from '@/i18n'
 
 export const useAuthStore = defineStore('auth', () => {
   // 状态
@@ -10,6 +12,9 @@ export const useAuthStore = defineStore('auth', () => {
   const refreshToken = ref<string>('')
   const knowledgeBases = ref<KnowledgeBaseInfo[]>([])
   const currentKnowledgeBase = ref<KnowledgeBaseInfo | null>(null)
+  const selectedTenantId = ref<number | null>(null)
+  const selectedTenantName = ref<string | null>(null)
+  const allTenants = ref<TenantInfoFromAPI[]>([])
 
   // 计算属性
   const isLoggedIn = computed(() => {
@@ -26,6 +31,15 @@ export const useAuthStore = defineStore('auth', () => {
 
   const currentUserId = computed(() => {
     return user.value?.id || ''
+  })
+
+  const canAccessAllTenants = computed(() => {
+    return user.value?.can_access_all_tenants || false
+  })
+
+  const effectiveTenantId = computed(() => {
+    // 如果选择了其他租户，使用选择的租户ID，否则使用用户默认租户ID
+    return selectedTenantId.value || (tenant.value?.id ? Number(tenant.value.id) : null)
   })
 
   // 操作方法
@@ -66,6 +80,28 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  const setSelectedTenant = (tenantId: number | null, tenantName: string | null = null) => {
+    selectedTenantId.value = tenantId
+    selectedTenantName.value = tenantName
+    if (tenantId !== null) {
+      localStorage.setItem('weknora_selected_tenant_id', String(tenantId))
+      if (tenantName) {
+        localStorage.setItem('weknora_selected_tenant_name', tenantName)
+      }
+    } else {
+      localStorage.removeItem('weknora_selected_tenant_id')
+      localStorage.removeItem('weknora_selected_tenant_name')
+    }
+  }
+
+  const setAllTenants = (tenants: TenantInfoFromAPI[]) => {
+    allTenants.value = tenants
+  }
+
+  const getSelectedTenant = () => {
+    return selectedTenantId.value
+  }
+
 
   const logout = () => {
     // 清空状态
@@ -75,6 +111,9 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken.value = ''
     knowledgeBases.value = []
     currentKnowledgeBase.value = null
+    selectedTenantId.value = null
+    selectedTenantName.value = null
+    allTenants.value = []
 
     // 清空localStorage
     localStorage.removeItem('weknora_user')
@@ -83,6 +122,8 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('weknora_refresh_token')
     localStorage.removeItem('weknora_knowledge_bases')
     localStorage.removeItem('weknora_current_kb')
+    localStorage.removeItem('weknora_selected_tenant_id')
+    localStorage.removeItem('weknora_selected_tenant_name')
 
   }
 
@@ -94,12 +135,14 @@ export const useAuthStore = defineStore('auth', () => {
     const storedRefreshToken = localStorage.getItem('weknora_refresh_token')
     const storedKnowledgeBases = localStorage.getItem('weknora_knowledge_bases')
     const storedCurrentKb = localStorage.getItem('weknora_current_kb')
+    const storedSelectedTenantId = localStorage.getItem('weknora_selected_tenant_id')
+    const storedSelectedTenantName = localStorage.getItem('weknora_selected_tenant_name')
 
     if (storedUser) {
       try {
         user.value = JSON.parse(storedUser)
       } catch (e) {
-        console.error('解析用户信息失败:', e)
+        console.error(i18n.global.t('authStore.errors.parseUserFailed'), e)
       }
     }
 
@@ -107,7 +150,7 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         tenant.value = JSON.parse(storedTenant)
       } catch (e) {
-        console.error('解析租户信息失败:', e)
+        console.error(i18n.global.t('authStore.errors.parseTenantFailed'), e)
       }
     }
 
@@ -124,7 +167,7 @@ export const useAuthStore = defineStore('auth', () => {
         const parsed = JSON.parse(storedKnowledgeBases)
         knowledgeBases.value = Array.isArray(parsed) ? parsed : []
       } catch (e) {
-        console.error('解析知识库列表失败:', e)
+        console.error(i18n.global.t('authStore.errors.parseKnowledgeBasesFailed'), e)
         knowledgeBases.value = []
       }
     }
@@ -133,7 +176,20 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         currentKnowledgeBase.value = JSON.parse(storedCurrentKb)
       } catch (e) {
-        console.error('解析当前知识库失败:', e)
+        console.error(i18n.global.t('authStore.errors.parseCurrentKnowledgeBaseFailed'), e)
+      }
+    }
+
+    if (storedSelectedTenantId) {
+      try {
+        selectedTenantId.value = Number(storedSelectedTenantId)
+        if (storedSelectedTenantName) {
+          selectedTenantName.value = storedSelectedTenantName
+        }
+      } catch (e) {
+        console.error('Failed to parse selected tenant ID', e)
+        selectedTenantId.value = null
+        selectedTenantName.value = null
       }
     }
   }
@@ -149,12 +205,17 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken,
     knowledgeBases,
     currentKnowledgeBase,
+    selectedTenantId,
+    selectedTenantName,
+    allTenants,
     
     // 计算属性
     isLoggedIn,
     hasValidTenant,
     currentTenantId,
     currentUserId,
+    canAccessAllTenants,
+    effectiveTenantId,
     
     // 方法
     setUser,
@@ -163,6 +224,9 @@ export const useAuthStore = defineStore('auth', () => {
     setRefreshToken,
     setKnowledgeBases,
     setCurrentKnowledgeBase,
+    setSelectedTenant,
+    setAllTenants,
+    getSelectedTenant,
     logout,
     initFromStorage
   }

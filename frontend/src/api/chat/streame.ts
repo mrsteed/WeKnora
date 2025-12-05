@@ -28,7 +28,7 @@ export function useStream() {
   let renderTimer: number | null = null
 
   // 启动流式请求
-  const startStream = async (params: { session_id: any; query: any; method: string; url: string }) => {
+  const startStream = async (params: { session_id: any; query: any; knowledge_base_ids?: string[]; agent_enabled?: boolean; web_search_enabled?: boolean; summary_model_id?: string; mcp_service_ids?: string[]; method: string; url: string }) => {
     // 重置状态
     output.value = '';
     error.value = null;
@@ -46,21 +46,69 @@ export function useStream() {
       return;
     }
 
+    // 获取跨租户访问请求头
+    const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
+    const defaultTenantId = localStorage.getItem('weknora_tenant');
+    let tenantIdHeader: string | null = null;
+    if (selectedTenantId) {
+      try {
+        const defaultTenant = defaultTenantId ? JSON.parse(defaultTenantId) : null;
+        const defaultId = defaultTenant?.id ? String(defaultTenant.id) : null;
+        if (selectedTenantId !== defaultId) {
+          tenantIdHeader = selectedTenantId;
+        }
+      } catch (e) {
+        console.error('Failed to parse tenant info', e);
+      }
+    }
+
+    // Validate knowledge_base_ids for agent-chat requests
+    // Note: knowledge_base_ids can be empty if user hasn't selected any, but we allow it
+    // The backend will handle the case when no knowledge bases are selected
+    const isAgentChat = params.url === '/api/v1/agent-chat';
+    // Removed validation - allow empty knowledge_base_ids array
+    // The backend should handle this case appropriately
+
     try {
       let url =
         params.method == "POST"
           ? `${apiUrl}${params.url}/${params.session_id}`
           : `${apiUrl}${params.url}/${params.session_id}?message_id=${params.query}`;
+      
+      // Prepare POST body with required fields for agent-chat
+      // knowledge_base_ids array and agent_enabled can update Session's SessionAgentConfig
+      const postBody: any = { 
+        query: params.query,
+        agent_enabled: params.agent_enabled !== undefined ? params.agent_enabled : true
+      };
+      // Always include knowledge_base_ids for agent-chat (already validated above)
+      if (params.knowledge_base_ids !== undefined && params.knowledge_base_ids.length > 0) {
+        postBody.knowledge_base_ids = params.knowledge_base_ids;
+      }
+      // Include web_search_enabled if provided
+      if (params.web_search_enabled !== undefined) {
+        postBody.web_search_enabled = params.web_search_enabled;
+      }
+      // Include summary_model_id if provided (for non-Agent mode)
+      if (params.summary_model_id) {
+        postBody.summary_model_id = params.summary_model_id;
+      }
+      // Include mcp_service_ids if provided (for Agent mode)
+      if (params.mcp_service_ids !== undefined && params.mcp_service_ids.length > 0) {
+        postBody.mcp_service_ids = params.mcp_service_ids;
+      }
+      
       await fetchEventSource(url, {
         method: params.method,
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
           "X-Request-ID": `${generateRandomString(12)}`,
+          ...(tenantIdHeader ? { "X-Tenant-ID": tenantIdHeader } : {}),
         },
         body:
           params.method == "POST"
-            ? JSON.stringify({ query: params.query })
+            ? JSON.stringify(postBody)
             : null,
         signal: controller.signal,
         openWhenHidden: true,

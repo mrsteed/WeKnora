@@ -25,6 +25,22 @@ instance.interceptors.request.use(
       config.headers["Authorization"] = `Bearer ${token}`;
     }
     
+    // 添加跨租户访问请求头（如果选择了其他租户）
+    const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
+    const defaultTenantId = localStorage.getItem('weknora_tenant');
+    if (selectedTenantId) {
+      try {
+        const defaultTenant = defaultTenantId ? JSON.parse(defaultTenantId) : null;
+        const defaultId = defaultTenant?.id ? String(defaultTenant.id) : null;
+        // 如果选择的租户ID与默认租户ID不同，添加请求头
+        if (selectedTenantId !== defaultId) {
+          config.headers["X-Tenant-ID"] = selectedTenantId;
+        }
+      } catch (e) {
+        console.error('Failed to parse tenant info', e);
+      }
+    }
+    
     config.headers["X-Request-ID"] = `${generateRandomString(12)}`;
     return config;
   },
@@ -152,7 +168,16 @@ instance.interceptors.response.use(
     
     const { status, data } = error.response;
     // 将HTTP状态码一并抛出，方便上层判断401等场景
-    return Promise.reject({ status, ...(typeof data === 'object' ? data : { message: data }) });
+    // 后端返回格式: { success: false, error: { code, message, details } }
+    // 提取 error.message 作为顶层 message，方便前端使用 error?.message 获取
+    const errorMessage = typeof data === 'object' && data?.error?.message 
+      ? data.error.message 
+      : (typeof data === 'object' ? data?.message : data);
+    return Promise.reject({ 
+      status, 
+      message: errorMessage,
+      ...(typeof data === 'object' ? data : {}) 
+    });
   }
 );
 
@@ -167,12 +192,13 @@ export async function getDown(url: string) {
   return res
 }
 
-export function postUpload(url: string, data = {}) {
+export function postUpload(url: string, data = {}, onUploadProgress?: (progressEvent: any) => void) {
   return instance.post(url, data, {
     headers: {
       "Content-Type": "multipart/form-data",
       "X-Request-ID": `${generateRandomString(12)}`,
     },
+    onUploadProgress,
   });
 }
 
@@ -185,14 +211,14 @@ export function postChat(url: string, data = {}) {
   });
 }
 
-export function post(url: string, data = {}) {
-  return instance.post(url, data);
+export function post(url: string, data = {}, config?: any) {
+  return instance.post(url, data, config);
 }
 
 export function put(url: string, data = {}) {
   return instance.put(url, data);
 }
 
-export function del(url: string) {
-  return instance.delete(url);
+export function del(url: string, data?: any) {
+  return instance.delete(url, { data });
 }

@@ -49,32 +49,52 @@ type SummaryConfig struct {
 	MaxCompletionTokens int     `json:"max_completion_tokens"`
 }
 
+// SessionAgentConfig defines session-level agent configuration (matches server struct).
+// Sessions only store Enabled and KnowledgeBases; other configs are read from Tenant at runtime
+type SessionAgentConfig struct {
+	AgentModeEnabled bool     `json:"agent_mode_enabled"` // Whether agent mode is enabled for this session
+	WebSearchEnabled bool     `json:"web_search_enabled"` // Whether web search is enabled for this session
+	KnowledgeBases   []string `json:"knowledge_bases"`    // Accessible knowledge base IDs for this session
+}
+
 // CreateSessionRequest session creation request
 type CreateSessionRequest struct {
-	KnowledgeBaseID string           `json:"knowledge_base_id"` // Associated knowledge base ID
-	SessionStrategy *SessionStrategy `json:"session_strategy"`  // Session strategy
+	KnowledgeBaseID string              `json:"knowledge_base_id"` // Associated knowledge base ID (optional in agent mode)
+	SessionStrategy *SessionStrategy    `json:"session_strategy"`  // Session strategy
+	AgentConfig     *SessionAgentConfig `json:"agent_config"`      // Agent configuration (optional, for agent mode)
+}
+
+// ContextConfig configures LLM context management
+type ContextConfig struct {
+	MaxTokens           int    `json:"max_tokens"`            // Maximum tokens allowed in LLM context
+	CompressionStrategy string `json:"compression_strategy"`  // Compression strategy: "sliding_window" or "smart"
+	RecentMessageCount  int    `json:"recent_message_count"`  // Number of recent messages to keep
+	SummarizeThreshold  int    `json:"summarize_threshold"`   // Number of messages before summarization
 }
 
 // Session session information
 type Session struct {
-	ID                string         `json:"id"`
-	TenantID          uint           `json:"tenant_id"`
-	KnowledgeBaseID   string         `json:"knowledge_base_id"`
-	Title             string         `json:"title"`
-	MaxRounds         int            `json:"max_rounds"`
-	EnableRewrite     bool           `json:"enable_rewrite"`
-	FallbackStrategy  string         `json:"fallback_strategy"`
-	FallbackResponse  string         `json:"fallback_response"`
-	EmbeddingTopK     int            `json:"embedding_top_k"`
-	KeywordThreshold  float64        `json:"keyword_threshold"`
-	VectorThreshold   float64        `json:"vector_threshold"`
-	RerankModelID     string         `json:"rerank_model_id"`
-	RerankTopK        int            `json:"rerank_top_k"`
-	RerankThreshold   float64        `json:"reranking_threshold"` // Reranking threshold
-	SummaryModelID    string         `json:"summary_model_id"`
-	SummaryParameters *SummaryConfig `json:"summary_parameters"`
-	CreatedAt         string         `json:"created_at"`
-	UpdatedAt         string         `json:"updated_at"`
+	ID                string              `json:"id"`
+	TenantID          uint64              `json:"tenant_id"`
+	KnowledgeBaseID   string              `json:"knowledge_base_id"`
+	Title             string              `json:"title"`
+	Description       string              `json:"description"`
+	MaxRounds         int                 `json:"max_rounds"`
+	EnableRewrite     bool                `json:"enable_rewrite"`
+	FallbackStrategy  string              `json:"fallback_strategy"`
+	FallbackResponse  string              `json:"fallback_response"`
+	EmbeddingTopK     int                 `json:"embedding_top_k"`
+	KeywordThreshold  float64             `json:"keyword_threshold"`
+	VectorThreshold   float64             `json:"vector_threshold"`
+	RerankModelID     string              `json:"rerank_model_id"`
+	RerankTopK        int                 `json:"rerank_top_k"`
+	RerankThreshold   float64             `json:"rerank_threshold"` // Reranking threshold
+	SummaryModelID    string              `json:"summary_model_id"`
+	SummaryParameters *SummaryConfig      `json:"summary_parameters"`
+	AgentConfig       *SessionAgentConfig `json:"agent_config"`   // Agent configuration (optional)
+	ContextConfig     *ContextConfig      `json:"context_config"` // Context management configuration (optional)
+	CreatedAt         string              `json:"created_at"`
+	UpdatedAt         string              `json:"updated_at"`
 }
 
 // SessionResponse session response
@@ -184,6 +204,11 @@ type GenerateTitleResponse struct {
 	Data    string `json:"data"`
 }
 
+// StopSessionRequest stop generation payload.
+type StopSessionRequest struct {
+	MessageID string `json:"message_id"`
+}
+
 // GenerateTitle generates a session title
 func (c *Client) GenerateTitle(ctx context.Context, sessionID string, request *GenerateTitleRequest) (string, error) {
 	path := fmt.Sprintf("/api/v1/sessions/%s/generate_title", sessionID)
@@ -222,7 +247,12 @@ type StreamResponse struct {
 }
 
 // KnowledgeQAStream knowledge Q&A streaming API
-func (c *Client) KnowledgeQAStream(ctx context.Context, sessionID string, query string, callback func(*StreamResponse) error) error {
+func (c *Client) KnowledgeQAStream(
+	ctx context.Context,
+	sessionID string,
+	query string,
+	callback func(*StreamResponse) error,
+) error {
 	path := fmt.Sprintf("/api/v1/knowledge-chat/%s", sessionID)
 	fmt.Printf("Starting KnowledgeQAStream request, session ID: %s, query: %s\n", sessionID, query)
 
@@ -301,7 +331,12 @@ func (c *Client) KnowledgeQAStream(ctx context.Context, sessionID string, query 
 }
 
 // ContinueStream continues to receive an active stream for a session
-func (c *Client) ContinueStream(ctx context.Context, sessionID string, messageID string, callback func(*StreamResponse) error) error {
+func (c *Client) ContinueStream(
+	ctx context.Context,
+	sessionID string,
+	messageID string,
+	callback func(*StreamResponse) error,
+) error {
 	path := fmt.Sprintf("/api/v1/sessions/continue-stream/%s", sessionID)
 
 	queryParams := url.Values{}
@@ -359,6 +394,31 @@ func (c *Client) ContinueStream(ctx context.Context, sessionID string, messageID
 	}
 
 	return nil
+}
+
+// StopSession stops the generation for a specific assistant message under a session.
+func (c *Client) StopSession(ctx context.Context, sessionID string, messageID string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("sessionID cannot be empty")
+	}
+	if strings.TrimSpace(messageID) == "" {
+		return fmt.Errorf("messageID cannot be empty")
+	}
+
+	path := fmt.Sprintf("/api/v1/sessions/%s/stop", sessionID)
+	resp, err := c.doRequest(ctx, http.MethodPost, path, &StopSessionRequest{
+		MessageID: messageID,
+	}, nil)
+	if err != nil {
+		return err
+	}
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message,omitempty"`
+	}
+
+	return parseResponse(resp, &response)
 }
 
 // SearchKnowledgeRequest knowledge search request

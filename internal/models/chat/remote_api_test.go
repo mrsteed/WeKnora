@@ -110,6 +110,7 @@ func TestRemoteAPIChat(t *testing.T) {
 			t.Run("Basic Chat", func(t *testing.T) {
 				response, err := chat.Chat(ctx, testMessages, testOptions)
 				require.NoError(t, err)
+				require.NotNil(t, response, "response should not be nil")
 				assert.NotEmpty(t, response.Content)
 				assert.Greater(t, response.Usage.TotalTokens, 0)
 				assert.Greater(t, response.Usage.PromptTokens, 0)
@@ -121,7 +122,6 @@ func TestRemoteAPIChat(t *testing.T) {
 					response.Usage.CompletionTokens,
 					response.Usage.TotalTokens)
 			})
-
 		})
 	}
 }

@@ -51,7 +51,7 @@ func (v *KeywordsVectorHybridRetrieveEngineService) Index(ctx context.Context,
 		if err != nil {
 			return err
 		}
-		embeddingMap[indexInfo.ChunkID] = embedding
+		embeddingMap[indexInfo.SourceID] = embedding
 	}
 	params["embedding"] = embeddingMap
 	return v.indexRepository.Save(ctx, indexInfo, params)
@@ -77,13 +77,15 @@ func (v *KeywordsVectorHybridRetrieveEngineService) BatchIndex(ctx context.Conte
 			embeddings, err = embedder.BatchEmbedWithPool(ctx, embedder, contentList)
 			if err == nil {
 				break
+			} else {
+				logger.Errorf(ctx, "BatchEmbedWithPool failed: %v", err)
+				time.Sleep(100 * time.Millisecond)
 			}
-			time.Sleep(100 * time.Millisecond)
 		}
 		if err != nil {
 			return err
 		}
-		batchSize := 20
+		batchSize := 40
 		for i, indexChunk := range utils.ChunkSlice(indexInfoList, batchSize) {
 			embeddingMap := make(map[string][]float32)
 			for j, indexInfo := range indexChunk {
@@ -112,6 +114,13 @@ func (v *KeywordsVectorHybridRetrieveEngineService) DeleteByChunkIDList(ctx cont
 	indexIDList []string, dimension int,
 ) error {
 	return v.indexRepository.DeleteByChunkIDList(ctx, indexIDList, dimension)
+}
+
+// DeleteBySourceIDList deletes vectors by their source IDs
+func (v *KeywordsVectorHybridRetrieveEngineService) DeleteBySourceIDList(ctx context.Context,
+	sourceIDList []string, dimension int,
+) error {
+	return v.indexRepository.DeleteBySourceIDList(ctx, sourceIDList, dimension)
 }
 
 // DeleteByKnowledgeIDList deletes vectors by their knowledge IDs
@@ -160,4 +169,12 @@ func (v *KeywordsVectorHybridRetrieveEngineService) CopyIndices(
 	return v.indexRepository.CopyIndices(
 		ctx, sourceKnowledgeBaseID, sourceToTargetKBIDMap, sourceToTargetChunkIDMap, targetKnowledgeBaseID, dimension,
 	)
+}
+
+// BatchUpdateChunkEnabledStatus updates the enabled status of chunks in batch
+func (v *KeywordsVectorHybridRetrieveEngineService) BatchUpdateChunkEnabledStatus(
+	ctx context.Context,
+	chunkStatusMap map[string]bool,
+) error {
+	return v.indexRepository.BatchUpdateChunkEnabledStatus(ctx, chunkStatusMap)
 }

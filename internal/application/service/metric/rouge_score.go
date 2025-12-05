@@ -96,11 +96,6 @@ func getWordNgrams(n int, sentences []string, exclusive bool) *Ngrams {
 	return getNgrams(n, words, exclusive)
 }
 
-func lenLcs(x, y []string) int {
-	table := lcs(x, y)
-	return table[len(x)][len(y)]
-}
-
 func lcs(x, y []string) [][]int {
 	n, m := len(x), len(y)
 	table := make([][]int, n+1)
@@ -203,7 +198,10 @@ func unionLcs(evaluatedSentences []string, referenceSentence string, prevUnion *
 	return newLcsCount, lcsUnion
 }
 
-func rougeLSummaryLevel(evaluatedSentences, referenceSentences []string, rawResults, exclusive bool) map[string]float64 {
+func rougeLSummaryLevel(
+	evaluatedSentences, referenceSentences []string,
+	rawResults, exclusive bool,
+) map[string]float64 {
 	referenceNgrams := NewNgrams(exclusive)
 	referenceNgrams.BatchAdd(splitIntoWords(referenceSentences))
 	m := referenceNgrams.Len()

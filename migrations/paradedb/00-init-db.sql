@@ -16,10 +16,13 @@ CREATE TABLE IF NOT EXISTS tenants (
     business VARCHAR(255) NOT NULL,
     storage_quota BIGINT NOT NULL DEFAULT 10737418240, -- 默认10GB配额(Bytes)
     storage_used BIGINT NOT NULL DEFAULT 0, -- 已使用的存储空间(Bytes)
+    agent_config JSONB DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE
 );
+
+COMMENT ON COLUMN tenants.agent_config IS 'Tenant-level agent configuration in JSON format';
 
 -- Set the starting value for tenants id sequence
 ALTER SEQUENCE tenants_id_seq RESTART WITH 10000;
@@ -59,7 +62,6 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     embedding_model_id VARCHAR(64) NOT NULL,
     summary_model_id VARCHAR(64) NOT NULL,
     rerank_model_id VARCHAR(64) NOT NULL,
-    vlm_model_id VARCHAR(64) NOT NULL,
     cos_config JSONB NOT NULL DEFAULT '{}',
     vlm_config JSONB NOT NULL DEFAULT '{}',
     extract_config JSONB NULL DEFAULT NULL,
@@ -122,10 +124,15 @@ CREATE TABLE IF NOT EXISTS sessions (
     rerank_threshold FLOAT NOT NULL DEFAULT 0.65,
     summary_model_id VARCHAR(64),
     summary_parameters JSONB NOT NULL DEFAULT '{}',
+    agent_config JSONB DEFAULT NULL,
+    context_config JSONB DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE
 );
+
+COMMENT ON COLUMN sessions.agent_config IS 'Session-level agent configuration in JSON format';
+COMMENT ON COLUMN sessions.context_config IS 'LLM context management configuration (separate from message storage)';
 
 -- Create Index for sessions
 CREATE INDEX IF NOT EXISTS idx_sessions_tenant_id ON sessions(tenant_id);
@@ -139,11 +146,14 @@ CREATE TABLE IF NOT EXISTS messages (
     role VARCHAR(50) NOT NULL,
     content TEXT NOT NULL,
     knowledge_references JSONB NOT NULL DEFAULT '[]',
+    agent_steps JSONB DEFAULT NULL,
     is_completed BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE
 );
+
+COMMENT ON COLUMN messages.agent_steps IS 'Agent execution steps (reasoning process and tool calls)';
 
 -- Create Index for messages
 CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id); 

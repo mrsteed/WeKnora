@@ -22,8 +22,9 @@ import (
 // Knowledge represents knowledge information
 type Knowledge struct {
 	ID               string            `json:"id"`
-	TenantID         uint              `json:"tenant_id"`
+	TenantID         uint64            `json:"tenant_id"`
 	KnowledgeBaseID  string            `json:"knowledge_base_id"`
+	TagID            string            `json:"tag_id"`
 	Type             string            `json:"type"`
 	Title            string            `json:"title"`
 	Description      string            `json:"description"`
@@ -34,7 +35,9 @@ type Knowledge struct {
 	FileName         string            `json:"file_name"`
 	FileType         string            `json:"file_type"`
 	FileSize         int64             `json:"file_size"`
+	FileHash         string            `json:"file_hash"`
 	FilePath         string            `json:"file_path"`
+	StorageSize      int64             `json:"storage_size"`
 	Metadata         map[string]string `json:"metadata"` // Extensible metadata for storing machine information, paths, etc.
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
@@ -78,8 +81,14 @@ var ErrDuplicateFile = errors.New("file already exists")
 var ErrDuplicateURL = errors.New("URL already exists")
 
 // CreateKnowledgeFromFile creates a knowledge entry from a local file path
+// Parameters:
+//   - knowledgeBaseID: The ID of the knowledge base
+//   - filePath: The local file path
+//   - metadata: Optional metadata for the knowledge entry
+//   - enableMultimodel: Optional flag to enable multimodal processing
+//   - customFileName: Optional custom file name (useful for folder uploads with path)
 func (c *Client) CreateKnowledgeFromFile(ctx context.Context,
-	knowledgeBaseID string, filePath string, metadata map[string]string, enableMultimodel *bool,
+	knowledgeBaseID string, filePath string, metadata map[string]string, enableMultimodel *bool, customFileName string,
 ) (*Knowledge, error) {
 	// Open the local file
 	file, err := os.Open(filePath)
@@ -133,6 +142,13 @@ func (c *Client) CreateKnowledgeFromFile(ctx context.Context,
 		}
 	}
 
+	// Add custom file name if provided
+	if customFileName != "" {
+		if err := writer.WriteField("fileName", customFileName); err != nil {
+			return nil, fmt.Errorf("failed to write fileName field: %w", err)
+		}
+	}
+
 	// Close the multipart writer
 	err = writer.Close()
 	if err != nil {
@@ -172,15 +188,23 @@ func (c *Client) CreateKnowledgeFromFile(ctx context.Context,
 }
 
 // CreateKnowledgeFromURL creates a knowledge entry from a web URL
-func (c *Client) CreateKnowledgeFromURL(ctx context.Context, knowledgeBaseID string, url string, enableMultimodel *bool) (*Knowledge, error) {
+func (c *Client) CreateKnowledgeFromURL(
+	ctx context.Context,
+	knowledgeBaseID string,
+	url string,
+	enableMultimodel *bool,
+	title string,
+) (*Knowledge, error) {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/knowledge/url", knowledgeBaseID)
 
 	reqBody := struct {
 		URL              string `json:"url"`
 		EnableMultimodel *bool  `json:"enable_multimodel"`
+		Title            string `json:"title"`
 	}{
 		URL:              url,
 		EnableMultimodel: enableMultimodel,
+		Title:            title,
 	}
 
 	resp, err := c.doRequest(ctx, http.MethodPost, path, reqBody, nil)
@@ -244,12 +268,16 @@ func (c *Client) ListKnowledge(ctx context.Context,
 	knowledgeBaseID string,
 	page int,
 	pageSize int,
+	tagID string,
 ) ([]Knowledge, int64, error) {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/knowledge", knowledgeBaseID)
 
 	queryParams := url.Values{}
 	queryParams.Add("page", strconv.Itoa(page))
 	queryParams.Add("page_size", strconv.Itoa(pageSize))
+	if tagID != "" {
+		queryParams.Add("tag_id", tagID)
+	}
 
 	resp, err := c.doRequest(ctx, http.MethodGet, path, nil, queryParams)
 	if err != nil {

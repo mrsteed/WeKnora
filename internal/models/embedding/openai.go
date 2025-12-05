@@ -103,7 +103,8 @@ func (e *OpenAIEmbedder) doRequestWithRetry(ctx context.Context, jsonData []byte
 			if backoffTime > 10*time.Second {
 				backoffTime = 10 * time.Second
 			}
-			logger.GetLogger(ctx).Infof("OpenAIEmbedder retrying request (%d/%d), waiting %v", i, e.maxRetries, backoffTime)
+			logger.GetLogger(ctx).
+				Infof("OpenAIEmbedder retrying request (%d/%d), waiting %v", i, e.maxRetries, backoffTime)
 
 			select {
 			case <-time.After(backoffTime):
@@ -152,7 +153,9 @@ func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 		logger.GetLogger(ctx).Errorf("OpenAIEmbedder EmbedBatch send request error: %v", err)
 		return nil, fmt.Errorf("send request: %w", err)
 	}
-	defer resp.Body.Close()
+	if resp.Body != nil {
+		defer resp.Body.Close()
+	}
 
 	// Read response
 	body, err := io.ReadAll(resp.Body)

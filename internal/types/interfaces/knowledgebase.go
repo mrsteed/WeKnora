@@ -80,6 +80,14 @@ type KnowledgeBaseService interface {
 	//   - Copied knowledge base object
 	//   - Possible errors such as not existing, insufficient permissions, etc.
 	CopyKnowledgeBase(ctx context.Context, src string, dst string) (*types.KnowledgeBase, *types.KnowledgeBase, error)
+
+	// GetRepository gets the knowledge base repository
+	// Parameters:
+	//   - ctx: Context with authentication and request information
+	//
+	// Returns:
+	//   - interfaces.KnowledgeBaseRepository: Knowledge base repository
+	GetRepository() KnowledgeBaseRepository
 }
 
 // KnowledgeBaseRepository defines the knowledge base repository interface
@@ -118,7 +126,7 @@ type KnowledgeBaseRepository interface {
 	// Returns:
 	//   - List of knowledge base objects
 	//   - Possible errors such as database errors, etc.
-	ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint) ([]*types.KnowledgeBase, error)
+	ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
 
 	// UpdateKnowledgeBase updates a knowledge base record
 	// Parameters:

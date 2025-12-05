@@ -8,42 +8,48 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	InitDefaultTenantID uint = 1
-)
-
 // Tenant represents the tenant
 type Tenant struct {
 	// ID
-	ID uint `yaml:"id" json:"id" gorm:"primaryKey"`
+	ID uint64 `yaml:"id"                  json:"id"                  gorm:"primaryKey"`
 	// Name
-	Name string `yaml:"name" json:"name"`
+	Name string `yaml:"name"                json:"name"`
 	// Description
-	Description string `yaml:"description" json:"description"`
+	Description string `yaml:"description"         json:"description"`
 	// API key
-	APIKey string `yaml:"api_key" json:"api_key"`
+	APIKey string `yaml:"api_key"             json:"api_key"`
 	// Status
-	Status string `yaml:"status" json:"status" gorm:"default:'active'"`
+	Status string `yaml:"status"              json:"status"              gorm:"default:'active'"`
 	// Retriever engines
-	RetrieverEngines RetrieverEngines `yaml:"retriever_engines" json:"retriever_engines" gorm:"type:json"`
+	RetrieverEngines RetrieverEngines `yaml:"retriever_engines"   json:"retriever_engines"   gorm:"type:json"`
 	// Business
-	Business string `yaml:"business" json:"business"`
+	Business string `yaml:"business"            json:"business"`
 	// Storage quota (Bytes), default is 10GB, including vector, original file, text, index, etc.
-	StorageQuota int64 `yaml:"storage_quota" json:"storage_quota" gorm:"default:10737418240"`
+	StorageQuota int64 `yaml:"storage_quota"       json:"storage_quota"       gorm:"default:10737418240"`
 	// Storage used (Bytes)
-	StorageUsed int64 `yaml:"storage_used" json:"storage_used" gorm:"default:0"`
+	StorageUsed int64 `yaml:"storage_used"        json:"storage_used"        gorm:"default:0"`
+	// Global Agent configuration for this tenant (default for all sessions)
+	AgentConfig *AgentConfig `yaml:"agent_config"        json:"agent_config"        gorm:"type:jsonb"`
+	// Global Context configuration for this tenant (default for all sessions)
+	ContextConfig *ContextConfig `yaml:"context_config"      json:"context_config"      gorm:"type:jsonb"`
+	// Global WebSearch configuration for this tenant
+	WebSearchConfig *WebSearchConfig `yaml:"web_search_config"   json:"web_search_config"   gorm:"type:jsonb"`
+	// Global Conversation configuration for this tenant (default for normal mode sessions)
+	ConversationConfig *ConversationConfig `yaml:"conversation_config" json:"conversation_config" gorm:"type:jsonb"`
 	// Creation time
-	CreatedAt time.Time `yaml:"created_at" json:"created_at"`
+	CreatedAt time.Time `yaml:"created_at"          json:"created_at"`
 	// Last updated time
-	UpdatedAt time.Time `yaml:"updated_at" json:"updated_at"`
+	UpdatedAt time.Time `yaml:"updated_at"          json:"updated_at"`
 	// Deletion time
-	DeletedAt gorm.DeletedAt `yaml:"deleted_at" json:"deleted_at" gorm:"index"`
+	DeletedAt gorm.DeletedAt `yaml:"deleted_at"          json:"deleted_at"          gorm:"index"`
 }
 
+// RetrieverEngines represents the retriever engines for a tenant
 type RetrieverEngines struct {
 	Engines []RetrieverEngineParams `yaml:"engines" json:"engines" gorm:"type:json"`
 }
 
+// BeforeCreate is a hook function that is called before creating a tenant
 func (t *Tenant) BeforeCreate(tx *gorm.DB) error {
 	if t.RetrieverEngines.Engines == nil {
 		t.RetrieverEngines.Engines = []RetrieverEngineParams{}
@@ -58,6 +64,63 @@ func (c RetrieverEngines) Value() (driver.Value, error) {
 
 // Scan implements the sql.Scanner interface, used to convert database value to RetrieverEngines
 func (c *RetrieverEngines) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return json.Unmarshal(b, c)
+}
+
+// ConversationConfig represents the conversation configuration for normal mode
+type ConversationConfig struct {
+	// Prompt is the system prompt for normal mode
+	UseCustomSystemPrompt    bool   `json:"use_custom_system_prompt"`
+	Prompt                   string `json:"prompt"`
+	UseCustomContextTemplate bool   `json:"use_custom_context_template"`
+	// ContextTemplate is the prompt template for summarizing retrieval results
+	ContextTemplate string `json:"context_template"`
+	// Temperature controls the randomness of the model output
+	Temperature float64 `json:"temperature"`
+	// MaxTokens is the maximum number of tokens to generate
+	MaxCompletionTokens int `json:"max_completion_tokens"`
+
+	// Retrieval & strategy parameters
+	MaxRounds            int     `json:"max_rounds"`
+	EmbeddingTopK        int     `json:"embedding_top_k"`
+	KeywordThreshold     float64 `json:"keyword_threshold"`
+	VectorThreshold      float64 `json:"vector_threshold"`
+	RerankTopK           int     `json:"rerank_top_k"`
+	RerankThreshold      float64 `json:"rerank_threshold"`
+	EnableRewrite        bool    `json:"enable_rewrite"`
+	EnableQueryExpansion bool    `json:"enable_query_expansion"`
+
+	// Model configuration
+	SummaryModelID string `json:"summary_model_id"`
+	RerankModelID  string `json:"rerank_model_id"`
+
+	// Fallback strategy
+	FallbackStrategy string `json:"fallback_strategy"`
+	FallbackResponse string `json:"fallback_response"`
+	FallbackPrompt   string `json:"fallback_prompt"`
+
+	// Rewrite prompts
+	RewritePromptSystem string `json:"rewrite_prompt_system"`
+	RewritePromptUser   string `json:"rewrite_prompt_user"`
+}
+
+// Value implements the driver.Valuer interface, used to convert ConversationConfig to database value
+func (c *ConversationConfig) Value() (driver.Value, error) {
+	if c == nil {
+		return nil, nil
+	}
+	return json.Marshal(c)
+}
+
+// Scan implements the sql.Scanner interface, used to convert database value to ConversationConfig
+func (c *ConversationConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}

@@ -16,9 +16,16 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-func NewChunkExtractTask(ctx context.Context, client *asynq.Client, tenantID uint, chunkID string, modelID string) error {
+// NewChunkExtractTask creates a new chunk extract task
+func NewChunkExtractTask(
+	ctx context.Context,
+	client *asynq.Client,
+	tenantID uint64,
+	chunkID string,
+	modelID string,
+) error {
 	if strings.ToLower(os.Getenv("NEO4J_ENABLE")) != "true" {
-		logger.Debugf(ctx, "NOT SUPPORT RETRIEVE GRAPH")
+		logger.Warn(ctx, "NEO4J is not enabled, skip chunk extract task")
 		return nil
 	}
 	payload, err := json.Marshal(types.ExtractChunkPayload{
@@ -39,6 +46,7 @@ func NewChunkExtractTask(ctx context.Context, client *asynq.Client, tenantID uin
 	return nil
 }
 
+// ChunkExtractService is a service for extracting chunks
 type ChunkExtractService struct {
 	template          *types.PromptTemplateStructured
 	modelService      interfaces.ModelService
@@ -47,6 +55,7 @@ type ChunkExtractService struct {
 	graphEngine       interfaces.RetrieveGraphRepository
 }
 
+// NewChunkExtractService creates a new chunk extract service
 func NewChunkExtractService(
 	config *config.Config,
 	modelService interfaces.ModelService,
@@ -54,10 +63,10 @@ func NewChunkExtractService(
 	chunkRepo interfaces.ChunkRepository,
 	graphEngine interfaces.RetrieveGraphRepository,
 ) interfaces.Extracter {
-	generator := chatpipline.NewQAPromptGenerator(chatpipline.NewFormater(), config.ExtractManager.ExtractGraph)
-	ctx := context.Background()
-	logger.Debugf(ctx, "chunk extract system prompt: %s", generator.System(ctx))
-	logger.Debugf(ctx, "chunk extract user prompt: %s", generator.User(ctx, "demo"))
+	// generator := chatpipline.NewQAPromptGenerator(chatpipline.NewFormater(), config.ExtractManager.ExtractGraph)
+	// ctx := context.Background()
+	// logger.Debugf(ctx, "chunk extract system prompt: %s", generator.System(ctx))
+	// logger.Debugf(ctx, "chunk extract user prompt: %s", generator.User(ctx, "demo"))
 	return &ChunkExtractService{
 		template:          config.ExtractManager.ExtractGraph,
 		modelService:      modelService,
@@ -67,6 +76,7 @@ func NewChunkExtractService(
 	}
 }
 
+// Extract extracts a chunk
 func (s *ChunkExtractService) Extract(ctx context.Context, t *asynq.Task) error {
 	var p types.ExtractChunkPayload
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -131,7 +141,5 @@ func (s *ChunkExtractService) Extract(ctx context.Context, t *asynq.Task) error 
 		logger.Errorf(ctx, "failed to add graph: %v", err)
 		return err
 	}
-	// gg, _ := json.Marshal(graph)
-	// logger.Infof(ctx, "extracted graph: %s", string(gg))
 	return nil
 }

@@ -7,8 +7,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/rerank"
+	"github.com/Tencent/WeKnora/internal/searchutil"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -36,26 +36,40 @@ func (p *PluginRerank) ActivationEvents() []types.EventType {
 func (p *PluginRerank) OnEvent(ctx context.Context,
 	eventType types.EventType, chatManage *types.ChatManage, next func() *PluginError,
 ) *PluginError {
-	logger.Info(ctx, "Starting reranking process")
-	logger.Infof(ctx, "Getting rerank model, model ID: %s", chatManage.RerankModelID)
+	pipelineInfo(ctx, "Rerank", "input", map[string]interface{}{
+		"session_id":    chatManage.SessionID,
+		"candidate_cnt": len(chatManage.SearchResult),
+		"rerank_model":  chatManage.RerankModelID,
+		"rerank_thresh": chatManage.RerankThreshold,
+		"rewrite_query": chatManage.RewriteQuery,
+	})
 	if len(chatManage.SearchResult) == 0 {
-		logger.Infof(ctx, "No search result, skip reranking")
+		pipelineInfo(ctx, "Rerank", "skip", map[string]interface{}{
+			"reason": "empty_search_result",
+		})
 		return next()
 	}
 	if chatManage.RerankModelID == "" {
-		logger.Warn(ctx, "Rerank model ID is empty, skipping reranking")
+		pipelineWarn(ctx, "Rerank", "skip", map[string]interface{}{
+			"reason": "empty_model_id",
+		})
 		return next()
 	}
 
 	// Get rerank model from service
 	rerankModel, err := p.modelService.GetRerankModel(ctx, chatManage.RerankModelID)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get rerank model: %v, rerank model ID: %s", err, chatManage.RerankModelID)
+		pipelineError(ctx, "Rerank", "get_model", map[string]interface{}{
+			"model_id": chatManage.RerankModelID,
+			"error":    err.Error(),
+		})
 		return ErrGetRerankModel.WithError(err)
 	}
 
 	// Prepare passages for reranking
-	logger.Infof(ctx, "Preparing passages for reranking, search result count: %d", len(chatManage.SearchResult))
+	pipelineInfo(ctx, "Rerank", "build_passages", map[string]interface{}{
+		"candidate_cnt": len(chatManage.SearchResult),
+	})
 	var passages []string
 	for _, result := range chatManage.SearchResult {
 		// 合并Content和ImageInfo的文本内容
@@ -63,30 +77,83 @@ func (p *PluginRerank) OnEvent(ctx context.Context,
 		passages = append(passages, passage)
 	}
 
-	// Try reranking with different query variants in priority order
+	// Single rerank call with RewriteQuery, use threshold degradation if no results
+	originalThreshold := chatManage.RerankThreshold
 	rerankResp := p.rerank(ctx, chatManage, rerankModel, chatManage.RewriteQuery, passages)
-	if len(rerankResp) == 0 {
-		rerankResp = p.rerank(ctx, chatManage, rerankModel, chatManage.ProcessedQuery, passages)
-		if len(rerankResp) == 0 {
-			rerankResp = p.rerank(ctx, chatManage, rerankModel, chatManage.Query, passages)
+
+	// If no results and threshold is high enough, try with lower threshold
+	if len(rerankResp) == 0 && originalThreshold > 0.3 {
+		degradedThreshold := originalThreshold * 0.7
+		if degradedThreshold < 0.3 {
+			degradedThreshold = 0.3
 		}
+		pipelineInfo(ctx, "Rerank", "threshold_degrade", map[string]interface{}{
+			"original": originalThreshold,
+			"degraded": degradedThreshold,
+		})
+		chatManage.RerankThreshold = degradedThreshold
+		rerankResp = p.rerank(ctx, chatManage, rerankModel, chatManage.RewriteQuery, passages)
+		// Restore original threshold
+		chatManage.RerankThreshold = originalThreshold
 	}
 
-	// Update search results with reranked scores
-	logger.Infof(ctx, "Filtered rerank results, original: %d, filtered: %d", len(rerankResp), len(rerankResp))
-	result := []*types.SearchResult{}
-	for _, rr := range rerankResp {
-		chatManage.SearchResult[rr.Index].Score = rr.RelevanceScore
-		result = append(result, chatManage.SearchResult[rr.Index])
+	pipelineInfo(ctx, "Rerank", "model_response", map[string]interface{}{
+		"result_cnt": len(rerankResp),
+	})
+
+	// Log input scores before reranking for debugging
+	for i, sr := range chatManage.SearchResult {
+		pipelineInfo(ctx, "Rerank", "input_score", map[string]interface{}{
+			"index":      i,
+			"chunk_id":   sr.ID,
+			"score":      fmt.Sprintf("%.4f", sr.Score),
+			"match_type": sr.MatchType,
+		})
 	}
-	chatManage.RerankResult = result
+
+	for i := range chatManage.SearchResult {
+		chatManage.SearchResult[i].Metadata = ensureMetadata(chatManage.SearchResult[i].Metadata)
+	}
+	reranked := make([]*types.SearchResult, 0, len(rerankResp))
+	for _, rr := range rerankResp {
+		sr := chatManage.SearchResult[rr.Index]
+		base := sr.Score
+		sr.Metadata["base_score"] = fmt.Sprintf("%.4f", base)
+		modelScore := rr.RelevanceScore
+		sr.Score = compositeScore(sr, modelScore, base)
+		pipelineInfo(ctx, "Rerank", "composite_calc", map[string]interface{}{
+			"chunk_id":    sr.ID,
+			"base_score":  fmt.Sprintf("%.4f", base),
+			"model_score": fmt.Sprintf("%.4f", modelScore),
+			"final_score": fmt.Sprintf("%.4f", sr.Score),
+			"match_type":  sr.MatchType,
+		})
+		reranked = append(reranked, sr)
+	}
+	final := applyMMR(ctx, reranked, chatManage, min(len(reranked), max(1, chatManage.RerankTopK)), 0.7)
+	chatManage.RerankResult = final
+
+	// Log composite top scores and MMR selection summary
+	topN := min(3, len(reranked))
+	for i := 0; i < topN; i++ {
+		pipelineInfo(ctx, "Rerank", "composite_top", map[string]interface{}{
+			"rank":        i + 1,
+			"chunk_id":    reranked[i].ID,
+			"base_score":  reranked[i].Metadata["base_score"],
+			"final_score": fmt.Sprintf("%.4f", reranked[i].Score),
+		})
+	}
 
 	if len(chatManage.RerankResult) == 0 {
-		logger.Warn(ctx, "Reranking produced no results above threshold")
+		pipelineWarn(ctx, "Rerank", "output", map[string]interface{}{
+			"filtered_cnt": 0,
+		})
 		return ErrSearchNothing
 	}
 
-	logger.Infof(ctx, "Reranking process completed successfully, result count: %d", len(chatManage.RerankResult))
+	pipelineInfo(ctx, "Rerank", "output", map[string]interface{}{
+		"filtered_cnt": len(chatManage.RerankResult),
+	})
 	return next()
 }
 
@@ -94,19 +161,32 @@ func (p *PluginRerank) OnEvent(ctx context.Context,
 func (p *PluginRerank) rerank(ctx context.Context,
 	chatManage *types.ChatManage, rerankModel rerank.Reranker, query string, passages []string,
 ) []rerank.RankResult {
-	logger.Infof(ctx, "Executing reranking with query: %s, passage count: %d", query, len(passages))
+	pipelineInfo(ctx, "Rerank", "model_call", map[string]interface{}{
+		"query_variant": query,
+		"passages":      len(passages),
+	})
 	rerankResp, err := rerankModel.Rerank(ctx, query, passages)
 	if err != nil {
-		logger.Errorf(ctx, "Reranking failed: %v", err)
+		pipelineError(ctx, "Rerank", "model_call", map[string]interface{}{
+			"query_variant": query,
+			"error":         err.Error(),
+		})
 		return nil
 	}
 
 	// Log top scores for debugging
-	logger.Infof(ctx, "Reranking completed, filtering results with threshold: %f", chatManage.RerankThreshold)
-	for i := range min(3, len(rerankResp)) {
-		logger.Infof(ctx, "Top %d score of rerankResp: %f, passages: %s, index: %d",
-			i+1, rerankResp[i].RelevanceScore, rerankResp[i].Document.Text, rerankResp[i].Index,
-		)
+	pipelineInfo(ctx, "Rerank", "threshold", map[string]interface{}{
+		"threshold": chatManage.RerankThreshold,
+	})
+	for i := range min(5, len(rerankResp)) {
+		pipelineInfo(ctx, "Rerank", "top_score", map[string]interface{}{
+			"rank":       i + 1,
+			"score":      rerankResp[i].RelevanceScore,
+			"chunk_id":   chatManage.SearchResult[rerankResp[i].Index].ID,
+			"match_type": chatManage.SearchResult[rerankResp[i].Index].MatchType,
+			"chunk_type": chatManage.SearchResult[rerankResp[i].Index].ChunkType,
+			"content":    chatManage.SearchResult[rerankResp[i].Index].Content,
+		})
 	}
 
 	// Filter results based on threshold with special handling for history matches
@@ -124,48 +204,176 @@ func (p *PluginRerank) rerank(ctx context.Context,
 	return rankFilter
 }
 
-// getEnrichedPassage 合并Content和ImageInfo的文本内容
-func getEnrichedPassage(ctx context.Context, result *types.SearchResult) string {
-	if result.ImageInfo == "" {
-		return result.Content
+// ensureMetadata ensures the metadata is not nil
+func ensureMetadata(m map[string]string) map[string]string {
+	if m == nil {
+		return make(map[string]string)
 	}
+	return m
+}
+
+// compositeScore calculates the composite score for a search result
+func compositeScore(sr *types.SearchResult, modelScore, baseScore float64) float64 {
+	sourceWeight := 1.0
+	switch strings.ToLower(sr.KnowledgeSource) {
+	case "web_search":
+		sourceWeight = 0.95
+	default:
+		sourceWeight = 1.0
+	}
+	positionPrior := 1.0
+	if sr.StartAt >= 0 {
+		positionPrior += searchutil.ClampFloat(1.0-float64(sr.StartAt)/float64(sr.EndAt+1), -0.05, 0.05)
+	}
+	composite := 0.6*modelScore + 0.3*baseScore + 0.1*sourceWeight
+	composite *= positionPrior
+	if composite < 0 {
+		composite = 0
+	}
+	if composite > 1 {
+		composite = 1
+	}
+	return composite
+}
+
+// applyMMR applies the MMR algorithm to the search results with pre-computed token sets
+func applyMMR(
+	ctx context.Context,
+	results []*types.SearchResult,
+	chatManage *types.ChatManage,
+	k int,
+	lambda float64,
+) []*types.SearchResult {
+	if k <= 0 || len(results) == 0 {
+		return nil
+	}
+	pipelineInfo(ctx, "Rerank", "mmr_start", map[string]interface{}{
+		"lambda":     lambda,
+		"k":          k,
+		"candidates": len(results),
+	})
+
+	// Pre-compute all token sets upfront (optimization)
+	allTokenSets := make([]map[string]struct{}, len(results))
+	for i, r := range results {
+		allTokenSets[i] = searchutil.TokenizeSimple(getEnrichedPassage(ctx, r))
+	}
+
+	selected := make([]*types.SearchResult, 0, k)
+	selectedTokenSets := make([]map[string]struct{}, 0, k)
+	selectedIndices := make(map[int]struct{})
+
+	for len(selected) < k && len(selectedIndices) < len(results) {
+		bestIdx := -1
+		bestScore := -1.0
+
+		for i, r := range results {
+			if _, isSelected := selectedIndices[i]; isSelected {
+				continue
+			}
+
+			relevance := r.Score
+			redundancy := 0.0
+
+			// Use pre-computed token sets for redundancy calculation
+			for _, selTokens := range selectedTokenSets {
+				sim := searchutil.Jaccard(allTokenSets[i], selTokens)
+				if sim > redundancy {
+					redundancy = sim
+				}
+			}
+
+			mmr := lambda*relevance - (1.0-lambda)*redundancy
+			if mmr > bestScore {
+				bestScore = mmr
+				bestIdx = i
+			}
+		}
+
+		if bestIdx < 0 {
+			break
+		}
+
+		selected = append(selected, results[bestIdx])
+		selectedTokenSets = append(selectedTokenSets, allTokenSets[bestIdx])
+		selectedIndices[bestIdx] = struct{}{}
+	}
+
+	// Compute average redundancy among selected using pre-computed token sets
+	avgRed := 0.0
+	if len(selected) > 1 {
+		pairs := 0
+		for i := 0; i < len(selectedTokenSets); i++ {
+			for j := i + 1; j < len(selectedTokenSets); j++ {
+				avgRed += searchutil.Jaccard(selectedTokenSets[i], selectedTokenSets[j])
+				pairs++
+			}
+		}
+		if pairs > 0 {
+			avgRed /= float64(pairs)
+		}
+	}
+	pipelineInfo(ctx, "Rerank", "mmr_done", map[string]interface{}{
+		"selected":       len(selected),
+		"avg_redundancy": fmt.Sprintf("%.4f", avgRed),
+	})
+	return selected
+}
+
+// getEnrichedPassage 合并Content、ImageInfo和GeneratedQuestions的文本内容
+func getEnrichedPassage(ctx context.Context, result *types.SearchResult) string {
+	combinedText := result.Content
+	var enrichments []string
 
 	// 解析ImageInfo
-	var imageInfos []types.ImageInfo
-	err := json.Unmarshal([]byte(result.ImageInfo), &imageInfos)
-	if err != nil {
-		logger.Warnf(ctx, "Failed to parse ImageInfo: %v, using content only", err)
-		return result.Content
-	}
-
-	if len(imageInfos) == 0 {
-		return result.Content
-	}
-
-	// 提取所有图片的描述和OCR文本
-	var imageTexts []string
-	for _, img := range imageInfos {
-		if img.Caption != "" {
-			imageTexts = append(imageTexts, fmt.Sprintf("图片描述: %s", img.Caption))
-		}
-		if img.OCRText != "" {
-			imageTexts = append(imageTexts, fmt.Sprintf("图片文本: %s", img.OCRText))
+	if result.ImageInfo != "" {
+		var imageInfos []types.ImageInfo
+		err := json.Unmarshal([]byte(result.ImageInfo), &imageInfos)
+		if err != nil {
+			pipelineWarn(ctx, "Rerank", "image_info_parse", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			// 提取所有图片的描述和OCR文本
+			for _, img := range imageInfos {
+				if img.Caption != "" {
+					enrichments = append(enrichments, fmt.Sprintf("图片描述: %s", img.Caption))
+				}
+				if img.OCRText != "" {
+					enrichments = append(enrichments, fmt.Sprintf("图片文本: %s", img.OCRText))
+				}
+			}
 		}
 	}
 
-	if len(imageTexts) == 0 {
-		return result.Content
+	// 解析ChunkMetadata中的GeneratedQuestions
+	if len(result.ChunkMetadata) > 0 {
+		var docMeta types.DocumentChunkMetadata
+		err := json.Unmarshal(result.ChunkMetadata, &docMeta)
+		if err != nil {
+			pipelineWarn(ctx, "Rerank", "chunk_metadata_parse", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else if questionStrings := docMeta.GetQuestionStrings(); len(questionStrings) > 0 {
+			enrichments = append(enrichments, fmt.Sprintf("相关问题: %s", strings.Join(questionStrings, "; ")))
+		}
 	}
 
-	// 组合内容和图片信息
-	combinedText := result.Content
+	if len(enrichments) == 0 {
+		return combinedText
+	}
+
+	// 组合内容和增强信息
 	if combinedText != "" {
 		combinedText += "\n\n"
 	}
-	combinedText += strings.Join(imageTexts, "\n")
+	combinedText += strings.Join(enrichments, "\n")
 
-	logger.Debugf(ctx, "Enhanced passage with image info: content length %d, image texts length %d",
-		len(result.Content), len(strings.Join(imageTexts, "\n")))
+	pipelineInfo(ctx, "Rerank", "passage_enrich", map[string]interface{}{
+		"content_len":    len(result.Content),
+		"enrichment":     strings.Join(enrichments, "\n"),
+		"enrichment_len": len(strings.Join(enrichments, "\n")),
+	})
 
 	return combinedText
 }

@@ -138,24 +138,3 @@ func (p *PluginError) WithError(err error) *PluginError {
 	pp.Err = err
 	return pp
 }
-
-// NewFallbackChan creates a channel with a single fallback response
-func NewFallbackChan(ctx context.Context, fallbackResponse string) <-chan types.StreamResponse {
-	fallabackChan := make(chan types.StreamResponse)
-	go func() {
-		fallabackChan <- NewFallback(ctx, fallbackResponse)
-		close(fallabackChan)
-	}()
-	return fallabackChan
-}
-
-// NewFallback creates a fallback stream response with the given content
-func NewFallback(ctx context.Context, fallbackResponse string) types.StreamResponse {
-	requestID := ctx.Value(types.RequestIDContextKey).(string)
-	return types.StreamResponse{
-		ID:           requestID,
-		ResponseType: types.ResponseTypeAnswer,
-		Content:      fallbackResponse,
-		Done:         true,
-	}
-}

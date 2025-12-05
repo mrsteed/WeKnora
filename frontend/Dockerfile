@@ -9,6 +9,7 @@ ENV VITE_IS_DOCKER=true
 
 # 复制依赖文件
 COPY package*.json ./
+COPY packages/xlsx-0.20.2.tgz ./packages/xlsx-0.20.2.tgz
 
 # 安装依赖
 RUN corepack enable

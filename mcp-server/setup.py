@@ -4,7 +4,7 @@ WeKnora MCP Server 安装脚本
 """
 
 from setuptools import setup
-import os
+
 
 # 读取 README 文件
 def read_readme():
@@ -14,13 +14,17 @@ def read_readme():
     except FileNotFoundError:
         return "WeKnora MCP Server - Model Context Protocol server for WeKnora API"
 
+
 # 读取依赖
 def read_requirements():
     try:
         with open("requirements.txt", "r", encoding="utf-8") as f:
-            return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+            return [
+                line.strip() for line in f if line.strip() and not line.startswith("#")
+            ]
     except FileNotFoundError:
         return ["mcp>=1.0.0", "requests>=2.31.0"]
+
 
 setup(
     name="weknora-mcp-server",

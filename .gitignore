@@ -23,6 +23,8 @@ node_modules/
 # 临时文件
 tmp/
 temp/
+logs/
+*.pid
 
 WeKnora
 /models/
@@ -36,4 +38,6 @@ data/files/
 ### macOS
 # General
 .DS_Store
-PROGRESS_RU.md
+/scripts/scale_dev_jobs.sh
+server
+frontend/.vite
