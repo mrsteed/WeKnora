@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2025-12-08
+
+### 🚀 New Features
+- **NEW**: Qdrant Vector Database Support
+  - Full integration with Qdrant as retriever engine
+  - Support for both vector similarity search and full-text keyword search
+  - Dynamic collection creation based on embedding dimensions (e.g., `weknora_embeddings_768`)
+  - Multilingual tokenizer support for Chinese/Japanese/Korean text search
+  - Professional Chinese word segmentation using jieba for keyword queries
+
+### ⚡ Infrastructure Improvements
+- **IMPROVED**: Docker Compose Profile Management
+  - Added profiles for optional services: `minio`, `qdrant`, `neo4j`, `jaeger`, `full`
+  - Enhanced `dev.sh` script with `--minio`, `--qdrant`, `--neo4j`, `--jaeger`, `--full` flags
+  - Pinned Qdrant Docker image version to `v1.16.2` for stability
+- **IMPROVED**: Database Migration System
+  - Added automatic dirty state recovery for failed migrations
+  - Added Neo4j connection retry mechanism with exponential backoff
+  - Improved migration error handling and logging
+- **IMPROVED**: Retriever Engine Configuration
+  - Retriever engines now auto-configured from `RETRIEVE_DRIVER` environment variable
+  - No longer required to write retriever config during user registration
+  - Added `GetEffectiveEngines()` method for dynamic engine resolution
+  - Centralized engine mapping in `types/tenant.go`
+
+### 🐛 Bug Fixes
+- **FIXED**: Qdrant keyword search returning empty results for Chinese queries
+- **FIXED**: Image URL validation logic simplified for better compatibility
+
+### 📚 Documentation
+- Added Qdrant configuration examples in docker-compose files
+
 ## [0.2.0] - 2025-12-05
 
 ### 🚀 Major Features
@@ -253,6 +285,7 @@ All notable changes to this project will be documented in this file.
 - Docker Compose for quick startup and service orchestration.
 - MCP server support for integrating with MCP-compatible clients.
 
+[0.2.1]: https://github.com/Tencent/WeKnora/tree/v0.2.1
 [0.2.0]: https://github.com/Tencent/WeKnora/tree/v0.2.0
 [0.1.4]: https://github.com/Tencent/WeKnora/tree/v0.1.4
 [0.1.3]: https://github.com/Tencent/WeKnora/tree/v0.1.3
