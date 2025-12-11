@@ -30,6 +30,7 @@ type Knowledge struct {
 	Description      string            `json:"description"`
 	Source           string            `json:"source"`
 	ParseStatus      string            `json:"parse_status"`
+	SummaryStatus    string            `json:"summary_status"`
 	EnableStatus     string            `json:"enable_status"`
 	EmbeddingModelID string            `json:"embedding_model_id"`
 	FileName         string            `json:"file_name"`
