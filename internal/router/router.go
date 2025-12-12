@@ -166,7 +166,8 @@ func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler) {
 		faq.POST("/entries", handler.UpsertEntries)
 		faq.POST("/entry", handler.CreateEntry)
 		faq.PUT("/entries/:entry_id", handler.UpdateEntry)
-		faq.PUT("/entries/status", handler.UpdateEntryStatusBatch)
+		// Unified batch update API - supports is_enabled, is_recommended, tag_id
+		faq.PUT("/entries/fields", handler.UpdateEntryFieldsBatch)
 		faq.PUT("/entries/tags", handler.UpdateEntryTagBatch)
 		faq.DELETE("/entries", handler.DeleteEntries)
 		faq.POST("/search", handler.SearchFAQ)

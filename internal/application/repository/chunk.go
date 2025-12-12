@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/common"
@@ -46,7 +47,7 @@ func (r *chunkRepository) ListChunksByID(
 	ctx context.Context, tenantID uint64, ids []string,
 ) ([]*types.Chunk, error) {
 	var chunks []*types.Chunk
-	if err := r.db.Debug().WithContext(ctx).
+	if err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND id IN ?", tenantID, ids).
 		Find(&chunks).Error; err != nil {
 		return nil, err
@@ -103,10 +104,7 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	}
 
 	// Then query the paginated data
-	dataQuery := baseFilter(
-		r.db.WithContext(ctx).
-			Select("id, content, knowledge_id, knowledge_base_id, start_at, end_at, chunk_index, is_enabled, chunk_type, parent_chunk_id, image_info, metadata, tag_id, status"),
-	)
+	dataQuery := baseFilter(r.db.WithContext(ctx))
 
 	if err := dataQuery.
 		Order("chunk_index ASC").
@@ -133,20 +131,111 @@ func (r *chunkRepository) ListChunkByParentID(
 	return chunks, nil
 }
 
-// UpdateChunk updates a chunk
+// UpdateChunk updates a chunk using GORM Save, which updates ALL fields.
+// Note: This will update all fields including metadata and content_hash.
+// Make sure the chunk object is complete (e.g., fetched from DB) before calling this method.
 func (r *chunkRepository) UpdateChunk(ctx context.Context, chunk *types.Chunk) error {
 	return r.db.WithContext(ctx).Save(chunk).Error
 }
 
-// UpdateChunks updates chunks in batch
+// UpdateChunks updates chunks in batch using raw SQL for efficiency.
+// Uses raw SQL to bypass GORM's default value handling for boolean fields.
+//
+// IMPORTANT: This method only updates the following fields:
+//   - content
+//   - is_enabled
+//   - tag_id
+//   - flags
+//   - status
+//   - updated_at
+//
+// Fields NOT updated by this method (will retain their original values):
+//   - metadata
+//   - content_hash
+//   - embedding-related fields
+//   - other fields not listed above
+//
+// If you need to update metadata or content_hash, use UpdateChunk (single) instead.
 func (r *chunkRepository) UpdateChunks(ctx context.Context, chunks []*types.Chunk) error {
 	if len(chunks) == 0 {
 		return nil
 	}
+
+	// Build batch update SQL with CASE expressions
+	var ids []string
+	contentCases := make([]string, 0, len(chunks))
+	isEnabledCases := make([]string, 0, len(chunks))
+	tagIDCases := make([]string, 0, len(chunks))
+	flagsCases := make([]string, 0, len(chunks))
+	statusCases := make([]string, 0, len(chunks))
+
+	var contentArgs []interface{}
+	var isEnabledArgs []interface{}
+	var tagIDArgs []interface{}
+	var flagsArgs []interface{}
+	var statusArgs []interface{}
+
 	for _, chunk := range chunks {
-		chunk.Content = common.CleanInvalidUTF8(chunk.Content)
+		ids = append(ids, chunk.ID)
+		content := common.CleanInvalidUTF8(chunk.Content)
+
+		contentCases = append(contentCases, "WHEN id = ? THEN ?")
+		contentArgs = append(contentArgs, chunk.ID, content)
+
+		// Convert bool to string for PostgreSQL compatibility
+		isEnabledStr := "false"
+		if chunk.IsEnabled {
+			isEnabledStr = "true"
+		}
+		isEnabledCases = append(isEnabledCases, "WHEN id = ? THEN ?")
+		isEnabledArgs = append(isEnabledArgs, chunk.ID, isEnabledStr)
+
+		tagIDCases = append(tagIDCases, "WHEN id = ? THEN ?")
+		tagIDArgs = append(tagIDArgs, chunk.ID, chunk.TagID)
+
+		flagsCases = append(flagsCases, "WHEN id = ? THEN ?")
+		flagsArgs = append(flagsArgs, chunk.ID, fmt.Sprintf("%d", chunk.Flags))
+
+		statusCases = append(statusCases, "WHEN id = ? THEN ?")
+		statusArgs = append(statusArgs, chunk.ID, fmt.Sprintf("%d", chunk.Status))
 	}
-	return r.db.WithContext(ctx).Save(chunks).Error
+
+	// Build IN clause placeholders
+	inPlaceholders := make([]string, len(ids))
+	for i := range ids {
+		inPlaceholders[i] = "?"
+	}
+
+	// Combine args in correct order: content, is_enabled, tag_id, flags, status, then IN clause
+	var args []interface{}
+	args = append(args, contentArgs...)
+	args = append(args, isEnabledArgs...)
+	args = append(args, tagIDArgs...)
+	args = append(args, flagsArgs...)
+	args = append(args, statusArgs...)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+
+	sql := fmt.Sprintf(`
+		UPDATE chunks SET
+			content = CASE %s END,
+			is_enabled = (CASE %s END)::boolean,
+			tag_id = CASE %s END,
+			flags = (CASE %s END)::integer,
+			status = (CASE %s END)::integer,
+			updated_at = NOW()
+		WHERE id IN (%s)
+	`,
+		strings.Join(contentCases, " "),
+		strings.Join(isEnabledCases, " "),
+		strings.Join(tagIDCases, " "),
+		strings.Join(flagsCases, " "),
+		strings.Join(statusCases, " "),
+		strings.Join(inPlaceholders, ","),
+	)
+
+	return r.db.WithContext(ctx).Exec(sql, args...).Error
 }
 
 // DeleteChunk deletes a chunk by its ID
@@ -173,6 +262,13 @@ func (r *chunkRepository) DeleteChunksByKnowledgeID(ctx context.Context, tenantI
 func (r *chunkRepository) DeleteByKnowledgeList(ctx context.Context, tenantID uint64, knowledgeIDs []string) error {
 	return r.db.WithContext(ctx).Where(
 		"tenant_id = ? AND knowledge_id in ?", tenantID, knowledgeIDs,
+	).Delete(&types.Chunk{}).Error
+}
+
+// DeleteChunksByTagID deletes all chunks with the specified tag ID
+func (r *chunkRepository) DeleteChunksByTagID(ctx context.Context, tenantID uint64, kbID string, tagID string) error {
+	return r.db.WithContext(ctx).Where(
+		"tenant_id = ? AND knowledge_base_id = ? AND tag_id = ?", tenantID, kbID, tagID,
 	).Delete(&types.Chunk{}).Error
 }
 
@@ -291,4 +387,157 @@ func (r *chunkRepository) ListAllFAQChunksWithMetadataByKnowledgeBaseID(
 	}
 
 	return allChunks, nil
+}
+
+// UpdateChunkFlagsBatch updates flags for multiple chunks in batch using SQL CASE expressions.
+// This is more efficient than updating chunks one by one.
+// setFlags: map of chunk ID to flags to set (OR operation)
+// clearFlags: map of chunk ID to flags to clear (AND NOT operation)
+func (r *chunkRepository) UpdateChunkFlagsBatch(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+	setFlags map[string]types.ChunkFlags,
+	clearFlags map[string]types.ChunkFlags,
+) error {
+	if len(setFlags) == 0 && len(clearFlags) == 0 {
+		return nil
+	}
+
+	// Collect all IDs
+	allIDs := make([]string, 0, len(setFlags)+len(clearFlags))
+	for id := range setFlags {
+		allIDs = append(allIDs, id)
+	}
+	for id := range clearFlags {
+		if _, exists := setFlags[id]; !exists {
+			allIDs = append(allIDs, id)
+		}
+	}
+
+	if len(allIDs) == 0 {
+		return nil
+	}
+
+	// Build CASE expression for flags update
+	// flags = (flags | setFlag) & ~clearFlag
+	var setCases, clearCases []string
+	var args []interface{}
+
+	// Build SET cases: flags | value
+	for id, flag := range setFlags {
+		setCases = append(setCases, "WHEN id = ? THEN ?")
+		args = append(args, id, int(flag))
+	}
+
+	// Build CLEAR cases: flags & ~value
+	for id, flag := range clearFlags {
+		clearCases = append(clearCases, "WHEN id = ? THEN ?")
+		args = append(args, id, int(flag))
+	}
+
+	setExpr := "0"
+	clearExpr := "0"
+
+	if len(setCases) > 0 {
+		setExpr = fmt.Sprintf("CASE %s ELSE 0 END", strings.Join(setCases, " "))
+	}
+
+	if len(clearCases) > 0 {
+		clearExpr = fmt.Sprintf("CASE %s ELSE 0 END", strings.Join(clearCases, " "))
+	}
+
+	// Build IN clause placeholders manually for raw SQL
+	inPlaceholders := make([]string, len(allIDs))
+	for i := range allIDs {
+		inPlaceholders[i] = "?"
+	}
+
+	sql := fmt.Sprintf(`
+	UPDATE chunks 
+    SET flags = (flags | (%s)) & ~(%s),
+        updated_at = NOW()
+    WHERE tenant_id = ? 
+      AND knowledge_base_id = ?
+      AND id IN (%s)
+`, setExpr, clearExpr, strings.Join(inPlaceholders, ","))
+
+	args = append(args, tenantID, kbID)
+	for _, id := range allIDs {
+		args = append(args, id)
+	}
+
+	return r.db.WithContext(ctx).Exec(sql, args...).Error
+}
+
+// UpdateChunkFieldsByTagID updates fields for all chunks with the specified tag ID.
+// Returns the list of affected chunk IDs for syncing with retriever engines.
+func (r *chunkRepository) UpdateChunkFieldsByTagID(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+	tagID string,
+	isEnabled *bool,
+	setFlags types.ChunkFlags,
+	clearFlags types.ChunkFlags,
+) ([]string, error) {
+	// First, get the IDs of chunks that will be affected (for is_enabled sync)
+	var affectedIDs []string
+	if isEnabled != nil {
+		var chunks []*types.Chunk
+		query := r.db.WithContext(ctx).
+			Select("id").
+			Where("tenant_id = ? AND knowledge_base_id = ? AND chunk_type = ?",
+				tenantID, kbID, types.ChunkTypeFAQ)
+		if tagID == "" {
+			query = query.Where("(tag_id = '' OR tag_id IS NULL)")
+		} else {
+			query = query.Where("tag_id = ?", tagID)
+		}
+		// Only get chunks that need to change
+		query = query.Where("is_enabled != ?", *isEnabled)
+		if err := query.Find(&chunks).Error; err != nil {
+			return nil, err
+		}
+		for _, c := range chunks {
+			affectedIDs = append(affectedIDs, c.ID)
+		}
+	}
+
+	// Build update query
+	updates := map[string]interface{}{
+		"updated_at": "NOW()",
+	}
+
+	if isEnabled != nil {
+		updates["is_enabled"] = *isEnabled
+	}
+
+	query := r.db.WithContext(ctx).Model(&types.Chunk{}).
+		Where("tenant_id = ? AND knowledge_base_id = ? AND chunk_type = ?",
+			tenantID, kbID, types.ChunkTypeFAQ)
+
+	if tagID == "" {
+		query = query.Where("(tag_id = '' OR tag_id IS NULL)")
+	} else {
+		query = query.Where("tag_id = ?", tagID)
+	}
+
+	// Handle flags update
+	if setFlags != 0 || clearFlags != 0 {
+		flagsExpr := "flags"
+		if setFlags != 0 {
+			flagsExpr = fmt.Sprintf("(%s | %d)", flagsExpr, int(setFlags))
+		}
+		if clearFlags != 0 {
+			flagsExpr = fmt.Sprintf("(%s & ~%d)", flagsExpr, int(clearFlags))
+		}
+		updates["flags"] = r.db.Raw(flagsExpr)
+	}
+
+	if err := query.Updates(updates).Error; err != nil {
+		return nil, err
+	}
+
+	return affectedIDs, nil
 }

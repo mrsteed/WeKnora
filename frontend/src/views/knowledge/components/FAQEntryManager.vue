@@ -468,6 +468,25 @@
                       </template>
                     </div>
                     <div class="faq-card-status" @click.stop>
+                      <!-- 暂时隐藏推荐开关
+                      <t-tooltip
+                        :content="entry.is_recommended ? $t('knowledgeEditor.faq.recommendedEnabled') : $t('knowledgeEditor.faq.recommendedDisabled')"
+                        placement="top"
+                      >
+                        <div class="status-item-compact">
+                          <t-switch
+                            :key="`${entry.id}-recommended-${entry.is_recommended}`"
+                            size="small"
+                            :value="entry.is_recommended"
+                            :loading="!!entryRecommendedLoading[entry.id]"
+                            :disabled="!!entryRecommendedLoading[entry.id]"
+                            @click.stop
+                            @change="(value: boolean) => handleEntryRecommendedChange(entry, value)"
+                          />
+                          <span class="status-label">{{ $t('knowledgeEditor.faq.recommended') }}</span>
+                        </div>
+                      </t-tooltip>
+                      -->
                       <t-tooltip
                         :content="entry.is_enabled ? $t('knowledgeEditor.faq.statusEnabled') : $t('knowledgeEditor.faq.statusDisabled')"
                         placement="top"
@@ -1089,7 +1108,7 @@ import {
   upsertFAQEntries,
   createFAQEntry,
   updateFAQEntry,
-  updateFAQEntryStatusBatch,
+  updateFAQEntryFieldsBatch,
   deleteFAQEntries,
   searchFAQEntries,
   listKnowledgeTags,
@@ -1113,6 +1132,7 @@ interface FAQEntry {
   knowledge_base_id: string
   tag_id?: string
   is_enabled: boolean
+  is_recommended: boolean
   standard_question: string
   similar_questions: string[]
   negative_questions: string[]
@@ -1133,7 +1153,9 @@ interface FAQEntryPayload {
   negative_questions: string[]
   answers: string[]
   tag_id?: string
+  tag_name?: string
   is_enabled?: boolean
+  is_recommended?: boolean
 }
 
 const props = defineProps<{
@@ -1148,6 +1170,7 @@ const loading = ref(false)
 const loadingMore = ref(false)
 const entries = ref<FAQEntry[]>([])
 const entryStatusLoading = reactive<Record<string, boolean>>({})
+const entryRecommendedLoading = reactive<Record<string, boolean>>({})
 const selectedRowKeys = ref<string[]>([])
 const scrollContainer = ref<HTMLElement | null>(null)
 const cardListRef = ref<HTMLElement | null>(null)
@@ -1335,6 +1358,18 @@ const toolbarActionOptions = computed(() => {
         value: 'batchDisable',
         icon: 'close-circle',
       },
+      /* 暂时隐藏推荐批量操作
+      {
+        content: `${t('knowledgeEditor.faq.batchEnableRecommended')} (${selectedRowKeys.value.length})`,
+        value: 'batchEnableRecommended',
+        icon: 'thumb-up',
+      },
+      {
+        content: `${t('knowledgeEditor.faq.batchDisableRecommended')} (${selectedRowKeys.value.length})`,
+        value: 'batchDisableRecommended',
+        icon: 'thumb-down',
+      },
+      */
       {
         content: `${t('knowledgeEditor.faqImport.deleteSelected')} (${selectedRowKeys.value.length})`,
         value: 'delete',
@@ -1362,6 +1397,12 @@ const handleToolbarAction = (data: { value: string }) => {
       break
     case 'batchDisable':
       handleBatchStatusChange(false)
+      break
+    case 'batchEnableRecommended':
+      handleBatchRecommendedChange(true)
+      break
+    case 'batchDisableRecommended':
+      handleBatchRecommendedChange(false)
       break
     case 'delete':
       handleBatchDelete()
@@ -1574,12 +1615,13 @@ const confirmDeleteTag = (tag: any) => {
     cancelBtn: t('common.cancel'),
     onConfirm: async () => {
       try {
-        await deleteKnowledgeBaseTag(props.kbId, tag.id)
+        await deleteKnowledgeBaseTag(props.kbId, tag.id, { force: true })
         MessagePlugin.success(t('knowledgeBase.tagDeleteSuccess'))
         if (selectedTagId.value === tag.id) {
           handleTagFilterChange('')
         }
         await loadTags()
+        await loadEntries()
         confirmDialog.hide()
       } catch (error: any) {
         MessagePlugin.error(error?.message || t('common.operationFailed'))
@@ -1682,7 +1724,7 @@ const handleEntryStatusChange = async (entry: FAQEntry, value: boolean) => {
   actualEntry.is_enabled = value
   entryStatusLoading[entry.id] = true
   try {
-    await updateFAQEntryStatusBatch(props.kbId, { updates: { [entry.id]: value } })
+    await updateFAQEntryFieldsBatch(props.kbId, { by_id: { [entry.id]: { is_enabled: value } } })
     MessagePlugin.success(t(value ? 'knowledgeEditor.faq.statusEnableSuccess' : 'knowledgeEditor.faq.statusDisableSuccess'))
   } catch (error: any) {
     // 失败时回滚
@@ -1690,6 +1732,32 @@ const handleEntryStatusChange = async (entry: FAQEntry, value: boolean) => {
     MessagePlugin.error(error?.message || t('knowledgeEditor.faq.statusUpdateFailed'))
   } finally {
     entryStatusLoading[entry.id] = false
+  }
+}
+
+const handleEntryRecommendedChange = async (entry: FAQEntry, value: boolean) => {
+  if (entryRecommendedLoading[entry.id]) {
+    return
+  }
+  const entryIndex = entries.value.findIndex(e => e.id === entry.id)
+  if (entryIndex === -1) {
+    return
+  }
+  const actualEntry = entries.value[entryIndex]
+  const previous = actualEntry.is_recommended
+  if (previous === value) {
+    return
+  }
+  actualEntry.is_recommended = value
+  entryRecommendedLoading[entry.id] = true
+  try {
+    await updateFAQEntryFieldsBatch(props.kbId, { by_id: { [entry.id]: { is_recommended: value } } })
+    MessagePlugin.success(t(value ? 'knowledgeEditor.faq.recommendedEnableSuccess' : 'knowledgeEditor.faq.recommendedDisableSuccess'))
+  } catch (error: any) {
+    actualEntry.is_recommended = previous
+    MessagePlugin.error(error?.message || t('knowledgeEditor.faq.recommendedUpdateFailed'))
+  } finally {
+    entryRecommendedLoading[entry.id] = false
   }
 }
 
@@ -1967,12 +2035,28 @@ const handleBatchTag = async () => {
 const handleBatchStatusChange = async (isEnabled: boolean) => {
   if (!selectedRowKeys.value.length || !props.kbId) return
   try {
-    const updates: Record<string, boolean> = {}
+    const by_id: Record<string, { is_enabled: boolean }> = {}
     selectedRowKeys.value.forEach(id => {
-      updates[id] = isEnabled
+      by_id[id] = { is_enabled: isEnabled }
     })
-    await updateFAQEntryStatusBatch(props.kbId, { updates })
+    await updateFAQEntryFieldsBatch(props.kbId, { by_id })
     MessagePlugin.success(t(isEnabled ? 'knowledgeEditor.faq.statusEnableSuccess' : 'knowledgeEditor.faq.statusDisableSuccess'))
+    selectedRowKeys.value = []
+    await loadEntries()
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('common.operationFailed'))
+  }
+}
+
+const handleBatchRecommendedChange = async (isRecommended: boolean) => {
+  if (!selectedRowKeys.value.length || !props.kbId) return
+  try {
+    const by_id: Record<string, { is_recommended: boolean }> = {}
+    selectedRowKeys.value.forEach(id => {
+      by_id[id] = { is_recommended: isRecommended }
+    })
+    await updateFAQEntryFieldsBatch(props.kbId, { by_id })
+    MessagePlugin.success(t(isRecommended ? 'knowledgeEditor.faq.recommendedEnableSuccess' : 'knowledgeEditor.faq.recommendedDisableSuccess'))
     selectedRowKeys.value = []
     await loadEntries()
   } catch (error: any) {
@@ -2092,7 +2176,8 @@ const parseCSVFile = async (file: File): Promise<FAQEntryPayload[]> => {
                 answers: splitByDelimiter(record['机器人回答'] || record['answers']),
                 similar_questions: splitByDelimiter(record['相似问题'] || record['similar_questions']),
                 negative_questions: splitByDelimiter(record['反例问题'] || record['negative_questions']),
-                tag_id: record['分类'] || record['tag_id'] || '',
+                tag_id: record['tag_id'] || '',
+                tag_name: record['分类'] || record['tag_name'] || '',
                 is_enabled: isDisabled !== undefined ? !isDisabled : undefined, // 是否停用：FALSE表示启用，TRUE表示停用，所以取反
               }),
             )
@@ -2138,7 +2223,8 @@ const parseExcelFile = async (file: File): Promise<FAQEntryPayload[]> => {
       answers: splitByDelimiter(normalizedRow['机器人回答'] || normalizedRow['answers']),
       similar_questions: splitByDelimiter(normalizedRow['相似问题'] || normalizedRow['similar_questions']),
       negative_questions: splitByDelimiter(normalizedRow['反例问题'] || normalizedRow['negative_questions']),
-      tag_id: normalizedRow['分类'] || normalizedRow['tag_id'] || '',
+      tag_id: normalizedRow['tag_id'] || '',
+      tag_name: normalizedRow['分类'] || normalizedRow['tag_name'] || '',
       is_enabled: isDisabled !== undefined ? !isDisabled : undefined, // 是否停用：FALSE表示启用，TRUE表示停用，所以取反
     })
   })
@@ -2181,6 +2267,7 @@ const normalizePayload = (payload: Partial<FAQEntryPayload>): FAQEntryPayload =>
   similar_questions: payload.similar_questions?.filter(Boolean) || [],
   negative_questions: payload.negative_questions?.filter(Boolean) || [],
   tag_id: payload.tag_id || '',
+  tag_name: payload.tag_name || '',
   is_enabled: payload.is_enabled !== undefined ? payload.is_enabled : undefined,
 })
 
@@ -2232,6 +2319,7 @@ const startPolling = (taskId: string) => {
         if (processed > lastProcessed) {
           lastProcessed = processed
           await loadEntries()
+          await loadTags()
         }
 
         // 任务完成或失败，停止轮询（但不自动关闭进度条，让用户手动关闭）
@@ -2239,7 +2327,11 @@ const startPolling = (taskId: string) => {
           stopPolling()
           if (status === 'success') {
             MessagePlugin.success(t('knowledgeEditor.faqImport.importSuccess'))
+            // 清除筛选条件，确保用户能看到所有新导入的数据
+            selectedTagId.value = ''
+            entrySearchKeyword.value = ''
             await loadEntries()
+            await loadTags()
             // 任务完成后，3秒后自动关闭进度条
             setTimeout(() => {
               if (importState.taskStatus?.status === 'success') {
@@ -2465,12 +2557,14 @@ const exampleData: FAQEntryPayload[] = [
     answers: ['WeKnora 是一个智能知识库管理系统', '它支持多种知识库类型和导入方式'],
     similar_questions: ['WeKnora 是什么？', '介绍一下 WeKnora'],
     negative_questions: ['这不是 WeKnora', '与 WeKnora 无关'],
+    tag_name: '产品介绍',
   },
   {
     standard_question: '如何创建知识库？',
     answers: ['点击"新建知识库"按钮', '选择知识库类型并填写相关信息', '完成创建后即可开始使用'],
     similar_questions: ['怎么创建知识库？', '如何新建知识库？'],
     negative_questions: [],
+    tag_name: '使用指南',
   },
 ]
 
@@ -2509,7 +2603,7 @@ const downloadCSVExample = () => {
   const headers = ['分类(必填)', '问题(必填)', '相似问题(选填-多个用##分隔)', '反例问题(选填-多个用##分隔)', '机器人回答(必填-多个用##分隔)', '是否全部回复(选填-默认FALSE)', '是否停用(选填-默认FALSE)', '是否禁止被推荐(选填-默认False 可被推荐)']
   const rows = exampleData.map((item) => {
     return [
-      '', // 分类
+      item.tag_name || '', // 分类
       item.standard_question,
       item.similar_questions.join('##'),
       item.negative_questions.join('##'),
@@ -2544,7 +2638,7 @@ const downloadCSVExample = () => {
 const downloadExcelExample = () => {
   const worksheet = XLSX.utils.json_to_sheet(
     exampleData.map((item) => ({
-      '分类(必填)': '',
+      '分类(必填)': item.tag_name || '',
       '问题(必填)': item.standard_question,
       '相似问题(选填-多个用##分隔)': item.similar_questions.join('##'),
       '反例问题(选填-多个用##分隔)': item.negative_questions.join('##'),

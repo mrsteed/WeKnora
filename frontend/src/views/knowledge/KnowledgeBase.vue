@@ -359,7 +359,7 @@ const confirmDeleteTag = (tag: any) => {
     t('knowledgeBase.tagDeleteDesc', { name: tag.name }) as string,
   );
   if (!confirm) return;
-  deleteKnowledgeBaseTag(kbId.value, tag.id)
+  deleteKnowledgeBaseTag(kbId.value, tag.id, { force: true })
     .then(() => {
       MessagePlugin.success(t('knowledgeBase.tagDeleteSuccess'));
       if (selectedTagId.value === tag.id) {

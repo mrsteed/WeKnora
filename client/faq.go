@@ -36,6 +36,7 @@ type FAQEntryPayload struct {
 	NegativeQuestions []string `json:"negative_questions,omitempty"`
 	Answers           []string `json:"answers"`
 	TagID             string   `json:"tag_id,omitempty"`
+	TagName           string   `json:"tag_name,omitempty"`
 	IsEnabled         *bool    `json:"is_enabled,omitempty"`
 }
 
@@ -46,9 +47,22 @@ type FAQBatchUpsertPayload struct {
 	KnowledgeID string            `json:"knowledge_id,omitempty"`
 }
 
-// FAQEntryStatusBatchRequest toggles enable states in bulk.
-type FAQEntryStatusBatchRequest struct {
-	Updates map[string]bool `json:"updates"`
+// FAQEntryFieldsUpdate represents the fields that can be updated for a single FAQ entry.
+type FAQEntryFieldsUpdate struct {
+	IsEnabled     *bool   `json:"is_enabled,omitempty"`
+	IsRecommended *bool   `json:"is_recommended,omitempty"`
+	TagID         *string `json:"tag_id,omitempty"`
+}
+
+// FAQEntryFieldsBatchRequest updates multiple fields for FAQ entries in bulk.
+// Supports two modes:
+// 1. By entry ID: use ByID field
+// 2. By Tag: use ByTag field to apply the same update to all entries under a tag
+type FAQEntryFieldsBatchRequest struct {
+	// ByID updates by entry ID, key is entry ID
+	ByID map[string]FAQEntryFieldsUpdate `json:"by_id,omitempty"`
+	// ByTag updates all entries under a tag, key is tag ID (empty string for uncategorized)
+	ByTag map[string]FAQEntryFieldsUpdate `json:"by_tag,omitempty"`
 }
 
 // FAQEntryTagBatchRequest updates tags in bulk.
@@ -204,12 +218,13 @@ func (c *Client) UpdateFAQEntry(ctx context.Context,
 	return parseResponse(resp, &response)
 }
 
-// UpdateFAQEntryStatusBatch enables/disables FAQ entries in bulk.
-func (c *Client) UpdateFAQEntryStatusBatch(ctx context.Context,
-	knowledgeBaseID string, updates map[string]bool,
+// UpdateFAQEntryFieldsBatch updates multiple fields for FAQ entries in bulk.
+// Supports updating is_enabled, is_recommended, tag_id in a single call.
+func (c *Client) UpdateFAQEntryFieldsBatch(ctx context.Context,
+	knowledgeBaseID string, byID map[string]FAQEntryFieldsUpdate,
 ) error {
-	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/faq/entries/status", knowledgeBaseID)
-	resp, err := c.doRequest(ctx, http.MethodPut, path, &FAQEntryStatusBatchRequest{Updates: updates}, nil)
+	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/faq/entries/fields", knowledgeBaseID)
+	resp, err := c.doRequest(ctx, http.MethodPut, path, &FAQEntryFieldsBatchRequest{ByID: byID}, nil)
 	if err != nil {
 		return err
 	}

@@ -5,6 +5,13 @@
 </p>
 
 <p align="center">
+  <picture>
+    <a href="https://trendshift.io/repositories/15289" target="_blank">
+      <img src="https://trendshift.io/api/badge/repositories/15289" alt="Tencent%2FWeKnora | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
+    </a>
+  </picture>
+</p>
+<p align="center">
     <a href="https://weknora.weixin.qq.com" target="_blank">
         <img alt="官方网站" src="https://img.shields.io/badge/官方网站-WeKnora-4e6b99">
     </a>

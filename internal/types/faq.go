@@ -170,6 +170,7 @@ type FAQEntry struct {
 	KnowledgeBaseID   string       `json:"knowledge_base_id"`
 	TagID             string       `json:"tag_id"`
 	IsEnabled         bool         `json:"is_enabled"`
+	IsRecommended     bool         `json:"is_recommended"`
 	StandardQuestion  string       `json:"standard_question"`
 	SimilarQuestions  []string     `json:"similar_questions"`
 	NegativeQuestions []string     `json:"negative_questions"`
@@ -189,7 +190,9 @@ type FAQEntryPayload struct {
 	NegativeQuestions []string `json:"negative_questions"`
 	Answers           []string `json:"answers"              binding:"required"`
 	TagID             string   `json:"tag_id"`
+	TagName           string   `json:"tag_name"`
 	IsEnabled         *bool    `json:"is_enabled,omitempty"`
+	IsRecommended     *bool    `json:"is_recommended,omitempty"`
 }
 
 const (
@@ -209,6 +212,25 @@ type FAQSearchRequest struct {
 	QueryText       string  `json:"query_text"       binding:"required"`
 	VectorThreshold float64 `json:"vector_threshold"`
 	MatchCount      int     `json:"match_count"`
+}
+
+// FAQEntryFieldsUpdate 单个FAQ条目的字段更新
+type FAQEntryFieldsUpdate struct {
+	IsEnabled     *bool   `json:"is_enabled,omitempty"`
+	IsRecommended *bool   `json:"is_recommended,omitempty"`
+	TagID         *string `json:"tag_id,omitempty"`
+	// 后续可扩展更多字段
+}
+
+// FAQEntryFieldsBatchUpdate 批量更新FAQ条目字段的请求
+// 支持两种模式：
+// 1. 按条目ID更新：使用 ByID 字段
+// 2. 按Tag更新：使用 ByTag 字段，将该Tag下所有条目应用相同的更新
+type FAQEntryFieldsBatchUpdate struct {
+	// ByID 按条目ID更新，key为条目ID
+	ByID map[string]FAQEntryFieldsUpdate `json:"by_id,omitempty"`
+	// ByTag 按Tag批量更新，key为TagID（空字符串表示未分类）
+	ByTag map[string]FAQEntryFieldsUpdate `json:"by_tag,omitempty"`
 }
 
 // FAQImportTaskStatus 导入任务状态
