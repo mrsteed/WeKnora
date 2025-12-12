@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -10,22 +11,26 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // knowledgeTagService implements KnowledgeTagService.
 type knowledgeTagService struct {
 	kbService interfaces.KnowledgeBaseService
 	repo      interfaces.KnowledgeTagRepository
+	chunkRepo interfaces.ChunkRepository
 }
 
 // NewKnowledgeTagService creates a new tag service.
 func NewKnowledgeTagService(
 	kbService interfaces.KnowledgeBaseService,
 	repo interfaces.KnowledgeTagRepository,
+	chunkRepo interfaces.ChunkRepository,
 ) (interfaces.KnowledgeTagService, error) {
 	return &knowledgeTagService{
 		kbService: kbService,
 		repo:      repo,
+		chunkRepo: chunkRepo,
 	}, nil
 }
 
@@ -147,7 +152,7 @@ func (s *knowledgeTagService) UpdateTag(
 	return tag, nil
 }
 
-// DeleteTag deletes a tag. When force=false, deletion is only allowed if no references exist.
+// DeleteTag deletes a tag. When force=true, also deletes all chunks under this tag.
 func (s *knowledgeTagService) DeleteTag(ctx context.Context, id string, force bool) error {
 	if id == "" {
 		return werrors.NewBadRequestError("标签ID不能为空")
@@ -164,5 +169,42 @@ func (s *knowledgeTagService) DeleteTag(ctx context.Context, id string, force bo
 	if !force && (kCount > 0 || cCount > 0) {
 		return werrors.NewBadRequestError("标签仍有知识或FAQ条目引用，无法删除")
 	}
+	// When force=true, delete all chunks under this tag first
+	if force && cCount > 0 {
+		if err := s.chunkRepo.DeleteChunksByTagID(ctx, tenantID, tag.KnowledgeBaseID, tag.ID); err != nil {
+			logger.Errorf(ctx, "Failed to delete chunks by tag ID %s: %v", tag.ID, err)
+			return werrors.NewInternalServerError("删除标签下的数据失败")
+		}
+		logger.Infof(ctx, "Deleted %d chunks under tag %s", cCount, tag.ID)
+	}
 	return s.repo.Delete(ctx, tenantID, id)
+}
+
+// FindOrCreateTagByName finds a tag by name or creates it if not exists.
+func (s *knowledgeTagService) FindOrCreateTagByName(ctx context.Context, kbID string, name string) (*types.KnowledgeTag, error) {
+	name = strings.TrimSpace(name)
+	if kbID == "" || name == "" {
+		return nil, werrors.NewBadRequestError("知识库ID和标签名称不能为空")
+	}
+
+	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		return nil, err
+	}
+
+	tenantID := kb.TenantID
+
+	// 先尝试查找现有标签
+	tag, err := s.repo.GetByName(ctx, tenantID, kbID, name)
+	if err == nil {
+		return tag, nil
+	}
+
+	// 如果不是 not found 错误，直接返回
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	// 创建新标签
+	return s.CreateTag(ctx, kbID, name, "", 0)
 }

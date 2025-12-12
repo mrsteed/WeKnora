@@ -40,6 +40,17 @@ func (r *knowledgeTagRepository) GetByID(ctx context.Context, tenantID uint64, i
 	return &tag, nil
 }
 
+// GetByName gets a knowledge tag by name
+func (r *knowledgeTagRepository) GetByName(ctx context.Context, tenantID uint64, kbID string, name string) (*types.KnowledgeTag, error) {
+	var tag types.KnowledgeTag
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND knowledge_base_id = ? AND name = ?", tenantID, kbID, name).
+		First(&tag).Error; err != nil {
+		return nil, err
+	}
+	return &tag, nil
+}
+
 // ListByKB lists knowledge tags by knowledge base ID with pagination and optional keyword filtering.
 func (r *knowledgeTagRepository) ListByKB(
 	ctx context.Context,

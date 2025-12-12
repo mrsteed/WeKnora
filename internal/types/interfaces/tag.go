@@ -16,6 +16,8 @@ type KnowledgeTagService interface {
 	UpdateTag(ctx context.Context, id string, name *string, color *string, sortOrder *int) (*types.KnowledgeTag, error)
 	// DeleteTag deletes a tag.
 	DeleteTag(ctx context.Context, id string, force bool) error
+	// FindOrCreateTagByName finds a tag by name or creates it if not exists.
+	FindOrCreateTagByName(ctx context.Context, kbID string, name string) (*types.KnowledgeTag, error)
 }
 
 // KnowledgeTagRepository defines persistence operations for tags.
@@ -23,6 +25,7 @@ type KnowledgeTagRepository interface {
 	Create(ctx context.Context, tag *types.KnowledgeTag) error
 	Update(ctx context.Context, tag *types.KnowledgeTag) error
 	GetByID(ctx context.Context, tenantID uint64, id string) (*types.KnowledgeTag, error)
+	GetByName(ctx context.Context, tenantID uint64, kbID string, name string) (*types.KnowledgeTag, error)
 	ListByKB(
 		ctx context.Context,
 		tenantID uint64,

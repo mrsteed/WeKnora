@@ -173,8 +173,23 @@ export function updateFAQEntry(kbId: string, entryId: string, data: any) {
   return put(`/api/v1/knowledge-bases/${kbId}/faq/entries/${entryId}`, data);
 }
 
-export function updateFAQEntryStatusBatch(kbId: string, data: { updates: Record<string, boolean> }) {
-  return put(`/api/v1/knowledge-bases/${kbId}/faq/entries/status`, data);
+// Unified batch update API - supports is_enabled, is_recommended, tag_id
+// Supports two modes:
+// 1. By entry ID: use by_id field
+// 2. By Tag: use by_tag field to apply the same update to all entries under a tag
+export interface FAQEntryFieldsUpdate {
+  is_enabled?: boolean
+  is_recommended?: boolean
+  tag_id?: string | null
+}
+
+export interface FAQEntryFieldsBatchRequest {
+  by_id?: Record<string, FAQEntryFieldsUpdate>
+  by_tag?: Record<string, FAQEntryFieldsUpdate>
+}
+
+export function updateFAQEntryFieldsBatch(kbId: string, data: FAQEntryFieldsBatchRequest) {
+  return put(`/api/v1/knowledge-bases/${kbId}/faq/entries/fields`, data);
 }
 
 export function deleteFAQEntries(kbId: string, ids: string[]) {

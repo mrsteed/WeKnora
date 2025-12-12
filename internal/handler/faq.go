@@ -138,17 +138,19 @@ func (h *FAQHandler) UpdateEntryTagBatch(c *gin.Context) {
 	})
 }
 
-// UpdateEntryStatusBatch updates the enable status of FAQ entries in batch.
-func (h *FAQHandler) UpdateEntryStatusBatch(c *gin.Context) {
+// UpdateEntryFieldsBatch updates multiple fields for FAQ entries in batch.
+// This is the unified API for batch updating FAQ entry fields.
+// Supports updating is_enabled, is_recommended, tag_id in a single call.
+func (h *FAQHandler) UpdateEntryFieldsBatch(c *gin.Context) {
 	ctx := c.Request.Context()
-	var req faqEntryStatusBatchRequest
+	var req types.FAQEntryFieldsBatchUpdate
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Error(ctx, "Failed to bind FAQ entry status batch payload", err)
+		logger.Error(ctx, "Failed to bind FAQ entry fields batch payload", err)
 		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
 		return
 	}
-	if err := h.knowledgeService.UpdateFAQEntryStatusBatch(ctx,
-		secutils.SanitizeForLog(c.Param("id")), req.Updates); err != nil {
+	if err := h.knowledgeService.UpdateFAQEntryFieldsBatch(ctx,
+		secutils.SanitizeForLog(c.Param("id")), &req); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)
 		return
@@ -161,11 +163,6 @@ func (h *FAQHandler) UpdateEntryStatusBatch(c *gin.Context) {
 // faqDeleteRequest is a request for deleting FAQ entries in batch
 type faqDeleteRequest struct {
 	IDs []string `json:"ids" binding:"required,min=1,dive,required"`
-}
-
-// faqEntryStatusBatchRequest is a request for updating the enable status of FAQ entries in batch
-type faqEntryStatusBatchRequest struct {
-	Updates map[string]bool `json:"updates" binding:"required,min=1"`
 }
 
 // faqEntryTagBatchRequest is a request for updating tags for FAQ entries in batch

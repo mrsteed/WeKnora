@@ -88,8 +88,9 @@ type KnowledgeService interface {
 	CreateFAQEntry(ctx context.Context, kbID string, payload *types.FAQEntryPayload) (*types.FAQEntry, error)
 	// UpdateFAQEntry updates a single FAQ entry.
 	UpdateFAQEntry(ctx context.Context, kbID string, entryID string, payload *types.FAQEntryPayload) error
-	// UpdateFAQEntryStatusBatch updates enable status for FAQ entries in batch.
-	UpdateFAQEntryStatusBatch(ctx context.Context, kbID string, updates map[string]bool) error
+	// UpdateFAQEntryFieldsBatch updates multiple fields for FAQ entries in batch.
+	// Supports updating is_enabled, is_recommended, tag_id, and other fields in a single call.
+	UpdateFAQEntryFieldsBatch(ctx context.Context, kbID string, req *types.FAQEntryFieldsBatchUpdate) error
 	// DeleteFAQEntries deletes FAQ entries in batch.
 	DeleteFAQEntries(ctx context.Context, kbID string, entryIDs []string) error
 	// SearchFAQEntries searches FAQ entries using hybrid search.

@@ -62,6 +62,7 @@ type knowledgeService struct {
 	chunkService    interfaces.ChunkService
 	chunkRepo       interfaces.ChunkRepository
 	tagRepo         interfaces.KnowledgeTagRepository
+	tagService      interfaces.KnowledgeTagService
 	fileSvc         interfaces.FileService
 	modelService    interfaces.ModelService
 	task            *asynq.Client
@@ -84,6 +85,7 @@ func NewKnowledgeService(
 	chunkService interfaces.ChunkService,
 	chunkRepo interfaces.ChunkRepository,
 	tagRepo interfaces.KnowledgeTagRepository,
+	tagService interfaces.KnowledgeTagService,
 	fileSvc interfaces.FileService,
 	modelService interfaces.ModelService,
 	task *asynq.Client,
@@ -99,6 +101,7 @@ func NewKnowledgeService(
 		chunkService:    chunkService,
 		chunkRepo:       chunkRepo,
 		tagRepo:         tagRepo,
+		tagService:      tagService,
 		fileSvc:         fileSvc,
 		modelService:    modelService,
 		task:            task,
@@ -2993,6 +2996,17 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 				})
 				return fmt.Errorf("failed to sanitize entry at index %d: %w", i+idx, err)
 			}
+
+			// 解析 TagID
+			tagID, err := s.resolveTagID(ctx, kbID, &entry)
+			if err != nil {
+				logger.ErrorWithFields(ctx, err, map[string]interface{}{
+					"entry":   entry,
+					"task_id": taskID,
+				})
+				return fmt.Errorf("failed to resolve tag for entry at index %d: %w", i+idx, err)
+			}
+
 			isEnabled := true
 			if entry.IsEnabled != nil {
 				isEnabled = *entry.IsEnabled
@@ -3007,7 +3021,7 @@ func (s *knowledgeService) executeFAQImport(ctx context.Context, taskID string, 
 				// ChunkIndex:      0,
 				IsEnabled: isEnabled,
 				ChunkType: types.ChunkTypeFAQ,
-				TagID:     entry.TagID,
+				TagID:     tagID,                        // 使用解析后的 TagID
 				Status:    int(types.ChunkStatusStored), // store but not indexed
 			}
 			if err := chunk.SetFAQMetadata(meta); err != nil {
@@ -3122,6 +3136,12 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		return nil, err
 	}
 
+	// 解析 TagID
+	tagID, err := s.resolveTagID(ctx, kbID, payload)
+	if err != nil {
+		return nil, err
+	}
+
 	// 检查标准问和相似问是否与其他条目重复
 	if err := s.checkFAQQuestionDuplicate(ctx, tenantID, kb.ID, "", meta); err != nil {
 		return nil, err
@@ -3150,6 +3170,11 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 	if payload.IsEnabled != nil {
 		isEnabled = *payload.IsEnabled
 	}
+	// 默认可推荐
+	flags := types.ChunkFlagRecommended
+	if payload.IsRecommended != nil && !*payload.IsRecommended {
+		flags = 0
+	}
 
 	chunk := &types.Chunk{
 		ID:              uuid.New().String(),
@@ -3158,8 +3183,9 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		KnowledgeBaseID: kb.ID,
 		Content:         buildFAQChunkContent(meta, indexMode),
 		IsEnabled:       isEnabled,
+		Flags:           flags,
 		ChunkType:       types.ChunkTypeFAQ,
-		TagID:           payload.TagID,
+		TagID:           tagID, // 使用解析后的 TagID
 		Status:          int(types.ChunkStatusStored),
 	}
 
@@ -3246,6 +3272,14 @@ func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 		chunk.IsEnabled = *payload.IsEnabled
 		isEnabledUpdated = (oldEnabled != chunk.IsEnabled)
 	}
+	// 处理推荐状态
+	if payload.IsRecommended != nil {
+		if *payload.IsRecommended {
+			chunk.Flags = chunk.Flags.SetFlag(types.ChunkFlagRecommended)
+		} else {
+			chunk.Flags = chunk.Flags.ClearFlag(types.ChunkFlagRecommended)
+		}
+	}
 	chunk.UpdatedAt = time.Now()
 	if err := s.chunkService.UpdateChunk(ctx, chunk); err != nil {
 		return err
@@ -3317,11 +3351,15 @@ func (s *knowledgeService) UpdateFAQEntryStatus(ctx context.Context,
 	return nil
 }
 
-// UpdateFAQEntryStatusBatch updates enable status for FAQ entries in batch.
-func (s *knowledgeService) UpdateFAQEntryStatusBatch(ctx context.Context,
-	kbID string, updates map[string]bool,
+// UpdateFAQEntryFieldsBatch updates multiple fields for FAQ entries in batch.
+// This is the unified API for batch updating FAQ entry fields.
+// Supports two modes:
+// 1. By entry ID: use ByID field
+// 2. By Tag: use ByTag field to apply the same update to all entries under a tag
+func (s *knowledgeService) UpdateFAQEntryFieldsBatch(ctx context.Context,
+	kbID string, req *types.FAQEntryFieldsBatchUpdate,
 ) error {
-	if len(updates) == 0 {
+	if req == nil || (len(req.ByID) == 0 && len(req.ByTag) == 0) {
 		return nil
 	}
 	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
@@ -3330,39 +3368,120 @@ func (s *knowledgeService) UpdateFAQEntryStatusBatch(ctx context.Context,
 	}
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 
-	// Get all chunks in batch
-	entryIDs := make([]string, 0, len(updates))
-	for entryID := range updates {
-		entryIDs = append(entryIDs, entryID)
-	}
-	chunks, err := s.chunkRepo.ListChunksByID(ctx, tenantID, entryIDs)
-	if err != nil {
-		return err
+	enabledUpdates := make(map[string]bool)
+
+	// Handle ByTag updates first
+	if len(req.ByTag) > 0 {
+		for tagID, update := range req.ByTag {
+			var setFlags, clearFlags types.ChunkFlags
+
+			// Handle IsRecommended
+			if update.IsRecommended != nil {
+				if *update.IsRecommended {
+					setFlags = types.ChunkFlagRecommended
+				} else {
+					clearFlags = types.ChunkFlagRecommended
+				}
+			}
+
+			// Update all chunks with this tag
+			affectedIDs, err := s.chunkRepo.UpdateChunkFieldsByTagID(
+				ctx, tenantID, kb.ID, tagID,
+				update.IsEnabled, setFlags, clearFlags,
+			)
+			if err != nil {
+				return err
+			}
+
+			// Collect affected IDs for retriever sync
+			if update.IsEnabled != nil && len(affectedIDs) > 0 {
+				for _, id := range affectedIDs {
+					enabledUpdates[id] = *update.IsEnabled
+				}
+			}
+		}
 	}
 
-	// Group chunks by enabled status for batch update
-	chunkStatusMap := make(map[string]bool)
-	for _, chunk := range chunks {
-		if chunk.KnowledgeBaseID != kb.ID || chunk.ChunkType != types.ChunkTypeFAQ {
-			continue
+	// Handle ByID updates
+	if len(req.ByID) > 0 {
+		entryIDs := make([]string, 0, len(req.ByID))
+		for entryID := range req.ByID {
+			entryIDs = append(entryIDs, entryID)
 		}
-		isEnabled, exists := updates[chunk.ID]
-		if !exists {
-			continue
-		}
-		if chunk.IsEnabled == isEnabled {
-			continue
-		}
-		chunk.IsEnabled = isEnabled
-		chunk.UpdatedAt = time.Now()
-		if err := s.chunkService.UpdateChunk(ctx, chunk); err != nil {
+		chunks, err := s.chunkRepo.ListChunksByID(ctx, tenantID, entryIDs)
+		if err != nil {
 			return err
 		}
-		chunkStatusMap[chunk.ID] = isEnabled
+
+		setFlags := make(map[string]types.ChunkFlags)
+		clearFlags := make(map[string]types.ChunkFlags)
+		chunksToUpdate := make([]*types.Chunk, 0)
+
+		for _, chunk := range chunks {
+			if chunk.KnowledgeBaseID != kb.ID || chunk.ChunkType != types.ChunkTypeFAQ {
+				continue
+			}
+			update, exists := req.ByID[chunk.ID]
+			if !exists {
+				continue
+			}
+
+			needUpdate := false
+
+			// Handle IsEnabled
+			if update.IsEnabled != nil && chunk.IsEnabled != *update.IsEnabled {
+				chunk.IsEnabled = *update.IsEnabled
+				enabledUpdates[chunk.ID] = *update.IsEnabled
+				needUpdate = true
+			}
+
+			// Handle IsRecommended (via Flags)
+			if update.IsRecommended != nil {
+				currentRecommended := chunk.Flags.HasFlag(types.ChunkFlagRecommended)
+				if currentRecommended != *update.IsRecommended {
+					if *update.IsRecommended {
+						setFlags[chunk.ID] = types.ChunkFlagRecommended
+					} else {
+						clearFlags[chunk.ID] = types.ChunkFlagRecommended
+					}
+				}
+			}
+
+			// Handle TagID
+			if update.TagID != nil {
+				newTagID := ""
+				if *update.TagID != "" {
+					newTagID = *update.TagID
+				}
+				if chunk.TagID != newTagID {
+					chunk.TagID = newTagID
+					needUpdate = true
+				}
+			}
+
+			if needUpdate {
+				chunk.UpdatedAt = time.Now()
+				chunksToUpdate = append(chunksToUpdate, chunk)
+			}
+		}
+
+		// Batch update chunks (for IsEnabled and TagID)
+		if len(chunksToUpdate) > 0 {
+			if err := s.chunkRepo.UpdateChunks(ctx, chunksToUpdate); err != nil {
+				return err
+			}
+		}
+
+		// Batch update flags (for IsRecommended)
+		if len(setFlags) > 0 || len(clearFlags) > 0 {
+			if err := s.chunkRepo.UpdateChunkFlagsBatch(ctx, tenantID, kb.ID, setFlags, clearFlags); err != nil {
+				return err
+			}
+		}
 	}
 
-	// Sync update to retriever engines
-	if len(chunkStatusMap) > 0 {
+	// Sync enabled status to retriever engines
+	if len(enabledUpdates) > 0 {
 		tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 		retrieveEngine, err := retriever.NewCompositeRetrieveEngine(
 			s.retrieveEngine,
@@ -3371,7 +3490,7 @@ func (s *knowledgeService) UpdateFAQEntryStatusBatch(ctx context.Context,
 		if err != nil {
 			return err
 		}
-		if err := retrieveEngine.BatchUpdateChunkEnabledStatus(ctx, chunkStatusMap); err != nil {
+		if err := retrieveEngine.BatchUpdateChunkEnabledStatus(ctx, enabledUpdates); err != nil {
 			return err
 		}
 	}
@@ -3878,6 +3997,7 @@ func (s *knowledgeService) chunkToFAQEntry(chunk *types.Chunk, kb *types.Knowled
 		KnowledgeBaseID:   chunk.KnowledgeBaseID,
 		TagID:             chunk.TagID,
 		IsEnabled:         chunk.IsEnabled,
+		IsRecommended:     chunk.Flags.HasFlag(types.ChunkFlagRecommended),
 		StandardQuestion:  meta.StandardQuestion,
 		SimilarQuestions:  meta.SimilarQuestions,
 		NegativeQuestions: meta.NegativeQuestions,
@@ -3967,6 +4087,26 @@ func (s *knowledgeService) checkFAQQuestionDuplicate(
 	}
 
 	return nil
+}
+
+// resolveTagID resolves tag ID from payload, prioritizing tag_id over tag_name
+func (s *knowledgeService) resolveTagID(ctx context.Context, kbID string, payload *types.FAQEntryPayload) (string, error) {
+	// 如果提供了 tag_id，优先使用 tag_id
+	if payload.TagID != "" {
+		return payload.TagID, nil
+	}
+
+	// 如果提供了 tag_name，查找或创建标签
+	if payload.TagName != "" && payload.TagName != "未分类" {
+		tag, err := s.tagService.FindOrCreateTagByName(ctx, kbID, payload.TagName)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve tag by name '%s': %w", payload.TagName, err)
+		}
+		return tag.ID, nil
+	}
+
+	// 都没有提供，返回空字符串
+	return "", nil
 }
 
 func sanitizeFAQEntryPayload(payload *types.FAQEntryPayload) (*types.FAQChunkMetadata, error) {

@@ -40,6 +40,8 @@ type ChunkRepository interface {
 	DeleteChunksByKnowledgeID(ctx context.Context, tenantID uint64, knowledgeID string) error
 	// DeleteByKnowledgeList deletes all chunks for a knowledge list
 	DeleteByKnowledgeList(ctx context.Context, tenantID uint64, knowledgeIDs []string) error
+	// DeleteChunksByTagID deletes all chunks with the specified tag ID
+	DeleteChunksByTagID(ctx context.Context, tenantID uint64, kbID string, tagID string) error
 	// CountChunksByKnowledgeBaseID counts the number of chunks in a knowledge base.
 	CountChunksByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) (int64, error)
 	// DeleteUnindexedChunks deletes unindexed chunks by knowledge id and chunk index range
@@ -50,6 +52,13 @@ type ChunkRepository interface {
 	// ListAllFAQChunksWithMetadataByKnowledgeBaseID lists all FAQ chunks for a knowledge base ID
 	// returns ID and Metadata fields for duplicate question checking
 	ListAllFAQChunksWithMetadataByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) ([]*types.Chunk, error)
+	// UpdateChunkFlagsBatch updates flags for multiple chunks in batch using a single SQL statement.
+	// setFlags: map of chunk ID to flags to set (OR operation)
+	// clearFlags: map of chunk ID to flags to clear (AND NOT operation)
+	UpdateChunkFlagsBatch(ctx context.Context, tenantID uint64, kbID string, setFlags map[string]types.ChunkFlags, clearFlags map[string]types.ChunkFlags) error
+	// UpdateChunkFieldsByTagID updates fields for all chunks with the specified tag ID.
+	// Supports updating is_enabled and flags fields.
+	UpdateChunkFieldsByTagID(ctx context.Context, tenantID uint64, kbID string, tagID string, isEnabled *bool, setFlags types.ChunkFlags, clearFlags types.ChunkFlags) ([]string, error)
 }
 
 // ChunkService defines the interface for chunk service operations
