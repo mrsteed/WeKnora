@@ -57,7 +57,7 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
     apk update && apk upgrade && \
     apk add --no-cache build-base postgresql-client mysql-client ca-certificates tzdata sed curl bash vim wget \
         nodejs npm python3 py3-pip python3-dev libffi-dev openssl-dev cargo && \
-    python3 -m pip install --upgrade pip setuptools wheel && \
+    python3 -m pip install --break-system-packages --upgrade pip setuptools wheel && \
     # 使用官方安装脚本安装 uvx
     curl -LsSf https://astral.sh/uv/install.sh | sh && \
     ln -sf /root/.cargo/bin/uvx /usr/local/bin/uvx
