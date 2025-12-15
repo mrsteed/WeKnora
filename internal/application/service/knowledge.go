@@ -3990,6 +3990,11 @@ func (s *knowledgeService) chunkToFAQEntry(chunk *types.Chunk, kb *types.Knowled
 	if meta == nil {
 		meta = &types.FAQChunkMetadata{StandardQuestion: chunk.Content}
 	}
+	// 默认使用 all 策略
+	answerStrategy := meta.AnswerStrategy
+	if answerStrategy == "" {
+		answerStrategy = types.AnswerStrategyAll
+	}
 	entry := &types.FAQEntry{
 		ID:                chunk.ID,
 		ChunkID:           chunk.ID,
@@ -4002,6 +4007,7 @@ func (s *knowledgeService) chunkToFAQEntry(chunk *types.Chunk, kb *types.Knowled
 		SimilarQuestions:  meta.SimilarQuestions,
 		NegativeQuestions: meta.NegativeQuestions,
 		Answers:           meta.Answers,
+		AnswerStrategy:    answerStrategy,
 		IndexMode:         kb.FAQConfig.IndexMode,
 		UpdatedAt:         chunk.UpdatedAt,
 		CreatedAt:         chunk.CreatedAt,
@@ -4110,11 +4116,22 @@ func (s *knowledgeService) resolveTagID(ctx context.Context, kbID string, payloa
 }
 
 func sanitizeFAQEntryPayload(payload *types.FAQEntryPayload) (*types.FAQChunkMetadata, error) {
+	// 处理 AnswerStrategy，默认为 all
+	answerStrategy := types.AnswerStrategyAll
+	if payload.AnswerStrategy != nil && *payload.AnswerStrategy != "" {
+		switch *payload.AnswerStrategy {
+		case types.AnswerStrategyAll, types.AnswerStrategyRandom:
+			answerStrategy = *payload.AnswerStrategy
+		default:
+			return nil, werrors.NewBadRequestError("answer_strategy 必须是 'all' 或 'random'")
+		}
+	}
 	meta := &types.FAQChunkMetadata{
 		StandardQuestion:  strings.TrimSpace(payload.StandardQuestion),
 		SimilarQuestions:  payload.SimilarQuestions,
 		NegativeQuestions: payload.NegativeQuestions,
 		Answers:           payload.Answers,
+		AnswerStrategy:    answerStrategy,
 		Version:           1,
 		Source:            "faq",
 	}

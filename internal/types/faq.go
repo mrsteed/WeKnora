@@ -11,12 +11,13 @@ import (
 
 // FAQChunkMetadata 定义 FAQ 条目在 Chunk.Metadata 中的结构
 type FAQChunkMetadata struct {
-	StandardQuestion  string   `json:"standard_question"`
-	SimilarQuestions  []string `json:"similar_questions,omitempty"`
-	NegativeQuestions []string `json:"negative_questions,omitempty"`
-	Answers           []string `json:"answers,omitempty"`
-	Version           int      `json:"version,omitempty"`
-	Source            string   `json:"source,omitempty"`
+	StandardQuestion  string         `json:"standard_question"`
+	SimilarQuestions  []string       `json:"similar_questions,omitempty"`
+	NegativeQuestions []string       `json:"negative_questions,omitempty"`
+	Answers           []string       `json:"answers,omitempty"`
+	AnswerStrategy    AnswerStrategy `json:"answer_strategy,omitempty"`
+	Version           int            `json:"version,omitempty"`
+	Source            string         `json:"source,omitempty"`
 }
 
 // GeneratedQuestion 表示AI生成的单个问题
@@ -162,37 +163,49 @@ func CalculateFAQContentHash(meta *FAQChunkMetadata) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// AnswerStrategy 定义答案返回策略
+type AnswerStrategy string
+
+const (
+	// AnswerStrategyAll 返回所有答案
+	AnswerStrategyAll AnswerStrategy = "all"
+	// AnswerStrategyRandom 随机返回一个答案
+	AnswerStrategyRandom AnswerStrategy = "random"
+)
+
 // FAQEntry 表示返回给前端的 FAQ 条目
 type FAQEntry struct {
-	ID                string       `json:"id"`
-	ChunkID           string       `json:"chunk_id"`
-	KnowledgeID       string       `json:"knowledge_id"`
-	KnowledgeBaseID   string       `json:"knowledge_base_id"`
-	TagID             string       `json:"tag_id"`
-	IsEnabled         bool         `json:"is_enabled"`
-	IsRecommended     bool         `json:"is_recommended"`
-	StandardQuestion  string       `json:"standard_question"`
-	SimilarQuestions  []string     `json:"similar_questions"`
-	NegativeQuestions []string     `json:"negative_questions"`
-	Answers           []string     `json:"answers"`
-	IndexMode         FAQIndexMode `json:"index_mode"`
-	UpdatedAt         time.Time    `json:"updated_at"`
-	CreatedAt         time.Time    `json:"created_at"`
-	Score             float64      `json:"score,omitempty"`
-	MatchType         MatchType    `json:"match_type,omitempty"`
-	ChunkType         ChunkType    `json:"chunk_type"`
+	ID                string         `json:"id"`
+	ChunkID           string         `json:"chunk_id"`
+	KnowledgeID       string         `json:"knowledge_id"`
+	KnowledgeBaseID   string         `json:"knowledge_base_id"`
+	TagID             string         `json:"tag_id"`
+	IsEnabled         bool           `json:"is_enabled"`
+	IsRecommended     bool           `json:"is_recommended"`
+	StandardQuestion  string         `json:"standard_question"`
+	SimilarQuestions  []string       `json:"similar_questions"`
+	NegativeQuestions []string       `json:"negative_questions"`
+	Answers           []string       `json:"answers"`
+	AnswerStrategy    AnswerStrategy `json:"answer_strategy"`
+	IndexMode         FAQIndexMode   `json:"index_mode"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	CreatedAt         time.Time      `json:"created_at"`
+	Score             float64        `json:"score,omitempty"`
+	MatchType         MatchType      `json:"match_type,omitempty"`
+	ChunkType         ChunkType      `json:"chunk_type"`
 }
 
 // FAQEntryPayload 用于创建/更新 FAQ 条目的 payload
 type FAQEntryPayload struct {
-	StandardQuestion  string   `json:"standard_question"    binding:"required"`
-	SimilarQuestions  []string `json:"similar_questions"`
-	NegativeQuestions []string `json:"negative_questions"`
-	Answers           []string `json:"answers"              binding:"required"`
-	TagID             string   `json:"tag_id"`
-	TagName           string   `json:"tag_name"`
-	IsEnabled         *bool    `json:"is_enabled,omitempty"`
-	IsRecommended     *bool    `json:"is_recommended,omitempty"`
+	StandardQuestion  string          `json:"standard_question"    binding:"required"`
+	SimilarQuestions  []string        `json:"similar_questions"`
+	NegativeQuestions []string        `json:"negative_questions"`
+	Answers           []string        `json:"answers"              binding:"required"`
+	AnswerStrategy    *AnswerStrategy `json:"answer_strategy,omitempty"`
+	TagID             string          `json:"tag_id"`
+	TagName           string          `json:"tag_name"`
+	IsEnabled         *bool           `json:"is_enabled,omitempty"`
+	IsRecommended     *bool           `json:"is_recommended,omitempty"`
 }
 
 const (
