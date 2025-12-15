@@ -17,6 +17,7 @@ type FAQEntry struct {
 	KnowledgeBaseID   string    `json:"knowledge_base_id"`
 	TagID             string    `json:"tag_id"`
 	IsEnabled         bool      `json:"is_enabled"`
+	IsRecommended     bool      `json:"is_recommended"`
 	StandardQuestion  string    `json:"standard_question"`
 	SimilarQuestions  []string  `json:"similar_questions"`
 	NegativeQuestions []string  `json:"negative_questions"`
@@ -38,6 +39,7 @@ type FAQEntryPayload struct {
 	TagID             string   `json:"tag_id,omitempty"`
 	TagName           string   `json:"tag_name,omitempty"`
 	IsEnabled         *bool    `json:"is_enabled,omitempty"`
+	IsRecommended     *bool    `json:"is_recommended,omitempty"`
 }
 
 // FAQBatchUpsertPayload represents the request body for batch import (append/replace).
@@ -220,11 +222,14 @@ func (c *Client) UpdateFAQEntry(ctx context.Context,
 
 // UpdateFAQEntryFieldsBatch updates multiple fields for FAQ entries in bulk.
 // Supports updating is_enabled, is_recommended, tag_id in a single call.
+// Supports two modes:
+//   - byID: update by entry ID, key is entry ID
+//   - byTag: update all entries under a tag, key is tag ID (empty string for uncategorized)
 func (c *Client) UpdateFAQEntryFieldsBatch(ctx context.Context,
-	knowledgeBaseID string, byID map[string]FAQEntryFieldsUpdate,
+	knowledgeBaseID string, byID map[string]FAQEntryFieldsUpdate, byTag map[string]FAQEntryFieldsUpdate,
 ) error {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/faq/entries/fields", knowledgeBaseID)
-	resp, err := c.doRequest(ctx, http.MethodPut, path, &FAQEntryFieldsBatchRequest{ByID: byID}, nil)
+	resp, err := c.doRequest(ctx, http.MethodPut, path, &FAQEntryFieldsBatchRequest{ByID: byID, ByTag: byTag}, nil)
 	if err != nil {
 		return err
 	}
