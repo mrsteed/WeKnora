@@ -22,6 +22,7 @@ type FAQEntry struct {
 	SimilarQuestions  []string  `json:"similar_questions"`
 	NegativeQuestions []string  `json:"negative_questions"`
 	Answers           []string  `json:"answers"`
+	AnswerStrategy    string    `json:"answer_strategy"`
 	IndexMode         string    `json:"index_mode"`
 	UpdatedAt         time.Time `json:"updated_at"`
 	CreatedAt         time.Time `json:"created_at"`
@@ -36,6 +37,7 @@ type FAQEntryPayload struct {
 	SimilarQuestions  []string `json:"similar_questions,omitempty"`
 	NegativeQuestions []string `json:"negative_questions,omitempty"`
 	Answers           []string `json:"answers"`
+	AnswerStrategy    *string  `json:"answer_strategy,omitempty"`
 	TagID             string   `json:"tag_id,omitempty"`
 	TagName           string   `json:"tag_name,omitempty"`
 	IsEnabled         *bool    `json:"is_enabled,omitempty"`
