@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2025-12-15
+
+### 🚀 New Features
+- **NEW**: FAQ Answer Strategy Configuration
+  - Added answer strategy field for FAQ entries, supporting `all` (return all answers) and `random` (randomly return one answer) modes
+  - More flexible FAQ response control
+
+- **NEW**: FAQ Recommendation Feature
+  - Added recommendation field for FAQ entries to mark recommended Q&A
+  - Support batch update of FAQ recommendation status by tag
+  - Optimized tag deletion logic
+
+- **NEW**: Document Summary Status Tracking
+  - Added `SummaryStatus` field to Knowledge struct
+  - Support tracking document summary generation status
+
+### ⚡ Infrastructure Improvements
+- **IMPROVED**: Docker Build Optimization
+  - Fixed system package conflicts during pip dependency installation with `--break-system-packages` parameter
+  - Adjusted uvx permission configuration
+  - Upgraded Node version
+
+- **IMPROVED**: Database Initialization
+  - Optimized database initialization logic with conditional embeddings handling
+
+### 🐛 Bug Fixes
+- **FIXED**: Corrected `MINIO_USE_SSL` environment variable parsing logic
+
 ## [0.2.1] - 2025-12-08
 
 ### 🚀 New Features
@@ -285,6 +313,7 @@ All notable changes to this project will be documented in this file.
 - Docker Compose for quick startup and service orchestration.
 - MCP server support for integrating with MCP-compatible clients.
 
+[0.2.2]: https://github.com/Tencent/WeKnora/tree/v0.2.2
 [0.2.1]: https://github.com/Tencent/WeKnora/tree/v0.2.1
 [0.2.0]: https://github.com/Tencent/WeKnora/tree/v0.2.0
 [0.1.4]: https://github.com/Tencent/WeKnora/tree/v0.1.4
