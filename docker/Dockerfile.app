@@ -51,20 +51,25 @@ WORKDIR /app
 
 ARG APK_MIRROR_ARG="mirrors.tencent.com"
 
+# Create a non-root user first
+RUN id -u appuser >/dev/null 2>&1 || adduser -D -g '' appuser
+
 RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         sed -i "s@dl-cdn.alpinelinux.org@${APK_MIRROR_ARG}@g" /etc/apk/repositories; \
     fi && \
     apk update && apk upgrade && \
     apk add --no-cache build-base postgresql-client mysql-client ca-certificates tzdata sed curl bash vim wget \
-        nodejs npm python3 py3-pip python3-dev libffi-dev openssl-dev cargo && \
+        python3 py3-pip python3-dev libffi-dev openssl-dev && \
     python3 -m pip install --break-system-packages --upgrade pip setuptools wheel && \
-    # 使用官方安装脚本安装 uvx
-    curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    ln -sf /root/.cargo/bin/uvx /usr/local/bin/uvx
+    apk add --no-cache nodejs-current npm && \
+    mkdir -p /home/appuser/.local/bin && \
+    curl -LsSf https://astral.sh/uv/install.sh | CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh && \
+    chown -R appuser:appuser /home/appuser && \
+    ln -sf /home/appuser/.local/bin/uvx /usr/local/bin/uvx && \
+    chmod +x /usr/local/bin/uvx
 
-# Create a non-root user and switch to it
+# Create data directories and set permissions
 RUN mkdir -p /data/files && \
-    id -u appuser >/dev/null 2>&1 || adduser -D -g '' appuser && \
     chown -R appuser:appuser /app /data/files
 
 # Copy migrate tool from builder stage
