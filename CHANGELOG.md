@@ -2,6 +2,90 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.5] - 2025-12-22
+
+### 🚀 New Features
+- **NEW**: In-Input Knowledge Base and File Selection
+  - Support selecting knowledge bases and files directly within the input box
+  - Display @mentioned knowledge bases and files in message stream
+  - Dynamic placeholder text based on knowledge base and web search status
+
+- **NEW**: API Key Authentication Support
+  - Added API Key authentication mechanism
+  - Optimized Swagger documentation security configuration
+  - Disabled Swagger documentation access in non-production environments by default
+
+- **NEW**: User Registration Control
+  - Added `DISABLE_REGISTRATION` environment variable to control user registration
+
+- **NEW**: User Conversation Model Selection
+  - Added user conversation model selection state management with store two-way binding
+
+### 🔒 Security Enhancements
+- **ENHANCED**: MCP stdio transport security validation to prevent command injection attacks
+- **ENHANCED**: SQL security validation rebuilt using PostgreSQL official parser for enhanced query protection
+- **ENHANCED**: Security policy updated with vulnerability reporting guidelines
+
+### ⚡ Improvements
+- **IMPROVED**: Streaming rendering mechanism optimized for token-by-token Markdown content parsing
+- **IMPROVED**: FAQ import progress refactored to use Redis for task state storage
+- **IMPROVED**: Enhanced knowledge base and search functionality logic
+
+### 🐛 Bug Fixes
+- **FIXED**: Corrected knowledge ID retrieval in FAQ import tasks
+- **FIXED**: Force removal of legacy vlm_model_id field from knowledge_bases table
+- **FIXED**: Disabled Ollama option for ReRank models in model management with tooltip
+
+
+## [0.2.4] - 2025-12-17
+
+### 🚀 New Features
+- **NEW**: FAQ Entry Export
+  - Support CSV format export for FAQ entries
+
+- **NEW**: Asynchronous Knowledge Base Copy
+  - Progress tracking and incremental sync support
+  - Improved SourceID conversion logic and tag mapping for knowledge base copying
+
+- **NEW**: FAQ Index Type Separation
+  - Added is_enabled field filtering and batch update optimization
+
+- **NEW**: Swagger API Documentation
+  - Enhanced Swagger API documentation generation
+
+### 🐛 Bug Fixes
+- **FIXED**: Optimized tag mapping logic and FAQ cloning during knowledge base copy
+- **FIXED**: Adjusted Knowledge struct Metadata field type to json.RawMessage
+- **FIXED**: Added tenant information to context during knowledge base copy
+- **FIXED**: Database migration compatibility with older versions
+
+## [0.2.3] - 2025-12-16
+
+### 🚀 New Features
+- **NEW**: Chat Message Image Preview
+  - Support image preview in chat messages
+  - Updated Agent prompts to include image-text result output
+  - Image information display in knowledge search and list tools
+
+- **NEW**: FAQ Answer Strategy Field
+  - Support 'all' (return all answers) and 'random' (randomly return one answer) modes
+
+- **NEW**: FAQ Recommendation Field
+  - Added recommendation field for FAQ entries
+  - Support batch update by tag
+
+### ⚡ Improvements
+- **IMPROVED**: Optimized async task retry logic to update failure status only on last retry
+- **IMPROVED**: Enhanced hybrid search result fusion strategy
+- **IMPROVED**: Updated MinIO, Jaeger, and Neo4j image versions for stability
+
+### 🐛 Bug Fixes
+- **FIXED**: Environment variable saving logic in MCP service dialog
+- **FIXED**: AUTO_RECOVER_DIRTY environment variable logic in database migration, enabled by default
+
+### ⚡ Infrastructure Improvements
+- **IMPROVED**: Updated Dockerfile with uvx permission adjustments and Node version upgrade
+
 ## [0.2.2] - 2025-12-15
 
 ### 🚀 New Features
@@ -313,6 +397,9 @@ All notable changes to this project will be documented in this file.
 - Docker Compose for quick startup and service orchestration.
 - MCP server support for integrating with MCP-compatible clients.
 
+[0.2.5]: https://github.com/Tencent/WeKnora/tree/v0.2.5
+[0.2.4]: https://github.com/Tencent/WeKnora/tree/v0.2.4
+[0.2.3]: https://github.com/Tencent/WeKnora/tree/v0.2.3
 [0.2.2]: https://github.com/Tencent/WeKnora/tree/v0.2.2
 [0.2.1]: https://github.com/Tencent/WeKnora/tree/v0.2.1
 [0.2.0]: https://github.com/Tencent/WeKnora/tree/v0.2.0
