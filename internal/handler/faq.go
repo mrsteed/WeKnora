@@ -351,6 +351,38 @@ func (h *FAQHandler) ExportEntries(c *gin.Context) {
 	c.Data(http.StatusOK, "text/csv; charset=utf-8", append(bom, csvData...))
 }
 
+// GetEntry godoc
+// @Summary      获取FAQ条目详情
+// @Description  根据ID获取单个FAQ条目的详情
+// @Tags         FAQ管理
+// @Accept       json
+// @Produce      json
+// @Param        id        path      string  true  "知识库ID"
+// @Param        entry_id  path      string  true  "FAQ条目ID"
+// @Success      200       {object}  map[string]interface{}  "FAQ条目详情"
+// @Failure      400       {object}  errors.AppError         "请求参数错误"
+// @Failure      404       {object}  errors.AppError         "条目不存在"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /knowledge-bases/{id}/faq/entries/{entry_id} [get]
+func (h *FAQHandler) GetEntry(c *gin.Context) {
+	ctx := c.Request.Context()
+	kbID := secutils.SanitizeForLog(c.Param("id"))
+	entryID := secutils.SanitizeForLog(c.Param("entry_id"))
+
+	entry, err := h.knowledgeService.GetFAQEntry(ctx, kbID, entryID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    entry,
+	})
+}
+
 // GetImportProgress godoc
 // @Summary      获取FAQ导入进度
 // @Description  获取FAQ导入任务的进度

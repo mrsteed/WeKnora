@@ -209,6 +209,23 @@ func (c *Client) CreateFAQEntry(ctx context.Context,
 	return response.Data, nil
 }
 
+// GetFAQEntry retrieves a single FAQ entry by ID.
+func (c *Client) GetFAQEntry(ctx context.Context,
+	knowledgeBaseID, entryID string,
+) (*FAQEntry, error) {
+	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/faq/entries/%s", knowledgeBaseID, entryID)
+	resp, err := c.doRequest(ctx, http.MethodGet, path, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response FAQEntryResponse
+	if err := parseResponse(resp, &response); err != nil {
+		return nil, err
+	}
+	return response.Data, nil
+}
+
 // UpdateFAQEntry updates a single FAQ entry.
 func (c *Client) UpdateFAQEntry(ctx context.Context,
 	knowledgeBaseID, entryID string, payload *FAQEntryPayload,
