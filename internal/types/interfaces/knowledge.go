@@ -86,6 +86,8 @@ type KnowledgeService interface {
 	UpsertFAQEntries(ctx context.Context, kbID string, payload *types.FAQBatchUpsertPayload) (string, error)
 	// CreateFAQEntry creates a single FAQ entry synchronously.
 	CreateFAQEntry(ctx context.Context, kbID string, payload *types.FAQEntryPayload) (*types.FAQEntry, error)
+	// GetFAQEntry retrieves a single FAQ entry by ID.
+	GetFAQEntry(ctx context.Context, kbID string, entryID string) (*types.FAQEntry, error)
 	// UpdateFAQEntry updates a single FAQ entry.
 	UpdateFAQEntry(ctx context.Context, kbID string, entryID string, payload *types.FAQEntryPayload) error
 	// UpdateFAQEntryFieldsBatch updates multiple fields for FAQ entries in batch.
