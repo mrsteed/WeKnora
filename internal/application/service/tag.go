@@ -153,7 +153,8 @@ func (s *knowledgeTagService) UpdateTag(
 }
 
 // DeleteTag deletes a tag. When force=true, also deletes all chunks under this tag.
-func (s *knowledgeTagService) DeleteTag(ctx context.Context, id string, force bool) error {
+// When contentOnly=true, only deletes the content under the tag but keeps the tag itself.
+func (s *knowledgeTagService) DeleteTag(ctx context.Context, id string, force bool, contentOnly bool) error {
 	if id == "" {
 		return werrors.NewBadRequestError("标签ID不能为空")
 	}
@@ -166,6 +167,19 @@ func (s *knowledgeTagService) DeleteTag(ctx context.Context, id string, force bo
 	if err != nil {
 		return err
 	}
+
+	// contentOnly mode: only delete content, keep the tag
+	if contentOnly {
+		if cCount > 0 {
+			if err := s.chunkRepo.DeleteChunksByTagID(ctx, tenantID, tag.KnowledgeBaseID, tag.ID); err != nil {
+				logger.Errorf(ctx, "Failed to delete chunks by tag ID %s: %v", tag.ID, err)
+				return werrors.NewInternalServerError("删除标签下的数据失败")
+			}
+			logger.Infof(ctx, "Deleted %d chunks under tag %s (content_only mode)", cCount, tag.ID)
+		}
+		return nil
+	}
+
 	if !force && (kCount > 0 || cCount > 0) {
 		return werrors.NewBadRequestError("标签仍有知识或FAQ条目引用，无法删除")
 	}

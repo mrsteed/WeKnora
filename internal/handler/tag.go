@@ -157,15 +157,16 @@ func (h *TagHandler) UpdateTag(c *gin.Context) {
 
 // DeleteTag godoc
 // @Summary      删除标签
-// @Description  删除标签，可使用force=true强制删除被引用的标签
+// @Description  删除标签，可使用force=true强制删除被引用的标签，content_only=true仅删除标签下的内容而保留标签本身
 // @Tags         标签管理
 // @Accept       json
 // @Produce      json
-// @Param        id      path      string  true   "知识库ID"
-// @Param        tag_id  path      string  true   "标签ID"
-// @Param        force   query     bool    false  "强制删除"
-// @Success      200     {object}  map[string]interface{}  "删除成功"
-// @Failure      400     {object}  errors.AppError         "请求参数错误"
+// @Param        id            path      string  true   "知识库ID"
+// @Param        tag_id        path      string  true   "标签ID"
+// @Param        force         query     bool    false  "强制删除"
+// @Param        content_only  query     bool    false  "仅删除内容，保留标签"
+// @Success      200           {object}  map[string]interface{}  "删除成功"
+// @Failure      400           {object}  errors.AppError         "请求参数错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /knowledge-bases/{id}/tags/{tag_id} [delete]
@@ -174,8 +175,9 @@ func (h *TagHandler) DeleteTag(c *gin.Context) {
 	tagID := secutils.SanitizeForLog(c.Param("tag_id"))
 
 	force := c.Query("force") == "true"
+	contentOnly := c.Query("content_only") == "true"
 
-	if err := h.tagService.DeleteTag(ctx, tagID, force); err != nil {
+	if err := h.tagService.DeleteTag(ctx, tagID, force, contentOnly); err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tag_id": tagID,
 		})

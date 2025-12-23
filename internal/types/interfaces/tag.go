@@ -15,7 +15,8 @@ type KnowledgeTagService interface {
 	// UpdateTag updates tag basic information.
 	UpdateTag(ctx context.Context, id string, name *string, color *string, sortOrder *int) (*types.KnowledgeTag, error)
 	// DeleteTag deletes a tag.
-	DeleteTag(ctx context.Context, id string, force bool) error
+	// When contentOnly=true, only deletes the content under the tag but keeps the tag itself.
+	DeleteTag(ctx context.Context, id string, force bool, contentOnly bool) error
 	// FindOrCreateTagByName finds a tag by name or creates it if not exists.
 	FindOrCreateTagByName(ctx context.Context, kbID string, name string) (*types.KnowledgeTag, error)
 }
