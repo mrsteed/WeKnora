@@ -20,13 +20,32 @@
 - `page_size`: 每页条数（默认 20）
 - `tag_id`: 按标签ID筛选（可选）
 - `keyword`: 关键字搜索（可选）
+- `search_field`: 搜索字段（可选），可选值：
+  - `standard_question`: 只搜索标准问题
+  - `similar_questions`: 只搜索相似问法
+  - `answers`: 只搜索答案
+  - 留空或不传：搜索全部字段
+- `sort_order`: 排序方式（可选），`asc` 表示按更新时间正序，默认按更新时间倒序
 
 **请求**:
 
 ```curl
-curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entries?page=1&page_size=10' \
+# 搜索全部字段
+curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entries?page=1&page_size=10&keyword=密码' \
 --header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ' \
 --header 'Content-Type: application/json'
+
+# 只搜索标准问题
+curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entries?keyword=密码&search_field=standard_question' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ'
+
+# 只搜索相似问法
+curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entries?keyword=忘记&search_field=similar_questions' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ'
+
+# 只搜索答案
+curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/faq/entries?keyword=点击&search_field=answers' \
+--header 'X-API-Key: sk-vQHV2NZI_LK5W7wHQvH3yGYExX8YnhaHwZipUYbiZKCYJbBQ'
 ```
 
 **响应**:
