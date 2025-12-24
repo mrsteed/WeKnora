@@ -33,6 +33,7 @@ func NewFAQHandler(knowledgeService interfaces.KnowledgeService) *FAQHandler {
 // @Param        page_size  query     int     false  "每页数量"
 // @Param        tag_id     query     string  false  "标签ID筛选"
 // @Param        keyword    query     string  false  "关键词搜索"
+// @Param        sort_order query     string  false  "排序方式: asc(按更新时间正序), 默认按更新时间倒序"
 // @Success      200        {object}  map[string]interface{}  "FAQ列表"
 // @Failure      400        {object}  errors.AppError         "请求参数错误"
 // @Security     Bearer
@@ -49,8 +50,9 @@ func (h *FAQHandler) ListEntries(c *gin.Context) {
 
 	tagID := secutils.SanitizeForLog(c.Query("tag_id"))
 	keyword := secutils.SanitizeForLog(c.Query("keyword"))
+	sortOrder := secutils.SanitizeForLog(c.Query("sort_order"))
 
-	result, err := h.knowledgeService.ListFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), &page, tagID, keyword)
+	result, err := h.knowledgeService.ListFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), &page, tagID, keyword, sortOrder)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

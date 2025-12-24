@@ -78,6 +78,7 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	chunkType []types.ChunkType,
 	tagID string,
 	keyword string,
+	sortOrder string,
 ) ([]*types.Chunk, int64, error) {
 	var chunks []*types.Chunk
 	var total int64
@@ -109,8 +110,14 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	// Then query the paginated data
 	dataQuery := baseFilter(r.db.WithContext(ctx))
 
+	// Default is time descending, "asc" for time ascending
+	orderClause := "updated_at DESC"
+	if sortOrder == "asc" {
+		orderClause = "updated_at ASC"
+	}
+
 	if err := dataQuery.
-		Order("chunk_index ASC").
+		Order(orderClause).
 		Offset(page.Offset()).
 		Limit(page.Limit()).
 		Find(&chunks).Error; err != nil {
