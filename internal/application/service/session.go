@@ -871,24 +871,46 @@ func getTenantConversationConfig(ctx context.Context) (*types.ConversationConfig
 }
 
 // SearchKnowledge performs knowledge base search without LLM summarization
+// knowledgeBaseIDs: list of knowledge base IDs to search (supports multi-KB)
+// knowledgeIDs: list of specific knowledge (file) IDs to search
 func (s *sessionService) SearchKnowledge(ctx context.Context,
-	knowledgeBaseID, query string,
+	knowledgeBaseIDs []string, knowledgeIDs []string, query string,
 ) ([]*types.SearchResult, error) {
 	logger.Info(ctx, "Start knowledge base search without LLM summary")
-	logger.Infof(ctx, "Knowledge base search parameters, knowledge base ID: %s, query: %s", knowledgeBaseID, query)
+	logger.Infof(ctx, "Knowledge base search parameters, knowledge base IDs: %v, knowledge IDs: %v, query: %s",
+		knowledgeBaseIDs, knowledgeIDs, query)
+
+	// Get tenant ID from context
+	tenantID, ok := ctx.Value(types.TenantIDContextKey).(uint64)
+	if !ok {
+		logger.Error(ctx, "Failed to get tenant ID from context")
+		return nil, fmt.Errorf("tenant ID not found in context")
+	}
+
+	// Build unified search targets (computed once, used throughout pipeline)
+	searchTargets, err := s.buildSearchTargets(ctx, tenantID, knowledgeBaseIDs, knowledgeIDs)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to build search targets: %v", err)
+	}
+
+	if len(searchTargets) == 0 {
+		logger.Warn(ctx, "No search targets available, returning empty results")
+		return []*types.SearchResult{}, nil
+	}
 
 	// Create default retrieval parameters
 	chatManage := &types.ChatManage{
-		Query:               query,
-		RewriteQuery:        query,
-		VectorThreshold:     s.cfg.Conversation.VectorThreshold,  // Use default configuration
-		KeywordThreshold:    s.cfg.Conversation.KeywordThreshold, // Use default configuration
-		EmbeddingTopK:       s.cfg.Conversation.EmbeddingTopK,    // Use default configuration
-		RerankTopK:          s.cfg.Conversation.RerankTopK,       // Use default configuration
-		RerankThreshold:     s.cfg.Conversation.RerankThreshold,  // Use default configuration
-		MaxRounds:           s.cfg.Conversation.MaxRounds,
-		RewritePromptSystem: s.cfg.Conversation.RewritePromptSystem,
-		RewritePromptUser:   s.cfg.Conversation.RewritePromptUser,
+		Query:            query,
+		RewriteQuery:     query,
+		KnowledgeBaseIDs: knowledgeBaseIDs,
+		KnowledgeIDs:     knowledgeIDs,
+		SearchTargets:    searchTargets,
+		VectorThreshold:  s.cfg.Conversation.VectorThreshold,  // Use default configuration
+		KeywordThreshold: s.cfg.Conversation.KeywordThreshold, // Use default configuration
+		EmbeddingTopK:    s.cfg.Conversation.EmbeddingTopK,    // Use default configuration
+		RerankTopK:       s.cfg.Conversation.RerankTopK,       // Use default configuration
+		RerankThreshold:  s.cfg.Conversation.RerankThreshold,  // Use default configuration
+		MaxRounds:        s.cfg.Conversation.MaxRounds,
 	}
 
 	// Get default models
@@ -930,7 +952,8 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 	logger.Infof(ctx, "Trigger search event list: %v", methods)
 	span.SetAttributes(
 		attribute.String("query", query),
-		attribute.String("knowledge_base_id", knowledgeBaseID),
+		attribute.StringSlice("knowledge_base_ids", knowledgeBaseIDs),
+		attribute.StringSlice("knowledge_ids", knowledgeIDs),
 		attribute.String("method", strings.Join(methods, ",")),
 	)
 

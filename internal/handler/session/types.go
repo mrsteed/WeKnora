@@ -72,8 +72,10 @@ type CreateKnowledgeQARequest struct {
 
 // SearchKnowledgeRequest defines the request structure for searching knowledge without LLM summarization
 type SearchKnowledgeRequest struct {
-	Query           string `json:"query"             binding:"required"` // Query text to search for
-	KnowledgeBaseID string `json:"knowledge_base_id" binding:"required"` // ID of the knowledge base to search
+	Query            string   `json:"query"              binding:"required"` // Query text to search for
+	KnowledgeBaseID  string   `json:"knowledge_base_id"`                     // Single knowledge base ID (for backward compatibility)
+	KnowledgeBaseIDs []string `json:"knowledge_base_ids"`                    // IDs of knowledge bases to search (multi-KB support)
+	KnowledgeIDs     []string `json:"knowledge_ids"`                         // IDs of specific knowledge (files) to search
 }
 
 // StopSessionRequest represents the stop session request
