@@ -48,21 +48,38 @@ func (h *Handler) SearchKnowledge(c *gin.Context) {
 		return
 	}
 
-	if request.KnowledgeBaseID == "" {
-		logger.Error(ctx, "Knowledge base ID is empty")
-		c.Error(errors.NewBadRequestError("Knowledge base ID cannot be empty"))
+	// Merge single knowledge_base_id into knowledge_base_ids for backward compatibility
+	knowledgeBaseIDs := request.KnowledgeBaseIDs
+	if request.KnowledgeBaseID != "" {
+		// Check if it's already in the list to avoid duplicates
+		found := false
+		for _, id := range knowledgeBaseIDs {
+			if id == request.KnowledgeBaseID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			knowledgeBaseIDs = append(knowledgeBaseIDs, request.KnowledgeBaseID)
+		}
+	}
+
+	if len(knowledgeBaseIDs) == 0 && len(request.KnowledgeIDs) == 0 {
+		logger.Error(ctx, "No knowledge base IDs or knowledge IDs provided")
+		c.Error(errors.NewBadRequestError("At least one knowledge_base_id, knowledge_base_ids or knowledge_ids must be provided"))
 		return
 	}
 
 	logger.Infof(
 		ctx,
-		"Knowledge search request, knowledge base ID: %s, query: %s",
-		secutils.SanitizeForLog(request.KnowledgeBaseID),
+		"Knowledge search request, knowledge base IDs: %v, knowledge IDs: %v, query: %s",
+		secutils.SanitizeForLogArray(knowledgeBaseIDs),
+		secutils.SanitizeForLogArray(request.KnowledgeIDs),
 		secutils.SanitizeForLog(request.Query),
 	)
 
 	// Directly call knowledge retrieval service without LLM summarization
-	searchResults, err := h.sessionService.SearchKnowledge(ctx, request.KnowledgeBaseID, request.Query)
+	searchResults, err := h.sessionService.SearchKnowledge(ctx, knowledgeBaseIDs, request.KnowledgeIDs, request.Query)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))

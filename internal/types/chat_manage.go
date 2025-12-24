@@ -65,12 +65,27 @@ func (c *ChatManage) Clone() *ChatManage {
 	knowledgeIDs := make([]string, len(c.KnowledgeIDs))
 	copy(knowledgeIDs, c.KnowledgeIDs)
 
+	// Deep copy search targets slice
+	searchTargets := make(SearchTargets, len(c.SearchTargets))
+	for i, t := range c.SearchTargets {
+		if t != nil {
+			kidsCopy := make([]string, len(t.KnowledgeIDs))
+			copy(kidsCopy, t.KnowledgeIDs)
+			searchTargets[i] = &SearchTarget{
+				Type:            t.Type,
+				KnowledgeBaseID: t.KnowledgeBaseID,
+				KnowledgeIDs:    kidsCopy,
+			}
+		}
+	}
+
 	return &ChatManage{
 		Query:            c.Query,
 		RewriteQuery:     c.RewriteQuery,
 		SessionID:        c.SessionID,
 		KnowledgeBaseIDs: knowledgeBaseIDs,
 		KnowledgeIDs:     knowledgeIDs,
+		SearchTargets:    searchTargets,
 		VectorThreshold:  c.VectorThreshold,
 		KeywordThreshold: c.KeywordThreshold,
 		EmbeddingTopK:    c.EmbeddingTopK,
@@ -101,6 +116,7 @@ func (c *ChatManage) Clone() *ChatManage {
 		RewritePromptUser:    c.RewritePromptUser,
 		EnableRewrite:        c.EnableRewrite,
 		EnableQueryExpansion: c.EnableQueryExpansion,
+		TenantID:             c.TenantID,
 	}
 }
 

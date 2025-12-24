@@ -395,6 +395,15 @@ func (e *EvaluationService) EvalDataset(ctx context.Context, detail *types.Evalu
 			// Prepare chat management parameters for this QA pair
 			chatManage := detail.Params.Clone()
 			chatManage.Query = qaPair.Question
+			chatManage.RewriteQuery = qaPair.Question
+			// Set knowledge base ID and search targets for this evaluation
+			chatManage.KnowledgeBaseIDs = []string{knowledgeBaseID}
+			chatManage.SearchTargets = types.SearchTargets{
+				&types.SearchTarget{
+					Type:            types.SearchTargetTypeKnowledgeBase,
+					KnowledgeBaseID: knowledgeBaseID,
+				},
+			}
 
 			// Execute knowledge QA pipeline
 			logger.Infof(ctx, "Running knowledge QA for question: %s", qaPair.Question)
