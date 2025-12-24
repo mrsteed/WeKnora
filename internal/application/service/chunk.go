@@ -152,6 +152,7 @@ func (s *chunkService) ListPagedChunksByKnowledgeID(ctx context.Context,
 		"",
 		"",
 		"",
+		"",
 	)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
