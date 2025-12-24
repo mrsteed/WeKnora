@@ -9,7 +9,6 @@
 // @contact.name   WeKnora Github
 // @contact.url    https://github.com/Tencent/WeKnora
 //
-// @host      localhost:8080
 // @BasePath  /api/v1
 //
 // @securityDefinitions.apikey Bearer

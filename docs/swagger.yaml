@@ -1690,13 +1690,22 @@ definitions:
   internal_handler_session.SearchKnowledgeRequest:
     properties:
       knowledge_base_id:
-        description: ID of the knowledge base to search
+        description: Single knowledge base ID (for backward compatibility)
         type: string
+      knowledge_base_ids:
+        description: IDs of knowledge bases to search (multi-KB support)
+        items:
+          type: string
+        type: array
+      knowledge_ids:
+        description: IDs of specific knowledge (files) to search
+        items:
+          type: string
+        type: array
       query:
         description: Query text to search for
         type: string
     required:
-    - knowledge_base_id
     - query
     type: object
   internal_handler_session.SessionStrategy:
@@ -1750,7 +1759,6 @@ definitions:
     required:
     - message_id
     type: object
-host: localhost:8080
 info:
   contact:
     name: WeKnora Github
@@ -1915,6 +1923,10 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.RegisterResponse'
         "400":
           description: 请求参数错误
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+        "403":
+          description: 注册功能已禁用
           schema:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       summary: 用户注册
@@ -2940,6 +2952,15 @@ paths:
         in: query
         name: keyword
         type: string
+      - description: '搜索字段: standard_question(标准问题), similar_questions(相似问法), answers(答案),
+          默认搜索全部'
+        in: query
+        name: search_field
+        type: string
+      - description: '排序方式: asc(按更新时间正序), 默认按更新时间倒序'
+        in: query
+        name: sort_order
+        type: string
       produces:
       - application/json
       responses:
@@ -2993,6 +3014,43 @@ paths:
       tags:
       - FAQ管理
   /knowledge-bases/{id}/faq/entries/{entry_id}:
+    get:
+      consumes:
+      - application/json
+      description: 根据ID获取单个FAQ条目的详情
+      parameters:
+      - description: 知识库ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: FAQ条目ID
+        in: path
+        name: entry_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: FAQ条目详情
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+        "404":
+          description: 条目不存在
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+      security:
+      - Bearer: []
+      - ApiKeyAuth: []
+      summary: 获取FAQ条目详情
+      tags:
+      - FAQ管理
     put:
       consumes:
       - application/json
@@ -3503,7 +3561,7 @@ paths:
     delete:
       consumes:
       - application/json
-      description: 删除标签，可使用force=true强制删除被引用的标签
+      description: 删除标签，可使用force=true强制删除被引用的标签，content_only=true仅删除标签下的内容而保留标签本身
       parameters:
       - description: 知识库ID
         in: path
@@ -3518,6 +3576,10 @@ paths:
       - description: 强制删除
         in: query
         name: force
+        type: boolean
+      - description: 仅删除内容，保留标签
+        in: query
+        name: content_only
         type: boolean
       produces:
       - application/json
