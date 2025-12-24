@@ -27,7 +27,9 @@ func (r *chunkRepository) CreateChunks(ctx context.Context, chunks []*types.Chun
 	for _, chunk := range chunks {
 		chunk.Content = common.CleanInvalidUTF8(chunk.Content)
 	}
-	return r.db.WithContext(ctx).CreateInBatches(chunks, 100).Error
+	// Use Select("*") to ensure all fields including zero values (IsEnabled=false, Flags=0)
+	// are inserted, bypassing GORM's default value behavior for zero values
+	return r.db.WithContext(ctx).Select("*").CreateInBatches(chunks, 100).Error
 }
 
 // GetChunkByID retrieves a chunk by its ID and tenant ID
