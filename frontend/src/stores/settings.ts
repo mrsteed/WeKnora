@@ -13,6 +13,7 @@ interface Settings {
   ollamaConfig: OllamaConfig;  // Ollama配置
   webSearchEnabled: boolean;  // 网络搜索是否启用
   conversationModels: ConversationModels;
+  selectedAgentId: string;  // 当前选中的智能体ID
 }
 
 // Agent 配置接口
@@ -89,7 +90,8 @@ const defaultSettings: Settings = {
     summaryModelId: "",
     rerankModelId: "",
     selectedChatModelId: "",  // 用户当前选择的对话模型ID
-  }
+  },
+  selectedAgentId: "builtin-normal",  // 默认选中普通模式
 };
 
 export const useSettingsStore = defineStore("settings", {
@@ -124,6 +126,9 @@ export const useSettingsStore = defineStore("settings", {
     
     // 网络搜索是否启用
     isWebSearchEnabled: (state) => state.settings.webSearchEnabled || false,
+    
+    // 当前选中的智能体ID
+    selectedAgentId: (state) => state.settings.selectedAgentId || "builtin-normal",
   },
 
   actions: {
@@ -300,6 +305,24 @@ export const useSettingsStore = defineStore("settings", {
     
     getSelectedFiles(): string[] {
       return this.settings.selectedFiles || [];
+    },
+    
+    // 选择智能体
+    selectAgent(agentId: string) {
+      this.settings.selectedAgentId = agentId;
+      // 根据智能体类型自动切换 Agent 模式
+      if (agentId === "builtin-normal") {
+        this.settings.isAgentEnabled = false;
+      } else if (agentId === "builtin-agent") {
+        this.settings.isAgentEnabled = true;
+      }
+      // 自定义智能体需要根据其配置来决定
+      localStorage.setItem("WeKnora_settings", JSON.stringify(this.settings));
+    },
+    
+    // 获取选中的智能体ID
+    getSelectedAgentId(): string {
+      return this.settings.selectedAgentId || "builtin-normal";
     },
   },
 });

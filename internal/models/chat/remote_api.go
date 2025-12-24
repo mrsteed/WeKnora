@@ -199,12 +199,23 @@ func (c *RemoteAPIChat) buildChatCompletionRequest(messages []Message,
 		"enable_thinking": thinking,
 	}
 
-	// print req
-	// jsonData, err := json.Marshal(req)
-	// if err != nil {
-	// 	logger.Error(context.Background(), "marshal request: %w", err)
-	// }
-	// logger.Infof(context.Background(), "llm request: %s", string(jsonData))
+	// Log LLM request for debugging
+	if jsonData, err := json.MarshalIndent(req, "", "  "); err == nil {
+		logger.Infof(context.Background(), "[LLM Request] model=%s, stream=%v, request:\n%s", c.modelName, isStream, string(jsonData))
+	}
+
+	// Log tools/functions separately for clarity
+	if len(req.Tools) > 0 {
+		toolNames := make([]string, 0, len(req.Tools))
+		for _, tool := range req.Tools {
+			toolNames = append(toolNames, tool.Function.Name)
+		}
+		logger.Infof(context.Background(), "[LLM Request] tools_count=%d, tool_names=%v", len(req.Tools), toolNames)
+		// Print full tool definitions
+		if toolsJSON, err := json.MarshalIndent(req.Tools, "", "  "); err == nil {
+			logger.Infof(context.Background(), "[LLM Request] tools_definition:\n%s", string(toolsJSON))
+		}
+	}
 
 	return req
 }

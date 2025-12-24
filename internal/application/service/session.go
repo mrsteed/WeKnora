@@ -392,6 +392,7 @@ func (s *sessionService) GenerateTitleAsync(
 
 // KnowledgeQA performs knowledge base question answering with LLM summarization
 // Events are emitted through eventBus (references, answer chunks, completion)
+// customAgent is optional - if provided, uses custom agent configuration for multiTurnEnabled and historyTurns
 func (s *sessionService) KnowledgeQA(
 	ctx context.Context,
 	session *types.Session,
@@ -402,6 +403,7 @@ func (s *sessionService) KnowledgeQA(
 	summaryModelID string,
 	webSearchEnabled bool,
 	eventBus *event.EventBus,
+	customAgent *types.CustomAgent,
 ) error {
 	logger.Infof(
 		ctx,
@@ -418,6 +420,22 @@ func (s *sessionService) KnowledgeQA(
 			logger.Infof(ctx, "No knowledge base IDs provided, using session default: %s", session.KnowledgeBaseID)
 		} else {
 			logger.Warnf(ctx, "Session has no associated knowledge base, session ID: %s", session.ID)
+		}
+	}
+
+	// Merge custom agent's configured knowledge bases
+	if customAgent != nil && len(customAgent.Config.KnowledgeBases) > 0 {
+		// Create a set of existing knowledge base IDs to avoid duplicates
+		existingKBs := make(map[string]bool)
+		for _, kbID := range knowledgeBaseIDs {
+			existingKBs[kbID] = true
+		}
+		// Add agent's knowledge bases that are not already in the list
+		for _, kbID := range customAgent.Config.KnowledgeBases {
+			if !existingKBs[kbID] {
+				knowledgeBaseIDs = append(knowledgeBaseIDs, kbID)
+				logger.Infof(ctx, "Adding custom agent's knowledge base: %s", kbID)
+			}
 		}
 	}
 
@@ -512,6 +530,32 @@ func (s *sessionService) KnowledgeQA(
 	if fallbackStrategy == "" {
 		fallbackStrategy = types.FallbackStrategyFixed
 		logger.Infof(ctx, "Fallback strategy not set, using default: %v", fallbackStrategy)
+	}
+
+	// Apply custom agent configuration if provided
+	multiTurnEnabled := true // Default: enable multi-turn
+	if customAgent != nil {
+		// Override system prompt with customAgent's SystemPrompt
+		if customAgent.Config.SystemPrompt != "" {
+			summaryConfig.Prompt = customAgent.Config.SystemPrompt
+			logger.Infof(ctx, "Using custom agent's system_prompt")
+		}
+		// Override temperature with customAgent's Temperature
+		if customAgent.Config.Temperature > 0 {
+			summaryConfig.Temperature = customAgent.Config.Temperature
+			logger.Infof(ctx, "Using custom agent's temperature: %f", customAgent.Config.Temperature)
+		}
+		// Override maxRounds with customAgent's HistoryTurns
+		if customAgent.Config.HistoryTurns > 0 {
+			maxRounds = customAgent.Config.HistoryTurns
+			logger.Infof(ctx, "Using custom agent's history_turns: %d", maxRounds)
+		}
+		// Check if multi-turn is disabled
+		multiTurnEnabled = customAgent.Config.MultiTurnEnabled
+		if !multiTurnEnabled {
+			maxRounds = 0 // Disable history
+			logger.Infof(ctx, "Multi-turn disabled by custom agent, clearing history")
+		}
 	}
 
 	// Build unified search targets (computed once, used throughout pipeline)
@@ -962,12 +1006,14 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 }
 
 // AgentQA performs agent-based question answering with conversation history and streaming support
+// customAgent is optional - if provided, uses custom agent configuration instead of tenant defaults
 func (s *sessionService) AgentQA(
 	ctx context.Context,
 	session *types.Session,
 	query string,
 	assistantMessageID string,
 	eventBus *event.EventBus,
+	customAgent *types.CustomAgent,
 ) error {
 	sessionID := session.ID
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
@@ -1004,29 +1050,82 @@ func (s *sessionService) AgentQA(
 		}
 	}
 
-	// Create runtime AgentConfig by merging session and tenant configs
-	// Tenant config provides the runtime parameters (MaxIterations, Temperature, Tools, Models)
+	// Create runtime AgentConfig
+	// Priority: CustomAgent config > Tenant config > Defaults
 	// Session config provides KnowledgeBases and KnowledgeIDs
-	agentConfig := &types.AgentConfig{
-		MaxIterations:     tenantInfo.AgentConfig.MaxIterations,
-		ReflectionEnabled: tenantInfo.AgentConfig.ReflectionEnabled,
-		AllowedTools:      tools.DefaultAllowedTools(),
-		Temperature:       tenantInfo.AgentConfig.Temperature,
-		KnowledgeBases:    session.AgentConfig.KnowledgeBases,   // Use session's knowledge bases
-		KnowledgeIDs:      session.AgentConfig.KnowledgeIDs,     // Use session's knowledge IDs (individual documents)
-		WebSearchEnabled:  session.AgentConfig.WebSearchEnabled, // Web search enabled from session config
+	var agentConfig *types.AgentConfig
+
+	if customAgent != nil && customAgent.ID != types.BuiltinAgentNormalID && customAgent.ID != types.BuiltinAgentAgentID {
+		// Use custom agent configuration
+		logger.Infof(ctx, "Using custom agent configuration, agent ID: %s, name: %s", customAgent.ID, customAgent.Name)
+		customAgent.EnsureDefaults()
+
+		agentConfig = &types.AgentConfig{
+			MaxIterations:     customAgent.Config.MaxIterations,
+			ReflectionEnabled: customAgent.Config.ReflectionEnabled,
+			Temperature:       customAgent.Config.Temperature,
+			WebSearchEnabled:  customAgent.Config.WebSearchEnabled,
+			WebSearchMaxResults: customAgent.Config.WebSearchMaxResults,
+			MultiTurnEnabled:  customAgent.Config.MultiTurnEnabled,
+			HistoryTurns:      customAgent.Config.HistoryTurns,
+		}
+
+		// Use custom agent's allowed tools if specified, otherwise use defaults
+		if len(customAgent.Config.AllowedTools) > 0 {
+			agentConfig.AllowedTools = customAgent.Config.AllowedTools
+		} else {
+			agentConfig.AllowedTools = tools.DefaultAllowedTools()
+		}
+
+		// Use custom agent's system prompt if specified
+		if customAgent.Config.SystemPrompt != "" {
+			agentConfig.UseCustomSystemPrompt = true
+			agentConfig.SystemPromptWebEnabled = customAgent.Config.SystemPrompt
+			agentConfig.SystemPromptWebDisabled = customAgent.Config.SystemPrompt
+		}
+
+		// Use custom agent's knowledge bases if specified, otherwise use session's
+		if len(customAgent.Config.KnowledgeBases) > 0 {
+			agentConfig.KnowledgeBases = customAgent.Config.KnowledgeBases
+		} else {
+			agentConfig.KnowledgeBases = session.AgentConfig.KnowledgeBases
+		}
+		agentConfig.KnowledgeIDs = session.AgentConfig.KnowledgeIDs
+
+		// Override summary model if custom agent specifies one
+		if customAgent.Config.ModelID != "" {
+			session.SummaryModelID = customAgent.Config.ModelID
+		}
+
+		logger.Infof(ctx, "Custom agent config applied: MaxIterations=%d, Temperature=%.2f, AllowedTools=%v, WebSearchEnabled=%v",
+			agentConfig.MaxIterations, agentConfig.Temperature, agentConfig.AllowedTools, agentConfig.WebSearchEnabled)
+	} else {
+		// Use tenant configuration (default behavior)
+		agentConfig = &types.AgentConfig{
+			MaxIterations:     tenantInfo.AgentConfig.MaxIterations,
+			ReflectionEnabled: tenantInfo.AgentConfig.ReflectionEnabled,
+			AllowedTools:      tools.DefaultAllowedTools(),
+			Temperature:       tenantInfo.AgentConfig.Temperature,
+			KnowledgeBases:    session.AgentConfig.KnowledgeBases,   // Use session's knowledge bases
+			KnowledgeIDs:      session.AgentConfig.KnowledgeIDs,     // Use session's knowledge IDs (individual documents)
+			WebSearchEnabled:  session.AgentConfig.WebSearchEnabled, // Web search enabled from session config
+			MultiTurnEnabled:  true,                                 // Default: enable multi-turn
+			HistoryTurns:      5,                                    // Default: keep 5 turns
+		}
+
+		agentConfig.UseCustomSystemPrompt = tenantInfo.AgentConfig.UseCustomSystemPrompt
+		if agentConfig.UseCustomSystemPrompt {
+			agentConfig.SystemPromptWebEnabled = tenantInfo.AgentConfig.ResolveSystemPrompt(true)
+			agentConfig.SystemPromptWebDisabled = tenantInfo.AgentConfig.ResolveSystemPrompt(false)
+		}
 	}
 
-	agentConfig.UseCustomSystemPrompt = tenantInfo.AgentConfig.UseCustomSystemPrompt
-	if agentConfig.UseCustomSystemPrompt {
-		agentConfig.SystemPromptWebEnabled = tenantInfo.AgentConfig.ResolveSystemPrompt(true)
-		agentConfig.SystemPromptWebDisabled = tenantInfo.AgentConfig.ResolveSystemPrompt(false)
-	}
-
-	// Set web search max results from tenant config (default: 5)
-	agentConfig.WebSearchMaxResults = 5
-	if tenantInfo.WebSearchConfig != nil && tenantInfo.WebSearchConfig.MaxResults > 0 {
-		agentConfig.WebSearchMaxResults = tenantInfo.WebSearchConfig.MaxResults
+	// Set web search max results from tenant config if not set (default: 5)
+	if agentConfig.WebSearchMaxResults == 0 {
+		agentConfig.WebSearchMaxResults = 5
+		if tenantInfo.WebSearchConfig != nil && tenantInfo.WebSearchConfig.MaxResults > 0 {
+			agentConfig.WebSearchMaxResults = tenantInfo.WebSearchConfig.MaxResults
+		}
 	}
 
 	logger.Infof(ctx, "Merged agent config from tenant %d and session %s", tenantInfo.ID, sessionID)
@@ -1099,6 +1198,18 @@ func (s *sessionService) AgentQA(
 
 	// Get or create contextManager for this session
 	contextManager := s.getContextManagerForSession(ctx, session, summaryModel)
+
+	// Set system prompt for the current agent in context manager
+	// This ensures the context uses the correct system prompt when switching agents
+	systemPrompt := agentConfig.ResolveSystemPrompt(agentConfig.WebSearchEnabled)
+	if systemPrompt != "" {
+		if err := contextManager.SetSystemPrompt(ctx, sessionID, systemPrompt); err != nil {
+			logger.Warnf(ctx, "Failed to set system prompt in context manager: %v", err)
+		} else {
+			logger.Infof(ctx, "System prompt updated in context manager for agent")
+		}
+	}
+
 	// Get LLM context from context manager
 	llmContext, err := s.getContextForSession(ctx, contextManager, sessionID)
 	if err != nil {
@@ -1106,6 +1217,15 @@ func (s *sessionService) AgentQA(
 		llmContext = []chat.Message{}
 	}
 	logger.Infof(ctx, "Loaded %d messages from LLM context manager", len(llmContext))
+
+	// Apply multi-turn configuration for Agent mode
+	// Note: In Agent mode, context is managed by contextManager with compression strategies,
+	// so we don't apply HistoryTurns limit here. HistoryTurns is used in normal (KnowledgeQA) mode.
+	if !agentConfig.MultiTurnEnabled {
+		// Multi-turn disabled, clear history
+		logger.Infof(ctx, "Multi-turn disabled for this agent, clearing history context")
+		llmContext = []chat.Message{}
+	}
 
 	// Create agent engine with EventBus and ContextManager
 	logger.Info(ctx, "Creating agent engine")

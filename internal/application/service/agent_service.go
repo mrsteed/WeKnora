@@ -179,8 +179,16 @@ func (s *agentService) registerTools(
 	sessionID string,
 	sessionService interfaces.SessionService,
 ) error {
-	// If no specific tools allowed, register default tools
-	allowedTools := tools.DefaultAllowedTools()
+	// Use config's allowed tools if specified, otherwise use defaults
+	var allowedTools []string
+	if len(config.AllowedTools) > 0 {
+		allowedTools = make([]string, len(config.AllowedTools))
+		copy(allowedTools, config.AllowedTools)
+		logger.Infof(ctx, "Using custom allowed tools from config: %v", allowedTools)
+	} else {
+		allowedTools = tools.DefaultAllowedTools()
+		logger.Infof(ctx, "Using default allowed tools: %v", allowedTools)
+	}
 
 	// Filter out knowledge base tools if no knowledge bases or knowledge IDs are configured
 	hasKnowledge := len(config.KnowledgeBases) > 0 || len(config.KnowledgeIDs) > 0
@@ -206,7 +214,7 @@ func (s *agentService) registerTools(
 			}
 		}
 		allowedTools = filteredTools
-		logger.Infof(ctx, "Pure Agent Mode: Knowledge base tools disabled due to empty configuration")
+		logger.Infof(ctx, "Pure Agent Mode: Knowledge base tools filtered out, remaining: %v", allowedTools)
 	}
 
 	// If web search is enabled, add web_search to allowedTools

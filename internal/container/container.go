@@ -97,6 +97,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewAuthTokenRepository))
 	must(container.Provide(neo4jRepo.NewNeo4jRepository))
 	must(container.Provide(repository.NewMCPServiceRepository))
+	must(container.Provide(repository.NewCustomAgentRepository))
 
 	// MCP manager for managing MCP client connections
 	must(container.Provide(mcp.NewMCPManager))
@@ -115,6 +116,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewChunkExtractService))
 	must(container.Provide(service.NewMessageService))
 	must(container.Provide(service.NewMCPServiceService))
+	must(container.Provide(service.NewCustomAgentService))
 
 	// Web search service (needed by AgentService)
 	must(container.Provide(service.NewWebSearchService))
@@ -163,6 +165,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewSystemHandler))
 	must(container.Provide(handler.NewMCPServiceHandler))
 	must(container.Provide(handler.NewWebSearchHandler))
+	must(container.Provide(handler.NewCustomAgentHandler))
 
 	// Router configuration
 	must(container.Provide(router.NewRouter))

@@ -20,6 +20,7 @@ type Handler struct {
 	streamManager        interfaces.StreamManager        // Manager for handling streaming responses
 	config               *config.Config                  // Application configuration
 	knowledgebaseService interfaces.KnowledgeBaseService // Service for managing knowledge bases
+	customAgentService   interfaces.CustomAgentService   // Service for managing custom agents
 }
 
 // NewHandler creates a new instance of Handler with all necessary dependencies
@@ -29,6 +30,7 @@ func NewHandler(
 	streamManager interfaces.StreamManager,
 	config *config.Config,
 	knowledgebaseService interfaces.KnowledgeBaseService,
+	customAgentService interfaces.CustomAgentService,
 ) *Handler {
 	return &Handler{
 		sessionService:       sessionService,
@@ -36,6 +38,7 @@ func NewHandler(
 		streamManager:        streamManager,
 		config:               config,
 		knowledgebaseService: knowledgebaseService,
+		customAgentService:   customAgentService,
 	}
 }
 

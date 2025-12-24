@@ -9,8 +9,10 @@ import { listKnowledgeBases, searchKnowledge, batchQueryKnowledge } from '@/api/
 import { stopSession } from '@/api/chat';
 import KnowledgeBaseSelector from './KnowledgeBaseSelector.vue';
 import MentionSelector from './MentionSelector.vue';
+import AgentSelector from './AgentSelector.vue';
 import { getCaretCoordinates } from '@/utils/caret';
 import { listModels, type ModelConfig } from '@/api/model';
+import { listAgents, type CustomAgent } from '@/api/agent';
 import { getTenantWebSearchConfig } from '@/api/web-search';
 import { getConversationConfig, updateConversationConfig, type ConversationConfig } from '@/api/system';
 import { useI18n } from 'vue-i18n';
@@ -25,6 +27,81 @@ const atButtonRef = ref<HTMLElement>();
 const showAgentModeSelector = ref(false);
 const agentModeButtonRef = ref<HTMLElement>();
 const agentModeDropdownStyle = ref<Record<string, string>>({});
+
+// 智能体相关状态
+const agents = ref<CustomAgent[]>([]);
+const selectedAgentId = computed({
+  get: () => settingsStore.selectedAgentId || 'builtin-normal',
+  set: (val: string) => settingsStore.selectAgent(val)
+});
+const selectedAgent = computed(() => {
+  return agents.value.find(a => a.id === selectedAgentId.value) || {
+    id: 'builtin-normal',
+    name: t('input.normalMode'),
+    type: 'normal',
+    is_builtin: true
+  } as CustomAgent;
+});
+
+// 判断是否为自定义智能体（非内置）
+const isCustomAgent = computed(() => {
+  const agent = selectedAgent.value;
+  return agent && !agent.is_builtin && agent.type === 'custom';
+});
+
+// 智能体预配置的知识库 IDs
+const agentKnowledgeBases = computed(() => {
+  if (!isCustomAgent.value) return [];
+  return selectedAgent.value?.config?.knowledge_bases || [];
+});
+
+// 智能体是否启用了网络搜索
+const agentWebSearchEnabled = computed(() => {
+  if (!isCustomAgent.value) return null; // null 表示不受智能体控制
+  return selectedAgent.value?.config?.web_search_enabled ?? false;
+});
+
+// 网络搜索是否被智能体禁用（只读状态）
+const isWebSearchDisabledByAgent = computed(() => {
+  return isCustomAgent.value && agentWebSearchEnabled.value === false;
+});
+
+// 网络搜索是否被智能体强制启用
+const isWebSearchForcedByAgent = computed(() => {
+  return isCustomAgent.value && agentWebSearchEnabled.value === true;
+});
+
+// 知识库选择是否被智能体锁定
+// 1. 如果智能体配置了知识库 → 锁定到这些知识库
+// 2. 如果智能体没配置知识库，但 allow_user_kb_selection=false → 禁用知识库选择
+const isKnowledgeBaseLockedByAgent = computed(() => {
+  if (!isCustomAgent.value) return false;
+  // 有预配置知识库时，锁定到这些知识库
+  if (agentKnowledgeBases.value.length > 0) return true;
+  // 没有预配置知识库，但禁止用户选择
+  const allowUserKBSelection = selectedAgent.value?.config?.allow_user_kb_selection;
+  // 默认为 true（允许用户选择），只有明确设置为 false 时才禁用
+  return allowUserKBSelection === false;
+});
+
+// 知识库是否被智能体完全禁用（没有预配置且不允许用户选择）
+const isKnowledgeBaseDisabledByAgent = computed(() => {
+  if (!isCustomAgent.value) return false;
+  if (agentKnowledgeBases.value.length > 0) return false; // 有预配置的不算禁用
+  const allowUserKBSelection = selectedAgent.value?.config?.allow_user_kb_selection;
+  return allowUserKBSelection === false;
+});
+
+// 智能体配置的模型 ID
+const agentModelId = computed(() => {
+  if (!isCustomAgent.value) return null;
+  return selectedAgent.value?.config?.model_id || null;
+});
+
+// 模型选择是否被智能体锁定
+const isModelLockedByAgent = computed(() => {
+  return isCustomAgent.value && !!agentModelId.value;
+});
 
 // Mention related state
 const showMention = ref(false);
@@ -80,21 +157,49 @@ const selectedFiles = computed(() => {
 });
 
   // 合并所有选中项（用于输入框内显示）
+  // 包括用户选择的和智能体预配置的知识库
   const allSelectedItems = computed(() => {
-    const kbs = selectedKbs.value.map(kb => ({ 
-      ...kb, 
-      type: 'kb' as const,
-      kbType: kb.type // 保留原始类型用于显示区分
-    }));
+    // 获取智能体预配置的知识库 IDs
+    const agentKbIds = agentKnowledgeBases.value;
+    
+    // 用户选择的知识库（排除智能体已配置的）
+    const userSelectedKbs = selectedKbs.value
+      .filter(kb => !agentKbIds.includes(kb.id))
+      .map(kb => ({ 
+        ...kb, 
+        type: 'kb' as const,
+        kbType: kb.type,
+        isAgentConfigured: false
+      }));
+    
+    // 智能体预配置的知识库
+    const agentConfiguredKbs = knowledgeBases.value
+      .filter(kb => agentKbIds.includes(kb.id))
+      .map(kb => ({
+        ...kb,
+        type: 'kb' as const,
+        kbType: kb.type,
+        isAgentConfigured: true  // 标记为智能体配置，不可删除
+      }));
+    
+    // 用户选择的文件
     const files = selectedFiles.value.map((f: { id: string; name: string }) => ({ 
       ...f, 
-      type: 'file' as const 
+      type: 'file' as const,
+      isAgentConfigured: false
     }));
-    return [...kbs, ...files];
+    
+    // 智能体配置的放在前面
+    return [...agentConfiguredKbs, ...userSelectedKbs, ...files];
   });
 
-// 移除选中项
-const removeSelectedItem = (item: { id: string; type: 'kb' | 'file' }) => {
+// 移除选中项（智能体配置的项不可移除）
+const removeSelectedItem = (item: { id: string; type: 'kb' | 'file'; isAgentConfigured?: boolean }) => {
+  // 如果是智能体配置的，不允许删除
+  if (item.isAgentConfigured) {
+    MessagePlugin.warning(t('input.cannotRemoveAgentKb'));
+    return;
+  }
   if (item.type === 'kb') {
     settingsStore.removeKnowledgeBase(item.id);
   } else {
@@ -123,6 +228,15 @@ const remainingCount = computed(() => Math.max(0, selectedKbs.value.length - 2))
 
 // 根据不同状态组合计算输入框的 placeholder
 const inputPlaceholder = computed(() => {
+  // 如果选择了自定义智能体
+  if (isCustomAgent.value && selectedAgent.value) {
+    // 有描述时显示描述，否则显示"向 [名称] 提问"
+    if (selectedAgent.value.description) {
+      return selectedAgent.value.description;
+    }
+    return t('input.placeholderAgent', { name: selectedAgent.value.name });
+  }
+  
   const hasKnowledge = allSelectedItems.value.length > 0;
   const hasWebSearch = isWebSearchEnabled.value && isWebSearchConfigured.value;
   
@@ -208,6 +322,16 @@ const loadWebSearchConfig = async () => {
     if (settingsStore.isWebSearchEnabled) {
       settingsStore.toggleWebSearch(false);
     }
+  }
+};
+
+// 加载智能体列表
+const loadAgents = async () => {
+  try {
+    const response = await listAgents();
+    agents.value = response.data || [];
+  } catch (error) {
+    console.error('Failed to load agents:', error);
   }
 };
 
@@ -619,6 +743,13 @@ const onCompositionEnd = (e: CompositionEvent) => {
 };
 
 const triggerMention = () => {
+  // 如果智能体锁定或禁用了知识库，不允许打开选择器
+  if (isKnowledgeBaseLockedByAgent.value) {
+    const msgKey = isKnowledgeBaseDisabledByAgent.value ? 'input.kbDisabledByAgent' : 'input.kbLockedByAgent';
+    MessagePlugin.warning(t(msgKey));
+    return;
+  }
+  
   const textarea = getTextareaEl();
   if (!textarea) return;
   
@@ -712,6 +843,12 @@ const removeFile = (id: string) => {
 };
 
 const toggleModelSelector = () => {
+  // 如果智能体锁定了模型，不允许打开选择器
+  if (isModelLockedByAgent.value) {
+    MessagePlugin.warning(t('input.modelLockedByAgent'));
+    return;
+  }
+  
   // 互斥：关闭其他
   showMention.value = false;
   showAgentModeSelector.value = false;
@@ -761,6 +898,7 @@ onMounted(() => {
   loadWebSearchConfig();
   loadConversationConfig();
   loadChatModels();
+  loadAgents();
   
   // 如果从知识库内部进入，自动选中该知识库
   const kbId = (route.params as any)?.kbId as string;
@@ -931,18 +1069,14 @@ const updateAgentModeDropdownPosition = () => {
 };
 
 const toggleAgentModeSelector = () => {
-  // 如果 Agent 未就绪，显示提示
-  if (!settingsStore.isAgentReady && !isAgentEnabled.value) {
-    toggleAgentMode();
-    return;
-  }
-  
   // 互斥
   showMention.value = false;
   showModelSelector.value = false;
 
   showAgentModeSelector.value = !showAgentModeSelector.value;
   if (showAgentModeSelector.value) {
+    // 重新加载智能体列表
+    loadAgents();
     // 多次更新位置确保准确
     nextTick(() => {
       updateAgentModeDropdownPosition();
@@ -966,9 +1100,49 @@ const selectAgentMode = (mode: 'normal' | 'agent') => {
   const shouldEnableAgent = mode === 'agent';
   if (shouldEnableAgent !== isAgentEnabled.value) {
     settingsStore.toggleAgent(shouldEnableAgent);
+    // 同时更新选中的智能体
+    settingsStore.selectAgent(shouldEnableAgent ? 'builtin-agent' : 'builtin-normal');
     MessagePlugin.success(shouldEnableAgent ? t('input.messages.agentSwitchedOn') : t('input.messages.agentSwitchedOff'));
   }
   showAgentModeSelector.value = false;
+}
+
+// 选择智能体（新版）
+const handleSelectAgent = (agent: CustomAgent) => {
+  selectedAgentId.value = agent.id;
+  
+  // 根据智能体类型切换 Agent 模式
+  const isAgentType = agent.type === 'agent' || (agent.type === 'custom' && (agent.config?.max_iterations ?? 0) > 1);
+  
+  if (isAgentType && !settingsStore.isAgentReady) {
+    // Agent 模式未就绪，显示提示
+    toggleAgentMode();
+    return;
+  }
+  
+  settingsStore.toggleAgent(!!isAgentType);
+  
+  // 如果是自定义智能体，同步网络搜索状态和模型
+  if (!agent.is_builtin && agent.type === 'custom') {
+    const agentWebSearch = agent.config?.web_search_enabled;
+    if (agentWebSearch !== undefined) {
+      // 智能体配置了网络搜索设置，同步到 store
+      settingsStore.toggleWebSearch(agentWebSearch);
+    }
+    
+    // 如果智能体配置了模型，同步到 store
+    const agentModel = agent.config?.model_id;
+    if (agentModel) {
+      selectedModelId.value = agentModel;
+    }
+  }
+  
+  showAgentModeSelector.value = false;
+  
+  const message = agent.is_builtin 
+    ? (isAgentType ? t('input.messages.agentSwitchedOn') : t('input.messages.agentSwitchedOff'))
+    : t('input.messages.agentSelected', { name: agent.name });
+  MessagePlugin.success(message);
 }
 
 const clearvalue = () => {
@@ -1107,6 +1281,18 @@ const toggleWebSearch = () => {
   showModelSelector.value = false;
   showAgentModeSelector.value = false;
 
+  // 如果智能体禁用了网络搜索，不允许开启
+  if (isWebSearchDisabledByAgent.value) {
+    MessagePlugin.warning(t('input.webSearchDisabledByAgent'));
+    return;
+  }
+  
+  // 如果智能体强制启用了网络搜索，不允许关闭
+  if (isWebSearchForcedByAgent.value) {
+    MessagePlugin.warning(t('input.webSearchForcedByAgent'));
+    return;
+  }
+
   if (!isWebSearchConfigured.value) {
     const messageContent = h('div', { style: 'display: flex; flex-direction: column; gap: 6px; max-width: 280px;' }, [
       h('span', { style: 'color: #333; line-height: 1.5;' }, t('input.messages.webSearchNotConfigured')),
@@ -1182,14 +1368,15 @@ onBeforeRouteUpdate((to, from, next) => {
   <div class="answers-input">
     <!-- 富文本输入框容器 -->
     <div class="rich-input-container">
-      <!-- 选中的知识库和文件标签（显示在输入框内顶部） -->
+        <!-- 选中的知识库和文件标签（显示在输入框内顶部） -->
       <div v-if="allSelectedItems.length > 0" class="selected-tags-inline">
         <span 
           v-for="item in allSelectedItems" 
           :key="item.id" 
           class="inline-tag"
           :class="[
-            item.type === 'kb' ? (item.kbType === 'faq' ? 'faq-tag' : 'kb-tag') : 'file-tag'
+            item.type === 'kb' ? (item.kbType === 'faq' ? 'faq-tag' : 'kb-tag') : 'file-tag',
+            { 'agent-configured': item.isAgentConfigured }
           ]"
         >
           <span class="tag-icon">
@@ -1197,7 +1384,8 @@ onBeforeRouteUpdate((to, from, next) => {
             <t-icon v-else name="file" />
           </span>
           <span class="tag-name">{{ item.name }}</span>
-          <span class="tag-remove" @click="removeSelectedItem(item)">×</span>
+          <!-- 智能体配置的项不显示删除按钮 -->
+          <span v-if="!item.isAgentConfigured" class="tag-remove" @click="removeSelectedItem(item)">×</span>
         </span>
       </div>
       
@@ -1243,28 +1431,8 @@ onBeforeRouteUpdate((to, from, next) => {
           }"
           @click.stop="toggleAgentModeSelector"
         >
-          <img 
-            v-if="isAgentEnabled"
-            :src="getImgSrc('agent-active.svg')" 
-            :alt="$t('input.agentMode')" 
-            class="control-icon agent-icon"
-          />
-          <svg 
-            v-else
-            width="18" 
-            height="18" 
-            viewBox="0 0 24 24" 
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class="control-icon normal-mode-icon"
-          >
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
           <span class="agent-mode-text">
-            {{ isAgentEnabled ? $t('input.agentMode') : $t('input.normalMode') }}
+            {{ selectedAgent.name || (isAgentEnabled ? $t('input.agentMode') : $t('input.normalMode')) }}
           </span>
           <svg 
             width="12" 
@@ -1278,79 +1446,21 @@ onBeforeRouteUpdate((to, from, next) => {
           </svg>
         </div>
 
-        <!-- Agent 模式选择下拉菜单 -->
-        <Teleport to="body">
-          <div v-if="showAgentModeSelector" class="agent-mode-selector-overlay" @click="closeAgentModeSelector">
-            <div 
-              class="agent-mode-selector-dropdown"
-              :style="agentModeDropdownStyle"
-              @click.stop
-            >
-              <div 
-                class="agent-mode-option"
-                :class="{ 'selected': !isAgentEnabled }"
-                @click="selectAgentMode('normal')"
-              >
-                <div class="agent-mode-option-main">
-                  <span class="agent-mode-option-name">{{ $t('input.normalMode') }}</span>
-                  <span class="agent-mode-option-desc">{{ $t('input.normalModeDesc') }}</span>
-                </div>
-                <svg 
-                  v-if="!isAgentEnabled"
-                  width="16" 
-                  height="16" 
-                  viewBox="0 0 16 16" 
-                  fill="currentColor"
-                  class="check-icon"
-                >
-                  <path d="M13.5 4.5L6 12L2.5 8.5L3.5 7.5L6 10L12.5 3.5L13.5 4.5Z"/>
-                </svg>
-              </div>
-              <div 
-                class="agent-mode-option"
-                :class="{ 
-                  'selected': isAgentEnabled,
-                  'disabled': !settingsStore.isAgentReady && !isAgentEnabled 
-                }"
-                @click="selectAgentMode('agent')"
-              >
-                <div class="agent-mode-option-main">
-                  <span class="agent-mode-option-name">{{ $t('input.agentMode') }}</span>
-                  <span class="agent-mode-option-desc">{{ $t('input.agentModeDesc') }}</span>
-                </div>
-                <svg 
-                  v-if="isAgentEnabled"
-                  width="16" 
-                  height="16" 
-                  viewBox="0 0 16 16" 
-                  fill="currentColor"
-                  class="check-icon"
-                >
-                  <path d="M13.5 4.5L6 12L2.5 8.5L3.5 7.5L6 10L12.5 3.5L13.5 4.5Z"/>
-                </svg>
-                <div v-if="!settingsStore.isAgentReady && !isAgentEnabled" class="agent-mode-warning">
-                  <t-tooltip :content="$t('input.agentNotReadyTooltip')" placement="left">
-                    <t-icon name="error-circle" class="warning-icon" />
-                  </t-tooltip>
-                </div>
-              </div>
-              <div v-if="!settingsStore.isAgentReady && !isAgentEnabled" class="agent-mode-footer">
-                <a 
-                  href="#"
-                  @click.prevent="handleGoToAgentSettings"
-                  class="agent-mode-link"
-                >
-                  {{ $t('input.goToSettings') }}
-                </a>
-              </div>
-            </div>
-          </div>
-        </Teleport>
+        <!-- Agent 选择器下拉菜单 -->
+        <AgentSelector
+          :visible="showAgentModeSelector"
+          :anchorEl="agentModeButtonRef"
+          :currentAgentId="selectedAgentId"
+          @close="closeAgentModeSelector"
+          @select="handleSelectAgent"
+        />
 
         <!-- WebSearch 开关按钮 -->
         <t-tooltip placement="top">
           <template #content>
-            <span v-if="isWebSearchConfigured">{{ isWebSearchEnabled ? $t('input.webSearch.toggleOff') : $t('input.webSearch.toggleOn') }}</span>
+            <span v-if="isWebSearchDisabledByAgent">{{ $t('input.webSearchDisabledByAgent') }}</span>
+            <span v-else-if="isWebSearchForcedByAgent">{{ $t('input.webSearchForcedByAgent') }}</span>
+            <span v-else-if="isWebSearchConfigured">{{ isWebSearchEnabled ? $t('input.webSearch.toggleOff') : $t('input.webSearch.toggleOn') }}</span>
             <div v-else class="websearch-tooltip-disabled">
               <span>{{ $t('input.webSearch.notConfigured') }}</span>
               <a href="#" @click.prevent="handleGoToWebSearchSettings">{{ $t('input.goToSettings') }}</a>
@@ -1358,7 +1468,11 @@ onBeforeRouteUpdate((to, from, next) => {
           </template>
           <div 
             class="control-btn websearch-btn"
-            :class="{ 'active': isWebSearchEnabled && isWebSearchConfigured, 'disabled': !isWebSearchConfigured }"
+            :class="{ 
+              'active': (isWebSearchEnabled && isWebSearchConfigured) || isWebSearchForcedByAgent, 
+              'disabled': !isWebSearchConfigured,
+              'agent-controlled': isWebSearchDisabledByAgent || isWebSearchForcedByAgent
+            }"
             @click.stop="toggleWebSearch"
           >
             <svg 
@@ -1368,7 +1482,7 @@ onBeforeRouteUpdate((to, from, next) => {
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
               class="control-icon websearch-icon"
-              :class="{ 'active': isWebSearchEnabled && isWebSearchConfigured }"
+              :class="{ 'active': (isWebSearchEnabled && isWebSearchConfigured) || isWebSearchForcedByAgent }"
             >
               <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
               <path d="M 9 2 A 3.5 7 0 0 0 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
@@ -1380,11 +1494,14 @@ onBeforeRouteUpdate((to, from, next) => {
         </t-tooltip>
 
         <!-- @ 知识库/文件选择按钮 -->
-        <t-tooltip :content="allSelectedItems.length > 0 ? $t('input.knowledgeBaseWithCount', { count: allSelectedItems.length }) : $t('input.knowledgeBase')">
+        <t-tooltip :content="isKnowledgeBaseDisabledByAgent ? $t('input.kbDisabledByAgent') : (isKnowledgeBaseLockedByAgent ? $t('input.kbLockedByAgent') : (allSelectedItems.length > 0 ? $t('input.knowledgeBaseWithCount', { count: allSelectedItems.length }) : $t('input.knowledgeBase')))">
           <div 
             ref="atButtonRef"
             class="control-btn kb-btn"
-            :class="{ 'active': allSelectedItems.length > 0 }"
+            :class="{ 
+              'active': allSelectedItems.length > 0,
+              'agent-controlled': isKnowledgeBaseLockedByAgent
+            }"
             @click.stop
             @mousedown.prevent="triggerMention"
           >
@@ -1394,27 +1511,29 @@ onBeforeRouteUpdate((to, from, next) => {
         </t-tooltip>
 
         <!-- 模型显示 -->
-        <div class="model-display">
-          <div
-            ref="modelButtonRef"
-            class="model-selector-trigger"
-            @click.stop="toggleModelSelector"
-          >
-            <span class="model-selector-name">
-              {{ selectedModel?.name || $t('input.notConfigured') }}
-            </span>
-            <svg 
-              width="12" 
-              height="12" 
-              viewBox="0 0 12 12" 
-              fill="currentColor"
-              class="model-dropdown-arrow"
-              :class="{ 'rotate': showModelSelector }"
+        <t-tooltip :content="isModelLockedByAgent ? $t('input.modelLockedByAgent') : ''" :disabled="!isModelLockedByAgent">
+          <div class="model-display" :class="{ 'agent-controlled': isModelLockedByAgent }">
+            <div
+              ref="modelButtonRef"
+              class="model-selector-trigger"
+              @click.stop="toggleModelSelector"
             >
-              <path d="M2.5 4.5L6 8L9.5 4.5H2.5Z"/>
-            </svg>
+              <span class="model-selector-name">
+                {{ selectedModel?.name || $t('input.notConfigured') }}
+              </span>
+              <svg 
+                width="12" 
+                height="12" 
+                viewBox="0 0 12 12" 
+                fill="currentColor"
+                class="model-dropdown-arrow"
+                :class="{ 'rotate': showModelSelector }"
+              >
+                <path d="M2.5 4.5L6 8L9.5 4.5H2.5Z"/>
+              </svg>
+            </div>
           </div>
-        </div>
+        </t-tooltip>
       </div>
 
       <Teleport to="body">
@@ -1609,6 +1728,12 @@ const getImgSrc = (url: string) => {
       background: rgba(0, 0, 0, 0.1);
     }
   }
+  
+  // 智能体配置的标签样式（用虚线边框区分，不显示锁图标）
+  &.agent-configured {
+    border-style: dashed;
+    opacity: 0.9;
+  }
 }
 
 :deep(.t-textarea__inner) {
@@ -1788,6 +1913,19 @@ const getImgSrc = (url: string) => {
       background: rgba(16, 185, 129, 0.15);
     }
   }
+  
+  &.agent-controlled {
+    cursor: not-allowed;
+    opacity: 0.85;
+    
+    &:hover {
+      background: var(--td-bg-color-secondarycontainer, #f5f5f5);
+    }
+    
+    &.active:hover {
+      background: rgba(16, 185, 129, 0.1);
+    }
+  }
 }
 
 .kb-count {
@@ -1826,6 +1964,7 @@ const getImgSrc = (url: string) => {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   
   &.active {
     background: rgba(16, 185, 129, 0.1);
@@ -1850,6 +1989,19 @@ const getImgSrc = (url: string) => {
       .websearch-icon {
         color: var(--td-text-color-primary, #333);
       }
+    }
+  }
+  
+  &.agent-controlled {
+    cursor: not-allowed;
+    opacity: 0.85;
+    
+    &:hover {
+      background: var(--td-bg-color-secondarycontainer, #f5f5f5);
+    }
+    
+    &.active:hover {
+      background: rgba(16, 185, 129, 0.1);
     }
   }
 }
@@ -1956,6 +2108,18 @@ const getImgSrc = (url: string) => {
   align-items: center;
   margin-left: auto;
   flex-shrink: 0;
+  
+  &.agent-controlled {
+    .model-selector-trigger {
+      cursor: not-allowed;
+      opacity: 0.85;
+      
+      &:hover {
+        background: rgba(16, 185, 129, 0.1);
+        border-color: rgba(16, 185, 129, 0.3);
+      }
+    }
+  }
 }
 
 .model-selector-trigger {
@@ -2040,12 +2204,12 @@ const getImgSrc = (url: string) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--td-component-border, #f2f4f5);
-  background: var(--td-bg-color-secondarycontainer, #fafcfc);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--td-component-stroke, #f0f0f0);
+  background: var(--td-bg-color-container, #fff);
   font-size: 12px;
-  font-weight: 600;
-  color: var(--td-text-color-primary, #222);
+  font-weight: 500;
+  color: var(--td-text-color-secondary, #666);
 }
 
 .model-selector-content {
@@ -2061,26 +2225,26 @@ const getImgSrc = (url: string) => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--td-component-border, #e1e5e6);
-  background: var(--td-bg-color-container, #fff);
-  color: var(--td-text-color-secondary, #52575a);
-  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--td-brand-color, #07c05f);
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.12s;
-}
-
-.model-selector-add .add-icon {
-  font-size: 12px;
-  line-height: 1;
-}
-
-.model-selector-add:hover {
-  border-color: #10b981;
-  color: #10b981;
-  background: #f0fdf6;
+  transition: all 0.2s;
+  
+  .add-icon {
+    font-size: 14px;
+    line-height: 1;
+    font-weight: 400;
+  }
+  
+  &:hover {
+    color: var(--td-brand-color-hover, #05a04f);
+    background: var(--td-bg-color-secondarycontainer, #f3f3f3);
+  }
 }
 
 .model-option {

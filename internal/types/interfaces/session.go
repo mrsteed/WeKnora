@@ -31,10 +31,12 @@ type SessionService interface {
 	// knowledgeIDs: list of specific knowledge (file) IDs to search
 	// summaryModelID: optional summary model ID override (if empty, uses session/KB default)
 	// webSearchEnabled: whether to enable web search to supplement knowledge base results
+	// customAgent: optional custom agent for config override (multiTurnEnabled, historyTurns)
 	// Events are emitted through eventBus (references, answer chunks, completion)
 	KnowledgeQA(ctx context.Context,
 		session *types.Session, query string, knowledgeBaseIDs []string, knowledgeIDs []string,
 		assistantMessageID string, summaryModelID string, webSearchEnabled bool, eventBus *event.EventBus,
+		customAgent *types.CustomAgent,
 	) error
 	// KnowledgeQAByEvent performs knowledge-based question answering by event
 	KnowledgeQAByEvent(ctx context.Context, chatManage *types.ChatManage, eventList []types.EventType) error
@@ -42,12 +44,14 @@ type SessionService interface {
 	SearchKnowledge(ctx context.Context, knowledgeBaseID, query string) ([]*types.SearchResult, error)
 	// AgentQA performs agent-based question answering with conversation history and streaming support
 	// eventBus is optional - if nil, uses service's default EventBus
+	// customAgent is optional - if provided, uses custom agent configuration instead of tenant defaults
 	AgentQA(
 		ctx context.Context,
 		session *types.Session,
 		query string,
 		assistantMessageID string,
 		eventBus *event.EventBus,
+		customAgent *types.CustomAgent,
 	) error
 	// ClearContext clears the LLM context for a session
 	ClearContext(ctx context.Context, sessionID string) error
