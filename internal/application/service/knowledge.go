@@ -2548,6 +2548,7 @@ func (s *knowledgeService) CloneChunk(ctx context.Context, src, dst *types.Knowl
 			chunkType,
 			"",
 			"",
+			"",
 		)
 		chunkPage++
 		if err != nil {
@@ -2642,7 +2643,7 @@ func (s *knowledgeService) CloneChunk(ctx context.Context, src, dst *types.Knowl
 
 // ListFAQEntries lists FAQ entries under a FAQ knowledge base.
 func (s *knowledgeService) ListFAQEntries(ctx context.Context,
-	kbID string, page *types.Pagination, tagID string, keyword string,
+	kbID string, page *types.Pagination, tagID string, keyword string, sortOrder string,
 ) (*types.PageResult, error) {
 	if page == nil {
 		page = &types.Pagination{}
@@ -2662,17 +2663,43 @@ func (s *knowledgeService) ListFAQEntries(ctx context.Context,
 	}
 	chunkType := []types.ChunkType{types.ChunkTypeFAQ}
 	chunks, total, err := s.chunkRepo.ListPagedChunksByKnowledgeID(
-		ctx, tenantID, faqKnowledge.ID, page, chunkType, tagID, keyword,
+		ctx, tenantID, faqKnowledge.ID, page, chunkType, tagID, keyword, sortOrder,
 	)
 	if err != nil {
 		return nil, err
 	}
+
+	// Build tag ID to name mapping for all unique tag IDs (batch query)
+	tagNameMap := make(map[string]string)
+	tagIDs := make([]string, 0)
+	tagIDSet := make(map[string]struct{})
+	for _, chunk := range chunks {
+		if chunk.TagID != "" {
+			if _, exists := tagIDSet[chunk.TagID]; !exists {
+				tagIDSet[chunk.TagID] = struct{}{}
+				tagIDs = append(tagIDs, chunk.TagID)
+			}
+		}
+	}
+	if len(tagIDs) > 0 {
+		tags, err := s.tagRepo.GetByIDs(ctx, tenantID, tagIDs)
+		if err == nil {
+			for _, tag := range tags {
+				tagNameMap[tag.ID] = tag.Name
+			}
+		}
+	}
+
 	kb.EnsureDefaults()
 	entries := make([]*types.FAQEntry, 0, len(chunks))
 	for _, chunk := range chunks {
 		entry, err := s.chunkToFAQEntry(chunk, kb)
 		if err != nil {
 			return nil, err
+		}
+		// Set tag name from mapping
+		if entry.TagID != "" {
+			entry.TagName = tagNameMap[entry.TagID]
 		}
 		entries = append(entries, entry)
 	}
@@ -3315,6 +3342,14 @@ func (s *knowledgeService) CreateFAQEntry(ctx context.Context,
 		return nil, err
 	}
 
+	// 查询TagName
+	if entry.TagID != "" {
+		tag, tagErr := s.tagRepo.GetByID(ctx, tenantID, entry.TagID)
+		if tagErr == nil && tag != nil {
+			entry.TagName = tag.Name
+		}
+	}
+
 	return entry, nil
 }
 
@@ -3354,6 +3389,14 @@ func (s *knowledgeService) GetFAQEntry(ctx context.Context,
 	entry, err := s.chunkToFAQEntry(chunk, kb)
 	if err != nil {
 		return nil, err
+	}
+
+	// 查询TagName
+	if entry.TagID != "" {
+		tag, tagErr := s.tagRepo.GetByID(ctx, tenantID, entry.TagID)
+		if tagErr == nil && tag != nil {
+			entry.TagName = tag.Name
+		}
 	}
 
 	return entry, nil

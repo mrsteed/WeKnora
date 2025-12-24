@@ -180,6 +180,7 @@ type FAQEntry struct {
 	KnowledgeID       string         `json:"knowledge_id"`
 	KnowledgeBaseID   string         `json:"knowledge_base_id"`
 	TagID             string         `json:"tag_id"`
+	TagName           string         `json:"tag_name"`
 	IsEnabled         bool           `json:"is_enabled"`
 	IsRecommended     bool           `json:"is_recommended"`
 	StandardQuestion  string         `json:"standard_question"`
