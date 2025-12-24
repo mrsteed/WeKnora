@@ -74,6 +74,7 @@ type KnowledgeService interface {
 	UpdateImageInfo(ctx context.Context, knowledgeID string, chunkID string, imageInfo string) error
 	// ListFAQEntries lists FAQ entries under a FAQ knowledge base.
 	// When tagID is non-empty, results are filtered by tag_id on FAQ chunks.
+	// searchField: specifies which field to search in ("standard_question", "similar_questions", "answers", "" for all)
 	// sortOrder: "asc" for time ascending (updated_at ASC), default is time descending (updated_at DESC)
 	ListFAQEntries(
 		ctx context.Context,
@@ -81,6 +82,7 @@ type KnowledgeService interface {
 		page *types.Pagination,
 		tagID string,
 		keyword string,
+		searchField string,
 		sortOrder string,
 	) (*types.PageResult, error)
 	// UpsertFAQEntries imports or appends FAQ entries asynchronously.

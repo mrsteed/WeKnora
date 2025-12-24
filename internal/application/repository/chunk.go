@@ -80,6 +80,7 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	chunkType []types.ChunkType,
 	tagID string,
 	keyword string,
+	searchField string,
 	sortOrder string,
 ) ([]*types.Chunk, int64, error) {
 	var chunks []*types.Chunk
@@ -97,7 +98,20 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 		}
 		if keyword != "" {
 			like := "%" + keyword + "%"
-			db = db.Where("(content LIKE ? OR metadata::text LIKE ?)", like, like)
+			switch searchField {
+			case "standard_question":
+				// Search only in standard_question field of metadata
+				db = db.Where("metadata->>'standard_question' ILIKE ?", like)
+			case "similar_questions":
+				// Search in similar_questions array of metadata
+				db = db.Where("metadata->'similar_questions'::text ILIKE ?", like)
+			case "answers":
+				// Search in answers array of metadata
+				db = db.Where("metadata->'answers'::text ILIKE ?", like)
+			default:
+				// Search in all fields (content and metadata)
+				db = db.Where("(content ILIKE ? OR metadata::text ILIKE ?)", like, like)
+			}
 		}
 		return db
 	}
