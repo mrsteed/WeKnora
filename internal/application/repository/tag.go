@@ -40,6 +40,20 @@ func (r *knowledgeTagRepository) GetByID(ctx context.Context, tenantID uint64, i
 	return &tag, nil
 }
 
+// GetByIDs retrieves multiple tags by their IDs in a single query
+func (r *knowledgeTagRepository) GetByIDs(ctx context.Context, tenantID uint64, ids []string) ([]*types.KnowledgeTag, error) {
+	if len(ids) == 0 {
+		return []*types.KnowledgeTag{}, nil
+	}
+	var tags []*types.KnowledgeTag
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND id IN (?)", tenantID, ids).
+		Find(&tags).Error; err != nil {
+		return nil, err
+	}
+	return tags, nil
+}
+
 // GetByName gets a knowledge tag by name
 func (r *knowledgeTagRepository) GetByName(ctx context.Context, tenantID uint64, kbID string, name string) (*types.KnowledgeTag, error) {
 	var tag types.KnowledgeTag

@@ -26,6 +26,8 @@ type KnowledgeTagRepository interface {
 	Create(ctx context.Context, tag *types.KnowledgeTag) error
 	Update(ctx context.Context, tag *types.KnowledgeTag) error
 	GetByID(ctx context.Context, tenantID uint64, id string) (*types.KnowledgeTag, error)
+	// GetByIDs retrieves multiple tags by their IDs in a single query.
+	GetByIDs(ctx context.Context, tenantID uint64, ids []string) ([]*types.KnowledgeTag, error)
 	GetByName(ctx context.Context, tenantID uint64, kbID string, name string) (*types.KnowledgeTag, error)
 	ListByKB(
 		ctx context.Context,

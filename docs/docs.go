@@ -265,6 +265,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
+                    },
+                    "403": {
+                        "description": "注册功能已禁用",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
                     }
                 }
             }
@@ -1947,6 +1953,18 @@ const docTemplate = `{
                         "description": "关键词搜索",
                         "name": "keyword",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索字段: standard_question(标准问题), similar_questions(相似问法), answers(答案), 默认搜索全部",
+                        "name": "search_field",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序方式: asc(按更新时间正序), 默认按更新时间倒序",
+                        "name": "sort_order",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2241,6 +2259,64 @@ const docTemplate = `{
             }
         },
         "/knowledge-bases/{id}/faq/entries/{entry_id}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "根据ID获取单个FAQ条目的详情",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "FAQ管理"
+                ],
+                "summary": "获取FAQ条目详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "知识库ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "FAQ条目ID",
+                        "name": "entry_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "FAQ条目详情",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "条目不存在",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            },
             "put": {
                 "security": [
                     {
@@ -2958,7 +3034,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "删除标签，可使用force=true强制删除被引用的标签",
+                "description": "删除标签，可使用force=true强制删除被引用的标签，content_only=true仅删除标签下的内容而保留标签本身",
                 "consumes": [
                     "application/json"
                 ],
@@ -2988,6 +3064,12 @@ const docTemplate = `{
                         "type": "boolean",
                         "description": "强制删除",
                         "name": "force",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "仅删除内容，保留标签",
+                        "name": "content_only",
                         "in": "query"
                     }
                 ],
@@ -7796,13 +7878,26 @@ const docTemplate = `{
         "internal_handler_session.SearchKnowledgeRequest": {
             "type": "object",
             "required": [
-                "knowledge_base_id",
                 "query"
             ],
             "properties": {
                 "knowledge_base_id": {
-                    "description": "ID of the knowledge base to search",
+                    "description": "Single knowledge base ID (for backward compatibility)",
                     "type": "string"
+                },
+                "knowledge_base_ids": {
+                    "description": "IDs of knowledge bases to search (multi-KB support)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "knowledge_ids": {
+                    "description": "IDs of specific knowledge (files) to search",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "query": {
                     "description": "Query text to search for",
@@ -7906,7 +8001,7 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "",
 	BasePath:         "/api/v1",
 	Schemes:          []string{},
 	Title:            "WeKnora API",

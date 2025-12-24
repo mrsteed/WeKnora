@@ -27,7 +27,9 @@ func (r *chunkRepository) CreateChunks(ctx context.Context, chunks []*types.Chun
 	for _, chunk := range chunks {
 		chunk.Content = common.CleanInvalidUTF8(chunk.Content)
 	}
-	return r.db.WithContext(ctx).CreateInBatches(chunks, 100).Error
+	// Use Select("*") to ensure all fields including zero values (IsEnabled=false, Flags=0)
+	// are inserted, bypassing GORM's default value behavior for zero values
+	return r.db.WithContext(ctx).Select("*").CreateInBatches(chunks, 100).Error
 }
 
 // GetChunkByID retrieves a chunk by its ID and tenant ID
@@ -78,6 +80,8 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	chunkType []types.ChunkType,
 	tagID string,
 	keyword string,
+	searchField string,
+	sortOrder string,
 ) ([]*types.Chunk, int64, error) {
 	var chunks []*types.Chunk
 	var total int64
@@ -94,7 +98,20 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 		}
 		if keyword != "" {
 			like := "%" + keyword + "%"
-			db = db.Where("(content LIKE ? OR metadata::text LIKE ?)", like, like)
+			switch searchField {
+			case "standard_question":
+				// Search only in standard_question field of metadata
+				db = db.Where("metadata->>'standard_question' ILIKE ?", like)
+			case "similar_questions":
+				// Search in similar_questions array of metadata
+				db = db.Where("metadata->'similar_questions'::text ILIKE ?", like)
+			case "answers":
+				// Search in answers array of metadata
+				db = db.Where("metadata->'answers'::text ILIKE ?", like)
+			default:
+				// Search in all fields (content and metadata)
+				db = db.Where("(content ILIKE ? OR metadata::text ILIKE ?)", like, like)
+			}
 		}
 		return db
 	}
@@ -109,8 +126,14 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 	// Then query the paginated data
 	dataQuery := baseFilter(r.db.WithContext(ctx))
 
+	// Default is time descending, "asc" for time ascending
+	orderClause := "updated_at DESC"
+	if sortOrder == "asc" {
+		orderClause = "updated_at ASC"
+	}
+
 	if err := dataQuery.
-		Order("chunk_index ASC").
+		Order(orderClause).
 		Offset(page.Offset()).
 		Limit(page.Limit()).
 		Find(&chunks).Error; err != nil {

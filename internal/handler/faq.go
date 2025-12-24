@@ -28,11 +28,13 @@ func NewFAQHandler(knowledgeService interfaces.KnowledgeService) *FAQHandler {
 // @Tags         FAQ管理
 // @Accept       json
 // @Produce      json
-// @Param        id         path      string  true   "知识库ID"
-// @Param        page       query     int     false  "页码"
-// @Param        page_size  query     int     false  "每页数量"
-// @Param        tag_id     query     string  false  "标签ID筛选"
-// @Param        keyword    query     string  false  "关键词搜索"
+// @Param        id           path      string  true   "知识库ID"
+// @Param        page         query     int     false  "页码"
+// @Param        page_size    query     int     false  "每页数量"
+// @Param        tag_id       query     string  false  "标签ID筛选"
+// @Param        keyword      query     string  false  "关键词搜索"
+// @Param        search_field query     string  false  "搜索字段: standard_question(标准问题), similar_questions(相似问法), answers(答案), 默认搜索全部"
+// @Param        sort_order   query     string  false  "排序方式: asc(按更新时间正序), 默认按更新时间倒序"
 // @Success      200        {object}  map[string]interface{}  "FAQ列表"
 // @Failure      400        {object}  errors.AppError         "请求参数错误"
 // @Security     Bearer
@@ -49,8 +51,10 @@ func (h *FAQHandler) ListEntries(c *gin.Context) {
 
 	tagID := secutils.SanitizeForLog(c.Query("tag_id"))
 	keyword := secutils.SanitizeForLog(c.Query("keyword"))
+	searchField := secutils.SanitizeForLog(c.Query("search_field"))
+	sortOrder := secutils.SanitizeForLog(c.Query("sort_order"))
 
-	result, err := h.knowledgeService.ListFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), &page, tagID, keyword)
+	result, err := h.knowledgeService.ListFAQEntries(ctx, secutils.SanitizeForLog(c.Param("id")), &page, tagID, keyword, searchField, sortOrder)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

@@ -17,6 +17,7 @@ type FAQEntry struct {
 	KnowledgeID       string    `json:"knowledge_id"`
 	KnowledgeBaseID   string    `json:"knowledge_base_id"`
 	TagID             string    `json:"tag_id"`
+	TagName           string    `json:"tag_name"`
 	IsEnabled         bool      `json:"is_enabled"`
 	IsRecommended     bool      `json:"is_recommended"`
 	StandardQuestion  string    `json:"standard_question"`
@@ -139,8 +140,10 @@ type faqSimpleResponse struct {
 }
 
 // ListFAQEntries returns paginated FAQ entries under a knowledge base.
+// searchField: specifies which field to search in ("standard_question", "similar_questions", "answers", "" for all)
+// sortOrder: "asc" for time ascending (updated_at ASC), default is time descending (updated_at DESC)
 func (c *Client) ListFAQEntries(ctx context.Context,
-	knowledgeBaseID string, page, pageSize int, tagID string, keyword string,
+	knowledgeBaseID string, page, pageSize int, tagID string, keyword string, searchField string, sortOrder string,
 ) (*FAQEntriesPage, error) {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/faq/entries", knowledgeBaseID)
 	query := url.Values{}
@@ -155,6 +158,12 @@ func (c *Client) ListFAQEntries(ctx context.Context,
 	}
 	if keyword != "" {
 		query.Add("keyword", keyword)
+	}
+	if searchField != "" {
+		query.Add("search_field", searchField)
+	}
+	if sortOrder != "" {
+		query.Add("sort_order", sortOrder)
 	}
 
 	resp, err := c.doRequest(ctx, http.MethodGet, path, nil, query)

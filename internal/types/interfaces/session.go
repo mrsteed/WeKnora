@@ -41,7 +41,9 @@ type SessionService interface {
 	// KnowledgeQAByEvent performs knowledge-based question answering by event
 	KnowledgeQAByEvent(ctx context.Context, chatManage *types.ChatManage, eventList []types.EventType) error
 	// SearchKnowledge performs knowledge-based search, without summarization
-	SearchKnowledge(ctx context.Context, knowledgeBaseID, query string) ([]*types.SearchResult, error)
+	// knowledgeBaseIDs: list of knowledge base IDs to search (supports multi-KB)
+	// knowledgeIDs: list of specific knowledge (file) IDs to search
+	SearchKnowledge(ctx context.Context, knowledgeBaseIDs []string, knowledgeIDs []string, query string) ([]*types.SearchResult, error)
 	// AgentQA performs agent-based question answering with conversation history and streaming support
 	// eventBus is optional - if nil, uses service's default EventBus
 	// customAgent is optional - if provided, uses custom agent configuration instead of tenant defaults

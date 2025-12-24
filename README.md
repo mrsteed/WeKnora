@@ -323,7 +323,7 @@ Please refer to the [MCP Configuration Guide](./mcp-server/MCP_CONFIG.md) for th
 
 Troubleshooting FAQ: [Troubleshooting FAQ](./docs/QA.md)
 
-Detailed API documentation is available at: [API Docs](./docs/API.md)
+Detailed API documentation is available at: [API Docs](./docs/api/README.md)
 
 ## 🧭 Developer Guide
 

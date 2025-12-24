@@ -423,8 +423,10 @@ func (c *Client) StopSession(ctx context.Context, sessionID string, messageID st
 
 // SearchKnowledgeRequest knowledge search request
 type SearchKnowledgeRequest struct {
-	Query           string `json:"query"`             // Query content
-	KnowledgeBaseID string `json:"knowledge_base_id"` // Knowledge base ID
+	Query            string   `json:"query"`                         // Query content
+	KnowledgeBaseID  string   `json:"knowledge_base_id,omitempty"`   // Single knowledge base ID (for backward compatibility)
+	KnowledgeBaseIDs []string `json:"knowledge_base_ids,omitempty"`  // Knowledge base IDs (multi-KB support)
+	KnowledgeIDs     []string `json:"knowledge_ids,omitempty"`       // Specific knowledge (file) IDs
 }
 
 // SearchKnowledgeResponse search results response
@@ -435,8 +437,8 @@ type SearchKnowledgeResponse struct {
 
 // SearchKnowledge performs knowledge base search without LLM summarization
 func (c *Client) SearchKnowledge(ctx context.Context, request *SearchKnowledgeRequest) ([]*SearchResult, error) {
-	fmt.Printf("Starting SearchKnowledge request, knowledge base ID: %s, query: %s\n",
-		request.KnowledgeBaseID, request.Query)
+	fmt.Printf("Starting SearchKnowledge request, knowledge base IDs: %v, knowledge IDs: %v, query: %s\n",
+		request.KnowledgeBaseIDs, request.KnowledgeIDs, request.Query)
 
 	resp, err := c.doRequest(ctx, http.MethodPost, "/api/v1/knowledge-search", request, nil)
 	if err != nil {
