@@ -5,25 +5,59 @@ export type CustomAgentType = 'normal' | 'agent' | 'custom';
 
 // 智能体配置
 export interface CustomAgentConfig {
+  // ===== 基础设置 =====
   agent_mode?: 'normal' | 'agent';  // 运行模式：normal=RAG模式, agent=ReAct Agent模式
-  system_prompt?: string;
+  system_prompt?: string;           // 系统提示词（普通模式，或Agent模式网络搜索关闭时）
+  system_prompt_web_enabled?: string; // Agent模式网络搜索开启时的系统提示词
+  context_template?: string;        // 上下文模板（普通模式）
+
+  // ===== 模型设置 =====
   model_id?: string;
-  rerank_model_id?: string;  // ReRank 模型 ID（当使用知识库时需要）
+  rerank_model_id?: string;         // ReRank 模型 ID
   temperature?: number;
-  max_iterations?: number;
-  allowed_tools?: string[];
+  max_completion_tokens?: number;   // 最大生成token数（普通模式）
+
+  // ===== Agent模式设置 =====
+  max_iterations?: number;          // 最大迭代次数
+  allowed_tools?: string[];         // 允许的工具
+  reflection_enabled?: boolean;     // 是否启用反思
+
+  // ===== 知识库设置 =====
+  // 知识库选择模式：all=全部知识库, selected=指定知识库, none=不使用知识库
+  kb_selection_mode?: 'all' | 'selected' | 'none';
   knowledge_bases?: string[];
   // 当没有配置知识库时，是否允许用户自由选择知识库
   // true (默认): 用户可以自由选择任意知识库
   // false: 禁用知识库选择功能
   allow_user_kb_selection?: boolean;
+
+  // ===== 网络搜索设置 =====
   web_search_enabled?: boolean;
   web_search_max_results?: number;
-  reflection_enabled?: boolean;
+
+  // ===== 多轮对话设置 =====
+  multi_turn_enabled?: boolean;     // 是否启用多轮对话
+  history_turns?: number;           // 保留历史轮数
+
+  // ===== 检索策略设置 =====
+  embedding_top_k?: number;         // 向量召回TopK
+  keyword_threshold?: number;       // 关键词召回阈值
+  vector_threshold?: number;        // 向量召回阈值
+  rerank_top_k?: number;            // 重排TopK
+  rerank_threshold?: number;        // 重排阈值
+
+  // ===== 高级设置（主要用于普通模式）=====
+  enable_query_expansion?: boolean; // 是否启用查询扩展
+  enable_rewrite?: boolean;         // 是否启用问题改写
+  rewrite_prompt_system?: string;   // 改写系统提示词
+  rewrite_prompt_user?: string;     // 改写用户提示词模板
+  fallback_strategy?: 'fixed' | 'model'; // 兜底策略
+  fallback_response?: string;       // 固定兜底回复
+  fallback_prompt?: string;         // 兜底提示词（模型生成时）
+
+  // ===== 已废弃字段（保留兼容）=====
   welcome_message?: string;
   suggested_prompts?: string[];
-  multi_turn_enabled?: boolean;  // 是否启用多轮对话
-  history_turns?: number;        // 保留历史轮数
 }
 
 // 智能体

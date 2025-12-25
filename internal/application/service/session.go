@@ -87,8 +87,7 @@ func (s *sessionService) CreateSession(ctx context.Context, session *types.Sessi
 		return nil, errors.New("tenant ID is required")
 	}
 
-	logger.Infof(ctx, "Creating session, tenant ID: %d, model ID: %s, knowledge base ID: %s",
-		session.TenantID, session.SummaryModelID, session.KnowledgeBaseID)
+	logger.Infof(ctx, "Creating session, tenant ID: %d", session.TenantID)
 
 	// Create session in repository
 	createdSession, err := s.sessionRepo.Create(ctx, session)
@@ -259,30 +258,28 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 		return "", errors.New("no user message found")
 	}
 
-	// Get chat model, use default if SummaryModelID is empty
-	modelID := session.SummaryModelID
-	if modelID == "" {
-		// Try to get an available KnowledgeQA model
-		models, err := s.modelService.ListModels(ctx)
-		if err != nil {
-			logger.ErrorWithFields(ctx, err, nil)
-			return "", fmt.Errorf("failed to list models: %w", err)
+	// Get chat model, find an available model
+	modelID := ""
+	// Try to get an available KnowledgeQA model
+	models, err := s.modelService.ListModels(ctx)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		return "", fmt.Errorf("failed to list models: %w", err)
+	}
+	// Find first available KnowledgeQA model
+	for _, model := range models {
+		if model == nil {
+			continue
 		}
-		// Find first available KnowledgeQA model
-		for _, model := range models {
-			if model == nil {
-				continue
-			}
 			if model.Type == types.ModelTypeKnowledgeQA {
-				modelID = model.ID
-				logger.Infof(ctx, "Using first available KnowledgeQA model: %s", modelID)
-				break
-			}
+			modelID = model.ID
+			logger.Infof(ctx, "Using first available KnowledgeQA model: %s", modelID)
+			break
 		}
-		if modelID == "" {
-			logger.Error(ctx, "No KnowledgeQA model found")
-			return "", errors.New("no KnowledgeQA model available for title generation")
-		}
+	}
+	if modelID == "" {
+		logger.Error(ctx, "No KnowledgeQA model found")
+		return "", errors.New("no KnowledgeQA model available for title generation")
 	}
 
 	chatModel, err := s.modelService.GetChatModel(ctx, modelID)
@@ -413,16 +410,6 @@ func (s *sessionService) KnowledgeQA(
 		webSearchEnabled,
 	)
 
-	// If no knowledge base IDs provided, fall back to session's default
-	if len(knowledgeBaseIDs) == 0 {
-		if session.KnowledgeBaseID != "" {
-			knowledgeBaseIDs = []string{session.KnowledgeBaseID}
-			logger.Infof(ctx, "No knowledge base IDs provided, using session default: %s", session.KnowledgeBaseID)
-		} else {
-			logger.Warnf(ctx, "Session has no associated knowledge base, session ID: %s", session.ID)
-		}
-	}
-
 	// Merge custom agent's configured knowledge bases
 	if customAgent != nil && len(customAgent.Config.KnowledgeBases) > 0 {
 		// Create a set of existing knowledge base IDs to avoid duplicates
@@ -447,83 +434,28 @@ func (s *sessionService) KnowledgeQA(
 		return err
 	}
 
+	// Initialize default values from config.yaml
 	rewritePromptSystem := s.cfg.Conversation.RewritePromptSystem
 	rewritePromptUser := s.cfg.Conversation.RewritePromptUser
-	var tenantConv *types.ConversationConfig
-	if tc, err := getTenantConversationConfig(ctx); err == nil {
-		tenantConv = tc
-	} else {
-		logger.Warnf(ctx, "Failed to load tenant conversation config, tenant ID: %d, error: %v", session.TenantID, err)
-	}
+	vectorThreshold := s.cfg.Conversation.VectorThreshold
+	keywordThreshold := s.cfg.Conversation.KeywordThreshold
+	embeddingTopK := s.cfg.Conversation.EmbeddingTopK
+	rerankTopK := s.cfg.Conversation.RerankTopK
+	rerankThreshold := s.cfg.Conversation.RerankThreshold
+	maxRounds := s.cfg.Conversation.MaxRounds
+	fallbackStrategy := types.FallbackStrategy(s.cfg.Conversation.FallbackStrategy)
+	fallbackResponse := s.cfg.Conversation.FallbackResponse
+	fallbackPrompt := s.cfg.Conversation.FallbackPrompt
+	enableRewrite := s.cfg.Conversation.EnableRewrite
+	enableQueryExpansion := s.cfg.Conversation.EnableQueryExpansion
+	rerankModelID := ""
 
-	vectorThreshold := session.VectorThreshold
-	keywordThreshold := session.KeywordThreshold
-	embeddingTopK := session.EmbeddingTopK
-	rerankModelID := session.RerankModelID
-	rerankTopK := session.RerankTopK
-	rerankThreshold := session.RerankThreshold
-	maxRounds := session.MaxRounds
-	fallbackStrategy := session.FallbackStrategy
-	fallbackResponse := session.FallbackResponse
-	fallbackPrompt := ""
-	enableRewrite := session.EnableRewrite
-	enableQueryExpansion := true
-
-	summaryParams := session.SummaryParameters
-	if summaryParams == nil {
-		summaryParams = &types.SummaryConfig{}
-	}
 	summaryConfig := types.SummaryConfig{
-		MaxTokens:           summaryParams.MaxTokens,
-		RepeatPenalty:       summaryParams.RepeatPenalty,
-		TopK:                summaryParams.TopK,
-		TopP:                summaryParams.TopP,
-		FrequencyPenalty:    summaryParams.FrequencyPenalty,
-		PresencePenalty:     summaryParams.PresencePenalty,
-		Prompt:              summaryParams.Prompt,
-		ContextTemplate:     summaryParams.ContextTemplate,
-		Temperature:         summaryParams.Temperature,
-		Seed:                summaryParams.Seed,
-		NoMatchPrefix:       summaryParams.NoMatchPrefix,
-		MaxCompletionTokens: summaryParams.MaxCompletionTokens,
-	}
-
-	if tenantConv != nil {
-		vectorThreshold = tenantConv.VectorThreshold
-		keywordThreshold = tenantConv.KeywordThreshold
-		embeddingTopK = tenantConv.EmbeddingTopK
-		rerankModelID = tenantConv.RerankModelID
-		rerankTopK = tenantConv.RerankTopK
-		rerankThreshold = tenantConv.RerankThreshold
-		maxRounds = tenantConv.MaxRounds
-		if tenantConv.FallbackStrategy != "" {
-			fallbackStrategy = types.FallbackStrategy(tenantConv.FallbackStrategy)
-		}
-		fallbackResponse = tenantConv.FallbackResponse
-		if tenantConv.FallbackPrompt != "" {
-			fallbackPrompt = tenantConv.FallbackPrompt
-		}
-		enableRewrite = tenantConv.EnableRewrite
-		enableQueryExpansion = tenantConv.EnableQueryExpansion
-
-		if tenantConv.MaxCompletionTokens != 0 {
-			summaryConfig.MaxCompletionTokens = tenantConv.MaxCompletionTokens
-		}
-		if tenantConv.Prompt != "" {
-			summaryConfig.Prompt = tenantConv.Prompt
-		}
-		if tenantConv.ContextTemplate != "" {
-			summaryConfig.ContextTemplate = tenantConv.ContextTemplate
-		}
-		if tenantConv.Temperature != 0 {
-			summaryConfig.Temperature = tenantConv.Temperature
-		}
-		if tenantConv.RewritePromptSystem != "" {
-			rewritePromptSystem = tenantConv.RewritePromptSystem
-		}
-		if tenantConv.RewritePromptUser != "" {
-			rewritePromptUser = tenantConv.RewritePromptUser
-		}
+		Prompt:              s.cfg.Conversation.Summary.Prompt,
+		ContextTemplate:     s.cfg.Conversation.Summary.ContextTemplate,
+		Temperature:         s.cfg.Conversation.Summary.Temperature,
+		NoMatchPrefix:       s.cfg.Conversation.Summary.NoMatchPrefix,
+		MaxCompletionTokens: s.cfg.Conversation.Summary.MaxCompletionTokens,
 	}
 
 	// Set default fallback strategy if not set
@@ -533,26 +465,75 @@ func (s *sessionService) KnowledgeQA(
 	}
 
 	// Apply custom agent configuration if provided
-	multiTurnEnabled := true // Default: enable multi-turn
 	if customAgent != nil {
-		// Override system prompt with customAgent's SystemPrompt
+		// Ensure defaults are set
+		customAgent.EnsureDefaults()
+
+		// Override system prompt
 		if customAgent.Config.SystemPrompt != "" {
 			summaryConfig.Prompt = customAgent.Config.SystemPrompt
 			logger.Infof(ctx, "Using custom agent's system_prompt")
 		}
-		// Override temperature with customAgent's Temperature
+		// Override context template
+		if customAgent.Config.ContextTemplate != "" {
+			summaryConfig.ContextTemplate = customAgent.Config.ContextTemplate
+			logger.Infof(ctx, "Using custom agent's context_template")
+		}
+		// Override temperature
 		if customAgent.Config.Temperature > 0 {
 			summaryConfig.Temperature = customAgent.Config.Temperature
 			logger.Infof(ctx, "Using custom agent's temperature: %f", customAgent.Config.Temperature)
 		}
-		// Override maxRounds with customAgent's HistoryTurns
+		// Override max completion tokens
+		if customAgent.Config.MaxCompletionTokens > 0 {
+			summaryConfig.MaxCompletionTokens = customAgent.Config.MaxCompletionTokens
+			logger.Infof(ctx, "Using custom agent's max_completion_tokens: %d", customAgent.Config.MaxCompletionTokens)
+		}
+		// Override retrieval strategy settings
+		if customAgent.Config.EmbeddingTopK > 0 {
+			embeddingTopK = customAgent.Config.EmbeddingTopK
+		}
+		if customAgent.Config.KeywordThreshold > 0 {
+			keywordThreshold = customAgent.Config.KeywordThreshold
+		}
+		if customAgent.Config.VectorThreshold > 0 {
+			vectorThreshold = customAgent.Config.VectorThreshold
+		}
+		if customAgent.Config.RerankTopK > 0 {
+			rerankTopK = customAgent.Config.RerankTopK
+		}
+		if customAgent.Config.RerankThreshold > 0 {
+			rerankThreshold = customAgent.Config.RerankThreshold
+		}
+		if customAgent.Config.RerankModelID != "" {
+			rerankModelID = customAgent.Config.RerankModelID
+		}
+		// Override rewrite settings
+		enableRewrite = customAgent.Config.EnableRewrite
+		enableQueryExpansion = customAgent.Config.EnableQueryExpansion
+		if customAgent.Config.RewritePromptSystem != "" {
+			rewritePromptSystem = customAgent.Config.RewritePromptSystem
+		}
+		if customAgent.Config.RewritePromptUser != "" {
+			rewritePromptUser = customAgent.Config.RewritePromptUser
+		}
+		// Override fallback settings
+		if customAgent.Config.FallbackStrategy != "" {
+			fallbackStrategy = types.FallbackStrategy(customAgent.Config.FallbackStrategy)
+		}
+		if customAgent.Config.FallbackResponse != "" {
+			fallbackResponse = customAgent.Config.FallbackResponse
+		}
+		if customAgent.Config.FallbackPrompt != "" {
+			fallbackPrompt = customAgent.Config.FallbackPrompt
+		}
+		// Override history turns
 		if customAgent.Config.HistoryTurns > 0 {
 			maxRounds = customAgent.Config.HistoryTurns
 			logger.Infof(ctx, "Using custom agent's history_turns: %d", maxRounds)
 		}
 		// Check if multi-turn is disabled
-		multiTurnEnabled = customAgent.Config.MultiTurnEnabled
-		if !multiTurnEnabled {
+		if !customAgent.Config.MultiTurnEnabled {
 			maxRounds = 0 // Disable history
 			logger.Infof(ctx, "Multi-turn disabled by custom agent, clearing history")
 		}
@@ -625,8 +606,7 @@ func (s *sessionService) KnowledgeQA(
 	err = s.KnowledgeQAByEvent(ctx, chatManage, pipeline)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
-			"session_id":        session.ID,
-			"knowledge_base_id": session.KnowledgeBaseID,
+			"session_id": session.ID,
 		})
 		return err
 	}
@@ -703,10 +683,6 @@ func (s *sessionService) selectChatModelID(
 	knowledgeIDs []string,
 ) (string, error) {
 
-	// First, check if session has a SummaryModelID and if it's a Remote model
-	if session.SummaryModelID != "" {
-		return session.SummaryModelID, nil
-	}
 	// If no knowledge base IDs but have knowledge IDs, derive KB IDs from knowledge IDs
 	if len(knowledgeBaseIDs) == 0 && len(knowledgeIDs) > 0 {
 		tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
@@ -728,7 +704,7 @@ func (s *sessionService) selectChatModelID(
 				len(knowledgeBaseIDs), len(knowledgeIDs))
 		}
 	}
-	// If no Remote model found from session, check knowledge bases for Remote models
+	// Check knowledge bases for models
 	if len(knowledgeBaseIDs) > 0 {
 		// Try to find a knowledge base with Remote model
 		for _, kbID := range knowledgeBaseIDs {
@@ -746,13 +722,7 @@ func (s *sessionService) selectChatModelID(
 			}
 		}
 
-		// If still no Remote model found, use session's SummaryModelID if available
-		if session.SummaryModelID != "" {
-			logger.Infof(ctx, "No Remote model found, using session's summary model: %s", session.SummaryModelID)
-			return session.SummaryModelID, nil
-		}
-
-		// If still empty, use first knowledge base's model
+		// If no Remote model found, use first knowledge base's model
 		kb, err := s.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseIDs[0])
 		if err != nil {
 			logger.Errorf(ctx, "Failed to get knowledge base for model ID: %v", err)
@@ -766,22 +736,24 @@ func (s *sessionService) selectChatModelID(
 				kb.SummaryModelID,
 			)
 			return kb.SummaryModelID, nil
-		} else {
-			logger.Errorf(ctx, "Knowledge base %s has no summary model ID", knowledgeBaseIDs[0])
-			return "", fmt.Errorf("knowledge base %s has no summary model configured", knowledgeBaseIDs[0])
 		}
 	}
 
-	// No knowledge bases - use session's SummaryModelID if available
-	if session.SummaryModelID != "" {
-		logger.Infof(ctx, "No knowledge bases, using session's summary model: %s", session.SummaryModelID)
-		return session.SummaryModelID, nil
+	// No knowledge bases - try to find any available chat model
+	models, err := s.modelService.ListModels(ctx)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to list models: %v", err)
+		return "", fmt.Errorf("failed to list models: %w", err)
+	}
+	for _, model := range models {
+		if model != nil && model.Type == types.ModelTypeKnowledgeQA {
+			logger.Infof(ctx, "Using first available KnowledgeQA model: %s", model.ID)
+			return model.ID, nil
+		}
 	}
 
 	logger.Error(ctx, "No chat model ID available")
-	return "", errors.New(
-		"no chat model ID available: session has no SummaryModelID and no knowledge bases configured",
-	)
+	return "", errors.New("no chat model ID available: no knowledge bases configured and no available models")
 }
 
 // buildSearchTargets computes the unified search targets from knowledgeBaseIDs and knowledgeIDs
@@ -1049,18 +1021,20 @@ func (s *sessionService) AgentQA(
 		sessionID, tenantID, query, string(sessionJSON))
 
 	// Build effective agent configuration by merging session and tenant configs
-	// Session-level config: Enabled, KnowledgeBases (stored in session.AgentConfig)
-	// Tenant-level config: MaxIterations, Temperature, Models, Tools, etc. (from tenant.AgentConfig)
+	// All config now comes from customAgent parameter
 
 	tenantInfo := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 
-	// Check if agent is enabled at session level
-	if session.AgentConfig == nil {
-		logger.Warnf(ctx, "Agent config not found for session: %s", sessionID)
-		return errors.New("agent config not found for session")
+	// customAgent is required for AgentQA
+	if customAgent == nil {
+		logger.Warnf(ctx, "Custom agent not provided for session: %s", sessionID)
+		return errors.New("custom agent configuration is required for agent QA")
 	}
 
-	// Check if tenant has agent configuration
+	// Ensure defaults are set
+	customAgent.EnsureDefaults()
+
+	// Check if tenant has agent configuration (for defaults)
 	if tenantInfo.AgentConfig == nil {
 		tenantInfo.AgentConfig = &types.AgentConfig{
 			MaxIterations:           agent.DefaultAgentMaxIterations,
@@ -1073,75 +1047,34 @@ func (s *sessionService) AgentQA(
 		}
 	}
 
-	// Create runtime AgentConfig
-	// Priority: CustomAgent config > Tenant config > Defaults
-	// Session config provides KnowledgeBases and KnowledgeIDs
-	var agentConfig *types.AgentConfig
-
-	if customAgent != nil && customAgent.ID != types.BuiltinAgentNormalID && customAgent.ID != types.BuiltinAgentAgentID {
-		// Use custom agent configuration
-		logger.Infof(ctx, "Using custom agent configuration, agent ID: %s, name: %s", customAgent.ID, customAgent.Name)
-		customAgent.EnsureDefaults()
-
-		agentConfig = &types.AgentConfig{
-			MaxIterations:     customAgent.Config.MaxIterations,
-			ReflectionEnabled: customAgent.Config.ReflectionEnabled,
-			Temperature:       customAgent.Config.Temperature,
-			WebSearchEnabled:  customAgent.Config.WebSearchEnabled,
-			WebSearchMaxResults: customAgent.Config.WebSearchMaxResults,
-			MultiTurnEnabled:  customAgent.Config.MultiTurnEnabled,
-			HistoryTurns:      customAgent.Config.HistoryTurns,
-		}
-
-		// Use custom agent's allowed tools if specified, otherwise use defaults
-		if len(customAgent.Config.AllowedTools) > 0 {
-			agentConfig.AllowedTools = customAgent.Config.AllowedTools
-		} else {
-			agentConfig.AllowedTools = tools.DefaultAllowedTools()
-		}
-
-		// Use custom agent's system prompt if specified
-		if customAgent.Config.SystemPrompt != "" {
-			agentConfig.UseCustomSystemPrompt = true
-			agentConfig.SystemPromptWebEnabled = customAgent.Config.SystemPrompt
-			agentConfig.SystemPromptWebDisabled = customAgent.Config.SystemPrompt
-		}
-
-		// Use custom agent's knowledge bases if specified, otherwise use session's
-		if len(customAgent.Config.KnowledgeBases) > 0 {
-			agentConfig.KnowledgeBases = customAgent.Config.KnowledgeBases
-		} else {
-			agentConfig.KnowledgeBases = session.AgentConfig.KnowledgeBases
-		}
-		agentConfig.KnowledgeIDs = session.AgentConfig.KnowledgeIDs
-
-		// Override summary model if custom agent specifies one
-		if customAgent.Config.ModelID != "" {
-			session.SummaryModelID = customAgent.Config.ModelID
-		}
-
-		logger.Infof(ctx, "Custom agent config applied: MaxIterations=%d, Temperature=%.2f, AllowedTools=%v, WebSearchEnabled=%v",
-			agentConfig.MaxIterations, agentConfig.Temperature, agentConfig.AllowedTools, agentConfig.WebSearchEnabled)
-	} else {
-		// Use tenant configuration (default behavior)
-		agentConfig = &types.AgentConfig{
-			MaxIterations:     tenantInfo.AgentConfig.MaxIterations,
-			ReflectionEnabled: tenantInfo.AgentConfig.ReflectionEnabled,
-			AllowedTools:      tools.DefaultAllowedTools(),
-			Temperature:       tenantInfo.AgentConfig.Temperature,
-			KnowledgeBases:    session.AgentConfig.KnowledgeBases,   // Use session's knowledge bases
-			KnowledgeIDs:      session.AgentConfig.KnowledgeIDs,     // Use session's knowledge IDs (individual documents)
-			WebSearchEnabled:  session.AgentConfig.WebSearchEnabled, // Web search enabled from session config
-			MultiTurnEnabled:  true,                                 // Default: enable multi-turn
-			HistoryTurns:      5,                                    // Default: keep 5 turns
-		}
-
-		agentConfig.UseCustomSystemPrompt = tenantInfo.AgentConfig.UseCustomSystemPrompt
-		if agentConfig.UseCustomSystemPrompt {
-			agentConfig.SystemPromptWebEnabled = tenantInfo.AgentConfig.ResolveSystemPrompt(true)
-			agentConfig.SystemPromptWebDisabled = tenantInfo.AgentConfig.ResolveSystemPrompt(false)
-		}
+	// Create runtime AgentConfig from customAgent
+	agentConfig := &types.AgentConfig{
+		MaxIterations:       customAgent.Config.MaxIterations,
+		ReflectionEnabled:   customAgent.Config.ReflectionEnabled,
+		Temperature:         customAgent.Config.Temperature,
+		WebSearchEnabled:    customAgent.Config.WebSearchEnabled,
+		WebSearchMaxResults: customAgent.Config.WebSearchMaxResults,
+		MultiTurnEnabled:    customAgent.Config.MultiTurnEnabled,
+		HistoryTurns:        customAgent.Config.HistoryTurns,
+		KnowledgeBases:      customAgent.Config.KnowledgeBases,
 	}
+
+	// Use custom agent's allowed tools if specified, otherwise use defaults
+	if len(customAgent.Config.AllowedTools) > 0 {
+		agentConfig.AllowedTools = customAgent.Config.AllowedTools
+	} else {
+		agentConfig.AllowedTools = tools.DefaultAllowedTools()
+	}
+
+	// Use custom agent's system prompt if specified
+	if customAgent.Config.SystemPrompt != "" {
+		agentConfig.UseCustomSystemPrompt = true
+		agentConfig.SystemPromptWebEnabled = customAgent.Config.SystemPrompt
+		agentConfig.SystemPromptWebDisabled = customAgent.Config.SystemPrompt
+	}
+
+	logger.Infof(ctx, "Custom agent config applied: MaxIterations=%d, Temperature=%.2f, AllowedTools=%v, WebSearchEnabled=%v",
+		agentConfig.MaxIterations, agentConfig.Temperature, agentConfig.AllowedTools, agentConfig.WebSearchEnabled)
 
 	// Set web search max results from tenant config if not set (default: 5)
 	if agentConfig.WebSearchMaxResults == 0 {
@@ -1153,31 +1086,13 @@ func (s *sessionService) AgentQA(
 
 	logger.Infof(ctx, "Merged agent config from tenant %d and session %s", tenantInfo.ID, sessionID)
 
-	// Log knowledge IDs if present
-	if len(agentConfig.KnowledgeIDs) > 0 {
-		logger.Infof(ctx, "Agent configured with %d individual knowledge ID(s): %v",
-			len(agentConfig.KnowledgeIDs), agentConfig.KnowledgeIDs)
-	}
-
-	// Determine knowledge bases for agent
-	// Priority: Session.AgentConfig.KnowledgeBases > Session.KnowledgeBaseID > All tenant knowledge bases
-	// Exception: If KnowledgeIDs are specified, don't auto-add all KBs (let buildSearchTargets handle it)
-	if len(agentConfig.KnowledgeBases) == 0 && len(agentConfig.KnowledgeIDs) == 0 {
-		if session.KnowledgeBaseID != "" {
-			// Use session's knowledge base as fallback
-			agentConfig.KnowledgeBases = []string{session.KnowledgeBaseID}
-			logger.Infof(ctx, "Using session's knowledge base for agent: %s", session.KnowledgeBaseID)
-		} else {
-			// Allow running without knowledge bases (Pure Agent mode)
-			logger.Infof(ctx, "No knowledge bases specified for agent, running in pure agent mode")
-		}
-	} else if len(agentConfig.KnowledgeIDs) > 0 && len(agentConfig.KnowledgeBases) == 0 {
-		// User specified individual files but no KBs - don't auto-add all KBs
-		logger.Infof(ctx, "Agent configured with %d individual knowledge ID(s), no KB auto-expansion",
-			len(agentConfig.KnowledgeIDs))
-	} else {
+	// Log knowledge bases if present
+	if len(agentConfig.KnowledgeBases) > 0 {
 		logger.Infof(ctx, "Agent configured with %d knowledge base(s): %v",
 			len(agentConfig.KnowledgeBases), agentConfig.KnowledgeBases)
+	} else {
+		// Allow running without knowledge bases (Pure Agent mode)
+		logger.Infof(ctx, "No knowledge bases specified for agent, running in pure agent mode")
 	}
 
 	// Build search targets for agent (pre-compute once to avoid repeated queries)
@@ -1189,7 +1104,8 @@ func (s *sessionService) AgentQA(
 	agentConfig.SearchTargets = searchTargets
 	logger.Infof(ctx, "Agent search targets built: %d targets", len(searchTargets))
 
-	summaryModelID := session.SummaryModelID
+	// Get summary model from custom agent config or tenant config
+	summaryModelID := customAgent.Config.ModelID
 	if summaryModelID == "" && tenantInfo.ConversationConfig != nil {
 		summaryModelID = tenantInfo.ConversationConfig.SummaryModelID
 	}
@@ -1204,7 +1120,8 @@ func (s *sessionService) AgentQA(
 		return fmt.Errorf("failed to get chat model: %w", err)
 	}
 
-	rerankModelID := session.RerankModelID
+	// Get rerank model from custom agent config or tenant config
+	rerankModelID := customAgent.Config.RerankModelID
 	if rerankModelID == "" && tenantInfo.ConversationConfig != nil {
 		rerankModelID = tenantInfo.ConversationConfig.RerankModelID
 	}
@@ -1296,13 +1213,9 @@ func (s *sessionService) getContextManagerForSession(
 ) interfaces.ContextManager {
 	// Get tenant to access global context configuration
 	tenant, _ := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
-	// Determine which context config to use: session-specific or tenant-level
+	// Determine which context config to use: tenant-level or default
 	var contextConfig *types.ContextConfig
-	if session.ContextConfig != nil {
-		// Use session-specific configuration
-		contextConfig = session.ContextConfig
-		logger.Infof(ctx, "Using session-specific context config for session %s", session.ID)
-	} else if tenant.ContextConfig != nil {
+	if tenant != nil && tenant.ContextConfig != nil {
 		// Use tenant-level configuration
 		contextConfig = tenant.ContextConfig
 		logger.Infof(ctx, "Using tenant-level context config for session %s", session.ID)

@@ -111,118 +111,6 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 	return reqCtx, &request, nil
 }
 
-// detectAndApplyConfigChanges detects configuration changes and updates session if needed
-// Returns true if any configuration changed
-func (h *Handler) detectAndApplyConfigChanges(
-	reqCtx *qaRequestContext,
-	request *CreateKnowledgeQARequest,
-) (bool, error) {
-	ctx := reqCtx.ctx
-	session := reqCtx.session
-	sessionID := reqCtx.sessionID
-
-	// Initialize AgentConfig if it doesn't exist
-	if session.AgentConfig == nil {
-		session.AgentConfig = &types.SessionAgentConfig{}
-	}
-
-	configChanged := false
-
-	// Check knowledge bases change
-	if hasArrayChanged(session.AgentConfig.KnowledgeBases, request.KnowledgeBaseIDs) {
-		logger.Infof(ctx, "Knowledge bases changed from %v to %v",
-			session.AgentConfig.KnowledgeBases, request.KnowledgeBaseIDs)
-		configChanged = true
-	}
-
-	// Check knowledge IDs change
-	if hasArrayChanged(session.AgentConfig.KnowledgeIDs, request.KnowledgeIds) {
-		logger.Infof(ctx, "Knowledge IDs changed from %v to %v",
-			session.AgentConfig.KnowledgeIDs, request.KnowledgeIds)
-		configChanged = true
-	}
-
-	// Check agent mode change
-	if request.AgentEnabled != session.AgentConfig.AgentModeEnabled {
-		logger.Infof(ctx, "Agent mode changed from %v to %v",
-			session.AgentConfig.AgentModeEnabled, request.AgentEnabled)
-		configChanged = true
-	}
-
-	// Check web search change
-	if request.WebSearchEnabled != session.AgentConfig.WebSearchEnabled {
-		logger.Infof(ctx, "Web search mode changed from %v to %v",
-			session.AgentConfig.WebSearchEnabled, request.WebSearchEnabled)
-		configChanged = true
-	}
-
-	// Resolve summary model ID
-	summaryModelID := reqCtx.summaryModelID
-	if summaryModelID == "" {
-		summaryModelID = session.SummaryModelID
-	}
-	if summaryModelID == "" {
-		if tenantInfo, ok := ctx.Value(types.TenantInfoContextKey).(*types.Tenant); ok && tenantInfo.ConversationConfig != nil {
-			summaryModelID = tenantInfo.ConversationConfig.SummaryModelID
-		}
-	}
-	if summaryModelID != session.SummaryModelID {
-		configChanged = true
-	}
-
-	// Apply changes if any
-	if configChanged {
-		logger.Warnf(ctx, "Configuration changed, clearing context for session: %s", sessionID)
-
-		// Clear LLM context
-		if err := h.sessionService.ClearContext(ctx, sessionID); err != nil {
-			logger.Errorf(ctx, "Failed to clear context for session %s: %v", sessionID, err)
-		}
-
-		// Delete temp KB state
-		if err := h.sessionService.DeleteWebSearchTempKBState(ctx, sessionID); err != nil {
-			logger.Errorf(ctx, "Failed to delete temp knowledge base for session %s: %v", sessionID, err)
-		}
-
-		// Update session config
-		session.AgentConfig.KnowledgeBases = secutils.SanitizeForLogArray(request.KnowledgeBaseIDs)
-		session.AgentConfig.KnowledgeIDs = secutils.SanitizeForLogArray(request.KnowledgeIds)
-		session.AgentConfig.AgentModeEnabled = request.AgentEnabled
-		session.AgentConfig.WebSearchEnabled = request.WebSearchEnabled
-		session.SummaryModelID = summaryModelID
-
-		// Persist changes
-		if err := h.sessionService.UpdateSession(ctx, session); err != nil {
-			logger.Errorf(ctx, "Failed to update session %s: %v", sessionID, err)
-			return false, errors.NewInternalServerError("Failed to update session configuration")
-		}
-		logger.Infof(ctx, "Session configuration updated successfully for session: %s", sessionID)
-	}
-
-	return configChanged, nil
-}
-
-// hasArrayChanged checks if two string arrays are different
-func hasArrayChanged(current, new []string) bool {
-	if len(current) != len(new) {
-		return true
-	}
-	if len(current) == 0 && len(new) == 0 {
-		return false
-	}
-
-	currentMap := make(map[string]bool)
-	for _, v := range current {
-		currentMap[v] = true
-	}
-	for _, v := range new {
-		if !currentMap[v] {
-			return true
-		}
-	}
-	return false
-}
-
 // sseStreamContext holds the context for SSE streaming
 type sseStreamContext struct {
 	eventBus         *event.EventBus
@@ -388,12 +276,6 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		return
 	}
 
-	// Detect and apply configuration changes
-	if _, err := h.detectAndApplyConfigChanges(reqCtx, request); err != nil {
-		c.Error(err)
-		return
-	}
-
 	// Determine if agent mode should be enabled
 	// Priority: customAgent.IsAgentMode() > request.AgentEnabled
 	agentModeEnabled := request.AgentEnabled
@@ -408,13 +290,7 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		h.executeAgentModeQA(reqCtx)
 	} else {
 		logger.Infof(reqCtx.ctx, "Agent mode disabled, delegating to normal mode for session: %s", reqCtx.sessionID)
-		// Fallback to session's knowledge bases if not specified in request
-		if len(reqCtx.knowledgeBaseIDs) == 0 {
-			reqCtx.knowledgeBaseIDs = reqCtx.session.AgentConfig.KnowledgeBases
-		}
-		if len(reqCtx.knowledgeBaseIDs) == 0 && reqCtx.session.KnowledgeBaseID != "" {
-			reqCtx.knowledgeBaseIDs = []string{reqCtx.session.KnowledgeBaseID}
-		}
+		// Knowledge bases should be specified in request or from custom agent
 		h.executeNormalModeQA(reqCtx, false)
 	}
 }

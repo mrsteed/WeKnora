@@ -3403,47 +3403,6 @@ func (s *knowledgeService) GetFAQEntry(ctx context.Context,
 	return entry, nil
 }
 
-// GetFAQEntry retrieves a single FAQ entry by ID.
-func (s *knowledgeService) GetFAQEntry(ctx context.Context,
-	kbID string, entryID string,
-) (*types.FAQEntry, error) {
-	if entryID == "" {
-		return nil, werrors.NewBadRequestError("条目ID不能为空")
-	}
-
-	kb, err := s.validateFAQKnowledgeBase(ctx, kbID)
-	if err != nil {
-		return nil, err
-	}
-	kb.EnsureDefaults()
-
-	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
-
-	// 获取chunk
-	chunk, err := s.chunkService.GetChunkByID(ctx, entryID)
-	if err != nil {
-		return nil, err
-	}
-
-	// 验证chunk属于当前知识库
-	if chunk.KnowledgeBaseID != kb.ID || chunk.TenantID != tenantID {
-		return nil, werrors.NewNotFoundError("FAQ条目不存在")
-	}
-
-	// 验证是FAQ类型
-	if chunk.ChunkType != types.ChunkTypeFAQ {
-		return nil, werrors.NewNotFoundError("FAQ条目不存在")
-	}
-
-	// 转换为FAQEntry返回
-	entry, err := s.chunkToFAQEntry(chunk, kb)
-	if err != nil {
-		return nil, err
-	}
-
-	return entry, nil
-}
-
 // UpdateFAQEntry updates a single FAQ entry.
 func (s *knowledgeService) UpdateFAQEntry(ctx context.Context,
 	kbID string, entryID string, payload *types.FAQEntryPayload,
@@ -5901,4 +5860,3 @@ func (s *knowledgeService) SearchKnowledge(ctx context.Context, keyword string, 
 	}
 	return s.repo.SearchKnowledge(ctx, tenantID, keyword, offset, limit)
 }
-

@@ -4,6 +4,10 @@
       <div class="section-header">
         <h2>{{ $t('settings.conversationStrategy') }}</h2>
         <p class="section-description">{{ $t('conversationSettings.description') }}</p>
+        <div class="global-config-notice">
+          <t-icon name="info-circle" />
+          <span>这些是全局默认配置，新建智能体时会继承这些设置。您也可以在智能体列表中单独配置每个智能体。</span>
+        </div>
       </div>
 
       <t-tabs v-model="activeTab" class="conversation-tabs">
@@ -146,17 +150,7 @@
         </div>
         <div class="setting-control full-width" style="position: relative;">
           <div class="prompt-header">
-            <div class="prompt-toggle">
-              <span class="prompt-toggle-label">{{ $t('agentSettings.systemPrompt.custom') }}</span>
-              <t-switch
-                v-model="localUseCustomSystemPrompt"
-                :label="[$t('common.off'), $t('common.on')]"
-                size="large"
-                @change="handleUseCustomPromptToggle"
-              />
-            </div>
             <t-button
-              v-if="localUseCustomSystemPrompt"
               theme="default"
               variant="outline"
               size="small"
@@ -167,18 +161,15 @@
             </t-button>
           </div>
           <p class="prompt-tab-hint">
-            {{ $t('agentSettings.systemPrompt.tabHint') }}
+            {{ $t('agentSettings.systemPrompt.tabHint') }}（留空则使用系统默认）
           </p>
-          <p v-if="!localUseCustomSystemPrompt" class="prompt-disabled-hint">
-            {{ $t('agentSettings.systemPrompt.disabledHint') }}
-          </p>
-          <div v-if="localUseCustomSystemPrompt" class="system-prompt-tabs">
+          <div class="system-prompt-tabs">
             <t-tabs
               v-model="activeSystemPromptTab"
               class="system-prompt-variant-tabs"
             >
               <t-tab-panel value="web-enabled" :label="$t('agentSettings.systemPrompt.tabWebOn')">
-                <div v-if="activeSystemPromptTab === 'web-enabled'" class="prompt-textarea-wrapper">
+                <div v-if="activeSystemPromptTab === 'web-enabled'" class="prompt-textarea-wrapper textarea-with-template">
                   <t-textarea
                     ref="promptTextareaRef"
                     v-model="localSystemPromptWebEnabled"
@@ -187,14 +178,18 @@
                     @blur="handleSystemPromptChange('web-enabled', $event)"
                     @input="handlePromptInput"
                     @keydown="handlePromptKeydown"
-                    :readonly="!localUseCustomSystemPrompt"
-                    :class="{ 'prompt-textarea-readonly': !localUseCustomSystemPrompt }"
                     style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
+                  />
+                  <PromptTemplateSelector 
+                    type="systemPrompt" 
+                    position="corner"
+                    :hasKnowledgeBase="true"
+                    @select="handleAgentSystemPromptTemplateSelect"
                   />
                 </div>
               </t-tab-panel>
               <t-tab-panel value="web-disabled" :label="$t('agentSettings.systemPrompt.tabWebOff')">
-                <div v-if="activeSystemPromptTab === 'web-disabled'" class="prompt-textarea-wrapper">
+                <div v-if="activeSystemPromptTab === 'web-disabled'" class="prompt-textarea-wrapper textarea-with-template">
                   <t-textarea
                     ref="promptTextareaRef"
                     v-model="localSystemPromptWebDisabled"
@@ -203,9 +198,13 @@
                     @blur="handleSystemPromptChange('web-disabled', $event)"
                     @input="handlePromptInput"
                     @keydown="handlePromptKeydown"
-                    :readonly="!localUseCustomSystemPrompt"
-                    :class="{ 'prompt-textarea-readonly': !localUseCustomSystemPrompt }"
                     style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
+                  />
+                  <PromptTemplateSelector 
+                    type="systemPrompt" 
+                    position="corner"
+                    :hasKnowledgeBase="true"
+                    @select="handleAgentSystemPromptTemplateSelect"
                   />
                 </div>
               </t-tab-panel>
@@ -214,7 +213,7 @@
           <!-- 占位符提示下拉框 -->
           <teleport to="body">
             <div
-              v-if="localUseCustomSystemPrompt && showPlaceholderPopup && filteredPlaceholders.length > 0"
+              v-if="showPlaceholderPopup && filteredPlaceholders.length > 0"
               class="placeholder-popup-wrapper"
               :style="popupStyle"
             >
@@ -249,24 +248,10 @@
             <div class="setting-row vertical">
               <div class="setting-info">
                 <label>{{ $t('conversationSettings.systemPrompt.label') }}</label>
-                <p class="desc">{{ $t('conversationSettings.systemPrompt.desc') }}</p>
+                <p class="desc">{{ $t('conversationSettings.systemPrompt.desc') }}（留空则使用系统默认）</p>
               </div>
               <div class="setting-control full-width">
-                <div class="prompt-header">
-                  <div class="prompt-toggle">
-                    <span class="prompt-toggle-label">{{ $t('conversationSettings.systemPrompt.custom') }}</span>
-                    <t-switch
-                      v-model="localUseCustomSystemPromptNormal"
-                      :label="[$t('common.off'), $t('common.on')]"
-                      size="large"
-                      @change="handleUseCustomSystemPromptNormalToggle"
-                    />
-                  </div>
-                </div>
-                <p v-if="!localUseCustomSystemPromptNormal" class="prompt-disabled-hint">
-                  {{ $t('conversationSettings.systemPrompt.disabledHint') }}
-                </p>
-                <div v-if="localUseCustomSystemPromptNormal" class="prompt-textarea-wrapper">
+                <div class="prompt-textarea-wrapper textarea-with-template">
                   <t-textarea
                     v-model="localSystemPromptNormal"
                     :autosize="{ minRows: 10, maxRows: 20 }"
@@ -274,38 +259,36 @@
                     @blur="handleSystemPromptNormalChange"
                     style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
                   />
+                  <PromptTemplateSelector 
+                    type="systemPrompt" 
+                    position="corner"
+                    :hasKnowledgeBase="true"
+                    @select="handleNormalSystemPromptTemplateSelect"
+                  />
                 </div>
               </div>
             </div>
 
-            <!-- Context Template（普通模式，自定义开关） -->
+            <!-- Context Template（普通模式） -->
             <div class="setting-row vertical">
               <div class="setting-info">
                 <label>{{ $t('conversationSettings.contextTemplate.label') }}</label>
-                <p class="desc">{{ $t('conversationSettings.contextTemplate.desc') }}</p>
+                <p class="desc">{{ $t('conversationSettings.contextTemplate.desc') }}（留空则使用系统默认）</p>
               </div>
               <div class="setting-control full-width">
-                <div class="prompt-header">
-                  <div class="prompt-toggle">
-                    <span class="prompt-toggle-label">{{ $t('conversationSettings.contextTemplate.custom') }}</span>
-                    <t-switch
-                      v-model="localUseCustomContextTemplate"
-                      :label="[$t('common.off'), $t('common.on')]"
-                      size="large"
-                      @change="handleUseCustomContextTemplateToggle"
-                    />
-                  </div>
-                </div>
-                <p v-if="!localUseCustomContextTemplate" class="prompt-disabled-hint">
-                  {{ $t('conversationSettings.contextTemplate.disabledHint') }}
-                </p>
-                <div v-if="localUseCustomContextTemplate" class="prompt-textarea-wrapper">
+                <div class="prompt-textarea-wrapper textarea-with-template">
                   <t-textarea
                     v-model="localContextTemplate"
                     :autosize="{ minRows: 15, maxRows: 30 }"
                     :placeholder="$t('conversationSettings.contextTemplate.placeholder')"
                     @blur="handleContextTemplateChange"
                     style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
+                  />
+                  <PromptTemplateSelector 
+                    type="contextTemplate" 
+                    position="corner"
+                    :hasKnowledgeBase="true"
+                    @select="handleContextTemplateTemplateSelect"
                   />
                 </div>
               </div>
@@ -540,11 +523,18 @@
             <p class="desc">{{ $t('conversationSettings.rewritePrompt.desc') }}</p>
           </div>
           <div class="setting-control full-width">
-            <t-textarea
-              v-model="localRewritePromptSystem"
-              :autosize="{ minRows: 8, maxRows: 16 }"
-              @blur="handleRewritePromptSystemChange"
-            />
+            <div class="textarea-with-template">
+              <t-textarea
+                v-model="localRewritePromptSystem"
+                :autosize="{ minRows: 8, maxRows: 16 }"
+                @blur="handleRewritePromptSystemChange"
+              />
+              <PromptTemplateSelector 
+                type="rewriteSystem" 
+                position="corner"
+                @select="handleRewriteSystemTemplateSelect"
+              />
+            </div>
           </div>
         </div>
 
@@ -554,11 +544,18 @@
             <p class="desc">{{ $t('conversationSettings.rewritePrompt.userDesc') }}</p>
           </div>
           <div class="setting-control full-width">
-            <t-textarea
-              v-model="localRewritePromptUser"
-              :autosize="{ minRows: 8, maxRows: 16 }"
-              @blur="handleRewritePromptUserChange"
-            />
+            <div class="textarea-with-template">
+              <t-textarea
+                v-model="localRewritePromptUser"
+                :autosize="{ minRows: 8, maxRows: 16 }"
+                @blur="handleRewritePromptUserChange"
+              />
+              <PromptTemplateSelector 
+                type="rewriteUser" 
+                position="corner"
+                @select="handleRewriteUserTemplateSelect"
+              />
+            </div>
           </div>
         </div>
 
@@ -583,26 +580,40 @@
             <p class="desc">{{ $t('conversationSettings.fallbackResponse.desc') }}</p>
           </div>
           <div class="setting-control full-width">
-            <t-textarea
-              v-model="localFallbackResponse"
-              :autosize="{ minRows: 3, maxRows: 6 }"
-              @blur="handleFallbackResponseChange"
-            />
+            <div class="textarea-with-template">
+              <t-textarea
+                v-model="localFallbackResponse"
+                :autosize="{ minRows: 3, maxRows: 6 }"
+                @blur="handleFallbackResponseChange"
+              />
+              <PromptTemplateSelector 
+                type="fallback" 
+                position="corner"
+                @select="handleFallbackResponseTemplateSelect"
+              />
+            </div>
           </div>
         </div>
 
-        <!-- 兜底 Prompt：仅在选择“交给模型继续生成”时展示 -->
+        <!-- 兜底 Prompt：仅在选择"交给模型继续生成"时展示 -->
         <div v-else-if="localFallbackStrategy === 'model'" class="setting-row vertical">
           <div class="setting-info">
             <label>{{ $t('conversationSettings.fallbackPrompt.label') }}</label>
             <p class="desc">{{ $t('conversationSettings.fallbackPrompt.desc') }}</p>
           </div>
           <div class="setting-control full-width">
-            <t-textarea
-              v-model="localFallbackPrompt"
-              :autosize="{ minRows: 8, maxRows: 16 }"
-              @blur="handleFallbackPromptChange"
-            />
+            <div class="textarea-with-template">
+              <t-textarea
+                v-model="localFallbackPrompt"
+                :autosize="{ minRows: 8, maxRows: 16 }"
+                @blur="handleFallbackPromptChange"
+              />
+              <PromptTemplateSelector 
+                type="fallback" 
+                position="corner"
+                @select="handleFallbackPromptTemplateSelect"
+              />
+            </div>
           </div>
         </div>
 
@@ -659,6 +670,7 @@ import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import { listModels, type ModelConfig } from '@/api/model'
 import { getAgentConfig, updateAgentConfig, getConversationConfig, updateConversationConfig, type AgentConfig, type ConversationConfig, type ToolDefinition, type PlaceholderDefinition } from '@/api/system'
+import PromptTemplateSelector from '@/components/PromptTemplateSelector.vue'
 
 const props = defineProps<{
   // 来自外部设置弹窗的子菜单 key: 'modes' | 'models' | 'thresholds' | 'advanced'
@@ -680,8 +692,6 @@ const getDefaultConversationConfig = (): ConversationConfig => ({
   context_template: '',
   temperature: 0.3,
   max_completion_tokens: 2048,
-  use_custom_system_prompt: true,
-  use_custom_context_template: true,
   max_rounds: 5,
   embedding_top_k: 10,
   keyword_threshold: 0.3,
@@ -727,7 +737,6 @@ const savedSystemPromptMap: Record<SystemPromptTab, string> = {
 }
 const getPromptRefByTab = (tab: SystemPromptTab) => systemPromptRefs[tab]
 const getActivePromptRef = () => getPromptRefByTab(activeSystemPromptTab.value)
-const localUseCustomSystemPrompt = ref(false)
 
 // 普通模式本地状态
 const localContextTemplate = ref('')
@@ -755,10 +764,6 @@ const localRewritePromptUser = ref('')
 const localSummaryModelId = ref('')
 const localConversationRerankModelId = ref('')
 
-// 普通模式 Prompt 是否自定义（关闭时使用系统默认）
-const localUseCustomSystemPromptNormal = ref(true)
-const localUseCustomContextTemplate = ref(true)
-
 const syncConversationLocals = () => {
   const cfg = conversationConfig.value
   localContextTemplate.value = cfg.context_template ?? ''
@@ -785,8 +790,6 @@ const syncConversationLocals = () => {
   localRewritePromptUser.value = cfg.rewrite_prompt_user ?? ''
   localSummaryModelId.value = cfg.summary_model_id ?? ''
   localConversationRerankModelId.value = cfg.rerank_model_id ?? ''
-  localUseCustomSystemPromptNormal.value = cfg.use_custom_system_prompt ?? true
-  localUseCustomContextTemplate.value = cfg.use_custom_context_template ?? true
 
   settingsStore.updateConversationModels({
     summaryModelId: localSummaryModelId.value || '',
@@ -837,7 +840,6 @@ const buildAgentConfigPayload = (overrides: Partial<AgentConfig> = {}): AgentCon
   temperature: localTemperature.value,
   system_prompt_web_enabled: localSystemPromptWebEnabled.value,
   system_prompt_web_disabled: localSystemPromptWebDisabled.value,
-  use_custom_system_prompt: localUseCustomSystemPrompt.value,
   ...overrides,
 })
 
@@ -915,9 +917,6 @@ const displayAllowedTools = computed(() => {
 const loadingConfig = ref(false)
 const configLoaded = ref(false) // 防止重复加载
 const isInitializing = ref(true) // 标记是否正在初始化，防止初始化时触发保存
-
-// 保存的 Prompt 值，用于比较是否变化
-let savedUseCustomSystemPrompt = false
 
 // 恢复默认 Prompt 的加载状态
 const isResettingPrompt = ref(false)
@@ -1055,9 +1054,6 @@ onMounted(async () => {
     localSystemPromptWebDisabled.value = promptWebDisabled
     savedSystemPromptMap['web-enabled'] = promptWebEnabled
     savedSystemPromptMap['web-disabled'] = promptWebDisabled
-    const useCustomPrompt = config.use_custom_system_prompt ?? false
-    localUseCustomSystemPrompt.value = useCustomPrompt
-    savedUseCustomSystemPrompt = useCustomPrompt
     availableTools.value = config.available_tools || []
     availablePlaceholders.value = config.available_placeholders || []
     
@@ -1076,7 +1072,6 @@ onMounted(async () => {
       allowedTools: config.allowed_tools || [],
       system_prompt_web_enabled: promptWebEnabled,
       system_prompt_web_disabled: promptWebDisabled,
-      use_custom_system_prompt: useCustomPrompt
     })
 
     // 加载普通模式配置
@@ -1229,25 +1224,6 @@ const handleTemperatureChange = async (value: number) => {
   } catch (error) {
     console.error('保存失败:', error)
     MessagePlugin.error(getErrorMessage(error))
-  }
-}
-
-// 切换是否启用自定义 Prompt
-const handleUseCustomPromptToggle = async (value: boolean) => {
-  if (isInitializing.value) return
-  if (value === savedUseCustomSystemPrompt) return
-
-  try {
-    const config = buildAgentConfigPayload({ use_custom_system_prompt: value })
-    await updateAgentConfig(config)
-    savedUseCustomSystemPrompt = value
-
-    MessagePlugin.success(value ? t('agentSettings.toasts.customPromptEnabled') : t('agentSettings.toasts.defaultPromptEnabled'))
-  } catch (error) {
-    console.error('切换自定义 Prompt 失败:', error)
-    MessagePlugin.error(getErrorMessage(error))
-    // 回滚开关状态
-    localUseCustomSystemPrompt.value = savedUseCustomSystemPrompt
   }
 }
 
@@ -1461,7 +1437,6 @@ const handleResetToDefault = async () => {
         const tempConfig = buildAgentConfigPayload({
           system_prompt_web_enabled: '',
           system_prompt_web_disabled: '',
-          use_custom_system_prompt: false,
         })
         
         await updateAgentConfig(tempConfig)
@@ -1470,15 +1445,12 @@ const handleResetToDefault = async () => {
         const res = await getAgentConfig()
         const defaultPromptWebEnabled = res.data.system_prompt_web_enabled || ''
         const defaultPromptWebDisabled = res.data.system_prompt_web_disabled || ''
-        const useCustom = res.data.use_custom_system_prompt ?? false
         
         // 设置为默认 Prompt 的内容
         localSystemPromptWebEnabled.value = defaultPromptWebEnabled
         localSystemPromptWebDisabled.value = defaultPromptWebDisabled
         savedSystemPromptMap['web-enabled'] = defaultPromptWebEnabled
         savedSystemPromptMap['web-disabled'] = defaultPromptWebDisabled
-        localUseCustomSystemPrompt.value = useCustom
-        savedUseCustomSystemPrompt = useCustom
         
         MessagePlugin.success(t('agentSettings.toasts.resetToDefault'))
         confirmDialog.hide()
@@ -1559,7 +1531,6 @@ const handleContextTemplateChange = async () => {
     await saveConversationConfig(
       {
         context_template: localContextTemplate.value,
-        use_custom_context_template: localUseCustomContextTemplate.value,
       },
       t('conversationSettings.toasts.contextTemplateSaved')
     )
@@ -1576,66 +1547,6 @@ const reloadConversationConfig = async () => {
   syncConversationLocals()
 }
 
-const handleUseCustomSystemPromptNormalToggle = async (value: boolean) => {
-  if (!conversationConfigLoaded.value) return
-
-  try {
-    if (!value) {
-      await saveConversationConfig(
-        {
-          prompt: '',
-          use_custom_system_prompt: false,
-        },
-        t('conversationSettings.toasts.defaultPromptEnabled')
-      )
-      await reloadConversationConfig()
-    } else {
-      await saveConversationConfig(
-        {
-          prompt: localSystemPromptNormal.value,
-          use_custom_system_prompt: true,
-        },
-        t('conversationSettings.toasts.customPromptEnabled')
-      )
-      savedSystemPromptNormal = localSystemPromptNormal.value
-    }
-  } catch (error) {
-    console.error('切换普通模式 System Prompt 自定义失败:', error)
-    MessagePlugin.error(getErrorMessage(error))
-    localUseCustomSystemPromptNormal.value = !value
-  }
-}
-
-const handleUseCustomContextTemplateToggle = async (value: boolean) => {
-  if (!conversationConfigLoaded.value) return
-
-  try {
-    if (!value) {
-      await saveConversationConfig(
-        {
-          context_template: '',
-          use_custom_context_template: false,
-        },
-        t('conversationSettings.toasts.defaultContextTemplateEnabled')
-      )
-      await reloadConversationConfig()
-    } else {
-      await saveConversationConfig(
-        {
-          context_template: localContextTemplate.value,
-          use_custom_context_template: true,
-        },
-        t('conversationSettings.toasts.customContextTemplateEnabled')
-      )
-      savedContextTemplate = localContextTemplate.value
-    }
-  } catch (error) {
-    console.error('切换普通模式 Context Template 自定义失败:', error)
-    MessagePlugin.error(getErrorMessage(error))
-    localUseCustomContextTemplate.value = !value
-  }
-}
-
 const handleSystemPromptNormalChange = async () => {
   if (!conversationConfigLoaded.value) return
   
@@ -1647,7 +1558,6 @@ const handleSystemPromptNormalChange = async () => {
     await saveConversationConfig(
       {
         prompt: localSystemPromptNormal.value,
-        use_custom_system_prompt: localUseCustomSystemPromptNormal.value,
       },
       t('conversationSettings.toasts.systemPromptSaved')
     )
@@ -1813,6 +1723,39 @@ const handleFallbackPromptChange = async () => {
   }
 }
 
+// 模板选择处理函数
+const handleAgentSystemPromptTemplateSelect = (template: string) => {
+  if (activeSystemPromptTab.value === 'web-enabled') {
+    localSystemPromptWebEnabled.value = template
+  } else {
+    localSystemPromptWebDisabled.value = template
+  }
+}
+
+const handleNormalSystemPromptTemplateSelect = (template: string) => {
+  localSystemPromptNormal.value = template
+}
+
+const handleContextTemplateTemplateSelect = (template: string) => {
+  localContextTemplate.value = template
+}
+
+const handleRewriteSystemTemplateSelect = (template: string) => {
+  localRewritePromptSystem.value = template
+}
+
+const handleRewriteUserTemplateSelect = (template: string) => {
+  localRewritePromptUser.value = template
+}
+
+const handleFallbackResponseTemplateSelect = (template: string) => {
+  localFallbackResponse.value = template
+}
+
+const handleFallbackPromptTemplateSelect = (template: string) => {
+  localFallbackPrompt.value = template
+}
+
 const navigateToModelSettings = (subsection: 'chat' | 'rerank') => {
   router.push('/platform/settings')
 
@@ -1881,8 +1824,28 @@ const handleConversationRerankModelChange = async (value: string) => {
   .section-description {
     font-size: 14px;
     color: #666666;
-    margin: 0 0 20px 0;
+    margin: 0 0 12px 0;
     line-height: 1.5;
+  }
+
+  .global-config-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #f0f9ff;
+    border: 1px solid #bae0ff;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    color: #0958d9;
+    font-size: 13px;
+    line-height: 1.5;
+
+    .t-icon {
+      font-size: 16px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
   }
 }
 
@@ -2055,6 +2018,17 @@ const handleConversationRerankModelChange = async (value: string) => {
   max-width: 55%;
   word-break: keep-all;
   white-space: normal;
+
+  .setting-info-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    
+    label {
+      margin-bottom: 0;
+    }
+  }
 
   label {
     font-size: 15px;
@@ -2260,6 +2234,11 @@ const handleConversationRerankModelChange = async (value: string) => {
 }
 
 .prompt-textarea-wrapper {
+  width: 100%;
+}
+
+.textarea-with-template {
+  position: relative;
   width: 100%;
 }
 

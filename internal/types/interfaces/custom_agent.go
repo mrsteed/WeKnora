@@ -65,14 +65,15 @@ type CustomAgentRepository interface {
 	//   - Possible errors such as database connection failure, unique constraint conflicts, etc.
 	CreateAgent(ctx context.Context, agent *types.CustomAgent) error
 
-	// GetAgentByID queries an agent by ID
+	// GetAgentByID queries an agent by ID and tenant
 	// Parameters:
 	//   - ctx: Context information
 	//   - id: Agent ID
+	//   - tenantID: Tenant ID for isolation
 	// Returns:
 	//   - Agent object, if found
 	//   - Possible errors such as record not existing, database errors, etc.
-	GetAgentByID(ctx context.Context, id string) (*types.CustomAgent, error)
+	GetAgentByID(ctx context.Context, id string, tenantID uint64) (*types.CustomAgent, error)
 
 	// ListAgentsByTenantID lists all agents for a specific tenant
 	// Parameters:

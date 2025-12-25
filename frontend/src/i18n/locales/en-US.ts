@@ -268,6 +268,12 @@ export default {
       modelConfigDesc: 'Configure agent model parameters',
       capabilities: 'Capabilities',
       capabilitiesDesc: 'Configure agent capabilities and tools',
+      toolsConfig: 'Tools',
+      toolsConfigDesc: 'Configure tools available to the Agent',
+      knowledgeConfig: 'Knowledge Base',
+      knowledgeConfigDesc: 'Configure knowledge bases for the agent',
+      webSearchConfig: 'Web Search',
+      webSearchConfigDesc: 'Configure web search capabilities for the agent',
       configuration: 'Configuration',
       name: 'Name',
       namePlaceholder: 'Enter agent name',
@@ -286,6 +292,10 @@ export default {
       modelPlaceholder: 'Select Model',
       systemPrompt: 'System Prompt',
       systemPromptPlaceholder: 'Custom system prompt to define agent behavior and role',
+      systemPromptWebEnabledPlaceholder: 'System prompt used when web search is enabled',
+      defaultPromptHint: 'Leave empty to use the following default system prompt:',
+      defaultContextTemplateHint: 'Leave empty to use the following default context template:',
+      contextTemplateRequired: 'Context template is required',
       availablePlaceholders: 'Available Placeholders',
       placeholderHint: 'Type {{ to trigger autocomplete',
       temperature: 'Temperature',
@@ -296,9 +306,16 @@ export default {
       webSearch: 'Web Search',
       webSearchMaxResults: 'Max Search Results',
       knowledgeBases: 'Knowledge Bases',
-      selectKnowledgeBases: 'Select knowledge bases',
+      allKnowledgeBases: 'All Knowledge Bases',
+      allKnowledgeBasesDesc: 'Agent can access all knowledge bases',
+      selectedKnowledgeBases: 'Selected Knowledge Bases',
+      selectedKnowledgeBasesDesc: 'Only access selected knowledge bases',
+      noKnowledgeBase: 'No Knowledge Base',
+      noKnowledgeBaseDesc: 'Pure model conversation, no knowledge retrieval',
+      selectKnowledgeBases: 'Select Knowledge Bases',
       allowUserKBSelection: 'Allow User KB Selection',
-      allowUserKBSelectionDesc: 'When disabled, users cannot select knowledge bases during conversation',
+      allowUserKBSelectionDescAll: 'When enabled, users can select from all knowledge bases during conversation; when disabled, all knowledge bases will be used automatically',
+      allowUserKBSelectionDescSelected: 'When enabled, users can select from associated knowledge bases during conversation; when disabled, all associated knowledge bases will be used automatically',
       rerankModel: 'ReRank Model',
       rerankModelDesc: 'Used to rerank knowledge base retrieval results for better accuracy',
       rerankModelPlaceholder: 'Select ReRank Model',
@@ -306,6 +323,36 @@ export default {
       allowedTools: 'Allowed Tools',
       multiTurn: 'Multi-turn Conversation',
       historyTurns: 'History Turns',
+      // Retrieval Strategy
+      retrievalStrategy: 'Retrieval Strategy',
+      embeddingTopK: 'Embedding Top K',
+      keywordThreshold: 'Keyword Threshold',
+      vectorThreshold: 'Vector Threshold',
+      rerankTopK: 'Rerank Top K',
+      rerankThreshold: 'Rerank Threshold',
+      // Conversation Settings
+      conversationSettings: 'Conversation',
+      // Advanced Settings
+      advancedSettings: 'Advanced Settings',
+      contextTemplate: 'Context Template',
+      contextTemplatePlaceholder: 'Custom context template...',
+      availableContextPlaceholders: 'Available Placeholders',
+      placeholderQuery: 'User query',
+      placeholderContexts: 'Retrieved content list',
+      placeholderCurrentTime: 'Current time (format: 2006-01-02 15:04:05)',
+      placeholderCurrentWeek: 'Current weekday (e.g., Monday)',
+      enableQueryExpansion: 'Query Expansion',
+      enableRewrite: 'Query Rewrite',
+      rewritePromptSystem: 'Rewrite System Prompt',
+      rewritePromptSystemPlaceholder: 'Leave empty to use default prompt',
+      rewritePromptUser: 'Rewrite User Prompt',
+      rewritePromptUserPlaceholder: 'Leave empty to use default prompt',
+      maxCompletionTokens: 'Max Completion Tokens',
+      fallbackStrategy: 'Fallback Strategy',
+      fallbackResponse: 'Fixed Response',
+      fallbackResponsePlaceholder: 'Sorry, I cannot answer this question.',
+      fallbackPrompt: 'Fallback Prompt',
+      fallbackPromptPlaceholder: 'Leave empty to use default prompt',
     },
     selector: {
       title: 'Select Agent',
@@ -313,9 +360,6 @@ export default {
       customSection: 'My Agents',
       addNew: 'Add New Agent',
     },
-    builtinAgents: 'Built-in Agents',
-    customAgents: 'Custom Agents',
-    manageAgents: 'Manage Agents',
   },
   settings: {
     title: 'Settings',
@@ -1993,5 +2037,93 @@ export default {
       createFailed: 'Failed to create MCP service',
       updateFailed: 'Failed to update MCP service'
     }
-  }
+  },
+  promptTemplate: {
+    selectTemplate: 'Select Template',
+    useTemplate: 'Use Template',
+    withKnowledgeBase: 'KB',
+    withWebSearch: 'Web Search',
+    systemPrompt: {
+      defaultKB: {
+        name: 'Knowledge Base Assistant',
+        desc: 'Basic knowledge base Q&A template for most scenarios',
+      },
+      expert: {
+        name: 'Domain Expert',
+        desc: 'Professional and in-depth answers for technical domains',
+      },
+      customerService: {
+        name: 'Customer Service',
+        desc: 'Friendly and warm service style for customer support',
+      },
+      techSupport: {
+        name: 'Technical Support',
+        desc: 'Professional technical problem solving with code examples',
+      },
+      pureChat: {
+        name: 'General Chat',
+        desc: 'General conversation assistant without knowledge base',
+      },
+      webSearch: {
+        name: 'Web Search Assistant',
+        desc: 'Combines web search for up-to-date information',
+      },
+    },
+    contextTemplate: {
+      default: {
+        name: 'Standard Template',
+        desc: 'Basic context template with clear references and questions',
+      },
+      detailed: {
+        name: 'Detailed Template',
+        desc: 'Complete template with detailed instructions and requirements',
+      },
+      simple: {
+        name: 'Simple Template',
+        desc: 'Minimal template format for simple Q&A scenarios',
+      },
+      qa: {
+        name: 'Q&A Template',
+        desc: 'Optimized template for Q&A scenarios',
+      },
+    },
+    rewriteSystem: {
+      default: {
+        name: 'Standard Rewrite',
+        desc: 'Standard rules for resolving references and completing omissions',
+      },
+      strict: {
+        name: 'Strict Rewrite',
+        desc: 'Stricter requirements for complete and independent questions',
+      },
+    },
+    rewriteUser: {
+      default: {
+        name: 'Standard Format',
+        desc: 'Standard format with conversation history and current question',
+      },
+      detailed: {
+        name: 'Detailed Format',
+        desc: 'Detailed format with task instructions',
+      },
+    },
+    fallback: {
+      default: {
+        name: 'Standard Fallback',
+        desc: 'Friendly message with suggestions when unable to answer',
+      },
+      polite: {
+        name: 'Polite Fallback',
+        desc: 'More polite and detailed unable-to-answer message',
+      },
+      brief: {
+        name: 'Brief Fallback',
+        desc: 'Short unable-to-answer message',
+      },
+      model: {
+        name: 'Model Fallback Prompt',
+        desc: 'Prompt to guide model to answer with general knowledge',
+      },
+    },
+  },
 }

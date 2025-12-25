@@ -55,6 +55,12 @@ const agentKnowledgeBases = computed(() => {
   return selectedAgent.value?.config?.knowledge_bases || [];
 });
 
+// 智能体的知识库选择模式
+const agentKBSelectionMode = computed(() => {
+  if (!isCustomAgent.value) return null; // null 表示不受智能体控制
+  return selectedAgent.value?.config?.kb_selection_mode || 'none';
+});
+
 // 智能体是否启用了网络搜索
 const agentWebSearchEnabled = computed(() => {
   if (!isCustomAgent.value) return null; // null 表示不受智能体控制
@@ -72,24 +78,22 @@ const isWebSearchForcedByAgent = computed(() => {
 });
 
 // 知识库选择是否被智能体锁定
-// 1. 如果智能体配置了知识库 → 锁定到这些知识库
-// 2. 如果智能体没配置知识库，但 allow_user_kb_selection=false → 禁用知识库选择
+// 1. 如果智能体配置了 kb_selection_mode = 'none' → 完全禁用知识库
+// 2. 如果智能体配置了 kb_selection_mode = 'selected' 且 allow_user_kb_selection=false → 锁定到指定知识库
+// 3. 如果智能体配置了 kb_selection_mode = 'all' 且 allow_user_kb_selection=false → 锁定到全部知识库（但不允许用户选择）
 const isKnowledgeBaseLockedByAgent = computed(() => {
   if (!isCustomAgent.value) return false;
-  // 有预配置知识库时，锁定到这些知识库
-  if (agentKnowledgeBases.value.length > 0) return true;
-  // 没有预配置知识库，但禁止用户选择
+  // 如果禁用了知识库，返回 true（锁定状态）
+  if (agentKBSelectionMode.value === 'none') return true;
+  // 如果不允许用户选择知识库，返回 true
   const allowUserKBSelection = selectedAgent.value?.config?.allow_user_kb_selection;
-  // 默认为 true（允许用户选择），只有明确设置为 false 时才禁用
   return allowUserKBSelection === false;
 });
 
-// 知识库是否被智能体完全禁用（没有预配置且不允许用户选择）
+// 知识库是否被智能体完全禁用（kb_selection_mode = 'none'）
 const isKnowledgeBaseDisabledByAgent = computed(() => {
   if (!isCustomAgent.value) return false;
-  if (agentKnowledgeBases.value.length > 0) return false; // 有预配置的不算禁用
-  const allowUserKBSelection = selectedAgent.value?.config?.allow_user_kb_selection;
-  return allowUserKBSelection === false;
+  return agentKBSelectionMode.value === 'none';
 });
 
 // 智能体配置的模型 ID
@@ -556,10 +560,28 @@ const loadMentionItems = async (q: string, resetIndex = true, append = false) =>
     mentionOffset.value = 0;
   }
   
-  // Fetch KBs (always show, filter by query) - only on first load
+  // 根据智能体的 kb_selection_mode 过滤知识库
   let kbItems: any[] = [];
   if (!append) {
-    const kbs = knowledgeBases.value.filter(kb => 
+    // 获取可选的知识库列表
+    let availableKbs = knowledgeBases.value;
+    
+    // 如果是自定义智能体，根据 kb_selection_mode 过滤
+    if (isCustomAgent.value) {
+      const kbMode = agentKBSelectionMode.value;
+      if (kbMode === 'none') {
+        // 不使用知识库，不显示任何知识库
+        availableKbs = [];
+      } else if (kbMode === 'selected') {
+        // 仅显示智能体配置的知识库
+        const configuredKbIds = agentKnowledgeBases.value;
+        availableKbs = knowledgeBases.value.filter(kb => configuredKbIds.includes(kb.id));
+      }
+      // kbMode === 'all' 时显示全部知识库
+    }
+    
+    // 按查询过滤
+    const kbs = availableKbs.filter(kb => 
       !q || kb.name.toLowerCase().includes(q.toLowerCase())
     );
     kbItems = kbs.map(kb => ({ 
@@ -572,26 +594,41 @@ const loadMentionItems = async (q: string, resetIndex = true, append = false) =>
   }
   
   // Fetch Files from API
+  // 如果智能体禁用了知识库，也不显示文件
   let fileItems: any[] = [];
-  mentionLoading.value = true;
-  try {
-    const res: any = await searchKnowledge(q || '', mentionOffset.value, MENTION_PAGE_SIZE);
-    console.log('[Mention] searchKnowledge response:', res);
-    if (res.data && Array.isArray(res.data)) {
-      fileItems = res.data.map((f: any) => ({ 
-        id: f.id, 
-        name: f.title || f.file_name, 
-        type: 'file' as const,
-        kbName: f.knowledge_base_name || ''
-      }));
+  const shouldLoadFiles = !isCustomAgent.value || agentKBSelectionMode.value !== 'none';
+  
+  if (shouldLoadFiles) {
+    mentionLoading.value = true;
+    try {
+      const res: any = await searchKnowledge(q || '', mentionOffset.value, MENTION_PAGE_SIZE);
+      console.log('[Mention] searchKnowledge response:', res);
+      if (res.data && Array.isArray(res.data)) {
+        let files = res.data;
+        
+        // 如果是自定义智能体且 kb_selection_mode === 'selected'，只显示指定知识库中的文件
+        if (isCustomAgent.value && agentKBSelectionMode.value === 'selected') {
+          const configuredKbIds = agentKnowledgeBases.value;
+          files = files.filter((f: any) => configuredKbIds.includes(f.knowledge_base_id));
+        }
+        
+        fileItems = files.map((f: any) => ({ 
+          id: f.id, 
+          name: f.title || f.file_name, 
+          type: 'file' as const,
+          kbName: f.knowledge_base_name || ''
+        }));
+      }
+      mentionHasMore.value = res.has_more || false;
+      mentionOffset.value += fileItems.length;
+    } catch (e) {
+      console.error('[Mention] searchKnowledge error:', e);
+      mentionHasMore.value = false;
+    } finally {
+      mentionLoading.value = false;
     }
-    mentionHasMore.value = res.has_more || false;
-    mentionOffset.value += fileItems.length;
-  } catch (e) {
-    console.error('[Mention] searchKnowledge error:', e);
+  } else {
     mentionHasMore.value = false;
-  } finally {
-    mentionLoading.value = false;
   }
   
   if (append) {
@@ -680,6 +717,15 @@ const onInput = (val: string | InputEvent) => {
     }
   } else {
     if (textBeforeCursor.endsWith('@')) {
+      // 如果智能体禁用了知识库，不触发 @ 菜单
+      if (isKnowledgeBaseDisabledByAgent.value) {
+        return;
+      }
+      // 如果智能体锁定了知识库且不允许用户选择，也不触发 @ 菜单
+      if (isKnowledgeBaseLockedByAgent.value) {
+        return;
+      }
+      
       console.log('[Mention] @ detected, opening menu');
       isMentionTriggeredByButton.value = false;
       mentionStartPos.value = cursor - 1;

@@ -23,7 +23,6 @@ interface AgentConfig {
   allowedTools: string[];
   system_prompt_web_enabled?: string;
   system_prompt_web_disabled?: string;
-  use_custom_system_prompt?: boolean;
 }
 
 interface ConversationModels {
@@ -71,7 +70,6 @@ const defaultSettings: Settings = {
     allowedTools: [],  // 默认为空，需要通过 API 从后端加载
     system_prompt_web_enabled: "",
     system_prompt_web_disabled: "",
-    use_custom_system_prompt: false
   },
   selectedKnowledgeBases: [],  // 默认为空数组
   selectedFiles: [], // 默认为空数组

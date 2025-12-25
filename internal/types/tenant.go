@@ -126,9 +126,7 @@ func (c *RetrieverEngines) Scan(value interface{}) error {
 // ConversationConfig represents the conversation configuration for normal mode
 type ConversationConfig struct {
 	// Prompt is the system prompt for normal mode
-	UseCustomSystemPrompt    bool   `json:"use_custom_system_prompt"`
-	Prompt                   string `json:"prompt"`
-	UseCustomContextTemplate bool   `json:"use_custom_context_template"`
+	Prompt string `json:"prompt"`
 	// ContextTemplate is the prompt template for summarizing retrieval results
 	ContextTemplate string `json:"context_template"`
 	// Temperature controls the randomness of the model output

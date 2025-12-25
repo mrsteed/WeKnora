@@ -35,7 +35,7 @@ type CreateAgentRequest struct {
 
 // UpdateAgentRequest defines the request body for updating an agent
 type UpdateAgentRequest struct {
-	Name        string                   `json:"name" binding:"required"`
+	Name        string                   `json:"name"`
 	Description string                   `json:"description"`
 	Avatar      string                   `json:"avatar"`
 	Type        types.CustomAgentType    `json:"type"`

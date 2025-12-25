@@ -37,6 +37,10 @@
           <div class="card-header-left">
             <AgentAvatar :name="agent.name" size="medium" />
             <span class="card-title" :title="agent.name">{{ agent.name }}</span>
+            <div v-if="agent.is_builtin" class="builtin-badge">
+              <t-icon name="lock-on" size="12px" />
+              <span>{{ $t('agent.builtin') }}</span>
+            </div>
           </div>
           <t-popup 
             v-if="!agent.is_builtin"
@@ -67,9 +71,9 @@
               </div>
             </template>
           </t-popup>
-          <div v-else class="builtin-badge">
-            <t-icon name="lock-on" size="12px" />
-            <span>{{ $t('agent.builtin') }}</span>
+          <!-- 内置智能体显示编辑按钮 -->
+          <div v-else class="edit-btn" @click.stop="handleEdit(agent)">
+            <t-icon name="edit" size="16px" />
           </div>
         </div>
 
@@ -178,13 +182,11 @@ const fetchList = () => {
   loading.value = true
   return listAgents().then((res: any) => {
     const data = res.data || []
-    // 过滤掉内置智能体，只展示自定义智能体
-    agents.value = data
-      .filter((agent: CustomAgent) => !agent.is_builtin)
-      .map((agent: CustomAgent) => ({
-        ...agent,
-        showMore: false
-      }))
+    // 显示所有智能体（包括内置智能体）
+    agents.value = data.map((agent: CustomAgent) => ({
+      ...agent,
+      showMore: false
+    }))
   }).finally(() => loading.value = false)
 }
 
@@ -215,13 +217,8 @@ const handleCardClick = (agent: AgentWithUI) => {
   if (agent.showMore) {
     return
   }
-  // 点击卡片查看详情或编辑
-  if (agent.is_builtin) {
-    // 内置智能体只能查看
-    MessagePlugin.info(t('agent.messages.builtinReadonly'))
-  } else {
-    handleEdit(agent)
-  }
+  // 点击卡片编辑（包括内置智能体）
+  handleEdit(agent)
 }
 
 const handleEdit = (agent: AgentWithUI) => {
@@ -456,6 +453,25 @@ defineExpose({
   font-family: "PingFang SC";
   font-size: 12px;
   font-weight: 400;
+  flex-shrink: 0;
+}
+
+.edit-btn {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  justify-content: center;
+  align-items: center;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  color: #00000066;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: #07c05f;
+  }
 }
 
 .more-wrap {

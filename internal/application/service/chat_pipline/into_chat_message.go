@@ -1,11 +1,9 @@
 package chatpipline
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"regexp"
 	"strings"
 	"time"
@@ -46,20 +44,6 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 		passages[i] = getEnrichedPassageForChat(ctx, result)
 	}
 
-	// Parse the context template
-	tmpl, err := template.New("searchContent").Parse(chatManage.SummaryConfig.ContextTemplate)
-	if err != nil {
-		pipelineError(ctx, "IntoChatMessage", "parse_template", map[string]interface{}{
-			"session_id": chatManage.SessionID,
-			"error":      err.Error(),
-		})
-		return ErrTemplateParse.WithError(err)
-	}
-
-	// Prepare weekday names for template
-	weekdayName := []string{"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"}
-	var userContent bytes.Buffer
-
 	// 验证用户查询的安全性
 	safeQuery, isValid := secutils.ValidateInput(chatManage.Query)
 	if !isValid {
@@ -69,23 +53,27 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 		return ErrTemplateExecute.WithError(fmt.Errorf("用户查询包含非法内容"))
 	}
 
-	// Execute template with context data
-	err = tmpl.Execute(&userContent, map[string]interface{}{
-		"Query":       safeQuery,                                // User's original query
-		"Contexts":    passages,                                 // Extracted passages from search results
-		"CurrentTime": time.Now().Format("2006-01-02 15:04:05"), // Formatted current time
-		"CurrentWeek": weekdayName[time.Now().Weekday()],        // Current weekday in Chinese
-	})
-	if err != nil {
-		pipelineError(ctx, "IntoChatMessage", "render_template", map[string]interface{}{
-			"session_id": chatManage.SessionID,
-			"error":      err.Error(),
-		})
-		return ErrTemplateExecute.WithError(err)
+	// Prepare weekday names
+	weekdayName := []string{"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"}
+
+	// Build contexts string from passages
+	var contextsBuilder strings.Builder
+	for i, passage := range passages {
+		if i > 0 {
+			contextsBuilder.WriteString("\n\n")
+		}
+		contextsBuilder.WriteString(fmt.Sprintf("[%d] %s", i+1, passage))
 	}
 
+	// Replace placeholders in context template
+	userContent := chatManage.SummaryConfig.ContextTemplate
+	userContent = strings.ReplaceAll(userContent, "{{query}}", safeQuery)
+	userContent = strings.ReplaceAll(userContent, "{{contexts}}", contextsBuilder.String())
+	userContent = strings.ReplaceAll(userContent, "{{current_time}}", time.Now().Format("2006-01-02 15:04:05"))
+	userContent = strings.ReplaceAll(userContent, "{{current_week}}", weekdayName[time.Now().Weekday()])
+
 	// Set formatted content back to chat management
-	chatManage.UserContent = userContent.String()
+	chatManage.UserContent = userContent
 	pipelineInfo(ctx, "IntoChatMessage", "output", map[string]interface{}{
 		"session_id":       chatManage.SessionID,
 		"user_content_len": len(chatManage.UserContent),

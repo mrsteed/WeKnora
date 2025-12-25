@@ -27,10 +27,10 @@ func (r *customAgentRepository) CreateAgent(ctx context.Context, agent *types.Cu
 	return r.db.WithContext(ctx).Create(agent).Error
 }
 
-// GetAgentByID gets an agent by id
-func (r *customAgentRepository) GetAgentByID(ctx context.Context, id string) (*types.CustomAgent, error) {
+// GetAgentByID gets an agent by id and tenant
+func (r *customAgentRepository) GetAgentByID(ctx context.Context, id string, tenantID uint64) (*types.CustomAgent, error) {
 	var agent types.CustomAgent
-	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&agent).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).First(&agent).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrCustomAgentNotFound
 		}
