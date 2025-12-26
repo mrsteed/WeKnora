@@ -771,6 +771,7 @@ export default {
     features: {
       webSearch: "支持网络搜索",
       knowledgeBase: "关联知识库",
+      mcp: "支持MCP服务",
       multiTurn: "多轮对话",
     },
     empty: {

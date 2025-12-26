@@ -95,17 +95,27 @@
               </t-tooltip>
               <t-tooltip v-if="agent.config?.web_search_enabled" :content="$t('agent.features.webSearch')" placement="top">
                 <div class="feature-badge web-search">
-                  <t-icon name="search" size="14px" />
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                    <ellipse cx="8" cy="8" rx="2.5" ry="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                    <line x1="2" y1="6" x2="14" y2="6" stroke="currentColor" stroke-width="1.2"/>
+                    <line x1="2" y1="10" x2="14" y2="10" stroke="currentColor" stroke-width="1.2"/>
+                  </svg>
                 </div>
               </t-tooltip>
-              <t-tooltip v-if="agent.config?.knowledge_bases?.length" :content="$t('agent.features.knowledgeBase')" placement="top">
+              <t-tooltip v-if="agent.config?.knowledge_bases?.length || agent.config?.kb_selection_mode === 'all'" :content="$t('agent.features.knowledgeBase')" placement="top">
                 <div class="feature-badge knowledge">
-                  <t-icon name="folder" size="14px" />
+                  <t-icon name="folder" size="16px" />
+                </div>
+              </t-tooltip>
+              <t-tooltip v-if="agent.config?.mcp_services?.length || agent.config?.mcp_selection_mode === 'all'" :content="$t('agent.features.mcp')" placement="top">
+                <div class="feature-badge mcp">
+                  <t-icon name="extension" size="16px" />
                 </div>
               </t-tooltip>
               <t-tooltip v-if="agent.config?.multi_turn_enabled" :content="$t('agent.features.multiTurn')" placement="top">
                 <div class="feature-badge multi-turn">
-                  <t-icon name="chat-bubble" size="14px" />
+                  <t-icon name="chat-bubble" size="16px" />
                 </div>
               </t-tooltip>
             </div>
@@ -655,6 +665,15 @@ defineExpose({
 
     &:hover {
       background: rgba(7, 192, 95, 0.12);
+    }
+  }
+
+  &.mcp {
+    background: rgba(236, 72, 153, 0.08);
+    color: #ec4899;
+
+    &:hover {
+      background: rgba(236, 72, 153, 0.12);
     }
   }
 

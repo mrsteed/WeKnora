@@ -195,6 +195,10 @@ func (a *CustomAgent) EnsureDefaults() {
 	if a.Config.MaxCompletionTokens == 0 {
 		a.Config.MaxCompletionTokens = 2048
 	}
+	// Agent mode should always enable multi-turn conversation
+	if a.Config.AgentMode == AgentModeSmartReasoning {
+		a.Config.MultiTurnEnabled = true
+	}
 }
 
 // IsAgentMode returns true if this agent uses ReAct agent mode
@@ -281,13 +285,15 @@ var BuiltinAgentRegistry = map[string]func(uint64) *CustomAgent{
 	BuiltinSmartReasoningID: GetBuiltinSmartReasoningAgent,
 }
 
-// GetBuiltinAgentIDs returns all built-in agent IDs
+// builtinAgentIDsOrdered defines the fixed display order of built-in agents
+var builtinAgentIDsOrdered = []string{
+	BuiltinQuickAnswerID,
+	BuiltinSmartReasoningID,
+}
+
+// GetBuiltinAgentIDs returns all built-in agent IDs in fixed order
 func GetBuiltinAgentIDs() []string {
-	ids := make([]string, 0, len(BuiltinAgentRegistry))
-	for id := range BuiltinAgentRegistry {
-		ids = append(ids, id)
-	}
-	return ids
+	return builtinAgentIDsOrdered
 }
 
 // IsBuiltinAgentID checks if the given ID is a built-in agent ID

@@ -241,6 +241,7 @@ export default {
     features: {
       webSearch: 'Web Search Enabled',
       knowledgeBase: 'Knowledge Base Linked',
+      mcp: 'MCP Services Enabled',
       multiTurn: 'Multi-turn Conversation',
     },
     empty: {
