@@ -1,4 +1,5 @@
 import { defineStore } from "pinia";
+import { BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from "@/api/agent";
 
 // 定义设置接口
 interface Settings {
@@ -89,7 +90,7 @@ const defaultSettings: Settings = {
     rerankModelId: "",
     selectedChatModelId: "",  // 用户当前选择的对话模型ID
   },
-  selectedAgentId: "builtin-normal",  // 默认选中普通模式
+  selectedAgentId: BUILTIN_QUICK_ANSWER_ID,  // 默认选中快速问答模式
 };
 
 export const useSettingsStore = defineStore("settings", {
@@ -114,6 +115,16 @@ export const useSettingsStore = defineStore("settings", {
       )
     },
     
+    // 普通模式（快速回答）是否就绪
+    // 需要满足：1) 设置了对话模型 2) 设置了重排模型
+    isNormalModeReady: (state) => {
+      const models = state.settings.conversationModels || defaultSettings.conversationModels
+      return Boolean(
+        models.summaryModelId && models.summaryModelId.trim() !== '' &&
+        models.rerankModelId && models.rerankModelId.trim() !== ''
+      )
+    },
+    
     // 获取 Agent 配置
     agentConfig: (state) => state.settings.agentConfig || defaultSettings.agentConfig,
 
@@ -126,7 +137,7 @@ export const useSettingsStore = defineStore("settings", {
     isWebSearchEnabled: (state) => state.settings.webSearchEnabled || false,
     
     // 当前选中的智能体ID
-    selectedAgentId: (state) => state.settings.selectedAgentId || "builtin-normal",
+    selectedAgentId: (state) => state.settings.selectedAgentId || BUILTIN_QUICK_ANSWER_ID,
   },
 
   actions: {
@@ -309,9 +320,9 @@ export const useSettingsStore = defineStore("settings", {
     selectAgent(agentId: string) {
       this.settings.selectedAgentId = agentId;
       // 根据智能体类型自动切换 Agent 模式
-      if (agentId === "builtin-normal") {
+      if (agentId === BUILTIN_QUICK_ANSWER_ID) {
         this.settings.isAgentEnabled = false;
-      } else if (agentId === "builtin-agent") {
+      } else if (agentId === BUILTIN_SMART_REASONING_ID) {
         this.settings.isAgentEnabled = true;
       }
       // 自定义智能体需要根据其配置来决定
@@ -320,7 +331,7 @@ export const useSettingsStore = defineStore("settings", {
     
     // 获取选中的智能体ID
     getSelectedAgentId(): string {
-      return this.settings.selectedAgentId || "builtin-normal";
+      return this.settings.selectedAgentId || BUILTIN_QUICK_ANSWER_ID;
     },
   },
 });

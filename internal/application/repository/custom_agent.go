@@ -57,6 +57,6 @@ func (r *customAgentRepository) UpdateAgent(ctx context.Context, agent *types.Cu
 }
 
 // DeleteAgent deletes an agent (soft delete)
-func (r *customAgentRepository) DeleteAgent(ctx context.Context, id string) error {
-	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.CustomAgent{}).Error
+func (r *customAgentRepository) DeleteAgent(ctx context.Context, id string, tenantID uint64) error {
+	return r.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&types.CustomAgent{}).Error
 }

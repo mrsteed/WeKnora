@@ -417,6 +417,8 @@ func RegisterWebSearchRoutes(r *gin.RouterGroup, webSearchHandler *handler.WebSe
 func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomAgentHandler) {
 	agents := r.Group("/agents")
 	{
+		// Get placeholder definitions (must be before /:id to avoid conflict)
+		agents.GET("/placeholders", agentHandler.GetPlaceholders)
 		// Create custom agent
 		agents.POST("", agentHandler.CreateAgent)
 		// List all agents (including built-in)
@@ -427,5 +429,7 @@ func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomA
 		agents.PUT("/:id", agentHandler.UpdateAgent)
 		// Delete agent
 		agents.DELETE("/:id", agentHandler.DeleteAgent)
+		// Copy agent
+		agents.POST("/:id/copy", agentHandler.CopyAgent)
 	}
 }

@@ -101,25 +101,51 @@ func (s *agentService) CreateAgentEngine(
 		tenantID = tid
 	}
 	if tenantID > 0 && s.mcpServiceService != nil && s.mcpManager != nil {
-		// Get enabled MCP services for this tenant
-		mcpServices, err := s.mcpServiceService.ListMCPServices(ctx, tenantID)
-		if err != nil {
-			logger.Warnf(ctx, "Failed to list MCP services: %v", err)
+		// Check MCP selection mode from agent config
+		mcpMode := config.MCPSelectionMode
+		if mcpMode == "" {
+			mcpMode = "all" // Default to all enabled MCP services
+		}
+
+		// Skip MCP registration if mode is "none"
+		if mcpMode == "none" {
+			logger.Infof(ctx, "MCP services disabled by agent config (mode: none)")
 		} else {
-			// Filter enabled services
-			enabledServices := make([]*types.MCPService, 0)
-			for _, svc := range mcpServices {
-				if svc != nil && svc.Enabled {
-					enabledServices = append(enabledServices, svc)
+			var mcpServices []*types.MCPService
+			var err error
+
+			if mcpMode == "selected" && len(config.MCPServices) > 0 {
+				// Get only selected MCP services
+				mcpServices, err = s.mcpServiceService.ListMCPServicesByIDs(ctx, tenantID, config.MCPServices)
+				if err != nil {
+					logger.Warnf(ctx, "Failed to list selected MCP services: %v", err)
+				} else {
+					logger.Infof(ctx, "Using %d selected MCP services from agent config", len(mcpServices))
+				}
+			} else {
+				// Get all MCP services for this tenant
+				mcpServices, err = s.mcpServiceService.ListMCPServices(ctx, tenantID)
+				if err != nil {
+					logger.Warnf(ctx, "Failed to list MCP services: %v", err)
 				}
 			}
 
-			// Register MCP tools
-			if len(enabledServices) > 0 {
-				if err := tools.RegisterMCPTools(ctx, toolRegistry, enabledServices, s.mcpManager); err != nil {
-					logger.Warnf(ctx, "Failed to register MCP tools: %v", err)
-				} else {
-					logger.Infof(ctx, "Registered MCP tools from %d enabled services", len(enabledServices))
+			if err == nil && len(mcpServices) > 0 {
+				// Filter enabled services
+				enabledServices := make([]*types.MCPService, 0)
+				for _, svc := range mcpServices {
+					if svc != nil && svc.Enabled {
+						enabledServices = append(enabledServices, svc)
+					}
+				}
+
+				// Register MCP tools
+				if len(enabledServices) > 0 {
+					if err := tools.RegisterMCPTools(ctx, toolRegistry, enabledServices, s.mcpManager); err != nil {
+						logger.Warnf(ctx, "Failed to register MCP tools: %v", err)
+					} else {
+						logger.Infof(ctx, "Registered MCP tools from %d enabled services", len(enabledServices))
+					}
 				}
 			}
 		}

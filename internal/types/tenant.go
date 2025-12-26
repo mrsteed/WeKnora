@@ -69,13 +69,15 @@ type Tenant struct {
 	StorageQuota int64 `yaml:"storage_quota"       json:"storage_quota"       gorm:"default:10737418240"`
 	// Storage used (Bytes)
 	StorageUsed int64 `yaml:"storage_used"        json:"storage_used"        gorm:"default:0"`
-	// Global Agent configuration for this tenant (default for all sessions)
+	// Deprecated: AgentConfig is deprecated, use CustomAgent (builtin-smart-reasoning) config instead.
+	// This field is kept for backward compatibility and will be removed in future versions.
 	AgentConfig *AgentConfig `yaml:"agent_config"        json:"agent_config"        gorm:"type:jsonb"`
 	// Global Context configuration for this tenant (default for all sessions)
 	ContextConfig *ContextConfig `yaml:"context_config"      json:"context_config"      gorm:"type:jsonb"`
 	// Global WebSearch configuration for this tenant
 	WebSearchConfig *WebSearchConfig `yaml:"web_search_config"   json:"web_search_config"   gorm:"type:jsonb"`
-	// Global Conversation configuration for this tenant (default for normal mode sessions)
+	// Deprecated: ConversationConfig is deprecated, use CustomAgent (builtin-quick-answer) config instead.
+	// This field is kept for backward compatibility and will be removed in future versions.
 	ConversationConfig *ConversationConfig `yaml:"conversation_config" json:"conversation_config" gorm:"type:jsonb"`
 	// Creation time
 	CreatedAt time.Time `yaml:"created_at"          json:"created_at"`

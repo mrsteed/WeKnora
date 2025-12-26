@@ -60,13 +60,8 @@ func prepareMessagesWithHistory(chatManage *types.ChatManage) []chat.Message {
 		{Role: "system", Content: systemPrompt},
 	}
 
-	chatHistory := chatManage.History
-	if len(chatHistory) > 2 {
-		chatHistory = chatHistory[len(chatHistory)-2:]
-	}
-
-	// Add conversation history
-	for _, history := range chatHistory {
+	// Add conversation history (already limited by maxRounds in load_history/rewrite plugins)
+	for _, history := range chatManage.History {
 		chatMessages = append(chatMessages, chat.Message{Role: "user", Content: history.Query})
 		chatMessages = append(chatMessages, chat.Message{Role: "assistant", Content: history.Answer})
 	}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 // formatFileSize formats file size in human-readable format
@@ -78,6 +80,7 @@ type KnowledgeBaseInfo struct {
 }
 
 // PlaceholderDefinition defines a placeholder exposed to UI/configuration
+// Deprecated: Use types.PromptPlaceholder instead
 type PlaceholderDefinition struct {
 	Name        string `json:"name"`
 	Label       string `json:"label"`
@@ -85,24 +88,19 @@ type PlaceholderDefinition struct {
 }
 
 // AvailablePlaceholders lists all supported prompt placeholders for UI hints
+// This returns agent mode specific placeholders
 func AvailablePlaceholders() []PlaceholderDefinition {
-	return []PlaceholderDefinition{
-		{
-			Name:        "knowledge_bases",
-			Label:       "知识库列表",
-			Description: "自动格式化为表格形式的知识库列表，包含知识库名称、描述、文档数量、最近添加的文档等信息",
-		},
-		{
-			Name:        "web_search_status",
-			Label:       "网络检索模式开关状态",
-			Description: "网络检索（web_search）工具是否启用的状态说明，值为 Enabled 或 Disabled",
-		},
-		{
-			Name:        "current_time",
-			Label:       "当前系统时间",
-			Description: "格式为 RFC3339 的当前系统时间，用于帮助模型感知实时性",
-		},
+	// Use centralized placeholder definitions from types package
+	placeholders := types.PlaceholdersByField(types.PromptFieldAgentSystemPrompt)
+	result := make([]PlaceholderDefinition, len(placeholders))
+	for i, p := range placeholders {
+		result[i] = PlaceholderDefinition{
+			Name:        p.Name,
+			Label:       p.Label,
+			Description: p.Description,
+		}
 	}
+	return result
 }
 
 // formatKnowledgeBaseList formats knowledge base information for the prompt

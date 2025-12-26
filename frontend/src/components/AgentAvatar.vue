@@ -110,12 +110,17 @@ const letterStyle = computed(() => {
   overflow: hidden;
   
   &.agent-avatar-small {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    box-shadow: none;
     
     .agent-avatar-letter {
-      font-size: 12px;
+      font-size: 11px;
+    }
+    
+    .agent-sparkles {
+      display: none;
     }
   }
   

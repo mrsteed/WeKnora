@@ -124,6 +124,7 @@ func (c *ChatManage) Clone() *ChatManage {
 type EventType string
 
 const (
+	LOAD_HISTORY           EventType = "load_history"           // Load conversation history without rewriting
 	REWRITE_QUERY          EventType = "rewrite_query"          // Query rewriting for better retrieval
 	CHUNK_SEARCH           EventType = "chunk_search"           // Search for relevant chunks
 	CHUNK_SEARCH_PARALLEL  EventType = "chunk_search_parallel"  // Parallel search: chunks + entities
@@ -142,7 +143,12 @@ var Pipline = map[string][]EventType{
 	"chat": { // Simple chat without retrieval
 		CHAT_COMPLETION,
 	},
-	"chat_stream": { // Streaming chat without retrieval
+	"chat_stream": { // Streaming chat without retrieval (no history)
+		CHAT_COMPLETION_STREAM,
+		STREAM_FILTER,
+	},
+	"chat_history_stream": { // Streaming chat with conversation history
+		LOAD_HISTORY,
 		CHAT_COMPLETION_STREAM,
 		STREAM_FILTER,
 	},

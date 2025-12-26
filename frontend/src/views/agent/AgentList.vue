@@ -17,8 +17,8 @@
         class="agent-card"
         :class="{ 
           'is-builtin': agent.is_builtin,
-          'agent-mode-normal': agent.config?.agent_mode === 'normal',
-          'agent-mode-agent': agent.config?.agent_mode === 'agent'
+          'agent-mode-normal': agent.config?.agent_mode === 'quick-answer',
+          'agent-mode-agent': agent.config?.agent_mode === 'smart-reasoning'
         }"
         @click="handleCardClick(agent)"
       >
@@ -35,15 +35,15 @@
         <!-- 卡片头部 -->
         <div class="card-header">
           <div class="card-header-left">
-            <AgentAvatar :name="agent.name" size="medium" />
-            <span class="card-title" :title="agent.name">{{ agent.name }}</span>
-            <div v-if="agent.is_builtin" class="builtin-badge">
-              <t-icon name="lock-on" size="12px" />
-              <span>{{ $t('agent.builtin') }}</span>
+            <!-- 内置智能体使用简洁图标 -->
+            <div v-if="agent.is_builtin" class="builtin-avatar" :class="agent.config?.agent_mode === 'smart-reasoning' ? 'agent' : 'normal'">
+              <t-icon :name="agent.config?.agent_mode === 'smart-reasoning' ? 'control-platform' : 'chat'" size="18px" />
             </div>
+            <!-- 自定义智能体使用 AgentAvatar -->
+            <AgentAvatar v-else :name="agent.name" size="medium" />
+            <span class="card-title" :title="agent.name">{{ agent.name }}</span>
           </div>
           <t-popup 
-            v-if="!agent.is_builtin"
             v-model="agent.showMore" 
             overlayClassName="card-more-popup"
             :on-visible-change="(visible: boolean) => onVisibleChange(visible, agent)"
@@ -64,17 +64,17 @@
                   <t-icon class="menu-icon" name="edit" />
                   <span>{{ $t('common.edit') }}</span>
                 </div>
-                <div class="popup-menu-item delete" @click="handleDelete(agent)">
+                <div class="popup-menu-item" @click="handleCopy(agent)">
+                  <t-icon class="menu-icon" name="file-copy" />
+                  <span>{{ $t('common.copy') }}</span>
+                </div>
+                <div v-if="!agent.is_builtin" class="popup-menu-item delete" @click="handleDelete(agent)">
                   <t-icon class="menu-icon" name="delete" />
                   <span>{{ $t('common.delete') }}</span>
                 </div>
               </div>
             </template>
           </t-popup>
-          <!-- 内置智能体显示编辑按钮 -->
-          <div v-else class="edit-btn" @click.stop="handleEdit(agent)">
-            <t-icon name="edit" size="16px" />
-          </div>
         </div>
 
         <!-- 卡片内容 -->
@@ -87,11 +87,12 @@
         <!-- 卡片底部 -->
         <div class="card-bottom">
           <div class="bottom-left">
-            <div class="type-badge" :class="{ 'normal': agent.config?.agent_mode === 'normal', 'agent': agent.config?.agent_mode === 'agent' }">
-              <t-icon :name="agent.config?.agent_mode === 'agent' ? 'control-platform' : 'chat'" size="14px" />
-              <span>{{ agent.config?.agent_mode === 'agent' ? $t('agent.mode.agent') : $t('agent.mode.normal') }}</span>
-            </div>
             <div class="feature-badges">
+              <t-tooltip :content="agent.config?.agent_mode === 'smart-reasoning' ? $t('agent.mode.agent') : $t('agent.mode.normal')" placement="top">
+                <div class="feature-badge" :class="{ 'mode-normal': agent.config?.agent_mode === 'quick-answer', 'mode-agent': agent.config?.agent_mode === 'smart-reasoning' }">
+                  <t-icon :name="agent.config?.agent_mode === 'smart-reasoning' ? 'control-platform' : 'chat'" size="14px" />
+                </div>
+              </t-tooltip>
               <t-tooltip v-if="agent.config?.web_search_enabled" :content="$t('agent.features.webSearch')" placement="top">
                 <div class="feature-badge web-search">
                   <t-icon name="search" size="14px" />
@@ -109,7 +110,11 @@
               </t-tooltip>
             </div>
           </div>
-          <span v-if="agent.updated_at" class="card-time">{{ formatDate(agent.updated_at) }}</span>
+          <div v-if="agent.is_builtin" class="builtin-badge">
+            <t-icon name="lock-on" size="12px" />
+            <span>{{ $t('agent.builtin') }}</span>
+          </div>
+          <span v-else-if="agent.updated_at" class="card-time">{{ formatDate(agent.updated_at) }}</span>
         </div>
       </div>
     </div>
@@ -149,6 +154,7 @@
       :visible="editorVisible"
       :mode="editorMode"
       :agent="editingAgent"
+      :initialSection="editorInitialSection"
       @update:visible="editorVisible = $event"
       @success="handleEditorSuccess"
     />
@@ -157,14 +163,17 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { MessagePlugin, Icon as TIcon } from 'tdesign-vue-next'
-import { listAgents, deleteAgent, type CustomAgent } from '@/api/agent'
+import { listAgents, deleteAgent, copyAgent, type CustomAgent } from '@/api/agent'
 import { formatStringDate } from '@/utils/index'
 import { useI18n } from 'vue-i18n'
 import AgentEditorModal from './AgentEditorModal.vue'
 import AgentAvatar from '@/components/AgentAvatar.vue'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 
 interface AgentWithUI extends CustomAgent {
   showMore?: boolean
@@ -177,6 +186,7 @@ const deletingAgent = ref<AgentWithUI | null>(null)
 const editorVisible = ref(false)
 const editorMode = ref<'create' | 'edit'>('create')
 const editingAgent = ref<CustomAgent | null>(null)
+const editorInitialSection = ref<string>('basic')
 
 const fetchList = () => {
   loading.value = true
@@ -187,7 +197,27 @@ const fetchList = () => {
       ...agent,
       showMore: false
     }))
+    
+    // 检查 URL 中是否有 edit 参数，如果有则打开对应智能体的编辑模态框
+    checkAndOpenEditModal()
   }).finally(() => loading.value = false)
+}
+
+// 检查 URL 参数并打开编辑模态框
+const checkAndOpenEditModal = () => {
+  const editId = route.query.edit as string
+  const section = route.query.section as string
+  if (editId) {
+    const agent = agents.value.find(a => a.id === editId)
+    if (agent) {
+      editingAgent.value = agent
+      editorMode.value = 'edit'
+      editorInitialSection.value = section || 'basic'
+      editorVisible.value = true
+    }
+    // 清除 URL 中的参数
+    router.replace({ path: route.path, query: {} })
+  }
 }
 
 // 监听菜单创建智能体事件
@@ -232,6 +262,20 @@ const handleDelete = (agent: AgentWithUI) => {
   agent.showMore = false
   deletingAgent.value = agent
   deleteVisible.value = true
+}
+
+const handleCopy = (agent: AgentWithUI) => {
+  agent.showMore = false
+  copyAgent(agent.id).then((res: any) => {
+    if (res.data) {
+      MessagePlugin.success(t('agent.messages.copied'))
+      fetchList()
+    } else {
+      MessagePlugin.error(res.message || t('agent.messages.copyFailed'))
+    }
+  }).catch((e: any) => {
+    MessagePlugin.error(e?.message || t('agent.messages.copyFailed'))
+  })
 }
 
 const confirmDelete = () => {
@@ -323,43 +367,44 @@ defineExpose({
 
 .agent-card-wrap {
   display: grid;
-  gap: 20px;
+  gap: 16px;
   grid-template-columns: 1fr;
 }
 
 .agent-card {
-  border: 2px solid #fbfbfb;
-  border-radius: 6px;
+  border: 1px solid #f0f0f0;
+  border-radius: 12px;
   overflow: hidden;
   box-sizing: border-box;
-  box-shadow: 0 0 8px 0 #00000005;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   background: #fff;
   position: relative;
   cursor: pointer;
-  transition: all 0.2s ease;
-  padding: 12px 16px 14px;
+  transition: all 0.25s ease;
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  min-height: 150px;
+  height: 160px;
 
   &:hover {
     border-color: #07c05f;
+    box-shadow: 0 4px 12px rgba(7, 192, 95, 0.12);
   }
 
   // 普通模式样式
   &.agent-mode-normal {
     background: linear-gradient(135deg, #ffffff 0%, #f8fcfa 100%);
     border-color: #e8f5ed;
-    
+
     &:hover {
       border-color: #07c05f;
       background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
     }
-    
+
     .card-decoration {
       color: rgba(7, 192, 95, 0.35);
     }
-    
+
     &:hover .card-decoration {
       color: rgba(7, 192, 95, 0.5);
     }
@@ -369,16 +414,17 @@ defineExpose({
   &.agent-mode-agent {
     background: linear-gradient(135deg, #ffffff 0%, #f8f5ff 100%);
     border-color: #ede8ff;
-    
+
     &:hover {
       border-color: #7c4dff;
+      box-shadow: 0 4px 12px rgba(124, 77, 255, 0.12);
       background: linear-gradient(135deg, #ffffff 0%, #f3efff 100%);
     }
-    
+
     .card-decoration {
       color: rgba(124, 77, 255, 0.35);
     }
-    
+
     &:hover .card-decoration {
       color: rgba(124, 77, 255, 0.5);
     }
@@ -395,21 +441,21 @@ defineExpose({
 
 .card-decoration {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 12px;
+  right: 50px;
   display: flex;
   align-items: flex-start;
-  gap: 2px;
+  gap: 4px;
   pointer-events: none;
   z-index: 0;
-  transition: color 0.2s ease;
+  transition: color 0.25s ease;
   
   .star-icon {
-    opacity: 0.8;
+    opacity: 0.9;
     
     &.small {
-      margin-top: 12px;
-      opacity: 0.6;
+      margin-top: 14px;
+      opacity: 0.7;
     }
   }
 }
@@ -418,7 +464,7 @@ defineExpose({
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .card-header-left {
@@ -430,9 +476,9 @@ defineExpose({
 }
 
 .card-title {
-  color: #000000e6;
+  color: #1a1a1a;
   font-family: "PingFang SC";
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 22px;
   overflow: hidden;
@@ -445,15 +491,35 @@ defineExpose({
 .builtin-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   padding: 2px 8px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.05);
-  color: #00000066;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.04);
+  color: #666;
   font-family: "PingFang SC";
-  font-size: 12px;
-  font-weight: 400;
+  font-size: 11px;
+  font-weight: 500;
   flex-shrink: 0;
+}
+
+.builtin-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  
+  &.normal {
+    background: linear-gradient(135deg, rgba(7, 192, 95, 0.15) 0%, rgba(7, 192, 95, 0.08) 100%);
+    color: #059669;
+  }
+  
+  &.agent {
+    background: linear-gradient(135deg, rgba(124, 77, 255, 0.15) 0%, rgba(124, 77, 255, 0.08) 100%);
+    color: #7c4dff;
+  }
 }
 
 .edit-btn {
@@ -476,24 +542,28 @@ defineExpose({
 
 .more-wrap {
   display: flex;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   justify-content: center;
   align-items: center;
   border-radius: 6px;
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.2s ease;
-  opacity: 0.7;
+  opacity: 0;
+
+  .agent-card:hover & {
+    opacity: 0.6;
+  }
 
   &:hover {
-    background: rgba(0, 0, 0, 0.06);
-    opacity: 1;
+    background: rgba(0, 0, 0, 0.05);
+    opacity: 1 !important;
   }
 
   &.active-more {
-    background: rgba(0, 0, 0, 0.08);
-    opacity: 1;
+    background: rgba(0, 0, 0, 0.06);
+    opacity: 1 !important;
   }
 
   .more-icon {
@@ -504,7 +574,8 @@ defineExpose({
 
 .card-content {
   flex: 1;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  overflow: hidden;
 }
 
 .card-description {
@@ -513,21 +584,20 @@ defineExpose({
   -webkit-line-clamp: 2;
   line-clamp: 2;
   overflow: hidden;
-  color: #00000066;
+  color: #666;
   font-family: "PingFang SC";
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
   line-height: 20px;
-  min-height: 40px;
 }
 
 .card-bottom {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 0 0;
-  border-top: 1px solid #f0f0f0;
   margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
 }
 
 .bottom-left {
@@ -536,78 +606,70 @@ defineExpose({
   gap: 8px;
 }
 
-.type-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border-radius: 4px;
-  font-family: "PingFang SC";
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 18px;
-
-  &.normal {
-    background: rgba(7, 192, 95, 0.1);
-    color: #059669;
-    border: 1px solid rgba(7, 192, 95, 0.2);
-  }
-
-  &.agent {
-    background: rgba(124, 77, 255, 0.1);
-    color: #7c4dff;
-    border: 1px solid rgba(124, 77, 255, 0.2);
-  }
-}
-
 .feature-badges {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .feature-badge {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  cursor: default;
+  transition: background 0.2s ease;
 
-  &.web-search {
-    background: rgba(255, 152, 0, 0.1);
-    color: #ff9800;
-    border: 1px solid rgba(255, 152, 0, 0.2);
+  &.mode-normal {
+    background: rgba(7, 192, 95, 0.08);
+    color: #059669;
 
     &:hover {
-      background: rgba(255, 152, 0, 0.15);
+      background: rgba(7, 192, 95, 0.12);
+    }
+  }
+
+  &.mode-agent {
+    background: rgba(124, 77, 255, 0.08);
+    color: #7c4dff;
+
+    &:hover {
+      background: rgba(124, 77, 255, 0.12);
+    }
+  }
+
+  &.web-search {
+    background: rgba(255, 152, 0, 0.08);
+    color: #f59e0b;
+
+    &:hover {
+      background: rgba(255, 152, 0, 0.12);
     }
   }
 
   &.knowledge {
-    background: rgba(7, 192, 95, 0.1);
+    background: rgba(7, 192, 95, 0.08);
     color: #059669;
-    border: 1px solid rgba(7, 192, 95, 0.2);
 
     &:hover {
-      background: rgba(7, 192, 95, 0.15);
+      background: rgba(7, 192, 95, 0.12);
     }
   }
 
   &.multi-turn {
-    background: rgba(0, 82, 217, 0.1);
-    color: #0052d9;
-    border: 1px solid rgba(0, 82, 217, 0.2);
+    background: rgba(59, 130, 246, 0.08);
+    color: #3b82f6;
 
     &:hover {
-      background: rgba(0, 82, 217, 0.15);
+      background: rgba(59, 130, 246, 0.12);
     }
   }
 }
 
 .card-time {
-  color: #00000066;
+  color: #999;
   font-family: "PingFang SC";
   font-size: 12px;
   font-weight: 400;

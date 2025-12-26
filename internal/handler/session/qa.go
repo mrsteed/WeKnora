@@ -81,8 +81,8 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 				secutils.SanitizeForLog(request.AgentID), err)
 		} else {
 			customAgent = agent
-			logger.Infof(ctx, "Using custom agent: ID=%s, Name=%s, Type=%s, AgentMode=%s",
-				customAgent.ID, customAgent.Name, customAgent.Type, customAgent.Config.AgentMode)
+			logger.Infof(ctx, "Using custom agent: ID=%s, Name=%s, IsBuiltin=%v, AgentMode=%s",
+				customAgent.ID, customAgent.Name, customAgent.IsBuiltin, customAgent.Config.AgentMode)
 		}
 	}
 

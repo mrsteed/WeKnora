@@ -5,15 +5,10 @@ templates:
     description: "标准的改写用户提示词格式"
     content: |
       ## 历史对话背景
-      {{range .Conversation}}
-      ------BEGIN------
-      用户的问题是：{{.Query}}
-      助手的回答是：{{.Answer}}
-      ------END------
-      {{end}}
+      {{conversation}}
 
       ## 需要改写的用户问题
-      {{.Query}}
+      {{query}}
 
       ## 改写后的问题
 
@@ -24,14 +19,10 @@ templates:
       ## 历史对话背景
       以下是用户与助手的对话历史，请仔细阅读以理解上下文：
 
-      {{range .Conversation}}
-      【用户】{{.Query}}
-      【助手】{{.Answer}}
-
-      {{end}}
+      {{conversation}}
 
       ## 当前用户问题
-      {{.Query}}
+      {{query}}
 
       ## 任务要求
       请根据以上对话历史，将当前问题改写为一个独立、完整、可以脱离上下文理解的问题。

@@ -29,7 +29,6 @@ type CreateAgentRequest struct {
 	Name        string                   `json:"name" binding:"required"`
 	Description string                   `json:"description"`
 	Avatar      string                   `json:"avatar"`
-	Type        types.CustomAgentType    `json:"type"`
 	Config      types.CustomAgentConfig  `json:"config"`
 }
 
@@ -38,7 +37,6 @@ type UpdateAgentRequest struct {
 	Name        string                   `json:"name"`
 	Description string                   `json:"description"`
 	Avatar      string                   `json:"avatar"`
-	Type        types.CustomAgentType    `json:"type"`
 	Config      types.CustomAgentConfig  `json:"config"`
 }
 
@@ -72,12 +70,11 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 		Name:        req.Name,
 		Description: req.Description,
 		Avatar:      req.Avatar,
-		Type:        req.Type,
 		Config:      req.Config,
 	}
 
-	logger.Infof(ctx, "Creating custom agent, name: %s, type: %s",
-		secutils.SanitizeForLog(req.Name), req.Type)
+	logger.Infof(ctx, "Creating custom agent, name: %s, agent_mode: %s",
+		secutils.SanitizeForLog(req.Name), req.Config.AgentMode)
 
 	// Create agent using the service
 	createdAgent, err := h.service.CreateAgent(ctx, agent)
@@ -211,7 +208,6 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 		Name:        req.Name,
 		Description: req.Description,
 		Avatar:      req.Avatar,
-		Type:        req.Type,
 		Config:      req.Config,
 	}
 
@@ -294,5 +290,82 @@ func (h *CustomAgentHandler) DeleteAgent(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Agent deleted successfully",
+	})
+}
+
+// CopyAgent godoc
+// @Summary      复制智能体
+// @Description  复制指定的智能体
+// @Tags         智能体
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "智能体ID"
+// @Success      201  {object}  map[string]interface{}  "复制成功"
+// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Failure      404  {object}  errors.AppError         "智能体不存在"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /agents/{id}/copy [post]
+func (h *CustomAgentHandler) CopyAgent(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	logger.Info(ctx, "Start copying custom agent")
+
+	// Get agent ID from URL parameter
+	id := secutils.SanitizeForLog(c.Param("id"))
+	if id == "" {
+		logger.Error(ctx, "Agent ID is empty")
+		c.Error(errors.NewBadRequestError("Agent ID cannot be empty"))
+		return
+	}
+
+	logger.Infof(ctx, "Copying custom agent, ID: %s", secutils.SanitizeForLog(id))
+
+	// Copy the agent
+	copiedAgent, err := h.service.CopyAgent(ctx, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"agent_id": id,
+		})
+		switch err {
+		case service.ErrAgentNotFound:
+			c.Error(errors.NewNotFoundError("Agent not found"))
+		default:
+			c.Error(errors.NewInternalServerError(err.Error()))
+		}
+		return
+	}
+
+	logger.Infof(ctx, "Custom agent copied successfully, source ID: %s, new ID: %s",
+		secutils.SanitizeForLog(id), secutils.SanitizeForLog(copiedAgent.ID))
+	c.JSON(http.StatusCreated, gin.H{
+		"success": true,
+		"data":    copiedAgent,
+	})
+}
+
+// GetPlaceholders godoc
+// @Summary      获取占位符定义
+// @Description  获取所有可用的提示词占位符定义，按字段类型分组
+// @Tags         智能体
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "占位符定义"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /agents/placeholders [get]
+func (h *CustomAgentHandler) GetPlaceholders(c *gin.Context) {
+	// Return all placeholder definitions grouped by field type
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"all":                   types.AllPlaceholders(),
+			"system_prompt":         types.PlaceholdersByField(types.PromptFieldSystemPrompt),
+			"agent_system_prompt":   types.PlaceholdersByField(types.PromptFieldAgentSystemPrompt),
+			"context_template":      types.PlaceholdersByField(types.PromptFieldContextTemplate),
+			"rewrite_system_prompt": types.PlaceholdersByField(types.PromptFieldRewriteSystemPrompt),
+			"rewrite_prompt":        types.PlaceholdersByField(types.PromptFieldRewritePrompt),
+			"fallback_prompt":       types.PlaceholdersByField(types.PromptFieldFallbackPrompt),
+		},
 	})
 }

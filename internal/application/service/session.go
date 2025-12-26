@@ -1,13 +1,11 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
-	"text/template"
 
 	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
@@ -271,7 +269,7 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 		if model == nil {
 			continue
 		}
-			if model.Type == types.ModelTypeKnowledgeQA {
+		if model.Type == types.ModelTypeKnowledgeQA {
 			modelID = model.ID
 			logger.Infof(ctx, "Using first available KnowledgeQA model: %s", modelID)
 			break
@@ -469,6 +467,11 @@ func (s *sessionService) KnowledgeQA(
 		// Ensure defaults are set
 		customAgent.EnsureDefaults()
 
+		// Override model ID
+		if customAgent.Config.ModelID != "" {
+			chatModelID = customAgent.Config.ModelID
+			logger.Infof(ctx, "Using custom agent's model_id: %s", chatModelID)
+		}
 		// Override system prompt
 		if customAgent.Config.SystemPrompt != "" {
 			summaryConfig.Prompt = customAgent.Config.SystemPrompt
@@ -588,10 +591,18 @@ func (s *sessionService) KnowledgeQA(
 	// Otherwise use rag_stream pipeline (which handles both KB search and web search)
 	var pipeline []types.EventType
 	if len(knowledgeBaseIDs) == 0 && len(knowledgeIDs) == 0 && !webSearchEnabled {
-		logger.Info(ctx, "No knowledge bases selected and web search disabled, using chat_stream pipeline")
-		pipeline = types.Pipline["chat_stream"]
+		logger.Info(ctx, "No knowledge bases selected and web search disabled, using chat pipeline")
 		// For pure chat, UserContent is the Query (since INTO_CHAT_MESSAGE is skipped)
 		chatManage.UserContent = query
+
+		// Use chat_history_stream if multi-turn is enabled, otherwise use chat_stream
+		if maxRounds > 0 {
+			logger.Infof(ctx, "Multi-turn enabled with maxRounds=%d, using chat_history_stream pipeline", maxRounds)
+			pipeline = types.Pipline["chat_history_stream"]
+		} else {
+			logger.Info(ctx, "Multi-turn disabled, using chat_stream pipeline")
+			pipeline = types.Pipline["chat_stream"]
+		}
 	} else {
 		if webSearchEnabled && len(knowledgeBaseIDs) == 0 && len(knowledgeIDs) == 0 {
 			logger.Info(ctx, "Web search enabled without knowledge bases, using rag_stream pipeline for web search only")
@@ -1057,6 +1068,8 @@ func (s *sessionService) AgentQA(
 		MultiTurnEnabled:    customAgent.Config.MultiTurnEnabled,
 		HistoryTurns:        customAgent.Config.HistoryTurns,
 		KnowledgeBases:      customAgent.Config.KnowledgeBases,
+		MCPSelectionMode:    customAgent.Config.MCPSelectionMode,
+		MCPServices:         customAgent.Config.MCPServices,
 	}
 
 	// Use custom agent's allowed tools if specified, otherwise use defaults
@@ -1442,20 +1455,9 @@ func (s *sessionService) handleModelFallback(ctx context.Context, chatManage *ty
 
 // renderFallbackPrompt renders the fallback prompt template with Query variable
 func (s *sessionService) renderFallbackPrompt(ctx context.Context, chatManage *types.ChatManage) (string, error) {
-	tmpl, err := template.New("fallbackPrompt").Parse(chatManage.FallbackPrompt)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse template: %w", err)
-	}
-
-	var promptContent bytes.Buffer
-	err = tmpl.Execute(&promptContent, map[string]interface{}{
-		"Query": chatManage.Query,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to execute template: %w", err)
-	}
-
-	return promptContent.String(), nil
+	// Use simple string replacement instead of Go template
+	result := strings.ReplaceAll(chatManage.FallbackPrompt, "{{query}}", chatManage.Query)
+	return result, nil
 }
 
 // consumeFallbackStream consumes the streaming response and emits events

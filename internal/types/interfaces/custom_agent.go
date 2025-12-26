@@ -52,6 +52,15 @@ type CustomAgentService interface {
 	// Returns:
 	//   - Possible errors such as not existing, insufficient permissions, cannot delete built-in, etc.
 	DeleteAgent(ctx context.Context, id string) error
+
+	// CopyAgent creates a copy of an existing agent
+	// Parameters:
+	//   - ctx: Context information
+	//   - id: Unique identifier of the agent to copy
+	// Returns:
+	//   - The newly created agent copy
+	//   - Possible errors such as not existing, insufficient permissions, etc.
+	CopyAgent(ctx context.Context, id string) (*types.CustomAgent, error)
 }
 
 // CustomAgentRepository defines the custom agent repository interface
@@ -96,7 +105,8 @@ type CustomAgentRepository interface {
 	// Parameters:
 	//   - ctx: Context information
 	//   - id: Agent ID
+	//   - tenantID: Tenant ID for isolation (required for composite primary key)
 	// Returns:
 	//   - Possible errors such as record not existing, database errors, etc.
-	DeleteAgent(ctx context.Context, id string) error
+	DeleteAgent(ctx context.Context, id string, tenantID uint64) error
 }

@@ -32,8 +32,8 @@
                 :class="{ 'selected': currentAgentId === agent.id }"
                 @click="selectAgent(agent)"
               >
-                <div class="builtin-icon" :class="agent.type">
-                  <TIcon :name="agent.type === 'agent' ? 'control-platform' : 'chat'" size="14px" />
+                <div class="builtin-icon" :class="agent.config?.agent_mode === 'smart-reasoning' ? 'agent' : 'normal'">
+                  <TIcon :name="agent.config?.agent_mode === 'smart-reasoning' ? 'control-platform' : 'chat'" size="14px" />
                 </div>
                 <span class="agent-option-name">{{ agent.name }}</span>
                 <svg 
@@ -95,7 +95,7 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Icon as TIcon } from 'tdesign-vue-next';
-import { listAgents, type CustomAgent } from '@/api/agent';
+import { listAgents, type CustomAgent, BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from '@/api/agent';
 import AgentAvatar from '@/components/AgentAvatar.vue';
 
 const { t } = useI18n();
@@ -118,18 +118,18 @@ const dropdownStyle = ref<Record<string, string>>({});
 const builtinAgents = computed(() => {
   return [
     {
-      id: 'builtin-normal',
+      id: BUILTIN_QUICK_ANSWER_ID,
       name: t('input.normalMode'),
       description: t('input.normalModeDesc'),
-      type: 'normal',
-      is_builtin: true
+      is_builtin: true,
+      config: { agent_mode: 'quick-answer' as const }
     },
     {
-      id: 'builtin-agent',
+      id: BUILTIN_SMART_REASONING_ID,
       name: t('input.agentMode'),
       description: t('input.agentModeDesc'),
-      type: 'agent',
-      is_builtin: true
+      is_builtin: true,
+      config: { agent_mode: 'smart-reasoning' as const }
     }
   ] as CustomAgent[];
 });
@@ -143,9 +143,9 @@ const customAgents = computed(() => {
 const getAgentCapabilities = (agent: CustomAgent): string => {
   // 内置智能体
   if (agent.is_builtin) {
-    if (agent.type === 'normal') {
+    if (agent.config?.agent_mode === 'quick-answer') {
       return t('agent.capabilities.normal');
-    } else if (agent.type === 'agent') {
+    } else if (agent.config?.agent_mode === 'smart-reasoning') {
       return t('agent.capabilities.agent');
     }
     return '';
@@ -158,10 +158,12 @@ const getAgentCapabilities = (agent: CustomAgent): string => {
   if (config.model_id) {
     capabilities.push(t('agent.capabilities.modelSpecified'));
   }
-  if (config.knowledge_bases && config.knowledge_bases.length > 0) {
-    capabilities.push(t('agent.capabilities.kbCount', { count: config.knowledge_bases.length }));
-  } else if (config.allow_user_kb_selection === false) {
+  if (config.kb_selection_mode === 'none') {
     capabilities.push(t('agent.capabilities.kbDisabled'));
+  } else if (config.knowledge_bases && config.knowledge_bases.length > 0) {
+    capabilities.push(t('agent.capabilities.kbCount', { count: config.knowledge_bases.length }));
+  } else if (config.kb_selection_mode === 'all') {
+    capabilities.push(t('agent.capabilities.kbAll'));
   }
   if (config.rerank_model_id) {
     capabilities.push(t('agent.capabilities.rerankSpecified'));

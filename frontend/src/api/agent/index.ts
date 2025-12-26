@@ -1,12 +1,9 @@
 import { get, post, put, del } from "../../utils/request";
 
-// 智能体类型
-export type CustomAgentType = 'normal' | 'agent' | 'custom';
-
 // 智能体配置
 export interface CustomAgentConfig {
   // ===== 基础设置 =====
-  agent_mode?: 'normal' | 'agent';  // 运行模式：normal=RAG模式, agent=ReAct Agent模式
+  agent_mode?: 'quick-answer' | 'smart-reasoning';  // 运行模式：quick-answer=RAG模式, smart-reasoning=ReAct Agent模式
   system_prompt?: string;           // 系统提示词（普通模式，或Agent模式网络搜索关闭时）
   system_prompt_web_enabled?: string; // Agent模式网络搜索开启时的系统提示词
   context_template?: string;        // 上下文模板（普通模式）
@@ -21,15 +18,14 @@ export interface CustomAgentConfig {
   max_iterations?: number;          // 最大迭代次数
   allowed_tools?: string[];         // 允许的工具
   reflection_enabled?: boolean;     // 是否启用反思
+  // MCP服务选择模式：all=全部启用的MCP服务, selected=指定服务, none=不使用MCP
+  mcp_selection_mode?: 'all' | 'selected' | 'none';
+  mcp_services?: string[];          // 选择的MCP服务ID列表
 
   // ===== 知识库设置 =====
   // 知识库选择模式：all=全部知识库, selected=指定知识库, none=不使用知识库
   kb_selection_mode?: 'all' | 'selected' | 'none';
   knowledge_bases?: string[];
-  // 当没有配置知识库时，是否允许用户自由选择知识库
-  // true (默认): 用户可以自由选择任意知识库
-  // false: 禁用知识库选择功能
-  allow_user_kb_selection?: boolean;
 
   // ===== 网络搜索设置 =====
   web_search_enabled?: boolean;
@@ -67,7 +63,6 @@ export interface CustomAgent {
   description?: string;
   avatar?: string;
   is_builtin: boolean;
-  type: CustomAgentType;
   tenant_id?: number;
   created_by?: string;
   config: CustomAgentConfig;
@@ -80,7 +75,6 @@ export interface CreateAgentRequest {
   name: string;
   description?: string;
   avatar?: string;
-  type?: CustomAgentType;
   config?: CustomAgentConfig;
 }
 
@@ -89,13 +83,27 @@ export interface UpdateAgentRequest {
   name: string;
   description?: string;
   avatar?: string;
-  type?: CustomAgentType;
   config?: CustomAgentConfig;
 }
 
 // 内置智能体 ID
-export const BUILTIN_AGENT_NORMAL_ID = 'builtin-normal';
-export const BUILTIN_AGENT_AGENT_ID = 'builtin-agent';
+export const BUILTIN_QUICK_ANSWER_ID = 'builtin-quick-answer';
+export const BUILTIN_SMART_REASONING_ID = 'builtin-smart-reasoning';
+
+// AgentMode 常量
+export const AGENT_MODE_QUICK_ANSWER = 'quick-answer';
+export const AGENT_MODE_SMART_REASONING = 'smart-reasoning';
+
+// Deprecated: Use BUILTIN_QUICK_ANSWER_ID instead
+export const BUILTIN_AGENT_NORMAL_ID = BUILTIN_QUICK_ANSWER_ID;
+// Deprecated: Use BUILTIN_SMART_REASONING_ID instead
+export const BUILTIN_AGENT_AGENT_ID = BUILTIN_SMART_REASONING_ID;
+
+// 所有内置智能体 ID 列表（便于扩展）
+export const BUILTIN_AGENT_IDS = [
+  BUILTIN_QUICK_ANSWER_ID,
+  BUILTIN_SMART_REASONING_ID,
+] as const;
 
 // 获取智能体列表（包括内置智能体）
 export function listAgents() {
@@ -122,7 +130,35 @@ export function deleteAgent(id: string) {
   return del<{ success: boolean }>(`/api/v1/agents/${id}`);
 }
 
+// 复制智能体
+export function copyAgent(id: string) {
+  return post<{ data: CustomAgent }>(`/api/v1/agents/${id}/copy`);
+}
+
 // 判断是否为内置智能体
 export function isBuiltinAgent(agentId: string): boolean {
-  return agentId === BUILTIN_AGENT_NORMAL_ID || agentId === BUILTIN_AGENT_AGENT_ID;
+  return (BUILTIN_AGENT_IDS as readonly string[]).includes(agentId);
+}
+
+// 占位符定义
+export interface PlaceholderDefinition {
+  name: string;
+  label: string;
+  description: string;
+}
+
+// 占位符响应
+export interface PlaceholdersResponse {
+  all: PlaceholderDefinition[];
+  system_prompt: PlaceholderDefinition[];
+  agent_system_prompt: PlaceholderDefinition[];
+  context_template: PlaceholderDefinition[];
+  rewrite_system_prompt: PlaceholderDefinition[];
+  rewrite_prompt: PlaceholderDefinition[];
+  fallback_prompt: PlaceholderDefinition[];
+}
+
+// 获取占位符定义
+export function getPlaceholders() {
+  return get<{ data: PlaceholdersResponse }>('/api/v1/agents/placeholders');
 }

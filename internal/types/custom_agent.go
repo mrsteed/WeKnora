@@ -8,27 +8,27 @@ import (
 	"gorm.io/gorm"
 )
 
-// CustomAgentType represents the type of the custom agent
-type CustomAgentType string
-
-const (
-	// CustomAgentTypeNormal represents the normal RAG-based chat mode
-	CustomAgentTypeNormal CustomAgentType = "normal"
-	// CustomAgentTypeAgent represents the ReAct agent mode with tool calling
-	CustomAgentTypeAgent CustomAgentType = "agent"
-	// CustomAgentTypeCustom represents user-defined custom agents
-	CustomAgentTypeCustom CustomAgentType = "custom"
-)
-
 // BuiltinAgentID constants for built-in agents
 const (
-	BuiltinAgentNormalID = "builtin-normal"
-	BuiltinAgentAgentID  = "builtin-agent"
+	// BuiltinQuickAnswerID is the ID for the built-in quick answer (RAG) agent
+	BuiltinQuickAnswerID = "builtin-quick-answer"
+	// BuiltinSmartReasoningID is the ID for the built-in smart reasoning (ReAct) agent
+	BuiltinSmartReasoningID = "builtin-smart-reasoning"
+)
+
+// AgentMode constants for agent running mode
+const (
+	// AgentModeQuickAnswer is the RAG mode for quick Q&A
+	AgentModeQuickAnswer = "quick-answer"
+	// AgentModeSmartReasoning is the ReAct mode for multi-step reasoning
+	AgentModeSmartReasoning = "smart-reasoning"
 )
 
 // CustomAgent represents a configurable AI agent (similar to GPTs)
 type CustomAgent struct {
-	// Unique identifier of the agent
+	// Unique identifier of the agent (composite primary key with TenantID)
+	// For built-in agents, this is 'builtin-quick-answer' or 'builtin-smart-reasoning'
+	// For custom agents, this is a UUID
 	ID string `yaml:"id" json:"id" gorm:"type:varchar(36);primaryKey"`
 	// Name of the agent
 	Name string `yaml:"name" json:"name" gorm:"type:varchar(255);not null"`
@@ -38,10 +38,8 @@ type CustomAgent struct {
 	Avatar string `yaml:"avatar" json:"avatar" gorm:"type:varchar(64)"`
 	// Whether this is a built-in agent (normal mode / agent mode)
 	IsBuiltin bool `yaml:"is_builtin" json:"is_builtin" gorm:"default:false"`
-	// Type of the agent: normal, agent, custom
-	Type CustomAgentType `yaml:"type" json:"type" gorm:"type:varchar(32);default:'custom'"`
-	// Tenant ID
-	TenantID uint64 `yaml:"tenant_id" json:"tenant_id" gorm:"index"`
+	// Tenant ID (composite primary key with ID)
+	TenantID uint64 `yaml:"tenant_id" json:"tenant_id" gorm:"primaryKey"`
 	// Created by user ID
 	CreatedBy string `yaml:"created_by" json:"created_by" gorm:"type:varchar(36)"`
 
@@ -57,7 +55,7 @@ type CustomAgent struct {
 // CustomAgentConfig represents the configuration of a custom agent
 type CustomAgentConfig struct {
 	// ===== Basic Settings =====
-	// Agent mode: "normal" for RAG mode, "agent" for ReAct agent mode
+	// Agent mode: "quick-answer" for RAG mode, "smart-reasoning" for ReAct agent mode
 	AgentMode string `yaml:"agent_mode" json:"agent_mode"`
 	// System prompt for the agent (for normal mode, or agent mode when web search is disabled)
 	SystemPrompt string `yaml:"system_prompt" json:"system_prompt"`
@@ -83,16 +81,16 @@ type CustomAgentConfig struct {
 	AllowedTools []string `yaml:"allowed_tools" json:"allowed_tools"`
 	// Whether reflection is enabled (only for agent type)
 	ReflectionEnabled bool `yaml:"reflection_enabled" json:"reflection_enabled"`
+	// MCP service selection mode: "all" = all enabled MCP services, "selected" = specific services, "none" = no MCP
+	MCPSelectionMode string `yaml:"mcp_selection_mode" json:"mcp_selection_mode"`
+	// Selected MCP service IDs (only used when MCPSelectionMode is "selected")
+	MCPServices []string `yaml:"mcp_services" json:"mcp_services"`
 
 	// ===== Knowledge Base Settings =====
 	// Knowledge base selection mode: "all" = all KBs, "selected" = specific KBs, "none" = no KB
 	KBSelectionMode string `yaml:"kb_selection_mode" json:"kb_selection_mode"`
 	// Associated knowledge base IDs (only used when KBSelectionMode is "selected")
 	KnowledgeBases []string `yaml:"knowledge_bases" json:"knowledge_bases"`
-	// Whether to allow user to select knowledge bases during conversation
-	// If true, user can select from available KBs (all or selected based on KBSelectionMode)
-	// If false, the configured KBs are used automatically without user selection
-	AllowUserKBSelection *bool `yaml:"allow_user_kb_selection" json:"allow_user_kb_selection"`
 
 	// ===== Web Search Settings =====
 	// Whether web search is enabled
@@ -162,9 +160,6 @@ func (a *CustomAgent) EnsureDefaults() {
 	if a == nil {
 		return
 	}
-	if a.Type == "" {
-		a.Type = CustomAgentTypeCustom
-	}
 	if a.Config.Temperature == 0 {
 		a.Config.Temperature = 0.7
 	}
@@ -204,33 +199,33 @@ func (a *CustomAgent) EnsureDefaults() {
 
 // IsAgentMode returns true if this agent uses ReAct agent mode
 func (a *CustomAgent) IsAgentMode() bool {
-	return a.Config.AgentMode == "agent"
+	return a.Config.AgentMode == AgentModeSmartReasoning
 }
 
-// GetBuiltinNormalAgent returns the built-in normal mode agent
-func GetBuiltinNormalAgent(tenantID uint64) *CustomAgent {
+// GetBuiltinQuickAnswerAgent returns the built-in quick answer (RAG) mode agent
+func GetBuiltinQuickAnswerAgent(tenantID uint64) *CustomAgent {
 	return &CustomAgent{
-		ID:          BuiltinAgentNormalID,
-		Name:        "普通模式",
+		ID:          BuiltinQuickAnswerID,
+		Name:        "快速问答",
 		Description: "基于知识库的 RAG 问答，快速准确地回答问题",
-		Avatar:      "💬",
 		IsBuiltin:   true,
-		Type:        CustomAgentTypeNormal,
 		TenantID:    tenantID,
 		Config: CustomAgentConfig{
-			AgentMode:            "normal",
-			SystemPrompt:         "",
-			Temperature:          0.7,
-			MaxCompletionTokens:  2048,
-			WebSearchEnabled:     false,
-			MultiTurnEnabled:     true,
-			HistoryTurns:         5,
+			AgentMode:           AgentModeQuickAnswer,
+			SystemPrompt:        "",
+			Temperature:         0.7,
+			MaxCompletionTokens: 2048,
+			WebSearchEnabled:    true,
+			WebSearchMaxResults: 5,
+			MultiTurnEnabled:    true,
+			HistoryTurns:        5,
+			KBSelectionMode:     "all",
 			// Retrieval strategy
-			EmbeddingTopK:        10,
-			KeywordThreshold:     0.3,
-			VectorThreshold:      0.5,
-			RerankTopK:           5,
-			RerankThreshold:      0.5,
+			EmbeddingTopK:    10,
+			KeywordThreshold: 0.3,
+			VectorThreshold:  0.5,
+			RerankTopK:       10,
+			RerankThreshold:  0.3,
 			// Advanced settings
 			EnableQueryExpansion: true,
 			EnableRewrite:        true,
@@ -239,21 +234,21 @@ func GetBuiltinNormalAgent(tenantID uint64) *CustomAgent {
 	}
 }
 
-// GetBuiltinAgentAgent returns the built-in agent mode agent
-func GetBuiltinAgentAgent(tenantID uint64) *CustomAgent {
+// GetBuiltinSmartReasoningAgent returns the built-in smart reasoning (ReAct) mode agent
+func GetBuiltinSmartReasoningAgent(tenantID uint64) *CustomAgent {
 	return &CustomAgent{
-		ID:          BuiltinAgentAgentID,
-		Name:        "Agent 模式",
+		ID:          BuiltinSmartReasoningID,
+		Name:        "智能推理",
 		Description: "ReAct 推理框架，支持多步思考和工具调用",
-		Avatar:      "🤖",
 		IsBuiltin:   true,
-		Type:        CustomAgentTypeAgent,
 		TenantID:    tenantID,
 		Config: CustomAgentConfig{
-			AgentMode:           "agent",
+			AgentMode:           AgentModeSmartReasoning,
 			SystemPrompt:        "",
 			Temperature:         0.7,
-			MaxIterations:       10,
+			MaxCompletionTokens: 2048,
+			MaxIterations:       50,
+			KBSelectionMode:     "all",
 			AllowedTools:        []string{"thinking", "todo_write", "knowledge_search", "grep_chunks", "list_knowledge_chunks", "query_knowledge_graph", "get_document_info"},
 			WebSearchEnabled:    true,
 			WebSearchMaxResults: 5,
@@ -261,19 +256,50 @@ func GetBuiltinAgentAgent(tenantID uint64) *CustomAgent {
 			MultiTurnEnabled:    true,
 			HistoryTurns:        5,
 			// Retrieval strategy
-			EmbeddingTopK:       10,
-			KeywordThreshold:    0.3,
-			VectorThreshold:     0.5,
-			RerankTopK:          5,
-			RerankThreshold:     0.5,
+			EmbeddingTopK:    10,
+			KeywordThreshold: 0.3,
+			VectorThreshold:  0.5,
+			RerankTopK:       10,
+			RerankThreshold:  0.3,
 		},
 	}
 }
 
-// GetBuiltinAgents returns all built-in agents for a tenant
-func GetBuiltinAgents(tenantID uint64) []*CustomAgent {
-	return []*CustomAgent{
-		GetBuiltinNormalAgent(tenantID),
-		GetBuiltinAgentAgent(tenantID),
+// Deprecated: Use GetBuiltinQuickAnswerAgent instead
+func GetBuiltinNormalAgent(tenantID uint64) *CustomAgent {
+	return GetBuiltinQuickAnswerAgent(tenantID)
+}
+
+// Deprecated: Use GetBuiltinSmartReasoningAgent instead
+func GetBuiltinAgentAgent(tenantID uint64) *CustomAgent {
+	return GetBuiltinSmartReasoningAgent(tenantID)
+}
+
+// BuiltinAgentRegistry provides a registry of all built-in agents for easy extension
+var BuiltinAgentRegistry = map[string]func(uint64) *CustomAgent{
+	BuiltinQuickAnswerID:    GetBuiltinQuickAnswerAgent,
+	BuiltinSmartReasoningID: GetBuiltinSmartReasoningAgent,
+}
+
+// GetBuiltinAgentIDs returns all built-in agent IDs
+func GetBuiltinAgentIDs() []string {
+	ids := make([]string, 0, len(BuiltinAgentRegistry))
+	for id := range BuiltinAgentRegistry {
+		ids = append(ids, id)
 	}
+	return ids
+}
+
+// IsBuiltinAgentID checks if the given ID is a built-in agent ID
+func IsBuiltinAgentID(id string) bool {
+	_, exists := BuiltinAgentRegistry[id]
+	return exists
+}
+
+// GetBuiltinAgent returns a built-in agent by ID, or nil if not found
+func GetBuiltinAgent(id string, tenantID uint64) *CustomAgent {
+	if factory, exists := BuiltinAgentRegistry[id]; exists {
+		return factory(tenantID)
+	}
+	return nil
 }

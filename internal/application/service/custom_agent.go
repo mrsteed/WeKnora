@@ -56,9 +56,9 @@ func (s *customAgentService) CreateAgent(ctx context.Context, agent *types.Custo
 	agent.CreatedAt = time.Now()
 	agent.UpdatedAt = time.Now()
 
-	// Ensure custom type for user-created agents
-	if agent.Type == "" {
-		agent.Type = types.CustomAgentTypeCustom
+	// Ensure agent mode is set for user-created agents
+	if agent.Config.AgentMode == "" {
+		agent.Config.AgentMode = types.AgentModeQuickAnswer
 	}
 
 	// Cannot create built-in agents
@@ -67,8 +67,8 @@ func (s *customAgentService) CreateAgent(ctx context.Context, agent *types.Custo
 	// Set defaults
 	agent.EnsureDefaults()
 
-	logger.Infof(ctx, "Creating custom agent, ID: %s, tenant ID: %d, name: %s, type: %s",
-		agent.ID, agent.TenantID, agent.Name, agent.Type)
+	logger.Infof(ctx, "Creating custom agent, ID: %s, tenant ID: %d, name: %s, agent_mode: %s",
+		agent.ID, agent.TenantID, agent.Name, agent.Config.AgentMode)
 
 	if err := s.repo.CreateAgent(ctx, agent); err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -95,19 +95,18 @@ func (s *customAgentService) GetAgentByID(ctx context.Context, id string) (*type
 		return nil, ErrInvalidTenantID
 	}
 
-	// Check if it's a built-in agent
-	if id == types.BuiltinAgentNormalID || id == types.BuiltinAgentAgentID {
+	// Check if it's a built-in agent using the registry
+	if types.IsBuiltinAgentID(id) {
 		// Try to get from database first (for customized config)
 		agent, err := s.repo.GetAgentByID(ctx, id, tenantID)
 		if err == nil {
 			// Found in database, return with customized config
 			return agent, nil
 		}
-		// Not in database, return default built-in agent
-		if id == types.BuiltinAgentNormalID {
-			return types.GetBuiltinNormalAgent(tenantID), nil
+		// Not in database, return default built-in agent from registry
+		if builtinAgent := types.GetBuiltinAgent(id, tenantID); builtinAgent != nil {
+			return builtinAgent, nil
 		}
-		return types.GetBuiltinAgentAgent(tenantID), nil
 	}
 
 	// Query from database
@@ -141,48 +140,39 @@ func (s *customAgentService) ListAgents(ctx context.Context) ([]*types.CustomAge
 		return nil, err
 	}
 
-	// Check if built-in agents exist in database
-	hasNormalBuiltin := false
-	hasAgentBuiltin := false
+	// Track which built-in agents exist in database
+	builtinInDB := make(map[string]bool)
 	for _, agent := range allAgents {
-		if agent.ID == types.BuiltinAgentNormalID {
-			hasNormalBuiltin = true
-		}
-		if agent.ID == types.BuiltinAgentAgentID {
-			hasAgentBuiltin = true
+		if types.IsBuiltinAgentID(agent.ID) {
+			builtinInDB[agent.ID] = true
 		}
 	}
 
 	// Build result: built-in agents first, then custom agents
-	result := make([]*types.CustomAgent, 0, len(allAgents)+2)
+	builtinIDs := types.GetBuiltinAgentIDs()
+	result := make([]*types.CustomAgent, 0, len(allAgents)+len(builtinIDs))
 
-	// Add built-in normal agent
-	if hasNormalBuiltin {
-		for _, agent := range allAgents {
-			if agent.ID == types.BuiltinAgentNormalID {
+	// Add built-in agents in order
+	for _, builtinID := range builtinIDs {
+		if builtinInDB[builtinID] {
+			// Use customized config from database
+			for _, agent := range allAgents {
+				if agent.ID == builtinID {
+					result = append(result, agent)
+					break
+				}
+			}
+		} else {
+			// Use default built-in agent
+			if agent := types.GetBuiltinAgent(builtinID, tenantID); agent != nil {
 				result = append(result, agent)
-				break
 			}
 		}
-	} else {
-		result = append(result, types.GetBuiltinNormalAgent(tenantID))
-	}
-
-	// Add built-in agent mode agent
-	if hasAgentBuiltin {
-		for _, agent := range allAgents {
-			if agent.ID == types.BuiltinAgentAgentID {
-				result = append(result, agent)
-				break
-			}
-		}
-	} else {
-		result = append(result, types.GetBuiltinAgentAgent(tenantID))
 	}
 
 	// Add custom agents
 	for _, agent := range allAgents {
-		if agent.ID != types.BuiltinAgentNormalID && agent.ID != types.BuiltinAgentAgentID {
+		if !types.IsBuiltinAgentID(agent.ID) {
 			result = append(result, agent)
 		}
 	}
@@ -203,9 +193,8 @@ func (s *customAgentService) UpdateAgent(ctx context.Context, agent *types.Custo
 		return nil, ErrInvalidTenantID
 	}
 
-	// Handle built-in agents specially
-	isBuiltinAgent := agent.ID == types.BuiltinAgentNormalID || agent.ID == types.BuiltinAgentAgentID
-	if isBuiltinAgent {
+	// Handle built-in agents specially using registry
+	if types.IsBuiltinAgentID(agent.ID) {
 		return s.updateBuiltinAgent(ctx, agent, tenantID)
 	}
 
@@ -232,7 +221,6 @@ func (s *customAgentService) UpdateAgent(ctx context.Context, agent *types.Custo
 	existingAgent.Name = agent.Name
 	existingAgent.Description = agent.Description
 	existingAgent.Avatar = agent.Avatar
-	existingAgent.Type = agent.Type
 	existingAgent.Config = agent.Config
 	existingAgent.UpdatedAt = time.Now()
 
@@ -254,12 +242,10 @@ func (s *customAgentService) UpdateAgent(ctx context.Context, agent *types.Custo
 
 // updateBuiltinAgent updates a built-in agent's configuration (but not basic info)
 func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *types.CustomAgent, tenantID uint64) (*types.CustomAgent, error) {
-	// Get the default built-in agent
-	var defaultAgent *types.CustomAgent
-	if agent.ID == types.BuiltinAgentNormalID {
-		defaultAgent = types.GetBuiltinNormalAgent(tenantID)
-	} else {
-		defaultAgent = types.GetBuiltinAgentAgent(tenantID)
+	// Get the default built-in agent from registry
+	defaultAgent := types.GetBuiltinAgent(agent.ID, tenantID)
+	if defaultAgent == nil {
+		return nil, ErrAgentNotFound
 	}
 
 	// Try to get existing customized config from database
@@ -294,7 +280,6 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 		Description: defaultAgent.Description,
 		Avatar:      defaultAgent.Avatar,
 		IsBuiltin:   true,
-		Type:        defaultAgent.Type,
 		TenantID:    tenantID,
 		Config:      agent.Config,
 		CreatedAt:   time.Now(),
@@ -323,8 +308,8 @@ func (s *customAgentService) DeleteAgent(ctx context.Context, id string) error {
 		return errors.New("agent ID cannot be empty")
 	}
 
-	// Cannot delete built-in agents
-	if id == types.BuiltinAgentNormalID || id == types.BuiltinAgentAgentID {
+	// Cannot delete built-in agents using registry check
+	if types.IsBuiltinAgentID(id) {
 		return ErrCannotDeleteBuiltin
 	}
 
@@ -350,7 +335,7 @@ func (s *customAgentService) DeleteAgent(ctx context.Context, id string) error {
 
 	logger.Infof(ctx, "Deleting custom agent, ID: %s", id)
 
-	if err := s.repo.DeleteAgent(ctx, id); err != nil {
+	if err := s.repo.DeleteAgent(ctx, id, tenantID); err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"agent_id": id,
 		})
@@ -359,4 +344,53 @@ func (s *customAgentService) DeleteAgent(ctx context.Context, id string) error {
 
 	logger.Infof(ctx, "Custom agent deleted successfully, ID: %s", id)
 	return nil
+}
+
+// CopyAgent creates a copy of an existing agent
+func (s *customAgentService) CopyAgent(ctx context.Context, id string) (*types.CustomAgent, error) {
+	if id == "" {
+		logger.Error(ctx, "Agent ID is empty")
+		return nil, errors.New("agent ID cannot be empty")
+	}
+
+	// Get tenant ID from context
+	tenantID, ok := ctx.Value(types.TenantIDContextKey).(uint64)
+	if !ok {
+		return nil, ErrInvalidTenantID
+	}
+
+	// Get the source agent
+	sourceAgent, err := s.GetAgentByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a new agent with copied data
+	newAgent := &types.CustomAgent{
+		ID:          uuid.New().String(),
+		Name:        sourceAgent.Name + " (副本)",
+		Description: sourceAgent.Description,
+		Avatar:      sourceAgent.Avatar,
+		IsBuiltin:   false, // Copied agents are never built-in
+		TenantID:    tenantID,
+		Config:      sourceAgent.Config,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	// Ensure defaults
+	newAgent.EnsureDefaults()
+
+	logger.Infof(ctx, "Copying agent, source ID: %s, new ID: %s", id, newAgent.ID)
+
+	if err := s.repo.CreateAgent(ctx, newAgent); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"source_agent_id": id,
+			"new_agent_id":    newAgent.ID,
+		})
+		return nil, err
+	}
+
+	logger.Infof(ctx, "Agent copied successfully, source ID: %s, new ID: %s", id, newAgent.ID)
+	return newAgent, nil
 }
