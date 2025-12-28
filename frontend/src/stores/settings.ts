@@ -22,8 +22,7 @@ interface AgentConfig {
   maxIterations: number;
   temperature: number;
   allowedTools: string[];
-  system_prompt_web_enabled?: string;
-  system_prompt_web_disabled?: string;
+  system_prompt?: string;  // Unified system prompt (uses {{web_search_status}} placeholder)
 }
 
 interface ConversationModels {
@@ -69,8 +68,7 @@ const defaultSettings: Settings = {
     maxIterations: 5,
     temperature: 0.7,
     allowedTools: [],  // 默认为空，需要通过 API 从后端加载
-    system_prompt_web_enabled: "",
-    system_prompt_web_disabled: "",
+    system_prompt: "",
   },
   selectedKnowledgeBases: [],  // 默认为空数组
   selectedFiles: [], // 默认为空数组
@@ -326,6 +324,12 @@ export const useSettingsStore = defineStore("settings", {
         this.settings.isAgentEnabled = true;
       }
       // 自定义智能体需要根据其配置来决定
+      
+      // 切换智能体时重置知识库和文件选择状态
+      // 因为不同智能体关联的知识库不同，需要清空用户之前的选择
+      this.settings.selectedKnowledgeBases = [];
+      this.settings.selectedFiles = [];
+      
       localStorage.setItem("WeKnora_settings", JSON.stringify(this.settings));
     },
     

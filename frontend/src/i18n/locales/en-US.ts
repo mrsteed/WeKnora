@@ -228,6 +228,8 @@ export default {
       webSearchOff: 'Web search disabled',
       hasPrompt: 'Custom prompt',
       default: 'Default configuration',
+      mcpEnabled: 'MCP services enabled',
+      multiTurn: 'Multi-turn conversation',
     },
     type: {
       normal: 'Quick Answer',
@@ -285,6 +287,12 @@ export default {
       systemPromptRequired: 'System prompt is required',
       modelRequired: 'Please select a model',
       rerankModelRequired: 'ReRank model is required when using knowledge bases',
+      contextsMissing: 'Context template must contain {{contexts}} placeholder when knowledge base is enabled',
+      queryMissingInContext: 'Context template must contain {{query}} placeholder',
+      knowledgeBasesMissing: 'It is recommended to include {{knowledge_bases}} placeholder in system prompt so the model knows available knowledge bases',
+      queryMissingInRewrite: 'Rewrite user prompt must contain {{query}} placeholder',
+      conversationMissing: 'Rewrite user prompt must contain {{conversation}} placeholder',
+      queryMissingInFallback: 'Fallback prompt must contain {{query}} placeholder',
       avatar: 'Avatar',
       avatarPlaceholder: 'Enter Emoji or select',
       description: 'Description',
@@ -295,8 +303,7 @@ export default {
       model: 'Model',
       modelPlaceholder: 'Select Model',
       systemPrompt: 'System Prompt',
-      systemPromptPlaceholder: 'Custom system prompt to define agent behavior and role',
-      systemPromptWebEnabledPlaceholder: 'System prompt used when web search is enabled',
+      systemPromptPlaceholder: 'Custom system prompt to define agent behavior and role (use {{web_search_status}} placeholder for dynamic web search behavior)',
       defaultPromptHint: 'Leave empty to use the following default system prompt:',
       defaultContextTemplateHint: 'Leave empty to use the following default context template:',
       contextTemplateRequired: 'Context template is required',
@@ -360,6 +367,34 @@ export default {
       builtinSection: 'Built-in Agents',
       customSection: 'My Agents',
       addNew: 'Add New Agent',
+      current: 'Current',
+    },
+    // Built-in agent information
+    builtinInfo: {
+      quickAnswer: {
+        name: 'Quick Answer',
+        description: 'Knowledge base RAG Q&A for fast and accurate answers',
+      },
+      smartReasoning: {
+        name: 'Smart Reasoning',
+        description: 'ReAct reasoning framework with multi-step thinking and tool calling',
+      },
+      deepResearcher: {
+        name: 'Deep Researcher',
+        description: 'Focused on in-depth research and comprehensive analysis, capable of creating research plans, multi-dimensional information retrieval, deep thinking and providing thorough analysis reports',
+      },
+      dataAnalyst: {
+        name: 'Data Analyst',
+        description: 'Focused on database queries and data analysis, capable of understanding business needs, building SQL queries, analyzing data and providing insights',
+      },
+      knowledgeGraphExpert: {
+        name: 'Knowledge Graph Expert',
+        description: 'Focused on knowledge graph queries and relationship analysis, capable of exploring entity relationships, discovering hidden connections and building knowledge networks',
+      },
+      documentAssistant: {
+        name: 'Document Assistant',
+        description: 'Focused on document retrieval and content organization, capable of quickly locating documents, extracting key information and generating summaries',
+      },
     },
   },
   settings: {
@@ -1706,9 +1741,7 @@ export default {
       custom: 'Custom Prompt',
       disabledHint: 'Currently using the default prompt. Enable custom to apply the content below.',
       placeholder: 'Enter the system prompt, or leave blank to use the default...',
-      tabHint: 'Configure separate prompts for sessions with web search on or off.',
-      tabWebOn: 'Web search enabled',
-      tabWebOff: 'Web search disabled'
+      tabHint: 'Unified system prompt using {{web_search_status}} placeholder for dynamic web search behavior'
     },
     reset: {
       header: 'Reset to Default Prompt',

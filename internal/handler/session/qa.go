@@ -440,6 +440,8 @@ func (h *Handler) executeAgentModeQA(reqCtx *qaRequestContext) {
 			reqCtx.assistantMessage.ID,
 			streamCtx.eventBus,
 			reqCtx.customAgent,
+			reqCtx.knowledgeBaseIDs,
+			reqCtx.knowledgeIDs,
 		)
 		if err != nil {
 			logger.ErrorWithFields(streamCtx.asyncCtx, err, nil)

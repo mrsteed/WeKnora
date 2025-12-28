@@ -4,8 +4,7 @@ import { get, post, put, del } from "../../utils/request";
 export interface CustomAgentConfig {
   // ===== 基础设置 =====
   agent_mode?: 'quick-answer' | 'smart-reasoning';  // 运行模式：quick-answer=RAG模式, smart-reasoning=ReAct Agent模式
-  system_prompt?: string;           // 系统提示词（普通模式，或Agent模式网络搜索关闭时）
-  system_prompt_web_enabled?: string; // Agent模式网络搜索开启时的系统提示词
+  system_prompt?: string;           // 统一系统提示词（使用 {{web_search_status}} 占位符动态控制行为）
   context_template?: string;        // 上下文模板（普通模式）
 
   // ===== 模型设置 =====

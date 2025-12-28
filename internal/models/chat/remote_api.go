@@ -211,10 +211,6 @@ func (c *RemoteAPIChat) buildChatCompletionRequest(messages []Message,
 			toolNames = append(toolNames, tool.Function.Name)
 		}
 		logger.Infof(context.Background(), "[LLM Request] tools_count=%d, tool_names=%v", len(req.Tools), toolNames)
-		// Print full tool definitions
-		if toolsJSON, err := json.MarshalIndent(req.Tools, "", "  "); err == nil {
-			logger.Infof(context.Background(), "[LLM Request] tools_definition:\n%s", string(toolsJSON))
-		}
 	}
 
 	return req

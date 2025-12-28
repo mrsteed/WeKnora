@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const MAX_ITERATIONS = 30 // Max iterations for agent execution
+const MAX_ITERATIONS = 100 // Max iterations for agent execution
 
 // agentService implements agent-related business logic
 type agentService struct {

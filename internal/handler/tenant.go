@@ -419,12 +419,11 @@ func (h *TenantHandler) SearchTenants(c *gin.Context) {
 
 // AgentConfigRequest represents the request body for updating agent configuration
 type AgentConfigRequest struct {
-	MaxIterations           int      `json:"max_iterations"`
-	ReflectionEnabled       bool     `json:"reflection_enabled"`
-	AllowedTools            []string `json:"allowed_tools"`
-	Temperature             float64  `json:"temperature"`
-	SystemPromptWebEnabled  string   `json:"system_prompt_web_enabled,omitempty"`
-	SystemPromptWebDisabled string   `json:"system_prompt_web_disabled,omitempty"`
+	MaxIterations     int      `json:"max_iterations"`
+	ReflectionEnabled bool     `json:"reflection_enabled"`
+	AllowedTools      []string `json:"allowed_tools"`
+	Temperature       float64  `json:"temperature"`
+	SystemPrompt      string   `json:"system_prompt,omitempty"` // Unified system prompt (uses {{web_search_status}} placeholder)
 }
 
 // GetTenantAgentConfig godoc
@@ -472,42 +471,37 @@ func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data": gin.H{
-				"max_iterations":             agent.DefaultAgentMaxIterations,
-				"reflection_enabled":         agent.DefaultAgentReflectionEnabled,
-				"allowed_tools":              agenttools.DefaultAllowedTools(),
-				"temperature":                agent.DefaultAgentTemperature,
-				"system_prompt_web_enabled":  agent.ProgressiveRAGSystemPromptWithWeb,
-				"system_prompt_web_disabled": agent.ProgressiveRAGSystemPromptWithoutWeb,
-				"use_custom_system_prompt":   false,
-				"available_tools":            availableTools,
-				"available_placeholders":     availablePlaceholders,
+				"max_iterations":           agent.DefaultAgentMaxIterations,
+				"reflection_enabled":       agent.DefaultAgentReflectionEnabled,
+				"allowed_tools":            agenttools.DefaultAllowedTools(),
+				"temperature":              agent.DefaultAgentTemperature,
+				"system_prompt":            agent.ProgressiveRAGSystemPrompt,
+				"use_custom_system_prompt": false,
+				"available_tools":          availableTools,
+				"available_placeholders":   availablePlaceholders,
 			},
 		})
 		return
 	}
 
-	// Get system prompts for both web search states, use defaults if empty
-	systemPromptWithWeb := tenant.AgentConfig.ResolveSystemPrompt(true)
-	if systemPromptWithWeb == "" {
-		systemPromptWithWeb = agent.ProgressiveRAGSystemPromptWithWeb
-	}
-	systemPromptWithoutWeb := tenant.AgentConfig.ResolveSystemPrompt(false)
-	if systemPromptWithoutWeb == "" {
-		systemPromptWithoutWeb = agent.ProgressiveRAGSystemPromptWithoutWeb
+	// Get system prompt, use default if empty
+	systemPrompt := tenant.AgentConfig.ResolveSystemPrompt(true) // webSearchEnabled doesn't matter for unified prompt
+	if systemPrompt == "" {
+		systemPrompt = agent.ProgressiveRAGSystemPrompt
 	}
 
 	logger.Infof(ctx, "Retrieved tenant agent config successfully, Tenant ID: %d", tenant.ID)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"max_iterations":             tenant.AgentConfig.MaxIterations,
-			"reflection_enabled":         tenant.AgentConfig.ReflectionEnabled,
-			"allowed_tools":              agenttools.DefaultAllowedTools(),
-			"temperature":                tenant.AgentConfig.Temperature,
-			"system_prompt_web_enabled":  systemPromptWithWeb,
-			"system_prompt_web_disabled": systemPromptWithoutWeb,
-			"available_tools":            availableTools,
-			"available_placeholders":     availablePlaceholders,
+			"max_iterations":           tenant.AgentConfig.MaxIterations,
+			"reflection_enabled":       tenant.AgentConfig.ReflectionEnabled,
+			"allowed_tools":            agenttools.DefaultAllowedTools(),
+			"temperature":              tenant.AgentConfig.Temperature,
+			"system_prompt":            systemPrompt,
+			"use_custom_system_prompt": tenant.AgentConfig.UseCustomSystemPrompt,
+			"available_tools":          availableTools,
+			"available_placeholders":   availablePlaceholders,
 		},
 	})
 }
@@ -543,19 +537,20 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 	}
 	// Update agent configuration
 	// Determine if using custom prompt based on whether custom prompts are set
-	useCustomPrompt := req.SystemPromptWebEnabled != "" || req.SystemPromptWebDisabled != ""
+	// Support both new unified SystemPrompt and deprecated separate prompts
+	systemPrompt := req.SystemPrompt
+	useCustomPrompt := systemPrompt != ""
 
-	tenant.AgentConfig = &types.AgentConfig{
-		MaxIterations:           req.MaxIterations,
-		ReflectionEnabled:       req.ReflectionEnabled,
-		AllowedTools:            agenttools.DefaultAllowedTools(),
-		Temperature:             req.Temperature,
-		SystemPromptWebEnabled:  req.SystemPromptWebEnabled,
-		SystemPromptWebDisabled: req.SystemPromptWebDisabled,
-		UseCustomSystemPrompt:   useCustomPrompt,
+	agentConfig := &types.AgentConfig{
+		MaxIterations:         req.MaxIterations,
+		ReflectionEnabled:     req.ReflectionEnabled,
+		AllowedTools:          agenttools.DefaultAllowedTools(),
+		Temperature:           req.Temperature,
+		SystemPrompt:          systemPrompt,
+		UseCustomSystemPrompt: useCustomPrompt,
 	}
 
-	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
+	_, err := h.service.UpdateTenant(ctx, tenant)
 	if err != nil {
 		if appErr, ok := errors.IsAppError(err); ok {
 			logger.Error(ctx, "Failed to update tenant: application error", appErr)
@@ -570,7 +565,7 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 	logger.Infof(ctx, "Tenant agent config updated successfully, Tenant ID: %d", tenant.ID)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    updatedTenant.AgentConfig,
+		"data":    agentConfig,
 		"message": "Agent configuration updated successfully",
 	})
 }

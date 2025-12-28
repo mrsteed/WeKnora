@@ -758,6 +758,8 @@ export default {
       webSearchOff: "禁用网络搜索",
       hasPrompt: "自定义提示词",
       default: "默认配置",
+      mcpEnabled: "启用 MCP 服务",
+      multiTurn: "多轮对话",
     },
     type: {
       normal: "快速问答",
@@ -815,6 +817,12 @@ export default {
       systemPromptRequired: "请输入系统提示词",
       modelRequired: "请选择模型",
       rerankModelRequired: "使用知识库时请选择 ReRank 模型",
+      contextsMissing: "开启知识库时，上下文模板必须包含 {{contexts}} 占位符",
+      queryMissingInContext: "上下文模板必须包含 {{query}} 占位符",
+      knowledgeBasesMissing: "建议在系统提示词中包含 {{knowledge_bases}} 占位符，以便模型了解可用的知识库",
+      queryMissingInRewrite: "改写用户提示词必须包含 {{query}} 占位符",
+      conversationMissing: "改写用户提示词必须包含 {{conversation}} 占位符",
+      queryMissingInFallback: "兜底提示词必须包含 {{query}} 占位符",
       avatar: "图标",
       avatarPlaceholder: "输入 Emoji 或点击选择",
       description: "描述",
@@ -825,8 +833,7 @@ export default {
       model: "模型",
       modelPlaceholder: "请选择模型",
       systemPrompt: "系统提示词",
-      systemPromptPlaceholder: "自定义系统提示词，定义智能体的行为和角色",
-      systemPromptWebEnabledPlaceholder: "网络搜索开启时使用的系统提示词",
+      systemPromptPlaceholder: "自定义系统提示词，定义智能体的行为和角色（使用 {{web_search_status}} 占位符动态控制网络搜索行为）",
       defaultPromptHint: "留空将使用以下系统默认提示词：",
       defaultContextTemplateHint: "留空将使用以下系统默认上下文模板：",
       contextTemplateRequired: "请输入上下文模板",
@@ -890,6 +897,34 @@ export default {
       builtinSection: "内置智能体",
       customSection: "我的智能体",
       addNew: "添加新智能体",
+      current: "当前",
+    },
+    // 内置智能体信息
+    builtinInfo: {
+      quickAnswer: {
+        name: "快速问答",
+        description: "基于知识库的 RAG 问答，快速准确地回答问题",
+      },
+      smartReasoning: {
+        name: "智能推理",
+        description: "ReAct 推理框架，支持多步思考和工具调用",
+      },
+      deepResearcher: {
+        name: "深度研究员",
+        description: "专注于深度研究和综合分析，能够制定研究计划、多维度检索信息、深入思考并给出全面的分析报告",
+      },
+      dataAnalyst: {
+        name: "数据分析师",
+        description: "专注于数据库查询和数据分析，能够理解业务需求、构建SQL查询、分析数据并提供洞察",
+      },
+      knowledgeGraphExpert: {
+        name: "知识图谱专家",
+        description: "专注于知识图谱查询和关系分析，能够探索实体关系、发现隐藏联系并构建知识网络",
+      },
+      documentAssistant: {
+        name: "文档助手",
+        description: "专注于文档检索和内容整理，能够快速定位文档、提取关键信息并生成摘要",
+      },
     },
   },
   file: {
@@ -1709,9 +1744,7 @@ export default {
       custom: "自定义 Prompt",
       disabledHint: "当前使用系统默认 Prompt，开启自定义后才会应用下方内容。",
       placeholder: "请输入系统 Prompt，或留空使用默认 Prompt...",
-      tabHint: "根据是否启用网络搜索分别配置系统 Prompt。",
-      tabWebOn: "网络搜索已启用",
-      tabWebOff: "网络搜索未启用",
+      tabHint: "统一的系统提示词，使用 {{web_search_status}} 占位符动态控制网络搜索行为",
     },
     reset: {
       header: "恢复默认 Prompt",

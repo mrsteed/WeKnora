@@ -37,11 +37,32 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 		"template_len":     len(chatManage.SummaryConfig.ContextTemplate),
 	})
 
-	// Extract content from merge results
-	passages := make([]string, len(chatManage.MergeResult))
-	for i, result := range chatManage.MergeResult {
-		// 合并内容和图片信息
-		passages[i] = getEnrichedPassageForChat(ctx, result)
+	// Separate FAQ and document results when FAQ priority is enabled
+	var faqResults, docResults []*types.SearchResult
+	var hasHighConfidenceFAQ bool
+
+	if chatManage.FAQPriorityEnabled {
+		for _, result := range chatManage.MergeResult {
+			if result.ChunkType == string(types.ChunkTypeFAQ) {
+				faqResults = append(faqResults, result)
+				// Check if this FAQ has high confidence (above direct answer threshold)
+				if result.Score >= chatManage.FAQDirectAnswerThreshold && !hasHighConfidenceFAQ {
+					hasHighConfidenceFAQ = true
+					pipelineInfo(ctx, "IntoChatMessage", "high_confidence_faq", map[string]interface{}{
+						"chunk_id":  result.ID,
+						"score":     fmt.Sprintf("%.4f", result.Score),
+						"threshold": chatManage.FAQDirectAnswerThreshold,
+					})
+				}
+			} else {
+				docResults = append(docResults, result)
+			}
+		}
+		pipelineInfo(ctx, "IntoChatMessage", "faq_separation", map[string]interface{}{
+			"faq_count":           len(faqResults),
+			"doc_count":           len(docResults),
+			"has_high_confidence": hasHighConfidenceFAQ,
+		})
 	}
 
 	// 验证用户查询的安全性
@@ -56,13 +77,42 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 	// Prepare weekday names
 	weekdayName := []string{"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"}
 
-	// Build contexts string from passages
 	var contextsBuilder strings.Builder
-	for i, passage := range passages {
-		if i > 0 {
-			contextsBuilder.WriteString("\n\n")
+
+	// Build contexts string based on FAQ priority strategy
+	if chatManage.FAQPriorityEnabled && len(faqResults) > 0 {
+		// Build structured context with FAQ prioritization
+		contextsBuilder.WriteString("### 资料来源 1：标准问答库 (FAQ)\n")
+		contextsBuilder.WriteString("【高置信度 - 请优先参考】\n")
+		for i, result := range faqResults {
+			passage := getEnrichedPassageForChat(ctx, result)
+			if hasHighConfidenceFAQ && i == 0 {
+				contextsBuilder.WriteString(fmt.Sprintf("[FAQ-%d] ⭐ 精准匹配: %s\n", i+1, passage))
+			} else {
+				contextsBuilder.WriteString(fmt.Sprintf("[FAQ-%d] %s\n", i+1, passage))
+			}
 		}
-		contextsBuilder.WriteString(fmt.Sprintf("[%d] %s", i+1, passage))
+
+		if len(docResults) > 0 {
+			contextsBuilder.WriteString("\n### 资料来源 2：参考文档\n")
+			contextsBuilder.WriteString("【补充资料 - 仅在FAQ无法解答时参考】\n")
+			for i, result := range docResults {
+				passage := getEnrichedPassageForChat(ctx, result)
+				contextsBuilder.WriteString(fmt.Sprintf("[DOC-%d] %s\n", i+1, passage))
+			}
+		}
+	} else {
+		// Original behavior: simple numbered list
+		passages := make([]string, len(chatManage.MergeResult))
+		for i, result := range chatManage.MergeResult {
+			passages[i] = getEnrichedPassageForChat(ctx, result)
+		}
+		for i, passage := range passages {
+			if i > 0 {
+				contextsBuilder.WriteString("\n\n")
+			}
+			contextsBuilder.WriteString(fmt.Sprintf("[%d] %s", i+1, passage))
+		}
 	}
 
 	// Replace placeholders in context template
@@ -77,6 +127,7 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 	pipelineInfo(ctx, "IntoChatMessage", "output", map[string]interface{}{
 		"session_id":       chatManage.SessionID,
 		"user_content_len": len(chatManage.UserContent),
+		"faq_priority":     chatManage.FAQPriorityEnabled,
 	})
 	return next()
 }

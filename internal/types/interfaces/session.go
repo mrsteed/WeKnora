@@ -54,6 +54,8 @@ type SessionService interface {
 		assistantMessageID string,
 		eventBus *event.EventBus,
 		customAgent *types.CustomAgent,
+		knowledgeBaseIDs []string,
+		knowledgeIDs []string,
 	) error
 	// ClearContext clears the LLM context for a session
 	ClearContext(ctx context.Context, sessionID string) error

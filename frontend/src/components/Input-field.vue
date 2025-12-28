@@ -21,6 +21,8 @@ const route = useRoute();
 const router = useRouter();
 const settingsStore = useSettingsStore();
 const uiStore = useUIStore();
+const { t } = useI18n();
+
 let query = ref("");
 const showKbSelector = ref(false);
 const atButtonRef = ref<HTMLElement>();
@@ -75,6 +77,19 @@ const agentKnowledgeBases = computed(() => {
   if (!hasAgentConfig.value) return [];
   return currentAgentConfig.value?.knowledge_bases || [];
 });
+
+// 当智能体改变时，将智能体配置的知识库同步到 store
+// 这样用户可以移除这些知识库
+watch([selectedAgentId, agentKnowledgeBases], ([newAgentId, newAgentKbs], [oldAgentId]) => {
+  if (newAgentId !== oldAgentId && newAgentKbs && newAgentKbs.length > 0) {
+    // 智能体切换了，将新智能体配置的知识库添加到 store
+    const currentSelected = settingsStore.settings.selectedKnowledgeBases || [];
+    const toAdd = newAgentKbs.filter((id: string) => !currentSelected.includes(id));
+    if (toAdd.length > 0) {
+      settingsStore.selectKnowledgeBases([...currentSelected, ...toAdd]);
+    }
+  }
+}, { immediate: true });
 
 // 智能体的知识库选择模式
 const agentKBSelectionMode = computed(() => {
@@ -173,30 +188,18 @@ const selectedFiles = computed(() => {
 });
 
   // 合并所有选中项（用于输入框内显示）
-  // 包括用户选择的和智能体预配置的知识库
+  // 现在智能体配置的知识库也在 store 中，统一从 selectedKbs 获取
   const allSelectedItems = computed(() => {
-    // 获取智能体预配置的知识库 IDs
+    // 获取智能体预配置的知识库 IDs（用于标记和排序）
     const agentKbIds = agentKnowledgeBases.value;
     
-    // 用户选择的知识库（排除智能体已配置的）
-    const userSelectedKbs = selectedKbs.value
-      .filter(kb => !agentKbIds.includes(kb.id))
-      .map(kb => ({ 
-        ...kb, 
-        type: 'kb' as const,
-        kbType: kb.type,
-        isAgentConfigured: false
-      }));
-    
-    // 智能体预配置的知识库
-    const agentConfiguredKbs = knowledgeBases.value
-      .filter(kb => agentKbIds.includes(kb.id))
-      .map(kb => ({
-        ...kb,
-        type: 'kb' as const,
-        kbType: kb.type,
-        isAgentConfigured: true  // 标记为智能体配置，不可删除
-      }));
+    // 所有选中的知识库，标记是否为智能体配置
+    const allKbs = selectedKbs.value.map(kb => ({ 
+      ...kb, 
+      type: 'kb' as const,
+      kbType: kb.type,
+      isAgentConfigured: agentKbIds.includes(kb.id)
+    }));
     
     // 用户选择的文件
     const files = selectedFiles.value.map((f: { id: string; name: string }) => ({ 
@@ -206,16 +209,14 @@ const selectedFiles = computed(() => {
     }));
     
     // 智能体配置的放在前面
+    const agentConfiguredKbs = allKbs.filter(kb => kb.isAgentConfigured);
+    const userSelectedKbs = allKbs.filter(kb => !kb.isAgentConfigured);
+    
     return [...agentConfiguredKbs, ...userSelectedKbs, ...files];
   });
 
-// 移除选中项（智能体配置的项不可移除）
+// 移除选中项（智能体配置的项也可以移除）
 const removeSelectedItem = (item: { id: string; type: 'kb' | 'file'; isAgentConfigured?: boolean }) => {
-  // 如果是智能体配置的，不允许删除
-  if (item.isAgentConfigured) {
-    MessagePlugin.warning(t('input.cannotRemoveAgentKb'));
-    return;
-  }
   if (item.type === 'kb') {
     settingsStore.removeKnowledgeBase(item.id);
   } else {
@@ -235,8 +236,6 @@ const modelsLoading = ref(false);
 const showModelSelector = ref(false);
 const modelButtonRef = ref<HTMLElement>();
 const modelDropdownStyle = ref<Record<string, string>>({});
-
-const { t } = useI18n();
 
 // 显示的知识库标签（最多显示2个）
 const displayedKbs = computed(() => selectedKbs.value.slice(0, 2));
@@ -1507,8 +1506,7 @@ onBeforeRouteUpdate((to, from, next) => {
             <t-icon v-else name="file" />
           </span>
           <span class="tag-name">{{ item.name }}</span>
-          <!-- 智能体配置的项不显示删除按钮 -->
-          <span v-if="!item.isAgentConfigured" class="tag-remove" @click="removeSelectedItem(item)">×</span>
+          <span class="tag-remove" @click="removeSelectedItem(item)">×</span>
         </span>
       </div>
       

@@ -20,12 +20,13 @@
           <!-- 内置智能体分组 -->
           <div class="agent-group">
             <div class="agent-group-title">{{ $t('agent.builtinAgents') }}</div>
-            <t-tooltip 
+            <t-popup 
               v-for="agent in builtinAgents" 
               :key="agent.id"
-              :content="getAgentCapabilities(agent)"
-              :disabled="currentAgentId === agent.id"
               placement="right"
+              trigger="hover"
+              :show-arrow="true"
+              :overlay-inner-class-name="'agent-tooltip-popup'"
             >
               <div 
                 class="agent-option"
@@ -47,18 +48,39 @@
                   <path d="M13.5 4.5L6 12L2.5 8.5L3.5 7.5L6 10L12.5 3.5L13.5 4.5Z"/>
                 </svg>
               </div>
-            </t-tooltip>
+              <template #content>
+                <div class="agent-tooltip-content">
+                  <div class="agent-tooltip-header">
+                    <div class="builtin-icon" :class="agent.config?.agent_mode === 'smart-reasoning' ? 'agent' : 'normal'">
+                      <TIcon :name="agent.config?.agent_mode === 'smart-reasoning' ? 'control-platform' : 'chat'" size="14px" />
+                    </div>
+                    <div class="agent-tooltip-title">
+                      <span class="agent-tooltip-name">{{ agent.name }}</span>
+                      <span v-if="currentAgentId === agent.id" class="agent-tooltip-selected">{{ $t('agent.selector.current') }}</span>
+                    </div>
+                  </div>
+                  <p class="agent-tooltip-desc">{{ agent.description || $t('agent.noDescription') }}</p>
+                  <div class="agent-tooltip-capabilities">
+                    <div class="capability-item">
+                      <TIcon :name="agent.config?.agent_mode === 'smart-reasoning' ? 'control-platform' : 'chat'" size="12px" />
+                      <span>{{ agent.config?.agent_mode === 'smart-reasoning' ? $t('agent.type.agent') : $t('agent.type.normal') }}</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </t-popup>
           </div>
 
           <!-- 自定义智能体分组 -->
           <div v-if="customAgents.length > 0" class="agent-group">
             <div class="agent-group-title">{{ $t('agent.customAgents') }}</div>
-            <t-tooltip 
+            <t-popup 
               v-for="agent in customAgents" 
               :key="agent.id"
-              :content="getAgentCapabilities(agent)"
-              :disabled="currentAgentId === agent.id"
               placement="right"
+              trigger="hover"
+              :show-arrow="true"
+              :overlay-inner-class-name="'agent-tooltip-popup'"
             >
               <div 
                 class="agent-option"
@@ -78,7 +100,41 @@
                   <path d="M13.5 4.5L6 12L2.5 8.5L3.5 7.5L6 10L12.5 3.5L13.5 4.5Z"/>
                 </svg>
               </div>
-            </t-tooltip>
+              <template #content>
+                <div class="agent-tooltip-content">
+                  <div class="agent-tooltip-header">
+                    <AgentAvatar :name="agent.name" size="small" />
+                    <div class="agent-tooltip-title">
+                      <span class="agent-tooltip-name">{{ agent.name }}</span>
+                      <span v-if="currentAgentId === agent.id" class="agent-tooltip-selected">{{ $t('agent.selector.current') }}</span>
+                    </div>
+                  </div>
+                  <p class="agent-tooltip-desc">{{ agent.description || $t('agent.noDescription') }}</p>
+                  <div class="agent-tooltip-capabilities">
+                    <div class="capability-item">
+                      <TIcon :name="agent.config?.agent_mode === 'smart-reasoning' ? 'control-platform' : 'chat'" size="12px" />
+                      <span>{{ agent.config?.agent_mode === 'smart-reasoning' ? $t('agent.type.agent') : $t('agent.type.normal') }}</span>
+                    </div>
+                    <div v-if="getKbCapability(agent)" class="capability-item">
+                      <TIcon name="folder" size="12px" />
+                      <span>{{ getKbCapability(agent) }}</span>
+                    </div>
+                    <div v-if="agent.config?.web_search_enabled" class="capability-item">
+                      <TIcon name="internet" size="12px" />
+                      <span>{{ $t('agent.capabilities.webSearchOn') }}</span>
+                    </div>
+                    <div v-if="agent.config?.mcp_services?.length || agent.config?.mcp_selection_mode === 'all'" class="capability-item">
+                      <TIcon name="extension" size="12px" />
+                      <span>{{ $t('agent.capabilities.mcpEnabled') }}</span>
+                    </div>
+                    <div v-if="agent.config?.multi_turn_enabled" class="capability-item">
+                      <TIcon name="chat-bubble" size="12px" />
+                      <span>{{ $t('agent.capabilities.multiTurn') }}</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </t-popup>
           </div>
 
           <!-- 空状态 -->
@@ -94,7 +150,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Icon as TIcon } from 'tdesign-vue-next';
+import { Icon as TIcon, Popup as TPopup } from 'tdesign-vue-next';
 import { listAgents, type CustomAgent, BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from '@/api/agent';
 import AgentAvatar from '@/components/AgentAvatar.vue';
 
@@ -139,45 +195,17 @@ const customAgents = computed(() => {
   return agents.value.filter(a => !a.is_builtin);
 });
 
-// 获取智能体能力描述（用于 tooltip）
-const getAgentCapabilities = (agent: CustomAgent): string => {
-  // 内置智能体
-  if (agent.is_builtin) {
-    if (agent.config?.agent_mode === 'quick-answer') {
-      return t('agent.capabilities.normal');
-    } else if (agent.config?.agent_mode === 'smart-reasoning') {
-      return t('agent.capabilities.agent');
-    }
-    return '';
-  }
-  
-  // 自定义智能体
-  const capabilities: string[] = [];
+// 获取知识库能力描述
+const getKbCapability = (agent: CustomAgent): string => {
   const config = agent.config || {};
-  
-  if (config.model_id) {
-    capabilities.push(t('agent.capabilities.modelSpecified'));
-  }
   if (config.kb_selection_mode === 'none') {
-    capabilities.push(t('agent.capabilities.kbDisabled'));
+    return '';
   } else if (config.knowledge_bases && config.knowledge_bases.length > 0) {
-    capabilities.push(t('agent.capabilities.kbCount', { count: config.knowledge_bases.length }));
+    return t('agent.capabilities.kbCount', { count: config.knowledge_bases.length });
   } else if (config.kb_selection_mode === 'all') {
-    capabilities.push(t('agent.capabilities.kbAll'));
+    return t('agent.capabilities.kbAll');
   }
-  if (config.rerank_model_id) {
-    capabilities.push(t('agent.capabilities.rerankSpecified'));
-  }
-  if (config.web_search_enabled === true) {
-    capabilities.push(t('agent.capabilities.webSearchOn'));
-  } else if (config.web_search_enabled === false) {
-    capabilities.push(t('agent.capabilities.webSearchOff'));
-  }
-  if (config.system_prompt) {
-    capabilities.push(t('agent.capabilities.hasPrompt'));
-  }
-  
-  return capabilities.length > 0 ? capabilities.join('、') : t('agent.capabilities.default');
+  return '';
 };
 
 // 加载智能体列表
@@ -428,5 +456,101 @@ onMounted(() => {
   color: #10b981;
   flex-shrink: 0;
   margin-left: 6px;
+}
+
+// Tooltip 内容样式
+.agent-tooltip-content {
+  padding: 4px 0;
+  min-width: 200px;
+  max-width: 280px;
+}
+
+.agent-tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  
+  .builtin-icon {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+.agent-tooltip-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-tooltip-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--td-text-color-primary, #222);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-tooltip-selected {
+  font-size: 10px;
+  color: #10b981;
+  font-weight: 500;
+}
+
+.agent-tooltip-desc {
+  font-size: 12px;
+  color: var(--td-text-color-secondary, #666);
+  line-height: 1.5;
+  margin: 0 0 10px 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.agent-tooltip-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--td-component-stroke, #f0f0f0);
+}
+
+.capability-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--td-bg-color-secondarycontainer, #f5f5f5);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--td-text-color-secondary, #666);
+  
+  :deep(.t-icon) {
+    color: var(--td-text-color-placeholder, #999);
+  }
+}
+</style>
+
+<!-- 全局样式覆盖 TDesign Popup -->
+<style lang="less">
+.agent-tooltip-popup {
+  &.t-popup__content {
+    background: var(--td-bg-color-container, #fff) !important;
+    border: 1px solid var(--td-component-border, #e7e9eb) !important;
+    border-radius: 8px !important;
+    box-shadow: var(--td-shadow-2, 0 6px 28px rgba(15, 23, 42, 0.08)) !important;
+    padding: 10px 12px !important;
+  }
+  
+  .t-popup__arrow {
+    &::before {
+      background: var(--td-bg-color-container, #fff) !important;
+      border-color: var(--td-component-border, #e7e9eb) !important;
+    }
+  }
 }
 </style>

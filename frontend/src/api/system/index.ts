@@ -29,8 +29,7 @@ export interface AgentConfig {
   allowed_tools: string[]
   temperature: number
   knowledge_bases?: string[]
-  system_prompt_web_enabled?: string  // Custom system prompt when web search is enabled
-  system_prompt_web_disabled?: string // Custom system prompt when web search is disabled
+  system_prompt?: string  // Unified system prompt (uses {{web_search_status}} placeholder)
   available_tools?: ToolDefinition[]  // GET 响应中包含，POST/PUT 不需要
   available_placeholders?: PlaceholderDefinition[]  // GET 响应中包含，POST/PUT 不需要
 }

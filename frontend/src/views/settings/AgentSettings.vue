@@ -161,54 +161,27 @@
             </t-button>
           </div>
           <p class="prompt-tab-hint">
-            {{ $t('agentSettings.systemPrompt.tabHint') }}（留空则使用系统默认）
+            {{ $t('agentSettings.systemPrompt.tabHint') }}（留空则使用系统默认，使用 {{web_search_status}} 占位符动态控制网络搜索行为）
           </p>
           <div class="system-prompt-tabs">
-            <t-tabs
-              v-model="activeSystemPromptTab"
-              class="system-prompt-variant-tabs"
-            >
-              <t-tab-panel value="web-enabled" :label="$t('agentSettings.systemPrompt.tabWebOn')">
-                <div v-if="activeSystemPromptTab === 'web-enabled'" class="prompt-textarea-wrapper textarea-with-template">
-                  <t-textarea
-                    ref="promptTextareaRef"
-                    v-model="localSystemPromptWebEnabled"
-                    :autosize="{ minRows: 15, maxRows: 30 }"
-                    :placeholder="$t('agentSettings.systemPrompt.placeholder')"
-                    @blur="handleSystemPromptChange('web-enabled', $event)"
-                    @input="handlePromptInput"
-                    @keydown="handlePromptKeydown"
-                    style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
-                  />
-                  <PromptTemplateSelector 
-                    type="systemPrompt" 
-                    position="corner"
-                    :hasKnowledgeBase="true"
-                    @select="handleAgentSystemPromptTemplateSelect"
-                  />
-                </div>
-              </t-tab-panel>
-              <t-tab-panel value="web-disabled" :label="$t('agentSettings.systemPrompt.tabWebOff')">
-                <div v-if="activeSystemPromptTab === 'web-disabled'" class="prompt-textarea-wrapper textarea-with-template">
-                  <t-textarea
-                    ref="promptTextareaRef"
-                    v-model="localSystemPromptWebDisabled"
-                    :autosize="{ minRows: 15, maxRows: 30 }"
-                    :placeholder="$t('agentSettings.systemPrompt.placeholder')"
-                    @blur="handleSystemPromptChange('web-disabled', $event)"
-                    @input="handlePromptInput"
-                    @keydown="handlePromptKeydown"
-                    style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
-                  />
-                  <PromptTemplateSelector 
-                    type="systemPrompt" 
-                    position="corner"
-                    :hasKnowledgeBase="true"
-                    @select="handleAgentSystemPromptTemplateSelect"
-                  />
-                </div>
-              </t-tab-panel>
-            </t-tabs>
+            <div class="prompt-textarea-wrapper textarea-with-template">
+              <t-textarea
+                ref="promptTextareaRef"
+                v-model="localSystemPrompt"
+                :autosize="{ minRows: 15, maxRows: 30 }"
+                :placeholder="$t('agentSettings.systemPrompt.placeholder')"
+                @blur="handleSystemPromptChange"
+                @input="handlePromptInput"
+                @keydown="handlePromptKeydown"
+                style="width: 100%; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px;"
+              />
+              <PromptTemplateSelector 
+                type="systemPrompt" 
+                position="corner"
+                :hasKnowledgeBase="true"
+                @select="handleAgentSystemPromptTemplateSelect"
+              />
+            </div>
           </div>
           <!-- 占位符提示下拉框 -->
           <teleport to="body">
@@ -723,20 +696,9 @@ const localMaxIterations = ref(5)
 const localTemperature = ref(0.7)
 const localAllowedTools = ref<string[]>([])
 
-type SystemPromptTab = 'web-enabled' | 'web-disabled'
-const activeSystemPromptTab = ref<SystemPromptTab>('web-enabled')
-const localSystemPromptWebEnabled = ref('')
-const localSystemPromptWebDisabled = ref('')
-const systemPromptRefs: Record<SystemPromptTab, Ref<string>> = {
-  'web-enabled': localSystemPromptWebEnabled,
-  'web-disabled': localSystemPromptWebDisabled,
-}
-const savedSystemPromptMap: Record<SystemPromptTab, string> = {
-  'web-enabled': '',
-  'web-disabled': '',
-}
-const getPromptRefByTab = (tab: SystemPromptTab) => systemPromptRefs[tab]
-const getActivePromptRef = () => getPromptRefByTab(activeSystemPromptTab.value)
+// 统一系统提示词
+const localSystemPrompt = ref('')
+let savedSystemPrompt = ''
 
 // 普通模式本地状态
 const localContextTemplate = ref('')
@@ -838,8 +800,7 @@ const buildAgentConfigPayload = (overrides: Partial<AgentConfig> = {}): AgentCon
   reflection_enabled: false,
   allowed_tools: localAllowedTools.value,
   temperature: localTemperature.value,
-  system_prompt_web_enabled: localSystemPromptWebEnabled.value,
-  system_prompt_web_disabled: localSystemPromptWebDisabled.value,
+  system_prompt: localSystemPrompt.value,
   ...overrides,
 })
 
@@ -928,12 +889,6 @@ const selectedPlaceholderIndex = ref(0)
 let placeholderPopupTimer: any = null
 const placeholderPrefix = ref('') // 当前输入的前缀，用于过滤
 const popupStyle = ref({ top: '0px', left: '0px' }) // 提示框位置
-
-watch(activeSystemPromptTab, () => {
-  showPlaceholderPopup.value = false
-  placeholderPrefix.value = ''
-  selectedPlaceholderIndex.value = 0
-})
 
 // 设置 textarea 原生事件监听器
 const setupTextareaEventListeners = () => {
@@ -1048,12 +1003,9 @@ onMounted(async () => {
     lastSavedValue = config.max_iterations // 初始化时记录已保存的值
     localTemperature.value = config.temperature
     localAllowedTools.value = config.allowed_tools || []
-    const promptWebEnabled = config.system_prompt_web_enabled || ''
-    const promptWebDisabled = config.system_prompt_web_disabled || ''
-    localSystemPromptWebEnabled.value = promptWebEnabled
-    localSystemPromptWebDisabled.value = promptWebDisabled
-    savedSystemPromptMap['web-enabled'] = promptWebEnabled
-    savedSystemPromptMap['web-disabled'] = promptWebDisabled
+    const systemPrompt = config.system_prompt || ''
+    localSystemPrompt.value = systemPrompt
+    savedSystemPrompt = systemPrompt
     availableTools.value = config.available_tools || []
     availablePlaceholders.value = config.available_placeholders || []
     
@@ -1070,8 +1022,7 @@ onMounted(async () => {
       maxIterations: config.max_iterations,
       temperature: config.temperature,
       allowedTools: config.allowed_tools || [],
-      system_prompt_web_enabled: promptWebEnabled,
-      system_prompt_web_disabled: promptWebDisabled,
+      system_prompt: systemPrompt,
     })
 
     // 加载普通模式配置
@@ -1432,25 +1383,21 @@ const handleResetToDefault = async () => {
       try {
         isResettingPrompt.value = true
         
-        // 通过设置 system_prompt_web_* 为空字符串来获取默认值
+        // 通过设置 system_prompt 为空字符串来获取默认值
         // 后端在字段为空时会返回默认值
         const tempConfig = buildAgentConfigPayload({
-          system_prompt_web_enabled: '',
-          system_prompt_web_disabled: '',
+          system_prompt: '',
         })
         
         await updateAgentConfig(tempConfig)
         
         // 重新加载配置以获取默认 Prompt 的完整内容
         const res = await getAgentConfig()
-        const defaultPromptWebEnabled = res.data.system_prompt_web_enabled || ''
-        const defaultPromptWebDisabled = res.data.system_prompt_web_disabled || ''
+        const defaultPrompt = res.data.system_prompt || ''
         
         // 设置为默认 Prompt 的内容
-        localSystemPromptWebEnabled.value = defaultPromptWebEnabled
-        localSystemPromptWebDisabled.value = defaultPromptWebDisabled
-        savedSystemPromptMap['web-enabled'] = defaultPromptWebEnabled
-        savedSystemPromptMap['web-disabled'] = defaultPromptWebDisabled
+        localSystemPrompt.value = defaultPrompt
+        savedSystemPrompt = defaultPrompt
         
         MessagePlugin.success(t('agentSettings.toasts.resetToDefault'))
         confirmDialog.hide()
@@ -1465,7 +1412,7 @@ const handleResetToDefault = async () => {
 }
 
 // 处理系统 Prompt 变化
-const handleSystemPromptChange = async (tab: SystemPromptTab, e?: FocusEvent) => {
+const handleSystemPromptChange = async (e?: FocusEvent) => {
   // 如果点击的是占位符提示框，不触发保存
   if (e?.relatedTarget) {
     const target = e.relatedTarget as HTMLElement
@@ -1487,19 +1434,16 @@ const handleSystemPromptChange = async (tab: SystemPromptTab, e?: FocusEvent) =>
   
   // 如果正在初始化，不触发保存
   if (isInitializing.value) return
-  
-  const promptRef = getPromptRefByTab(tab)
-  const savedValue = savedSystemPromptMap[tab]
 
   // 检查内容是否变化
-  if (promptRef.value === savedValue) {
+  if (localSystemPrompt.value === savedSystemPrompt) {
     return // 内容没变，不调用接口
   }
   
   try {
     const config = buildAgentConfigPayload()
     await updateAgentConfig(config)
-    savedSystemPromptMap[tab] = promptRef.value // 更新已保存的值
+    savedSystemPrompt = localSystemPrompt.value // 更新已保存的值
     MessagePlugin.success(t('agentSettings.toasts.systemPromptSaved'))
   } catch (error) {
     console.error('保存系统 Prompt 失败:', error)
@@ -1725,11 +1669,7 @@ const handleFallbackPromptChange = async () => {
 
 // 模板选择处理函数
 const handleAgentSystemPromptTemplateSelect = (template: string) => {
-  if (activeSystemPromptTab.value === 'web-enabled') {
-    localSystemPromptWebEnabled.value = template
-  } else {
-    localSystemPromptWebDisabled.value = template
-  }
+  localSystemPrompt.value = template
 }
 
 const handleNormalSystemPromptTemplateSelect = (template: string) => {

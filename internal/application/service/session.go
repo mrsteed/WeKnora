@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	chatpipline "github.com/Tencent/WeKnora/internal/application/service/chat_pipline"
 	llmcontext "github.com/Tencent/WeKnora/internal/application/service/llmcontext"
@@ -15,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/models/rerank"
 	"github.com/Tencent/WeKnora/internal/tracing"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -408,23 +408,14 @@ func (s *sessionService) KnowledgeQA(
 		webSearchEnabled,
 	)
 
-	// Merge custom agent's configured knowledge bases
-	if customAgent != nil && len(customAgent.Config.KnowledgeBases) > 0 {
-		// Create a set of existing knowledge base IDs to avoid duplicates
-		existingKBs := make(map[string]bool)
-		for _, kbID := range knowledgeBaseIDs {
-			existingKBs[kbID] = true
-		}
-		// Add agent's knowledge bases that are not already in the list
-		for _, kbID := range customAgent.Config.KnowledgeBases {
-			if !existingKBs[kbID] {
-				knowledgeBaseIDs = append(knowledgeBaseIDs, kbID)
-				logger.Infof(ctx, "Adding custom agent's knowledge base: %s", kbID)
-			}
-		}
+	// Use custom agent's knowledge bases only if request didn't specify any
+	// When user explicitly @mentions a knowledge base or document, only search those
+	if len(knowledgeBaseIDs) == 0 && len(knowledgeIDs) == 0 && customAgent != nil && len(customAgent.Config.KnowledgeBases) > 0 {
+		knowledgeBaseIDs = customAgent.Config.KnowledgeBases
+		logger.Infof(ctx, "No knowledge bases specified in request, using custom agent's knowledge bases: %v", knowledgeBaseIDs)
+	} else if len(knowledgeBaseIDs) > 0 || len(knowledgeIDs) > 0 {
+		logger.Infof(ctx, "Using request-specified targets (ignoring agent config): kbs=%v, docs=%v", knowledgeBaseIDs, knowledgeIDs)
 	}
-
-	logger.Infof(ctx, "Using knowledge bases: %v", knowledgeBaseIDs)
 
 	// Determine chat model ID: prioritize request's summaryModelID, then Remote models
 	chatModelID, err := s.selectChatModelIDWithOverride(ctx, session, knowledgeBaseIDs, knowledgeIDs, summaryModelID)
@@ -542,6 +533,20 @@ func (s *sessionService) KnowledgeQA(
 		}
 	}
 
+	// Extract FAQ strategy settings from custom agent
+	var faqPriorityEnabled bool
+	var faqDirectAnswerThreshold float64
+	var faqScoreBoost float64
+	if customAgent != nil {
+		faqPriorityEnabled = customAgent.Config.FAQPriorityEnabled
+		faqDirectAnswerThreshold = customAgent.Config.FAQDirectAnswerThreshold
+		faqScoreBoost = customAgent.Config.FAQScoreBoost
+		if faqPriorityEnabled {
+			logger.Infof(ctx, "FAQ priority enabled: threshold=%.2f, boost=%.2f",
+				faqDirectAnswerThreshold, faqScoreBoost)
+		}
+	}
+
 	// Build unified search targets (computed once, used throughout pipeline)
 	searchTargets, err := s.buildSearchTargets(ctx, session.TenantID, knowledgeBaseIDs, knowledgeIDs)
 	if err != nil {
@@ -584,6 +589,10 @@ func (s *sessionService) KnowledgeQA(
 		RewritePromptUser:    rewritePromptUser,
 		EnableRewrite:        enableRewrite,
 		EnableQueryExpansion: enableQueryExpansion,
+		// FAQ Strategy Settings
+		FAQPriorityEnabled:       faqPriorityEnabled,
+		FAQDirectAnswerThreshold: faqDirectAnswerThreshold,
+		FAQScoreBoost:            faqScoreBoost,
 	}
 
 	// Determine pipeline based on knowledge bases availability and web search setting
@@ -886,17 +895,6 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 	return nil
 }
 
-func getTenantConversationConfig(ctx context.Context) (*types.ConversationConfig, error) {
-	tenant := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
-	if tenant == nil {
-		return nil, errors.New("tenant is empty")
-	}
-	if tenant.ConversationConfig == nil {
-		return nil, errors.New("tenant has no conversation config")
-	}
-	return tenant.ConversationConfig, nil
-}
-
 // SearchKnowledge performs knowledge base search without LLM summarization
 // knowledgeBaseIDs: list of knowledge base IDs to search (supports multi-KB)
 // knowledgeIDs: list of specific knowledge (file) IDs to search
@@ -1020,6 +1018,8 @@ func (s *sessionService) AgentQA(
 	assistantMessageID string,
 	eventBus *event.EventBus,
 	customAgent *types.CustomAgent,
+	knowledgeBaseIDs []string,
+	knowledgeIDs []string,
 ) error {
 	sessionID := session.ID
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
@@ -1045,20 +1045,8 @@ func (s *sessionService) AgentQA(
 	// Ensure defaults are set
 	customAgent.EnsureDefaults()
 
-	// Check if tenant has agent configuration (for defaults)
-	if tenantInfo.AgentConfig == nil {
-		tenantInfo.AgentConfig = &types.AgentConfig{
-			MaxIterations:           agent.DefaultAgentMaxIterations,
-			ReflectionEnabled:       agent.DefaultAgentReflectionEnabled,
-			AllowedTools:            tools.DefaultAllowedTools(),
-			Temperature:             agent.DefaultAgentTemperature,
-			SystemPromptWebEnabled:  agent.ProgressiveRAGSystemPromptWithWeb,
-			SystemPromptWebDisabled: agent.ProgressiveRAGSystemPromptWithoutWeb,
-			UseCustomSystemPrompt:   agent.DefaultUseCustomSystemPrompt,
-		}
-	}
-
 	// Create runtime AgentConfig from customAgent
+	// Note: tenantInfo.AgentConfig is deprecated, all config comes from customAgent now
 	agentConfig := &types.AgentConfig{
 		MaxIterations:       customAgent.Config.MaxIterations,
 		ReflectionEnabled:   customAgent.Config.ReflectionEnabled,
@@ -1072,6 +1060,24 @@ func (s *sessionService) AgentQA(
 		MCPServices:         customAgent.Config.MCPServices,
 	}
 
+	// Handle knowledge bases: request-level @ mentions take priority over agent config
+	// When user explicitly @mentions a knowledge base or document, only search those
+	if len(knowledgeBaseIDs) > 0 || len(knowledgeIDs) > 0 {
+		// User explicitly specified via @ mention, use only those (clear agent's default KBs)
+		if len(knowledgeBaseIDs) > 0 {
+			agentConfig.KnowledgeBases = knowledgeBaseIDs
+			logger.Infof(ctx, "Using request-specified knowledge bases (ignoring agent config): %v", knowledgeBaseIDs)
+		} else {
+			// User only specified documents, clear the default KBs
+			agentConfig.KnowledgeBases = nil
+			logger.Infof(ctx, "User specified documents only, clearing agent's default knowledge bases")
+		}
+		if len(knowledgeIDs) > 0 {
+			agentConfig.KnowledgeIDs = knowledgeIDs
+			logger.Infof(ctx, "Using request-specified knowledge IDs: %v", knowledgeIDs)
+		}
+	}
+
 	// Use custom agent's allowed tools if specified, otherwise use defaults
 	if len(customAgent.Config.AllowedTools) > 0 {
 		agentConfig.AllowedTools = customAgent.Config.AllowedTools
@@ -1082,8 +1088,7 @@ func (s *sessionService) AgentQA(
 	// Use custom agent's system prompt if specified
 	if customAgent.Config.SystemPrompt != "" {
 		agentConfig.UseCustomSystemPrompt = true
-		agentConfig.SystemPromptWebEnabled = customAgent.Config.SystemPrompt
-		agentConfig.SystemPromptWebDisabled = customAgent.Config.SystemPrompt
+		agentConfig.SystemPrompt = customAgent.Config.SystemPrompt
 	}
 
 	logger.Infof(ctx, "Custom agent config applied: MaxIterations=%d, Temperature=%.2f, AllowedTools=%v, WebSearchEnabled=%v",
@@ -1117,14 +1122,12 @@ func (s *sessionService) AgentQA(
 	agentConfig.SearchTargets = searchTargets
 	logger.Infof(ctx, "Agent search targets built: %d targets", len(searchTargets))
 
-	// Get summary model from custom agent config or tenant config
+	// Get summary model from custom agent config
+	// Note: tenantInfo.ConversationConfig is deprecated, all config comes from customAgent now
 	summaryModelID := customAgent.Config.ModelID
-	if summaryModelID == "" && tenantInfo.ConversationConfig != nil {
-		summaryModelID = tenantInfo.ConversationConfig.SummaryModelID
-	}
 	if summaryModelID == "" {
-		logger.Warnf(ctx, "No summary model configured for tenant %d or session %s", tenantInfo.ID, session.ID)
-		return errors.New("summary model is not configured in conversation settings")
+		logger.Warnf(ctx, "No summary model configured for custom agent %s", customAgent.ID)
+		return errors.New("summary model (model_id) is not configured in custom agent settings")
 	}
 
 	summaryModel, err := s.modelService.GetChatModel(ctx, summaryModelID)
@@ -1133,20 +1136,23 @@ func (s *sessionService) AgentQA(
 		return fmt.Errorf("failed to get chat model: %w", err)
 	}
 
-	// Get rerank model from custom agent config or tenant config
-	rerankModelID := customAgent.Config.RerankModelID
-	if rerankModelID == "" && tenantInfo.ConversationConfig != nil {
-		rerankModelID = tenantInfo.ConversationConfig.RerankModelID
-	}
-	if rerankModelID == "" {
-		logger.Warnf(ctx, "No rerank model configured for tenant %d or session %s", tenantInfo.ID, session.ID)
-		return errors.New("rerank model is not configured in conversation settings")
-	}
+	// Get rerank model from custom agent config (only required when knowledge bases are configured)
+	var rerankModel rerank.Reranker
+	hasKnowledge := len(agentConfig.KnowledgeBases) > 0 || len(agentConfig.KnowledgeIDs) > 0
+	if hasKnowledge {
+		rerankModelID := customAgent.Config.RerankModelID
+		if rerankModelID == "" {
+			logger.Warnf(ctx, "No rerank model configured for custom agent %s, but knowledge bases are specified", customAgent.ID)
+			return errors.New("rerank model (rerank_model_id) is not configured in custom agent settings")
+		}
 
-	rerankModel, err := s.modelService.GetRerankModel(ctx, rerankModelID)
-	if err != nil {
-		logger.Warnf(ctx, "Failed to get rerank model: %v", err)
-		return fmt.Errorf("failed to get rerank model: %w", err)
+		rerankModel, err = s.modelService.GetRerankModel(ctx, rerankModelID)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to get rerank model: %v", err)
+			return fmt.Errorf("failed to get rerank model: %w", err)
+		}
+	} else {
+		logger.Infof(ctx, "No knowledge bases configured, skipping rerank model initialization")
 	}
 
 	// Get or create contextManager for this session

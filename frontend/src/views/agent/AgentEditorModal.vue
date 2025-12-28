@@ -127,44 +127,22 @@
                         </div>
                       </div>
                       <div class="setting-control setting-control-full" style="position: relative;">
-                        <!-- Agent模式：网络搜索开/关两个提示词 -->
-                        <div v-if="isAgentMode" class="system-prompt-tabs">
-                          <t-tabs v-model="activePromptTab" class="prompt-variant-tabs">
-                            <t-tab-panel value="web-disabled" label="网络搜索关闭">
-                              <div class="textarea-with-template">
-                                <t-textarea 
-                                  ref="promptTextareaRef"
-                                  v-model="formData.config.system_prompt" 
-                                  :placeholder="systemPromptWebDisabledPlaceholder"
-                                  :autosize="{ minRows: 10, maxRows: 25 }"
-                                  @input="handlePromptInput"
-                                  class="system-prompt-textarea"
-                                />
-                                <PromptTemplateSelector 
-                                  type="systemPrompt" 
-                                  position="corner"
-                                  :hasKnowledgeBase="hasKnowledgeBase"
-                                  @select="handleSystemPromptTemplateSelect"
-                                />
-                              </div>
-                            </t-tab-panel>
-                            <t-tab-panel value="web-enabled" label="网络搜索开启">
-                              <div class="textarea-with-template">
-                                <t-textarea 
-                                  v-model="formData.config.system_prompt_web_enabled" 
-                                  :placeholder="systemPromptWebEnabledPlaceholder"
-                                  :autosize="{ minRows: 10, maxRows: 25 }"
-                                  class="system-prompt-textarea"
-                                />
-                                <PromptTemplateSelector 
-                                  type="systemPrompt" 
-                                  position="corner"
-                                  :hasKnowledgeBase="hasKnowledgeBase"
-                                  @select="handleSystemPromptTemplateSelect"
-                                />
-                              </div>
-                            </t-tab-panel>
-                          </t-tabs>
+                        <!-- Agent模式：统一提示词（使用 {{web_search_status}} 占位符动态控制行为） -->
+                        <div v-if="isAgentMode" class="textarea-with-template">
+                          <t-textarea 
+                            ref="promptTextareaRef"
+                            v-model="formData.config.system_prompt" 
+                            :placeholder="systemPromptPlaceholder"
+                            :autosize="{ minRows: 10, maxRows: 25 }"
+                            @input="handlePromptInput"
+                            class="system-prompt-textarea"
+                          />
+                          <PromptTemplateSelector 
+                            type="systemPrompt" 
+                            position="corner"
+                            :hasKnowledgeBase="hasKnowledgeBase"
+                            @select="handleSystemPromptTemplateSelect"
+                          />
                         </div>
                         <!-- 普通模式：单个提示词 -->
                         <div v-else class="textarea-with-template">
@@ -625,8 +603,16 @@
                             v-for="kb in kbOptions" 
                             :key="kb.value" 
                             :value="kb.value" 
-                            :label="kb.label" 
-                          />
+                            :label="kb.label"
+                          >
+                            <div class="kb-option-item">
+                              <span class="kb-option-icon" :class="kb.type === 'faq' ? 'faq-icon' : 'doc-icon'">
+                                <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" />
+                              </span>
+                              <span class="kb-option-label">{{ kb.label }}</span>
+                              <span class="kb-option-count">({{ kb.count || 0 }})</span>
+                            </div>
+                          </t-option>
                         </t-select>
                       </div>
                     </div>
@@ -646,6 +632,56 @@
                           @add-model="handleAddModel('rerank')"
                           :placeholder="$t('agent.editor.rerankModelPlaceholder')"
                         />
+                      </div>
+                    </div>
+
+                    <!-- FAQ 策略设置（仅当选择了 FAQ 类型知识库时显示） -->
+                    <div v-if="hasFaqKnowledgeBase" class="faq-strategy-section">
+                      <div class="faq-strategy-header">
+                        <t-icon name="chat-bubble-help" class="faq-icon" />
+                        <span>FAQ 优先策略</span>
+                        <t-tooltip content="当知识库中包含 FAQ（问答对）时，可以启用此策略让 FAQ 答案优先于普通文档">
+                          <t-icon name="help-circle" class="help-icon" />
+                        </t-tooltip>
+                      </div>
+
+                      <!-- FAQ 优先开关 -->
+                      <div class="setting-row">
+                        <div class="setting-info">
+                          <label>启用 FAQ 优先</label>
+                          <p class="desc">FAQ 答案将优先于普通文档被引用，提高回答准确性</p>
+                        </div>
+                        <div class="setting-control">
+                          <t-switch v-model="formData.config.faq_priority_enabled" />
+                        </div>
+                      </div>
+
+                      <!-- FAQ 直接回答阈值 -->
+                      <div v-if="formData.config.faq_priority_enabled" class="setting-row">
+                        <div class="setting-info">
+                          <label>直接回答阈值</label>
+                          <p class="desc">当问题与 FAQ 相似度超过此值时，直接使用 FAQ 答案</p>
+                        </div>
+                        <div class="setting-control">
+                          <div class="slider-wrapper">
+                            <t-slider v-model="formData.config.faq_direct_answer_threshold" :min="0.7" :max="1" :step="0.05" />
+                            <span class="slider-value">{{ formData.config.faq_direct_answer_threshold?.toFixed(2) }}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- FAQ 分数加权 -->
+                      <div v-if="formData.config.faq_priority_enabled" class="setting-row">
+                        <div class="setting-info">
+                          <label>FAQ 分数加权</label>
+                          <p class="desc">FAQ 结果的相关性分数乘以此系数，使其排序更靠前</p>
+                        </div>
+                        <div class="setting-control">
+                          <div class="slider-wrapper">
+                            <t-slider v-model="formData.config.faq_score_boost" :min="1" :max="2" :step="0.1" />
+                            <span class="slider-value">{{ formData.config.faq_score_boost?.toFixed(1) }}x</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -768,115 +804,107 @@
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                <!-- 高级设置（仅普通模式） -->
-                <div v-show="currentSection === 'advanced' && !isAgentMode" class="section">
-                  <div class="section-header">
-                    <h2>{{ $t('agent.editor.advancedSettings') || '高级设置' }}</h2>
-                    <p class="section-description">配置兜底策略</p>
-                  </div>
-                  
-                  <div class="settings-group">
-                    <!-- 兜底策略 -->
-                    <div class="setting-row">
-                      <div class="setting-info">
-                        <label>{{ $t('agent.editor.fallbackStrategy') || '兜底策略' }}</label>
-                        <p class="desc">当无法从知识库找到相关内容时的处理方式</p>
-                      </div>
-                      <div class="setting-control">
-                        <t-radio-group v-model="formData.config.fallback_strategy">
-                          <t-radio-button value="fixed">固定回复</t-radio-button>
-                          <t-radio-button value="model">模型生成</t-radio-button>
-                        </t-radio-group>
-                      </div>
-                    </div>
-
-                    <!-- 固定兜底回复 -->
-                    <div v-if="formData.config.fallback_strategy === 'fixed'" class="setting-row setting-row-vertical">
-                      <div class="setting-info">
-                        <label>{{ $t('agent.editor.fallbackResponse') || '固定回复内容' }}</label>
-                        <p class="desc">当无法回答时返回的固定文本</p>
-                      </div>
-                      <div class="setting-control setting-control-full">
-                        <div class="textarea-with-template">
-                          <t-textarea 
-                            v-model="formData.config.fallback_response" 
-                            :placeholder="defaultFallbackResponse || $t('agent.editor.fallbackResponsePlaceholder') || '抱歉，我无法回答这个问题。'"
-                            :autosize="{ minRows: 2, maxRows: 6 }"
-                          />
-                          <PromptTemplateSelector 
-                            type="fallback" 
-                            position="corner"
-                            @select="handleFallbackResponseTemplateSelect"
-                          />
+                    <!-- 兜底策略（仅普通模式） -->
+                    <template v-if="!isAgentMode">
+                      <div class="setting-row">
+                        <div class="setting-info">
+                          <label>{{ $t('agent.editor.fallbackStrategy') || '兜底策略' }}</label>
+                          <p class="desc">当无法从知识库找到相关内容时的处理方式</p>
+                        </div>
+                        <div class="setting-control">
+                          <t-radio-group v-model="formData.config.fallback_strategy">
+                            <t-radio-button value="fixed">固定回复</t-radio-button>
+                            <t-radio-button value="model">模型生成</t-radio-button>
+                          </t-radio-group>
                         </div>
                       </div>
-                    </div>
 
-                    <!-- 兜底提示词 -->
-                    <div v-if="formData.config.fallback_strategy === 'model'" class="setting-row setting-row-vertical">
-                      <div class="setting-info">
-                        <label>{{ $t('agent.editor.fallbackPrompt') || '兜底提示词' }}</label>
-                        <p class="desc">当无法从知识库找到答案时，引导模型生成回复的提示词</p>
-                        <div class="placeholder-tags" v-if="fallbackPlaceholders.length > 0">
-                          <span class="placeholder-label">可用变量：</span>
-                          <t-tooltip 
-                            v-for="placeholder in fallbackPlaceholders" 
-                            :key="placeholder.name"
-                            :content="placeholder.description + '（点击插入）'"
-                            placement="top"
-                          >
-                            <span 
-                              class="placeholder-tag"
-                              @click="handlePlaceholderClick('fallback', placeholder.name)"
-                              v-text="'{{' + placeholder.name + '}}'"
-                            ></span>
-                          </t-tooltip>
-                          <span class="placeholder-hint" v-text="'（点击插入，或输入 {{ 唤起列表）'"></span>
+                      <!-- 固定兜底回复 -->
+                      <div v-if="formData.config.fallback_strategy === 'fixed'" class="setting-row setting-row-vertical">
+                        <div class="setting-info">
+                          <label>{{ $t('agent.editor.fallbackResponse') || '固定回复内容' }}</label>
+                          <p class="desc">当无法回答时返回的固定文本</p>
+                        </div>
+                        <div class="setting-control setting-control-full">
+                          <div class="textarea-with-template">
+                            <t-textarea 
+                              v-model="formData.config.fallback_response" 
+                              :placeholder="defaultFallbackResponse || $t('agent.editor.fallbackResponsePlaceholder') || '抱歉，我无法回答这个问题。'"
+                              :autosize="{ minRows: 2, maxRows: 6 }"
+                            />
+                            <PromptTemplateSelector 
+                              type="fallback" 
+                              position="corner"
+                              @select="handleFallbackResponseTemplateSelect"
+                            />
+                          </div>
                         </div>
                       </div>
-                      <div class="setting-control setting-control-full" style="position: relative;">
-                        <div class="textarea-with-template">
-                          <t-textarea 
-                            ref="fallbackPromptTextareaRef"
-                            v-model="formData.config.fallback_prompt" 
-                            :placeholder="defaultFallbackPrompt || $t('agent.editor.fallbackPromptPlaceholder') || '留空使用系统默认提示词'"
-                            :autosize="{ minRows: 4, maxRows: 10 }"
-                            @input="handleFallbackPromptInput"
-                          />
-                          <PromptTemplateSelector 
-                            type="fallback" 
-                            position="corner"
-                            @select="handleFallbackPromptTemplateSelect"
-                          />
+
+                      <!-- 兜底提示词 -->
+                      <div v-if="formData.config.fallback_strategy === 'model'" class="setting-row setting-row-vertical">
+                        <div class="setting-info">
+                          <label>{{ $t('agent.editor.fallbackPrompt') || '兜底提示词' }}</label>
+                          <p class="desc">当无法从知识库找到答案时，引导模型生成回复的提示词</p>
+                          <div class="placeholder-tags" v-if="fallbackPlaceholders.length > 0">
+                            <span class="placeholder-label">可用变量：</span>
+                            <t-tooltip 
+                              v-for="placeholder in fallbackPlaceholders" 
+                              :key="placeholder.name"
+                              :content="placeholder.description + '（点击插入）'"
+                              placement="top"
+                            >
+                              <span 
+                                class="placeholder-tag"
+                                @click="handlePlaceholderClick('fallback', placeholder.name)"
+                                v-text="'{{' + placeholder.name + '}}'"
+                              ></span>
+                            </t-tooltip>
+                            <span class="placeholder-hint" v-text="'（点击插入，或输入 {{ 唤起列表）'"></span>
+                          </div>
                         </div>
-                        <Teleport to="body">
-                          <div
-                            v-if="fallbackPromptPopup.show && filteredFallbackPlaceholders.length > 0"
-                            class="placeholder-popup-wrapper"
-                            :style="fallbackPromptPopup.style"
-                          >
-                            <div class="placeholder-popup">
-                              <div
-                                v-for="(placeholder, index) in filteredFallbackPlaceholders"
-                                :key="placeholder.name"
-                                class="placeholder-item"
-                                :class="{ active: fallbackPromptPopup.selectedIndex === index }"
-                                @mousedown.prevent="insertGenericPlaceholder('fallback', placeholder.name, true)"
-                                @mouseenter="fallbackPromptPopup.selectedIndex = index"
-                              >
-                                <div class="placeholder-name">
-                                  <code v-html="`{{${placeholder.name}}}`"></code>
+                        <div class="setting-control setting-control-full" style="position: relative;">
+                          <div class="textarea-with-template">
+                            <t-textarea 
+                              ref="fallbackPromptTextareaRef"
+                              v-model="formData.config.fallback_prompt" 
+                              :placeholder="defaultFallbackPrompt || $t('agent.editor.fallbackPromptPlaceholder') || '留空使用系统默认提示词'"
+                              :autosize="{ minRows: 4, maxRows: 10 }"
+                              @input="handleFallbackPromptInput"
+                            />
+                            <PromptTemplateSelector 
+                              type="fallback" 
+                              position="corner"
+                              @select="handleFallbackPromptTemplateSelect"
+                            />
+                          </div>
+                          <Teleport to="body">
+                            <div
+                              v-if="fallbackPromptPopup.show && filteredFallbackPlaceholders.length > 0"
+                              class="placeholder-popup-wrapper"
+                              :style="fallbackPromptPopup.style"
+                            >
+                              <div class="placeholder-popup">
+                                <div
+                                  v-for="(placeholder, index) in filteredFallbackPlaceholders"
+                                  :key="placeholder.name"
+                                  class="placeholder-item"
+                                  :class="{ active: fallbackPromptPopup.selectedIndex === index }"
+                                  @mousedown.prevent="insertGenericPlaceholder('fallback', placeholder.name, true)"
+                                  @mouseenter="fallbackPromptPopup.selectedIndex = index"
+                                >
+                                  <div class="placeholder-name">
+                                    <code v-html="`{{${placeholder.name}}}`"></code>
+                                  </div>
+                                  <div class="placeholder-desc">{{ placeholder.description }}</div>
                                 </div>
-                                <div class="placeholder-desc">{{ placeholder.description }}</div>
                               </div>
                             </div>
-                          </div>
-                        </Teleport>
+                          </Teleport>
+                        </div>
                       </div>
-                    </div>
+                    </template>
                   </div>
                 </div>
               </div>
@@ -927,13 +955,11 @@ const emit = defineEmits<{
 const currentSection = ref(props.initialSection || 'basic');
 const saving = ref(false);
 const allModels = ref<ModelConfig[]>([]);
-const kbOptions = ref<{ label: string; value: string }[]>([]);
+const kbOptions = ref<{ label: string; value: string; type?: 'document' | 'faq'; count?: number }[]>([]);
 const mcpOptions = ref<{ label: string; value: string }[]>([]);
 
 // 系统默认配置（用于内置智能体显示默认提示词）
-const defaultSystemPrompt = ref('');  // 普通模式默认提示词
-const defaultSystemPromptWebEnabled = ref('');  // Agent模式 Web开启时默认提示词
-const defaultSystemPromptWebDisabled = ref('');  // Agent模式 Web关闭时默认提示词
+const defaultSystemPrompt = ref('');  // 统一的默认系统提示词
 const defaultContextTemplate = ref('');
 const defaultRewritePromptSystem = ref('');
 const defaultRewritePromptUser = ref('');
@@ -972,6 +998,18 @@ const allTools = [
 // 根据知识库配置动态计算是否有知识库能力
 const hasKnowledgeBase = computed(() => {
   return kbSelectionMode.value !== 'none';
+});
+
+// 检测选择的知识库中是否包含 FAQ 类型
+const hasFaqKnowledgeBase = computed(() => {
+  if (kbSelectionMode.value === 'none') return false;
+  if (kbSelectionMode.value === 'all') {
+    // 全部知识库模式，检查是否有任何 FAQ 类型的知识库
+    return kbOptions.value.some(kb => kb.type === 'faq');
+  }
+  // 指定知识库模式，检查选中的知识库中是否有 FAQ 类型
+  const selectedKbIds = formData.value.config.knowledge_bases || [];
+  return kbOptions.value.some(kb => selectedKbIds.includes(kb.value) && kb.type === 'faq');
 });
 
 const availableTools = computed(() => {
@@ -1076,10 +1114,6 @@ const navItems = computed(() => {
   if (!isAgentMode.value) {
     items.push({ key: 'conversation', icon: 'chat', label: t('agent.editor.conversationSettings') || '多轮对话' });
   }
-  // 普通模式才显示高级设置
-  if (!isAgentMode.value) {
-    items.push({ key: 'advanced', icon: 'setting', label: t('agent.editor.advancedSettings') || '高级设置' });
-  }
   return items;
 });
 
@@ -1092,7 +1126,6 @@ const defaultFormData = {
     // 基础设置
     agent_mode: 'quick-answer' as 'quick-answer' | 'smart-reasoning',
     system_prompt: '',
-    system_prompt_web_enabled: '',
     context_template: '{{query}}',
     // 模型设置
     model_id: '',
@@ -1109,6 +1142,10 @@ const defaultFormData = {
     // 知识库设置
     kb_selection_mode: 'none' as 'all' | 'selected' | 'none',
     knowledge_bases: [] as string[],
+    // FAQ 策略设置
+    faq_priority_enabled: true, // 是否启用 FAQ 优先策略
+    faq_direct_answer_threshold: 0.9, // FAQ 直接回答阈值（相似度高于此值直接使用 FAQ 答案）
+    faq_score_boost: 1.2, // FAQ 分数加权系数
     // 网络搜索设置
     web_search_enabled: false,
     web_search_max_results: 5,
@@ -1153,23 +1190,10 @@ const systemPromptPlaceholder = computed(() => {
   return t('agent.editor.systemPromptPlaceholder');
 });
 
-// Agent模式 Web关闭时的 placeholder
-const systemPromptWebDisabledPlaceholder = computed(() => {
-  return t('agent.editor.systemPromptPlaceholder');
-});
-
-// Agent模式 Web开启时的 placeholder
-const systemPromptWebEnabledPlaceholder = computed(() => {
-  return t('agent.editor.systemPromptWebEnabledPlaceholder') || '网络搜索开启时使用的系统提示词';
-});
-
 // 上下文模板的 placeholder
 const contextTemplatePlaceholder = computed(() => {
   return t('agent.editor.contextTemplatePlaceholder');
 });
-
-// Agent模式系统提示词Tab
-const activePromptTab = ref<'web-disabled' | 'web-enabled'>('web-disabled');
 
 // 是否需要配置 ReRank 模型（有知识库能力时需要）
 const needsRerankModel = computed(() => {
@@ -1269,12 +1293,9 @@ const fillBuiltinAgentDefaults = () => {
   const isAgent = config.agent_mode === 'smart-reasoning';
   
   if (isAgent) {
-    // Agent 模式：填入 Web 开启/关闭的默认提示词
-    if (!config.system_prompt && defaultSystemPromptWebDisabled.value) {
-      config.system_prompt = defaultSystemPromptWebDisabled.value;
-    }
-    if (!config.system_prompt_web_enabled && defaultSystemPromptWebEnabled.value) {
-      config.system_prompt_web_enabled = defaultSystemPromptWebEnabled.value;
+    // Agent 模式：填入统一的默认提示词
+    if (!config.system_prompt && defaultSystemPrompt.value) {
+      config.system_prompt = defaultSystemPrompt.value;
     }
   } else {
     // 普通模式：填入默认系统提示词和上下文模板
@@ -1405,7 +1426,12 @@ const loadDependencies = async () => {
     // 加载知识库列表
     const kbRes: any = await listKnowledgeBases();
     if (kbRes.data) {
-      kbOptions.value = kbRes.data.map((kb: any) => ({ label: kb.name, value: kb.id }));
+      kbOptions.value = kbRes.data.map((kb: any) => ({ 
+        label: kb.name, 
+        value: kb.id,
+        type: kb.type || 'document',
+        count: kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0)
+      }));
     }
 
     // 加载 MCP 服务列表（只加载启用的）
@@ -1430,18 +1456,16 @@ const loadDependencies = async () => {
       console.warn('Failed to load placeholders', e);
     }
 
-    // 加载 Agent 模式默认提示词
+    // 加载 Agent 模式默认提示词（统一提示词）
     const agentConfig = await getAgentConfig();
-    if (agentConfig.data?.system_prompt_web_enabled) {
-      defaultSystemPromptWebEnabled.value = agentConfig.data.system_prompt_web_enabled;
-    }
-    if (agentConfig.data?.system_prompt_web_disabled) {
-      defaultSystemPromptWebDisabled.value = agentConfig.data.system_prompt_web_disabled;
+    if (agentConfig.data?.system_prompt) {
+      defaultSystemPrompt.value = agentConfig.data.system_prompt;
     }
 
-    // 加载系统默认配置（用于内置智能体显示默认提示词）
+    // 加载系统默认配置（用于普通模式）
     const conversationConfig = await getConversationConfig();
-    if (conversationConfig.data?.prompt) {
+    if (conversationConfig.data?.prompt && !defaultSystemPrompt.value) {
+      // 如果 Agent 配置没有提供默认提示词，则使用普通模式的
       defaultSystemPrompt.value = conversationConfig.data.prompt;
     }
     if (conversationConfig.data?.context_template) {
@@ -2214,11 +2238,7 @@ watch(() => props.visible, (val) => {
 
 // 模板选择处理函数
 const handleSystemPromptTemplateSelect = (template: string) => {
-  if (activePromptTab.value === 'web-enabled') {
-    formData.value.config.system_prompt_web_enabled = template;
-  } else {
-    formData.value.config.system_prompt = template;
-  }
+  formData.value.config.system_prompt = template;
 };
 
 const handleContextTemplateSelect = (template: string) => {
@@ -2241,6 +2261,12 @@ const handleFallbackPromptTemplateSelect = (template: string) => {
   formData.value.config.fallback_prompt = template;
 };
 
+// 辅助函数：检查提示词是否包含指定占位符
+const hasPlaceholder = (text: string | undefined, placeholder: string): boolean => {
+  if (!text) return false;
+  return text.includes(`{{${placeholder}}}`);
+};
+
 const handleSave = async () => {
   // 验证必填项（内置智能体不验证名称和系统提示词）
   if (!isBuiltinAgent.value) {
@@ -2261,6 +2287,58 @@ const handleSave = async () => {
     if (!isAgentMode.value && (!formData.value.config.context_template || !formData.value.config.context_template.trim())) {
       MessagePlugin.error(t('agent.editor.contextTemplateRequired'));
       currentSection.value = 'basic';
+      return;
+    }
+  }
+
+  // 校验占位符（普通模式 + 开启知识库）
+  if (!isAgentMode.value && hasKnowledgeBase.value) {
+    const contextTemplate = formData.value.config.context_template || '';
+    if (!hasPlaceholder(contextTemplate, 'contexts')) {
+      MessagePlugin.error(t('agent.editor.contextsMissing') || '开启知识库时，上下文模板必须包含 {{contexts}} 占位符');
+      currentSection.value = 'basic';
+      return;
+    }
+    if (!hasPlaceholder(contextTemplate, 'query')) {
+      MessagePlugin.error(t('agent.editor.queryMissingInContext') || '上下文模板必须包含 {{query}} 占位符');
+      currentSection.value = 'basic';
+      return;
+    }
+  }
+
+  // 校验占位符（Agent 模式 + 开启知识库）
+  if (isAgentMode.value && hasKnowledgeBase.value) {
+    const systemPrompt = formData.value.config.system_prompt || '';
+    if (!hasPlaceholder(systemPrompt, 'knowledge_bases')) {
+      MessagePlugin.warning(t('agent.editor.knowledgeBasesMissing') || '建议在系统提示词中包含 {{knowledge_bases}} 占位符，以便模型了解可用的知识库');
+    }
+  }
+
+  // 校验占位符（普通模式 + 开启多轮对话改写）
+  if (!isAgentMode.value && formData.value.config.multi_turn_enabled && formData.value.config.enable_rewrite) {
+    const rewritePrompt = formData.value.config.rewrite_prompt_user || '';
+    // 只有用户自定义了改写提示词时才校验
+    if (rewritePrompt.trim()) {
+      if (!hasPlaceholder(rewritePrompt, 'query')) {
+        MessagePlugin.error(t('agent.editor.queryMissingInRewrite') || '改写用户提示词必须包含 {{query}} 占位符');
+        currentSection.value = 'conversation';
+        return;
+      }
+      if (!hasPlaceholder(rewritePrompt, 'conversation')) {
+        MessagePlugin.error(t('agent.editor.conversationMissing') || '改写用户提示词必须包含 {{conversation}} 占位符');
+        currentSection.value = 'conversation';
+        return;
+      }
+    }
+  }
+
+  // 校验占位符（兜底策略为模型生成时）
+  if (!isAgentMode.value && formData.value.config.fallback_strategy === 'model') {
+    const fallbackPrompt = formData.value.config.fallback_prompt || '';
+    // 只有用户自定义了兜底提示词时才校验
+    if (fallbackPrompt.trim() && !hasPlaceholder(fallbackPrompt, 'query')) {
+      MessagePlugin.error(t('agent.editor.queryMissingInFallback') || '兜底提示词必须包含 {{query}} 占位符');
+      currentSection.value = 'retrieval';
       return;
     }
   }
@@ -3006,6 +3084,87 @@ const handleSave = async () => {
     :deep(.t-tabs__nav) {
       margin-bottom: 12px;
     }
+  }
+}
+
+// 知识库选项样式
+.kb-option-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kb-option-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 16px;
+  
+  // Document KB - Greenish
+  &.doc-icon {
+    color: #10b981;
+  }
+  
+  // FAQ KB - Blueish
+  &.faq-icon {
+    color: #0052d9;
+  }
+}
+
+.kb-option-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-option-count {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #999;
+}
+
+// FAQ 策略区域样式
+.faq-strategy-section {
+  margin-top: 24px;
+  padding: 16px;
+  background: rgba(0, 82, 217, 0.04);
+  border: 1px solid rgba(0, 82, 217, 0.15);
+  border-radius: 8px;
+}
+
+.faq-strategy-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0052d9;
+  
+  .faq-icon {
+    font-size: 18px;
+  }
+  
+  .help-icon {
+    font-size: 14px;
+    color: #999;
+    cursor: help;
+  }
+}
+
+.faq-strategy-section .setting-row {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(0, 82, 217, 0.1);
+  
+  &:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+  
+  &:first-of-type {
+    padding-top: 0;
   }
 }
 </style>
