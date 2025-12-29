@@ -147,8 +147,13 @@ func (h *Handler) setupSSEStream(reqCtx *qaRequestContext) *sseStreamContext {
 
 	// Generate title if needed
 	if reqCtx.session.Title == "" {
-		logger.Infof(reqCtx.ctx, "Session has no title, starting async title generation, session ID: %s", reqCtx.sessionID)
-		h.sessionService.GenerateTitleAsync(asyncCtx, reqCtx.session, reqCtx.query, eventBus)
+		// Use the same model as the conversation for title generation
+		modelID := ""
+		if reqCtx.customAgent != nil && reqCtx.customAgent.Config.ModelID != "" {
+			modelID = reqCtx.customAgent.Config.ModelID
+		}
+		logger.Infof(reqCtx.ctx, "Session has no title, starting async title generation, session ID: %s, model: %s", reqCtx.sessionID, modelID)
+		h.sessionService.GenerateTitleAsync(asyncCtx, reqCtx.session, reqCtx.query, modelID, eventBus)
 	}
 
 	return streamCtx

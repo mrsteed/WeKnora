@@ -83,9 +83,8 @@ func (s *agentService) CreateAgentEngine(
 		return nil, fmt.Errorf("chat model is nil after initialization")
 	}
 
-	if rerankModel == nil {
-		return nil, fmt.Errorf("rerank model is nil after initialization")
-	}
+	// Note: rerankModel can be nil when no knowledge bases are configured
+	// The registerTools function will filter out knowledge-related tools in this case
 
 	// Create tool registry
 	toolRegistry := tools.NewToolRegistry(s.knowledgeService, s.chunkService, s.db)

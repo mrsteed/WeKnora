@@ -22,10 +22,12 @@ type SessionService interface {
 	// DeleteSession deletes a session
 	DeleteSession(ctx context.Context, id string) error
 	// GenerateTitle generates a title for the current conversation
-	GenerateTitle(ctx context.Context, session *types.Session, messages []types.Message) (string, error)
+	// modelID: optional model ID to use for title generation (if empty, uses first available KnowledgeQA model)
+	GenerateTitle(ctx context.Context, session *types.Session, messages []types.Message, modelID string) (string, error)
 	// GenerateTitleAsync generates a title for the session asynchronously
 	// It emits an event when the title is generated
-	GenerateTitleAsync(ctx context.Context, session *types.Session, userQuery string, eventBus *event.EventBus)
+	// modelID: optional model ID to use for title generation (if empty, uses first available KnowledgeQA model)
+	GenerateTitleAsync(ctx context.Context, session *types.Session, userQuery string, modelID string, eventBus *event.EventBus)
 	// KnowledgeQA performs knowledge-based question answering
 	// knowledgeBaseIDs: list of knowledge base IDs to search (supports multi-KB)
 	// knowledgeIDs: list of specific knowledge (file) IDs to search
