@@ -93,6 +93,9 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from context
+	userID, _ := c.Get(types.UserIDContextKey.String())
+
 	// Sessions are now knowledge-base-independent:
 	// - All configuration comes from custom agent at query time
 	// - Session only stores basic info (tenant ID, title, description)
@@ -105,6 +108,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	// Create session object with base properties
 	createdSession := &types.Session{
 		TenantID:    tenantID.(uint64),
+		UserID:      userID.(string),
 		Title:       request.Title,
 		Description: request.Description,
 	}
@@ -247,6 +251,9 @@ func (h *Handler) UpdateSession(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from context for ownership
+	userID, _ := c.Get(types.UserIDContextKey.String())
+
 	// Parse request body to session object
 	var session types.Session
 	if err := c.ShouldBindJSON(&session); err != nil {
@@ -257,6 +264,9 @@ func (h *Handler) UpdateSession(c *gin.Context) {
 
 	session.ID = id
 	session.TenantID = tenantID.(uint64)
+	if uid, ok := userID.(string); ok {
+		session.UserID = uid
+	}
 
 	// Call service to update session
 	if err := h.sessionService.UpdateSession(ctx, &session); err != nil {
