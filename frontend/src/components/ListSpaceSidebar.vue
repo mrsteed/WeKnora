@@ -73,8 +73,55 @@
         </div>
         <span v-if="countAll !== undefined" class="item-count">{{ countAll }}</span>
       </div>
-
-      <template v-if="mode === 'resource'">
+      <!-- 资源列表模式（按可见性分组）：全部 / 全局 / 组织 / 我的 -->
+      <template v-if="mode === 'resource' && enableVisibilityGroup">
+        <div
+          class="sidebar-item"
+          :class="{ active: selected === 'all' }"
+          @click="select('all')"
+        >
+          <div class="item-left">
+            <t-icon name="layers" class="item-icon" />
+            <span class="item-label">{{ $t('listSpaceSidebar.all') }}</span>
+          </div>
+          <span v-if="countAll !== undefined" class="item-count">{{ countAll }}</span>
+        </div>
+        <div
+          class="sidebar-item"
+          :class="{ active: selected === 'global' }"
+          @click="select('global')"
+        >
+          <div class="item-left">
+            <t-icon name="earth" class="item-icon" />
+            <span class="item-label">{{ $t('listSpaceSidebar.globalKbs') }}</span>
+          </div>
+          <span v-if="countGlobal !== undefined" class="item-count">{{ countGlobal }}</span>
+        </div>
+        <div
+          class="sidebar-item"
+          :class="{ active: selected === 'org' }"
+          @click="select('org')"
+        >
+          <div class="item-left">
+            <t-icon name="usergroup" class="item-icon" />
+            <span class="item-label">{{ $t('listSpaceSidebar.orgKbs') }}</span>
+          </div>
+          <span v-if="countOrg !== undefined" class="item-count">{{ countOrg }}</span>
+        </div>
+        <div
+          class="sidebar-item"
+          :class="{ active: selected === 'mine' }"
+          @click="select('mine')"
+        >
+          <div class="item-left">
+            <t-icon name="user" class="item-icon" />
+            <span class="item-label">{{ $t('listSpaceSidebar.myKbs') }}</span>
+          </div>
+          <span v-if="countMine !== undefined" class="item-count">{{ countMine }}</span>
+        </div>
+      </template>
+      <!-- 资源列表模式（传统）：我的 + 共享给我 + 空间列表 -->
+      <template v-else-if="mode === 'resource'">
         <div
           class="sidebar-item"
           :class="{ active: selected === 'mine' }"
@@ -169,7 +216,15 @@ const props = withDefaults(
     mode?: 'resource' | 'organization'
     modelValue: string
     collapsedKey?: string
+    /** 启用按可见性分组（resource 模式下：全部/全局/组织/我的） */
+    enableVisibilityGroup?: boolean
+    /** 全部数量（可选） */
     countAll?: number
+    /** 全局可见知识库数量（可见性分组模式） */
+    countGlobal?: number
+    /** 组织可见知识库数量（可见性分组模式） */
+    countOrg?: number
+    /** 我的数量（resource 模式） */
     countMine?: number
     countShared?: number
     countByOrg?: Record<string, number>
@@ -178,7 +233,7 @@ const props = withDefaults(
     hideAll?: boolean
     hideShared?: boolean
   }>(),
-  { mode: 'resource', collapsedKey: 'sidebar-collapsed-list', countAll: undefined, countMine: undefined, countShared: undefined, countByOrg: () => ({}), countCreated: undefined, countJoined: undefined, hideAll: false, hideShared: false }
+  { mode: 'resource', collapsedKey: 'sidebar-collapsed-list', enableVisibilityGroup: false, countAll: undefined, countGlobal: undefined, countOrg: undefined, countMine: undefined, countShared: undefined, countByOrg: () => ({}), countCreated: undefined, countJoined: undefined, hideAll: false, hideShared: false }
 )
 
 const storageKey = props.collapsedKey + '-expanded'

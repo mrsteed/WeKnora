@@ -24,6 +24,8 @@ type UserService interface {
 	GetUserByUsername(ctx context.Context, username string) (*types.User, error)
 	// GetUserByTenantID gets the first user (owner) of a tenant
 	GetUserByTenantID(ctx context.Context, tenantID uint64) (*types.User, error)
+	// GetUserByPhone gets a user by phone number
+	GetUserByPhone(ctx context.Context, phone string) (*types.User, error)
 	// UpdateUser updates user information
 	UpdateUser(ctx context.Context, user *types.User) error
 	// DeleteUser deletes a user
@@ -44,6 +46,8 @@ type UserService interface {
 	GetCurrentUser(ctx context.Context) (*types.User, error)
 	// SearchUsers searches users by username or email
 	SearchUsers(ctx context.Context, query string, limit int) ([]*types.User, error)
+	// CreateUserByAdmin creates a new user by admin (no default tenant, uses given tenantID)
+	CreateUserByAdmin(ctx context.Context, req *types.CreateUserInOrgRequest, tenantID uint64) (*types.User, error)
 }
 
 // UserRepository defines the user repository interface
@@ -66,6 +70,8 @@ type UserRepository interface {
 	ListUsers(ctx context.Context, offset, limit int) ([]*types.User, error)
 	// SearchUsers searches users by username or email
 	SearchUsers(ctx context.Context, query string, limit int) ([]*types.User, error)
+	// GetUserByPhone gets a user by phone number
+	GetUserByPhone(ctx context.Context, phone string) (*types.User, error)
 }
 
 // AuthTokenRepository defines the auth token repository interface

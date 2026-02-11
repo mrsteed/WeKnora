@@ -207,4 +207,24 @@ type KnowledgeBaseRepository interface {
 
 	// TogglePinKnowledgeBase toggles the pin status of a knowledge base
 	TogglePinKnowledgeBase(ctx context.Context, id string, tenantID uint64) (*types.KnowledgeBase, error)
+
+	// ListAccessibleKBs returns knowledge bases accessible to a user considering visibility rules
+	// Parameters:
+	//   - ctx: Context information
+	//   - userID: User ID
+	//   - tenantID: Tenant ID
+	//   - orgIDs: Organization IDs the user belongs to (for org-visibility KBs)
+	// Returns:
+	//   - List of accessible knowledge base objects
+	//   - Possible errors
+	ListAccessibleKBs(ctx context.Context, userID string, tenantID uint64, orgIDs []string) ([]*types.KnowledgeBase, error)
+
+	// ListKBsByOrganization lists knowledge bases belonging to a specific organization
+	// Parameters:
+	//   - ctx: Context information
+	//   - organizationID: Organization ID
+	// Returns:
+	//   - List of knowledge base objects
+	//   - Possible errors
+	ListKBsByOrganization(ctx context.Context, organizationID string) ([]*types.KnowledgeBase, error)
 }

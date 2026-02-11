@@ -132,6 +132,19 @@
                           :autosize="{ minRows: 3, maxRows: 6 }"
                         />
                       </div>
+                      <div v-if="authStore.isSuperAdmin || orgStore.myOrgTreeOrgs.length > 0" class="form-item">
+                        <label class="form-label">{{ $t('knowledgeEditor.basic.visibilityLabel') }}</label>
+                        <t-radio-group v-model="formData.visibility">
+                          <t-radio-button value="private">{{ $t('knowledgeEditor.basic.visibilityPrivate') }}</t-radio-button>
+                          <t-radio-button value="org">{{ $t('knowledgeEditor.basic.visibilityOrg') }}</t-radio-button>
+                          <t-radio-button value="global" :disabled="!authStore.isSuperAdmin">{{ $t('knowledgeEditor.basic.visibilityGlobal') }}</t-radio-button>
+                        </t-radio-group>
+                        <p class="form-tip">{{ $t('knowledgeEditor.basic.visibilityTip') }}</p>
+                      </div>
+                      <div v-if="formData.visibility === 'org'" class="form-item">
+                        <label class="form-label required">{{ $t('knowledgeEditor.basic.organizationLabel') }}</label>
+                        <OrgTreeSelector v-model="formData.organization_id" :show-all="authStore.isSuperAdmin" />
+                      </div>
 
                       <!-- Wiki 合成模型移至模型配置页 -->
                     </div>
@@ -360,6 +373,7 @@ import { createKnowledgeBase, getKnowledgeBaseById, listKnowledgeFiles, updateKn
 import { updateKBConfig, type KBModelConfigRequest } from '@/api/initialization'
 import { listModels } from '@/api/model'
 import { useUIStore } from '@/stores/ui'
+import { useOrganizationStore } from '@/stores/organization'
 import { useAuthStore } from '@/stores/auth'
 import KBModelConfig from './settings/KBModelConfig.vue'
 import KBParserSettings from './settings/KBParserSettings.vue'
@@ -370,9 +384,11 @@ import ModelSelector from '@/components/ModelSelector.vue'
 import GraphSettings from './settings/GraphSettings.vue'
 import KBShareSettings from './settings/KBShareSettings.vue'
 import DataSourceSettings from './settings/DataSourceSettings.vue'
+import OrgTreeSelector from '@/components/OrgTreeSelector.vue'
 import { useI18n } from 'vue-i18n'
 
 const uiStore = useUIStore()
+const orgStore = useOrganizationStore()
 const authStore = useAuthStore()
 const { t } = useI18n()
 
@@ -382,6 +398,7 @@ const props = defineProps<{
   mode: 'create' | 'edit'
   kbId?: string
   initialType?: 'document' | 'faq'
+  initialVisibility?: 'private' | 'org' | 'global'
 }>()
 
 // Emits
@@ -469,11 +486,13 @@ watch(
 )
 
 // 初始化表单数据
-const initFormData = (type: 'document' | 'faq' = 'document') => {
+const initFormData = (type: 'document' | 'faq' = 'document', visibility: 'private' | 'org' | 'global' = 'private') => {
   return {
     type,
     name: '',
     description: '',
+    visibility,
+    organization_id: orgStore.currentOrganizationId || '',
     faqConfig: {
       indexMode: 'question_only',
       questionIndexMode: 'separate'
@@ -571,6 +590,8 @@ const loadKBData = async () => {
       type: kbType,
       name: kb.name || '',
       description: kb.description || '',
+      visibility: kb.visibility || 'private',
+      organization_id: kb.organization_id || '',
       faqConfig: {
         indexMode: kb.faq_config?.index_mode || 'question_only',
         questionIndexMode: kb.faq_config?.question_index_mode || 'separate'
@@ -808,6 +829,13 @@ const validateForm = (): boolean => {
     return false
   }
 
+  // 验证组织可见性时必须选择组织
+  if (formData.value.visibility === 'org' && !formData.value.organization_id) {
+    MessagePlugin.warning(t('knowledgeEditor.messages.orgRequired') || 'Please select an organization for org visibility')
+    currentSection.value = 'basic'
+    return false
+  }
+
   // 验证多模态配置（如果启用）
   if (formData.value.multimodalConfig.enabled && !formData.value.multimodalConfig.vllmModelId) {
     MessagePlugin.warning(t('knowledgeEditor.messages.multimodalInvalid'))
@@ -832,6 +860,8 @@ const buildSubmitData = () => {
     name: formData.value.name,
     description: formData.value.description,
     type: formData.value.type,
+    visibility: formData.value.visibility || 'private',
+    organization_id: formData.value.visibility !== 'private' ? formData.value.organization_id : undefined,
     chunking_config: {
       chunk_size: formData.value.chunkingConfig.chunkSize,
       chunk_overlap: formData.value.chunkingConfig.chunkOverlap,
@@ -1130,7 +1160,8 @@ watch(() => props.visible, async (newVal) => {
       await loadKBData()
     } else {
       // 创建模式：初始化空表单
-      formData.value = initFormData(props.initialType || 'document')
+      const visibility = props.initialVisibility || uiStore.kbEditorInitialVisibility || 'private'
+      formData.value = initFormData(props.initialType || 'document', visibility)
       hasFiles.value = false
     }
   } else {

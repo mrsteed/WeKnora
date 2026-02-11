@@ -12,6 +12,8 @@ interface MenuItem {
   path: string
   childrenPath?: string
   children?: MenuChild[]
+  superAdminOnly?: boolean
+  orgAdminOnly?: boolean
 }
 
 const createMenuChildren = () => reactive<MenuChild[]>([])
@@ -22,6 +24,7 @@ export const useMenuStore = defineStore('menuStore', () => {
     { title: '', titleKey: 'menu.knowledgeSearch', icon: 'search', path: 'knowledge-search' },
     { title: '', titleKey: 'menu.agents', icon: 'agent', path: 'agents' },
     { title: '', titleKey: 'menu.organizations', icon: 'organization', path: 'organizations' },
+    { title: '', titleKey: 'menu.admin', icon: 'setting', path: 'admin', superAdminOnly: true },
     {
       title: '',
       titleKey: 'menu.chat',
@@ -63,24 +66,32 @@ export const useMenuStore = defineStore('menuStore', () => {
 
   const visibleMenuArr = computed(() => {
     const authStore = useAuthStore()
-    if (authStore.isLiteMode) {
-      return menuArr.filter(item => !liteHiddenPaths.has(item.path))
-    }
-    return menuArr
+    return menuArr.filter(item => {
+      if (authStore.isLiteMode && liteHiddenPaths.has(item.path)) {
+        return false
+      }
+      if (item.superAdminOnly && !authStore.isSuperAdmin) {
+        return false
+      }
+      if (item.orgAdminOnly && !authStore.isSuperAdmin) {
+        return false
+      }
+      return true
+    })
   })
 
-  const chatMenuIndex = menuArr.findIndex(item => item.path === 'creatChat')
+  const findChatMenu = () => menuArr.find(item => item.path === 'creatChat')
 
   const clearMenuArr = () => {
-    const chatMenu = menuArr[chatMenuIndex]
+    const chatMenu = findChatMenu()
     if (chatMenu && chatMenu.children) {
       chatMenu.children = createMenuChildren()
     }
   }
 
   const updatemenuArr = (obj: any) => {
-    const chatMenu = menuArr[chatMenuIndex]
-    if (!chatMenu.children) {
+    const chatMenu = findChatMenu()
+    if (!chatMenu || !chatMenu.children) {
       chatMenu.children = createMenuChildren()
     }
     const exists = chatMenu.children.some((item: MenuChild) => item.id === obj.id)
@@ -90,16 +101,16 @@ export const useMenuStore = defineStore('menuStore', () => {
   }
 
   const updataMenuChildren = (item: MenuChild) => {
-    const chatMenu = menuArr[chatMenuIndex]
-    if (!chatMenu.children) {
+    const chatMenu = findChatMenu()
+    if (!chatMenu || !chatMenu.children) {
       chatMenu.children = createMenuChildren()
     }
     chatMenu.children.unshift(item)
   }
 
   const updatasessionTitle = (sessionId: string, title: string) => {
-    const chatMenu = menuArr[chatMenuIndex]
-    chatMenu.children?.forEach((item: MenuChild) => {
+    const chatMenu = findChatMenu()
+    chatMenu?.children?.forEach((item: MenuChild) => {
       if (item.id === sessionId) {
         item.title = title
         item.isNoTitle = false
