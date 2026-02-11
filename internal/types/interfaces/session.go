@@ -55,23 +55,23 @@ type SessionService interface {
 type SessionRepository interface {
 	// Create creates a session
 	Create(ctx context.Context, session *types.Session) (*types.Session, error)
-	// Get gets a session
-	Get(ctx context.Context, tenantID uint64, id string) (*types.Session, error)
-	// GetByTenantID gets all sessions of a tenant
-	GetByTenantID(ctx context.Context, tenantID uint64) ([]*types.Session, error)
-	// GetPagedByTenantID gets paged sessions of a tenant
-	GetPagedByTenantID(ctx context.Context, tenantID uint64, page *types.Pagination) ([]*types.Session, int64, error)
+	// Get gets a session (filtered by tenantID and userID for ownership check)
+	Get(ctx context.Context, tenantID uint64, userID string, id string) (*types.Session, error)
+	// GetByTenantAndUser gets all sessions of a specific user within a tenant
+	GetByTenantAndUser(ctx context.Context, tenantID uint64, userID string) ([]*types.Session, error)
+	// GetPagedByTenantAndUser gets paged sessions of a specific user within a tenant
+	GetPagedByTenantAndUser(ctx context.Context, tenantID uint64, userID string, page *types.Pagination) ([]*types.Session, int64, error)
 	// QueryPaged lists sessions with filters, user-scoped ownership and pin-aware ordering.
 	QueryPaged(ctx context.Context, q *types.SessionListQuery) ([]*types.SessionListItem, int64, error)
-	// Update updates a session
+	// Update updates a session (filtered by tenantID and userID for ownership check)
 	Update(ctx context.Context, session *types.Session) error
 	// SetPinned pins or unpins a session row scoped by tenant.
 	// userID, when non-empty, is enforced so users cannot pin sessions they don't own.
 	// Returns the number of rows affected; 0 means the session doesn't exist or is
 	// not visible to this caller.
 	SetPinned(ctx context.Context, tenantID uint64, userID string, id string, pinned bool) (int64, error)
-	// Delete deletes a session
-	Delete(ctx context.Context, tenantID uint64, id string) error
+	// Delete deletes a session (filtered by tenantID and userID for ownership check)
+	Delete(ctx context.Context, tenantID uint64, userID string, id string) error
 	// BatchDelete deletes multiple sessions by IDs
 	BatchDelete(ctx context.Context, tenantID uint64, ids []string) error
 	// DeleteAllByTenantID deletes all sessions for a tenant

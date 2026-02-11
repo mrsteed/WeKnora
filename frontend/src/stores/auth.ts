@@ -50,6 +50,10 @@ export const useAuthStore = defineStore('auth', () => {
     return user.value?.can_access_all_tenants || false
   })
 
+  const isSuperAdmin = computed(() => {
+    return user.value?.is_super_admin || false
+  })
+
   const effectiveTenantId = computed(() => {
     // 如果选择了其他租户，使用选择的租户ID，否则使用用户默认租户ID
     return selectedTenantId.value || (tenant.value?.id ? Number(tenant.value.id) : null)
@@ -249,6 +253,7 @@ export const useAuthStore = defineStore('auth', () => {
     currentTenantId,
     currentUserId,
     canAccessAllTenants,
+    isSuperAdmin,
     effectiveTenantId,
     isLiteMode,
     

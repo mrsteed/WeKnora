@@ -23,6 +23,7 @@ import {
   listSharedKnowledgeBases,
   listSharedAgents
 } from '@/api/organization'
+import { getMyOrgTreeOrganizations, getOrgTree } from '@/api/org-tree'
 
 export const useOrganizationStore = defineStore('organization', () => {
   // State
@@ -39,6 +40,11 @@ export const useOrganizationStore = defineStore('organization', () => {
   /** 用于去重：同一时刻只允许一次 GET /organizations 请求 */
   let fetchOrganizationsPromise: Promise<void> | null = null
 
+  // Org-tree state: organizations the user belongs to in the tenant org-tree 
+  const currentOrganizationId = ref<string>(localStorage.getItem('weknora_current_org_id') || '')
+  const myOrgTreeOrgs = ref<Organization[]>([])
+  const allOrgTreeOrgs = ref<Organization[]>([])
+
   // Computed
   const myOrganizations = computed(() => organizations.value)
   
@@ -54,6 +60,11 @@ export const useOrganizationStore = defineStore('organization', () => {
   const totalPendingJoinRequestCount = computed(() =>
     organizations.value.reduce((sum, org) => sum + (org.pending_join_request_count ?? 0), 0)
   )
+
+  const currentOrgTreeOrganization = computed(() => {
+    if (!currentOrganizationId.value) return null
+    return myOrgTreeOrgs.value.find(o => o.id === currentOrganizationId.value) || null
+  })
 
   // Actions
 
@@ -429,7 +440,52 @@ export const useOrganizationStore = defineStore('organization', () => {
     sharedAgents.value = []
     resourceCounts.value = null
     previewData.value = null
+    myOrgTreeOrgs.value = []
+    currentOrganizationId.value = ''
+    localStorage.removeItem('weknora_current_org_id')
     error.value = null
+  }
+
+  /**
+   * Switch current organization (org-tree)
+   */
+  function switchOrganization(orgId: string | null) {
+    currentOrganizationId.value = orgId || ''
+    if (orgId) {
+      localStorage.setItem('weknora_current_org_id', orgId)
+    } else {
+      localStorage.removeItem('weknora_current_org_id')
+    }
+  }
+
+  /**   * Fetch all org-tree organizations (for super admin, within current tenant)
+   */
+  async function fetchAllOrgTreeOrgs() {
+    try {
+      const response = await getOrgTree()
+      if (response.success && response.data) {
+        allOrgTreeOrgs.value = response.data
+      }
+    } catch (e: any) {
+      console.error('Failed to fetch all org tree organizations:', e)
+    }
+  }
+
+  /**   * Fetch user's org-tree organizations within current tenant
+   */
+  async function fetchMyOrgTreeOrganizations() {
+    try {
+      const response = await getMyOrgTreeOrganizations()
+      if (response.success && response.data) {
+        myOrgTreeOrgs.value = response.data
+        // Auto-select first org if none selected
+        if (!currentOrganizationId.value && response.data.length > 0) {
+          switchOrganization(response.data[0].id)
+        }
+      }
+    } catch (e: any) {
+      console.error('Failed to fetch org-tree organizations:', e)
+    }
   }
 
   return {
@@ -443,15 +499,20 @@ export const useOrganizationStore = defineStore('organization', () => {
     previewData,
     loading,
     error,
+    currentOrganizationId,
+    myOrgTreeOrgs,
+    allOrgTreeOrgs,
 
     // Computed
     myOrganizations,
     ownedOrganizations,
     joinedOrganizations,
     totalPendingJoinRequestCount,
+    currentOrgTreeOrganization,
 
     // Actions
     fetchOrganizations,
+    fetchAllOrgTreeOrgs,
     create,
     update,
     remove,
@@ -468,6 +529,8 @@ export const useOrganizationStore = defineStore('organization', () => {
     getKBPermission,
     canEditKB,
     canManageKB,
+    switchOrganization,
+    fetchMyOrgTreeOrganizations,
     clearState
   }
 })

@@ -18,55 +18,61 @@
     <!-- 下拉菜单 -->
     <Transition name="dropdown">
       <div v-if="menuVisible" class="user-dropdown" @click.stop>
-        <div class="menu-item" @click="handleQuickNav('models')">
-          <t-icon name="control-platform" class="menu-icon" />
-          <span>{{ $t('settings.modelManagement') }}</span>
-        </div>
-        <div class="menu-item" @click="handleQuickNav('websearch')">
-          <svg 
-            width="16" 
-            height="16" 
-            viewBox="0 0 18 18" 
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            class="menu-icon svg-icon"
+        <template v-if="authStore.isSuperAdmin">
+          <div class="menu-item" @click="handleQuickNav('models')">
+            <t-icon name="control-platform" class="menu-icon" />
+            <span>{{ $t('settings.modelManagement') }}</span>
+          </div>
+          <div class="menu-item" @click="handleQuickNav('ollama')">
+            <t-icon name="server" class="menu-icon" />
+            <span>Ollama</span>
+          </div>
+          <div class="menu-item" @click="handleQuickNav('websearch')">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 18 18"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              class="menu-icon svg-icon"
+            >
+              <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              <path d="M 9 2 A 3.5 7 0 0 0 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              <path d="M 9 2 A 3.5 7 0 0 1 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              <line x1="2.94" y1="5.5" x2="15.06" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              <line x1="2.94" y1="12.5" x2="15.06" y2="12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+            <span>{{ $t('settings.webSearchConfig') }}</span>
+          </div>
+          <div class="menu-item" @click="handleQuickNav('mcp')">
+            <t-icon name="tools" class="menu-icon" />
+            <span>{{ $t('settings.mcpService') }}</span>
+          </div>
+          <div class="menu-item" @click="handleQuickNav('api')">
+            <t-icon name="secured" class="menu-icon" />
+            <span>{{ $t('settings.apiInfo') }}</span>
+          </div>
+          <div
+            ref="imMenuItemRef"
+            class="menu-item menu-item--submenu"
+            :class="{ 'is-open': imSubmenuOpen }"
+            @mouseenter="showIMSubmenu"
+            @mouseleave="scheduleHideIMSubmenu"
           >
-            <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
-            <path d="M 9 2 A 3.5 7 0 0 0 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
-            <path d="M 9 2 A 3.5 7 0 0 1 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
-            <line x1="2.94" y1="5.5" x2="15.06" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-            <line x1="2.94" y1="12.5" x2="15.06" y2="12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-          </svg>
-          <span>{{ $t('settings.webSearchConfig') }}</span>
-        </div>
-        <div class="menu-item" @click="handleQuickNav('mcp')">
-          <t-icon name="tools" class="menu-icon" />
-          <span>{{ $t('settings.mcpService') }}</span>
-        </div>
-        <div class="menu-item" @click="handleQuickNav('api')">
-          <t-icon name="secured" class="menu-icon" />
-          <span>{{ $t('settings.apiInfo') }}</span>
-        </div>
-        <div
-          ref="imMenuItemRef"
-          class="menu-item menu-item--submenu"
-          :class="{ 'is-open': imSubmenuOpen }"
-          @mouseenter="showIMSubmenu"
-          @mouseleave="scheduleHideIMSubmenu"
-        >
-          <t-icon name="link" class="menu-icon" />
-          <span class="menu-item-label">{{ $t('imOverview.menuTitle') }}</span>
-          <span
-            v-if="hasActiveIMChannels"
-            class="live-indicator"
-            :title="$t('imOverview.liveIndicator')"
-            aria-hidden="true"
-          >
-            <span class="live-indicator-dot"></span>
-          </span>
-          <t-icon name="chevron-right" class="menu-chevron" />
-        </div>
-        <div class="menu-divider"></div>
+            <t-icon name="link" class="menu-icon" />
+            <span class="menu-item-label">{{ $t('imOverview.menuTitle') }}</span>
+            <span
+              v-if="hasActiveIMChannels"
+              class="live-indicator"
+              :title="$t('imOverview.liveIndicator')"
+              aria-hidden="true"
+            >
+              <span class="live-indicator-dot"></span>
+            </span>
+            <t-icon name="chevron-right" class="menu-chevron" />
+          </div>
+          <div class="menu-divider"></div>
+        </template>
         <div class="menu-item" @click="handleSettings">
           <t-icon name="setting" class="menu-icon" />
           <span>{{ $t('general.allSettings') }}</span>
@@ -350,6 +356,7 @@ const loadUserInfo = async () => {
         avatar: user.avatar,
         tenant_id: user.tenant_id,
         can_access_all_tenants: user.can_access_all_tenants || false,
+        is_super_admin: user.is_super_admin || false,
         created_at: user.created_at,
         updated_at: user.updated_at
       })

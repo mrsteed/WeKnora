@@ -111,14 +111,17 @@ func (s *sessionService) GetSession(ctx context.Context, id string) (*types.Sess
 
 	// Get tenant ID from context
 	tenantID := types.MustTenantIDFromContext(ctx)
-	logger.Infof(ctx, "Retrieving session, ID: %s, tenant ID: %d", id, tenantID)
+	// Get user ID from context for ownership check
+	userID, _ := types.UserIDFromContext(ctx)
+	logger.Infof(ctx, "Retrieving session, ID: %s, tenant ID: %d, user ID: %s", id, tenantID, userID)
 
-	// Get session from repository
-	session, err := s.sessionRepo.Get(ctx, tenantID, id)
+	// Get session from repository (filtered by user ownership)
+	session, err := s.sessionRepo.Get(ctx, tenantID, userID, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"session_id": id,
 			"tenant_id":  tenantID,
+			"user_id":    userID,
 		})
 		return nil, err
 	}
@@ -131,19 +134,22 @@ func (s *sessionService) GetSession(ctx context.Context, id string) (*types.Sess
 func (s *sessionService) GetSessionsByTenant(ctx context.Context) ([]*types.Session, error) {
 	// Get tenant ID from context
 	tenantID := types.MustTenantIDFromContext(ctx)
-	logger.Infof(ctx, "Retrieving all sessions for tenant, tenant ID: %d", tenantID)
+	// Get user ID from context for per-user filtering
+	userID, _ := types.UserIDFromContext(ctx)
+	logger.Infof(ctx, "Retrieving all sessions for tenant, tenant ID: %d, user ID: %s", tenantID, userID)
 
-	// Get sessions from repository
-	sessions, err := s.sessionRepo.GetByTenantID(ctx, tenantID)
+	// Get sessions from repository (filtered by user ownership)
+	sessions, err := s.sessionRepo.GetByTenantAndUser(ctx, tenantID, userID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenantID,
+			"user_id":   userID,
 		})
 		return nil, err
 	}
 
 	logger.Infof(
-		ctx, "Tenant sessions retrieved successfully, tenant ID: %d, session count: %d", tenantID, len(sessions),
+		ctx, "Tenant sessions retrieved successfully, tenant ID: %d, user ID: %s, session count: %d", tenantID, userID, len(sessions),
 	)
 	return sessions, nil
 }
@@ -154,11 +160,14 @@ func (s *sessionService) GetPagedSessionsByTenant(ctx context.Context,
 ) (*types.PageResult, error) {
 	// Get tenant ID from context
 	tenantID := types.MustTenantIDFromContext(ctx)
-	// Get paged sessions from repository
-	sessions, total, err := s.sessionRepo.GetPagedByTenantID(ctx, tenantID, pagination)
+	// Get user ID from context for per-user filtering
+	userID, _ := types.UserIDFromContext(ctx)
+	// Get paged sessions from repository (filtered by user ownership)
+	sessions, total, err := s.sessionRepo.GetPagedByTenantAndUser(ctx, tenantID, userID, pagination)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenantID,
+			"user_id":   userID,
 			"page":      pagination.Page,
 			"page_size": pagination.PageSize,
 		})
@@ -243,6 +252,8 @@ func (s *sessionService) DeleteSession(ctx context.Context, id string) error {
 
 	// Get tenant ID from context
 	tenantID := types.MustTenantIDFromContext(ctx)
+	// Get user ID from context for ownership check
+	userID, _ := types.UserIDFromContext(ctx)
 
 	// Cleanup chat history knowledge entries for this session (async, best-effort).
 	// Use WithoutCancel so the goroutine survives after the HTTP request context is done.
@@ -265,12 +276,13 @@ func (s *sessionService) DeleteSession(ctx context.Context, id string) error {
 		logger.Warnf(ctx, "Failed to cleanup temporary KB for session %s: %v", id, err)
 	}
 
-	// Delete session from repository
-	err := s.sessionRepo.Delete(ctx, tenantID, id)
+	// Delete session from repository (filtered by user ownership)
+	err := s.sessionRepo.Delete(ctx, tenantID, userID, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"session_id": id,
 			"tenant_id":  tenantID,
+			"user_id":    userID,
 		})
 		return err
 	}
@@ -327,7 +339,7 @@ func (s *sessionService) DeleteAllSessions(ctx context.Context) error {
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Deleting all sessions for tenant %d", tenantID)
 
-	sessions, err := s.sessionRepo.GetByTenantID(ctx, tenantID)
+	sessions, err := s.sessionRepo.GetByTenantAndUser(ctx, tenantID, "")
 	if err != nil {
 		logger.Warnf(ctx, "Failed to list sessions for cleanup: %v", err)
 	} else {

@@ -229,13 +229,6 @@
                 {{ loading ? $t('auth.loggingIn') : $t('auth.login') }}
           </t-button>
 
-          <div class="form-footer login-form-footer">
-            <span>{{ $t('auth.noAccount') }}</span>
-            <a href="#" @click.prevent="toggleMode" class="link-button">
-              {{ $t('auth.registerNow') }}
-            </a>
-          </div>
-
           <div v-if="oidcEnabled" class="oidc-divider">
             <span>{{ $t('auth.orContinueWith') }}</span>
           </div>
@@ -252,6 +245,13 @@
           >
             {{ oidcLoading ? $t('auth.redirectingToOIDC') : oidcLoginText }}
           </t-button>
+            <!-- 公开注册已禁用，用户由管理员在组织人员管理中创建 -->
+            <!-- <div class="form-footer">
+          <span>{{ $t('auth.noAccount') }}</span>
+              <a href="#" @click.prevent="toggleMode" class="link-button">
+            {{ $t('auth.registerNow') }}
+          </a>
+        </div> -->
         </t-form>
 
             <!-- Features list -->
@@ -551,6 +551,7 @@ const persistLoginResponse = async (response: any) => {
       avatar: response.user.avatar,
       tenant_id: String(response.tenant.id) || '',
       can_access_all_tenants: response.user.can_access_all_tenants || false,
+      is_super_admin: response.user.is_super_admin || false,
       created_at: response.user.created_at || new Date().toISOString(),
       updated_at: response.user.updated_at || new Date().toISOString()
     })

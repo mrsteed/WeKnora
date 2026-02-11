@@ -164,6 +164,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
 import SystemInfo from './SystemInfo.vue'
 import TenantInfo from './TenantInfo.vue'
@@ -182,27 +183,66 @@ import WeKnoraCloudSettings from './WeKnoraCloudSettings.vue'
 const route = useRoute()
 const router = useRouter()
 const uiStore = useUIStore()
+const authStore = useAuthStore()
 const { t } = useI18n()
 
 const currentSection = ref<string>('general')
 const currentSubSection = ref<string>('')
 const expandedMenus = ref<string[]>([])
 
-const navItems = computed(() => [
-  { key: 'general', icon: 'setting', label: t('general.title') },
-  { key: 'ollama', icon: 'server', label: 'Ollama' },
-  { key: 'weknoracloud', icon: '', label: 'WeKnora Cloud' },
-  { key: 'models', icon: 'control-platform', label: t('settings.modelManagement') },
-   { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig')  },
-  { key: 'chathistory', icon: 'chat', label: t('chatHistorySettings.title') },
-  { key: 'vectorstore', icon: 'data-base', label: t('settings.vectorStoreEngine') },
-  { key: 'parser', icon: 'file-search', label: t('settings.parserEngine') },
-  { key: 'storage', icon: 'cloud', label: t('settings.storageEngine') },
-  { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
-  { key: 'system', icon: 'info-circle', label: t('settings.systemSettings') },
-  { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
-  { key: 'api', icon: 'secured', label: t('settings.apiInfo') }
+const allNavItems = computed(() => [
+  { key: 'general', icon: 'setting', label: t('general.title'), superAdminOnly: false },
+  { 
+    key: 'models', 
+    icon: 'control-platform', 
+    label: t('settings.modelManagement'),
+    superAdminOnly: true,
+    children: [
+      { key: 'chat', label: t('model.llmModel') },
+      { key: 'embedding', label: t('model.embeddingModel') },
+      { key: 'rerank', label: t('model.rerankModel') },
+      { key: 'vllm', label: t('model.vlmModel') }
+    ]
+  },
+  { key: 'ollama', icon: 'server', label: 'Ollama', superAdminOnly: true },
+  { key: 'weknoracloud', icon: 'cloud', label: 'WeKnora Cloud', superAdminOnly: true },
+  { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig'), superAdminOnly: true },
+  { key: 'chathistory', icon: 'chat', label: t('chatHistorySettings.title'), superAdminOnly: true },
+  { key: 'vectorstore', icon: 'data-base', label: t('settings.vectorStoreEngine'), superAdminOnly: true },
+  {
+    key: 'parser',
+    icon: 'file-search',
+    label: t('settings.parserEngine'),
+    superAdminOnly: true,
+    children: [
+      { key: 'builtin', label: 'Builtin (DocReader)' },
+      { key: 'simple', label: 'Simple' },
+      { key: 'markitdown', label: 'Markitdown' },
+      { key: 'mineru', label: 'MinerU' },
+      { key: 'mineru_cloud', label: 'MinerU Cloud' },
+    ]
+  },
+  {
+    key: 'storage',
+    icon: 'cloud',
+    label: t('settings.storageEngine'),
+    superAdminOnly: true,
+    children: [
+      { key: 'local', label: 'Local' },
+      { key: 'minio', label: 'MinIO' },
+      { key: 'cos', label: t('settings.storage.cos') },
+      { key: 'tos', label: t('settings.storage.tos') },
+    ]
+  },
+  { key: 'mcp', icon: 'tools', label: t('settings.mcpService'), superAdminOnly: true },
+  { key: 'system', icon: 'info-circle', label: t('settings.systemSettings'), superAdminOnly: true },
+  { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo'), superAdminOnly: true },
+  { key: 'api', icon: 'secured', label: t('settings.apiInfo'), superAdminOnly: false }
 ])
+
+const navItems = computed(() =>
+  allNavItems.value.filter(item => !item.superAdminOnly || authStore.isSuperAdmin)
+)
 
 // 导航项点击处理
 const handleNavClick = (item: any) => {
