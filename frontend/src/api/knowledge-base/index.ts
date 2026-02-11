@@ -1,9 +1,10 @@
 import { get, post, put, del, postUpload, getDown } from "../../utils/request";
 
 // 知识库管理 API（列表、创建、获取、更新、删除、复制）
-export function listKnowledgeBases(params?: { agent_id?: string }) {
+export function listKnowledgeBases(params?: { agent_id?: string; organization_id?: string }) {
   const query = new URLSearchParams();
   if (params?.agent_id) query.set('agent_id', params.agent_id);
+  if (params?.organization_id) query.set('organization_id', params.organization_id);
   const qs = query.toString();
   return get(qs ? `/api/v1/knowledge-bases?${qs}` : '/api/v1/knowledge-bases');
 }
@@ -12,6 +13,8 @@ export function createKnowledgeBase(data: {
   name: string; 
   description?: string; 
   type?: 'document' | 'faq';
+  visibility?: 'global' | 'org' | 'private';
+  organization_id?: string;
   chunking_config?: any;
   embedding_model_id?: string;
   summary_model_id?: string;
@@ -33,7 +36,7 @@ export function getKnowledgeBaseById(id: string, options?: { agent_id?: string }
   return get(qs ? `/api/v1/knowledge-bases/${id}?${qs}` : `/api/v1/knowledge-bases/${id}`);
 }
 
-export function updateKnowledgeBase(id: string, data: { name: string; description?: string; config: any }) {
+export function updateKnowledgeBase(id: string, data: { name: string; description?: string; config: any; visibility?: 'global' | 'org' | 'private'; organization_id?: string }) {
   return put(`/api/v1/knowledge-bases/${id}` , data);
 }
 

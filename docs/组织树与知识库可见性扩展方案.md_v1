@@ -1,0 +1,1371 @@
+# WeKnora 组织树与知识库可见性扩展方案
+
+> **文档版本**: v1.0  
+> **创建日期**: 2026-02-10  
+> **适用项目**: WeKnora 知识库管理平台  
+> **文档性质**: 扩展设计方案（基于现有 Organization 模型演进）
+
+---
+
+## 1. 需求概述
+
+| 序号 | 需求 | 说明 |
+|------|------|------|
+| 1 | **超级管理员建立组织树** | 超级管理员可创建多级组织结构（树形），管理全局人员和知识库 |
+| 2 | **组织管理员** | 每个组织有一级组织管理员，负责本组织的人员和知识库管理 |
+| 3 | **知识库可见性** | 知识库分为「全部组织可见」和「组织内可见」两种权限 |
+| 4 | **个人知识库** | 个人知识库仅创建者自己可见 |
+
+---
+
+## 2. 现状分析与扩展策略
+
+### 2.1 现有架构关键点
+
+| 模块 | 现状 | 扩展影响 |
+|------|------|----------|
+| **Organization** | 扁平的共享空间，无 `parent_id`，无层级 | 需要加 `parent_id` + 树查询 |
+| **OrgMemberRole** | `admin` / `editor` / `viewer` 三级角色 | 可复用，`admin` 即为组织管理员 |
+| **User** | `can_access_all_tenants` 为唯一超级权限标志 | 需新增 `is_super_admin` 字段 |
+| **KnowledgeBase** | 仅 `tenant_id` 隔离，无 visibility / created_by | 需新增 `visibility` + `created_by` + `organization_id` |
+| **kb_shares** | 知识库通过组织共享（多对多） | 保留，作为精细授权的补充通道 |
+| **Auth 中间件** | 仅 JWT + API Key，无角色检查 | 需新增超级管理员中间件 |
+| **迁移** | 最新编号 000012 | 新迁移从 000013 开始 |
+
+### 2.2 扩展策略：最小侵入式演进
+
+核心原则：**在现有 Organization 模型上添加层级能力 + 在 KnowledgeBase 上添加可见性，而非另建一套体系**。
+
+```
+演进路线：
+  扁平 Organization → 层级化 Organization（加 parent_id + path）
+  仅 tenant_id 的 KB → visibility 三级可见性的 KB
+  单一 can_access_all_tenants → is_super_admin + 组织 admin 二级管理
+```
+
+**兼容性策略**：
+- 现有无 `parent_id` 的组织视为顶级组织（`parent_id = NULL`）
+- 现有知识库默认 `visibility = 'org'`（组织内可见）+ `created_by = ''`（迁移时不设创建者）
+- 现有 `kb_shares` 共享机制保留，作为"跨组织精细授权"补充
+
+---
+
+## 3. 整体架构设计
+
+### 3.1 权限层次模型
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       租户（Tenant）                             │
+│                                                                  │
+│  ┌─ 超级管理员 (is_super_admin=true) ─────────────────────────┐ │
+│  │  · 管理组织树结构（创建/编辑/删除/调整层级）                  │ │
+│  │  · 管理全局人员（分配到组织、设置组织管理员）                  │ │
+│  │  · 查看和管理所有知识库                                      │ │
+│  │  · 创建全局可见知识库                                        │ │
+│  └──────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  ┌─ 组织管理员 (org member role=admin) ──────────────────────┐  │
+│  │  · 管理本组织成员（添加/移除/角色设置）                      │  │
+│  │  · 管理本组织知识库（CRUD + 权限）                           │  │
+│  │  · 查看组织内可见 + 全局可见知识库                            │  │
+│  └──────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  ┌─ 普通用户 (org member role=editor/viewer) ────────────────┐  │
+│  │  · 查看全局可见 + 所属组织内可见 + 自己的私有知识库           │  │
+│  │  · 创建个人（私有）知识库                                    │  │
+│  │  · 使用共享给所属组织的 Agent                                │  │
+│  └──────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  ┌─ 知识库可见性 ──────────────────────────────────────────┐    │
+│  │                                                          │    │
+│  │  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐  │    │
+│  │  │ 全局可见  │  │  组织内可见   │  │   个人（私有）    │  │    │
+│  │  │ global   │  │    org       │  │    private        │  │    │
+│  │  │          │  │              │  │                   │  │    │
+│  │  │ 所有组织 │  │ 归属组织及   │  │ 仅 created_by    │  │    │
+│  │  │ 成员均可 │  │ 其子组织成员 │  │ 本人可见         │  │    │
+│  │  │ 查看     │  │ 可查看       │  │                   │  │    │
+│  │  └──────────┘  └──────────────┘  └───────────────────┘  │    │
+│  └──────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 组织树模型
+
+```
+租户
+ └─ 组织树（超级管理员管理）
+     ├─ 技术中心 (admin: 张三)
+     │   ├─ 前端组 (admin: 李四)
+     │   ├─ 后端组 (admin: 王五)
+     │   └─ AI 组  (admin: 赵六)
+     ├─ 产品部 (admin: 孙七)
+     │   ├─ 产品策划组
+     │   └─ 用户研究组
+     └─ 运营部 (admin: 周八)
+
+知识库归属：
+  · "API 设计规范" → visibility='org', organization_id='后端组' → 后端组成员 + 技术中心成员可见
+  · "公司规章制度" → visibility='global' → 所有组织成员均可见
+  · "我的笔记"    → visibility='private', created_by='user-xxx' → 仅本人可见
+```
+
+---
+
+## 4. 数据库设计
+
+### 4.1 `organizations` 表扩展
+
+在现有 `organizations` 表上新增字段：
+
+```sql
+-- 层级结构支持
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS parent_id VARCHAR(36) DEFAULT NULL;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS path TEXT DEFAULT '';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS tenant_id BIGINT DEFAULT NULL;
+
+-- 索引
+CREATE INDEX IF NOT EXISTS idx_organizations_parent_id ON organizations(parent_id);
+CREATE INDEX IF NOT EXISTS idx_organizations_path ON organizations USING btree(path);
+CREATE INDEX IF NOT EXISTS idx_organizations_tenant_id ON organizations(tenant_id);
+
+-- 外键（自引用，parent 删除时子组织保留为顶级）
+ALTER TABLE organizations ADD CONSTRAINT fk_organizations_parent
+    FOREIGN KEY (parent_id) REFERENCES organizations(id) ON DELETE SET NULL;
+```
+
+| 新增字段 | 类型 | 说明 |
+|----------|------|------|
+| `parent_id` | VARCHAR(36) | 父组织 ID，NULL 为顶级组织 |
+| `path` | TEXT | 物化路径，如 `/root_id/parent_id/self_id`，加速子树查询 |
+| `level` | INTEGER | 层级深度（1=顶级）|
+| `sort_order` | INTEGER | 同级排序 |
+| `tenant_id` | BIGINT | 组织所属租户（组织树在租户内管理）|
+
+> **兼容性**：现有组织的 `parent_id` 为 NULL，`level` 为 1，`path` 为 `/<self_id>`，不影响现有功能。
+
+### 4.2 `users` 表扩展
+
+```sql
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT false;
+```
+
+| 新增字段 | 类型 | 说明 |
+|----------|------|------|
+| `is_super_admin` | BOOLEAN | 超级管理员标志，拥有租户内全权限 |
+
+> **与 `can_access_all_tenants` 的关系**：
+> - `can_access_all_tenants`：**跨租户**访问能力（平台级，切换到其它租户）
+> - `is_super_admin`：**租户内**超级管理权限（管理组织树、全局人员、所有知识库）
+> - 两者独立，通常注册首用户同时拥有两者
+
+### 4.3 `knowledge_bases` 表扩展
+
+```sql
+ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS created_by VARCHAR(36) DEFAULT '';
+ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS visibility VARCHAR(20) DEFAULT 'org';
+ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS organization_id VARCHAR(36) DEFAULT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_created_by ON knowledge_bases(created_by);
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_visibility ON knowledge_bases(visibility);
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_organization_id ON knowledge_bases(organization_id);
+```
+
+| 新增字段 | 类型 | 说明 |
+|----------|------|------|
+| `created_by` | VARCHAR(36) | 创建者用户 ID（参考 `custom_agents.created_by` 模式） |
+| `visibility` | VARCHAR(20) | 可见性：`global`（全局）/ `org`（组织内）/ `private`（个人） |
+| `organization_id` | VARCHAR(36) | 归属组织 ID（`global` 和 `org` 类型必填，`private` 可为空） |
+
+### 4.4 完整迁移脚本
+
+**文件**：`migrations/versioned/000013_org_tree_kb_visibility.up.sql`
+
+```sql
+-- =============================================
+-- WeKnora Organization Tree & KB Visibility
+-- Version: 000013
+-- Description: 组织层级化 + 知识库可见性 + 超级管理员
+-- =============================================
+
+BEGIN;
+
+-- 1. organizations 表扩展（层级结构）
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS parent_id VARCHAR(36) DEFAULT NULL;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS path TEXT DEFAULT '';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS tenant_id BIGINT DEFAULT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_organizations_parent_id ON organizations(parent_id);
+CREATE INDEX IF NOT EXISTS idx_organizations_path ON organizations USING btree(path);
+CREATE INDEX IF NOT EXISTS idx_organizations_tenant_id ON organizations(tenant_id);
+
+-- 自引用外键
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_organizations_parent'
+    ) THEN
+        ALTER TABLE organizations ADD CONSTRAINT fk_organizations_parent
+            FOREIGN KEY (parent_id) REFERENCES organizations(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+-- 为现有组织生成 path（顶级组织 path = '/<self_id>'）
+UPDATE organizations SET path = '/' || id, level = 1
+WHERE parent_id IS NULL AND (path IS NULL OR path = '');
+
+-- 2. users 表扩展（超级管理员标志）
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT false;
+
+-- 将现有 can_access_all_tenants=true 的用户设为超级管理员
+UPDATE users SET is_super_admin = true WHERE can_access_all_tenants = true;
+
+-- 3. knowledge_bases 表扩展（可见性 + 创建者 + 归属组织）
+ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS created_by VARCHAR(36) DEFAULT '';
+ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS visibility VARCHAR(20) DEFAULT 'org';
+ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS organization_id VARCHAR(36) DEFAULT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_created_by ON knowledge_bases(created_by);
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_visibility ON knowledge_bases(visibility);
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_organization_id ON knowledge_bases(organization_id);
+
+COMMIT;
+```
+
+**回滚**：`migrations/versioned/000013_org_tree_kb_visibility.down.sql`
+
+```sql
+BEGIN;
+
+-- 1. 移除 knowledge_bases 扩展字段
+DROP INDEX IF EXISTS idx_knowledge_bases_created_by;
+DROP INDEX IF EXISTS idx_knowledge_bases_visibility;
+DROP INDEX IF EXISTS idx_knowledge_bases_organization_id;
+ALTER TABLE knowledge_bases DROP COLUMN IF EXISTS created_by;
+ALTER TABLE knowledge_bases DROP COLUMN IF EXISTS visibility;
+ALTER TABLE knowledge_bases DROP COLUMN IF EXISTS organization_id;
+
+-- 2. 移除 users 扩展字段
+ALTER TABLE users DROP COLUMN IF EXISTS is_super_admin;
+
+-- 3. 移除 organizations 扩展字段
+ALTER TABLE organizations DROP CONSTRAINT IF EXISTS fk_organizations_parent;
+DROP INDEX IF EXISTS idx_organizations_parent_id;
+DROP INDEX IF EXISTS idx_organizations_path;
+DROP INDEX IF EXISTS idx_organizations_tenant_id;
+ALTER TABLE organizations DROP COLUMN IF EXISTS parent_id;
+ALTER TABLE organizations DROP COLUMN IF EXISTS path;
+ALTER TABLE organizations DROP COLUMN IF EXISTS level;
+ALTER TABLE organizations DROP COLUMN IF EXISTS sort_order;
+ALTER TABLE organizations DROP COLUMN IF EXISTS tenant_id;
+
+COMMIT;
+```
+
+### 4.5 ER 关系图（扩展后）
+
+```
+┌─────────────┐       ┌──────────────────────────────────────┐
+│   tenants   │  1:N  │             users                     │
+│  id (PK)    │──────→│  id (PK)                              │
+│  name       │       │  tenant_id (FK)                       │
+│             │       │  is_super_admin (NEW)                 │
+│             │       │  can_access_all_tenants               │
+└──────┬──────┘       └──────────────┬────────────────────────┘
+       │                             │
+       │     1:N                     │ owner_id / user_id
+       │            ┌────────────────┴──────────────────────────────┐
+       ├───────────→│              organizations                    │
+       │            │  id (PK)                                      │
+       │            │  parent_id → organizations.id (NEW, 自引用)   │
+       │            │  path (NEW, 物化路径)                          │
+       │            │  level (NEW, 层级深度)                         │
+       │            │  sort_order (NEW)                              │
+       │            │  tenant_id (NEW)                               │
+       │            │  owner_id → users.id                          │
+       │            │  name, invite_code, ...                       │
+       │            └───────────────┬───────────────────────────────┘
+       │                            │ 1:N
+       │                  ┌─────────┴──────────┐
+       │                  │ organization_members│
+       │                  │  organization_id    │
+       │                  │  user_id            │
+       │                  │  role (admin/editor/ │
+       │                  │        viewer)      │
+       │                  └────────────────────┘
+       │
+       │     1:N     ┌──────────────────────────────────────┐
+       ├────────────→│         knowledge_bases               │
+       │             │  id (PK)                              │
+       │             │  tenant_id                            │
+       │             │  created_by (NEW) → users.id          │
+       │             │  visibility (NEW): global/org/private │
+       │             │  organization_id (NEW) → org.id       │
+       │             │  name, type, ...                      │
+       │             └────────────────┬─────────────────────┘
+       │                              │ 1:N (保留)
+       │                     ┌────────┴─────────┐
+       │                     │    kb_shares      │  ← 跨组织精细授权
+       │                     │  knowledge_base_id│
+       │                     │  organization_id  │
+       │                     │  permission       │
+       │                     └──────────────────┘
+```
+
+---
+
+## 5. 知识库可见性规则
+
+### 5.1 三级可见性定义
+
+| 可见性 | 标识 | 创建者 | 归属组织 | 可见范围 |
+|--------|------|--------|----------|----------|
+| **全局可见** | `global` | 超级管理员/组织管理员 | 可选（可不归属） | 租户内所有组织成员 + 超级管理员 |
+| **组织内可见** | `org` | 组织管理员/组织 editor | 必填 | 归属组织及其**所有子组织**的成员 + 超级管理员 |
+| **个人私有** | `private` | 任何登录用户 | 可选 | 仅创建者本人 + 超级管理员 |
+
+### 5.2 访问权限判定逻辑（伪代码）
+
+```
+func canAccessKnowledgeBase(user, kb) bool:
+    // 1. 超级管理员：全部可见
+    if user.is_super_admin:
+        return true
+
+    // 2. 全局可见：租户内所有用户
+    if kb.visibility == 'global' && kb.tenant_id == user.tenant_id:
+        return true
+
+    // 3. 组织内可见：归属组织及其子组织的成员
+    if kb.visibility == 'org' && kb.organization_id != '':
+        userOrgIDs = getUserOrganizationIDs(user)
+        kbOrgTree  = getOrgAndAllAncestorIDs(kb.organization_id)  // 包括自身及所有祖先
+        if intersection(userOrgIDs, kbOrgTree) is not empty:
+            return true
+        // 反向：KB 归属的组织是用户所在组织的祖先
+        kbOrgDescendants = getOrgAndAllDescendantIDs(kb.organization_id)  // 包括自身及所有子孙
+        if intersection(userOrgIDs, kbOrgDescendants) is not empty:
+            return true
+
+    // 4. 个人私有：仅创建者
+    if kb.visibility == 'private' && kb.created_by == user.id:
+        return true
+
+    // 5. 跨组织共享（现有 kb_shares 机制保留）
+    if hasKBShareAccess(user, kb):
+        return true
+
+    // 6. 通过共享 Agent 间接访问（现有机制保留）
+    if hasAgentShareKBAccess(user, kb):
+        return true
+
+    return false
+```
+
+### 5.3 可见性规则的子组织继承
+
+当知识库 `visibility='org'`，归属于组织 A 时：
+
+```
+技术中心 (A)
+ ├─ 前端组 (B)
+ ├─ 后端组 (C)
+ └─ AI 组 (D)
+
+KB "API 规范" → organization_id = A（技术中心）
+
+可见范围：
+  ✅ A（技术中心）的成员
+  ✅ B（前端组）的成员    ← 子组织自动继承可见性
+  ✅ C（后端组）的成员    ← 子组织自动继承可见性
+  ✅ D（AI 组）的成员     ← 子组织自动继承可见性
+
+KB "前端组件库" → organization_id = B（前端组）
+
+可见范围：
+  ✅ B（前端组）的成员
+  ✅ A（技术中心）的成员  ← 父组织也可见（管理需要）
+  ❌ C（后端组）的成员    ← 兄弟组织不可见
+  ❌ D（AI 组）的成员     ← 兄弟组织不可见
+```
+
+**实现方式**：利用 `path` 物化路径做前缀匹配。
+
+```sql
+-- 查询用户可访问的 org 类型 KB
+-- user_org_ids = 用户所在的组织 ID 列表
+-- user_org_paths = 用户所在组织的 path 列表
+
+SELECT kb.* FROM knowledge_bases kb
+JOIN organizations org ON org.id = kb.organization_id
+WHERE kb.visibility = 'org'
+  AND kb.tenant_id = ?
+  AND (
+    -- KB 归属组织是用户所在组织的祖先或自身
+    org.id IN (user_org_ids)
+    OR
+    -- KB 归属组织的 path 是用户所在组织 path 的前缀（KB 在用户的祖先组织）
+    EXISTS (
+      SELECT 1 FROM organization_members om
+      JOIN organizations user_org ON user_org.id = om.organization_id
+      WHERE om.user_id = ? AND user_org.path LIKE org.path || '/%'
+    )
+    OR
+    -- 用户所在组织的 path 是 KB 归属组织 path 的前缀（用户在 KB 的祖先组织）
+    EXISTS (
+      SELECT 1 FROM organization_members om
+      JOIN organizations user_org ON user_org.id = om.organization_id
+      WHERE om.user_id = ? AND org.path LIKE user_org.path || '/%'
+    )
+  );
+```
+
+### 5.4 创建权限
+
+| 可见性 | 谁可以创建 | organization_id |
+|--------|------------|-----------------|
+| `global` | 超级管理员 | 可选（不强制归属组织） |
+| `org` | 超级管理员 + 该组织的 admin/editor | 必填（归属到具体组织） |
+| `private` | 所有登录用户 | 可选（可归属组织或不归属） |
+
+### 5.5 编辑/删除权限
+
+```
+可编辑/删除 KB = 
+    用户是超级管理员
+    OR 用户是 KB 归属组织的 admin
+    OR 用户是 KB 的创建者（created_by = user.id）
+```
+
+---
+
+## 6. 后端实现方案
+
+### 6.1 类型定义变更
+
+#### 6.1.1 修改 `internal/types/organization.go` —— Organization 新增字段
+
+```go
+type Organization struct {
+    // ... 现有字段保持不变 ...
+
+    // 新增：层级结构
+    ParentID  *string    `json:"parent_id" gorm:"type:varchar(36);index"`
+    Path      string     `json:"path" gorm:"type:text"`
+    Level     int        `json:"level" gorm:"default:1"`
+    SortOrder int        `json:"sort_order" gorm:"default:0"`
+    TenantID  uint64     `json:"tenant_id" gorm:"index"`
+
+    // 新增：非数据库字段
+    Children  []*Organization `json:"children,omitempty" gorm:"-"`
+    UserCount int64           `json:"user_count,omitempty" gorm:"-"`
+}
+
+// 新增请求类型
+type CreateOrgTreeNodeRequest struct {
+    Name        string  `json:"name" binding:"required,max=255"`
+    Description string  `json:"description"`
+    ParentID    *string `json:"parent_id"`
+    SortOrder   int     `json:"sort_order"`
+}
+
+type UpdateOrgTreeNodeRequest struct {
+    Name        *string `json:"name" binding:"omitempty,max=255"`
+    Description *string `json:"description"`
+    ParentID    *string `json:"parent_id"`    // 移动节点
+    SortOrder   *int    `json:"sort_order"`
+}
+
+type OrgTreeNode struct {
+    Organization
+    Children []*OrgTreeNode `json:"children"`
+}
+```
+
+#### 6.1.2 修改 `internal/types/user.go` —— User 新增字段
+
+```go
+type User struct {
+    // ... 现有字段保持不变 ...
+
+    // 新增
+    IsSuperAdmin bool `json:"is_super_admin" gorm:"default:false"`
+}
+
+// UserInfo 新增
+type UserInfo struct {
+    // ... 现有字段 ...
+    IsSuperAdmin bool `json:"is_super_admin"`
+}
+```
+
+更新 `User.ToUserInfo()` 方法，将 `IsSuperAdmin` 包含在返回值中。
+
+#### 6.1.3 修改 `internal/types/knowledgebase.go` —— KnowledgeBase 新增字段
+
+```go
+// 可见性常量
+const (
+    KBVisibilityGlobal  = "global"   // 全局可见
+    KBVisibilityOrg     = "org"      // 组织内可见（含子组织）
+    KBVisibilityPrivate = "private"  // 仅创建者可见
+)
+
+type KnowledgeBase struct {
+    // ... 现有字段保持不变 ...
+
+    // 新增
+    CreatedBy      string `json:"created_by" gorm:"type:varchar(36)"`
+    Visibility     string `json:"visibility" gorm:"type:varchar(20);default:'org'"`
+    OrganizationID string `json:"organization_id" gorm:"type:varchar(36);index"`
+}
+```
+
+### 6.2 新增接口
+
+#### 6.2.1 `internal/types/interfaces/org_tree.go` —— 组织树接口
+
+```go
+package interfaces
+
+import "weknora/internal/types"
+
+// OrgTreeService 组织树管理服务（超级管理员专用）
+type OrgTreeService interface {
+    // 树管理
+    CreateNode(tenantID uint64, req *types.CreateOrgTreeNodeRequest, creatorID string) (*types.Organization, error)
+    UpdateNode(tenantID uint64, orgID string, req *types.UpdateOrgTreeNodeRequest) (*types.Organization, error)
+    DeleteNode(tenantID uint64, orgID string, force bool) error
+    MoveNode(tenantID uint64, orgID string, newParentID *string) error
+    GetTree(tenantID uint64) ([]*types.OrgTreeNode, error)
+
+    // 成员管理（超级管理员视角）
+    AssignUserToOrg(tenantID uint64, userID string, orgID string, role types.OrgMemberRole) error
+    RemoveUserFromOrg(tenantID uint64, userID string, orgID string) error
+    SetOrgAdmin(tenantID uint64, userID string, orgID string) error
+
+    // 查询
+    GetOrgAndDescendantIDs(tenantID uint64, orgID string) ([]string, error)
+    GetOrgAndAncestorIDs(tenantID uint64, orgID string) ([]string, error)
+    GetUserOrgIDs(tenantID uint64, userID string) ([]string, error)
+}
+```
+
+#### 6.2.2 `internal/types/interfaces/kb_visibility.go` —— 知识库可见性接口
+
+```go
+package interfaces
+
+import "weknora/internal/types"
+
+// KBVisibilityService 知识库可见性过滤服务
+type KBVisibilityService interface {
+    // 过滤用户可访问的知识库列表
+    FilterAccessibleKBs(tenantID uint64, userID string, kbs []*types.KnowledgeBase) ([]*types.KnowledgeBase, error)
+
+    // 检查用户是否可访问指定知识库
+    CanAccessKB(tenantID uint64, userID string, kb *types.KnowledgeBase) (bool, error)
+
+    // 检查用户是否可编辑/删除指定知识库
+    CanManageKB(tenantID uint64, userID string, kb *types.KnowledgeBase) (bool, error)
+}
+```
+
+### 6.3 Repository 层变更
+
+#### 6.3.1 `OrganizationRepository` 接口新增方法
+
+```go
+// 在现有 OrganizationRepository 接口中新增：
+GetByIDAndTenant(tenantID uint64, orgID string) (*types.Organization, error)
+ListByTenantID(tenantID uint64) ([]types.Organization, error)
+GetChildren(tenantID uint64, parentID string) ([]types.Organization, error)
+GetByPath(tenantID uint64, pathPrefix string) ([]types.Organization, error)
+UpdatePath(orgID string, path string, level int) error
+```
+
+#### 6.3.2 `KnowledgeBaseRepository` 接口新增方法
+
+```go
+// 在现有 KnowledgeBaseRepository 接口中新增：
+ListAccessibleKBs(tenantID uint64, userID string, userOrgIDs []string, isSuperAdmin bool) ([]*types.KnowledgeBase, error)
+ListKBsByOrganization(tenantID uint64, orgID string) ([]*types.KnowledgeBase, error)
+ListKBsByVisibility(tenantID uint64, visibility string) ([]*types.KnowledgeBase, error)
+```
+
+**`ListAccessibleKBs` 核心查询逻辑**：
+
+```go
+func (r *knowledgeBaseRepository) ListAccessibleKBs(
+    tenantID uint64, userID string, userOrgIDs []string, isSuperAdmin bool,
+) ([]*types.KnowledgeBase, error) {
+    var kbs []*types.KnowledgeBase
+
+    query := r.db.Model(&types.KnowledgeBase{}).
+        Where("tenant_id = ? AND is_temporary = false AND deleted_at IS NULL", tenantID)
+
+    if isSuperAdmin {
+        // 超级管理员看到所有
+        return kbs, query.Order("created_at DESC").Find(&kbs).Error
+    }
+
+    // 非超级管理员：按可见性过滤
+    // visibility='global' → 全部可见
+    // visibility='org' → 归属组织在用户组织树路径上
+    // visibility='private' → 仅创建者
+    // + kb_shares 授权
+
+    subQuery := r.db.Where("visibility = 'global'").
+        Or("visibility = 'private' AND created_by = ?", userID)
+
+    if len(userOrgIDs) > 0 {
+        // org 类型：用户所在组织的祖先链或后代链上的 KB
+        subQuery = subQuery.Or(
+            r.db.Where("visibility = 'org'").Where(
+                // 简化：先查用户所在组织及其所有祖先/后代的 ID
+                "organization_id IN (?)",
+                r.db.Model(&types.Organization{}).
+                    Select("id").
+                    Where("id IN ? OR path LIKE ANY(ARRAY(SELECT path || '/%' FROM organizations WHERE id IN ?))",
+                        userOrgIDs, userOrgIDs),
+            ),
+        )
+    }
+
+    return kbs, query.Where(subQuery).Order("created_at DESC").Find(&kbs).Error
+}
+```
+
+### 6.4 Service 层新增
+
+#### 6.4.1 新增 `internal/application/service/org_tree.go`
+
+```go
+package service
+
+type orgTreeService struct {
+    orgRepo  interfaces.OrganizationRepository
+    userRepo interfaces.UserRepository
+}
+
+func NewOrgTreeService(
+    orgRepo interfaces.OrganizationRepository,
+    userRepo interfaces.UserRepository,
+) interfaces.OrgTreeService {
+    return &orgTreeService{orgRepo: orgRepo, userRepo: userRepo}
+}
+
+func (s *orgTreeService) CreateNode(tenantID uint64, req *types.CreateOrgTreeNodeRequest, creatorID string) (*types.Organization, error) {
+    org := &types.Organization{
+        ID:       uuid.New().String(),
+        Name:     req.Name,
+        Description: req.Description,
+        OwnerID:  creatorID,
+        TenantID: tenantID,
+        SortOrder: req.SortOrder,
+    }
+
+    if req.ParentID != nil && *req.ParentID != "" {
+        parent, err := s.orgRepo.GetByIDAndTenant(tenantID, *req.ParentID)
+        if err != nil { return nil, fmt.Errorf("parent org not found: %w", err) }
+        org.ParentID = req.ParentID
+        org.Path = parent.Path + "/" + org.ID
+        org.Level = parent.Level + 1
+    } else {
+        org.Path = "/" + org.ID
+        org.Level = 1
+    }
+
+    if err := s.orgRepo.Create(org); err != nil { return nil, err }
+    return org, nil
+}
+
+func (s *orgTreeService) GetTree(tenantID uint64) ([]*types.OrgTreeNode, error) {
+    orgs, err := s.orgRepo.ListByTenantID(tenantID)
+    if err != nil { return nil, err }
+
+    nodeMap := make(map[string]*types.OrgTreeNode)
+    for i := range orgs {
+        nodeMap[orgs[i].ID] = &types.OrgTreeNode{
+            Organization: orgs[i],
+            Children:     make([]*types.OrgTreeNode, 0),
+        }
+    }
+
+    var roots []*types.OrgTreeNode
+    for _, node := range nodeMap {
+        if node.ParentID == nil || *node.ParentID == "" {
+            roots = append(roots, node)
+        } else if parent, ok := nodeMap[*node.ParentID]; ok {
+            parent.Children = append(parent.Children, node)
+        } else {
+            roots = append(roots, node)
+        }
+    }
+
+    sortOrgTree(roots)
+    return roots, nil
+}
+
+func (s *orgTreeService) GetOrgAndDescendantIDs(tenantID uint64, orgID string) ([]string, error) {
+    org, err := s.orgRepo.GetByIDAndTenant(tenantID, orgID)
+    if err != nil { return nil, err }
+    // 利用 path 前缀查所有子孙
+    descendants, err := s.orgRepo.GetByPath(tenantID, org.Path)
+    if err != nil { return nil, err }
+    ids := make([]string, 0, len(descendants)+1)
+    ids = append(ids, orgID)
+    for _, d := range descendants {
+        ids = append(ids, d.ID)
+    }
+    return ids, nil
+}
+```
+
+#### 6.4.2 新增 `internal/application/service/kb_visibility.go`
+
+```go
+package service
+
+type kbVisibilityService struct {
+    orgTreeService interfaces.OrgTreeService
+    orgRepo        interfaces.OrganizationRepository
+    userRepo       interfaces.UserRepository
+    kbShareService interfaces.KBShareService
+}
+
+func NewKBVisibilityService(
+    orgTreeSvc interfaces.OrgTreeService,
+    orgRepo    interfaces.OrganizationRepository,
+    userRepo   interfaces.UserRepository,
+    kbShareSvc interfaces.KBShareService,
+) interfaces.KBVisibilityService {
+    return &kbVisibilityService{
+        orgTreeService: orgTreeSvc,
+        orgRepo:        orgRepo,
+        userRepo:       userRepo,
+        kbShareService: kbShareSvc,
+    }
+}
+
+func (s *kbVisibilityService) CanAccessKB(tenantID uint64, userID string, kb *types.KnowledgeBase) (bool, error) {
+    user, err := s.userRepo.FindByID(userID)
+    if err != nil { return false, err }
+
+    // 1. 超级管理员
+    if user.IsSuperAdmin { return true, nil }
+
+    // 2. 全局可见
+    if kb.Visibility == types.KBVisibilityGlobal && kb.TenantID == tenantID {
+        return true, nil
+    }
+
+    // 3. 个人私有
+    if kb.Visibility == types.KBVisibilityPrivate && kb.CreatedBy == userID {
+        return true, nil
+    }
+
+    // 4. 组织内可见
+    if kb.Visibility == types.KBVisibilityOrg && kb.OrganizationID != "" {
+        userOrgIDs, _ := s.orgTreeService.GetUserOrgIDs(tenantID, userID)
+        // KB 归属组织的所有祖先 + 后代 ID
+        kbOrgTreeIDs, _ := s.orgTreeService.GetOrgAndDescendantIDs(tenantID, kb.OrganizationID)
+        kbOrgAncestorIDs, _ := s.orgTreeService.GetOrgAndAncestorIDs(tenantID, kb.OrganizationID)
+        allRelatedIDs := append(kbOrgTreeIDs, kbOrgAncestorIDs...)
+        for _, uOrgID := range userOrgIDs {
+            for _, relatedID := range allRelatedIDs {
+                if uOrgID == relatedID { return true, nil }
+            }
+        }
+    }
+
+    // 5. 跨组织共享（保留现有机制）
+    if hasAccess, _ := s.kbShareService.HasKBPermission(tenantID, userID, kb.ID); hasAccess {
+        return true, nil
+    }
+
+    return false, nil
+}
+
+func (s *kbVisibilityService) FilterAccessibleKBs(tenantID uint64, userID string, kbs []*types.KnowledgeBase) ([]*types.KnowledgeBase, error) {
+    var result []*types.KnowledgeBase
+    for _, kb := range kbs {
+        if ok, _ := s.CanAccessKB(tenantID, userID, kb); ok {
+            result = append(result, kb)
+        }
+    }
+    return result, nil
+}
+
+func (s *kbVisibilityService) CanManageKB(tenantID uint64, userID string, kb *types.KnowledgeBase) (bool, error) {
+    user, _ := s.userRepo.FindByID(userID)
+    // 超级管理员可管理所有
+    if user.IsSuperAdmin { return true, nil }
+    // 创建者可管理自己的
+    if kb.CreatedBy == userID { return true, nil }
+    // 归属组织的 admin 可管理
+    if kb.OrganizationID != "" {
+        role, _ := s.orgRepo.GetMember(kb.OrganizationID, userID)
+        if role != nil && role.Role == types.OrgRoleAdmin { return true, nil }
+    }
+    return false, nil
+}
+```
+
+### 6.5 Handler 层变更
+
+#### 6.5.1 新增 `internal/handler/org_tree.go` —— 组织树管理 Handler
+
+```go
+package handler
+
+type OrgTreeHandler struct {
+    orgTreeService interfaces.OrgTreeService
+}
+
+func NewOrgTreeHandler(orgTreeSvc interfaces.OrgTreeService) *OrgTreeHandler {
+    return &OrgTreeHandler{orgTreeService: orgTreeSvc}
+}
+
+func (h *OrgTreeHandler) GetOrgTree(c *gin.Context)    { /* ... */ }
+func (h *OrgTreeHandler) CreateOrgNode(c *gin.Context)  { /* ... */ }
+func (h *OrgTreeHandler) UpdateOrgNode(c *gin.Context)  { /* ... */ }
+func (h *OrgTreeHandler) DeleteOrgNode(c *gin.Context)  { /* ... */ }
+func (h *OrgTreeHandler) MoveOrgNode(c *gin.Context)    { /* ... */ }
+func (h *OrgTreeHandler) AssignUser(c *gin.Context)     { /* ... */ }
+func (h *OrgTreeHandler) RemoveUser(c *gin.Context)     { /* ... */ }
+func (h *OrgTreeHandler) SetOrgAdmin(c *gin.Context)    { /* ... */ }
+```
+
+#### 6.5.2 修改 `internal/handler/knowledgebase.go`
+
+**`CreateKnowledgeBase`** —— 增加 visibility + created_by + organization_id 处理：
+
+```go
+func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
+    // ... 现有绑定逻辑 ...
+
+    // 新增：设置创建者
+    if user, ok := c.Get(types.UserContextKey); ok {
+        req.CreatedBy = user.(*types.User).ID
+    }
+
+    // 新增：验证 visibility
+    if req.Visibility == "" {
+        req.Visibility = types.KBVisibilityPrivate  // 默认个人私有
+    }
+    switch req.Visibility {
+    case types.KBVisibilityGlobal:
+        // 需要超级管理员权限
+        if user, ok := c.Get(types.UserContextKey); ok {
+            if !user.(*types.User).IsSuperAdmin {
+                c.JSON(403, gin.H{"error": "只有超级管理员可创建全局知识库"})
+                return
+            }
+        }
+    case types.KBVisibilityOrg:
+        // 需要 organization_id 且用户是该组织 admin/editor
+        if req.OrganizationID == "" {
+            c.JSON(400, gin.H{"error": "组织内知识库必须指定 organization_id"})
+            return
+        }
+    case types.KBVisibilityPrivate:
+        // 所有用户均可
+    }
+
+    result, err := h.service.CreateKnowledgeBase(c.Request.Context(), &req)
+    // ...
+}
+```
+
+**`ListKnowledgeBases`** —— 增加可见性过滤：
+
+```go
+func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
+    // ... 现有逻辑 ...
+
+    kbs, err := h.service.ListKnowledgeBases(ctx)
+
+    // 新增：可见性过滤
+    if user, ok := c.Get(types.UserContextKey); ok {
+        userInfo := user.(*types.User)
+        kbs, err = h.kbVisibilityService.FilterAccessibleKBs(tenantID, userInfo.ID, kbs)
+        if err != nil { /* error handling */ }
+    }
+
+    c.JSON(200, kbs)
+}
+```
+
+### 6.6 中间件新增
+
+#### `internal/middleware/super_admin.go` —— 超级管理员中间件
+
+```go
+package middleware
+
+// RequireSuperAdmin 超级管理员权限中间件
+func RequireSuperAdmin() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        userInfo, exists := c.Get(types.UserContextKey)
+        if !exists {
+            c.AbortWithStatusJSON(401, gin.H{"error": "未认证"})
+            return
+        }
+        user := userInfo.(*types.User)
+        if !user.IsSuperAdmin {
+            c.AbortWithStatusJSON(403, gin.H{"error": "需要超级管理员权限"})
+            return
+        }
+        c.Next()
+    }
+}
+```
+
+### 6.7 路由注册
+
+```go
+// internal/router/router.go
+
+// 超级管理员专用路由
+superAdmin := v1.Group("", middleware.RequireSuperAdmin())
+{
+    // 组织树管理
+    orgTree := superAdmin.Group("/org-tree")
+    {
+        orgTree.GET("", orgTreeHandler.GetOrgTree)
+        orgTree.POST("", orgTreeHandler.CreateOrgNode)
+        orgTree.PUT("/:id", orgTreeHandler.UpdateOrgNode)
+        orgTree.DELETE("/:id", orgTreeHandler.DeleteOrgNode)
+        orgTree.PUT("/:id/move", orgTreeHandler.MoveOrgNode)
+        orgTree.POST("/:id/users", orgTreeHandler.AssignUser)
+        orgTree.DELETE("/:id/users/:user_id", orgTreeHandler.RemoveUser)
+        orgTree.PUT("/:id/admin", orgTreeHandler.SetOrgAdmin)
+    }
+}
+```
+
+### 6.8 DI 容器注册
+
+```go
+// internal/container/container.go 新增
+
+// Service
+container.Provide(service.NewOrgTreeService)
+container.Provide(service.NewKBVisibilityService)
+
+// Handler
+container.Provide(handler.NewOrgTreeHandler)
+```
+
+### 6.9 `KnowledgeBaseService.CreateKnowledgeBase` 变更
+
+```go
+func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context, kb *types.KnowledgeBase) (*types.KnowledgeBase, error) {
+    kb.ID = uuid.New().String()
+    kb.TenantID = ctx.Value(types.TenantIDContextKey).(uint64)
+
+    // 新增：从 context 获取创建者
+    if user, ok := ctx.Value(types.UserContextKey).(*types.User); ok && kb.CreatedBy == "" {
+        kb.CreatedBy = user.ID
+    }
+
+    // 新增：默认可见性
+    if kb.Visibility == "" {
+        kb.Visibility = types.KBVisibilityPrivate
+    }
+
+    // ... 现有逻辑（EnsureDefaults、创建向量表等）...
+
+    return kb, s.repo.CreateKnowledgeBase(ctx, kb)
+}
+```
+
+---
+
+## 7. 前端实现方案
+
+### 7.1 状态管理变更
+
+#### 新增 `frontend/src/stores/auth.ts` 字段
+
+```typescript
+// UserInfo 接口新增
+interface UserInfo {
+    // ... 现有字段 ...
+    is_super_admin: boolean    // 新增
+}
+
+// computed 新增
+const isSuperAdmin = computed(() => user.value?.is_super_admin ?? false)
+```
+
+#### 新增 `frontend/src/stores/orgTree.ts`
+
+```typescript
+import { defineStore } from 'pinia'
+
+export const useOrgTreeStore = defineStore('orgTree', () => {
+    const tree = ref<OrgTreeNode[]>([])
+
+    async function fetchTree() { /* GET /api/v1/org-tree */ }
+    async function createNode(data: CreateOrgTreeNodeReq) { /* POST /api/v1/org-tree */ }
+    async function updateNode(id: string, data: any) { /* PUT /api/v1/org-tree/:id */ }
+    async function deleteNode(id: string) { /* DELETE /api/v1/org-tree/:id */ }
+    async function moveNode(id: string, newParentId: string) { /* PUT /api/v1/org-tree/:id/move */ }
+
+    return { tree, fetchTree, createNode, updateNode, deleteNode, moveNode }
+})
+```
+
+### 7.2 路由变更
+
+```typescript
+// frontend/src/router/index.ts 新增
+
+// 超级管理员管理页面
+{
+    path: '/platform/admin',
+    name: 'admin',
+    component: () => import('@/views/admin/AdminLayout.vue'),
+    meta: { requiresAuth: true, requiresSuperAdmin: true },
+    children: [
+        {
+            path: 'org-tree',
+            name: 'orgTreeManage',
+            component: () => import('@/views/admin/OrgTreeManage.vue'),
+        },
+        {
+            path: 'members',
+            name: 'memberManage',
+            component: () => import('@/views/admin/MemberManage.vue'),
+        },
+    ]
+}
+```
+
+路由守卫增强：
+
+```typescript
+router.beforeEach(async (to, from, next) => {
+    // ... 现有逻辑 ...
+
+    // 新增：超级管理员页面检查
+    if (to.meta.requiresSuperAdmin && !authStore.isSuperAdmin) {
+        next({ name: 'knowledgeBaseList' })
+        return
+    }
+
+    next()
+})
+```
+
+### 7.3 菜单变更
+
+`frontend/src/components/menu.vue` —— 超级管理员专属菜单：
+
+```html
+<!-- 在现有菜单项之后，UserMenu 之前 -->
+<template v-if="authStore.isSuperAdmin">
+    <div class="menu-group-divider" />
+    <MenuItem icon="admin" label="组织管理" to="/platform/admin/org-tree" />
+    <MenuItem icon="members" label="人员管理" to="/platform/admin/members" />
+</template>
+```
+
+### 7.4 知识库创建弹窗变更
+
+知识库创建时新增可见性选择：
+
+```html
+<!-- 在创建知识库弹窗中新增 -->
+<t-form-item label="可见性">
+    <t-radio-group v-model="form.visibility">
+        <t-radio value="private">个人私有</t-radio>
+        <t-radio value="org" :disabled="!selectedOrg">组织内可见</t-radio>
+        <t-radio value="global" :disabled="!authStore.isSuperAdmin">全局可见</t-radio>
+    </t-radio-group>
+</t-form-item>
+
+<t-form-item v-if="form.visibility === 'org'" label="归属组织">
+    <OrgTreeSelector v-model="form.organization_id" />
+</t-form-item>
+```
+
+### 7.5 知识库列表页变更
+
+`frontend/src/views/knowledge/KnowledgeBaseList.vue` 左侧导航扩展：
+
+```
+现有空间导航                       扩展后
+┌──────────────┐                ┌──────────────┐
+│ 全部          │                │ 全部          │
+│ 我的          │                │ 我的（私有）   │  ← 个人知识库
+│ 共享的        │                │ 全局          │  ← 全局可见 KB
+│ ─────────── │                │ ─────────── │
+│ 空间A         │                │ 技术中心 ▸    │  ← 组织树（可展开）
+│ 空间B         │                │   ├ 前端组    │
+│              │                │   ├ 后端组    │
+│              │                │ 产品部 ▸      │
+│              │                │ ─────────── │
+│              │                │ 共享的        │  ← 保留现有共享空间
+│              │                │ 空间A         │
+└──────────────┘                └──────────────┘
+
+选中组织节点时：显示该组织及其子组织的 org 类型 KB
+选中"全局"时：显示 visibility='global' 的 KB
+选中"我的"时：显示 visibility='private' && created_by=me 的 KB
+选中"全部"时：显示用户可访问的所有 KB
+```
+
+### 7.6 新增页面清单
+
+```
+frontend/src/
+├── api/
+│   └── org-tree/
+│       └── index.ts              # 组织树管理 API
+├── stores/
+│   └── orgTree.ts                # 组织树状态管理
+├── views/
+│   └── admin/
+│       ├── AdminLayout.vue       # 管理页面布局
+│       ├── OrgTreeManage.vue     # 组织树管理页
+│       ├── MemberManage.vue      # 全局人员管理页
+│       └── components/
+│           ├── OrgTreeEditor.vue     # 组织搜编辑器
+│           ├── OrgTreeSelector.vue   # 组织选择器（树形下拉）
+│           └── MemberOrgDialog.vue   # 分配组织弹窗
+└── components/
+    └── OrgTreeNav.vue            # 知识库列表页的组织树导航组件
+```
+
+---
+
+## 8. API 设计
+
+### 8.1 组织树管理 API（超级管理员）
+
+> 前缀：`/api/v1/org-tree`  
+> 权限：`RequireSuperAdmin` 中间件
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| `GET` | `/org-tree` | 获取组织树 |
+| `POST` | `/org-tree` | 创建组织节点 |
+| `PUT` | `/org-tree/:id` | 更新组织节点 |
+| `DELETE` | `/org-tree/:id` | 删除组织节点 |
+| `PUT` | `/org-tree/:id/move` | 移动组织节点 |
+| `POST` | `/org-tree/:id/users` | 分配用户到组织 |
+| `DELETE` | `/org-tree/:id/users/:user_id` | 从组织移除用户 |
+| `PUT` | `/org-tree/:id/admin` | 设置组织管理员 |
+
+```json
+// POST /org-tree
+{
+    "name": "技术中心",
+    "description": "技术研发部门",
+    "parent_id": null,
+    "sort_order": 1
+}
+
+// GET /org-tree 响应
+[
+    {
+        "id": "uuid-1",
+        "name": "技术中心",
+        "parent_id": null,
+        "level": 1,
+        "sort_order": 1,
+        "user_count": 30,
+        "children": [
+            {
+                "id": "uuid-2",
+                "name": "前端组",
+                "parent_id": "uuid-1",
+                "level": 2,
+                "user_count": 8,
+                "children": []
+            }
+        ]
+    }
+]
+
+// PUT /org-tree/:id/move
+{
+    "new_parent_id": "uuid-3"
+}
+
+// POST /org-tree/:id/users
+{
+    "user_id": "uuid-user-1",
+    "role": "editor"
+}
+
+// PUT /org-tree/:id/admin
+{
+    "user_id": "uuid-user-2"
+}
+```
+
+### 8.2 知识库 API 变更
+
+**`POST /api/v1/knowledge-bases`** —— 创建知识库请求新增字段：
+
+```json
+{
+    "name": "API 设计规范",
+    "type": "document",
+    "description": "...",
+    "visibility": "org",              // NEW: "global" / "org" / "private"
+    "organization_id": "uuid-org-1",  // NEW: org 类型必填
+    // ... 其它现有字段 ...
+}
+```
+
+**`GET /api/v1/knowledge-bases`** —— 列表响应新增字段：
+
+```json
+[
+    {
+        "id": "uuid-kb-1",
+        "name": "API 设计规范",
+        "visibility": "org",              // NEW
+        "organization_id": "uuid-org-1",  // NEW
+        "created_by": "uuid-user-1",      // NEW
+        "organization_name": "后端组",     // NEW（非持久化，查询时填充）
+        // ... 其它现有字段 ...
+    }
+]
+```
+
+**`GET /api/v1/knowledge-bases`** —— 新增查询参数：
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `visibility` | string | 无 | 按可见性筛选：`global` / `org` / `private` |
+| `organization_id` | string | 无 | 按归属组织筛选 |
+| `include_descendants` | bool | true | 筛选组织时是否包含子组织的 KB |
+
+---
+
+## 9. 与现有功能的兼容性
+
+### 9.1 现有组织（共享空间）功能保留
+
+| 功能 | 处理方式 |
+|------|----------|
+| `/organizations` 路由 | **完全保留**，作为"共享空间"功能继续使用 |
+| 邀请码加入组织 | **保留**，用于共享空间的邀请 |
+| `kb_shares` 知识库共享 | **保留**，作为跨组织精细授权的补充 |
+| `agent_shares` Agent 共享 | **保留**，不受组织树影响 |
+| 组织搜索/发现 | **保留** |
+
+### 9.2 两套组织体系的区分
+
+| 维度 | 组织树（新增） | 共享空间（现有） |
+|------|---------------|-----------------|
+| **管理入口** | `/api/v1/org-tree`（超级管理员） | `/api/v1/organizations`（所有用户） |
+| **创建者** | 超级管理员 | 任何用户 |
+| **层级** | 树形（parent_id） | 扁平 |
+| **用途** | 组织架构管理 + KB 归属 | 跨用户资源共享 |
+| **标识** | `tenant_id` 非空 + `parent_id` 关系 | `tenant_id` 为空（独立于租户） |
+| **在前端** | 知识库列表左侧组织树导航 + 管理页面 | 顶部菜单"共享空间"入口 |
+
+> **关键区分**：组织树中的 Organization 记录 `tenant_id` 字段非空，表示归属于某租户的组织架构节点；而原有共享空间的 Organization 记录 `tenant_id` 为空（或为 0），表示独立的共享空间。
+
+### 9.3 数据迁移策略
+
+```sql
+-- 现有知识库：默认为组织内可见，created_by 为空
+-- 不影响现有功能，因为 FilterAccessibleKBs 会:
+--   · visibility='org' + organization_id='' → 仅 tenant 下所有人可见（向下兼容）
+--   · 超级管理员全部可见
+
+-- 为保持兼容性，当 organization_id 为空时的特殊处理：
+-- visibility='org' && organization_id='' → 视为当前租户内所有用户可见（等同旧行为）
+```
+
+---
+
+## 10. 实施计划
+
+### 阶段一：数据库 + 核心类型（2 天）
+
+| 任务 | 产出 |
+|------|------|
+| 编写并执行 000013 迁移脚本 | `migrations/versioned/000013_*.sql` |
+| 修改 Organization 类型（加 ParentID/Path/Level/SortOrder/TenantID） | `internal/types/organization.go` |
+| 修改 User 类型（加 IsSuperAdmin） | `internal/types/user.go` |
+| 修改 KnowledgeBase 类型（加 CreatedBy/Visibility/OrganizationID） | `internal/types/knowledgebase.go` |
+| 新增 OrgTreeService / KBVisibilityService 接口 | `internal/types/interfaces/` |
+
+### 阶段二：后端组织树功能（3 天）
+
+| 任务 | 产出 |
+|------|------|
+| OrganizationRepository 新增方法 | `internal/application/repository/organization.go` |
+| OrgTreeService 实现 | `internal/application/service/org_tree.go` |
+| OrgTreeHandler 实现 | `internal/handler/org_tree.go` |
+| SuperAdmin 中间件 | `internal/middleware/super_admin.go` |
+| 路由注册 | `internal/router/router.go` |
+| DI 注册 | `internal/container/container.go` |
+
+### 阶段三：后端知识库可见性（3 天）
+
+| 任务 | 产出 |
+|------|------|
+| KBVisibilityService 实现 | `internal/application/service/kb_visibility.go` |
+| KnowledgeBaseRepository 新增查询方法 | `internal/application/repository/knowledgebase.go` |
+| 修改 KnowledgeBaseHandler（创建 + 列表） | `internal/handler/knowledgebase.go` |
+| 修改 KnowledgeBaseService（创建逻辑） | `internal/application/service/knowledgebase.go` |
+| 修改 Auth Handler（/auth/me 返回 is_super_admin） | `internal/handler/auth.go` |
+
+### 阶段四：前端实现（5 天）
+
+| 任务 | 产出 |
+|------|------|
+| auth store 增加 isSuperAdmin | `frontend/src/stores/auth.ts` |
+| 组织树 store + API | `frontend/src/stores/orgTree.ts` + `frontend/src/api/org-tree/` |
+| 路由改造（admin 路由 + 守卫） | `frontend/src/router/index.ts` |
+| 菜单增加超管入口 | `frontend/src/components/menu.vue` |
+| 组织树管理页 | `frontend/src/views/admin/OrgTreeManage.vue` |
+| 人员管理页 | `frontend/src/views/admin/MemberManage.vue` |
+| 知识库创建弹窗增加可见性 | 现有 KB 创建组件 |
+| 知识库列表页增加组织树导航 | `KnowledgeBaseList.vue` + `OrgTreeNav.vue` |
+| 国际化 | `frontend/src/i18n/locales/*.ts` |
+
+### 阶段五：测试与优化（2 天）
+
+| 任务 | 说明 |
+|------|------|
+| 兼容性测试 | 验证现有共享空间功能不受影响 |
+| 可见性测试 | 验证三级可见性规则正确性 |
+| 子组织继承测试 | 验证组织树路径上的 KB 可见性传递 |
+| 超级管理员权限测试 | 验证管理员和普通用户的权限边界 |
+| 性能优化 | path 前缀查询优化、可见性过滤 SQL 优化 |
+
+**总预计工时：15 天**
+
+---
+
+## 11. 总结
+
+本方案的核心设计要点：
+
+1. **最小侵入式扩展**：在现有 Organization 模型上加 `parent_id` + `path` 实现层级化，不另建新表
+2. **双体系共存**：组织树（`tenant_id` 非空）和共享空间（`tenant_id` 为空）共用 `organizations` 表，通过 `tenant_id` 区分
+3. **三级可见性**：`global`（全局）、`org`（组织内，含子组织继承）、`private`（个人），通过 `visibility` + `organization_id` + `created_by` 三个字段实现
+4. **物化路径优化**：使用 `path` 字段存储组织路径，支持高效的子树查询和祖先链查询
+5. **向下兼容**：现有数据迁移后默认 `visibility='org'` + `organization_id=''`，等同于原有的租户级可见行为
+6. **权限分层**：超级管理员（is_super_admin）→ 组织管理员（org member admin）→ 普通用户，三级清晰
+
+---
+
+> **文档结束**

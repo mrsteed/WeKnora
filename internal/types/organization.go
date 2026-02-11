@@ -62,6 +62,16 @@ type Organization struct {
 	Searchable bool `json:"searchable" gorm:"default:false"`
 	// Max members allowed; 0 means no limit
 	MemberLimit int `json:"member_limit" gorm:"default:50"`
+	// Parent organization ID; NULL for top-level organizations
+	ParentID *string `json:"parent_id" gorm:"type:varchar(36)"`
+	// Materialized path: /root_id/parent_id/self_id
+	Path string `json:"path" gorm:"type:text;default:''"`
+	// Tree depth level (1 = top-level)
+	Level int `json:"level" gorm:"default:1"`
+	// Sort order among siblings
+	SortOrder int `json:"sort_order" gorm:"default:0"`
+	// Tenant ID that this org-tree node belongs to (NULL for shared spaces)
+	OrgTenantID *uint64 `json:"org_tenant_id" gorm:"column:tenant_id"`
 	// Creation time
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time
@@ -70,9 +80,10 @@ type Organization struct {
 	DeletedAt gorm.DeletedAt `json:"deleted_at" gorm:"index"`
 
 	// Associations (not stored in database)
-	Owner   *User                `json:"owner,omitempty" gorm:"foreignKey:OwnerID"`
-	Members []OrganizationMember `json:"members,omitempty" gorm:"foreignKey:OrganizationID"`
-	Shares  []KnowledgeBaseShare `json:"shares,omitempty" gorm:"foreignKey:OrganizationID"`
+	Owner    *User                `json:"owner,omitempty" gorm:"foreignKey:OwnerID"`
+	Members  []OrganizationMember `json:"members,omitempty" gorm:"foreignKey:OrganizationID"`
+	Shares   []KnowledgeBaseShare `json:"shares,omitempty" gorm:"foreignKey:OrganizationID"`
+	Children []*Organization      `json:"children,omitempty" gorm:"-"` // populated in-memory for tree queries
 }
 
 // TableName returns the table name for GORM
@@ -232,15 +243,15 @@ func (AgentShare) TableName() string {
 
 // SharedAgentInfo represents a shared agent with additional sharing info
 type SharedAgentInfo struct {
-	Agent             *CustomAgent  `json:"agent"`
-	ShareID           string        `json:"share_id"`
-	OrganizationID    string        `json:"organization_id"`
-	OrgName           string        `json:"org_name"`
-	Permission        OrgMemberRole `json:"permission"`
-	SourceTenantID    uint64        `json:"source_tenant_id"`
-	SharedAt          time.Time     `json:"shared_at"`
-	SharedByUserID    string        `json:"shared_by_user_id,omitempty"`
-	SharedByUsername  string        `json:"shared_by_username,omitempty"`
+	Agent            *CustomAgent  `json:"agent"`
+	ShareID          string        `json:"share_id"`
+	OrganizationID   string        `json:"organization_id"`
+	OrgName          string        `json:"org_name"`
+	Permission       OrgMemberRole `json:"permission"`
+	SourceTenantID   uint64        `json:"source_tenant_id"`
+	SharedAt         time.Time     `json:"shared_at"`
+	SharedByUserID   string        `json:"shared_by_user_id,omitempty"`
+	SharedByUsername string        `json:"shared_by_username,omitempty"`
 	// DisabledByMe: current tenant has hidden this shared agent from their conversation dropdown (per-user preference)
 	DisabledByMe bool `json:"disabled_by_me"`
 }
@@ -256,7 +267,7 @@ type SourceFromAgentInfo struct {
 // When SourceFromAgent is set, the KB is from a shared agent's config (no direct KB share); show as read-only and "来自智能体 XXX".
 type OrganizationSharedKnowledgeBaseItem struct {
 	SharedKnowledgeBaseInfo
-	IsMine          bool                `json:"is_mine"`
+	IsMine          bool                 `json:"is_mine"`
 	SourceFromAgent *SourceFromAgentInfo `json:"source_from_agent,omitempty"`
 }
 
@@ -371,7 +382,7 @@ type OrganizationResponse struct {
 	MemberLimit             int        `json:"member_limit"` // 0 = unlimited
 	MemberCount             int        `json:"member_count"`
 	ShareCount              int        `json:"share_count"`                // 共享到该组织的知识库数量
-	AgentShareCount         int        `json:"agent_share_count"`        // 共享到该组织的智能体数量
+	AgentShareCount         int        `json:"agent_share_count"`          // 共享到该组织的智能体数量
 	PendingJoinRequestCount int        `json:"pending_join_request_count"` // 待审批加入申请数（仅管理员可见）
 	IsOwner                 bool       `json:"is_owner"`
 	MyRole                  string     `json:"my_role,omitempty"`
@@ -427,10 +438,10 @@ type AgentShareResponse struct {
 	MyPermission     string    `json:"my_permission,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 	// Agent scope summary for list display (from agent config when available)
-	ScopeKB        string `json:"scope_kb,omitempty"`        // "all" | "selected" | "none"
+	ScopeKB        string `json:"scope_kb,omitempty"`       // "all" | "selected" | "none"
 	ScopeKBCount   int    `json:"scope_kb_count,omitempty"` // when selected
 	ScopeWebSearch bool   `json:"scope_web_search,omitempty"`
-	ScopeMCP       string `json:"scope_mcp,omitempty"`        // "all" | "selected" | "none"
+	ScopeMCP       string `json:"scope_mcp,omitempty"`       // "all" | "selected" | "none"
 	ScopeMCPCount  int    `json:"scope_mcp_count,omitempty"` // when selected
 	// Agent avatar (emoji or icon name) for list display
 	AgentAvatar string `json:"agent_avatar,omitempty"`
@@ -438,8 +449,8 @@ type AgentShareResponse struct {
 
 // ListOrganizationsResponse represents the response for listing organizations
 type ListOrganizationsResponse struct {
-	Organizations  []OrganizationResponse     `json:"organizations"`
-	Total          int64                      `json:"total"`
+	Organizations  []OrganizationResponse       `json:"organizations"`
+	Total          int64                        `json:"total"`
 	ResourceCounts *ResourceCountsByOrgResponse `json:"resource_counts,omitempty"` // 各空间内知识库/智能体数量，供列表侧栏展示
 }
 
@@ -511,4 +522,61 @@ type ListMembersResponse struct {
 type ListSharesResponse struct {
 	Shares []KnowledgeBaseShareResponse `json:"shares"`
 	Total  int64                        `json:"total"`
+}
+
+// =====================
+// Org-Tree Request Types
+// =====================
+
+// CreateOrgTreeNodeRequest represents a request to create an org-tree node
+type CreateOrgTreeNodeRequest struct {
+	Name        string  `json:"name" binding:"required,min=1,max=255"`
+	Description string  `json:"description" binding:"max=1000"`
+	ParentID    *string `json:"parent_id"`  // nil = top-level
+	SortOrder   int     `json:"sort_order"` // optional
+}
+
+// UpdateOrgTreeNodeRequest represents a request to update an org-tree node
+type UpdateOrgTreeNodeRequest struct {
+	Name        *string `json:"name" binding:"omitempty,min=1,max=255"`
+	Description *string `json:"description" binding:"omitempty,max=1000"`
+	SortOrder   *int    `json:"sort_order"`
+}
+
+// MoveOrgNodeRequest represents a request to move a node in the org tree
+type MoveOrgNodeRequest struct {
+	NewParentID *string `json:"new_parent_id"` // nil = move to top-level
+	SortOrder   int     `json:"sort_order"`
+}
+
+// OrgTreeNode represents a node in the organization tree (API response)
+type OrgTreeNode struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	ParentID    *string        `json:"parent_id"`
+	Path        string         `json:"path"`
+	Level       int            `json:"level"`
+	SortOrder   int            `json:"sort_order"`
+	MemberCount int            `json:"member_count"`
+	Children    []*OrgTreeNode `json:"children,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+// AssignUserToOrgRequest represents a request to assign a user to an organization
+type AssignUserToOrgRequest struct {
+	UserID string        `json:"user_id" binding:"required"`
+	Role   OrgMemberRole `json:"role" binding:"required"`
+}
+
+// RemoveUserFromOrgRequest represents a request to remove a user from an organization
+type RemoveUserFromOrgRequest struct {
+	UserID string `json:"user_id"`
+}
+
+// SetOrgAdminRequest represents a request to set/unset an organization admin
+type SetOrgAdminRequest struct {
+	UserID  string `json:"user_id" binding:"required"`
+	IsAdmin bool   `json:"is_admin"`
 }

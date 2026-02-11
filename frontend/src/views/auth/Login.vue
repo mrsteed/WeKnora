@@ -316,12 +316,13 @@
           </t-button>
         </t-form>
 
-            <div class="form-footer">
+            <!-- 公开注册已禁用，用户由管理员在组织人员管理中创建 -->
+            <!-- <div class="form-footer">
           <span>{{ $t('auth.noAccount') }}</span>
               <a href="#" @click.prevent="toggleMode" class="link-button">
             {{ $t('auth.registerNow') }}
           </a>
-        </div>
+        </div> -->
 
             <!-- Features list -->
             <div class="login-features">
@@ -627,6 +628,7 @@ const handleLogin = async () => {
             avatar: response.user.avatar,
             tenant_id: String(response.tenant.id) || '',
             can_access_all_tenants: response.user.can_access_all_tenants || false,
+            is_super_admin: response.user.is_super_admin || false,
             created_at: response.user.created_at || new Date().toISOString(),
             updated_at: response.user.updated_at || new Date().toISOString()
           })

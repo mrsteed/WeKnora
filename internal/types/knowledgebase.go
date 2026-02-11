@@ -15,6 +15,16 @@ const (
 	KnowledgeBaseTypeFAQ      = "faq"
 )
 
+// KnowledgeBase visibility constants
+const (
+	// KBVisibilityGlobal means the KB is visible to all users within the tenant
+	KBVisibilityGlobal = "global"
+	// KBVisibilityOrg means the KB is visible to members of the owning organization
+	KBVisibilityOrg = "org"
+	// KBVisibilityPrivate means the KB is visible only to the creator
+	KBVisibilityPrivate = "private"
+)
+
 // FAQIndexMode represents the FAQ index mode: only index questions or index questions and answers
 type FAQIndexMode string
 
@@ -49,6 +59,12 @@ type KnowledgeBase struct {
 	Description string `yaml:"description"             json:"description"`
 	// Tenant ID
 	TenantID uint64 `yaml:"tenant_id"               json:"tenant_id"`
+	// User ID of the creator
+	CreatedBy string `yaml:"created_by"              json:"created_by"              gorm:"type:varchar(36);default:''"`
+	// Visibility: global / org / private
+	Visibility string `yaml:"visibility"              json:"visibility"              gorm:"type:varchar(20);default:'private'"`
+	// Organization ID this KB belongs to (required when visibility = org)
+	OrganizationID string `yaml:"organization_id"         json:"organization_id"         gorm:"type:varchar(36)"`
 	// Chunking configuration
 	ChunkingConfig ChunkingConfig `yaml:"chunking_config"         json:"chunking_config"         gorm:"type:json"`
 	// Image processing configuration

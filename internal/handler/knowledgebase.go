@@ -26,6 +26,7 @@ type KnowledgeBaseHandler struct {
 	knowledgeService  interfaces.KnowledgeService
 	kbShareService    interfaces.KBShareService
 	agentShareService interfaces.AgentShareService
+	kbVisibility      interfaces.KBVisibilityService
 	asynqClient       *asynq.Client
 }
 
@@ -35,6 +36,7 @@ func NewKnowledgeBaseHandler(
 	knowledgeService interfaces.KnowledgeService,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
+	kbVisibility interfaces.KBVisibilityService,
 	asynqClient *asynq.Client,
 ) *KnowledgeBaseHandler {
 	return &KnowledgeBaseHandler{
@@ -42,6 +44,7 @@ func NewKnowledgeBaseHandler(
 		knowledgeService:  knowledgeService,
 		kbShareService:    kbShareService,
 		agentShareService: agentShareService,
+		kbVisibility:      kbVisibility,
 		asynqClient:       asynqClient,
 	}
 }
@@ -129,7 +132,42 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Creating knowledge base, name: %s", secutils.SanitizeForLog(req.Name))
+	// Set created_by from authenticated user
+	userIDVal, _ := c.Get(types.UserIDContextKey.String())
+	if userID, ok := userIDVal.(string); ok {
+		req.CreatedBy = userID
+	}
+
+	// Validate visibility rules
+	if req.Visibility == "" {
+		req.Visibility = types.KBVisibilityPrivate
+	}
+	switch req.Visibility {
+	case types.KBVisibilityGlobal:
+		// Global visibility requires super admin
+		userVal, ok := c.Get(types.UserContextKey.String())
+		if !ok {
+			c.Error(apperrors.NewUnauthorizedError("User context not found"))
+			return
+		}
+		if user, ok := userVal.(*types.User); ok && user != nil && !user.IsSuperAdmin {
+			c.Error(apperrors.NewForbiddenError("Only super admins can create global knowledge bases"))
+			return
+		}
+	case types.KBVisibilityOrg:
+		// Org visibility requires organization_id
+		if req.OrganizationID == "" {
+			c.Error(apperrors.NewBadRequestError("organization_id is required when visibility is 'org'"))
+			return
+		}
+	case types.KBVisibilityPrivate:
+		// No additional validation needed
+	default:
+		c.Error(apperrors.NewBadRequestError("Invalid visibility value, must be 'global', 'org', or 'private'"))
+		return
+	}
+
+	logger.Infof(ctx, "Creating knowledge base, name: %s, visibility: %s", secutils.SanitizeForLog(req.Name), req.Visibility)
 	// Create knowledge base using the service
 	kb, err := h.service.CreateKnowledgeBase(ctx, &req)
 	if err != nil {
@@ -353,12 +391,43 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 		return
 	}
 
-	// Get all knowledge bases for this tenant
-	kbs, err := h.service.ListKnowledgeBases(ctx)
-	if err != nil {
-		logger.ErrorWithFields(ctx, err, nil)
-		c.Error(apperrors.NewInternalServerError(err.Error()))
+	// Get user info for visibility filtering
+	userIDVal, _ := c.Get(types.UserIDContextKey.String())
+	userID, _ := userIDVal.(string)
+	currentTenantID := c.GetUint64(types.TenantIDContextKey.String())
+
+	if userID == "" {
+		c.Error(apperrors.NewUnauthorizedError("User ID not found in context"))
 		return
+	}
+
+	// Check if user is super admin
+	var isSuperAdmin bool
+	if userVal, ok := c.Get(types.UserContextKey.String()); ok {
+		if user, ok := userVal.(*types.User); ok && user != nil {
+			isSuperAdmin = user.IsSuperAdmin
+		}
+	}
+
+	// Use KBVisibilityService to filter knowledge bases by visibility rules
+	var kbs []*types.KnowledgeBase
+	if h.kbVisibility != nil {
+		var err error
+		kbs, err = h.kbVisibility.ListAccessibleKBs(ctx, userID, currentTenantID, isSuperAdmin)
+		if err != nil {
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(apperrors.NewInternalServerError(err.Error()))
+			return
+		}
+	} else {
+		// Fallback: get all knowledge bases for this tenant (legacy behavior)
+		var err error
+		kbs, err = h.service.ListKnowledgeBases(ctx)
+		if err != nil {
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(apperrors.NewInternalServerError(err.Error()))
+			return
+		}
 	}
 
 	// Get share counts for all knowledge bases

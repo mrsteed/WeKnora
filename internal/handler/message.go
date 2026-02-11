@@ -17,16 +17,19 @@ import (
 // It provides endpoints for loading and managing message history
 type MessageHandler struct {
 	MessageService interfaces.MessageService // Service that implements message business logic
+	SessionService interfaces.SessionService // Service for verifying session ownership
 }
 
 // NewMessageHandler creates a new message handler instance with the required service
 // Parameters:
 //   - messageService: Service that implements message business logic
+//   - sessionService: Service for verifying session ownership
 //
 // Returns a pointer to a new MessageHandler
-func NewMessageHandler(messageService interfaces.MessageService) *MessageHandler {
+func NewMessageHandler(messageService interfaces.MessageService, sessionService interfaces.SessionService) *MessageHandler {
 	return &MessageHandler{
 		MessageService: messageService,
+		SessionService: sessionService,
 	}
 }
 
@@ -53,6 +56,16 @@ func (h *MessageHandler) LoadMessages(c *gin.Context) {
 	sessionID := secutils.SanitizeForLog(c.Param("session_id"))
 	limit := secutils.SanitizeForLog(c.DefaultQuery("limit", "20"))
 	beforeTimeStr := secutils.SanitizeForLog(c.DefaultQuery("before_time", ""))
+
+	logger.Infof(ctx, "Loading messages params, session ID: %s, limit: %s, before time: %s",
+		sessionID, limit, beforeTimeStr)
+
+	// Verify session ownership: GetSession will filter by tenantID + userID
+	if _, err := h.SessionService.GetSession(ctx, sessionID); err != nil {
+		logger.Warnf(ctx, "Session ownership check failed for session %s: %v", sessionID, err)
+		c.Error(errors.NewNotFoundError("Session not found or access denied"))
+		return
+	}
 
 	logger.Infof(ctx, "Loading messages params, session ID: %s, limit: %s, before time: %s",
 		sessionID, limit, beforeTimeStr)
@@ -140,6 +153,13 @@ func (h *MessageHandler) DeleteMessage(c *gin.Context) {
 	// Get path parameters for session and message identification
 	sessionID := secutils.SanitizeForLog(c.Param("session_id"))
 	messageID := secutils.SanitizeForLog(c.Param("id"))
+
+	// Verify session ownership: GetSession will filter by tenantID + userID
+	if _, err := h.SessionService.GetSession(ctx, sessionID); err != nil {
+		logger.Warnf(ctx, "Session ownership check failed for session %s: %v", sessionID, err)
+		c.Error(errors.NewNotFoundError("Session not found or access denied"))
+		return
+	}
 
 	logger.Infof(ctx, "Deleting message, session ID: %s, message ID: %s", sessionID, messageID)
 

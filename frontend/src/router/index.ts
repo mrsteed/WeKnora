@@ -94,6 +94,27 @@ const router = createRouter({
           component: () => import("../views/organization/OrganizationList.vue"),
           meta: { requiresInit: true, requiresAuth: true }
         },
+        {
+          path: "admin",
+          name: "admin",
+          component: () => import("../views/admin/AdminLayout.vue"),
+          meta: { requiresInit: true, requiresAuth: true, requiresSuperAdmin: true },
+          redirect: "/platform/admin/org-tree",
+          children: [
+            {
+              path: "org-tree",
+              name: "orgTreeManage",
+              component: () => import("../views/admin/OrgTreeManage.vue"),
+              meta: { requiresInit: true, requiresAuth: true, requiresSuperAdmin: true }
+            },
+            {
+              path: "members",
+              name: "memberManage",
+              component: () => import("../views/admin/MemberManage.vue"),
+              meta: { requiresInit: true, requiresAuth: true, requiresSuperAdmin: true }
+            },
+          ],
+        },
       ],
     },
   ],
@@ -137,6 +158,14 @@ router.beforeEach(async (to, from, next) => {
     //   next('/login')
     //   return
     // }
+  }
+
+  // 检查超级管理员权限
+  if (to.meta.requiresSuperAdmin) {
+    if (!authStore.isSuperAdmin) {
+      next('/platform/knowledge-bases')
+      return
+    }
   }
 
   next()

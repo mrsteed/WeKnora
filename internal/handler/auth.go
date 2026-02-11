@@ -55,8 +55,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	logger.Info(ctx, "Start user registration")
 
-	// 通过环境变量 DISABLE_REGISTRATION=true 禁止注册
-	if os.Getenv("DISABLE_REGISTRATION") == "true" {
+	// 默认禁止公开注册，用户由管理员在组织人员管理中创建
+	// 若需开启公开注册，设置环境变量 ENABLE_REGISTRATION=true
+	if os.Getenv("ENABLE_REGISTRATION") != "true" {
 		logger.Warn(ctx, "Registration is disabled by DISABLE_REGISTRATION env")
 		appErr := errors.NewForbiddenError("Registration is disabled")
 		c.Error(appErr)

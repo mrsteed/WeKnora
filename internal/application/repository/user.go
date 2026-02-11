@@ -117,6 +117,18 @@ func (r *userRepository) SearchUsers(ctx context.Context, query string, limit in
 	return users, nil
 }
 
+// GetUserByPhone gets a user by phone number
+func (r *userRepository) GetUserByPhone(ctx context.Context, phone string) (*types.User, error) {
+	var user types.User
+	if err := r.db.WithContext(ctx).Where("phone = ?", phone).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
 // authTokenRepository implements auth token repository interface
 type authTokenRepository struct {
 	db *gorm.DB

@@ -7,6 +7,9 @@
         <!-- 租户选择器：仅在用户可切换租户时显示 -->
         <TenantSelector v-if="canAccessAllTenants" />
         
+        <!-- 组织切换器 -->
+        <OrganizationSwitcher />
+        
         <!-- 上半部分：知识库和对话 -->
         <div class="menu_top">
             <div class="menu_box" :class="{ 'has-submenu': item.children }" v-for="(item, index) in topMenuItems" :key="index">
@@ -72,6 +75,7 @@ import { useUIStore } from '@/stores/ui';
 import { MessagePlugin } from "tdesign-vue-next";
 import UserMenu from '@/components/UserMenu.vue';
 import TenantSelector from '@/components/TenantSelector.vue';
+import OrganizationSwitcher from '@/components/OrganizationSwitcher.vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
@@ -90,7 +94,7 @@ const submenuscrollContainer = ref(null);
 // 计算总页数
 const totalPages = computed(() => Math.ceil(total.value / page_size.value));
 const hasMore = computed(() => currentPage.value < totalPages.value);
-type MenuItem = { title: string; icon: string; path: string; childrenPath?: string; children?: any[] };
+type MenuItem = { title: string; icon: string; path: string; childrenPath?: string; children?: any[]; superAdminOnly?: boolean };
 const { menuArr } = storeToRefs(usemenuStore);
 let activeSubmenu = ref<string>('');
 
@@ -136,6 +140,8 @@ const isMenuItemActive = (itemPath: string): boolean => {
             return currentRoute === 'agentList';
         case 'organizations':
             return currentRoute === 'organizationList';
+        case 'admin':
+            return currentRoute === 'admin' || currentRoute === 'orgTreeManage' || currentRoute === 'memberManage';
         case 'creatChat':
             return currentRoute === 'kbCreatChat' || currentRoute === 'globalCreatChat';
         case 'settings':
@@ -163,9 +169,10 @@ const getIconActiveState = (itemPath: string) => {
 
 // 分离上下两部分菜单
 const topMenuItems = computed<MenuItem[]>(() => {
-    return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => 
-        item.path === 'knowledge-bases' || item.path === 'agents' || item.path === 'organizations' || item.path === 'creatChat'
-    );
+    return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => {
+        if (item.superAdminOnly && !authStore.isSuperAdmin) return false
+        return item.path === 'knowledge-bases' || item.path === 'agents' || item.path === 'organizations' || item.path === 'admin' || item.path === 'creatChat'
+    });
 });
 
 const bottomMenuItems = computed<MenuItem[]>(() => {
@@ -468,6 +475,9 @@ const handleMenuClick = async (path: string) => {
     } else if (path === 'organizations') {
         // 组织菜单项：跳转到组织列表
         router.push('/platform/organizations')
+    } else if (path === 'admin') {
+        // 超管菜单项：跳转到管理页
+        router.push('/platform/admin')
     } else if (path === 'settings') {
         // 设置菜单项：打开设置弹窗并跳转路由
         uiStore.openSettings()

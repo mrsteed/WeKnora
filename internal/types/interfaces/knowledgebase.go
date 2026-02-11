@@ -190,4 +190,24 @@ type KnowledgeBaseRepository interface {
 	// Returns:
 	//   - Possible errors such as record not existing, database errors, etc.
 	DeleteKnowledgeBase(ctx context.Context, id string) error
+
+	// ListAccessibleKBs returns knowledge bases accessible to a user considering visibility rules
+	// Parameters:
+	//   - ctx: Context information
+	//   - userID: User ID
+	//   - tenantID: Tenant ID
+	//   - orgIDs: Organization IDs the user belongs to (for org-visibility KBs)
+	// Returns:
+	//   - List of accessible knowledge base objects
+	//   - Possible errors
+	ListAccessibleKBs(ctx context.Context, userID string, tenantID uint64, orgIDs []string) ([]*types.KnowledgeBase, error)
+
+	// ListKBsByOrganization lists knowledge bases belonging to a specific organization
+	// Parameters:
+	//   - ctx: Context information
+	//   - organizationID: Organization ID
+	// Returns:
+	//   - List of knowledge base objects
+	//   - Possible errors
+	ListKBsByOrganization(ctx context.Context, organizationID string) ([]*types.KnowledgeBase, error)
 }

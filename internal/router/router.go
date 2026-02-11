@@ -50,6 +50,7 @@ type RouterParams struct {
 	CustomAgentHandler    *handler.CustomAgentHandler
 	SkillHandler          *handler.SkillHandler
 	OrganizationHandler   *handler.OrganizationHandler
+	OrgTreeHandler        *handler.OrgTreeHandler
 }
 
 // NewRouter 创建新的路由
@@ -110,12 +111,26 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterModelRoutes(v1, params.ModelHandler)
 		RegisterEvaluationRoutes(v1, params.EvaluationHandler)
 		RegisterInitializationRoutes(v1, params.InitializationHandler)
-		RegisterSystemRoutes(v1, params.SystemHandler)
 		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler)
 		RegisterWebSearchRoutes(v1, params.WebSearchHandler)
 		RegisterCustomAgentRoutes(v1, params.CustomAgentHandler)
 		RegisterSkillRoutes(v1, params.SkillHandler)
 		RegisterOrganizationRoutes(v1, params.OrganizationHandler)
+
+		// Super admin routes (require super admin privileges)
+		superAdmin := v1.Group("", middleware.RequireSuperAdmin())
+		{
+			RegisterOrgTreeRoutes(superAdmin, params.OrgTreeHandler)
+			// Model write operations (super admin only)
+			RegisterModelWriteRoutes(superAdmin, params.ModelHandler)
+			// System info routes (super admin only)
+			RegisterSystemRoutes(superAdmin, params.SystemHandler)
+			// Tenant KV write route (super admin only)
+			RegisterTenantWriteRoutes(superAdmin, params.TenantHandler)
+		}
+
+		// User org-tree membership route (accessible by all authenticated users)
+		v1.GET("/my-organizations", params.OrgTreeHandler.GetMyOrganizations)
 	}
 
 	return r
@@ -295,7 +310,7 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
 	}
 }
 
-// RegisterTenantRoutes 注册租户相关的路由
+// RegisterTenantRoutes registers tenant read routes (accessible to all authenticated users)
 func RegisterTenantRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
 	// 添加获取所有租户的路由（需要跨租户权限）
 	r.GET("/tenants/all", handler.ListAllTenants)
@@ -310,26 +325,36 @@ func RegisterTenantRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
 		tenantRoutes.DELETE("/:id", handler.DeleteTenant)
 		tenantRoutes.GET("", handler.ListTenants)
 
-		// Generic KV configuration management (tenant-level)
-		// Tenant ID is obtained from authentication context
+		// Tenant KV read (all authenticated users)
 		tenantRoutes.GET("/kv/:key", handler.GetTenantKV)
-		tenantRoutes.PUT("/kv/:key", handler.UpdateTenantKV)
 	}
 }
 
-// RegisterModelRoutes 注册模型相关的路由
+// RegisterTenantWriteRoutes registers tenant KV write routes (super admin only)
+func RegisterTenantWriteRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
+	r.PUT("/tenants/kv/:key", handler.UpdateTenantKV)
+}
+
+// RegisterModelRoutes registers model read routes (accessible to all authenticated users)
 func RegisterModelRoutes(r *gin.RouterGroup, handler *handler.ModelHandler) {
-	// 模型路由组
+	// 模型路由组 (read-only for all users)
 	models := r.Group("/models")
 	{
 		// 获取模型厂商列表
 		models.GET("/providers", handler.ListModelProviders)
-		// 创建模型
-		models.POST("", handler.CreateModel)
 		// 获取模型列表
 		models.GET("", handler.ListModels)
 		// 获取单个模型
 		models.GET("/:id", handler.GetModel)
+	}
+}
+
+// RegisterModelWriteRoutes registers model write routes (super admin only)
+func RegisterModelWriteRoutes(r *gin.RouterGroup, handler *handler.ModelHandler) {
+	models := r.Group("/models")
+	{
+		// 创建模型
+		models.POST("", handler.CreateModel)
 		// 更新模型
 		models.PUT("/:id", handler.UpdateModel)
 		// 删除模型
@@ -534,4 +559,39 @@ func RegisterOrganizationRoutes(r *gin.RouterGroup, orgHandler *handler.Organiza
 	// Shared agents route
 	r.GET("/shared-agents", orgHandler.ListSharedAgents)
 	r.POST("/shared-agents/disabled", orgHandler.SetSharedAgentDisabledByMe)
+}
+
+// RegisterOrgTreeRoutes registers organization tree management routes (super admin only)
+func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
+	orgTree := r.Group("/org-tree")
+	{
+		// Search users for assignment (must be before /:id to avoid conflict)
+		orgTree.GET("/search-users", orgTreeHandler.SearchUsersForAssign)
+		// Set/unset super admin (must be before /:id to avoid conflict)
+		orgTree.PUT("/super-admin", orgTreeHandler.SetSuperAdmin)
+		// Get the full organization tree
+		orgTree.GET("", orgTreeHandler.GetOrgTree)
+		// Create a new organization tree node
+		orgTree.POST("", orgTreeHandler.CreateOrgNode)
+		// Get a single tree node
+		orgTree.GET("/:id", orgTreeHandler.GetOrgNode)
+		// Update a tree node
+		orgTree.PUT("/:id", orgTreeHandler.UpdateOrgNode)
+		// Delete a tree node
+		orgTree.DELETE("/:id", orgTreeHandler.DeleteOrgNode)
+		// Move a tree node
+		orgTree.POST("/:id/move", orgTreeHandler.MoveOrgNode)
+		// List members of an organization
+		orgTree.GET("/:id/members", orgTreeHandler.ListOrgMembers)
+		// Assign a user to an organization
+		orgTree.POST("/:id/members", orgTreeHandler.AssignUser)
+		// Create a new user and assign to an organization
+		orgTree.POST("/:id/create-user", orgTreeHandler.CreateUserInOrg)
+		// Update a user in an organization
+		orgTree.PUT("/:id/users/:user_id", orgTreeHandler.UpdateUserInOrg)
+		// Remove a user from an organization
+		orgTree.DELETE("/:id/members/:user_id", orgTreeHandler.RemoveUser)
+		// Set/unset org admin
+		orgTree.PUT("/:id/admin", orgTreeHandler.SetOrgAdmin)
+	}
 }

@@ -126,6 +126,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
 import SystemInfo from './SystemInfo.vue'
 import TenantInfo from './TenantInfo.vue'
@@ -139,18 +140,20 @@ import WebSearchSettings from './WebSearchSettings.vue'
 const route = useRoute()
 const router = useRouter()
 const uiStore = useUIStore()
+const authStore = useAuthStore()
 const { t } = useI18n()
 
 const currentSection = ref<string>('general')
 const currentSubSection = ref<string>('')
 const expandedMenus = ref<string[]>([])
 
-const navItems = computed(() => [
-  { key: 'general', icon: 'setting', label: t('general.title') },
+const allNavItems = computed(() => [
+  { key: 'general', icon: 'setting', label: t('general.title'), superAdminOnly: false },
   { 
     key: 'models', 
     icon: 'control-platform', 
     label: t('settings.modelManagement'),
+    superAdminOnly: true,
     children: [
       { key: 'chat', label: t('model.llmModel') },
       { key: 'embedding', label: t('model.embeddingModel') },
@@ -158,13 +161,17 @@ const navItems = computed(() => [
       { key: 'vllm', label: t('model.vlmModel') }
     ]
   },
-  { key: 'ollama', icon: 'server', label: 'Ollama' },
-  { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig')  },
-  { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
-  { key: 'system', icon: 'info-circle', label: t('settings.systemSettings') },
-  { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
-  { key: 'api', icon: 'secured', label: t('settings.apiInfo') }
+  { key: 'ollama', icon: 'server', label: 'Ollama', superAdminOnly: true },
+  { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig'), superAdminOnly: true },
+  { key: 'mcp', icon: 'tools', label: t('settings.mcpService'), superAdminOnly: true },
+  { key: 'system', icon: 'info-circle', label: t('settings.systemSettings'), superAdminOnly: true },
+  { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo'), superAdminOnly: true },
+  { key: 'api', icon: 'secured', label: t('settings.apiInfo'), superAdminOnly: false }
 ])
+
+const navItems = computed(() =>
+  allNavItems.value.filter(item => !item.superAdminOnly || authStore.isSuperAdmin)
+)
 
 // 导航项点击处理
 const handleNavClick = (item: any) => {

@@ -65,6 +65,8 @@ type OrganizationRepository interface {
 	GetMember(ctx context.Context, orgID string, userID string) (*types.OrganizationMember, error)
 	ListMembersByUserForOrgs(ctx context.Context, userID string, orgIDs []string) (map[string]*types.OrganizationMember, error)
 	CountMembers(ctx context.Context, orgID string) (int64, error)
+	// BatchCountMembers counts members for multiple organizations in a single query
+	BatchCountMembers(ctx context.Context, orgIDs []string) (map[string]int, error)
 
 	// Invite code
 	UpdateInviteCode(ctx context.Context, orgID string, inviteCode string, expiresAt *time.Time) error
@@ -77,6 +79,15 @@ type OrganizationRepository interface {
 	ListJoinRequests(ctx context.Context, orgID string, status types.JoinRequestStatus) ([]*types.OrganizationJoinRequest, error)
 	CountJoinRequests(ctx context.Context, orgID string, status types.JoinRequestStatus) (int64, error)
 	UpdateJoinRequestStatus(ctx context.Context, id string, status types.JoinRequestStatus, reviewedBy string, reviewMessage string) error
+
+	// Org-tree operations
+	GetByIDAndTenant(ctx context.Context, id string, tenantID uint64) (*types.Organization, error)
+	ListByTenantID(ctx context.Context, tenantID uint64) ([]*types.Organization, error)
+	GetChildren(ctx context.Context, parentID string) ([]*types.Organization, error)
+	GetDescendantsByPath(ctx context.Context, pathPrefix string) ([]*types.Organization, error)
+	UpdatePath(ctx context.Context, id string, path string, level int) error
+	UpdatePathBatch(ctx context.Context, oldPathPrefix string, newPathPrefix string, levelDelta int) error
+	GetByIDs(ctx context.Context, ids []string) ([]*types.Organization, error)
 }
 
 // KBShareService defines the knowledge base sharing service interface

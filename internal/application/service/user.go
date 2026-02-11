@@ -127,6 +127,70 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	return user, nil
 }
 
+// CreateUserByAdmin creates a new user by admin (no default tenant creation, uses the admin's tenantID)
+func (s *userService) CreateUserByAdmin(ctx context.Context, req *types.CreateUserInOrgRequest, tenantID uint64) (*types.User, error) {
+	logger.Info(ctx, "Admin creating a new user")
+
+	// At least one of email or phone is required
+	if req.Email == "" && req.Phone == "" {
+		return nil, errors.New("at least one of email or phone is required")
+	}
+
+	if req.Username == "" || req.Password == "" {
+		return nil, errors.New("username and password are required")
+	}
+
+	// Check username uniqueness
+	existingUser, _ := s.userRepo.GetUserByUsername(ctx, req.Username)
+	if existingUser != nil {
+		return nil, errors.New("user with this username already exists")
+	}
+
+	// Check email uniqueness (if provided)
+	if req.Email != "" {
+		existingUser, _ = s.userRepo.GetUserByEmail(ctx, req.Email)
+		if existingUser != nil {
+			return nil, errors.New("user with this email already exists")
+		}
+	}
+
+	// Check phone uniqueness (if provided)
+	if req.Phone != "" {
+		existingUser, _ = s.userRepo.GetUserByPhone(ctx, req.Phone)
+		if existingUser != nil {
+			return nil, errors.New("user with this phone already exists")
+		}
+	}
+
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to hash password: %v", err)
+		return nil, errors.New("failed to process password")
+	}
+
+	// Create user with tenant ID from the admin
+	user := &types.User{
+		ID:           uuid.New().String(),
+		Username:     req.Username,
+		Email:        req.Email,
+		Phone:        req.Phone,
+		PasswordHash: string(hashedPassword),
+		TenantID:     tenantID,
+		IsActive:     true,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	if err := s.userRepo.CreateUser(ctx, user); err != nil {
+		logger.Errorf(ctx, "Failed to create user: %v", err)
+		return nil, errors.New("failed to create user")
+	}
+
+	logger.Info(ctx, "User created by admin successfully")
+	return user, nil
+}
+
 // Login authenticates a user and returns tokens
 func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*types.LoginResponse, error) {
 	logger.Info(ctx, "Start user login")
@@ -211,6 +275,11 @@ func (s *userService) GetUserByEmail(ctx context.Context, email string) (*types.
 // GetUserByUsername gets a user by username
 func (s *userService) GetUserByUsername(ctx context.Context, username string) (*types.User, error) {
 	return s.userRepo.GetUserByUsername(ctx, username)
+}
+
+// GetUserByPhone gets a user by phone number
+func (s *userService) GetUserByPhone(ctx context.Context, phone string) (*types.User, error) {
+	return s.userRepo.GetUserByPhone(ctx, phone)
 }
 
 // UpdateUser updates user information

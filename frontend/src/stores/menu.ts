@@ -11,6 +11,7 @@ interface MenuItem {
   path: string
   childrenPath?: string
   children?: MenuChild[]
+  superAdminOnly?: boolean
 }
 
 const createMenuChildren = () => reactive<MenuChild[]>([])
@@ -20,6 +21,7 @@ export const useMenuStore = defineStore('menuStore', () => {
     { title: '', titleKey: 'menu.knowledgeBase', icon: 'zhishiku', path: 'knowledge-bases' },
     { title: '', titleKey: 'menu.agents', icon: 'agent', path: 'agents' },
     { title: '', titleKey: 'menu.organizations', icon: 'organization', path: 'organizations' },
+    { title: '', titleKey: 'menu.admin', icon: 'setting', path: 'admin', superAdminOnly: true },
     {
       title: '',
       titleKey: 'menu.chat',
@@ -54,16 +56,18 @@ export const useMenuStore = defineStore('menuStore', () => {
     }
   )
 
+  const findChatMenu = () => menuArr.find(item => item.path === 'creatChat')
+
   const clearMenuArr = () => {
-    const chatMenu = menuArr[3]
+    const chatMenu = findChatMenu()
     if (chatMenu && chatMenu.children) {
       chatMenu.children = createMenuChildren()
     }
   }
 
   const updatemenuArr = (obj: any) => {
-    const chatMenu = menuArr[3]
-    if (!chatMenu.children) {
+    const chatMenu = findChatMenu()
+    if (!chatMenu || !chatMenu.children) {
       chatMenu.children = createMenuChildren()
     }
     const exists = chatMenu.children.some((item: MenuChild) => item.id === obj.id)
@@ -73,16 +77,16 @@ export const useMenuStore = defineStore('menuStore', () => {
   }
 
   const updataMenuChildren = (item: MenuChild) => {
-    const chatMenu = menuArr[3]
-    if (!chatMenu.children) {
+    const chatMenu = findChatMenu()
+    if (!chatMenu || !chatMenu.children) {
       chatMenu.children = createMenuChildren()
     }
     chatMenu.children.unshift(item)
   }
 
   const updatasessionTitle = (sessionId: string, title: string) => {
-    const chatMenu = menuArr[3]
-    chatMenu.children?.forEach((item: MenuChild) => {
+    const chatMenu = findChatMenu()
+    chatMenu?.children?.forEach((item: MenuChild) => {
       if (item.id === sessionId) {
         item.title = title
         item.isNoTitle = false

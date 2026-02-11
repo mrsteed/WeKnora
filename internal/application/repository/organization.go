@@ -28,8 +28,40 @@ func NewOrganizationRepository(db *gorm.DB) interfaces.OrganizationRepository {
 	return &organizationRepository{db: db}
 }
 
+// NewOrgTreeRepository creates a new org-tree repository (shares the same implementation)
+func NewOrgTreeRepository(db *gorm.DB) interfaces.OrgTreeRepository {
+	return &organizationRepository{db: db}
+}
+
 // Create creates a new organization
 func (r *organizationRepository) Create(ctx context.Context, org *types.Organization) error {
+	// If invite_code is empty string, set it to nil BEFORE inserting
+	// to avoid unique constraint violations (empty string would trigger the unique index)
+	if org.InviteCode == "" {
+		// Use sql.NullString or set the field via a map to insert NULL
+		return r.db.WithContext(ctx).Model(&types.Organization{}).Create(map[string]interface{}{
+			"id":                        org.ID,
+			"name":                      org.Name,
+			"description":               org.Description,
+			"avatar":                    org.Avatar,
+			"owner_id":                  org.OwnerID,
+			"invite_code":               nil, // Explicitly set to NULL
+			"invite_code_expires_at":    org.InviteCodeExpiresAt,
+			"invite_code_validity_days": org.InviteCodeValidityDays,
+			"require_approval":          org.RequireApproval,
+			"searchable":                org.Searchable,
+			"member_limit":              org.MemberLimit,
+			"parent_id":                 org.ParentID,
+			"path":                      org.Path,
+			"level":                     org.Level,
+			"sort_order":                org.SortOrder,
+			"tenant_id":                 org.OrgTenantID,
+			"created_at":                org.CreatedAt,
+			"updated_at":                org.UpdatedAt,
+			"deleted_at":                org.DeletedAt,
+		}).Error
+	}
+	// Normal insert for organizations with invite codes
 	return r.db.WithContext(ctx).Create(org).Error
 }
 
@@ -99,7 +131,7 @@ func (r *organizationRepository) ListSearchable(ctx context.Context, query strin
 // Update updates an organization (Select ensures zero values like invite_code_validity_days=0 are persisted)
 func (r *organizationRepository) Update(ctx context.Context, org *types.Organization) error {
 	return r.db.WithContext(ctx).Model(&types.Organization{}).Where("id = ?", org.ID).
-		Select("name", "description", "avatar", "require_approval", "searchable", "invite_code_validity_days", "member_limit", "updated_at").
+		Select("name", "description", "avatar", "require_approval", "searchable", "invite_code_validity_days", "member_limit", "parent_id", "sort_order", "updated_at").
 		Updates(org).Error
 }
 
@@ -216,6 +248,32 @@ func (r *organizationRepository) CountMembers(ctx context.Context, orgID string)
 	return count, err
 }
 
+// BatchCountMembers counts members for multiple organizations in a single query
+func (r *organizationRepository) BatchCountMembers(ctx context.Context, orgIDs []string) (map[string]int, error) {
+	if len(orgIDs) == 0 {
+		return make(map[string]int), nil
+	}
+	type countResult struct {
+		OrganizationID string `gorm:"column:organization_id"`
+		Count          int    `gorm:"column:count"`
+	}
+	var results []countResult
+	err := r.db.WithContext(ctx).
+		Model(&types.OrganizationMember{}).
+		Select("organization_id, COUNT(*) as count").
+		Where("organization_id IN ?", orgIDs).
+		Group("organization_id").
+		Find(&results).Error
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int, len(results))
+	for _, r := range results {
+		counts[r.OrganizationID] = r.Count
+	}
+	return counts, nil
+}
+
 // UpdateInviteCode updates the invite code and optional expiry for an organization (expiresAt nil = never expire)
 func (r *organizationRepository) UpdateInviteCode(ctx context.Context, orgID string, inviteCode string, expiresAt *time.Time) error {
 	updates := map[string]interface{}{"invite_code": inviteCode, "invite_code_expires_at": expiresAt}
@@ -322,4 +380,158 @@ func (r *organizationRepository) UpdateJoinRequestStatus(ctx context.Context, id
 			"reviewed_at":    gorm.Expr("NOW()"),
 			"review_message": reviewMessage,
 		}).Error
+}
+
+// --------------------------------
+// Org-tree operations
+// --------------------------------
+
+// GetByIDAndTenant gets an organization by ID within a specific tenant
+func (r *organizationRepository) GetByIDAndTenant(ctx context.Context, id string, tenantID uint64) (*types.Organization, error) {
+	var org types.Organization
+	if err := r.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
+		First(&org).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrOrganizationNotFound
+		}
+		return nil, err
+	}
+	return &org, nil
+}
+
+// ListByTenantID lists all organizations belonging to a tenant (org-tree nodes)
+func (r *organizationRepository) ListByTenantID(ctx context.Context, tenantID uint64) ([]*types.Organization, error) {
+	var orgs []*types.Organization
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ?", tenantID).
+		Order("level ASC, sort_order ASC, created_at ASC").
+		Find(&orgs).Error; err != nil {
+		return nil, err
+	}
+	return orgs, nil
+}
+
+// GetChildren returns direct children of an organization
+func (r *organizationRepository) GetChildren(ctx context.Context, parentID string) ([]*types.Organization, error) {
+	var orgs []*types.Organization
+	if err := r.db.WithContext(ctx).
+		Where("parent_id = ?", parentID).
+		Order("sort_order ASC, created_at ASC").
+		Find(&orgs).Error; err != nil {
+		return nil, err
+	}
+	return orgs, nil
+}
+
+// GetDescendantsByPath returns all descendants by matching path prefix
+func (r *organizationRepository) GetDescendantsByPath(ctx context.Context, pathPrefix string) ([]*types.Organization, error) {
+	var orgs []*types.Organization
+	if err := r.db.WithContext(ctx).
+		Where("path LIKE ?", pathPrefix+"/%").
+		Order("level ASC, sort_order ASC").
+		Find(&orgs).Error; err != nil {
+		return nil, err
+	}
+	return orgs, nil
+}
+
+// GetDescendantsByPathAndTenant returns all descendants by matching path prefix within a specific tenant
+func (r *organizationRepository) GetDescendantsByPathAndTenant(ctx context.Context, pathPrefix string, tenantID uint64) ([]*types.Organization, error) {
+	var orgs []*types.Organization
+	if err := r.db.WithContext(ctx).
+		Where("path LIKE ? AND tenant_id = ?", pathPrefix+"/%", tenantID).
+		Order("level ASC, sort_order ASC").
+		Find(&orgs).Error; err != nil {
+		return nil, err
+	}
+	return orgs, nil
+}
+
+// GetDescendantsByPathsAndTenant returns all descendants matching any of the path prefixes within a tenant (batch optimization)
+func (r *organizationRepository) GetDescendantsByPathsAndTenant(ctx context.Context, pathPrefixes []string, tenantID uint64) ([]*types.Organization, error) {
+	if len(pathPrefixes) == 0 {
+		return nil, nil
+	}
+	var orgs []*types.Organization
+	query := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID)
+	// Build OR conditions for each path prefix
+	pathConditions := r.db.WithContext(ctx)
+	for i, prefix := range pathPrefixes {
+		if i == 0 {
+			pathConditions = pathConditions.Where("path LIKE ?", prefix+"/%")
+		} else {
+			pathConditions = pathConditions.Or("path LIKE ?", prefix+"/%")
+		}
+	}
+	query = query.Where(pathConditions)
+	if err := query.Order("level ASC, sort_order ASC").Find(&orgs).Error; err != nil {
+		return nil, err
+	}
+	return orgs, nil
+}
+
+// UpdatePath updates the path and level for an organization
+func (r *organizationRepository) UpdatePath(ctx context.Context, id string, path string, level int) error {
+	return r.db.WithContext(ctx).
+		Model(&types.Organization{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"path":  path,
+			"level": level,
+		}).Error
+}
+
+// UpdatePathBatch updates path and level for all organizations matching old path prefix
+func (r *organizationRepository) UpdatePathBatch(ctx context.Context, oldPathPrefix string, newPathPrefix string, levelDelta int) error {
+	// Use SQL REPLACE for path and arithmetic for level
+	return r.db.WithContext(ctx).
+		Model(&types.Organization{}).
+		Where("path LIKE ?", oldPathPrefix+"/%").
+		Updates(map[string]interface{}{
+			"path":  gorm.Expr("REPLACE(path, ?, ?)", oldPathPrefix, newPathPrefix),
+			"level": gorm.Expr("level + ?", levelDelta),
+		}).Error
+}
+
+// MoveNodeInTx atomically updates a node's path/level, its descendants' paths/levels, and its parent_id/sort_order
+func (r *organizationRepository) MoveNodeInTx(ctx context.Context, nodeID string, newPath string, newLevel int, oldPathPrefix string, levelDelta int, parentID *string, sortOrder int) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Step 1: Update self path and level
+		if err := tx.Model(&types.Organization{}).Where("id = ?", nodeID).Updates(map[string]interface{}{
+			"path":  newPath,
+			"level": newLevel,
+		}).Error; err != nil {
+			return err
+		}
+		// Step 2: Batch update descendants' paths and levels
+		if err := tx.Model(&types.Organization{}).Where("path LIKE ?", oldPathPrefix+"/%").Updates(map[string]interface{}{
+			"path":  gorm.Expr("REPLACE(path, ?, ?)", oldPathPrefix, newPath),
+			"level": gorm.Expr("level + ?", levelDelta),
+		}).Error; err != nil {
+			return err
+		}
+		// Step 3: Update parent_id and sort_order
+		if err := tx.Model(&types.Organization{}).Where("id = ?", nodeID).Updates(map[string]interface{}{
+			"parent_id":  parentID,
+			"sort_order": sortOrder,
+		}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// GetByIDs returns organizations by a list of IDs
+func (r *organizationRepository) GetByIDs(ctx context.Context, ids []string) ([]*types.Organization, error) {
+	if len(ids) == 0 {
+		return []*types.Organization{}, nil
+	}
+	var orgs []*types.Organization
+	if err := r.db.WithContext(ctx).
+		Where("id IN ?", ids).
+		Find(&orgs).Error; err != nil {
+		return nil, err
+	}
+	return orgs, nil
 }

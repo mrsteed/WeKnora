@@ -92,11 +92,30 @@ check_docker() {
         return 1
     fi
     
-    if ! docker info &> /dev/null; then
-        log_error "Docker服务未运行"
+    # 尝试连接 Docker 守护进程，捕获错误输出以便诊断
+    DOCKER_INFO_OUTPUT=$(docker info 2>&1)
+    if [ $? -ne 0 ]; then
+        log_error "无法连接到 Docker 守护进程: $DOCKER_INFO_OUTPUT"
+
+        # 在 WSL 环境提供额外提示
+        if grep -qi "microsoft" /proc/version 2>/dev/null || [ -n "${WSL_DISTRO_NAME:-}" ]; then
+            log_warning "检测到 WSL 环境。请确保 Docker Desktop 已在 Windows 上运行并已启用 WSL 集成，或在 WSL 中运行 Docker 守护进程。"
+            log_info "常见修复（任选其一）:"
+            echo "  - 在 Windows 的 Docker Desktop 设置中启用 WSL 集成并选择当前发行版。"
+            echo "  - 在 WSL 中启用守护进程: sudo service docker start 或 sudo dockerd &"
+            echo "  - 检查 DOCKER_HOST 环境变量: echo \$DOCKER_HOST（如指向远程地址可能需要调整）"
+        else
+            log_info "建议检查 Docker 是否已启动: sudo systemctl start docker; sudo systemctl status docker"
+        fi
+
+        # 给出一些快速诊断命令，帮助用户贴出错误信息
+        log_info "可运行的诊断命令:" 
+        echo "  docker --version"
+        echo "  docker info"
+        echo "  docker ps"
         return 1
     fi
-    
+
     return 0
 }
 
@@ -218,12 +237,20 @@ restart_services() {
 
 # 查看日志
 show_logs() {
+    check_docker
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
     cd "$PROJECT_ROOT"
     "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml logs -f
 }
 
 # 查看状态
 show_status() {
+    check_docker
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
     cd "$PROJECT_ROOT"
     "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml ps
 }
@@ -259,6 +286,7 @@ start_app() {
     export OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
     export NEO4J_URI=bolt://localhost:7687
     export QDRANT_HOST=localhost
+    export DB_PORT=${DB_PORT:-5432}
     
     # 确保必要的环境变量已设置
     if [ -z "$DB_DRIVER" ]; then

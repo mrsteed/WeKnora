@@ -12,7 +12,10 @@
     <div class="kb-list-body">
       <ListSpaceSidebar
         v-model="spaceSelection"
+        :enable-visibility-group="true"
         :count-all="allKnowledgeBases"
+        :count-global="countGlobalKbs"
+        :count-org="countOrgKbs"
         :count-mine="kbs.length"
         :count-shared="sharedKbs.length"
         :count-by-org="effectiveSharedCountByOrg"
@@ -239,6 +242,180 @@
           </div>
         </div>
       </template>
+    </div>
+
+    <!-- 卡片网格：全局知识库 -->
+    <div v-if="spaceSelection === 'global' && filteredKnowledgeBases.length > 0" class="kb-card-wrap">
+      <div
+        v-for="kb in filteredKnowledgeBases"
+        :key="kb.id"
+        class="kb-card"
+        :class="{
+          'uninitialized': !isInitialized(kb),
+          'kb-type-document': (kb.type || 'document') === 'document',
+          'kb-type-faq': kb.type === 'faq',
+          'highlight-flash': highlightedKbId !== null && highlightedKbId === kb.id
+        }"
+        :ref="el => { if (highlightedKbId !== null && highlightedKbId === kb.id && el) highlightedCardRef = el as HTMLElement }"
+        @click="handleCardClick(kb)"
+      >
+        <div class="card-header">
+          <span class="card-title" :title="kb.name">{{ kb.name }}</span>
+          <t-popup
+            overlayClassName="card-more-popup"
+            trigger="click"
+            destroy-on-close
+            placement="bottom-right"
+          >
+            <div class="more-wrap" @click.stop>
+              <img class="more-icon" src="@/assets/img/more.png" alt="" />
+            </div>
+            <template #content>
+              <div class="popup-menu" @click.stop>
+                <div class="popup-menu-item" @click.stop="handleSettings(kb)">
+                  <t-icon class="menu-icon" name="setting" />
+                  <span>{{ $t('knowledgeBase.settings') }}</span>
+                </div>
+                <div class="popup-menu-item delete" @click.stop="handleDelete(kb)">
+                  <t-icon class="menu-icon" name="delete" />
+                  <span>{{ $t('common.delete') }}</span>
+                </div>
+              </div>
+            </template>
+          </t-popup>
+        </div>
+        <div class="card-content">
+          <div class="card-description">
+            {{ kb.description || $t('knowledgeBase.noDescription') }}
+          </div>
+        </div>
+        <div class="card-bottom">
+          <div class="bottom-left">
+            <div class="feature-badges">
+              <t-tooltip :content="kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')" placement="top">
+                <div class="feature-badge" :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq' }">
+                  <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
+                  <span class="badge-count">{{ kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0) }}</span>
+                  <t-icon v-if="kb.isProcessing" name="loading" size="12px" class="processing-icon" />
+                </div>
+              </t-tooltip>
+              <t-tooltip v-if="kb.extract_config?.enabled" :content="$t('knowledgeList.features.knowledgeGraph')" placement="top">
+                <div class="feature-badge kg">
+                  <t-icon name="relation" size="14px" />
+                </div>
+              </t-tooltip>
+              <t-tooltip v-if="kb.vlm_config?.enabled || (kb.cos_config?.provider && kb.cos_config?.bucket_name)" :content="$t('knowledgeList.features.multimodal')" placement="top">
+                <div class="feature-badge multimodal">
+                  <t-icon name="image" size="14px" />
+                </div>
+              </t-tooltip>
+              <t-tooltip v-if="kb.question_generation_config?.enabled" :content="$t('knowledgeList.features.questionGeneration')" placement="top">
+                <div class="feature-badge question">
+                  <t-icon name="help-circle" size="14px" />
+                </div>
+              </t-tooltip>
+              <t-tooltip v-if="(kb.share_count ?? 0) > 0" :content="$t('knowledgeList.sharedToOrgs', { count: kb.share_count ?? 0 })" placement="top">
+                <div class="feature-badge shared">
+                  <t-icon name="share" size="14px" />
+                </div>
+              </t-tooltip>
+            </div>
+          </div>
+          <div class="bottom-right">
+            <div class="personal-source">
+              <t-icon name="user" size="14px" />
+              <span>{{ $t('knowledgeList.myLabel') }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片网格：组织知识库 -->
+    <div v-if="spaceSelection === 'org' && filteredKnowledgeBases.length > 0" class="kb-card-wrap">
+      <div
+        v-for="kb in filteredKnowledgeBases"
+        :key="kb.id"
+        class="kb-card"
+        :class="{
+          'uninitialized': !isInitialized(kb),
+          'kb-type-document': (kb.type || 'document') === 'document',
+          'kb-type-faq': kb.type === 'faq',
+          'highlight-flash': highlightedKbId !== null && highlightedKbId === kb.id
+        }"
+        :ref="el => { if (highlightedKbId !== null && highlightedKbId === kb.id && el) highlightedCardRef = el as HTMLElement }"
+        @click="handleCardClick(kb)"
+      >
+        <div class="card-header">
+          <span class="card-title" :title="kb.name">{{ kb.name }}</span>
+          <t-popup
+            overlayClassName="card-more-popup"
+            trigger="click"
+            destroy-on-close
+            placement="bottom-right"
+          >
+            <div class="more-wrap" @click.stop>
+              <img class="more-icon" src="@/assets/img/more.png" alt="" />
+            </div>
+            <template #content>
+              <div class="popup-menu" @click.stop>
+                <div class="popup-menu-item" @click.stop="handleSettings(kb)">
+                  <t-icon class="menu-icon" name="setting" />
+                  <span>{{ $t('knowledgeBase.settings') }}</span>
+                </div>
+                <div class="popup-menu-item delete" @click.stop="handleDelete(kb)">
+                  <t-icon class="menu-icon" name="delete" />
+                  <span>{{ $t('common.delete') }}</span>
+                </div>
+              </div>
+            </template>
+          </t-popup>
+        </div>
+        <div class="card-content">
+          <div class="card-description">
+            {{ kb.description || $t('knowledgeBase.noDescription') }}
+          </div>
+        </div>
+        <div class="card-bottom">
+          <div class="bottom-left">
+            <div class="feature-badges">
+              <t-tooltip :content="kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')" placement="top">
+                <div class="feature-badge" :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq' }">
+                  <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
+                  <span class="badge-count">{{ kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0) }}</span>
+                  <t-icon v-if="kb.isProcessing" name="loading" size="12px" class="processing-icon" />
+                </div>
+              </t-tooltip>
+              <t-tooltip v-if="kb.extract_config?.enabled" :content="$t('knowledgeList.features.knowledgeGraph')" placement="top">
+                <div class="feature-badge kg">
+                  <t-icon name="relation" size="14px" />
+                </div>
+              </t-tooltip>
+              <t-tooltip v-if="kb.vlm_config?.enabled || (kb.cos_config?.provider && kb.cos_config?.bucket_name)" :content="$t('knowledgeList.features.multimodal')" placement="top">
+                <div class="feature-badge multimodal">
+                  <t-icon name="image" size="14px" />
+                </div>
+              </t-tooltip>
+              <t-tooltip v-if="kb.question_generation_config?.enabled" :content="$t('knowledgeList.features.questionGeneration')" placement="top">
+                <div class="feature-badge question">
+                  <t-icon name="help-circle" size="14px" />
+                </div>
+              </t-tooltip>
+              <t-tooltip v-if="(kb.share_count ?? 0) > 0" :content="$t('knowledgeList.sharedToOrgs', { count: kb.share_count ?? 0 })" placement="top">
+                <div class="feature-badge shared">
+                  <t-icon name="share" size="14px" />
+                </div>
+              </t-tooltip>
+            </div>
+          </div>
+          <div class="bottom-right">
+            <div class="personal-source">
+              <t-icon name="user" size="14px" />
+              <span>{{ $t('knowledgeList.myLabel') }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div v-if="spaceSelection === 'mine' && kbs.length > 0" class="kb-card-wrap">
@@ -476,6 +653,28 @@
       </t-button>
     </div>
 
+    <!-- 全局知识库空状态 -->
+    <div v-if="spaceSelection === 'global' && filteredKnowledgeBases.length === 0 && !loading" class="empty-state">
+      <img class="empty-img" src="@/assets/img/upload.svg" alt="">
+      <span class="empty-txt">{{ $t('knowledgeList.empty.title') }}</span>
+      <span class="empty-desc">{{ $t('knowledgeList.empty.globalDescription') || '创建全局知识库后，所有租户都可以访问' }}</span>
+      <t-button class="kb-create-btn empty-state-btn" @click="handleCreateKnowledgeBase">
+        <template #icon><t-icon name="folder-add" /></template>
+        {{ $t('knowledgeList.create') }}
+      </t-button>
+    </div>
+
+    <!-- 组织知识库空状态 -->
+    <div v-if="spaceSelection === 'org' && filteredKnowledgeBases.length === 0 && !loading" class="empty-state">
+      <img class="empty-img" src="@/assets/img/upload.svg" alt="">
+      <span class="empty-txt">{{ $t('knowledgeList.empty.title') }}</span>
+      <span class="empty-desc">{{ $t('knowledgeList.empty.orgDescription') || '创建组织知识库后，组织成员可以访问' }}</span>
+      <t-button class="kb-create-btn empty-state-btn" @click="handleCreateKnowledgeBase">
+        <template #icon><t-icon name="folder-add" /></template>
+        {{ $t('knowledgeList.create') }}
+      </t-button>
+    </div>
+
     <!-- 空间下知识库空状态 -->
     <div v-if="spaceSelectionOrgId && !spaceKbsLoading && spaceKbsList.length === 0" class="empty-state">
       <img class="empty-img" src="@/assets/img/upload.svg" alt="">
@@ -514,6 +713,7 @@
       :mode="uiStore.kbEditorMode"
       :kb-id="uiStore.currentKBId || undefined"
       :initial-type="uiStore.kbEditorType"
+      :initial-visibility="uiStore.kbEditorInitialVisibility"
       @update:visible="(val) => val ? null : uiStore.closeKBEditor()"
       @success="handleKBEditorSuccess"
     />
@@ -618,6 +818,7 @@ interface KB {
   embedding_model_id?: string;
   summary_model_id?: string;
   type?: 'document' | 'faq';
+  visibility?: 'global' | 'org' | 'private';
   showMore?: boolean;
   vlm_config?: { enabled?: boolean; model_id?: string };
   extract_config?: { enabled?: boolean };
@@ -653,10 +854,15 @@ const sharedKbs = computed<SharedKnowledgeBase[]>(() => orgStore.sharedKnowledge
 // All knowledge bases (mine + shared to me)
 const allKnowledgeBases = computed(() => kbs.value.length + sharedKbs.value.length)
 
+// 按可见性分组计数
+const countGlobalKbs = computed(() => kbs.value.filter(kb => kb.visibility === 'global').length)
+const countOrgKbs = computed(() => kbs.value.filter(kb => kb.visibility === 'org').length)
+
 // 当前选中的是空间 ID（非全部、非我的）
+const SIDEBAR_RESERVED_VALUES = new Set(['all', 'mine', 'shared', 'global', 'org'])
 const spaceSelectionOrgId = computed(() => {
   const s = spaceSelection.value
-  return s !== 'all' && s !== 'mine' && s !== 'shared' && !!s
+  return !SIDEBAR_RESERVED_VALUES.has(s) && !!s
 })
 
 // 当前空间下共享给我的知识库（旧：仅他人共享；保留用于兼容）
@@ -693,10 +899,16 @@ const effectiveSharedCountByOrg = computed<Record<string, number>>(() => {
   return merged
 })
 
-// Filtered knowledge bases: 全部 = 我的 + 全部共享；我的 = 仅我的
+// Filtered knowledge bases: 全部 = 我的 + 全部共享；我的 = 仅我的；全局/组织 = 按可见性筛选
 const filteredKnowledgeBases = computed(() => {
   if (spaceSelection.value === 'mine') {
-    return kbs.value.map(kb => ({ ...kb, isMine: true as const }))
+    return kbs.value.filter(kb => kb.visibility === 'private' || !kb.visibility).map(kb => ({ ...kb, isMine: true as const }))
+  }
+  if (spaceSelection.value === 'global') {
+    return kbs.value.filter(kb => kb.visibility === 'global').map(kb => ({ ...kb, isMine: true as const }))
+  }
+  if (spaceSelection.value === 'org') {
+    return kbs.value.filter(kb => kb.visibility === 'org').map(kb => ({ ...kb, isMine: true as const }))
   }
   if (spaceSelection.value !== 'all') {
     return []
@@ -742,8 +954,12 @@ interface UploadSummary {
 
 const fetchList = () => {
   loading.value = true
+  const listParams: { organization_id?: string } = {}
+  if (orgStore.currentOrganizationId) {
+    listParams.organization_id = orgStore.currentOrganizationId
+  }
   return Promise.all([
-    listKnowledgeBases().then((res: any) => {
+    listKnowledgeBases(listParams).then((res: any) => {
       const data = res.data || []
       // 格式化时间，并初始化 showMore 状态
       // is_processing 字段由后端返回
@@ -766,7 +982,8 @@ const fetchList = () => {
 
 // 选中空间时请求该空间内全部知识库（含我共享的）
 watch(spaceSelection, (val) => {
-  if (val === 'all' || val === 'mine' || val === 'shared' || !val) {
+  // 'global' and 'org' are special filter values for visibility, not real organization IDs
+  if (val === 'all' || val === 'mine' || val === 'shared' || val === 'global' || val === 'org' || !val) {
     spaceKbsList.value = []
     return
   }
@@ -782,6 +999,11 @@ watch(spaceSelection, (val) => {
     spaceKbsLoading.value = false
   })
 }, { immediate: true })
+
+// 组织切换时自动刷新知识库列表
+watch(() => orgStore.currentOrganizationId, () => {
+  fetchList()
+})
 
 onMounted(() => {
   fetchList().then(() => {
@@ -1066,7 +1288,19 @@ const goSettings = (id: string) => {
 
 // 创建知识库
 const handleCreateKnowledgeBase = () => {
-  uiStore.openCreateKB()
+  // 根据当前选中的空间设置默认的 visibility
+  let visibility: 'private' | 'org' | 'global' = 'private'
+  if (spaceSelection.value === 'global') {
+    visibility = 'global'
+  } else if (spaceSelection.value === 'org') {
+    visibility = 'org'
+  } else if (spaceSelection.value === 'mine') {
+    visibility = 'private'
+  } else if (spaceSelection.value !== 'all' && spaceSelection.value !== 'shared') {
+    // 选中了具体的组织，设置为组织可见
+    visibility = 'org'
+  }
+  uiStore.openCreateKB('document', visibility)
 }
 
 // 知识库编辑器成功回调（创建或编辑成功）

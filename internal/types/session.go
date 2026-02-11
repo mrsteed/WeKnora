@@ -81,6 +81,8 @@ type Session struct {
 	Description string `json:"description"`
 	// Tenant ID
 	TenantID uint64 `json:"tenant_id"   gorm:"index"`
+	// User ID - the user who created/owns this session
+	UserID string `json:"user_id"     gorm:"type:varchar(36);index"`
 
 	// // Strategy configuration
 	// KnowledgeBaseID   string              `json:"knowledge_base_id"`                    // 关联的知识库ID

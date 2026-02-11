@@ -92,3 +92,53 @@ func (r *knowledgeBaseRepository) UpdateKnowledgeBase(ctx context.Context, kb *t
 func (r *knowledgeBaseRepository) DeleteKnowledgeBase(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.KnowledgeBase{}).Error
 }
+
+// ListAccessibleKBs returns knowledge bases accessible to a user considering visibility rules:
+// - global: all global KBs within the tenant
+// - org: KBs belonging to any of the user's organizations
+// - private: only the user's own KBs
+func (r *knowledgeBaseRepository) ListAccessibleKBs(
+	ctx context.Context, userID string, tenantID uint64, orgIDs []string,
+) ([]*types.KnowledgeBase, error) {
+	var kbs []*types.KnowledgeBase
+
+	query := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND is_temporary = ?", tenantID, false)
+
+	// Build visibility conditions:
+	// visibility='global' OR (visibility='org' AND organization_id IN orgIDs) OR (visibility='private' AND created_by=userID)
+	// Also include legacy KBs that have empty visibility (treat as global)
+	if len(orgIDs) > 0 {
+		query = query.Where(
+			"(visibility = ? OR visibility = '') OR (visibility = ? AND organization_id IN ?) OR (visibility = ? AND created_by = ?)",
+			types.KBVisibilityGlobal,
+			types.KBVisibilityOrg, orgIDs,
+			types.KBVisibilityPrivate, userID,
+		)
+	} else {
+		query = query.Where(
+			"(visibility = ? OR visibility = '') OR (visibility = ? AND created_by = ?)",
+			types.KBVisibilityGlobal,
+			types.KBVisibilityPrivate, userID,
+		)
+	}
+
+	if err := query.Order("created_at DESC").Find(&kbs).Error; err != nil {
+		return nil, err
+	}
+	return kbs, nil
+}
+
+// ListKBsByOrganization lists knowledge bases belonging to a specific organization
+func (r *knowledgeBaseRepository) ListKBsByOrganization(
+	ctx context.Context, organizationID string,
+) ([]*types.KnowledgeBase, error) {
+	var kbs []*types.KnowledgeBase
+	if err := r.db.WithContext(ctx).
+		Where("organization_id = ? AND is_temporary = ?", organizationID, false).
+		Order("created_at DESC").
+		Find(&kbs).Error; err != nil {
+		return nil, err
+	}
+	return kbs, nil
+}
