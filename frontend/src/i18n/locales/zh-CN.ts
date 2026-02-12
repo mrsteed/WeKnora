@@ -2789,4 +2789,14 @@ export default {
     visibilityGlobal: "全局可见",
     visibilityTip: "私有：仅自己可见；组织可见：本组织及子组织可访问；全局可见：租户内所有人可见（仅超管可设）",
   },
+  chatExport: {
+    title: '导出',
+    pdf: '导出为 PDF',
+    markdown: '导出为 Markdown',
+    word: '导出为 Word',
+    xlsx: '导出为 XLSX',
+    success: '导出成功',
+    failed: '导出失败，请重试',
+    emptyContent: '当前回答为空，无法导出',
+  },
 };

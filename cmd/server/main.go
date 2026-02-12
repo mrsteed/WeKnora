@@ -59,17 +59,18 @@ func main() {
 		tracer *tracing.Tracer,
 		resourceCleaner interfaces.ResourceCleaner,
 	) error {
-		// Create context for resource cleanup
+		// Shutdown timeout configuration
 		shutdownTimeout := cfg.Server.ShutdownTimeout
 		if shutdownTimeout == 0 {
 			shutdownTimeout = 30 * time.Second
 		}
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cleanupCancel()
 
 		// Register tracer cleanup function to resource cleaner
+		// Note: cleanup context will be created at shutdown time, not at startup
 		resourceCleaner.RegisterWithName("Tracer", func() error {
-			return tracer.Cleanup(cleanupCtx)
+			ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			defer cancel()
+			return tracer.Cleanup(ctx)
 		})
 
 		// Create HTTP server
@@ -93,8 +94,10 @@ func main() {
 				logger.Fatalf(context.Background(), "Server forced to shutdown: %v", err)
 			}
 
-			// Clean up all registered resources
+			// Clean up all registered resources with a fresh context
 			logger.Info(context.Background(), "Cleaning up resources...")
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			defer cleanupCancel()
 			errs := resourceCleaner.Cleanup(cleanupCtx)
 			if len(errs) > 0 {
 				logger.Errorf(context.Background(), "Errors occurred during resource cleanup: %v", errs)

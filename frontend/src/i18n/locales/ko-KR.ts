@@ -1991,4 +1991,14 @@ export default {
       updateFailed: "MCP 서비스 업데이트 실패",
     },
   },
+  chatExport: {
+    title: '내보내기',
+    pdf: 'PDF로 내보내기',
+    markdown: 'Markdown으로 내보내기',
+    word: 'Word로 내보내기',
+    xlsx: 'XLSX로 내보내기',
+    success: '내보내기 완료',
+    failed: '내보내기 실패, 다시 시도하세요',
+    emptyContent: '내보낼 내용이 없습니다',
+  },
 };

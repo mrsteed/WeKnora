@@ -2784,4 +2784,14 @@ export default {
     visibilityGlobal: 'Global Visible',
     visibilityTip: 'Private: only visible to yourself; Org: accessible by current and sub-orgs; Global: visible to all users in tenant (super admin only)',
   },
+  chatExport: {
+    title: 'Export',
+    pdf: 'Export as PDF',
+    markdown: 'Export as Markdown',
+    word: 'Export as Word',
+    xlsx: 'Export as XLSX',
+    success: 'Export successful',
+    failed: 'Export failed, please retry',
+    emptyContent: 'No content to export',
+  },
 }

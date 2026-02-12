@@ -1832,5 +1832,15 @@ export default {
       stopSuccess: 'Генерация остановлена',
       stopFailed: 'Не удалось остановить. Попробуйте ещё раз.'
     }
-  }
+  },
+  chatExport: {
+    title: 'Экспорт',
+    pdf: 'Экспорт в PDF',
+    markdown: 'Экспорт в Markdown',
+    word: 'Экспорт в Word',
+    xlsx: 'Экспорт в XLSX',
+    success: 'Экспорт выполнен',
+    failed: 'Ошибка экспорта, попробуйте снова',
+    emptyContent: 'Нет содержимого для экспорта',
+  },
 }

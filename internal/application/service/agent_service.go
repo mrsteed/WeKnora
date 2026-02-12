@@ -399,7 +399,7 @@ func (s *agentService) registerTools(
 			logger.Infof(ctx, "Registered data_analysis tool for session: %s", sessionID)
 
 		case tools.ToolDataSchema:
-			toolToRegister = tools.NewDataSchemaTool(s.knowledgeService, s.chunkService.GetRepository())
+			toolToRegister = tools.NewDataSchemaTool(s.knowledgeService, s.chunkService.GetRepository(), s.fileService, s.duckdb, sessionID)
 			logger.Infof(ctx, "Registered data_schema tool")
 
 		default:
