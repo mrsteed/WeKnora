@@ -148,6 +148,8 @@ func newReranker(config *RerankerConfig) (Reranker, error) {
 		reranker, err = NewZhipuReranker(config)
 	case provider.ProviderJina:
 		reranker, err = NewJinaReranker(config)
+	case provider.ProviderHuggingFace:
+		reranker, err = NewTEIReranker(config)
 	case provider.ProviderNvidia:
 		reranker, err = NewNvidiaReranker(config)
 	case provider.ProviderWeKnoraCloud:

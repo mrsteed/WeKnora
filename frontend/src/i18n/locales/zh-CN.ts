@@ -467,7 +467,6 @@ export default {
     title: "设置",
     modelConfig: "模型配置",
     modelManagement: "模型管理",
-    agentConfig: "Agent配置",
     conversationConfig: "对话设置",
     conversationStrategy: "对话策略",
     webSearchConfig: "网络搜索",
@@ -479,12 +478,22 @@ export default {
     memoryHowToEnable: "查看 Neo4j 配置指南",
     vectorStoreEngine: "向量数据库引擎",
     parserEngine: "解析引擎",
-    storageEngine: "存储引擎",
+        huggingface: {
+          label: "HuggingFace / TEI",
+          description: "Text Embeddings Inference (bge-reranker-v2-m3, bge-m3, etc.)",
+        },
+        lkeap: {
+          label: "腾讯云 LKEAP",
+          description: "DeepSeek-R1, DeepSeek-V3 系列模型，支持思维链",
+        },
+        nvidia: {
+            label: "NVIDIA",
+            description: "deepseek-ai-deepseek-v3_1, nv-embed-v1, rerank-qa-mistral-4b, etc.",
+        },
+        novita: {
+            label: "Novita AI",
+            description: "moonshotai/kimi-k2.5, zai-org/glm-5, minimax/minimax-m2.7, qwen/qwen3-embedding-0.6b 等",
     mcpService: "MCP服务",
-    systemSettings: "系统设置",
-    tenantInfo: "租户信息",
-    apiInfo: "API信息",
-    weknoraCloud: {
       title: "WeKnora Cloud",
       description: "配置 WeKnora Cloud 的 APPID 和 APPSECRET 凭证。凭证用于模型服务和文档解析引擎。",
       viewDocs: "查看文档",
@@ -862,7 +871,7 @@ export default {
   },
   initialization: {
     title: "初始化",
-    welcome: "欢迎使用WeKnora",
+    welcome: "欢迎使用IntraMind",
     description: "请先配置系统以开始使用",
     step1: "步骤1：配置LLM模型",
     step2: "步骤2：配置嵌入模型",
@@ -1086,7 +1095,7 @@ export default {
     registerNow: "立即注册",
     registerSuccess: "注册成功！系统已为您创建专属租户，请登录",
     registerFailed: "注册失败",
-    subtitle: "基于大模型的文档理解和语义搜索框架",
+    subtitle: "欢迎使用 IntraMind-智枢 智能文档检索平台",
     registerSubtitle: "注册后系统将为您创建专属租户",
     emailPlaceholder: "输入邮箱地址",
     passwordPlaceholder: "输入密码（8-32个字符，包含字母和数字）",
@@ -1860,6 +1869,10 @@ export default {
           label: "LongCat AI",
           description: "LongCat-Flash-Chat, LongCat-Flash-Thinking, etc.",
         },
+        huggingface: {
+          label: "HuggingFace / TEI",
+          description: "Text Embeddings Inference (bge-reranker-v2-m3, bge-m3, etc.)",
+        },
         lkeap: {
           label: "腾讯云 LKEAP",
           description: "DeepSeek-R1, DeepSeek-V3 系列模型，支持思维链",
@@ -1902,8 +1915,8 @@ export default {
     selectTheme: "选择主题",
   },
   platform: {
-    subtitle: "企业级智能文档检索框架",
-    description: "让复杂文档理解与精准检索变得简单",
+    subtitle: "IntraMind-智枢 · 企业级智能文档检索框架",
+    description: "让知识触手可及，让检索精准高效",
     rag: "RAG 增强生成",
     hybridSearch: "混合检索",
     localDeploy: "本地部署",

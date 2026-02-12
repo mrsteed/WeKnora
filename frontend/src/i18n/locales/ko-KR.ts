@@ -466,7 +466,6 @@ export default {
     title: "설정",
     modelConfig: "모델 설정",
     modelManagement: "모델 관리",
-    agentConfig: "Agent 설정",
     conversationConfig: "대화 설정",
     conversationStrategy: "대화 전략",
     webSearchConfig: "웹 검색",
@@ -478,12 +477,22 @@ export default {
     memoryHowToEnable: "Neo4j 구성 가이드 보기",
     vectorStoreEngine: "벡터 DB 엔진",
     parserEngine: "파싱 엔진",
-    storageEngine: "스토리지 엔진",
+        huggingface: {
+          label: "HuggingFace / TEI",
+          description: "Text Embeddings Inference (bge-reranker-v2-m3, bge-m3, etc.)",
+        },
+        lkeap: {
+          label: "텐센트 클라우드 LKEAP",
+          description: "DeepSeek-R1, DeepSeek-V3 시리즈, 사고 체인 지원",
+        },
+        nvidia: {
+          label: "NVIDIA",
+          description: "deepseek-ai-deepseek-v3_1, nv-embed-v1, rerank-qa-mistral-4b, etc.",
+        },
+        novita: {
+          label: "Novita AI",
+          description: "moonshotai/kimi-k2.5, zai-org/glm-5, minimax/minimax-m2.7, qwen/qwen3-embedding-0.6b 등",
     mcpService: "MCP 서비스",
-    systemSettings: "시스템 설정",
-    tenantInfo: "테넌트 정보",
-    apiInfo: "API 정보",
-    weknoraCloud: {
       title: 'WeKnora Cloud',
       description: 'WeKnora Cloud APPID 및 APPSECRET 자격 증명을 설정합니다. 자격 증명은 모델 서비스와 문서 파싱 엔진에 사용됩니다.',
       viewDocs: '문서 보기',
@@ -861,7 +870,7 @@ export default {
   },
   initialization: {
     title: "초기화",
-    welcome: "WeKnora에 오신 것을 환영합니다",
+    welcome: "IntraMind에 오신 것을 환영합니다",
     description: "사용을 시작하려면 먼저 시스템을 구성하세요",
     step1: "1단계: LLM 모델 구성",
     step2: "2단계: 임베딩 모델 구성",
@@ -1877,6 +1886,10 @@ export default {
         longcat: {
           label: "LongCat AI",
           description: "LongCat-Flash-Chat, LongCat-Flash-Thinking, etc.",
+        },
+        huggingface: {
+          label: "HuggingFace / TEI",
+          description: "Text Embeddings Inference (bge-reranker-v2-m3, bge-m3, etc.)",
         },
         lkeap: {
           label: "텐센트 클라우드 LKEAP",

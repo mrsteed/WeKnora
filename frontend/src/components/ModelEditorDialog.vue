@@ -481,6 +481,16 @@ const fallbackProviderOptions = computed(() => [
     modelTypes: ['chat', 'embedding', 'vllm']
   },
   { 
+    value: 'huggingface', 
+    label: t('model.editor.providers.huggingface.label'), 
+    defaultUrls: {
+      embedding: 'http://localhost:8080',
+      rerank: 'http://localhost:8082'
+    },
+    description: t('model.editor.providers.huggingface.description'),
+    modelTypes: ['embedding', 'rerank']
+  },
+  { 
     value: 'generic', 
     label: t('model.editor.providers.generic.label'),
     defaultUrls: {},
