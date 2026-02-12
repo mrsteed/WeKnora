@@ -42,7 +42,8 @@ web/
 
 **/__pycache__
 /scripts/scale_dev_jobs.sh
-/server
+server
+main
 frontend/.vite
 frontend/chrome-extension/
 WeKnora-Chrome-Extension
