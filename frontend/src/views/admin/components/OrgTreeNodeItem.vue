@@ -22,9 +22,12 @@
         <t-icon name="folder" class="node-icon" />
         <span class="node-name">{{ node.name }}</span>
         <span v-if="node.description" class="node-desc">{{ node.description }}</span>
-        <span class="node-member-count">
+        <span class="node-member-count" :title="`直属 ${node.direct_member_count || 0} 人，含下级共 ${node.total_member_count || node.member_count || 0} 人`">
           <t-icon name="user" size="14px" />
-          {{ node.member_count || 0 }}
+          {{ node.total_member_count || node.member_count || 0 }}
+          <span v-if="node.children && node.children.length > 0 && node.direct_member_count !== undefined" class="direct-count">
+            (直属{{ node.direct_member_count }})
+          </span>
         </span>
       </div>
       <div class="node-actions">
@@ -204,6 +207,12 @@ const handleDragEnd = () => {
       font-size: 12px;
       color: #999;
       flex-shrink: 0;
+
+      .direct-count {
+        font-size: 11px;
+        color: #bbb;
+        margin-left: 2px;
+      }
     }
   }
 

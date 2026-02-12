@@ -67,6 +67,10 @@ type OrganizationRepository interface {
 	CountMembers(ctx context.Context, orgID string) (int64, error)
 	// BatchCountMembers counts members for multiple organizations in a single query
 	BatchCountMembers(ctx context.Context, orgIDs []string) (map[string]int, error)
+	// BatchListMemberUserIDs returns user IDs of direct members for each org (batch query)
+	BatchListMemberUserIDs(ctx context.Context, orgIDs []string) (map[string][]string, error)
+	// IsAdminOfAnyOrg checks if the user is an admin of any org in the given list
+	IsAdminOfAnyOrg(ctx context.Context, userID string, orgIDs []string, tenantID uint64) bool
 
 	// Invite code
 	UpdateInviteCode(ctx context.Context, orgID string, inviteCode string, expiresAt *time.Time) error

@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -45,23 +46,51 @@ func (h *OrgTreeHandler) getUserFromContext(c *gin.Context) (*types.User, bool) 
 	return user, true
 }
 
-// isOrgAdminOf checks if the given user is an admin of the specified organization.
+// isOrgAdminOf checks if the given user is an admin of the specified organization
+// or any of its ancestor organizations (permission inheritance via materialized path).
 // Super admins are always considered admin of any org.
 func (h *OrgTreeHandler) isOrgAdminOf(c *gin.Context, user *types.User, orgID string, tenantID uint64) bool {
 	if user.IsSuperAdmin {
 		return true
 	}
 	ctx := c.Request.Context()
+
+	// Step 1: Check if user is a direct admin of this org (fast path)
 	orgMembers, err := h.orgTreeService.ListOrgMembers(ctx, orgID, tenantID)
+	if err == nil {
+		for _, member := range orgMembers {
+			if member.UserID == user.ID && member.Role == types.OrgRoleAdmin {
+				return true
+			}
+		}
+	}
+
+	// Step 2: Get the org node to read its path, then check ancestor admin
+	org, err := h.orgTreeService.GetNode(ctx, orgID, tenantID)
 	if err != nil {
 		return false
 	}
-	for _, member := range orgMembers {
-		if member.UserID == user.ID && member.Role == types.OrgRoleAdmin {
-			return true
+
+	ancestorIDs := parseAncestorIDs(org.Path, orgID)
+	if len(ancestorIDs) == 0 {
+		return false // root node, no ancestors to check
+	}
+
+	// Step 3: Batch check if user is admin of any ancestor org (single SQL)
+	return h.orgTreeService.IsAdminOfAnyOrg(ctx, user.ID, ancestorIDs, tenantID)
+}
+
+// parseAncestorIDs extracts ancestor org IDs from a materialized path, excluding the node itself.
+// Path format: /root_id/parent_id/self_id
+func parseAncestorIDs(path string, selfID string) []string {
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	ancestors := make([]string, 0, len(parts)-1)
+	for _, part := range parts {
+		if part != "" && part != selfID {
+			ancestors = append(ancestors, part)
 		}
 	}
-	return false
+	return ancestors
 }
 
 // isOrgAdminOfAny checks if the user is a super admin or admin of any org-tree organization.
@@ -731,7 +760,7 @@ func (h *OrgTreeHandler) ListOrgMembers(c *gin.Context) {
 		return
 	}
 
-	// Permission: super admin or admin of this org
+	// Permission: super admin or admin of this org (including ancestor inheritance)
 	if !h.isOrgAdminOf(c, currentUser, orgID, tenantID) {
 		c.Error(apperrors.NewForbiddenError("You do not have permission to view members of this organization"))
 		return
@@ -744,13 +773,45 @@ func (h *OrgTreeHandler) ListOrgMembers(c *gin.Context) {
 		return
 	}
 
-	// Transform to flat structure with user info
-	result := make([]gin.H, 0, len(members))
+	// Classify direct members into admins and regular members
+	directAdmins := make([]gin.H, 0)
+	directMembers := make([]gin.H, 0)
 	for _, m := range members {
 		if m.User == nil {
 			continue
 		}
-		result = append(result, gin.H{
+		entry := gin.H{
+			"user_id":        m.UserID,
+			"username":       m.User.Username,
+			"email":          m.User.Email,
+			"phone":          m.User.Phone,
+			"role":           string(m.Role),
+			"is_admin":       m.Role == types.OrgRoleAdmin,
+			"is_super_admin": m.User.IsSuperAdmin,
+			"is_direct":      true,
+			"joined_at":      m.CreatedAt,
+		}
+		if m.Role == types.OrgRoleAdmin {
+			directAdmins = append(directAdmins, entry)
+		} else {
+			directMembers = append(directMembers, entry)
+		}
+	}
+
+	// Get inherited admins from ancestor orgs
+	inheritedAdmins, err := h.orgTreeService.ListInheritedAdmins(ctx, orgID, tenantID)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to list inherited admins for org %s: %v", orgID, err)
+		inheritedAdmins = nil
+	}
+
+	// Build backward-compatible flat list (direct members only, as before)
+	flatResult := make([]gin.H, 0, len(members))
+	for _, m := range members {
+		if m.User == nil {
+			continue
+		}
+		flatResult = append(flatResult, gin.H{
 			"user_id":        m.UserID,
 			"username":       m.User.Username,
 			"email":          m.User.Email,
@@ -763,8 +824,12 @@ func (h *OrgTreeHandler) ListOrgMembers(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    result,
+		"success":          true,
+		"data":             flatResult, // backward compatible
+		"direct_admins":    directAdmins,
+		"direct_members":   directMembers,
+		"inherited_admins": inheritedAdmins,
+		"total_direct":     len(members),
 	})
 }
 
