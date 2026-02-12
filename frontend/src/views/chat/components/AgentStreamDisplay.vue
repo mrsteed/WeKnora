@@ -221,6 +221,10 @@
                 <t-icon name="info-circle" />
               </t-button>
             </t-tooltip>
+            <ExportDropdown
+              :content="getActualContent(event)"
+              :filename-prefix="formatManualTitle(props.userQuery || '')"
+            />
           </div>
         </div>
 
@@ -375,6 +379,7 @@ import markedKatex from 'marked-katex-extension';
 import 'katex/dist/katex.min.css';
 import DOMPurify from 'dompurify';
 import ToolResultRenderer from './ToolResultRenderer.vue';
+import ExportDropdown from './ExportDropdown.vue';
 import picturePreview from '@/components/picture-preview.vue';
 import { getChunkByIdOnly } from '@/api/knowledge-base';
 import { getWikiPage, type WikiPage } from '@/api/wiki';

@@ -3792,4 +3792,14 @@ export default {
     schedule12h: 'Каждые 12 часов',
     schedule24h: 'Ежедневно',
   },
+  chatExport: {
+    title: 'Экспорт',
+    pdf: 'Экспорт в PDF',
+    markdown: 'Экспорт в Markdown',
+    word: 'Экспорт в Word',
+    xlsx: 'Экспорт в XLSX',
+    success: 'Экспорт выполнен',
+    failed: 'Ошибка экспорта, попробуйте снова',
+    emptyContent: 'Нет содержимого для экспорта',
+  },
 }
