@@ -1,5 +1,6 @@
 import { marked } from 'marked';
 import * as XLSX from 'xlsx';
+import { postBlob, get } from './request';
 
 /**
  * 生成带时间戳的文件名
@@ -26,7 +27,7 @@ export const triggerDownload = (blob: Blob, filename: string): void => {
 };
 
 /**
- * 将 Markdown 转换为带样式的 HTML 字符串
+ * 将 Markdown 转换为带样式的 HTML 字符串（前端版本，用于前端降级）
  */
 export const markdownToStyledHTML = (markdown: string): string => {
   const rawHTML = marked.parse(markdown) as string;
@@ -63,16 +64,83 @@ export const exportAsMarkdown = (content: string, filename: string): void => {
   triggerDownload(blob, `${filename}.md`);
 };
 
-/**
- * 导出为 PDF 文件
- * 采用 html2pdf.js 库，将 HTML 渲染为 PDF
- */
-export const exportAsPDF = async (content: string, filename: string): Promise<void> => {
-  const html2pdf = (await import('html2pdf.js')).default;
+// ============================================================
+// 后端导出能力缓存
+// ============================================================
+let _capabilities: { pdf: boolean; docx: boolean } | null = null;
 
+/**
+ * 查询后端导出能力（是否安装 wkhtmltopdf / pandoc）
+ * 结果会被缓存，只请求一次
+ */
+export const getExportCapabilities = async (): Promise<{ pdf: boolean; docx: boolean }> => {
+  if (_capabilities) return _capabilities;
+  try {
+    const res = await get('/api/v1/export/capabilities');
+    const data = (res as any).data?.data || (res as any).data;
+    _capabilities = {
+      pdf: data?.pdf?.available === true,
+      docx: data?.docx?.available === true,
+    };
+  } catch {
+    _capabilities = { pdf: false, docx: false };
+  }
+  return _capabilities;
+};
+
+/**
+ * 通过后端 API 导出文档（PDF / DOCX）
+ * 后端使用 wkhtmltopdf（PDF）或 pandoc（DOCX）生成高质量文档
+ */
+const exportViaBackend = async (
+  content: string,
+  format: 'pdf' | 'docx',
+  filename: string,
+): Promise<void> => {
+  const res = await postBlob('/api/v1/export/document', {
+    content,
+    format,
+    filename_prefix: filename,
+  });
+
+  // axios interceptor 的 success handler 已返回 response.data，
+  // 所以 res 直接就是 Blob（responseType: "blob" 时）。
+  // 如果 res 不是 Blob（例如 interceptor 返回了完整 response），则取 .data。
+  const rawData = res instanceof Blob ? res : (res as any).data || res;
+
+  // 检查是否实际拿到了有效的二进制数据
+  if (!(rawData instanceof Blob) || rawData.size === 0) {
+    throw new Error('Backend returned empty or invalid response');
+  }
+
+  // 如果后端返回了 JSON 错误（Content-Type 为 application/json），则解析并抛出
+  if (rawData.type && rawData.type.includes('application/json')) {
+    const text = await rawData.text();
+    let errMsg = 'Backend export failed';
+    try {
+      const json = JSON.parse(text);
+      errMsg = json?.error?.message || json?.message || errMsg;
+    } catch { /* ignore parse error */ }
+    throw new Error(errMsg);
+  }
+
+  const blob = new Blob([rawData], {
+    type: format === 'pdf'
+      ? 'application/pdf'
+      : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+
+  const ext = format === 'pdf' ? 'pdf' : 'docx';
+  triggerDownload(blob, `${filename}.${ext}`);
+};
+
+/**
+ * 前端降级：使用 html2pdf.js 生成 PDF（当后端 wkhtmltopdf 不可用时）
+ */
+const exportAsPDFFallback = async (content: string, filename: string): Promise<void> => {
+  const html2pdf = (await import('html2pdf.js')).default;
   const styledHTML = markdownToStyledHTML(content);
 
-  // 创建临时容器
   const container = document.createElement('div');
   container.innerHTML = styledHTML;
   container.style.position = 'absolute';
@@ -97,7 +165,7 @@ export const exportAsPDF = async (content: string, filename: string): Promise<vo
           orientation: 'portrait',
         },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-      })
+      } as any)
       .from(container)
       .save();
   } finally {
@@ -106,14 +174,46 @@ export const exportAsPDF = async (content: string, filename: string): Promise<vo
 };
 
 /**
+ * 前端降级：使用 html-docx-js-typescript 生成 DOCX（当后端 pandoc 不可用时）
+ */
+const exportAsWordFallback = async (content: string, filename: string): Promise<void> => {
+  const { asBlob } = await import('html-docx-js-typescript');
+  const styledHTML = markdownToStyledHTML(content);
+  const result = asBlob(styledHTML);
+  // asBlob may return a Blob or an ArrayBuffer depending on the version;
+  // ensure we always pass a proper Blob to triggerDownload.
+  const docxBlob = result instanceof Blob
+    ? result
+    : new Blob([result], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+  triggerDownload(docxBlob, `${filename}.docx`);
+};
+
+/**
+ * 导出为 PDF 文件
+ * 优先使用后端 wkhtmltopdf（高质量），失败时降级到前端 html2pdf.js
+ */
+export const exportAsPDF = async (content: string, filename: string): Promise<void> => {
+  try {
+    await exportViaBackend(content, 'pdf', filename);
+  } catch (err) {
+    console.warn('[Export] Backend PDF export failed, falling back to frontend html2pdf.js:', err);
+    await exportAsPDFFallback(content, filename);
+  }
+};
+
+/**
  * 导出为 Word DOCX 文件
+ * 优先使用后端 pandoc（高质量），失败时降级到前端 html-docx-js-typescript
  */
 export const exportAsWord = async (content: string, filename: string): Promise<void> => {
-  const { asBlob } = await import('html-docx-js-typescript');
-
-  const styledHTML = markdownToStyledHTML(content);
-  const docxBlob = asBlob(styledHTML) as Blob;
-  triggerDownload(docxBlob, `${filename}.docx`);
+  try {
+    await exportViaBackend(content, 'docx', filename);
+  } catch (err) {
+    console.warn('[Export] Backend DOCX export failed, falling back to frontend html-docx-js-typescript:', err);
+    await exportAsWordFallback(content, filename);
+  }
 };
 
 /**

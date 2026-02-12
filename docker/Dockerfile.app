@@ -72,6 +72,8 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         libsqlite3-0 \
         python3 python3-pip python3-dev libffi-dev libssl-dev \
         nodejs npm \
+        wkhtmltopdf pandoc \
+        xvfb libxrender1 libfontconfig1 fonts-noto-cjk fonts-noto-cjk-extra \
         gosu \
         ffmpeg && \
     python3 -m pip install --break-system-packages --upgrade pip setuptools wheel && \
