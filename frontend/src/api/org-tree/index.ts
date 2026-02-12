@@ -11,6 +11,8 @@ export interface OrgTreeNode {
   level: number
   sort_order: number
   member_count: number
+  direct_member_count: number
+  total_member_count: number
   my_is_admin: boolean
   children?: OrgTreeNode[]
   created_at: string
@@ -79,7 +81,28 @@ export interface OrgMember {
   role: string
   is_admin: boolean
   is_super_admin?: boolean
+  is_direct?: boolean
   joined_at: string
+}
+
+export interface InheritedAdmin {
+  user_id: string
+  username: string
+  email: string
+  from_org_id: string
+  from_org_name: string
+  role: string
+  is_inherited: boolean
+}
+
+export interface OrgMembersResponse {
+  success: boolean
+  data?: OrgMember[]
+  direct_admins?: OrgMember[]
+  direct_members?: OrgMember[]
+  inherited_admins?: InheritedAdmin[]
+  total_direct?: number
+  message?: string
 }
 
 export interface SearchUserResult {
@@ -187,10 +210,10 @@ export async function getMyOrgTreeOrganizations(): Promise<ApiResponse<OrgTreeNo
   }
 }
 
-/** Get members of a specific org node (super admin only) */
-export async function getOrgMembers(orgId: string): Promise<ApiResponse<OrgMember[]>> {
+/** Get members of a specific org node */
+export async function getOrgMembers(orgId: string): Promise<OrgMembersResponse> {
   try {
-    return await get(`/api/v1/org-tree/${orgId}/members`) as unknown as ApiResponse<OrgMember[]>
+    return await get(`/api/v1/org-tree/${orgId}/members`) as unknown as OrgMembersResponse
   } catch (error: any) {
     return { success: false, message: error.message || 'Failed to get org members' }
   }
