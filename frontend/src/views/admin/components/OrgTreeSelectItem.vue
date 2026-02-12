@@ -8,7 +8,7 @@
         v-if="node.children && node.children.length > 0"
         :name="expanded ? 'chevron-down' : 'chevron-right'"
         class="expand-icon"
-        @click.stop="expanded = !expanded"
+        @click.stop="toggleExpanded"
       />
       <span v-else class="expand-placeholder"></span>
       <t-icon name="folder" class="folder-icon" />
@@ -43,6 +43,10 @@ defineEmits<{
 }>()
 
 const expanded = ref(true)
+
+const toggleExpanded = () => {
+  expanded.value = !expanded.value
+}
 </script>
 
 <style lang="less" scoped>

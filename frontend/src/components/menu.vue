@@ -1,4 +1,5 @@
 <template>
+<<<<<<< HEAD
     <div class="aside_box" :class="{ 'aside_box--collapsed': uiStore.sidebarCollapsed }">
         <!-- 展开时：Logo + 折叠按钮同行 -->
         <div class="logo_row" v-if="!uiStore.sidebarCollapsed">
@@ -15,6 +16,11 @@
                     <line x1="4" y1="7.5" x2="4" y2="12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
                 </svg>
             </div>
+=======
+    <div class="aside_box">
+        <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
+            <img class="logo" src="@/assets/img/IntraMindw.png" alt="">
+>>>>>>> c9d4b37 (修改登录界面样式，增加TEI RERANK 模型支持)
         </div>
         <!-- 折叠时：展开按钮 -->
         <t-tooltip v-else :content="t('menu.expandSidebar')" placement="right">

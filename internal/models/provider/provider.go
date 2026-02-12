@@ -61,6 +61,8 @@ const (
 	ProviderNovita ProviderName = "novita"
 	// Azure OpenAI
 	ProviderAzureOpenAI ProviderName = "azure_openai"
+	// HuggingFace TEI (Text Embeddings Inference)
+	ProviderHuggingFace ProviderName = "huggingface"
 )
 
 // AllProviders 返回所有注册的提供者名称
@@ -91,6 +93,7 @@ func AllProviders() []ProviderName {
 		ProviderNvidia,
 		ProviderNovita,
 		ProviderAzureOpenAI,
+		ProviderHuggingFace,
 	}
 }
 
