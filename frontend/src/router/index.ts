@@ -98,20 +98,20 @@ const router = createRouter({
           path: "admin",
           name: "admin",
           component: () => import("../views/admin/AdminLayout.vue"),
-          meta: { requiresInit: true, requiresAuth: true, requiresSuperAdmin: true },
+          meta: { requiresInit: true, requiresAuth: true, requiresOrgAdmin: true },
           redirect: "/platform/admin/org-tree",
           children: [
             {
               path: "org-tree",
               name: "orgTreeManage",
               component: () => import("../views/admin/OrgTreeManage.vue"),
-              meta: { requiresInit: true, requiresAuth: true, requiresSuperAdmin: true }
+              meta: { requiresInit: true, requiresAuth: true, requiresOrgAdmin: true }
             },
             {
               path: "members",
               name: "memberManage",
               component: () => import("../views/admin/MemberManage.vue"),
-              meta: { requiresInit: true, requiresAuth: true, requiresSuperAdmin: true }
+              meta: { requiresInit: true, requiresAuth: true, requiresOrgAdmin: true }
             },
           ],
         },
@@ -163,6 +163,14 @@ router.beforeEach(async (to, from, next) => {
   // 检查超级管理员权限
   if (to.meta.requiresSuperAdmin) {
     if (!authStore.isSuperAdmin) {
+      next('/platform/knowledge-bases')
+      return
+    }
+  }
+
+  // 检查组织管理员权限（超级管理员或组织管理员均可访问）
+  if (to.meta.requiresOrgAdmin) {
+    if (!authStore.isSuperAdmin && !authStore.isOrgAdmin) {
       next('/platform/knowledge-bases')
       return
     }

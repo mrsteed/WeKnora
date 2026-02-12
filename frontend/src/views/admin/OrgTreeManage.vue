@@ -2,7 +2,7 @@
   <div class="org-tree-manage">
     <div class="page-header">
       <h2 class="page-title">{{ $t('admin.orgTreeManage') }}</h2>
-      <t-button theme="primary" @click="handleCreate(null)">
+      <t-button v-if="authStore.isSuperAdmin" theme="primary" @click="handleCreate(null)">
         <template #icon><t-icon name="add" /></template>
         {{ $t('admin.org.createRoot') }}
       </t-button>
@@ -15,7 +15,7 @@
       <div v-else-if="orgTreeStore.tree.length === 0" class="tree-empty">
         <t-icon name="folder-open" class="empty-icon" />
         <p>{{ $t('admin.org.emptyTree') }}</p>
-        <t-button theme="primary" variant="outline" @click="handleCreate(null)">
+        <t-button v-if="authStore.isSuperAdmin" theme="primary" variant="outline" @click="handleCreate(null)">
           {{ $t('admin.org.createFirst') }}
         </t-button>
       </div>
@@ -47,6 +47,7 @@
 import { ref, onMounted } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useOrgTreeStore } from '@/stores/orgTree'
+import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
 import type { OrgTreeNode } from '@/api/org-tree'
 import { moveOrgTreeNode } from '@/api/org-tree'
@@ -54,6 +55,7 @@ import OrgTreeEditor from './components/OrgTreeEditor.vue'
 import OrgTreeNodeItem from './components/OrgTreeNodeItem.vue'
 
 const orgTreeStore = useOrgTreeStore()
+const authStore = useAuthStore()
 const { t } = useI18n()
 
 const editorVisible = ref(false)

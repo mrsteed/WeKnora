@@ -480,16 +480,41 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 	logger.Info(ctx, "Start updating knowledge base")
 
 	// Validate and get the knowledge base
-	_, id, _, permission, err := h.validateAndGetKnowledgeBase(c)
+	kb, id, _, _, err := h.validateAndGetKnowledgeBase(c)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	// Only admin/editor can update knowledge base
-	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
-		c.Error(apperrors.NewForbiddenError("No permission to update knowledge base"))
+	// Get current user
+	userVal, ok := c.Get(types.UserContextKey.String())
+	if !ok {
+		c.Error(apperrors.NewUnauthorizedError("User context not found"))
 		return
+	}
+	user, ok := userVal.(*types.User)
+	if !ok || user == nil {
+		c.Error(apperrors.NewUnauthorizedError("Invalid user context"))
+		return
+	}
+
+	// Debug log for permission check
+	logger.Infof(ctx, "Permission check - KB ID: %s, CreatedBy: %s, User ID: %s, IsSuperAdmin: %v, Visibility: %s",
+		kb.ID, kb.CreatedBy, user.ID, user.IsSuperAdmin, kb.Visibility)
+
+	// Check if this is a global knowledge base - only super admin can update
+	if kb.Visibility == types.KBVisibilityGlobal {
+		if !user.IsSuperAdmin {
+			c.Error(apperrors.NewForbiddenError("Only super admins can update global knowledge bases"))
+			return
+		}
+	} else {
+		// For non-global knowledge bases - only creator or super admin can update
+		// If CreatedBy is empty, allow update (for backward compatibility with old data)
+		if kb.CreatedBy != "" && kb.CreatedBy != user.ID && !user.IsSuperAdmin {
+			c.Error(apperrors.NewForbiddenError("Only the creator or super admin can update this knowledge base"))
+			return
+		}
 	}
 
 	// Parse request body
@@ -504,7 +529,7 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		secutils.SanitizeForLog(id), secutils.SanitizeForLog(req.Name))
 
 	// Update the knowledge base
-	kb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config)
+	updatedKb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(apperrors.NewInternalServerError(err.Error()))
@@ -515,7 +540,7 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		secutils.SanitizeForLog(id))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    kb,
+		"data":    updatedKb,
 	})
 }
 
@@ -536,17 +561,41 @@ func (h *KnowledgeBaseHandler) DeleteKnowledgeBase(c *gin.Context) {
 	logger.Info(ctx, "Start deleting knowledge base")
 
 	// Validate and get the knowledge base
-	kb, id, _, permission, err := h.validateAndGetKnowledgeBase(c)
+	kb, id, _, _, err := h.validateAndGetKnowledgeBase(c)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	// Only owner (admin with matching tenant) can delete knowledge base
-	tenantID, _ := c.Get(types.TenantIDContextKey.String())
-	if kb.TenantID != tenantID.(uint64) || permission != types.OrgRoleAdmin {
-		c.Error(apperrors.NewForbiddenError("Only knowledge base owner can delete"))
+	// Get current user
+	userVal, ok := c.Get(types.UserContextKey.String())
+	if !ok {
+		c.Error(apperrors.NewUnauthorizedError("User context not found"))
 		return
+	}
+	user, ok := userVal.(*types.User)
+	if !ok || user == nil {
+		c.Error(apperrors.NewUnauthorizedError("Invalid user context"))
+		return
+	}
+
+	// Debug log for permission check
+	logger.Infof(ctx, "Permission check - KB ID: %s, CreatedBy: %s, User ID: %s, IsSuperAdmin: %v, Visibility: %s",
+		kb.ID, kb.CreatedBy, user.ID, user.IsSuperAdmin, kb.Visibility)
+
+	// Check if this is a global knowledge base - only super admin can delete
+	if kb.Visibility == types.KBVisibilityGlobal {
+		if !user.IsSuperAdmin {
+			c.Error(apperrors.NewForbiddenError("Only super admins can delete global knowledge bases"))
+			return
+		}
+	} else {
+		// For non-global knowledge bases - only creator or super admin can delete
+		// If CreatedBy is empty, allow delete (for backward compatibility with old data)
+		if kb.CreatedBy != "" && kb.CreatedBy != user.ID && !user.IsSuperAdmin {
+			c.Error(apperrors.NewForbiddenError("Only the creator or super admin can delete this knowledge base"))
+			return
+		}
 	}
 
 	logger.Infof(ctx, "Deleting knowledge base, ID: %s, name: %s",

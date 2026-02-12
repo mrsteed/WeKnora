@@ -64,6 +64,23 @@ func (s *orgTreeService) CreateNode(ctx context.Context, tenantID uint64, userID
 		return nil, fmt.Errorf("failed to create org-tree node: %w", err)
 	}
 
+	// Only add creator as admin for root-level organizations (no parent)
+	if org.ParentID == nil {
+		creatorMember := &types.OrganizationMember{
+			ID:             uuid.New().String(),
+			OrganizationID: org.ID,
+			UserID:         userID,
+			Role:           types.OrgRoleAdmin,
+			TenantID:       tenantID,
+		}
+		if err := s.orgRepo.AddMember(ctx, creatorMember); err != nil {
+			logger.Errorf(ctx, "Failed to add creator as admin: %v", err)
+			// Don't fail the entire operation, but log the error
+		} else {
+			logger.Infof(ctx, "Creator %s added as admin of root org %s", userID, org.ID)
+		}
+	}
+
 	logger.Infof(ctx, "Org-tree node created: %s (path: %s)", org.ID, org.Path)
 	return org, nil
 }
@@ -231,6 +248,146 @@ func (s *orgTreeService) GetTree(ctx context.Context, tenantID uint64) ([]*types
 	return roots, nil
 }
 
+// GetTreeForUser returns the organization tree visible to a specific user
+// - Super admins see the full tree
+// - Org admins see subtrees rooted at orgs where they are admin
+func (s *orgTreeService) GetTreeForUser(ctx context.Context, userID string, tenantID uint64, isSuperAdmin bool) ([]*types.OrgTreeNode, error) {
+	logger.Infof(ctx, "Getting org tree for user %s in tenant %d (isSuperAdmin=%v)", userID, tenantID, isSuperAdmin)
+
+	// Super admins see the full tree
+	if isSuperAdmin {
+		return s.GetTree(ctx, tenantID)
+	}
+
+	// Get all organizations the user is a member of
+	userOrgs, err := s.GetUserOrganizations(ctx, userID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user organizations: %w", err)
+	}
+
+	// Find organizations where the user is admin
+	adminOrgIDs := make([]string, 0)
+	for _, org := range userOrgs {
+		if org.MyIsAdmin {
+			adminOrgIDs = append(adminOrgIDs, org.ID)
+		}
+	}
+
+	// If not admin of any org, return empty tree
+	if len(adminOrgIDs) == 0 {
+		return []*types.OrgTreeNode{}, nil
+	}
+
+	// Get the full tree first
+	fullTree, err := s.GetTree(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build a map of all nodes for quick lookup
+	nodeMap := make(map[string]*types.OrgTreeNode)
+	var collectNodes func([]*types.OrgTreeNode)
+	collectNodes = func(nodes []*types.OrgTreeNode) {
+		for _, node := range nodes {
+			nodeMap[node.ID] = node
+			if len(node.Children) > 0 {
+				collectNodes(node.Children)
+			}
+		}
+	}
+	collectNodes(fullTree)
+
+	// Add MyIsAdmin flag to nodes
+	for _, adminOrgID := range adminOrgIDs {
+		if node, ok := nodeMap[adminOrgID]; ok {
+			node.MyIsAdmin = true
+		}
+	}
+
+	// Convert adminOrgIDs to a set for quick lookup
+	adminOrgSet := make(map[string]bool)
+	for _, id := range adminOrgIDs {
+		adminOrgSet[id] = true
+	}
+
+	// Extract subtrees where user is admin
+	// Only include orgs whose ancestors are NOT in the admin list (to avoid duplicates)
+	var userRoots []*types.OrgTreeNode
+	for _, adminOrgID := range adminOrgIDs {
+		node, ok := nodeMap[adminOrgID]
+		if !ok {
+			continue
+		}
+
+		// Check if any ancestor of this node is also in adminOrgSet
+		hasAdminAncestor := false
+		ancestorPath := node.Path // e.g., "/parent_id/node_id"
+		pathParts := strings.Split(strings.Trim(ancestorPath, "/"), "/")
+
+		// Check all ancestors (exclude the node itself which is the last part)
+		for i := 0; i < len(pathParts)-1; i++ {
+			ancestorID := pathParts[i]
+			if adminOrgSet[ancestorID] {
+				hasAdminAncestor = true
+				break
+			}
+		}
+
+		// Only add as root if no ancestor is also an admin org
+		if !hasAdminAncestor {
+			// Deep copy the node and its descendants, marking all as manageable
+			copiedNode := s.copyNodeTree(node, true)
+			userRoots = append(userRoots, copiedNode)
+		}
+	}
+
+	return userRoots, nil
+}
+
+// copyNodeTree creates a deep copy of a node and all its descendants.
+// When isAdminSubtree is true, all nodes in the subtree will have MyIsAdmin=true
+// because the admin of a parent org can manage all descendant organizations.
+func (s *orgTreeService) copyNodeTree(node *types.OrgTreeNode, isAdminSubtree ...bool) *types.OrgTreeNode {
+	if node == nil {
+		return nil
+	}
+
+	adminSubtree := false
+	if len(isAdminSubtree) > 0 {
+		adminSubtree = isAdminSubtree[0]
+	}
+
+	myIsAdmin := node.MyIsAdmin
+	if adminSubtree {
+		myIsAdmin = true
+	}
+
+	copied := &types.OrgTreeNode{
+		ID:          node.ID,
+		Name:        node.Name,
+		Description: node.Description,
+		ParentID:    nil, // Root nodes in the filtered tree should have nil parent
+		Path:        node.Path,
+		Level:       node.Level,
+		SortOrder:   node.SortOrder,
+		MemberCount: node.MemberCount,
+		MyIsAdmin:   myIsAdmin,
+		CreatedAt:   node.CreatedAt,
+		UpdatedAt:   node.UpdatedAt,
+		Children:    make([]*types.OrgTreeNode, 0),
+	}
+
+	// Copy children recursively - propagate admin status to all descendants
+	for _, child := range node.Children {
+		copiedChild := s.copyNodeTree(child, myIsAdmin)
+		// Restore parent relationship within the subtree
+		copiedChild.ParentID = &copied.ID
+		copied.Children = append(copied.Children, copiedChild)
+	}
+
+	return copied
+}
+
 // GetNode returns a single tree node by ID
 func (s *orgTreeService) GetNode(ctx context.Context, nodeID string, tenantID uint64) (*types.Organization, error) {
 	return s.orgTreeRepo.GetByIDAndTenant(ctx, nodeID, tenantID)
@@ -283,6 +440,27 @@ func (s *orgTreeService) GetDescendantIDsByPaths(ctx context.Context, pathPrefix
 		ids = append(ids, d.ID)
 	}
 	return ids, nil
+}
+
+// GetAncestorIDsFromPaths extracts all ancestor org IDs from organization paths (batch optimization, no DB query)
+// Paths are in format: /root_id/parent_id/self_id
+func (s *orgTreeService) GetAncestorIDsFromPaths(paths []string) []string {
+	ancestorSet := make(map[string]bool)
+	for _, path := range paths {
+		// Parse ancestor IDs from path (e.g., /root_id/parent_id/self_id)
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		for _, ancestorID := range parts {
+			if ancestorID != "" {
+				ancestorSet[ancestorID] = true
+			}
+		}
+	}
+
+	ancestorIDs := make([]string, 0, len(ancestorSet))
+	for id := range ancestorSet {
+		ancestorIDs = append(ancestorIDs, id)
+	}
+	return ancestorIDs
 }
 
 // AssignUserToOrg assigns a user to an organization with a given role
@@ -361,7 +539,7 @@ func (s *orgTreeService) SetOrgAdmin(ctx context.Context, orgID string, tenantID
 }
 
 // GetUserOrganizations returns all org-tree organizations a user belongs to (within a tenant)
-func (s *orgTreeService) GetUserOrganizations(ctx context.Context, userID string, tenantID uint64) ([]*types.Organization, error) {
+func (s *orgTreeService) GetUserOrganizations(ctx context.Context, userID string, tenantID uint64) ([]*types.OrgTreeNode, error) {
 	logger.Infof(ctx, "Getting organizations for user %s in tenant %d", userID, tenantID)
 
 	// Get all orgs user is a member of
@@ -370,11 +548,39 @@ func (s *orgTreeService) GetUserOrganizations(ctx context.Context, userID string
 		return nil, fmt.Errorf("failed to list user organizations: %w", err)
 	}
 
-	// Filter to only those belonging to the tenant (org-tree nodes have OrgTenantID set)
-	var result []*types.Organization
+	// Filter to only those belonging to the tenant and convert to OrgTreeNode
+	var result []*types.OrgTreeNode
 	for _, org := range allOrgs {
 		if org.OrgTenantID != nil && *org.OrgTenantID == tenantID {
-			result = append(result, org)
+			// Check if user is admin in this org
+			members, err := s.orgRepo.ListMembers(ctx, org.ID)
+			if err != nil {
+				logger.Warnf(ctx, "Failed to get members for org %s: %v", org.ID, err)
+				continue
+			}
+
+			isAdmin := false
+			for _, member := range members {
+				if member.UserID == userID && member.Role == types.OrgRoleAdmin {
+					isAdmin = true
+					break
+				}
+			}
+
+			node := &types.OrgTreeNode{
+				ID:          org.ID,
+				Name:        org.Name,
+				Description: org.Description,
+				ParentID:    org.ParentID,
+				Path:        org.Path,
+				Level:       org.Level,
+				SortOrder:   org.SortOrder,
+				MemberCount: len(members),
+				MyIsAdmin:   isAdmin,
+				CreatedAt:   org.CreatedAt,
+				UpdatedAt:   org.UpdatedAt,
+			}
+			result = append(result, node)
 		}
 	}
 

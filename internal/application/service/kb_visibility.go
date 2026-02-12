@@ -13,16 +13,25 @@ import (
 type kbVisibilityService struct {
 	kbRepo         interfaces.KnowledgeBaseRepository
 	orgTreeService interfaces.OrgTreeService
+	kgRepo         interfaces.KnowledgeRepository
+	chunkRepo      interfaces.ChunkRepository
+	userRepo       interfaces.UserRepository
 }
 
 // NewKBVisibilityService creates a new knowledge base visibility service
 func NewKBVisibilityService(
 	kbRepo interfaces.KnowledgeBaseRepository,
 	orgTreeService interfaces.OrgTreeService,
+	kgRepo interfaces.KnowledgeRepository,
+	chunkRepo interfaces.ChunkRepository,
+	userRepo interfaces.UserRepository,
 ) interfaces.KBVisibilityService {
 	return &kbVisibilityService{
 		kbRepo:         kbRepo,
 		orgTreeService: orgTreeService,
+		kgRepo:         kgRepo,
+		chunkRepo:      chunkRepo,
+		userRepo:       userRepo,
 	}
 }
 
@@ -39,6 +48,7 @@ func (s *kbVisibilityService) ListAccessibleKBs(ctx context.Context, userID stri
 			logger.Errorf(ctx, "Failed to list all KBs for super admin: %v", err)
 			return nil, fmt.Errorf("failed to list KBs: %w", err)
 		}
+		s.fillKnowledgeCounts(ctx, kbs)
 		return kbs, nil
 	}
 
@@ -49,9 +59,10 @@ func (s *kbVisibilityService) ListAccessibleKBs(ctx context.Context, userID stri
 		return nil, fmt.Errorf("failed to get user organizations: %w", err)
 	}
 
-	// Collect all related org IDs (user's orgs + their descendants for visibility)
-	// Optimization: batch collect descendants from all user orgs' paths to avoid N+1 queries.
-	// We already have the org objects (with paths), so we pass them to a batch method.
+	// Collect all related org IDs:
+	// 1. User's orgs themselves
+	// 2. Ancestors of user's orgs (kb in parent org should be visible to child org members)
+	// 3. Descendants of user's orgs (for future sub-org scenarios)
 	orgIDSet := make(map[string]bool)
 	pathPrefixes := make([]string, 0, len(userOrgs))
 	for _, org := range userOrgs {
@@ -59,12 +70,18 @@ func (s *kbVisibilityService) ListAccessibleKBs(ctx context.Context, userID stri
 		pathPrefixes = append(pathPrefixes, org.Path)
 	}
 
+	// Extract ancestor org IDs from paths (no DB query needed)
+	ancestorIDs := s.orgTreeService.GetAncestorIDsFromPaths(pathPrefixes)
+	for _, id := range ancestorIDs {
+		orgIDSet[id] = true
+	}
+
 	// Single batch call to get all descendants for all user orgs
 	if len(pathPrefixes) > 0 {
 		allDescendants, err := s.orgTreeService.GetDescendantIDsByPaths(ctx, pathPrefixes, tenantID)
 		if err != nil {
 			logger.Errorf(ctx, "Failed to batch get descendant org IDs: %v", err)
-			// Fallback silently — orgIDSet already has user's direct orgs
+			// Fallback silently — orgIDSet already has user's direct orgs + ancestors
 		} else {
 			for _, id := range allDescendants {
 				orgIDSet[id] = true
@@ -84,7 +101,47 @@ func (s *kbVisibilityService) ListAccessibleKBs(ctx context.Context, userID stri
 		return nil, fmt.Errorf("failed to list accessible KBs: %w", err)
 	}
 
+	// Fill knowledge counts for each knowledge base
+	s.fillKnowledgeCounts(ctx, kbs)
+
+	// Fill creator nicknames for each knowledge base
+	s.fillCreatorNicknames(ctx, kbs)
+
 	return kbs, nil
+}
+
+// fillKnowledgeCounts fills KnowledgeCount, ChunkCount, IsProcessing, ProcessingCount for all KBs
+func (s *kbVisibilityService) fillKnowledgeCounts(ctx context.Context, kbs []*types.KnowledgeBase) {
+	for _, kb := range kbs {
+		if kb == nil {
+			continue
+		}
+		kb.EnsureDefaults()
+		tenantID := kb.TenantID
+
+		switch kb.Type {
+		case types.KnowledgeBaseTypeDocument:
+			if cnt, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, tenantID, kb.ID); err == nil {
+				kb.KnowledgeCount = cnt
+			} else {
+				logger.Warnf(ctx, "Failed to get knowledge count for KB %s: %v", kb.ID, err)
+			}
+		case types.KnowledgeBaseTypeFAQ:
+			if cnt, err := s.chunkRepo.CountChunksByKnowledgeBaseID(ctx, tenantID, kb.ID); err == nil {
+				kb.ChunkCount = cnt
+			} else {
+				logger.Warnf(ctx, "Failed to get chunk count for KB %s: %v", kb.ID, err)
+			}
+		}
+
+		// Check processing status
+		if processingCount, err := s.kgRepo.CountKnowledgeByStatus(ctx, tenantID, kb.ID, []string{"pending", "processing"}); err == nil {
+			kb.IsProcessing = processingCount > 0
+			kb.ProcessingCount = processingCount
+		} else {
+			logger.Warnf(ctx, "Failed to get processing count for KB %s: %v", kb.ID, err)
+		}
+	}
 }
 
 // CanAccessKB checks whether a user can access (read) a specific knowledge base
@@ -171,4 +228,51 @@ func (s *kbVisibilityService) CanManageKB(ctx context.Context, userID string, te
 	}
 
 	return false, nil
+}
+
+// fillCreatorNicknames fills the CreatedByNickname field for each knowledge base
+func (s *kbVisibilityService) fillCreatorNicknames(ctx context.Context, kbs []*types.KnowledgeBase) {
+	// Batch query all creator IDs
+	creatorIDs := make(map[string]bool)
+	for _, kb := range kbs {
+		if kb != nil && kb.CreatedBy != "" {
+			creatorIDs[kb.CreatedBy] = true
+		}
+	}
+
+	// Query users by IDs
+	userMap := make(map[string]string)
+	for creatorID := range creatorIDs {
+		// Check for built-in system knowledge bases
+		if types.IsBuiltinAgentID(creatorID) || creatorID == "system" {
+			userMap[creatorID] = "系统"
+			continue
+		}
+
+		user, err := s.userRepo.GetUserByID(ctx, creatorID)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to get user %s: %v", creatorID, err)
+			continue
+		}
+		if user != nil {
+			// Use username as nickname
+			userMap[creatorID] = user.Username
+		}
+	}
+
+	// Fill nicknames
+	for _, kb := range kbs {
+		if kb == nil {
+			continue
+		}
+		if kb.Visibility == types.KBVisibilityGlobal {
+			// Global knowledge bases show "系统"
+			kb.CreatedByNickname = "系统"
+		} else if nickname, ok := userMap[kb.CreatedBy]; ok {
+			kb.CreatedByNickname = nickname
+		} else if kb.CreatedBy != "" {
+			// Fallback: show user ID if username not found
+			kb.CreatedByNickname = kb.CreatedBy
+		}
+	}
 }

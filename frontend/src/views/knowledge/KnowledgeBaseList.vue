@@ -171,7 +171,7 @@
             <div class="bottom-right">
               <div class="personal-source">
                 <t-icon name="user" size="14px" />
-                <span>{{ $t('knowledgeList.myLabel') }}</span>
+                <span>{{ kb.created_by_nickname || $t('knowledgeList.unknownCreator') }}</span>
               </div>
             </div>
           </div>
@@ -232,12 +232,10 @@
               </div>
             </div>
             <div class="bottom-right">
-              <t-tooltip :content="kb.org_name" placement="top">
-                  <div class="org-source">
-                    <img src="@/assets/img/organization-green.svg" class="org-source-icon" alt="" aria-hidden="true" />
-                    <span>{{ kb.org_name }}</span>
-                  </div>
-                </t-tooltip>
+              <div class="personal-source">
+                <t-icon name="user" size="14px" />
+                <span>{{ kb.created_by_nickname || $t('knowledgeList.unknownCreator') }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -324,7 +322,7 @@
           <div class="bottom-right">
             <div class="personal-source">
               <t-icon name="user" size="14px" />
-              <span>{{ $t('knowledgeList.myLabel') }}</span>
+              <span>{{ kb.created_by_nickname || $t('knowledgeList.unknownCreator') }}</span>
             </div>
           </div>
         </div>
@@ -411,7 +409,7 @@
           <div class="bottom-right">
             <div class="personal-source">
               <t-icon name="user" size="14px" />
-              <span>{{ $t('knowledgeList.myLabel') }}</span>
+              <span>{{ kb.created_by_nickname || $t('knowledgeList.unknownCreator') }}</span>
             </div>
           </div>
         </div>
@@ -511,7 +509,7 @@
           <div class="bottom-right">
             <div class="personal-source">
               <t-icon name="user" size="14px" />
-              <span>{{ $t('knowledgeList.myLabel') }}</span>
+              <span>{{ kb.created_by_nickname || $t('knowledgeList.unknownCreator') }}</span>
             </div>
           </div>
         </div>
@@ -555,12 +553,10 @@
             </div>
           </div>
           <div class="bottom-right">
-            <t-tooltip :content="shared.org_name" placement="top">
-              <div class="org-source">
-                <img src="@/assets/img/organization-green.svg" class="org-source-icon" alt="" aria-hidden="true" />
-                <span>{{ shared.org_name }}</span>
-              </div>
-            </t-tooltip>
+            <div class="personal-source">
+              <t-icon name="user" size="14px" />
+              <span>{{ shared.knowledge_base.created_by_nickname || $t('knowledgeList.unknownCreator') }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -620,12 +616,10 @@
             </div>
           </div>
           <div class="bottom-right">
-            <t-tooltip :content="shared.org_name" placement="top">
-              <div class="org-source">
-                <img src="@/assets/img/organization-green.svg" class="org-source-icon" alt="" aria-hidden="true" />
-                <span>{{ shared.org_name }}</span>
-              </div>
-            </t-tooltip>
+            <div class="personal-source">
+              <t-icon name="user" size="14px" />
+              <span>{{ shared.knowledge_base.created_by_nickname || $t('knowledgeList.unknownCreator') }}</span>
+            </div>
           </div>
         </div>
       </div>

@@ -14,32 +14,38 @@ import (
 
 // CustomAgentHandler defines the HTTP handler for custom agent operations
 type CustomAgentHandler struct {
-	service     interfaces.CustomAgentService
-	disabledRepo interfaces.TenantDisabledSharedAgentRepository
+	service           interfaces.CustomAgentService
+	visibilityService interfaces.AgentVisibilityService
+	disabledRepo      interfaces.TenantDisabledSharedAgentRepository
 }
 
 // NewCustomAgentHandler creates a new custom agent handler instance
-func NewCustomAgentHandler(service interfaces.CustomAgentService, disabledRepo interfaces.TenantDisabledSharedAgentRepository) *CustomAgentHandler {
+func NewCustomAgentHandler(service interfaces.CustomAgentService, visibilityService interfaces.AgentVisibilityService, disabledRepo interfaces.TenantDisabledSharedAgentRepository) *CustomAgentHandler {
 	return &CustomAgentHandler{
-		service:     service,
-		disabledRepo: disabledRepo,
+		service:           service,
+		visibilityService: visibilityService,
+		disabledRepo:      disabledRepo,
 	}
 }
 
 // CreateAgentRequest defines the request body for creating an agent
 type CreateAgentRequest struct {
-	Name        string                   `json:"name" binding:"required"`
-	Description string                   `json:"description"`
-	Avatar      string                   `json:"avatar"`
-	Config      types.CustomAgentConfig  `json:"config"`
+	Name           string                  `json:"name" binding:"required"`
+	Description    string                  `json:"description"`
+	Avatar         string                  `json:"avatar"`
+	Config         types.CustomAgentConfig `json:"config"`
+	Visibility     string                  `json:"visibility"`
+	OrganizationID string                  `json:"organization_id"`
 }
 
 // UpdateAgentRequest defines the request body for updating an agent
 type UpdateAgentRequest struct {
-	Name        string                  `json:"name"`
-	Description string                  `json:"description"`
-	Avatar      string                  `json:"avatar"`
-	Config      types.CustomAgentConfig `json:"config"`
+	Name           string                  `json:"name"`
+	Description    string                  `json:"description"`
+	Avatar         string                  `json:"avatar"`
+	Visibility     string                  `json:"visibility"`
+	OrganizationID string                  `json:"organization_id"`
+	Config         types.CustomAgentConfig `json:"config"`
 }
 
 // CreateAgent godoc
@@ -67,12 +73,32 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 		return
 	}
 
+	// Get user from context for created_by
+	userID := c.GetString(types.UserIDContextKey.String())
+
+	// Validate and default visibility
+	visibility := req.Visibility
+	if visibility == "" {
+		visibility = types.AgentVisibilityPrivate
+	}
+	if visibility != types.AgentVisibilityGlobal && visibility != types.AgentVisibilityOrg && visibility != types.AgentVisibilityPrivate {
+		c.Error(errors.NewBadRequestError("Invalid visibility value, must be one of: global, org, private"))
+		return
+	}
+	if visibility == types.AgentVisibilityOrg && req.OrganizationID == "" {
+		c.Error(errors.NewBadRequestError("organization_id is required when visibility is 'org'"))
+		return
+	}
+
 	// Build agent object
 	agent := &types.CustomAgent{
-		Name:        req.Name,
-		Description: req.Description,
-		Avatar:      req.Avatar,
-		Config:      req.Config,
+		Name:           req.Name,
+		Description:    req.Description,
+		Avatar:         req.Avatar,
+		Config:         req.Config,
+		CreatedBy:      userID,
+		Visibility:     visibility,
+		OrganizationID: req.OrganizationID,
 	}
 
 	logger.Infof(ctx, "Creating custom agent, name: %s, agent_mode: %s",
@@ -155,8 +181,19 @@ func (h *CustomAgentHandler) GetAgent(c *gin.Context) {
 func (h *CustomAgentHandler) ListAgents(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	// Get all agents for this tenant
-	agents, err := h.service.ListAgents(ctx)
+	// Get user info for visibility filtering
+	userID := c.GetString(types.UserIDContextKey.String())
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	user, exists := c.Get(types.UserContextKey.String())
+	isSuperAdmin := false
+	if exists {
+		if u, ok := user.(*types.User); ok {
+			isSuperAdmin = u.IsSuperAdmin
+		}
+	}
+
+	// Get agents filtered by visibility
+	agents, err := h.visibilityService.ListAccessibleAgents(ctx, userID, tenantID, isSuperAdmin)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))
@@ -164,8 +201,7 @@ func (h *CustomAgentHandler) ListAgents(c *gin.Context) {
 	}
 
 	// Per-tenant "disabled by me" for own agents (only affects this tenant's conversation dropdown)
-	tenantID, _ := c.Get(types.TenantIDContextKey.String())
-	disabledOwnIDs, _ := h.disabledRepo.ListDisabledOwnAgentIDs(ctx, tenantID.(uint64))
+	disabledOwnIDs, _ := h.disabledRepo.ListDisabledOwnAgentIDs(ctx, tenantID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":                true,
@@ -201,6 +237,49 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 		return
 	}
 
+	// Get current user
+	userVal, ok := c.Get(types.UserContextKey.String())
+	if !ok {
+		c.Error(errors.NewUnauthorizedError("User context not found"))
+		return
+	}
+	user, ok := userVal.(*types.User)
+	if !ok || user == nil {
+		c.Error(errors.NewUnauthorizedError("Invalid user context"))
+		return
+	}
+
+	// Get existing agent to check permissions
+	existingAgent, err := h.service.GetAgentByID(ctx, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"agent_id": id})
+		if err == service.ErrAgentNotFound {
+			c.Error(errors.NewNotFoundError("Agent not found"))
+		} else {
+			c.Error(errors.NewInternalServerError(err.Error()))
+		}
+		return
+	}
+
+	// Debug log for permission check
+	logger.Infof(ctx, "Permission check - Agent ID: %s, CreatedBy: %s, User ID: %s, IsSuperAdmin: %v",
+		existingAgent.ID, existingAgent.CreatedBy, user.ID, user.IsSuperAdmin)
+
+	// Check if this is a built-in agent - only super admin can update
+	if types.IsBuiltinAgentID(id) {
+		if !user.IsSuperAdmin {
+			c.Error(errors.NewForbiddenError("Only super admins can update built-in agents"))
+			return
+		}
+	} else {
+		// For custom agents - only creator or super admin can update
+		// If CreatedBy is empty, allow update (for backward compatibility with old data)
+		if existingAgent.CreatedBy != "" && existingAgent.CreatedBy != user.ID && !user.IsSuperAdmin {
+			c.Error(errors.NewForbiddenError("Only the creator or super admin can update this agent"))
+			return
+		}
+	}
+
 	// Parse request body
 	var req UpdateAgentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -216,6 +295,21 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 		Description: req.Description,
 		Avatar:      req.Avatar,
 		Config:      req.Config,
+	}
+
+	// Handle visibility update
+	visibility := req.Visibility
+	if visibility != "" {
+		if visibility != types.AgentVisibilityGlobal && visibility != types.AgentVisibilityOrg && visibility != types.AgentVisibilityPrivate {
+			c.Error(errors.NewBadRequestError("Invalid visibility value, must be one of: global, org, private"))
+			return
+		}
+		if visibility == types.AgentVisibilityOrg && req.OrganizationID == "" {
+			c.Error(errors.NewBadRequestError("organization_id is required when visibility is org"))
+			return
+		}
+		agent.Visibility = visibility
+		agent.OrganizationID = req.OrganizationID
 	}
 
 	logger.Infof(ctx, "Updating custom agent, ID: %s, name: %s",
@@ -274,10 +368,45 @@ func (h *CustomAgentHandler) DeleteAgent(c *gin.Context) {
 		return
 	}
 
+	// Get current user
+	userVal, ok := c.Get(types.UserContextKey.String())
+	if !ok {
+		c.Error(errors.NewUnauthorizedError("User context not found"))
+		return
+	}
+	user, ok := userVal.(*types.User)
+	if !ok || user == nil {
+		c.Error(errors.NewUnauthorizedError("Invalid user context"))
+		return
+	}
+
+	// Get existing agent to check permissions
+	existingAgent, err := h.service.GetAgentByID(ctx, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"agent_id": id})
+		if err == service.ErrAgentNotFound {
+			c.Error(errors.NewNotFoundError("Agent not found"))
+		} else {
+			c.Error(errors.NewInternalServerError(err.Error()))
+		}
+		return
+	}
+
+	// Debug log for permission check
+	logger.Infof(ctx, "Permission check - Agent ID: %s, CreatedBy: %s, User ID: %s, IsSuperAdmin: %v",
+		existingAgent.ID, existingAgent.CreatedBy, user.ID, user.IsSuperAdmin)
+
+	// Check permissions - only creator or super admin can delete
+	// If CreatedBy is empty, allow delete (for backward compatibility with old data)
+	if existingAgent.CreatedBy != "" && existingAgent.CreatedBy != user.ID && !user.IsSuperAdmin {
+		c.Error(errors.NewForbiddenError("Only the creator or super admin can delete this agent"))
+		return
+	}
+
 	logger.Infof(ctx, "Deleting custom agent, ID: %s", secutils.SanitizeForLog(id))
 
 	// Delete the agent
-	err := h.service.DeleteAgent(ctx, id)
+	err = h.service.DeleteAgent(ctx, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"agent_id": id,

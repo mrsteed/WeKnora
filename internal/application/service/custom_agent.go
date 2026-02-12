@@ -240,6 +240,12 @@ func (s *customAgentService) UpdateAgent(ctx context.Context, agent *types.Custo
 	existingAgent.Config = agent.Config
 	existingAgent.UpdatedAt = time.Now()
 
+	// Update visibility if provided
+	if agent.Visibility != "" {
+		existingAgent.Visibility = agent.Visibility
+		existingAgent.OrganizationID = agent.OrganizationID
+	}
+
 	// Ensure defaults
 	existingAgent.EnsureDefaults()
 
@@ -375,6 +381,12 @@ func (s *customAgentService) CopyAgent(ctx context.Context, id string) (*types.C
 		return nil, ErrInvalidTenantID
 	}
 
+	// Get current user ID from context
+	userID, ok := ctx.Value(types.UserIDContextKey).(string)
+	if !ok {
+		return nil, errors.New("user ID not found in context")
+	}
+
 	// Get the source agent
 	sourceAgent, err := s.GetAgentByID(ctx, id)
 	if err != nil {
@@ -383,15 +395,18 @@ func (s *customAgentService) CopyAgent(ctx context.Context, id string) (*types.C
 
 	// Create a new agent with copied data
 	newAgent := &types.CustomAgent{
-		ID:          uuid.New().String(),
-		Name:        sourceAgent.Name + " (副本)",
-		Description: sourceAgent.Description,
-		Avatar:      sourceAgent.Avatar,
-		IsBuiltin:   false, // Copied agents are never built-in
-		TenantID:    tenantID,
-		Config:      sourceAgent.Config,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:             uuid.New().String(),
+		Name:           sourceAgent.Name + " (副本)",
+		Description:    sourceAgent.Description,
+		Avatar:         sourceAgent.Avatar,
+		IsBuiltin:      false, // Copied agents are never built-in
+		TenantID:       tenantID,
+		CreatedBy:      userID,                       // Set creator to current user
+		Visibility:     types.AgentVisibilityPrivate, // Default to private for copied agents
+		OrganizationID: "",                           // Clear organization_id for private agents
+		Config:         sourceAgent.Config,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 
 	// Ensure defaults

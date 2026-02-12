@@ -117,16 +117,21 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterSkillRoutes(v1, params.SkillHandler)
 		RegisterOrganizationRoutes(v1, params.OrganizationHandler)
 
+		// System info routes (accessible by all authenticated users)
+		RegisterSystemRoutes(v1, params.SystemHandler)
+
+		// Org-tree management routes (accessible by super admin and org admin, permission enforced in handler)
+		RegisterOrgTreeRoutes(v1, params.OrgTreeHandler)
+
 		// Super admin routes (require super admin privileges)
 		superAdmin := v1.Group("", middleware.RequireSuperAdmin())
 		{
-			RegisterOrgTreeRoutes(superAdmin, params.OrgTreeHandler)
+			// Super admin only org-tree operations
+			RegisterOrgTreeSuperAdminRoutes(superAdmin, params.OrgTreeHandler)
 			// Model write operations (super admin only)
 			RegisterModelWriteRoutes(superAdmin, params.ModelHandler)
-			// System info routes (super admin only)
-			RegisterSystemRoutes(superAdmin, params.SystemHandler)
-			// Tenant KV write route (super admin only)
-			RegisterTenantWriteRoutes(superAdmin, params.TenantHandler)
+			// Note: Tenant KV write routes moved to RegisterTenantRoutes to allow
+			// normal users to update their own tenant's configuration
 		}
 
 		// User org-tree membership route (accessible by all authenticated users)
@@ -327,12 +332,16 @@ func RegisterTenantRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
 
 		// Tenant KV read (all authenticated users)
 		tenantRoutes.GET("/kv/:key", handler.GetTenantKV)
+		// Tenant KV write (all authenticated users can update their own tenant's config)
+		tenantRoutes.PUT("/kv/:key", handler.UpdateTenantKV)
 	}
 }
 
 // RegisterTenantWriteRoutes registers tenant KV write routes (super admin only)
+// NOTE: This function is now unused since KV write routes have been moved to RegisterTenantRoutes
+// to allow normal users to update their own tenant's configuration
 func RegisterTenantWriteRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
-	r.PUT("/tenants/kv/:key", handler.UpdateTenantKV)
+	// Moved to RegisterTenantRoutes
 }
 
 // RegisterModelRoutes registers model read routes (accessible to all authenticated users)
@@ -561,15 +570,14 @@ func RegisterOrganizationRoutes(r *gin.RouterGroup, orgHandler *handler.Organiza
 	r.POST("/shared-agents/disabled", orgHandler.SetSharedAgentDisabledByMe)
 }
 
-// RegisterOrgTreeRoutes registers organization tree management routes (super admin only)
+// RegisterOrgTreeRoutes registers organization tree management routes (accessible by super admin and org admin)
+// Fine-grained permission checks are enforced in each handler.
 func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
 	orgTree := r.Group("/org-tree")
 	{
 		// Search users for assignment (must be before /:id to avoid conflict)
 		orgTree.GET("/search-users", orgTreeHandler.SearchUsersForAssign)
-		// Set/unset super admin (must be before /:id to avoid conflict)
-		orgTree.PUT("/super-admin", orgTreeHandler.SetSuperAdmin)
-		// Get the full organization tree
+		// Get the full organization tree (org admins see only their subtrees)
 		orgTree.GET("", orgTreeHandler.GetOrgTree)
 		// Create a new organization tree node
 		orgTree.POST("", orgTreeHandler.CreateOrgNode)
@@ -594,4 +602,10 @@ func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHa
 		// Set/unset org admin
 		orgTree.PUT("/:id/admin", orgTreeHandler.SetOrgAdmin)
 	}
+}
+
+// RegisterOrgTreeSuperAdminRoutes registers org-tree routes that require super admin privileges
+func RegisterOrgTreeSuperAdminRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
+	// Set/unset super admin (super admin only)
+	r.PUT("/org-tree/super-admin", orgTreeHandler.SetSuperAdmin)
 }

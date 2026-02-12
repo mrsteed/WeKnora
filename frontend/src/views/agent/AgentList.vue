@@ -159,7 +159,7 @@
               </t-tooltip>
             </div>
           </div>
-          <!-- 右下角：内置 / 自定义 / 空间图标+名称 -->
+          <!-- 右下角：内置 / 自定义 / 空间图标+名称 / 创建者 -->
           <div v-if="!agent.isMine" class="card-bottom-source">
             <img src="@/assets/img/organization-green.svg" class="org-icon" alt="" aria-hidden="true" />
             <span class="org-source-text">{{ agent.org_name }}</span>
@@ -167,6 +167,10 @@
           <div v-else-if="agent.is_builtin" class="builtin-badge">
             <t-icon name="lock-on" size="12px" />
             <span>{{ $t('agent.builtin') }}</span>
+          </div>
+          <div v-else-if="agent.creator_name" class="creator-badge">
+            <t-icon name="user" size="12px" />
+            <span>{{ agent.creator_name }}</span>
           </div>
           <div v-else class="custom-badge">
             <span>{{ $t('agent.type.custom') }}</span>
@@ -292,10 +296,14 @@
               </t-tooltip>
             </div>
           </div>
-          <!-- 右下角：内置 / 自定义 -->
+          <!-- 右下角：内置 / 创建者 / 自定义 -->
           <div v-if="agent.is_builtin" class="builtin-badge">
             <t-icon name="lock-on" size="12px" />
             <span>{{ $t('agent.builtin') }}</span>
+          </div>
+          <div v-else-if="agent.creator_name" class="creator-badge">
+            <t-icon name="user" size="12px" />
+            <span>{{ agent.creator_name }}</span>
           </div>
           <div v-else class="custom-badge">
             <span>{{ $t('agent.type.custom') }}</span>
@@ -1139,6 +1147,27 @@ defineExpose({
   font-size: 11px;
   font-weight: 500;
   flex-shrink: 0;
+}
+
+.creator-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.04);
+  color: #666;
+  font-family: "PingFang SC";
+  font-size: 11px;
+  font-weight: 500;
+  flex-shrink: 0;
+  max-width: 120px;
+  
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 

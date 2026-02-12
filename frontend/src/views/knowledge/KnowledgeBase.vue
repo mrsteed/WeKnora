@@ -625,6 +625,7 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
   timeout = setInterval(() => {
     batchQueryKnowledge(query).then((result: any) => {
       if (result.success && result.data) {
+        let allCompleted = true;
         (result.data as KnowledgeCard[]).forEach((item: KnowledgeCard) => {
           const index = cardList.value.findIndex(card => card.id == item.id);
           if (index == -1) return;
@@ -633,7 +634,21 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
           cardList.value[index].parse_status = item.parse_status;
           cardList.value[index].summary_status = item.summary_status;
           cardList.value[index].description = item.description;
+          
+          // Check if this item is still processing
+          const isParsing = item.parse_status == 'pending' || item.parse_status == 'processing';
+          const isSummaryPending = item.parse_status == 'completed' && 
+            (item.summary_status == 'pending' || item.summary_status == 'processing');
+          if (isParsing || isSummaryPending) {
+            allCompleted = false;
+          }
         });
+        
+        // Stop polling if all items are completed
+        if (allCompleted && timeout !== null) {
+          clearInterval(timeout);
+          timeout = null;
+        }
       }
     }).catch((_err) => {
       // 错误处理

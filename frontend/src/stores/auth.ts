@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import type { UserInfo, TenantInfo, KnowledgeBaseInfo } from '@/api/auth'
 import type { TenantInfo as TenantInfoFromAPI } from '@/api/tenant'
 import i18n from '@/i18n'
+import { useOrganizationStore } from '@/stores/organization'
 
 export const useAuthStore = defineStore('auth', () => {
   // 状态
@@ -39,6 +40,17 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isSuperAdmin = computed(() => {
     return user.value?.is_super_admin || false
+  })
+
+  const isOrgAdmin = computed(() => {
+    // 超级管理员直接返回true
+    if (isSuperAdmin.value) return true
+    
+    // 检查是否在任何组织中是管理员
+    const orgStore = useOrganizationStore()
+    
+    // 检查用户所属的组织树组织中是否有管理员角色
+    return orgStore.myOrgTreeOrgs.some((org: any) => org.my_is_admin === true)
   })
 
   const effectiveTenantId = computed(() => {
@@ -220,6 +232,7 @@ export const useAuthStore = defineStore('auth', () => {
     currentUserId,
     canAccessAllTenants,
     isSuperAdmin,
+    isOrgAdmin,
     effectiveTenantId,
     
     // 方法

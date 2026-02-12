@@ -94,7 +94,7 @@ const submenuscrollContainer = ref(null);
 // 计算总页数
 const totalPages = computed(() => Math.ceil(total.value / page_size.value));
 const hasMore = computed(() => currentPage.value < totalPages.value);
-type MenuItem = { title: string; icon: string; path: string; childrenPath?: string; children?: any[]; superAdminOnly?: boolean };
+type MenuItem = { title: string; icon: string; path: string; childrenPath?: string; children?: any[]; superAdminOnly?: boolean; orgAdminOnly?: boolean };
 const { menuArr } = storeToRefs(usemenuStore);
 let activeSubmenu = ref<string>('');
 
@@ -171,6 +171,7 @@ const getIconActiveState = (itemPath: string) => {
 const topMenuItems = computed<MenuItem[]>(() => {
     return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => {
         if (item.superAdminOnly && !authStore.isSuperAdmin) return false
+        if (item.orgAdminOnly && !authStore.isSuperAdmin && !authStore.isOrgAdmin) return false
         return item.path === 'knowledge-bases' || item.path === 'agents' || item.path === 'organizations' || item.path === 'admin' || item.path === 'creatChat'
     });
 });

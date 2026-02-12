@@ -1516,6 +1516,7 @@ export default {
     sharedToOrgs: "已共享给 {count} 个空间",
     sharedLabel: "共享",
     myLabel: "我的",
+    unknownCreator: "未知",
     fromAgent: "来自智能体 {name}",
     fromAgentShort: "智能体: {name}",
     tabs: {
@@ -1529,6 +1530,8 @@ export default {
     empty: {
       title: "暂无知识库",
       description: '点击左侧快捷操作"新建知识库"按钮创建第一个知识库',
+      globalDescription: '创建全局知识库后，所有租户都可以访问',
+      orgDescription: '创建组织知识库后，组织成员可以访问',
       sharedTitle: "暂无共享知识库",
       sharedDescription: "您可以加入共享空间或请求他人共享知识库给您",
     },

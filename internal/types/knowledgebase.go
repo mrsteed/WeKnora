@@ -99,6 +99,8 @@ type KnowledgeBase struct {
 	ProcessingCount int64 `yaml:"processing_count"        json:"processing_count"        gorm:"-"`
 	// ShareCount indicates the number of organizations this knowledge base is shared with (not stored in database)
 	ShareCount int64 `yaml:"share_count"             json:"share_count"             gorm:"-"`
+	// CreatedByNickname stores the nickname of the creator (not stored in database, filled at query time)
+	CreatedByNickname string `yaml:"created_by_nickname"    json:"created_by_nickname"    gorm:"-"`
 }
 
 // KnowledgeBaseConfig represents the knowledge base configuration
