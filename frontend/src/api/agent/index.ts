@@ -99,6 +99,10 @@ export interface CustomAgent {
   is_builtin: boolean;
   tenant_id?: number;
   created_by?: string;
+  creator_name?: string;
+  visibility?: 'global' | 'org' | 'private';
+  organization_id?: string;
+  organization_name?: string;
   config: CustomAgentConfig;
   created_at?: string;
   updated_at?: string;
@@ -109,6 +113,8 @@ export interface CreateAgentRequest {
   name: string;
   description?: string;
   avatar?: string;
+  visibility?: 'global' | 'org' | 'private';
+  organization_id?: string;
   config?: CustomAgentConfig;
 }
 
@@ -117,6 +123,8 @@ export interface UpdateAgentRequest {
   name: string;
   description?: string;
   avatar?: string;
+  visibility?: 'global' | 'org' | 'private';
+  organization_id?: string;
   config?: CustomAgentConfig;
 }
 

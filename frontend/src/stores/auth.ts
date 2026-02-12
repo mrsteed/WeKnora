@@ -6,6 +6,7 @@ import i18n from '@/i18n'
 import { reloadFontFromStorage } from '@/composables/useFont'
 import { reloadThemeFromStorage } from '@/composables/useTheme'
 import { resetMigrationLatch } from '@/composables/preferenceStorage'
+import { useOrganizationStore } from '@/stores/organization'
 
 // Per-user UI preferences are namespaced by user id in localStorage.
 // Reload them whenever the active user changes.
@@ -52,6 +53,17 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isSuperAdmin = computed(() => {
     return user.value?.is_super_admin || false
+  })
+
+  const isOrgAdmin = computed(() => {
+    // 超级管理员直接返回true
+    if (isSuperAdmin.value) return true
+
+    // 检查是否在任何组织中是管理员
+    const orgStore = useOrganizationStore()
+
+    // 检查用户所属的组织树组织中是否有管理员角色
+    return orgStore.myOrgTreeOrgs.some((org: any) => org.my_is_admin === true)
   })
 
   const effectiveTenantId = computed(() => {
@@ -254,6 +266,7 @@ export const useAuthStore = defineStore('auth', () => {
     currentUserId,
     canAccessAllTenants,
     isSuperAdmin,
+    isOrgAdmin,
     effectiveTenantId,
     isLiteMode,
     

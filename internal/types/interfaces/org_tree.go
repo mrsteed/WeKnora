@@ -18,6 +18,9 @@ type OrgTreeService interface {
 	MoveNode(ctx context.Context, nodeID string, tenantID uint64, req *types.MoveOrgNodeRequest) error
 	// GetTree returns the full organization tree for a tenant
 	GetTree(ctx context.Context, tenantID uint64) ([]*types.OrgTreeNode, error)
+	// GetTreeForUser returns the organization tree visible to a specific user
+	// Super admins see the full tree; org admins see subtrees rooted at orgs where they are admin
+	GetTreeForUser(ctx context.Context, userID string, tenantID uint64, isSuperAdmin bool) ([]*types.OrgTreeNode, error)
 	// GetNode returns a single tree node by ID
 	GetNode(ctx context.Context, nodeID string, tenantID uint64) (*types.Organization, error)
 
@@ -27,6 +30,8 @@ type OrgTreeService interface {
 	GetOrgAndAncestorIDs(ctx context.Context, orgID string, tenantID uint64) ([]string, error)
 	// GetDescendantIDsByPaths returns all descendant org IDs for multiple path prefixes within a tenant (batch optimization)
 	GetDescendantIDsByPaths(ctx context.Context, pathPrefixes []string, tenantID uint64) ([]string, error)
+	// GetAncestorIDsFromPaths extracts all ancestor org IDs from organization paths (batch optimization, no DB query)
+	GetAncestorIDsFromPaths(paths []string) []string
 
 	// AssignUserToOrg assigns a user to an organization with a given role
 	AssignUserToOrg(ctx context.Context, orgID string, tenantID uint64, req *types.AssignUserToOrgRequest) error
@@ -35,7 +40,7 @@ type OrgTreeService interface {
 	// SetOrgAdmin sets or unsets a user as organization admin
 	SetOrgAdmin(ctx context.Context, orgID string, tenantID uint64, req *types.SetOrgAdminRequest) error
 	// GetUserOrganizations returns all org-tree organizations a user belongs to (within a tenant)
-	GetUserOrganizations(ctx context.Context, userID string, tenantID uint64) ([]*types.Organization, error)
+	GetUserOrganizations(ctx context.Context, userID string, tenantID uint64) ([]*types.OrgTreeNode, error)
 	// ListOrgMembers returns all members of an organization
 	ListOrgMembers(ctx context.Context, orgID string, tenantID uint64) ([]*types.OrganizationMember, error)
 }

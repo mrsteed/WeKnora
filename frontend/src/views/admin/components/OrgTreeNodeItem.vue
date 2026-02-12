@@ -3,11 +3,11 @@
     <div
       class="node-row"
       :class="{ expanded: isExpanded, 'drag-over': isDragOver }"
-      draggable="true"
+      :draggable="canManageNode"
       @dragstart.stop="handleDragStart"
-      @dragover.prevent="handleDragOver"
+      @dragover.prevent="canManageNode ? handleDragOver($event) : undefined"
       @dragleave="handleDragLeave"
-      @drop.prevent="handleDrop"
+      @drop.prevent="canManageNode ? handleDrop($event) : undefined"
       @dragend="handleDragEnd"
     >
       <div class="node-expand" @click="toggleExpand">
@@ -28,13 +28,14 @@
         </span>
       </div>
       <div class="node-actions">
-        <t-button size="small" variant="text" theme="primary" @click.stop="$emit('create', node.id)">
+        <t-button v-if="canManageNode" size="small" variant="text" theme="primary" @click.stop="$emit('create', node.id)">
           <t-icon name="add" />
         </t-button>
-        <t-button size="small" variant="text" theme="default" @click.stop="$emit('edit', node)">
+        <t-button v-if="canManageNode" size="small" variant="text" theme="default" @click.stop="$emit('edit', node)">
           <t-icon name="edit" />
         </t-button>
         <t-popconfirm
+          v-if="canManageNode"
           :content="$t('admin.org.deleteConfirm')"
           @confirm="$emit('delete', node)"
         >
@@ -60,7 +61,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import type { OrgTreeNode } from '@/api/org-tree'
 
 const props = defineProps<{
@@ -75,8 +77,14 @@ const emit = defineEmits<{
   (e: 'move', payload: { nodeId: string; newParentId: string | null }): void
 }>()
 
+const authStore = useAuthStore()
 const isExpanded = ref(true)
 const isDragOver = ref(false)
+
+// 计算是否可以管理该节点：超级管理员或该组织的管理员
+const canManageNode = computed(() => {
+  return authStore.isSuperAdmin || props.node.my_is_admin === true
+})
 
 const toggleExpand = () => {
   isExpanded.value = !isExpanded.value

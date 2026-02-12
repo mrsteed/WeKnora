@@ -327,17 +327,18 @@ func (r *organizationRepository) GetPendingJoinRequest(ctx context.Context, orgI
 
 // GetPendingRequestByType gets a pending request for a user filtered by request type
 func (r *organizationRepository) GetPendingRequestByType(ctx context.Context, orgID string, userID string, requestType types.JoinRequestType) (*types.OrganizationJoinRequest, error) {
-	var request types.OrganizationJoinRequest
+	var requests []types.OrganizationJoinRequest
 	err := r.db.WithContext(ctx).
 		Where("organization_id = ? AND user_id = ? AND status = ? AND request_type = ?", orgID, userID, types.JoinRequestStatusPending, requestType).
-		First(&request).Error
+		Limit(1).
+		Find(&requests).Error
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrJoinRequestNotFound
-		}
 		return nil, err
 	}
-	return &request, nil
+	if len(requests) == 0 {
+		return nil, ErrJoinRequestNotFound
+	}
+	return &requests[0], nil
 }
 
 // ListJoinRequests lists join requests for an organization
