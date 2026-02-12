@@ -1730,7 +1730,7 @@ func (h *InitializationHandler) checkRemoteModelConnection(ctx context.Context,
 
 // checkRerankModelConnection 检查Rerank模型连接和功能的内部方法
 func (h *InitializationHandler) checkRerankModelConnection(ctx context.Context,
-	modelName, baseURL, apiKey string,
+	modelName, baseURL, apiKey, providerName string,
 ) (bool, string) {
 	// 创建Reranker配置
 	config := &rerank.RerankerConfig{
@@ -1738,6 +1738,7 @@ func (h *InitializationHandler) checkRerankModelConnection(ctx context.Context,
 		BaseURL:   baseURL,
 		ModelName: modelName,
 		Source:    types.ModelSourceRemote, // 默认值，实际会根据URL判断
+		Provider:  providerName,
 	}
 	tenantInfo, ok := types.TenantInfoFromContext(ctx)
 	if !ok {
@@ -1799,6 +1800,7 @@ func (h *InitializationHandler) CheckRerankModel(c *gin.Context) {
 		ModelName string `json:"modelName" binding:"required"`
 		BaseURL   string `json:"baseUrl" binding:"required"`
 		APIKey    string `json:"apiKey"`
+		Provider  string `json:"provider"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1823,7 +1825,7 @@ func (h *InitializationHandler) CheckRerankModel(c *gin.Context) {
 
 	// 检查Rerank模型连接和功能
 	available, message := h.checkRerankModelConnection(
-		ctx, req.ModelName, req.BaseURL, req.APIKey,
+		ctx, req.ModelName, req.BaseURL, req.APIKey, req.Provider,
 	)
 
 	logger.Infof(ctx, "Rerank model check completed, available: %v, message: %s", available, message)

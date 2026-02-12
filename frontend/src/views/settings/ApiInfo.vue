@@ -158,7 +158,6 @@
           </p>
         </div>
       </div>
-
       <!-- User info -->
       <div class="info-section-title">{{ $t('tenant.api.userSectionTitle') }}</div>
 
@@ -424,10 +423,6 @@ const loadInfo = async () => {
   } finally {
     loading.value = false
   }
-}
-
-const openApiDoc = () => {
-  window.open('https://github.com/Tencent/WeKnora/blob/main/docs/api/README.md', '_blank')
 }
 
 const fallbackCopyText = (text: string) => {

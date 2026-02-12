@@ -351,7 +351,6 @@ export default {
       webSearch: 'Web Search Enabled',
       knowledgeBase: 'Knowledge Base Linked',
       mcp: 'MCP Services Enabled',
-      multiTurn: 'Multi-turn Conversation',
     },
     tabs: {
       all: 'All',
@@ -363,12 +362,22 @@ export default {
       description: 'Click the button in the top right to create your first agent',
       sharedTitle: 'No shared agents yet',
       sharedDescription: 'You can join a space or ask others to share agents with you',
-    },
+        huggingface: {
+          label: 'HuggingFace / TEI',
+          description: 'Text Embeddings Inference (bge-reranker-v2-m3, bge-m3, etc.)',
+        },
+        lkeap: {
+          label: 'Tencent Cloud LKEAP',
+          description: 'DeepSeek-R1, DeepSeek-V3 series with chain-of-thought',
+        },
+        nvidia: {
+          label: "NVIDIA",
+          description: "deepseek-ai-deepseek-v3_1, nv-embed-v1, rerank-qa-mistral-4b, etc.",
+        },
+        novita: {
+          label: "Novita AI",
+          description: "moonshotai/kimi-k2.5, zai-org/glm-5, minimax/minimax-m2.7, qwen/qwen3-embedding-0.6b, etc.",
     detail: {
-      title: 'Agent Details',
-      useInChat: 'Use in Chat',
-    },
-    shareScope: {
       title: 'Share Scope',
       desc: 'Space members have read-only access to this agent and will use it according to your current configuration; your changes to the agent will sync to shared spaces. To allow space members to edit knowledge base content, share the knowledge base to the space.',
       knowledgeBase: 'Knowledge bases',
@@ -961,7 +970,7 @@ export default {
   },
   initialization: {
     title: 'Initialization',
-    welcome: 'Welcome to WeKnora',
+    welcome: 'Welcome to IntraMind',
     description: 'Please configure the system before starting',
     step1: 'Step 1: Configure LLM Model',
     step2: 'Step 2: Configure Embedding Model',
@@ -2483,6 +2492,10 @@ export default {
         longcat: {
           label: 'LongCat AI',
           description: 'LongCat-Flash-Chat, LongCat-Flash-Thinking, etc.',
+        },
+        huggingface: {
+          label: 'HuggingFace / TEI',
+          description: 'Text Embeddings Inference (bge-reranker-v2-m3, bge-m3, etc.)',
         },
         lkeap: {
           label: 'Tencent Cloud LKEAP',

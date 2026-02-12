@@ -4,3 +4,14 @@
 declare module '*.vue' {
     import { Component } from 'vue'; const component: Component; export default component;
 }
+// vue-i18n 全局类型增强，使 $t 等在模板中可用
+import 'vue-i18n'
+
+declare module 'vue' {
+    interface ComponentCustomProperties {
+        $t: import('vue-i18n').ComposerTranslation
+        $d: import('vue-i18n').ComposerDateTimeFormatting
+        $n: import('vue-i18n').ComposerNumberFormatting
+        $tm: (key: string) => unknown
+    }
+}
