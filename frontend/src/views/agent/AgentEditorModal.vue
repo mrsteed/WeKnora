@@ -134,6 +134,32 @@
                       </div>
                     </div>
 
+                    <!-- 可见性设置（非内置智能体 + 超管或有组织时显示） -->
+                    <div v-if="!isBuiltinAgent && (authStore.isSuperAdmin || orgStore.myOrgTreeOrgs.length > 0)" class="setting-row">
+                      <div class="setting-info">
+                        <label>{{ $t('knowledgeEditor.basic.visibilityLabel') || '可见性' }}</label>
+                        <p class="desc">{{ $t('knowledgeEditor.basic.visibilityTip') || '控制智能体对其他用户的可见范围' }}</p>
+                      </div>
+                      <div class="setting-control">
+                        <t-radio-group v-model="formData.visibility">
+                          <t-radio-button value="private">{{ $t('knowledgeEditor.basic.visibilityPrivate') || '私有' }}</t-radio-button>
+                          <t-radio-button value="org">{{ $t('knowledgeEditor.basic.visibilityOrg') || '组织可见' }}</t-radio-button>
+                          <t-radio-button value="global" :disabled="!authStore.isSuperAdmin">{{ $t('knowledgeEditor.basic.visibilityGlobal') || '全局可见' }}</t-radio-button>
+                        </t-radio-group>
+                      </div>
+                    </div>
+
+                    <!-- 组织选择器（可见性为组织时显示） -->
+                    <div v-if="!isBuiltinAgent && formData.visibility === 'org'" class="setting-row">
+                      <div class="setting-info">
+                        <label>所属组织 <span class="required">*</span></label>
+                        <p class="desc">选择智能体归属的组织</p>
+                      </div>
+                      <div class="setting-control">
+                        <OrgTreeSelector v-model="formData.organization_id" :show-all="authStore.isSuperAdmin" />
+                      </div>
+                    </div>
+
                     <!-- 系统提示词 -->
                     <div class="setting-row setting-row-vertical">
                       <div class="setting-info">
@@ -1405,6 +1431,7 @@ import {
   type RequirementMissKind,
   type ScopeCapabilities,
 } from '@/utils/tool-capabilities';
+import OrgTreeSelector from '@/components/OrgTreeSelector.vue';
 
 const uiStore = useUIStore();
 const authStore = useAuthStore();
@@ -1803,6 +1830,8 @@ const defaultFormData = {
   name: '',
   description: '',
   is_builtin: false,
+  visibility: 'private' as 'global' | 'org' | 'private',
+  organization_id: '',
   config: {
     // 基础设置
     agent_mode: 'smart-reasoning' as 'quick-answer' | 'smart-reasoning',
@@ -2161,6 +2190,10 @@ watch(() => props.visible, async (val) => {
       // 补全可能缺失的字段
       agentData.config = { ...defaultFormData.config, ...agentData.config };
       
+      // 补全可见性字段（旧数据可能没有）
+      if (!agentData.visibility) agentData.visibility = 'private';
+      if (!agentData.organization_id) agentData.organization_id = '';
+      
       // 确保数组字段存在
       if (!agentData.config.suggested_prompts) agentData.config.suggested_prompts = [];
       if (!agentData.config.knowledge_bases) agentData.config.knowledge_bases = [];
@@ -2230,7 +2263,9 @@ watch(() => props.visible, async (val) => {
         }
       }
       formData.value = newFormData;
-      // 新建智能体：知识库默认 "全部"，MCP / Skills 仍默认 "不使用"。
+      kbSelectionMode.value = 'all';
+      formData.value.organization_id = orgStore.currentOrganizationId || '';
+      // 新建智能体：默认填充当前组织，同时默认可使用全部知识库；MCP / Skills 仍默认 "不使用"。
       kbSelectionMode.value = 'all';
       mcpSelectionMode.value = 'none';
       skillsSelectionMode.value = 'none';
@@ -3470,6 +3505,13 @@ const handleSave = async () => {
     // 自定义智能体必须填写系统提示词
     if (!formData.value.config.system_prompt || !formData.value.config.system_prompt.trim()) {
       MessagePlugin.error(t('agent.editor.systemPromptRequired'));
+      currentSection.value = 'basic';
+      return;
+    }
+
+    // 校验可见性：选择"组织可见"时必须选择组织
+    if (formData.value.visibility === 'org' && !formData.value.organization_id) {
+      MessagePlugin.error('选择组织可见时必须指定所属组织');
       currentSection.value = 'basic';
       return;
     }

@@ -161,16 +161,21 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler)
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler)
 
+		// System info routes (accessible by all authenticated users)
+		RegisterSystemRoutes(v1, params.SystemHandler)
+
+		// Org-tree management routes (accessible by super admin and org admin, permission enforced in handler)
+		RegisterOrgTreeRoutes(v1, params.OrgTreeHandler)
+
 		// Super admin routes (require super admin privileges)
 		superAdmin := v1.Group("", middleware.RequireSuperAdmin())
 		{
-			RegisterOrgTreeRoutes(superAdmin, params.OrgTreeHandler)
+			// Super admin only org-tree operations
+			RegisterOrgTreeSuperAdminRoutes(superAdmin, params.OrgTreeHandler)
 			// Model write operations (super admin only)
 			RegisterModelWriteRoutes(superAdmin, params.ModelHandler)
-			// System info routes (super admin only)
-			RegisterSystemRoutes(superAdmin, params.SystemHandler)
-			// Tenant KV write route (super admin only)
-			RegisterTenantWriteRoutes(superAdmin, params.TenantHandler)
+			// Note: Tenant KV write routes moved to RegisterTenantRoutes to allow
+			// normal users to update their own tenant's configuration
 		}
 
 		// User org-tree membership route (accessible by all authenticated users)
@@ -394,12 +399,16 @@ func RegisterTenantRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
 
 		// Tenant KV read (all authenticated users)
 		tenantRoutes.GET("/kv/:key", handler.GetTenantKV)
+		// Tenant KV write (all authenticated users can update their own tenant's config)
+		tenantRoutes.PUT("/kv/:key", handler.UpdateTenantKV)
 	}
 }
 
 // RegisterTenantWriteRoutes registers tenant KV write routes (super admin only)
+// NOTE: This function is now unused since KV write routes have been moved to RegisterTenantRoutes
+// to allow normal users to update their own tenant's configuration
 func RegisterTenantWriteRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
-	r.PUT("/tenants/kv/:key", handler.UpdateTenantKV)
+	// Moved to RegisterTenantRoutes
 }
 
 // RegisterModelRoutes registers model read routes (accessible to all authenticated users)
@@ -982,10 +991,6 @@ func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHan
 		wiki.GET("/index", wikiHandler.GetIndex)
 		wiki.GET("/log", wikiHandler.GetLog)
 
-		// Graph and stats
-		wiki.GET("/graph", wikiHandler.GetGraph)
-		wiki.GET("/stats", wikiHandler.GetStats)
-
 		// Search and maintenance
 		wiki.GET("/search", wikiHandler.SearchPages)
 		wiki.POST("/rebuild-links", wikiHandler.RebuildLinks)
@@ -998,37 +1003,29 @@ func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHan
 	}
 }
 
-// RegisterOrgTreeRoutes registers organization tree management routes (super admin only)
+// RegisterOrgTreeRoutes registers organization tree management routes.
+// Fine-grained permission checks are enforced in each handler.
 func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
 	orgTree := r.Group("/org-tree")
 	{
 		// Search users for assignment (must be before /:id to avoid conflict)
 		orgTree.GET("/search-users", orgTreeHandler.SearchUsersForAssign)
-		// Set/unset super admin (must be before /:id to avoid conflict)
-		orgTree.PUT("/super-admin", orgTreeHandler.SetSuperAdmin)
-		// Get the full organization tree
+		// Get the full organization tree (org admins see only their subtrees)
 		orgTree.GET("", orgTreeHandler.GetOrgTree)
-		// Create a new organization tree node
 		orgTree.POST("", orgTreeHandler.CreateOrgNode)
-		// Get a single tree node
 		orgTree.GET("/:id", orgTreeHandler.GetOrgNode)
-		// Update a tree node
 		orgTree.PUT("/:id", orgTreeHandler.UpdateOrgNode)
-		// Delete a tree node
 		orgTree.DELETE("/:id", orgTreeHandler.DeleteOrgNode)
-		// Move a tree node
 		orgTree.POST("/:id/move", orgTreeHandler.MoveOrgNode)
-		// List members of an organization
 		orgTree.GET("/:id/members", orgTreeHandler.ListOrgMembers)
-		// Assign a user to an organization
 		orgTree.POST("/:id/members", orgTreeHandler.AssignUser)
-		// Create a new user and assign to an organization
 		orgTree.POST("/:id/create-user", orgTreeHandler.CreateUserInOrg)
-		// Update a user in an organization
 		orgTree.PUT("/:id/users/:user_id", orgTreeHandler.UpdateUserInOrg)
-		// Remove a user from an organization
 		orgTree.DELETE("/:id/members/:user_id", orgTreeHandler.RemoveUser)
-		// Set/unset org admin
 		orgTree.PUT("/:id/admin", orgTreeHandler.SetOrgAdmin)
 	}
 }
+
+// RegisterOrgTreeSuperAdminRoutes registers org-tree routes that require super admin privileges.
+func RegisterOrgTreeSuperAdminRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
+	r.PUT("/org-tree/super-admin", orgTreeHandler.SetSuperAdmin)

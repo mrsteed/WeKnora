@@ -888,6 +888,7 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
     batchQueryKnowledge(query).then((result: any) => {
       let hasChanges = false;
       if (result.success && result.data) {
+        let allCompleted = true;
         (result.data as KnowledgeCard[]).forEach((item: KnowledgeCard) => {
           const index = cardList.value.findIndex(card => card.id == item.id);
           if (index == -1) return;
@@ -895,14 +896,28 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
           if (cardList.value[index].parse_status !== item.parse_status ||
               cardList.value[index].summary_status !== item.summary_status ||
               cardList.value[index].description !== item.description) {
-            
-            // Always update the card data
-            cardList.value[index].parse_status = item.parse_status;
-            cardList.value[index].summary_status = item.summary_status;
-            cardList.value[index].description = item.description;
             hasChanges = true;
           }
+
+          // Always update the card data
+          cardList.value[index].parse_status = item.parse_status;
+          cardList.value[index].summary_status = item.summary_status;
+          cardList.value[index].description = item.description;
+          
+          // Check if this item is still processing
+          const isParsing = item.parse_status == 'pending' || item.parse_status == 'processing';
+          const isSummaryPending = item.parse_status == 'completed' && 
+            (item.summary_status == 'pending' || item.summary_status == 'processing');
+          if (isParsing || isSummaryPending) {
+            allCompleted = false;
+          }
         });
+        
+        // Stop polling if all items are completed
+        if (allCompleted && timeout !== null) {
+          clearInterval(timeout);
+          timeout = null;
+        }
       }
       // If there are no changes, the watch won't trigger, so we must manually poll again
       // Even if there are changes, we can manually poll again just to be safe.

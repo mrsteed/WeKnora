@@ -1509,6 +1509,7 @@ export default {
     sharedToOrgs: 'Shared to {count} space(s)',
     sharedLabel: 'Shared',
     myLabel: 'Mine',
+    unknownCreator: 'Unknown',
     fromAgent: 'From agent {name}',
     fromAgentShort: 'Agent: {name}',
     tabs: {
@@ -1521,6 +1522,8 @@ export default {
     empty: {
       title: 'No knowledge bases yet',
       description: 'Click "Create Knowledge Base" in the top-right corner to add your first one.',
+      globalDescription: 'After creating a global knowledge base, all tenants can access it',
+      orgDescription: 'After creating an organization knowledge base, organization members can access it',
       sharedTitle: 'No shared knowledge bases',
       sharedDescription: 'You can join a shared space or request others to share knowledge bases with you'
     },

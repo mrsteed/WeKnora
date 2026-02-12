@@ -559,6 +559,7 @@ type OrgTreeNode struct {
 	Level       int            `json:"level"`
 	SortOrder   int            `json:"sort_order"`
 	MemberCount int            `json:"member_count"`
+	MyIsAdmin   bool           `json:"my_is_admin"`
 	Children    []*OrgTreeNode `json:"children,omitempty"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
