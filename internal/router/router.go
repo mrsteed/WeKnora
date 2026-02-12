@@ -69,6 +69,7 @@ type RouterParams struct {
 	WeKnoraCloudHandler      *handler.WeKnoraCloudHandler
 	WikiPageHandler          *handler.WikiPageHandler
 	OrgTreeHandler        *handler.OrgTreeHandler
+	ExportHandler         *handler.ExportHandler
 }
 
 // NewRouter 创建新的路由
@@ -160,6 +161,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterDataSourceRoutes(v1, params.DataSourceHandler)
 		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler)
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler)
+		RegisterExportRoutes(v1, params.ExportHandler)
 
 		// System info routes (accessible by all authenticated users)
 		RegisterSystemRoutes(v1, params.SystemHandler)
@@ -340,6 +342,19 @@ func RegisterMessageRoutes(r *gin.RouterGroup, handler *handler.MessageHandler) 
 		messages.GET("/:session_id/load", handler.LoadMessages)
 		// 删除消息
 		messages.DELETE("/:session_id/:id", handler.DeleteMessage)
+	}
+}
+
+// RegisterExportRoutes 注册文档导出相关的路由
+func RegisterExportRoutes(r *gin.RouterGroup, h *handler.ExportHandler) {
+	exportGroup := r.Group("/export")
+	{
+		// 导出文档（PDF/DOCX）
+		exportGroup.POST("/document", h.ExportDocument)
+		// 查询导出能力（检查后端工具是否可用）
+		exportGroup.GET("/capabilities", h.ExportCapabilities)
+		// Markdown → HTML 预览
+		exportGroup.POST("/html", h.ExportHTML)
 	}
 }
 
