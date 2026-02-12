@@ -211,22 +211,30 @@ func (s *orgTreeService) GetTree(ctx context.Context, tenantID uint64) ([]*types
 		}
 	}
 
+	// Batch query member user IDs for subtree aggregation
+	memberUserIDs, err := s.orgRepo.BatchListMemberUserIDs(ctx, orgIDs)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to batch list member user IDs: %v", err)
+		memberUserIDs = make(map[string][]string)
+	}
+
 	// Convert to tree nodes
 	nodeMap := make(map[string]*types.OrgTreeNode)
 	var roots []*types.OrgTreeNode
 
 	for _, org := range orgs {
 		node := &types.OrgTreeNode{
-			ID:          org.ID,
-			Name:        org.Name,
-			Description: org.Description,
-			ParentID:    org.ParentID,
-			Path:        org.Path,
-			Level:       org.Level,
-			SortOrder:   org.SortOrder,
-			MemberCount: memberCounts[org.ID],
-			CreatedAt:   org.CreatedAt,
-			UpdatedAt:   org.UpdatedAt,
+			ID:                org.ID,
+			Name:              org.Name,
+			Description:       org.Description,
+			ParentID:          org.ParentID,
+			Path:              org.Path,
+			Level:             org.Level,
+			SortOrder:         org.SortOrder,
+			DirectMemberCount: memberCounts[org.ID],
+			MemberCount:       memberCounts[org.ID], // will be updated to total after tree build
+			CreatedAt:         org.CreatedAt,
+			UpdatedAt:         org.UpdatedAt,
 		}
 		nodeMap[org.ID] = node
 	}
@@ -245,7 +253,35 @@ func (s *orgTreeService) GetTree(ctx context.Context, tenantID uint64) ([]*types
 		}
 	}
 
+	// Compute subtree total member counts (bottom-up, deduplicated)
+	for _, root := range roots {
+		s.computeSubtreeMemberCount(root, memberUserIDs)
+	}
+
 	return roots, nil
+}
+
+// computeSubtreeMemberCount recursively computes total unique member count for a subtree
+func (s *orgTreeService) computeSubtreeMemberCount(node *types.OrgTreeNode, memberUserIDs map[string][]string) map[string]bool {
+	userSet := make(map[string]bool)
+
+	// Add current node's direct members
+	for _, uid := range memberUserIDs[node.ID] {
+		userSet[uid] = true
+	}
+
+	// Recursively process children
+	for _, child := range node.Children {
+		childUsers := s.computeSubtreeMemberCount(child, memberUserIDs)
+		for uid := range childUsers {
+			userSet[uid] = true
+		}
+	}
+
+	node.TotalMemberCount = len(userSet)
+	node.MemberCount = node.TotalMemberCount // backward compatible
+
+	return userSet
 }
 
 // GetTreeForUser returns the organization tree visible to a specific user
@@ -363,18 +399,20 @@ func (s *orgTreeService) copyNodeTree(node *types.OrgTreeNode, isAdminSubtree ..
 	}
 
 	copied := &types.OrgTreeNode{
-		ID:          node.ID,
-		Name:        node.Name,
-		Description: node.Description,
-		ParentID:    nil, // Root nodes in the filtered tree should have nil parent
-		Path:        node.Path,
-		Level:       node.Level,
-		SortOrder:   node.SortOrder,
-		MemberCount: node.MemberCount,
-		MyIsAdmin:   myIsAdmin,
-		CreatedAt:   node.CreatedAt,
-		UpdatedAt:   node.UpdatedAt,
-		Children:    make([]*types.OrgTreeNode, 0),
+		ID:                node.ID,
+		Name:              node.Name,
+		Description:       node.Description,
+		ParentID:          nil, // Root nodes in the filtered tree should have nil parent
+		Path:              node.Path,
+		Level:             node.Level,
+		SortOrder:         node.SortOrder,
+		MemberCount:       node.MemberCount,
+		DirectMemberCount: node.DirectMemberCount,
+		TotalMemberCount:  node.TotalMemberCount,
+		MyIsAdmin:         myIsAdmin,
+		CreatedAt:         node.CreatedAt,
+		UpdatedAt:         node.UpdatedAt,
+		Children:          make([]*types.OrgTreeNode, 0),
 	}
 
 	// Copy children recursively - propagate admin status to all descendants
@@ -568,17 +606,19 @@ func (s *orgTreeService) GetUserOrganizations(ctx context.Context, userID string
 			}
 
 			node := &types.OrgTreeNode{
-				ID:          org.ID,
-				Name:        org.Name,
-				Description: org.Description,
-				ParentID:    org.ParentID,
-				Path:        org.Path,
-				Level:       org.Level,
-				SortOrder:   org.SortOrder,
-				MemberCount: len(members),
-				MyIsAdmin:   isAdmin,
-				CreatedAt:   org.CreatedAt,
-				UpdatedAt:   org.UpdatedAt,
+				ID:                org.ID,
+				Name:              org.Name,
+				Description:       org.Description,
+				ParentID:          org.ParentID,
+				Path:              org.Path,
+				Level:             org.Level,
+				SortOrder:         org.SortOrder,
+				DirectMemberCount: len(members),
+				TotalMemberCount:  len(members),
+				MemberCount:       len(members),
+				MyIsAdmin:         isAdmin,
+				CreatedAt:         org.CreatedAt,
+				UpdatedAt:         org.UpdatedAt,
 			}
 			result = append(result, node)
 		}
@@ -602,4 +642,88 @@ func (s *orgTreeService) ListOrgMembers(ctx context.Context, orgID string, tenan
 		return nil, fmt.Errorf("failed to list org members: %w", err)
 	}
 	return members, nil
+}
+
+// IsAdminOfAnyOrg checks if the user is an admin of any of the specified organizations
+func (s *orgTreeService) IsAdminOfAnyOrg(ctx context.Context, userID string, orgIDs []string, tenantID uint64) bool {
+	return s.orgRepo.IsAdminOfAnyOrg(ctx, userID, orgIDs, tenantID)
+}
+
+// ListInheritedAdmins returns admins inherited from ancestor organizations
+func (s *orgTreeService) ListInheritedAdmins(ctx context.Context, orgID string, tenantID uint64) ([]map[string]interface{}, error) {
+	// 1. Get the current org node
+	org, err := s.orgTreeRepo.GetByIDAndTenant(ctx, orgID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("org not found: %w", err)
+	}
+
+	// 2. Parse ancestor IDs from path (exclude self)
+	parts := strings.Split(strings.TrimPrefix(org.Path, "/"), "/")
+	ancestorIDs := make([]string, 0, len(parts)-1)
+	for _, part := range parts {
+		if part != "" && part != orgID {
+			ancestorIDs = append(ancestorIDs, part)
+		}
+	}
+
+	if len(ancestorIDs) == 0 {
+		return nil, nil // root node has no ancestors
+	}
+
+	// 3. Query admin members of ancestor orgs
+	var adminMembers []*types.OrganizationMember
+	for _, ancestorID := range ancestorIDs {
+		members, err := s.orgRepo.ListMembers(ctx, ancestorID)
+		if err != nil {
+			continue
+		}
+		for _, m := range members {
+			if m.Role == types.OrgRoleAdmin {
+				adminMembers = append(adminMembers, m)
+			}
+		}
+	}
+
+	// 4. Get ancestor org names for display
+	ancestorOrgs, err := s.orgTreeRepo.GetByIDs(ctx, ancestorIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ancestor orgs: %w", err)
+	}
+	orgNameMap := make(map[string]string)
+	for _, ao := range ancestorOrgs {
+		orgNameMap[ao.ID] = ao.Name
+	}
+
+	// 5. Exclude users already in the current org (direct members)
+	directMembers, _ := s.orgRepo.ListMembers(ctx, orgID)
+	directUserIDs := make(map[string]bool)
+	for _, dm := range directMembers {
+		directUserIDs[dm.UserID] = true
+	}
+
+	// 6. Build result, deduplicate
+	seen := make(map[string]bool)
+	result := make([]map[string]interface{}, 0)
+	for _, m := range adminMembers {
+		if directUserIDs[m.UserID] || seen[m.UserID] {
+			continue
+		}
+		seen[m.UserID] = true
+		entry := map[string]interface{}{
+			"user_id":       m.UserID,
+			"username":      "",
+			"email":         "",
+			"from_org_id":   m.OrganizationID,
+			"from_org_name": orgNameMap[m.OrganizationID],
+			"role":          "admin",
+			"is_inherited":  true,
+		}
+		if m.User != nil {
+			entry["username"] = m.User.Username
+			entry["email"] = m.User.Email
+		}
+		result = append(result, entry)
+	}
+
+	return result, nil
 }
