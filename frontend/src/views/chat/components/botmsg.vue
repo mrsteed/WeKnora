@@ -52,6 +52,10 @@
                         <t-icon name="info-circle" />
                     </t-button>
                 </t-tooltip>
+                <ExportDropdown
+                    :content="getActualContent()"
+                    :filename-prefix="formatManualTitle(userQuery)"
+                />
             </div>
             <div v-if="isImgLoading" class="img_loading"><t-loading size="small"></t-loading><span>{{ $t('common.loading') }}</span></div>
         </div>
@@ -66,6 +70,7 @@ import 'katex/dist/katex.min.css';
 import docInfo from './docInfo.vue';
 import deepThink from './deepThink.vue';
 import AgentStreamDisplay from './AgentStreamDisplay.vue';
+import ExportDropdown from './ExportDropdown.vue';
 import picturePreview from '@/components/picture-preview.vue';
 import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL, hydrateProtectedFileImages } from '@/utils/security';
 import { useI18n } from 'vue-i18n';

@@ -3,18 +3,21 @@ package tools
 import (
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	filesvc "github.com/Tencent/WeKnora/internal/application/service/file"
 	"io"
 	"os"
 	"regexp"
+	"path/filepath"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/utils"
+	"github.com/extrame/xls"
 )
 
 var dataAnalysisTool = BaseTool{
@@ -567,8 +570,17 @@ func (t *DataAnalysisTool) LoadFromKnowledge(ctx context.Context, knowledge *typ
 	switch fileType {
 	case "csv":
 		return t.LoadFromCSV(ctx, localPath, tableName)
-	case "xlsx", "xls":
+	case "xlsx":
 		return t.LoadFromExcel(ctx, localPath, tableName)
+	case "xls":
+		// Old .xls binary format is not supported by DuckDB's st_read (GDAL).
+		// Convert to CSV first, then load via read_csv_auto.
+		csvPath, err := t.convertXlsToCSV(ctx, localPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert .xls to CSV: %w", err)
+		}
+		defer os.Remove(csvPath)
+		return t.LoadFromCSV(ctx, csvPath, tableName)
 	default:
 		logger.Warnf(ctx, "[Tool][DataAnalysis] Unsupported file type '%s' for knowledge '%s' in session %s",
 			fileType, knowledge.ID, t.sessionID)
@@ -627,6 +639,110 @@ func (t *DataAnalysisTool) materializeKnowledgeFile(ctx context.Context, knowled
 		knowledge.ID, tmpPath, t.sessionID)
 
 	return tmpPath, cleanup, nil
+}
+
+// downloadToTempFile downloads the file from storage to a local temporary file.
+// Returns the local file path. Caller is responsible for removing the temp file.
+func (t *DataAnalysisTool) downloadToTempFile(ctx context.Context, filePath string, fileType string) (string, error) {
+	reader, err := t.fileService.GetFile(ctx, filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to get file from storage: %w", err)
+	}
+	defer reader.Close()
+
+	// Determine file extension
+	ext := "." + fileType
+	if ext == "." {
+		ext = ".tmp"
+	}
+
+	// Create temp file
+	tmpFile, err := os.CreateTemp("", "weknora_data_*"+ext)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	if _, err := io.Copy(tmpFile, reader); err != nil {
+		_ = tmpFile.Close()
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to write to temp file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to finalize temp file: %w", err)
+	}
+
+	// Ensure the path is absolute for DuckDB
+	absPath, err := filepath.Abs(tmpPath)
+	if err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	return absPath, nil
+}
+
+// convertXlsToCSV converts an old .xls binary format file to a CSV temp file.
+// DuckDB's st_read (GDAL) does not support the legacy .xls format, so we use
+// the extrame/xls library to read .xls and write it out as CSV.
+// Returns the path to the CSV temp file. Caller is responsible for removing it.
+func (t *DataAnalysisTool) convertXlsToCSV(ctx context.Context, xlsPath string) (string, error) {
+	logger.Infof(ctx, "[Tool][DataAnalysis] Converting .xls file '%s' to CSV for session %s", xlsPath, t.sessionID)
+
+	xlFile, err := xls.Open(xlsPath, "utf-8")
+	if err != nil {
+		return "", fmt.Errorf("failed to open .xls file: %w", err)
+	}
+
+	sheet := xlFile.GetSheet(0)
+	if sheet == nil {
+		return "", fmt.Errorf("no sheets found in .xls file")
+	}
+
+	// Create CSV temp file
+	csvFile, err := os.CreateTemp("", "weknora_xls2csv_*.csv")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp CSV file: %w", err)
+	}
+	csvPath := csvFile.Name()
+
+	writer := csv.NewWriter(csvFile)
+
+	maxRow := int(sheet.MaxRow)
+	for i := 0; i <= maxRow; i++ {
+		row := sheet.Row(i)
+		if row == nil {
+			continue
+		}
+		lastCol := row.LastCol()
+		record := make([]string, lastCol)
+		for j := 0; j < lastCol; j++ {
+			record[j] = row.Col(j)
+		}
+		if err := writer.Write(record); err != nil {
+			csvFile.Close()
+			os.Remove(csvPath)
+			return "", fmt.Errorf("failed to write CSV row: %w", err)
+		}
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		csvFile.Close()
+		os.Remove(csvPath)
+		return "", fmt.Errorf("failed to flush CSV writer: %w", err)
+	}
+	csvFile.Close()
+
+	absPath, err := filepath.Abs(csvPath)
+	if err != nil {
+		os.Remove(csvPath)
+		return "", fmt.Errorf("failed to get absolute path for CSV: %w", err)
+	}
+
+	logger.Infof(ctx, "[Tool][DataAnalysis] Successfully converted .xls to CSV at '%s' for session %s", absPath, t.sessionID)
+	return absPath, nil
 }
 
 // LoadFromKnowledgeID loads data from a Knowledge ID into a DuckDB table and returns the table schema
