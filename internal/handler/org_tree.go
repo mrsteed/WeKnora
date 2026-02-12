@@ -29,9 +29,63 @@ func NewOrgTreeHandler(
 	}
 }
 
-// GetOrgTree returns the full organization tree for the current tenant
+// getUserFromContext extracts the current user from the Gin context.
+// Returns the user and true on success, or sends an error response and returns nil/false.
+func (h *OrgTreeHandler) getUserFromContext(c *gin.Context) (*types.User, bool) {
+	userVal, exists := c.Get(types.UserContextKey.String())
+	if !exists {
+		c.Error(apperrors.NewUnauthorizedError("User not found in context"))
+		return nil, false
+	}
+	user, ok := userVal.(*types.User)
+	if !ok {
+		c.Error(apperrors.NewInternalServerError("Invalid user type in context"))
+		return nil, false
+	}
+	return user, true
+}
+
+// isOrgAdminOf checks if the given user is an admin of the specified organization.
+// Super admins are always considered admin of any org.
+func (h *OrgTreeHandler) isOrgAdminOf(c *gin.Context, user *types.User, orgID string, tenantID uint64) bool {
+	if user.IsSuperAdmin {
+		return true
+	}
+	ctx := c.Request.Context()
+	orgMembers, err := h.orgTreeService.ListOrgMembers(ctx, orgID, tenantID)
+	if err != nil {
+		return false
+	}
+	for _, member := range orgMembers {
+		if member.UserID == user.ID && member.Role == types.OrgRoleAdmin {
+			return true
+		}
+	}
+	return false
+}
+
+// isOrgAdminOfAny checks if the user is a super admin or admin of any org-tree organization.
+func (h *OrgTreeHandler) isOrgAdminOfAny(c *gin.Context, user *types.User, tenantID uint64) bool {
+	if user.IsSuperAdmin {
+		return true
+	}
+	ctx := c.Request.Context()
+	userOrgs, err := h.orgTreeService.GetUserOrganizations(ctx, user.ID, tenantID)
+	if err != nil {
+		return false
+	}
+	for _, org := range userOrgs {
+		if org.MyIsAdmin {
+			return true
+		}
+	}
+	return false
+}
+
+// GetOrgTree returns the organization tree for the current user
+// Super admins see the full tree; org admins see only their managed subtrees
 // @Summary      获取组织树
-// @Description  返回当前租户的完整组织树
+// @Description  返回当前用户可见的组织树（超管看全部，组织管理员看自己管理的子树）
 // @Tags         组织树管理
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
@@ -42,7 +96,18 @@ func (h *OrgTreeHandler) GetOrgTree(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 
-	tree, err := h.orgTreeService.GetTree(ctx, tenantID)
+	user, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// Permission gate: must be super admin or org admin
+	if !h.isOrgAdminOfAny(c, user, tenantID) {
+		c.Error(apperrors.NewForbiddenError("You do not have permission to access the organization tree"))
+		return
+	}
+
+	tree, err := h.orgTreeService.GetTreeForUser(ctx, user.ID, tenantID, user.IsSuperAdmin)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get org tree: %v", err)
 		c.Error(apperrors.NewInternalServerError("Failed to get organization tree").WithDetails(err.Error()))
@@ -78,6 +143,28 @@ func (h *OrgTreeHandler) CreateOrgNode(c *gin.Context) {
 		return
 	}
 
+	user, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// 如果不是超级管理员，需要进行权限检查
+	if !user.IsSuperAdmin {
+		// 不允许创建根组织（parent_id为空或空字符串）
+		if req.ParentID == nil || *req.ParentID == "" {
+			logger.Warnf(ctx, "Non-super-admin user %s attempted to create root organization", userID)
+			c.Error(apperrors.NewForbiddenError("Only super administrators can create root organizations"))
+			return
+		}
+
+		// 检查用户是否是父组织的管理员
+		if !h.isOrgAdminOf(c, user, *req.ParentID, tenantID) {
+			logger.Warnf(ctx, "User %s is not an admin of parent organization %s", userID, *req.ParentID)
+			c.Error(apperrors.NewForbiddenError("You must be an administrator of the parent organization to create sub-organizations"))
+			return
+		}
+	}
+
 	org, err := h.orgTreeService.CreateNode(ctx, tenantID, userID, &req)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to create org-tree node: %v", err)
@@ -105,6 +192,17 @@ func (h *OrgTreeHandler) GetOrgNode(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	nodeID := c.Param("id")
+
+	user, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// Permission: super admin or admin of this org (or an ancestor)
+	if !h.isOrgAdminOf(c, user, nodeID, tenantID) {
+		c.Error(apperrors.NewForbiddenError("You do not have permission to view this organization node"))
+		return
+	}
 
 	org, err := h.orgTreeService.GetNode(ctx, nodeID, tenantID)
 	if err != nil {
@@ -143,6 +241,17 @@ func (h *OrgTreeHandler) UpdateOrgNode(c *gin.Context) {
 		return
 	}
 
+	user, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// Permission: super admin or admin of this org
+	if !h.isOrgAdminOf(c, user, nodeID, tenantID) {
+		c.Error(apperrors.NewForbiddenError("You do not have permission to update this organization node"))
+		return
+	}
+
 	org, err := h.orgTreeService.UpdateNode(ctx, nodeID, tenantID, &req)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to update org-tree node: %v", err)
@@ -170,6 +279,17 @@ func (h *OrgTreeHandler) DeleteOrgNode(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	nodeID := c.Param("id")
+
+	user, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// Permission: super admin or admin of this org
+	if !h.isOrgAdminOf(c, user, nodeID, tenantID) {
+		c.Error(apperrors.NewForbiddenError("You do not have permission to delete this organization node"))
+		return
+	}
 
 	if err := h.orgTreeService.DeleteNode(ctx, nodeID, tenantID); err != nil {
 		logger.Errorf(ctx, "Failed to delete org-tree node: %v", err)
@@ -204,6 +324,29 @@ func (h *OrgTreeHandler) MoveOrgNode(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Errorf(ctx, "Invalid request parameters: %v", err)
 		c.Error(apperrors.NewValidationError("Invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	user, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// Permission: must be admin of the node being moved
+	if !h.isOrgAdminOf(c, user, nodeID, tenantID) {
+		c.Error(apperrors.NewForbiddenError("You do not have permission to move this organization node"))
+		return
+	}
+
+	// If moving to a new parent, must also be admin of the target parent
+	if req.NewParentID != nil && *req.NewParentID != "" {
+		if !h.isOrgAdminOf(c, user, *req.NewParentID, tenantID) {
+			c.Error(apperrors.NewForbiddenError("You do not have permission to move nodes into the target organization"))
+			return
+		}
+	} else if !user.IsSuperAdmin {
+		// Moving to root level requires super admin
+		c.Error(apperrors.NewForbiddenError("Only super administrators can move nodes to root level"))
 		return
 	}
 
@@ -243,6 +386,18 @@ func (h *OrgTreeHandler) AssignUser(c *gin.Context) {
 		return
 	}
 
+	user, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// Permission: must be admin of this org
+	if !h.isOrgAdminOf(c, user, orgID, tenantID) {
+		logger.Warnf(ctx, "User %s is not an admin of organization %s", user.ID, orgID)
+		c.Error(apperrors.NewForbiddenError("Only organization administrators can add members to this organization"))
+		return
+	}
+
 	if err := h.orgTreeService.AssignUserToOrg(ctx, orgID, tenantID, &req); err != nil {
 		logger.Errorf(ctx, "Failed to assign user to org: %v", err)
 		c.Error(apperrors.NewInternalServerError("Failed to assign user to organization").WithDetails(err.Error()))
@@ -279,17 +434,29 @@ func (h *OrgTreeHandler) CreateUserInOrg(c *gin.Context) {
 		return
 	}
 
+	user, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// Permission: must be admin of this org
+	if !h.isOrgAdminOf(c, user, orgID, tenantID) {
+		logger.Warnf(ctx, "User %s is not an admin of organization %s", user.ID, orgID)
+		c.Error(apperrors.NewForbiddenError("Only organization administrators can create users in this organization"))
+		return
+	}
+
 	// Step 1: Create user via user service
-	user, err := h.userService.CreateUserByAdmin(ctx, &req, tenantID)
+	newUser, err := h.userService.CreateUserByAdmin(ctx, &req, tenantID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to create user: %v", err)
 		c.Error(apperrors.NewInternalServerError("Failed to create user").WithDetails(err.Error()))
 		return
 	}
 
-	// Step 2: Assign user to org
+	// Step 2: Assign the newly created user to org
 	assignReq := &types.AssignUserToOrgRequest{
-		UserID: user.ID,
+		UserID: newUser.ID,
 		Role:   types.OrgMemberRole(req.Role),
 	}
 	if err := h.orgTreeService.AssignUserToOrg(ctx, orgID, tenantID, assignReq); err != nil {
@@ -298,7 +465,7 @@ func (h *OrgTreeHandler) CreateUserInOrg(c *gin.Context) {
 		c.JSON(http.StatusOK, types.CreateUserInOrgResponse{
 			Success: true,
 			Message: "User created but failed to assign to organization: " + err.Error(),
-			User:    user.ToUserInfo(),
+			User:    newUser.ToUserInfo(),
 		})
 		return
 	}
@@ -306,7 +473,7 @@ func (h *OrgTreeHandler) CreateUserInOrg(c *gin.Context) {
 	c.JSON(http.StatusOK, types.CreateUserInOrgResponse{
 		Success: true,
 		Message: "User created and assigned to organization successfully",
-		User:    user.ToUserInfo(),
+		User:    newUser.ToUserInfo(),
 	})
 }
 
@@ -333,6 +500,17 @@ func (h *OrgTreeHandler) UpdateUserInOrg(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Errorf(ctx, "Invalid request parameters: %v", err)
 		c.Error(apperrors.NewValidationError("Invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	currentUser, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// Permission: must be admin of this org
+	if !h.isOrgAdminOf(c, currentUser, orgID, tenantID) {
+		c.Error(apperrors.NewForbiddenError("You do not have permission to update users in this organization"))
 		return
 	}
 
@@ -430,6 +608,18 @@ func (h *OrgTreeHandler) RemoveUser(c *gin.Context) {
 	userID := c.Param("user_id")
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 
+	currentUser, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// Permission: must be admin of this org
+	if !h.isOrgAdminOf(c, currentUser, orgID, tenantID) {
+		logger.Warnf(ctx, "User %s is not an admin of organization %s", currentUser.ID, orgID)
+		c.Error(apperrors.NewForbiddenError("Only organization administrators can remove members from this organization"))
+		return
+	}
+
 	req := &types.RemoveUserFromOrgRequest{
 		UserID: userID,
 	}
@@ -467,6 +657,18 @@ func (h *OrgTreeHandler) SetOrgAdmin(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Errorf(ctx, "Invalid request parameters: %v", err)
 		c.Error(apperrors.NewValidationError("Invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	currentUser, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// Permission: must be admin of this org
+	if !h.isOrgAdminOf(c, currentUser, orgID, tenantID) {
+		logger.Warnf(ctx, "User %s is not an admin of organization %s", currentUser.ID, orgID)
+		c.Error(apperrors.NewForbiddenError("Only organization administrators can manage admin roles in this organization"))
 		return
 	}
 
@@ -524,6 +726,17 @@ func (h *OrgTreeHandler) ListOrgMembers(c *gin.Context) {
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	orgID := c.Param("id")
 
+	currentUser, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// Permission: super admin or admin of this org
+	if !h.isOrgAdminOf(c, currentUser, orgID, tenantID) {
+		c.Error(apperrors.NewForbiddenError("You do not have permission to view members of this organization"))
+		return
+	}
+
 	members, err := h.orgTreeService.ListOrgMembers(ctx, orgID, tenantID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to list org members: %v", err)
@@ -569,6 +782,18 @@ func (h *OrgTreeHandler) ListOrgMembers(c *gin.Context) {
 func (h *OrgTreeHandler) SearchUsersForAssign(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+
+	currentUser, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	// Permission: must be super admin or org admin of at least one org
+	if !h.isOrgAdminOfAny(c, currentUser, tenantID) {
+		c.Error(apperrors.NewForbiddenError("You do not have permission to search users"))
+		return
+	}
+
 	query := c.Query("q")
 	limitStr := c.DefaultQuery("limit", "20")
 	limit := 20

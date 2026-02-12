@@ -11,6 +11,7 @@ export interface OrgTreeNode {
   level: number
   sort_order: number
   member_count: number
+  my_is_admin: boolean
   children?: OrgTreeNode[]
   created_at: string
   updated_at: string

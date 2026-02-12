@@ -71,7 +71,7 @@ func (s *messageService) CreateMessage(ctx context.Context, message *types.Messa
 
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d, session ID: %s", tenantID, message.SessionID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, message.SessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, "", message.SessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -97,7 +97,7 @@ func (s *messageService) GetMessage(ctx context.Context, sessionID string, messa
 
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, "", sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -126,7 +126,7 @@ func (s *messageService) GetMessagesBySession(ctx context.Context,
 
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, "", sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -160,7 +160,7 @@ func (s *messageService) GetRecentMessagesBySession(ctx context.Context,
 		return nil, errors.New("tenant ID not found in context")
 	}
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, "", sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -193,7 +193,7 @@ func (s *messageService) GetMessagesBySessionBeforeTime(ctx context.Context,
 		return nil, errors.New("tenant ID not found in context")
 	}
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, "", sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -221,7 +221,7 @@ func (s *messageService) UpdateMessage(ctx context.Context, message *types.Messa
 
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, message.SessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, "", message.SessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return err
@@ -258,7 +258,7 @@ func (s *messageService) DeleteMessage(ctx context.Context, sessionID string, me
 
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, "", sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return err

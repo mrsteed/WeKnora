@@ -168,7 +168,7 @@ const submenuscrollContainer = ref(null);
 // 计算总页数
 const totalPages = computed(() => Math.ceil(total.value / page_size.value));
 const hasMore = computed(() => currentPage.value < totalPages.value);
-type MenuItem = { title: string; icon: string; path: string; childrenPath?: string; children?: any[]; superAdminOnly?: boolean };
+type MenuItem = { title: string; icon: string; path: string; childrenPath?: string; children?: any[]; superAdminOnly?: boolean; orgAdminOnly?: boolean };
 const { menuArr, visibleMenuArr } = storeToRefs(usemenuStore);
 let activeSubmenu = ref<string>('');
 const isLiteEdition = ref(false);
