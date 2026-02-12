@@ -355,7 +355,7 @@ export default {
   },
   initialization: {
     title: 'Инициализация',
-    welcome: 'Добро пожаловать в WeKnora',
+    welcome: 'Добро пожаловать в IntraMind',
     description: 'Пожалуйста, настройте систему перед началом работы',
     step1: 'Шаг 1: Настройка LLM модели',
     step2: 'Шаг 2: Настройка модели встраивания',
@@ -992,6 +992,10 @@ export default {
         longcat: {
           label: 'LongCat AI',
           description: 'LongCat-Flash-Chat, LongCat-Flash-Thinking, etc.',
+        },
+        huggingface: {
+          label: 'HuggingFace / TEI',
+          description: 'Text Embeddings Inference (bge-reranker-v2-m3, bge-m3, etc.)',
         },
       },
     }

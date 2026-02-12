@@ -55,20 +55,6 @@
         </div>
       </div>
 
-      <!-- API docs -->
-      <div class="setting-row">
-        <div class="setting-info">
-          <label>{{ $t('tenant.api.docLabel') }}</label>
-          <p class="desc">
-            {{ $t('tenant.api.docDescription') }}
-            <a @click="openApiDoc" class="doc-link">
-              {{ $t('tenant.api.openDoc') }}
-              <t-icon name="link" class="link-icon" />
-            </a>
-          </p>
-        </div>
-      </div>
-
       <!-- User info -->
       <div class="info-section-title">{{ $t('tenant.api.userSectionTitle') }}</div>
 
@@ -167,10 +153,6 @@ const loadInfo = async () => {
   } finally {
     loading.value = false
   }
-}
-
-const openApiDoc = () => {
-  window.open('https://github.com/Tencent/WeKnora/blob/main/docs/api/README.md', '_blank')
 }
 
 const fallbackCopyText = (text: string) => {

@@ -618,7 +618,7 @@ export default {
   },
   initialization: {
     title: 'Initialization',
-    welcome: 'Welcome to WeKnora',
+    welcome: 'Welcome to IntraMind',
     description: 'Please configure the system before starting',
     step1: 'Step 1: Configure LLM Model',
     step2: 'Step 2: Configure Embedding Model',
@@ -1882,6 +1882,10 @@ export default {
         longcat: {
           label: 'LongCat AI',
           description: 'LongCat-Flash-Chat, LongCat-Flash-Thinking, etc.',
+        },
+        huggingface: {
+          label: 'HuggingFace / TEI',
+          description: 'Text Embeddings Inference (bge-reranker-v2-m3, bge-m3, etc.)',
         },
       },
     }

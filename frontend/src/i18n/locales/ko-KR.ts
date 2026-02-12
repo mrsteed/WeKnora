@@ -458,7 +458,7 @@ export default {
   },
   initialization: {
     title: "초기화",
-    welcome: "WeKnora에 오신 것을 환영합니다",
+    welcome: "IntraMind에 오신 것을 환영합니다",
     description: "사용을 시작하려면 먼저 시스템을 구성하세요",
     step1: "1단계: LLM 모델 구성",
     step2: "2단계: 임베딩 모델 구성",
@@ -1084,6 +1084,10 @@ export default {
         longcat: {
           label: "LongCat AI",
           description: "LongCat-Flash-Chat, LongCat-Flash-Thinking, etc.",
+        },
+        huggingface: {
+          label: "HuggingFace / TEI",
+          description: "Text Embeddings Inference (bge-reranker-v2-m3, bge-m3, etc.)",
         },
       },
     },

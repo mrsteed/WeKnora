@@ -53,6 +53,8 @@ const (
 	ProviderLongCat ProviderName = "longcat"
 	// 腾讯云 LKEAP (知识引擎原子能力)
 	ProviderLKEAP ProviderName = "lkeap"
+	// HuggingFace TEI (Text Embeddings Inference)
+	ProviderHuggingFace ProviderName = "huggingface"
 )
 
 // AllProviders 返回所有注册的提供者名称
@@ -78,6 +80,7 @@ func AllProviders() []ProviderName {
 		ProviderLongCat,
 		ProviderLKEAP,
 		ProviderGPUStack,
+		ProviderHuggingFace,
 	}
 }
 

@@ -357,6 +357,16 @@ const fallbackProviderOptions = computed(() => [
     modelTypes: ['embedding', 'rerank']
   },
   { 
+    value: 'huggingface', 
+    label: t('model.editor.providers.huggingface.label'), 
+    defaultUrls: {
+      embedding: 'http://localhost:8080',
+      rerank: 'http://localhost:8082'
+    },
+    description: t('model.editor.providers.huggingface.description'),
+    modelTypes: ['embedding', 'rerank']
+  },
+  { 
     value: 'generic', 
     label: t('model.editor.providers.generic.label'), 
     defaultUrls: {},
@@ -777,7 +787,8 @@ const checkRemoteAPI = async () => {
         result = await checkRerankModel({
           modelName: formData.value.modelName,
           baseUrl: formData.value.baseUrl,
-          apiKey: formData.value.apiKey || ''
+          apiKey: formData.value.apiKey || '',
+          provider: formData.value.provider
         })
         break
         

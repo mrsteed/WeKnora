@@ -101,6 +101,8 @@ func NewReranker(config *RerankerConfig) (Reranker, error) {
 		return NewZhipuReranker(config)
 	case provider.ProviderJina:
 		return NewJinaReranker(config)
+	case provider.ProviderHuggingFace:
+		return NewTEIReranker(config)
 	default:
 		return NewOpenAIReranker(config)
 	}

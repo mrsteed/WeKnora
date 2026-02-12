@@ -345,6 +345,7 @@ func (s *modelService) GetRerankModel(ctx context.Context, modelId string) (rera
 		BaseURL:   model.Parameters.BaseURL,
 		ModelName: model.Name,
 		Source:    model.Source,
+		Provider:  model.Parameters.Provider,
 	})
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
