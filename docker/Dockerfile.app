@@ -64,7 +64,9 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
     apt-get install -y --no-install-recommends \
         build-essential postgresql-client default-mysql-client ca-certificates tzdata sed curl bash vim wget \
         python3 python3-pip python3-dev libffi-dev libssl-dev \
-        nodejs npm && \
+        nodejs npm \
+        wkhtmltopdf pandoc \
+        xvfb libxrender1 libfontconfig1 fonts-noto-cjk fonts-noto-cjk-extra && \
     python3 -m pip install --break-system-packages --upgrade pip setuptools wheel && \
     mkdir -p /home/appuser/.local/bin && \
     curl -LsSf https://astral.sh/uv/install.sh | CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh && \

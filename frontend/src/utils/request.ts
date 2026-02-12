@@ -231,3 +231,11 @@ export function put(url: string, data = {}) {
 export function del(url: string, data?: any) {
   return instance.delete(url, { data });
 }
+
+export async function postBlob(url: string, data = {}) {
+  const res = await instance.post(url, data, {
+    responseType: "blob",
+    timeout: 120000, // 导出可能较慢，120s超时
+  });
+  return res;
+}
