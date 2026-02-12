@@ -274,6 +274,49 @@ func (r *organizationRepository) BatchCountMembers(ctx context.Context, orgIDs [
 	return counts, nil
 }
 
+// BatchListMemberUserIDs returns user IDs grouped by organization for batch processing
+func (r *organizationRepository) BatchListMemberUserIDs(ctx context.Context, orgIDs []string) (map[string][]string, error) {
+	if len(orgIDs) == 0 {
+		return make(map[string][]string), nil
+	}
+	type memberRow struct {
+		OrganizationID string `gorm:"column:organization_id"`
+		UserID         string `gorm:"column:user_id"`
+	}
+	var rows []memberRow
+	err := r.db.WithContext(ctx).
+		Model(&types.OrganizationMember{}).
+		Select("organization_id, user_id").
+		Where("organization_id IN ?", orgIDs).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]string, len(orgIDs))
+	for _, row := range rows {
+		result[row.OrganizationID] = append(result[row.OrganizationID], row.UserID)
+	}
+	return result, nil
+}
+
+// IsAdminOfAnyOrg checks if the user is an admin of any org in the given list (single SQL query)
+func (r *organizationRepository) IsAdminOfAnyOrg(ctx context.Context, userID string, orgIDs []string, tenantID uint64) bool {
+	if len(orgIDs) == 0 {
+		return false
+	}
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&types.OrganizationMember{}).
+		Where("user_id = ? AND organization_id IN ? AND role = ? AND tenant_id = ?",
+			userID, orgIDs, types.OrgRoleAdmin, tenantID).
+		Limit(1).
+		Count(&count).Error
+	if err != nil {
+		return false
+	}
+	return count > 0
+}
+
 // UpdateInviteCode updates the invite code and optional expiry for an organization (expiresAt nil = never expire)
 func (r *organizationRepository) UpdateInviteCode(ctx context.Context, orgID string, inviteCode string, expiresAt *time.Time) error {
 	updates := map[string]interface{}{"invite_code": inviteCode, "invite_code_expires_at": expiresAt}

@@ -43,6 +43,10 @@ type OrgTreeService interface {
 	GetUserOrganizations(ctx context.Context, userID string, tenantID uint64) ([]*types.OrgTreeNode, error)
 	// ListOrgMembers returns all members of an organization
 	ListOrgMembers(ctx context.Context, orgID string, tenantID uint64) ([]*types.OrganizationMember, error)
+	// IsAdminOfAnyOrg checks if the user is an admin of any of the specified organizations
+	IsAdminOfAnyOrg(ctx context.Context, userID string, orgIDs []string, tenantID uint64) bool
+	// ListInheritedAdmins returns admins inherited from ancestor organizations
+	ListInheritedAdmins(ctx context.Context, orgID string, tenantID uint64) ([]map[string]interface{}, error)
 }
 
 // OrgTreeRepository defines the repository interface for org-tree operations

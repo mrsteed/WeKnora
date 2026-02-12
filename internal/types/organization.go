@@ -551,18 +551,20 @@ type MoveOrgNodeRequest struct {
 
 // OrgTreeNode represents a node in the organization tree (API response)
 type OrgTreeNode struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	ParentID    *string        `json:"parent_id"`
-	Path        string         `json:"path"`
-	Level       int            `json:"level"`
-	SortOrder   int            `json:"sort_order"`
-	MemberCount int            `json:"member_count"`
-	MyIsAdmin   bool           `json:"my_is_admin"`
-	Children    []*OrgTreeNode `json:"children,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	ID                string         `json:"id"`
+	Name              string         `json:"name"`
+	Description       string         `json:"description"`
+	ParentID          *string        `json:"parent_id"`
+	Path              string         `json:"path"`
+	Level             int            `json:"level"`
+	SortOrder         int            `json:"sort_order"`
+	MemberCount       int            `json:"member_count"`
+	DirectMemberCount int            `json:"direct_member_count"`
+	TotalMemberCount  int            `json:"total_member_count"`
+	MyIsAdmin         bool           `json:"my_is_admin"`
+	Children          []*OrgTreeNode `json:"children,omitempty"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
 }
 
 // AssignUserToOrgRequest represents a request to assign a user to an organization
