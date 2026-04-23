@@ -400,7 +400,6 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 		}
 		kbs = filterByOrganization(kbs)
 
-
 		// `all` mode: authoritative server-side capability filter so a client
 		// that bypassed the frontend (old tab, curl, rogue plugin) can't @ a
 		// KB whose capabilities don't match any allowed tool of this agent.
