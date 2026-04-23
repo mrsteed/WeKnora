@@ -1,4 +1,5 @@
 import { get, post, put, del } from '@/utils/request'
+import type { CustomAgent } from '@/api/agent'
 
 // Organization types
 export interface Organization {
@@ -63,6 +64,7 @@ export interface SharedKnowledgeBase {
     name: string
     description: string
     type: string
+    created_by_nickname?: string
     knowledge_count?: number
     chunk_count?: number
   }
@@ -254,7 +256,7 @@ export interface AgentShareResponse {
 }
 
 export interface SharedAgentInfo {
-  agent: { id: string; name: string; description?: string; [key: string]: any }
+  agent: Partial<CustomAgent> & { id: string; name: string; description?: string }
   share_id: string
   organization_id: string
   org_name: string

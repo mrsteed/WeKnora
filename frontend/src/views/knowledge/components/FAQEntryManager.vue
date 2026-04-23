@@ -1501,14 +1501,14 @@ const loadKnowledgeInfo = async (kbId: string) => {
 const loadKnowledgeList = async () => {
   try {
     const res: any = await listKnowledgeBases()
-    const myKbs = (res?.data || []).map((item: any) => ({
+    const myKbs: Array<{ id: string; name: string; type?: string }> = (res?.data || []).map((item: any) => ({
       id: String(item.id),
       name: item.name,
       type: item.type,
     }))
     
     // Also include shared knowledge bases from orgStore
-    const sharedKbs = (orgStore.sharedKnowledgeBases || [])
+    const sharedKbs: Array<{ id: string; name: string; type?: string }> = (orgStore.sharedKnowledgeBases || [])
       .filter(s => s.knowledge_base != null)
       .map(s => ({
         id: String(s.knowledge_base.id),
@@ -3017,7 +3017,7 @@ watch(tagSearchQuery, (newVal, oldVal) => {
   if (tagSearchDebounce) {
     clearTimeout(tagSearchDebounce)
   }
-  tagSearchDebounce = window.setTimeout(() => {
+  tagSearchDebounce = setTimeout(() => {
     loadTags(true)
   }, 300)
 })
@@ -3028,7 +3028,7 @@ watch(entrySearchKeyword, (newVal, oldVal) => {
   if (entrySearchDebounce) {
     clearTimeout(entrySearchDebounce)
   }
-  entrySearchDebounce = window.setTimeout(() => {
+  entrySearchDebounce = setTimeout(() => {
     loadEntries()
   }, 300)
 })

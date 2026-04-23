@@ -1,5 +1,4 @@
 import mermaid from 'mermaid';
-import type {Tokens} from 'marked';
 import {openMermaidFullscreen} from "@/utils/mermaidViewer.ts";
 import hljs from "highlight.js";
 import "highlight.js/styles/github.css";
@@ -45,23 +44,23 @@ export const ensureMermaidInitialized = () => {
 let mermaidCount = 0;
 
 export const createMermaidCodeRenderer = (idPrefix: string) => {
-  return ({text, lang}: Tokens.Code) => {
+  return (code: string, language?: string) => {
     let highlighted = '';
-    let highlightLang: string = lang || 'Code';
+    let highlightLang: string = language || 'Code';
     if (highlightLang && hljs.getLanguage(highlightLang)) {
         try {
-            highlighted = hljs.highlight(text, { language: lang }).value;
+        highlighted = hljs.highlight(code, { language: highlightLang }).value;
         } catch {
-            let ret = hljs.highlightAuto(text);
+            let ret = hljs.highlightAuto(code);
             highlighted = ret.value;
             highlightLang = ret.language || "Code";
         }
     } else {
-        let ret = hljs.highlightAuto(text);
+        let ret = hljs.highlightAuto(code);
         highlighted = ret.value;
         highlightLang = ret.language || "Code";
     }
-    if (lang === 'mermaid') {
+    if (language === 'mermaid') {
       const id = `${idPrefix}-${++mermaidCount}`;
       return `<pre id="${id}" data-mermaid="false"><code class="hljs language-${highlightLang}">${highlighted}</code></pre>`;
     }

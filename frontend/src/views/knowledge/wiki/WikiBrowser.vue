@@ -2513,6 +2513,7 @@ function renderGraph(opts: RenderGraphOpts = {}) {
     container.innerHTML = ''
     return
   }
+  const graph = data
 
   // Stop any previous animation
   if (graphAnimFrame) { cancelAnimationFrame(graphAnimFrame); graphAnimFrame = 0 }
@@ -2555,7 +2556,7 @@ function renderGraph(opts: RenderGraphOpts = {}) {
 
   // Build adjacency for highlight
   const adjacency = new Map<string, Set<string>>()
-  for (const edge of data.edges) {
+  for (const edge of graph.edges) {
     if (!adjacency.has(edge.source)) adjacency.set(edge.source, new Set())
     if (!adjacency.has(edge.target)) adjacency.set(edge.target, new Set())
     adjacency.get(edge.source)!.add(edge.target)
@@ -3005,7 +3006,7 @@ function renderGraph(opts: RenderGraphOpts = {}) {
     }
 
     // Attraction along edges
-    for (const edge of data.edges) {
+    for (const edge of graph.edges) {
       const s = nodeMap.get(edge.source)
       const t = nodeMap.get(edge.target)
       if (!s || !t) continue

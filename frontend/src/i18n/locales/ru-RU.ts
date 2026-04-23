@@ -4268,3 +4268,4 @@ export default {
     emptyContent: 'Нет содержимого для экспорта',
   },
 }
+};

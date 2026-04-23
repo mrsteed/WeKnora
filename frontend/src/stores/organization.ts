@@ -23,6 +23,7 @@ import {
   listSharedKnowledgeBases,
   listSharedAgents
 } from '@/api/organization'
+import type { OrgTreeNode } from '@/api/org-tree'
 import { getMyOrgTreeOrganizations, getOrgTree } from '@/api/org-tree'
 
 export const useOrganizationStore = defineStore('organization', () => {
@@ -42,8 +43,8 @@ export const useOrganizationStore = defineStore('organization', () => {
 
   // Org-tree state: organizations the user belongs to in the tenant org-tree 
   const currentOrganizationId = ref<string>(localStorage.getItem('weknora_current_org_id') || '')
-  const myOrgTreeOrgs = ref<Organization[]>([])
-  const allOrgTreeOrgs = ref<Organization[]>([])
+  const myOrgTreeOrgs = ref<OrgTreeNode[]>([])
+  const allOrgTreeOrgs = ref<OrgTreeNode[]>([])
 
   // Computed
   const myOrganizations = computed(() => organizations.value)
