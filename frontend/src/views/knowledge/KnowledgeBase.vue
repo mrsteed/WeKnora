@@ -674,14 +674,14 @@ const loadKnowledgeBaseInfo = async (targetKbId: string) => {
 const loadKnowledgeList = async () => {
   try {
     const res: any = await listKnowledgeBases();
-    const myKbs = (res?.data || []).map((item: any) => ({
+    const myKbs: Array<{ id: string; name: string; type: string }> = (res?.data || []).map((item: any) => ({
       id: String(item.id),
       name: item.name,
       type: item.type || 'document',
     }));
     
     // Also include shared knowledge bases from orgStore
-    const sharedKbs = (orgStore.sharedKnowledgeBases || [])
+    const sharedKbs: Array<{ id: string; name: string; type: string }> = (orgStore.sharedKnowledgeBases || [])
       .filter(s => s.knowledge_base != null)
       .map(s => ({
         id: String(s.knowledge_base.id),
@@ -733,7 +733,7 @@ watch(tagSearchQuery, (newVal, oldVal) => {
   if (tagSearchDebounce) {
     clearTimeout(tagSearchDebounce);
   }
-  tagSearchDebounce = window.setTimeout(() => {
+  tagSearchDebounce = setTimeout(() => {
     if (kbId.value) {
       loadTags(kbId.value, true);
     }
@@ -746,7 +746,7 @@ watch(docSearchKeyword, (newVal, oldVal) => {
   if (docSearchDebounce) {
     clearTimeout(docSearchDebounce);
   }
-  docSearchDebounce = window.setTimeout(() => {
+  docSearchDebounce = setTimeout(() => {
     if (kbId.value) {
       page = 1;
       loadKnowledgeFiles(kbId.value);

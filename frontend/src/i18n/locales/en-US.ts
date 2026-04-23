@@ -27,21 +27,12 @@ export default {
     title: 'Manage Conversations',
     selectAll: 'Select All',
     cancel: 'Cancel',
-    delete: 'Delete Conversations',
-    deleteConfirmTitle: 'Delete Conversations',
-    deleteConfirmBody: 'Are you sure you want to delete the selected {count} conversation(s)? This action cannot be undone.',
-    deleteAllConfirmBody: 'Are you sure you want to delete all conversations? This action cannot be undone.',
-    deleteSuccess: 'Deleted successfully',
-    deleteFailed: 'Delete failed, please try again later',
-    noSelection: 'Please select at least one conversation',
-    loadFailed: 'Failed to load conversations',
-  },
-  listSpaceSidebar: {
-    title: 'Filter',
-    all: 'All',
-    mine: 'Mine',
-    myKbs: 'My Knowledge Bases',
-    globalKbs: 'Global',
+    },
+    detail: {
+      title: 'Agent Details',
+      useInChat: 'Use in Chat',
+    },
+    shareScope: {
     orgKbs: 'Organization',
     sharedToMe: 'Collaborative',
     spaces: 'Spaces'
@@ -385,22 +376,12 @@ export default {
       description: 'Click the button in the top right to create your first agent',
       sharedTitle: 'No shared agents yet',
       sharedDescription: 'You can join a space or ask others to share agents with you',
-        huggingface: {
-          label: 'HuggingFace / TEI',
-          description: 'Text Embeddings Inference (bge-reranker-v2-m3, bge-m3, etc.)',
-        },
-        lkeap: {
-          label: 'Tencent Cloud LKEAP',
-          description: 'DeepSeek-R1, DeepSeek-V3 series with chain-of-thought',
-        },
-        nvidia: {
-          label: "NVIDIA",
-          description: "deepseek-ai-deepseek-v3_1, nv-embed-v1, rerank-qa-mistral-4b, etc.",
-        },
-        novita: {
-          label: "Novita AI",
-          description: "moonshotai/kimi-k2.5, zai-org/glm-5, minimax/minimax-m2.7, qwen/qwen3-embedding-0.6b, etc.",
+    },
     detail: {
+      title: 'Agent Details',
+      useInChat: 'Use in Chat',
+    },
+    shareScope: {
       title: 'Share Scope',
       desc: 'Space members have read-only access to this agent and will use it according to your current configuration; your changes to the agent will sync to shared spaces. To allow space members to edit knowledge base content, share the knowledge base to the space.',
       knowledgeBase: 'Knowledge bases',

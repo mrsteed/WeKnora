@@ -1202,6 +1202,10 @@ const filteredPlaceholders = computed(() => {
   )
 })
 
+const getActivePromptRef = () => {
+  return activeTab.value === 'normal' ? localSystemPromptNormal : localSystemPrompt
+}
+
 // 计算光标在 textarea 中的像素位置
 const calculateCursorPosition = (textarea: HTMLTextAreaElement) => {
   const cursorPos = textarea.selectionStart

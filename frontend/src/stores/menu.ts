@@ -91,7 +91,10 @@ export const useMenuStore = defineStore('menuStore', () => {
 
   const updatemenuArr = (obj: any) => {
     const chatMenu = findChatMenu()
-    if (!chatMenu || !chatMenu.children) {
+    if (!chatMenu) {
+      return
+    }
+    if (!chatMenu.children) {
       chatMenu.children = createMenuChildren()
     }
     const exists = chatMenu.children.some((item: MenuChild) => item.id === obj.id)
@@ -102,7 +105,10 @@ export const useMenuStore = defineStore('menuStore', () => {
 
   const updataMenuChildren = (item: MenuChild) => {
     const chatMenu = findChatMenu()
-    if (!chatMenu || !chatMenu.children) {
+    if (!chatMenu) {
+      return
+    }
+    if (!chatMenu.children) {
       chatMenu.children = createMenuChildren()
     }
     chatMenu.children.unshift(item)

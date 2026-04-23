@@ -216,8 +216,8 @@ instance.interceptors.response.use(
   }
 );
 
-export function get(url: string) {
-  return instance.get(url);
+export function get<T = any>(url: string): Promise<T> {
+  return instance.get(url) as Promise<T>;
 }
 
 export async function getDown(url: string) {
@@ -246,16 +246,16 @@ export function postChat(url: string, data = {}) {
   });
 }
 
-export function post(url: string, data = {}, config?: any) {
-  return instance.post(url, data, config);
+export function post<T = any>(url: string, data = {}, config?: any): Promise<T> {
+  return instance.post(url, data, config) as Promise<T>;
 }
 
-export function put(url: string, data = {}) {
-  return instance.put(url, data);
+export function put<T = any>(url: string, data = {}): Promise<T> {
+  return instance.put(url, data) as Promise<T>;
 }
 
-export function del(url: string, data?: any) {
-  return instance.delete(url, { data });
+export function del<T = any>(url: string, data?: any): Promise<T> {
+  return instance.delete(url, { data }) as Promise<T>;
 }
 
 export async function postBlob(url: string, data = {}) {

@@ -68,8 +68,8 @@ type RouterParams struct {
 	DataSourceHandler        *handler.DataSourceHandler
 	WeKnoraCloudHandler      *handler.WeKnoraCloudHandler
 	WikiPageHandler          *handler.WikiPageHandler
-	OrgTreeHandler        *handler.OrgTreeHandler
-	ExportHandler         *handler.ExportHandler
+	OrgTreeHandler           *handler.OrgTreeHandler
+	ExportHandler            *handler.ExportHandler
 }
 
 // NewRouter 创建新的路由
@@ -1044,4 +1044,4 @@ func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHa
 // RegisterOrgTreeSuperAdminRoutes registers org-tree routes that require super admin privileges.
 func RegisterOrgTreeSuperAdminRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
 	r.PUT("/org-tree/super-admin", orgTreeHandler.SetSuperAdmin)
-	}
+}

@@ -478,22 +478,12 @@ export default {
     memoryHowToEnable: "查看 Neo4j 配置指南",
     vectorStoreEngine: "向量数据库引擎",
     parserEngine: "解析引擎",
-        huggingface: {
-          label: "HuggingFace / TEI",
-          description: "Text Embeddings Inference (bge-reranker-v2-m3, bge-m3, etc.)",
-        },
-        lkeap: {
-          label: "腾讯云 LKEAP",
-          description: "DeepSeek-R1, DeepSeek-V3 系列模型，支持思维链",
-        },
-        nvidia: {
-            label: "NVIDIA",
-            description: "deepseek-ai-deepseek-v3_1, nv-embed-v1, rerank-qa-mistral-4b, etc.",
-        },
-        novita: {
-            label: "Novita AI",
-            description: "moonshotai/kimi-k2.5, zai-org/glm-5, minimax/minimax-m2.7, qwen/qwen3-embedding-0.6b 等",
+    storageEngine: "存储引擎",
     mcpService: "MCP服务",
+    systemSettings: "系统设置",
+    tenantInfo: "租户信息",
+    apiInfo: "API信息",
+    weknoraCloud: {
       title: "WeKnora Cloud",
       description: "配置 WeKnora Cloud 的 APPID 和 APPSECRET 凭证。凭证用于模型服务和文档解析引擎。",
       viewDocs: "查看文档",

@@ -414,7 +414,7 @@ import {
 
 const { t } = useI18n()
 
-const defaultConfig = (): StorageEngineConfig => ({
+const defaultConfig = () => ({
   default_provider: 'local',
   local: { path_prefix: '' },
   minio: { mode: 'docker', endpoint: '', access_key_id: '', secret_access_key: '', bucket_name: '', use_ssl: false, path_prefix: '' },
@@ -434,26 +434,34 @@ const defaultConfig = (): StorageEngineConfig => ({
   },
 })
 
+type StorageEngineFormConfig = ReturnType<typeof defaultConfig>
+
 const loading = ref(true)
 const error = ref('')
-const config = ref<StorageEngineConfig>(defaultConfig())
+const config = ref<StorageEngineFormConfig>(defaultConfig())
 const allowedProviders = ref<string[] | null>(null)
-const engineStatus = ref<{ local: boolean; minio: boolean; cos: boolean }>({ local: true, minio: false, cos: true })
+const engineStatus = ref<{ local: boolean; minio: boolean; cos: boolean }>({
+  local: true,
+  minio: false,
+  cos: true,
+})
 const minioEnvAvailable = ref(false)
 const saving = ref(false)
 const saveMessage = ref('')
 const saveSuccess = ref(false)
 
+type EngineCheckResult = { ok: boolean; message: string; bucket_created?: boolean }
+
 const checkingMinio = ref(false)
-const minioCheckResult = ref<{ ok: boolean; message: string; bucket_created?: boolean } | null>(null)
+const minioCheckResult = ref<EngineCheckResult | null>(null)
 const checkingCos = ref(false)
-const cosCheckResult = ref<{ ok: boolean; message: string } | null>(null)
+const cosCheckResult = ref<EngineCheckResult | null>(null)
 const checkingTos = ref(false)
-const tosCheckResult = ref<{ ok: boolean; message: string } | null>(null)
+const tosCheckResult = ref<EngineCheckResult | null>(null)
 const checkingS3 = ref(false)
-const s3CheckResult = ref<{ ok: boolean; message: string } | null>(null)
+const s3CheckResult = ref<EngineCheckResult | null>(null)
 const checkingOss = ref(false)
-const ossCheckResult = ref<{ ok: boolean; message: string } | null>(null)
+const ossCheckResult = ref<EngineCheckResult | null>(null)
 
 const drawerVisible = ref(false)
 const currentEngine = ref<string | null>(null)

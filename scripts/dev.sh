@@ -1,5 +1,5 @@
 #!/bin/bash
-# 开发环境启动脚本 - 只启动基础设施，app 和 frontend 需要手动在本地运行
+# 开发环境启动脚本 - 按 .env 启动基础设施，app 和 frontend 需要手动在本地运行
 
 # 设置颜色
 GREEN='\033[0;32m'
@@ -55,7 +55,7 @@ show_help() {
     echo "用法: $0 [命令] [选项]"
     echo ""
     echo "命令:"
-    echo "  start      启动基础设施服务（postgres, redis, docreader）"
+    echo "  start      按 .env 启动基础设施服务（postgres、redis、docreader、minio）"
     echo "  stop       停止所有服务"
     echo "  restart    重启所有服务"
     echo "  logs       查看服务日志"
@@ -67,19 +67,55 @@ show_help() {
     echo "可选 Profile（用于 start 命令）:"
     echo "  --minio    启动 MinIO 对象存储"
     echo "  --qdrant   启动 Qdrant 向量数据库"
+    echo "  --milvus   启动 Milvus 向量数据库"
     echo "  --neo4j    启动 Neo4j 图数据库"
     echo "  --jaeger   启动 Jaeger 链路追踪"
     echo "  --dex      启动 Dex（OIDC 身份认证）"
     echo "  --full     启动所有可选服务"
     echo ""
     echo "示例："
-    echo "  $0 start                    # 启动基础服务"
+    echo "  $0 start                    # 按 .env 启动基础服务（仓库默认含 MinIO）"
     echo "  $0 start --qdrant           # 启动基础服务 + Qdrant"
+    echo "  $0 start --milvus           # 启动基础服务 + Milvus"
     echo "  $0 start --qdrant --jaeger  # 启动基础服务 + Qdrant + Jaeger"
     echo "  $0 start --dex             # 启动基础服务 + Dex"
     echo "  $0 start --full             # 启动所有服务"
     echo "  $0 app                      # 在另一个终端启动后端"
     echo "  $0 frontend                 # 在另一个终端启动前端"
+}
+
+append_profile() {
+    local profile="$1"
+    if [[ " $ENABLED_SERVICES " != *" $profile "* ]]; then
+        PROFILES="$PROFILES --profile $profile"
+        ENABLED_SERVICES="$ENABLED_SERVICES $profile"
+    fi
+}
+
+auto_detect_profiles_from_env() {
+    local retrieve_driver="${RETRIEVE_DRIVER:-postgres}"
+    local storage_type="${STORAGE_TYPE:-local}"
+    local enable_graph_rag="${ENABLE_GRAPH_RAG:-false}"
+    local neo4j_enable="${NEO4J_ENABLE:-false}"
+
+    case "$storage_type" in
+        minio)
+            append_profile "minio"
+            ;;
+    esac
+
+    case "$retrieve_driver" in
+        qdrant)
+            append_profile "qdrant"
+            ;;
+        milvus)
+            append_profile "milvus"
+            ;;
+    esac
+
+    if [[ "$enable_graph_rag" == "true" || "$neo4j_enable" == "true" ]]; then
+        append_profile "neo4j"
+    fi
 }
 
 # 检查 Docker
@@ -137,37 +173,42 @@ start_services() {
         log_error ".env 文件不存在，请先创建"
         return 1
     fi
+
+    set -a
+    source .env
+    set +a
     
     # 解析 profile 参数
     shift  # 移除 "start" 命令本身
-    PROFILES="--profile full"
+    PROFILES=""
     ENABLED_SERVICES=""
+
+    auto_detect_profiles_from_env
     
     while [ $# -gt 0 ]; do
         case "$1" in
             --minio)
-                PROFILES="$PROFILES --profile minio"
-                ENABLED_SERVICES="$ENABLED_SERVICES minio"
+                append_profile "minio"
                 ;;
             --qdrant)
-                PROFILES="$PROFILES --profile qdrant"
-                ENABLED_SERVICES="$ENABLED_SERVICES qdrant"
+                append_profile "qdrant"
+                ;;
+            --milvus)
+                append_profile "milvus"
                 ;;
             --neo4j)
-                PROFILES="$PROFILES --profile neo4j"
-                ENABLED_SERVICES="$ENABLED_SERVICES neo4j"
+                append_profile "neo4j"
                 ;;
             --jaeger)
-                PROFILES="$PROFILES --profile jaeger"
-                ENABLED_SERVICES="$ENABLED_SERVICES jaeger"
+                append_profile "jaeger"
                 ;;
             --dex)
-                PROFILES="$PROFILES --profile dex"
-                ENABLED_SERVICES="$ENABLED_SERVICES dex"
+                append_profile "dex"
                 ;;
             --full)
-                PROFILES="--profile full"
-                ENABLED_SERVICES="minio qdrant neo4j jaeger dex"
+                PROFILES=""
+                ENABLED_SERVICES=""
+                append_profile "full"
                 break
                 ;;
             *)
@@ -176,6 +217,12 @@ start_services() {
         esac
         shift
     done
+
+    if [ -n "$ENABLED_SERVICES" ]; then
+        log_info "按 .env/命令参数启用的可选服务:${ENABLED_SERVICES}"
+    else
+        log_info "按 .env 配置仅启动基础服务: postgres, redis, docreader"
+    fi
     
     # 启动服务
     "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml $PROFILES up -d
@@ -194,6 +241,9 @@ start_services() {
         fi
         if [[ "$ENABLED_SERVICES" == *"qdrant"* ]]; then
             echo "  - Qdrant:        localhost:6333 (gRPC: localhost:6334)"
+        fi
+        if [[ "$ENABLED_SERVICES" == *"milvus"* ]]; then
+            echo "  - Milvus:        localhost:19530 (Health: localhost:9091)"
         fi
         if [[ "$ENABLED_SERVICES" == *"neo4j"* ]]; then
             echo "  - Neo4j:         localhost:7474 (Bolt: localhost:7687)"
@@ -226,7 +276,7 @@ stop_services() {
     fi
     
     cd "$PROJECT_ROOT"
-    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml down
+    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml --profile full down --remove-orphans
     
     if [ $? -eq 0 ]; then
         log_success "所有服务已停止"

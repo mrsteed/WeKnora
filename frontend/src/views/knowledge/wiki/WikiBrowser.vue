@@ -1083,6 +1083,7 @@ function renderGraph() {
     container.innerHTML = ''
     return
   }
+  const graph = data
 
   // Stop any previous animation
   if (graphAnimFrame) { cancelAnimationFrame(graphAnimFrame); graphAnimFrame = 0 }
@@ -1115,7 +1116,7 @@ function renderGraph() {
 
   // Build adjacency for highlight
   const adjacency = new Map<string, Set<string>>()
-  for (const edge of data.edges) {
+  for (const edge of graph.edges) {
     if (!adjacency.has(edge.source)) adjacency.set(edge.source, new Set())
     if (!adjacency.has(edge.target)) adjacency.set(edge.target, new Set())
     adjacency.get(edge.source)!.add(edge.target)
@@ -1124,8 +1125,8 @@ function renderGraph() {
 
   // Build nodes
   const nodeMap = new Map<string, GNode>()
-  graphNodes = data.nodes.map((n, i) => {
-    const angle = (2 * Math.PI * i) / data.nodes.length
+  graphNodes = graph.nodes.map((n, i) => {
+    const angle = (2 * Math.PI * i) / graph.nodes.length
     const r = Math.min(width, height) * 0.35
     const node: GNode = {
       x: width / 2 + r * Math.cos(angle) + (Math.random() - 0.5) * 50,
@@ -1387,7 +1388,7 @@ function renderGraph() {
     }
 
     // Attraction along edges
-    for (const edge of data.edges) {
+    for (const edge of graph.edges) {
       const s = nodeMap.get(edge.source)
       const t = nodeMap.get(edge.target)
       if (!s || !t) continue

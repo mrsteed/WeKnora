@@ -59,6 +59,8 @@ require (
 	github.com/weaviate/weaviate-go-client/v5 v5.5.0
 	github.com/xuri/excelize/v2 v2.10.1
 	github.com/yanyiwu/gojieba v1.4.5
+	github.com/yuin/goldmark v1.7.16
+	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.37.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.37.0

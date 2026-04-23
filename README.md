@@ -273,12 +273,14 @@ The [WeKnora Mini Program](./miniprogram/README.md) provides a lightweight mobil
 git clone https://github.com/Tencent/WeKnora.git
 cd WeKnora
 cp .env.example .env   # Edit .env as needed, see comments in the file
-docker compose up -d   # Start core services
+docker compose --profile minio up -d   # Default .env uses MinIO storage
 ```
 
 Once started, visit **http://localhost** to get started.
 
 > To use a local Ollama model, run `ollama serve > /dev/null 2>&1 &` first.
+>
+> The repository default `.env` sets `STORAGE_TYPE=minio`. If you change it back to `local`, you can use `docker compose up -d` without the `minio` profile.
 
 ### 🔧 Optional Services (Docker Compose Profiles)
 
@@ -286,7 +288,8 @@ Add `--profile` flags to enable additional components. Multiple profiles can be 
 
 | Profile | Description | Command |
 |---------|-------------|---------|
-| _(default)_ | Core services | `docker compose up -d` |
+| _(default repo config)_ | Core services + MinIO | `docker compose --profile minio up -d` |
+| `local-storage` | Core services without MinIO | `docker compose up -d` |
 | `full` | All features | `docker compose --profile full up -d` |
 | `neo4j` | Knowledge Graph (Neo4j) | `docker compose --profile neo4j up -d` |
 | `minio` | Object Storage (MinIO) | `docker compose --profile minio up -d` |
@@ -342,6 +345,8 @@ make dev-app
 # Start frontend (new terminal)
 make dev-frontend
 ```
+
+By default, `make dev-start` reads `.env` and starts `postgres`, `redis`, `docreader`, and `minio`. If you switch `.env` back to `STORAGE_TYPE=local`, MinIO will no longer be started automatically.
 
 **Development Advantages:**
 - ✅ Frontend modifications auto hot-reload (no restart needed)
