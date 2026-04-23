@@ -298,7 +298,8 @@ func (s *messageService) ClearSessionMessages(ctx context.Context, sessionID str
 	logger.Infof(ctx, "Start clearing all messages for session: %s", sessionID)
 
 	tenantID := types.MustTenantIDFromContext(ctx)
-	if _, err := s.sessionRepo.Get(ctx, tenantID, sessionID); err != nil {
+	userID, _ := types.UserIDFromContext(ctx)
+	if _, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID); err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return err
 	}

@@ -857,6 +857,7 @@ interface KB {
   id: string; 
   name: string; 
   description?: string; 
+  created_by_nickname?: string;
   updated_at?: string;
   embedding_model_id?: string;
   summary_model_id?: string;
@@ -1469,16 +1470,28 @@ const handleUploadFinishedEvent = (event: Event) => {
   box-sizing: border-box;
   flex: 1;
   display: flex;
+  flex-direction: column;
   position: relative;
   min-height: 0;
+  min-width: 0;
 }
 
 .kb-list-content {
-  flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex-shrink: 0;
   padding: 24px 32px 0 32px;
+}
+
+.kb-list-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  gap: 20px;
+  padding: 0 32px 24px 32px;
+  box-sizing: border-box;
 }
 
 .header {

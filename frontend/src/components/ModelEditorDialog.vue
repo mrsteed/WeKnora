@@ -907,6 +907,7 @@ const checkRemoteAPI = async () => {
   checking.value = true
   remoteChecked.value = false
   remoteMessage.value = ''
+  const remoteBaseUrl = formData.value.baseUrl ?? ''
   
   try {
     let result: any
@@ -917,7 +918,7 @@ const checkRemoteAPI = async () => {
         // 对话模型（KnowledgeQA）
         result = await checkRemoteModel({
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl: remoteBaseUrl,
           apiKey: formData.value.apiKey || '',
           provider: formData.value.provider
         })
@@ -928,7 +929,7 @@ const checkRemoteAPI = async () => {
         result = await testEmbeddingModel({
           source: 'remote',
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl: remoteBaseUrl,
           apiKey: formData.value.apiKey || '',
           dimension: formData.value.dimension,
           provider: formData.value.provider
@@ -944,7 +945,7 @@ const checkRemoteAPI = async () => {
         // Rerank 模型
         result = await checkRerankModel({
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl: remoteBaseUrl,
           apiKey: formData.value.apiKey || '',
           provider: formData.value.provider
         })
@@ -955,7 +956,7 @@ const checkRemoteAPI = async () => {
         // VLLM 使用 checkRemoteModel 进行基础连接测试
         result = await checkRemoteModel({
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl: remoteBaseUrl,
           apiKey: formData.value.apiKey || '',
           provider: formData.value.provider
         })
@@ -965,7 +966,7 @@ const checkRemoteAPI = async () => {
         // ASR 模型（语音识别）— 使用专用的 ASR 测试接口（/v1/audio/transcriptions）
         result = await checkASRModel({
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl: remoteBaseUrl,
           apiKey: formData.value.apiKey || ''
         })
         break

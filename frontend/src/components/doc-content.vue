@@ -1,5 +1,5 @@
-// @ts-nocheck
 <script setup lang="ts">
+// @ts-nocheck
 import { marked } from "marked";
 import markedKatex from 'marked-katex-extension';
 import 'katex/dist/katex.min.css';

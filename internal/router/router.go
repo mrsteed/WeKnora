@@ -65,8 +65,8 @@ type RouterParams struct {
 	DataSourceHandler        *handler.DataSourceHandler
 	WeKnoraCloudHandler      *handler.WeKnoraCloudHandler
 	WikiPageHandler          *handler.WikiPageHandler
-	OrgTreeHandler        *handler.OrgTreeHandler
-	ExportHandler         *handler.ExportHandler
+	OrgTreeHandler           *handler.OrgTreeHandler
+	ExportHandler            *handler.ExportHandler
 }
 
 // NewRouter 创建新的路由
@@ -886,6 +886,7 @@ func RegisterWeKnoraCloudRoutes(r *gin.RouterGroup, handler *handler.WeKnoraClou
 	r.POST("/weknoracloud/credentials", handler.SaveCredentials)
 	r.GET("/models/weknoracloud/status", handler.Status)
 }
+
 // RegisterOrgTreeRoutes registers organization tree management routes (super admin only)
 func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
 	orgTree := r.Group("/org-tree")
@@ -920,32 +921,12 @@ func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHan
 		// Special pages
 		wiki.GET("/index", wikiHandler.GetIndex)
 		wiki.GET("/log", wikiHandler.GetLog)
-}
-
-// RegisterOrgTreeRoutes registers organization tree management routes (accessible by super admin and org admin)
-// Fine-grained permission checks are enforced in each handler.
-
 		// Search and maintenance
 		wiki.GET("/search", wikiHandler.SearchPages)
-// Fine-grained permission checks are enforced in each handler.
-		// Get the full organization tree (org admins see only their subtrees)
-		orgTree.GET("", orgTreeHandler.GetOrgTree)
-		orgTree.POST("", orgTreeHandler.CreateOrgNode)
-		orgTree.GET("/:id", orgTreeHandler.GetOrgNode)
-		orgTree.PUT("/:id", orgTreeHandler.UpdateOrgNode)
-		orgTree.DELETE("/:id", orgTreeHandler.DeleteOrgNode)
-		orgTree.POST("/:id/move", orgTreeHandler.MoveOrgNode)
-		orgTree.GET("/:id/members", orgTreeHandler.ListOrgMembers)
-		orgTree.POST("/:id/members", orgTreeHandler.AssignUser)
-		orgTree.POST("/:id/create-user", orgTreeHandler.CreateUserInOrg)
-		orgTree.PUT("/:id/users/:user_id", orgTreeHandler.UpdateUserInOrg)
-		orgTree.DELETE("/:id/members/:user_id", orgTreeHandler.RemoveUser)
-		orgTree.PUT("/:id/admin", orgTreeHandler.SetOrgAdmin)
 	}
 }
 
 // RegisterOrgTreeSuperAdminRoutes registers org-tree routes that require super admin privileges
 func RegisterOrgTreeSuperAdminRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
 	r.PUT("/org-tree/super-admin", orgTreeHandler.SetSuperAdmin)
-	r.PUT("/org-tree/super-admin", orgTreeHandler.SetSuperAdmin)
-		orgTree.GET("", orgTreeHandler.GetOrgTree)
+}

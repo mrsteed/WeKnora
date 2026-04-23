@@ -517,7 +517,7 @@ const sanitizeForDisplay = (text: string): string => {
   if (!text) return text;
   let result = text;
   for (const [name, i18nKey] of Object.entries(TOOL_NAME_KEYS)) {
-    result = result.replaceAll(name, i18n.global.t(i18nKey));
+    result = result.split(name).join(i18n.global.t(i18nKey));
   }
   // Format any remaining mcp_ tool names inline
   result = result.replace(/\bmcp_([a-z0-9_]+)/g, (_match, rest) => {
@@ -730,6 +730,7 @@ import webSearchGlobeGreenIcon from '@/assets/img/websearch-globe-green.svg';
 
 interface SessionData {
   isAgentMode?: boolean;
+  is_completed?: boolean;
   agentEventStream?: any[];
   knowledge_references?: any[];
 }
@@ -1439,10 +1440,14 @@ const onRootClick = (e: Event) => {
   
   // Handle wiki link clicks -> navigate to KB wiki browser page
   const wikiEl = target.closest?.('.citation-wiki') as HTMLElement | null;
-  if (wikiEl && wikiEl.getAttribute('data-slug')) {
+  if (wikiEl) {
     e.preventDefault();
     e.stopPropagation();
     const slug = wikiEl.getAttribute('data-slug');
+    if (!slug) {
+      MessagePlugin.warning(t('agentStream.citation.noKbForWiki'));
+      return;
+    }
     
     // Determine the relevant KB ID
     const kbId = getKbIdForWiki(slug);

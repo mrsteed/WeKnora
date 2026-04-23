@@ -486,6 +486,11 @@ const copyApiUrl = async () => {
   }
 }
 
+const openApiDoc = () => {
+  const docsUrl = apiBaseUrlDisplay.value.replace(/\/api\/v1$/, '/swagger/index.html')
+  window.open(docsUrl, '_blank', 'noopener,noreferrer')
+}
+
 const formatDate = (dateStr: string | undefined) => {
   if (!dateStr) return t('tenant.unknown')
   

@@ -275,7 +275,7 @@ import { ref, computed, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Icon as TIcon, Popup as TPopup, Tooltip as TTooltip } from 'tdesign-vue-next';
-import { type CustomAgent, BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from '@/api/agent';
+import { type CustomAgent, type CustomAgentConfig, BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from '@/api/agent';
 import AgentAvatar from '@/components/AgentAvatar.vue';
 import { useOrganizationStore } from '@/stores/organization';
 import { useSettingsStore } from '@/stores/settings';
@@ -350,7 +350,7 @@ const isMyAgentSelected = (agent: CustomAgent) =>
   props.currentAgentId === agent.id && !currentAgentSourceTenantId.value;
 
 // 获取知识库能力描述
-const getKbCapability = (agent: CustomAgent): string => {
+const getKbCapability = (agent: { config?: CustomAgentConfig }): string => {
   const config = agent.config || {};
   if (config.kb_selection_mode === 'none') {
     return '';
@@ -363,7 +363,7 @@ const getKbCapability = (agent: CustomAgent): string => {
 };
 
 // 获取 MCP 能力描述（更详细：全部 / 指定 N 个）
-const getMcpCapability = (agent: CustomAgent): string => {
+const getMcpCapability = (agent: { config?: CustomAgentConfig }): string => {
   const config = agent.config || {};
   if (config.mcp_selection_mode === 'none' || (!config.mcp_services?.length && config.mcp_selection_mode !== 'all')) {
     return '';

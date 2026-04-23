@@ -1,5 +1,5 @@
-// @ts-nocheck
 <script setup lang="ts">
+// @ts-nocheck
 import { ref, shallowRef, watch, onUnmounted, nextTick, defineAsyncComponent } from 'vue';
 import { previewKnowledgeFile } from '@/api/knowledge-base/index';
 import { MessagePlugin } from 'tdesign-vue-next';
