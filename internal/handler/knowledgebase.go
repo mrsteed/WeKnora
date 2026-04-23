@@ -406,7 +406,6 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 			kbs = filtered
 		}
 		kbs = filterByOrganization(kbs)
-
 		// `all` mode: authoritative server-side capability filter so a client
 		// that bypassed the frontend (old tab, curl, rogue plugin) can't @ a
 		// KB whose capabilities don't match any allowed tool of this agent.
@@ -501,8 +500,6 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 	})
 }
 
-// TogglePinKnowledgeBase godoc
-// @Summary      置顶/取消置顶知识库
 // @Description  切换知识库的置顶状态
 // @Tags         知识库
 // @Accept       json
