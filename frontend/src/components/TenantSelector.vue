@@ -77,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onUnmounted, nextTick } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { searchTenants, type TenantInfo } from '@/api/tenant'
 import { useI18n } from 'vue-i18n'
@@ -238,11 +238,6 @@ const handleScroll = () => {
     loadTenants(true)
   }
 }
-
-onMounted(() => {
-  // 预加载租户列表
-  loadTenants()
-})
 
 onUnmounted(() => {
   if (searchTimer.value) {

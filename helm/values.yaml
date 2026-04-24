@@ -417,10 +417,24 @@ secrets:
 # -----------------------------------------------------------------------------
 
 # -- MinIO configuration (S3-compatible storage)
-# Equivalent to: docker compose --profile minio
+# When endpoint is set, WeKnora uses an external MinIO service.
 minio:
-  # -- Enable MinIO
+  # -- Enable MinIO-backed storage integration
   enabled: false
+  # -- External MinIO/S3 endpoint, for example http://192.168.1.212:9000
+  endpoint: ""
+  # -- Public endpoint used by DocReader-generated file URLs; defaults to endpoint
+  publicEndpoint: ""
+  # -- External MinIO access key id
+  accessKeyId: ""
+  # -- External MinIO secret access key
+  accessKeySecret: ""
+  # -- Default bucket name injected into app/docreader env fallback
+  bucketName: ""
+  # -- Default object key prefix for DocReader uploads
+  pathPrefix: ""
+  # -- Whether SDK clients should use SSL
+  useSSL: false
   image:
     repository: minio/minio
     tag: latest

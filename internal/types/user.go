@@ -64,7 +64,8 @@ type AuthToken struct {
 
 // LoginRequest represents a login request
 type LoginRequest struct {
-	Email    string `json:"email"    binding:"required,email"`
+	// Email keeps the legacy request field name, but accepts email, phone, or username.
+	Email    string `json:"email"    binding:"required"`
 	Password string `json:"password" binding:"required,min=6"`
 }
 

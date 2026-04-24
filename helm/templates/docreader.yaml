@@ -48,6 +48,22 @@ spec:
           env:
             - name: STORAGE_TYPE
               value: {{ .Values.docreader.env.STORAGE_TYPE | quote }}
+            {{- if eq (include "weknora.minio.external" .) "true" }}
+            - name: MINIO_ENDPOINT
+              value: {{ .Values.minio.endpoint | quote }}
+            - name: MINIO_PUBLIC_ENDPOINT
+              value: {{ include "weknora.minio.publicEndpoint" . | quote }}
+            - name: MINIO_ACCESS_KEY_ID
+              value: {{ .Values.minio.accessKeyId | quote }}
+            - name: MINIO_SECRET_ACCESS_KEY
+              value: {{ .Values.minio.accessKeySecret | quote }}
+            - name: MINIO_BUCKET_NAME
+              value: {{ .Values.minio.bucketName | quote }}
+            - name: MINIO_PATH_PREFIX
+              value: {{ .Values.minio.pathPrefix | quote }}
+            - name: MINIO_USE_SSL
+              value: {{ ternary "true" "false" .Values.minio.useSSL | quote }}
+            {{- end }}
           resources:
             {{- toYaml .Values.docreader.resources | nindent 12 }}
           # gRPC health check using grpc_health_probe

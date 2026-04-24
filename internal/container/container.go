@@ -640,35 +640,54 @@ func resetPendingTasks(db *gorm.DB) {
 // Returns:
 //   - Configured file service implementation
 //   - Error if initialization fails
-func initFileService(cfg *config.Config) (interfaces.FileService, error) {
+func initFileService(cfg *config.Config, db *gorm.DB) (interfaces.FileService, error) {
 	storageType := strings.TrimSpace(os.Getenv("STORAGE_TYPE"))
 	if storageType == "" {
 		storageType = "local"
 	}
+	minioEndpoint := strings.TrimSpace(os.Getenv("MINIO_ENDPOINT"))
+	fallbackLocal := func(initErr error) (interfaces.FileService, error) {
+		baseDir := strings.TrimSpace(os.Getenv("LOCAL_STORAGE_BASE_DIR"))
+		if baseDir == "" {
+			baseDir = "/data/files"
+		}
+		logger.Warnf(context.Background(),
+			"Failed to initialize %s file service from environment: %v. Falling back to local file service at %s. Tenant-level storage settings will still be used when available.",
+			storageType, initErr, baseDir,
+		)
+		return file.NewLocalFileService(baseDir), nil
+	}
 	switch storageType {
 	case "minio":
+		if shouldBypassEnvMinioInit(db, minioEndpoint) {
+			return fallbackLocal(fmt.Errorf("skipped environment MinIO probe because tenant-level remote MinIO configuration exists"))
+		}
 		if os.Getenv("MINIO_ENDPOINT") == "" ||
 			os.Getenv("MINIO_ACCESS_KEY_ID") == "" ||
 			os.Getenv("MINIO_SECRET_ACCESS_KEY") == "" ||
 			os.Getenv("MINIO_BUCKET_NAME") == "" {
-			return nil, fmt.Errorf("missing MinIO configuration")
+			return fallbackLocal(fmt.Errorf("missing MinIO configuration"))
 		}
-		return file.NewMinioFileService(
+		svc, err := file.NewMinioFileService(
 			os.Getenv("MINIO_ENDPOINT"),
 			os.Getenv("MINIO_ACCESS_KEY_ID"),
 			os.Getenv("MINIO_SECRET_ACCESS_KEY"),
 			os.Getenv("MINIO_BUCKET_NAME"),
 			strings.EqualFold(os.Getenv("MINIO_USE_SSL"), "true"),
 		)
+		if err != nil {
+			return fallbackLocal(err)
+		}
+		return svc, nil
 	case "cos":
 		if os.Getenv("COS_BUCKET_NAME") == "" ||
 			os.Getenv("COS_REGION") == "" ||
 			os.Getenv("COS_SECRET_ID") == "" ||
 			os.Getenv("COS_SECRET_KEY") == "" ||
 			os.Getenv("COS_PATH_PREFIX") == "" {
-			return nil, fmt.Errorf("missing COS configuration")
+			return fallbackLocal(fmt.Errorf("missing COS configuration"))
 		}
-		return file.NewCosFileServiceWithTempBucket(
+		svc, err := file.NewCosFileServiceWithTempBucket(
 			os.Getenv("COS_BUCKET_NAME"),
 			os.Getenv("COS_REGION"),
 			os.Getenv("COS_SECRET_ID"),
@@ -677,15 +696,19 @@ func initFileService(cfg *config.Config) (interfaces.FileService, error) {
 			os.Getenv("COS_TEMP_BUCKET_NAME"),
 			os.Getenv("COS_TEMP_REGION"),
 		)
+		if err != nil {
+			return fallbackLocal(err)
+		}
+		return svc, nil
 	case "tos":
 		if os.Getenv("TOS_ENDPOINT") == "" ||
 			os.Getenv("TOS_REGION") == "" ||
 			os.Getenv("TOS_ACCESS_KEY") == "" ||
 			os.Getenv("TOS_SECRET_KEY") == "" ||
 			os.Getenv("TOS_BUCKET_NAME") == "" {
-			return nil, fmt.Errorf("missing TOS configuration")
+			return fallbackLocal(fmt.Errorf("missing TOS configuration"))
 		}
-		return file.NewTosFileServiceWithTempBucket(
+		svc, err := file.NewTosFileServiceWithTempBucket(
 			os.Getenv("TOS_ENDPOINT"),
 			os.Getenv("TOS_REGION"),
 			os.Getenv("TOS_ACCESS_KEY"),
@@ -695,19 +718,23 @@ func initFileService(cfg *config.Config) (interfaces.FileService, error) {
 			os.Getenv("TOS_TEMP_BUCKET_NAME"), // 可选：临时桶名称（桶需配置生命周期规则自动过期）
 			os.Getenv("TOS_TEMP_REGION"),      // 可选：临时桶 region，默认与主桶相同
 		)
+		if err != nil {
+			return fallbackLocal(err)
+		}
+		return svc, nil
 	case "s3":
 		if os.Getenv("S3_ENDPOINT") == "" ||
 			os.Getenv("S3_REGION") == "" ||
 			os.Getenv("S3_ACCESS_KEY") == "" ||
 			os.Getenv("S3_SECRET_KEY") == "" ||
 			os.Getenv("S3_BUCKET_NAME") == "" {
-			return nil, fmt.Errorf("missing S3 configuration")
+			return fallbackLocal(fmt.Errorf("missing S3 configuration"))
 		}
 		pathPrefix := os.Getenv("S3_PATH_PREFIX")
 		if pathPrefix == "" {
 			pathPrefix = "weknora/"
 		}
-		return file.NewS3FileService(
+		svc, err := file.NewS3FileService(
 			os.Getenv("S3_ENDPOINT"),
 			os.Getenv("S3_ACCESS_KEY"),
 			os.Getenv("S3_SECRET_KEY"),
@@ -715,19 +742,23 @@ func initFileService(cfg *config.Config) (interfaces.FileService, error) {
 			os.Getenv("S3_REGION"),
 			pathPrefix,
 		)
+		if err != nil {
+			return fallbackLocal(err)
+		}
+		return svc, nil
 	case "oss":
 		if os.Getenv("OSS_ENDPOINT") == "" ||
 			os.Getenv("OSS_REGION") == "" ||
 			os.Getenv("OSS_ACCESS_KEY") == "" ||
 			os.Getenv("OSS_SECRET_KEY") == "" ||
 			os.Getenv("OSS_BUCKET_NAME") == "" {
-			return nil, fmt.Errorf("missing OSS configuration")
+			return fallbackLocal(fmt.Errorf("missing OSS configuration"))
 		}
 		pathPrefix := os.Getenv("OSS_PATH_PREFIX")
 		if pathPrefix == "" {
 			pathPrefix = "weknora/"
 		}
-		return file.NewOssFileServiceWithTempBucket(
+		svc, err := file.NewOssFileServiceWithTempBucket(
 			os.Getenv("OSS_ENDPOINT"),
 			os.Getenv("OSS_REGION"),
 			os.Getenv("OSS_ACCESS_KEY"),
@@ -737,6 +768,10 @@ func initFileService(cfg *config.Config) (interfaces.FileService, error) {
 			os.Getenv("OSS_TEMP_BUCKET_NAME"),
 			os.Getenv("OSS_TEMP_REGION"),
 		)
+		if err != nil {
+			return fallbackLocal(err)
+		}
+		return svc, nil
 	case "local":
 		baseDir := os.Getenv("LOCAL_STORAGE_BASE_DIR")
 		if baseDir == "" {
@@ -748,6 +783,50 @@ func initFileService(cfg *config.Config) (interfaces.FileService, error) {
 		return file.NewDummyFileService(), nil
 	default:
 		return nil, fmt.Errorf("unsupported storage type: %s", storageType)
+	}
+}
+
+func shouldBypassEnvMinioInit(db *gorm.DB, endpoint string) bool {
+	if db == nil || !isLocalMinioEndpoint(endpoint) {
+		return false
+	}
+
+	var tenants []types.Tenant
+	if err := db.Select("id", "storage_engine_config").Find(&tenants).Error; err != nil {
+		logger.Warnf(context.Background(), "Failed to inspect tenant storage config for remote MinIO bootstrap: %v", err)
+		return false
+	}
+
+	for _, tenant := range tenants {
+		if tenant.StorageEngineConfig == nil || tenant.StorageEngineConfig.MinIO == nil {
+			continue
+		}
+		cfg := tenant.StorageEngineConfig
+		minioCfg := cfg.MinIO
+		if strings.EqualFold(strings.TrimSpace(cfg.DefaultProvider), "minio") &&
+			strings.EqualFold(strings.TrimSpace(minioCfg.Mode), "remote") &&
+			strings.TrimSpace(minioCfg.Endpoint) != "" &&
+			strings.TrimSpace(minioCfg.AccessKeyID) != "" &&
+			strings.TrimSpace(minioCfg.SecretAccessKey) != "" &&
+			strings.TrimSpace(minioCfg.BucketName) != "" {
+			logger.Infof(context.Background(),
+				"Detected tenant-level remote MinIO configuration (tenant_id=%d), skipping environment MinIO probe for endpoint %s",
+				tenant.ID, endpoint,
+			)
+			return true
+		}
+	}
+
+	return false
+}
+
+func isLocalMinioEndpoint(endpoint string) bool {
+	endpoint = strings.TrimSpace(strings.ToLower(endpoint))
+	switch endpoint {
+	case "", "minio:9000", "localhost:9000", "127.0.0.1:9000", "http://localhost:9000", "http://127.0.0.1:9000":
+		return true
+	default:
+		return false
 	}
 }
 

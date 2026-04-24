@@ -83,6 +83,7 @@ const persistOIDCLoginResponse = async (response: any) => {
   }
 
   await syncOIDCUserContext()
+  authStore.setSelectedTenant(null, null)
 
   await nextTick()
   router.replace('/platform/knowledge-bases')

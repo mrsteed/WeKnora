@@ -68,11 +68,10 @@ const emit = defineEmits<{
 }>()
 
 const uiStore = useUIStore()
-const localProvider = ref(props.storageProvider || 'local')
+const localProvider = ref(props.storageProvider || '')
 const loading = ref(true)
 const engineStatus = ref<StorageEngineStatusItem[]>([])
-const defaultProvider = ref('local')
-const allowedProviders = ref<string[]>([])
+const defaultProvider = ref('')
 const hasAnyConfig = ref(false)
 
 const engineOptions = computed(() => {
@@ -168,8 +167,7 @@ async function load() {
     ])
     const engines = statusRes?.data?.engines ?? []
     engineStatus.value = engines
-    allowedProviders.value = statusRes?.data?.allowed_providers ?? []
-    defaultProvider.value = configRes?.data?.default_provider || 'local'
+    defaultProvider.value = configRes?.data?.default_provider || ''
     const d = configRes?.data
     hasAnyConfig.value = !!(d?.local?.path_prefix || d?.minio?.bucket_name || d?.cos?.bucket_name || d?.tos?.bucket_name || d?.s3?.bucket_name)
     if (!localProvider.value || localProvider.value === '') {
@@ -185,7 +183,7 @@ async function load() {
 }
 
 watch(() => props.storageProvider, (v) => {
-  localProvider.value = v || defaultProvider.value || 'local'
+  localProvider.value = v || defaultProvider.value || ''
 }, { immediate: true })
 
 onMounted(load)
