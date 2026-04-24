@@ -185,7 +185,18 @@ func (h *CustomAgentHandler) ListAgents(c *gin.Context) {
 
 	// Get user info for visibility filtering
 	userID := c.GetString(types.UserIDContextKey.String())
-	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	tenantIDVal, exists := c.Get(types.TenantIDContextKey.String())
+	if !exists {
+		logger.Error(ctx, "Tenant ID not found in context")
+		c.Error(errors.NewUnauthorizedError("Missing tenant context"))
+		return
+	}
+	tenantID, ok := tenantIDVal.(uint64)
+	if !ok {
+		logger.Errorf(ctx, "Tenant ID has unexpected type %T in context", tenantIDVal)
+		c.Error(errors.NewInternalServerError("Invalid tenant context type"))
+		return
+	}
 	user, exists := c.Get(types.UserContextKey.String())
 	isSuperAdmin := false
 	if exists {
@@ -203,18 +214,6 @@ func (h *CustomAgentHandler) ListAgents(c *gin.Context) {
 	}
 
 	// Per-tenant "disabled by me" for own agents (only affects this tenant's conversation dropdown)
-	tenantIDVal, exists := c.Get(types.TenantIDContextKey.String())
-	if !exists {
-		logger.Error(ctx, "Tenant ID not found in context")
-		c.Error(errors.NewUnauthorizedError("Missing tenant context"))
-		return
-	}
-	tenantID, ok := tenantIDVal.(uint64)
-	if !ok {
-		logger.Errorf(ctx, "Tenant ID has unexpected type %T in context", tenantIDVal)
-		c.Error(errors.NewInternalServerError("Invalid tenant context type"))
-		return
-	}
 	disabledOwnIDs, err := h.disabledRepo.ListDisabledOwnAgentIDs(ctx, tenantID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
