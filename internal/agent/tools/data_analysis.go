@@ -558,7 +558,7 @@ func (t *DataAnalysisTool) convertXlsToCSV(ctx context.Context, xlsPath string) 
 
 	logger.Infof(ctx, "[Tool][DataAnalysis] Successfully converted .xls to CSV at '%s' for session %s", absPath, t.sessionID)
 	return absPath, nil
-	}
+}
 
 // materializeKnowledgeFile copies the knowledge's backing blob into a fresh
 // temp file on the local filesystem so DuckDB can open it with ordinary path
