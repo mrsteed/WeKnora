@@ -50,7 +50,7 @@
                         <usermsg :content="session.content" :mentioned_items="session.mentioned_items" :images="session.images" :attachments="session.attachments" :embeddedMode="embeddedMode"></usermsg>
                     </div>
                     <div v-if="session.role == 'assistant'">
-                        <botmsg :content="session.content" :session="session" :user-query="getUserQuery(id)" @scroll-bottom="scrollToBottom"
+                        <botmsg :content="session.content" :session="session" :user-query="getUserQuery(id)" @scroll-bottom="scrollToBottom" @retry="handleRetry"
                             :isFirstEnter="isFirstEnter" :embeddedMode="embeddedMode"></botmsg>
                     </div>
                 </div>
@@ -139,6 +139,7 @@ const loading = ref(false);
 const historyLoading = ref(true);
 let fullContent = ref('')
 let userquery = ref('')
+const lastRequestMeta = ref(null);
 const scrollContainer = ref(null)
 const userHasScrolledUp = ref(false)
 const SCROLL_BOTTOM_THRESHOLD = 80
@@ -236,6 +237,171 @@ const getUserQuery = (index) => {
         return previous.content || '';
     }
     return '';
+};
+
+const buildLocalAssistantMessage = (isAgentMode = false) => {
+    const localId = `local-assistant-${Date.now()}`;
+    return {
+        id: localId,
+        request_id: localId,
+        role: 'assistant',
+        content: '',
+        isAgentMode,
+        is_completed: false,
+        is_failed: false,
+        error_message: '',
+        agentEventStream: [],
+        _eventMap: new Map(),
+        _pendingToolCalls: new Map(),
+        knowledge_references: []
+    };
+};
+
+const findActiveAssistantMessage = () => {
+    if (currentAssistantMessageId.value) {
+        const current = messagesList.findLast((item) => item.id === currentAssistantMessageId.value || item.request_id === currentAssistantMessageId.value);
+        if (current) {
+            return current;
+        }
+    }
+
+    return messagesList.findLast((item) => item.role === 'assistant' && !item.is_completed && !item.is_failed);
+};
+
+const ensureAssistantMessage = () => {
+    const existing = findActiveAssistantMessage();
+    if (existing) {
+        return existing;
+    }
+
+    const message = buildLocalAssistantMessage(Boolean(lastRequestMeta.value?.agent_enabled));
+    messagesList.push(message);
+    return message;
+};
+
+const resetReplyState = () => {
+    loading.value = false;
+    isReplying.value = false;
+    fullContent.value = '';
+    currentAssistantMessageId.value = '';
+};
+
+const markAssistantFailed = (errorMessage) => {
+    const normalizedError = errorMessage || t('chat.processError');
+    const message = ensureAssistantMessage();
+
+    message.is_failed = true;
+    message.error_message = normalizedError;
+    message.is_completed = true;
+    if (message.isAgentMode) {
+        if (!message.agentEventStream) {
+            message.agentEventStream = [];
+        }
+        const hasTerminalError = message.agentEventStream.some((event) => event.type === 'error' && event.terminal);
+        if (!hasTerminalError) {
+            message.agentEventStream.push({
+                type: 'error',
+                content: normalizedError,
+                done: true,
+                terminal: true,
+                timestamp: Date.now()
+            });
+        }
+    } else if (!message.content?.trim()) {
+        message.content = normalizedError;
+    }
+
+    resetReplyState();
+    scrollToBottom(true);
+};
+
+const buildRetryPayloadFromUserMessage = (userMessage) => {
+    if (userMessage?.retry_payload) {
+        return userMessage.retry_payload;
+    }
+
+    const agentEnabled = props.embeddedMode ? (props.agentId && props.agentId !== 'builtin-quick-answer') : useSettingsStoreInstance.isAgentEnabled;
+    const selectedAgentId = props.embeddedMode ? props.agentId : (useSettingsStoreInstance.selectedAgentId || '');
+    const webSearchEnabled = props.embeddedMode ? false : useSettingsStoreInstance.isWebSearchEnabled;
+    const enableMemory = props.embeddedMode ? false : useSettingsStoreInstance.isMemoryEnabled;
+    const kbIds = props.embeddedMode ? props.kbIds : (useSettingsStoreInstance.settings.selectedKnowledgeBases || []);
+    const knowledgeIds = props.embeddedMode ? [] : (useSettingsStoreInstance.settings.selectedFiles || []);
+    const mcpServiceIds = props.embeddedMode ? [] : (useSettingsStoreInstance.settings.selectedMCPServices || []);
+
+    return {
+        request: {
+            session_id: session_id.value,
+            knowledge_base_ids: kbIds,
+            knowledge_ids: knowledgeIds,
+            agent_enabled: agentEnabled,
+            agent_id: selectedAgentId,
+            web_search_enabled: webSearchEnabled,
+            enable_memory: enableMemory,
+            summary_model_id: '',
+            mcp_service_ids: mcpServiceIds,
+            mentioned_items: userMessage?.mentioned_items || [],
+            images: undefined,
+            attachment_uploads: undefined,
+            query: userMessage?.content || '',
+            method: 'POST',
+            url: agentEnabled ? '/api/v1/agent-chat' : '/api/v1/knowledge-chat'
+        },
+        display: {
+            mentioned_items: userMessage?.mentioned_items || [],
+            user_images: userMessage?.images || [],
+            attachments: userMessage?.attachments || []
+        }
+    };
+};
+
+const resendFromRetryPayload = async (retryPayload) => {
+    if (!retryPayload?.request?.query) {
+        MessagePlugin.error(t('chat.processError'));
+        return;
+    }
+
+    const request = {
+        ...retryPayload.request,
+        session_id: session_id.value
+    };
+    lastRequestMeta.value = request;
+    userquery.value = request.query;
+    isReplying.value = true;
+    loading.value = true;
+
+    messagesList.push({
+        content: request.query,
+        role: 'user',
+        mentioned_items: retryPayload.display?.mentioned_items || [],
+        images: retryPayload.display?.user_images || [],
+        attachments: retryPayload.display?.attachments || [],
+        channel: 'web',
+        retry_payload: {
+            request,
+            display: retryPayload.display || {}
+        }
+    });
+    userHasScrolledUp.value = false;
+    scrollToBottom(true);
+
+    await startStream(request);
+};
+
+const handleRetry = async (assistantSession) => {
+    if (isReplying.value) {
+        MessagePlugin.warning(t('chat.replyingPleaseWait'));
+        return;
+    }
+
+    const assistantIndex = messagesList.findIndex((item) => item === assistantSession || item.id === assistantSession?.id || item.request_id === assistantSession?.request_id);
+    if (assistantIndex <= 0) {
+        MessagePlugin.error(t('chat.processError'));
+        return;
+    }
+
+    const userMessage = messagesList.slice(0, assistantIndex).reverse().find((item) => item.role === 'user');
+    const retryPayload = buildRetryPayloadFromUserMessage(userMessage);
+    await resendFromRetryPayload(retryPayload);
 };
 watch([() => route.params], (newvalue) => {
     isFirstEnter.value = true;
@@ -533,10 +699,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         }
     }
 
-    // 将@提及的知识库和文件信息存入用户消息
-     messagesList.push({ content: value, role: 'user', mentioned_items: mentionedItems, images: userImages, attachments: attachmentFiles.map(a => ({ file_name: a.name, file_size: a.size, file_type: '.' + a.name.split('.').pop()?.toLowerCase() })), channel: 'web' });
-    userHasScrolledUp.value = false;
-    scrollToBottom(true);
+    const attachmentDisplay = attachmentFiles.map(a => ({ file_name: a.name, file_size: a.size, file_type: '.' + a.name.split('.').pop()?.toLowerCase() }));
     
     // Get agent mode status from settings store
     const agentEnabled = props.embeddedMode ? (props.agentId && props.agentId !== 'builtin-quick-answer') : useSettingsStoreInstance.isAgentEnabled;
@@ -572,9 +735,9 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     
     // Get selected MCP services from settings store (if available)
     const mcpServiceIds = props.embeddedMode ? [] : (useSettingsStoreInstance.settings.selectedMCPServices || []);
-    
-    await startStream({ 
-        session_id: session_id.value, 
+
+    const requestParams = {
+        session_id: session_id.value,
         knowledge_base_ids: kbIds,
         knowledge_ids: knowledgeIds,
         agent_enabled: agentEnabled,
@@ -586,9 +749,37 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         mentioned_items: mentionedItems,
         images: imageAttachments.length > 0 ? imageAttachments : undefined,
         attachment_uploads: attachmentUploads.length > 0 ? attachmentUploads : undefined,
-        query: value, 
-        method: 'POST', 
+        query: value,
+        method: 'POST',
         url: endpoint
+    };
+
+    const retryPayload = {
+        request: requestParams,
+        display: {
+            mentioned_items: mentionedItems,
+            user_images: userImages,
+            attachments: attachmentDisplay
+        }
+    };
+
+    lastRequestMeta.value = requestParams;
+
+    // 将@提及的知识库和文件信息存入用户消息，并保留本次请求参数以便失败后重试
+    messagesList.push({
+        content: value,
+        role: 'user',
+        mentioned_items: mentionedItems,
+        images: userImages,
+        attachments: attachmentDisplay,
+        channel: 'web',
+        retry_payload: retryPayload
+    });
+    userHasScrolledUp.value = false;
+    scrollToBottom(true);
+    
+    await startStream({ 
+        ...requestParams
     });
 }
 
@@ -596,10 +787,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
 watch(error, (newError) => {
     if (newError) {
         MessagePlugin.error(newError);
-        isReplying.value = false;
-        loading.value = false;
-        // 清空当前 assistant message ID
-        currentAssistantMessageId.value = '';
+        markAssistantFailed(newError);
     }
 });
 
@@ -984,18 +1172,16 @@ const handleAgentChunk = (data) => {
                 // If this is an error response without tool data, handle it
                 if (data.response_type === 'error' && !toolName) {
                     const errorMsg = data.content || t('chat.processError');
-                    message.content = errorMsg;
-                    isReplying.value = false;
-                    loading.value = false;
+                    message.content = message.content || errorMsg;
+                    markAssistantFailed(errorMsg);
                     MessagePlugin.error(errorMsg);
                     console.error('[Chat Error]', errorMsg);
                 }
             } else if (data.response_type === 'error') {
                 // Generic error without tool context
                 const errorMsg = data.content || t('chat.processError');
-                message.content = errorMsg;
-                isReplying.value = false;
-                loading.value = false;
+                message.content = message.content || errorMsg;
+                markAssistantFailed(errorMsg);
                 MessagePlugin.error(errorMsg);
                 console.error('[Chat Error]', errorMsg);
             }
@@ -1062,11 +1248,7 @@ const handleAgentChunk = (data) => {
                 console.log('[Agent] Answer done, content length:', message.content?.length || 0, 'answerEvent.content length:', answerEvent.content?.length || 0);
                 
                 // 完成 - 关闭所有状态
-                loading.value = false;
-                isReplying.value = false;
-                fullContent.value = '';
-                // 清空当前 assistant message ID
-                currentAssistantMessageId.value = '';
+                resetReplyState();
                 
                 // 标题生成已改为异步事件推送，不再需要在这里手动调用
                 // 如果标题还未生成，前端会通过 SSE 事件接收
@@ -1078,8 +1260,7 @@ const handleAgentChunk = (data) => {
         case 'complete':
             // 整个流式响应完成事件 - 确保状态正确关闭
             console.log('[Agent] Complete event received');
-            loading.value = false;
-            isReplying.value = false;
+            resetReplyState();
             // 将 total_duration_ms 存入事件流供 AgentStreamDisplay 使用
             if (data.data?.total_duration_ms && message.agentEventStream) {
                 message.agentEventStream.push({
@@ -1103,8 +1284,7 @@ const handleAgentChunk = (data) => {
             });
             
             // Mark conversation as stopped
-            isReplying.value = false;
-            fullContent.value = '';
+            resetReplyState();
             break;
     }
     
@@ -1131,6 +1311,12 @@ const updateAssistantSession = (payload) => {
         // 更新完成状态
         if (payload.is_completed) {
             message.is_completed = true;
+        }
+        if (payload.is_failed) {
+            message.is_failed = true;
+        }
+        if (payload.error_message) {
+            message.error_message = payload.error_message;
         }
     } else {
         messagesList.push(payload);

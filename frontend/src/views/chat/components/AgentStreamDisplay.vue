@@ -731,6 +731,7 @@ import webSearchGlobeGreenIcon from '@/assets/img/websearch-globe-green.svg';
 interface SessionData {
   isAgentMode?: boolean;
   is_completed?: boolean;
+  is_failed?: boolean;
   agentEventStream?: any[];
   knowledge_references?: any[];
 }
@@ -860,6 +861,10 @@ watch(eventStream, (stream) => {
 // Check if conversation is done (based on answer event with done=true or stop event)
 const isConversationDone = computed(() => {
   const stream = eventStream.value;
+  if (props.session?.is_failed) {
+    console.log('[Collapse] Session marked failed, conversation done');
+    return true;
+  }
   if (!stream || stream.length === 0) {
     console.log('[Collapse] No stream or empty stream');
     return false;

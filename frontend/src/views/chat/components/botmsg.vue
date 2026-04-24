@@ -21,6 +21,12 @@
             <docInfo :session="session"></docInfo>
             <AgentStreamDisplay :session="session" :user-query="userQuery" v-if="session.isAgentMode"></AgentStreamDisplay>
             <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
+            <div v-if="session.is_failed" class="message-failed-state">
+                <div class="message-failed-text">{{ failureText }}</div>
+                <t-button size="small" variant="outline" theme="danger" shape="round" @click.stop="emitRetry">
+                    {{ $t('chat.regenerate') }}
+                </t-button>
+            </div>
         </div>
         <!-- 非 Agent 模式下才显示传统的 markdown 渲染 -->
         <div ref="parentMd" v-if="!session.hideContent && !session.isAgentMode">
@@ -32,7 +38,7 @@
                 </div>
             </div>
             <!-- Streaming indicator (non-Agent mode) -->
-            <div v-if="hasActualContent && !session.is_completed" class="loading-indicator">
+            <div v-if="hasActualContent && !session.is_completed && !session.is_failed" class="loading-indicator">
                 <div class="loading-typing">
                     <span></span>
                     <span></span>
@@ -106,7 +112,7 @@ const preprocessMathDelimiters = (rawText) => {
 
 ensureMermaidInitialized();
 
-const emit = defineEmits(['scroll-bottom'])
+const emit = defineEmits(['scroll-bottom', 'retry'])
 const { t } = useI18n()
 const uiStore = useUIStore();
 const renderer = new marked.Renderer();
@@ -190,6 +196,14 @@ const hasActualContent = computed(() => {
     const text = props.content || props.session?.content || '';
     return text && text.trim().length > 0;
 });
+
+const failureText = computed(() => {
+    return props.session?.error_message || t('chat.processError');
+});
+
+const emitRetry = () => {
+    emit('retry', props.session);
+};
 
 // 渲染单个 token 为 HTML
 const renderToken = (token) => {
@@ -332,6 +346,24 @@ onBeforeUnmount(() => {
     justify-content: flex-start;
     max-width: 100%;
     margin-bottom: 2px;
+}
+
+.message-failed-state {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--td-error-color) 28%, transparent);
+    background: color-mix(in srgb, var(--td-error-color) 8%, var(--td-bg-color-container));
+}
+
+.message-failed-text {
+    color: var(--td-error-color);
+    font-size: 13px;
+    line-height: 1.5;
+    word-break: break-word;
 }
 
 .mentioned_tag {

@@ -228,9 +228,38 @@ These map to docker-compose profiles:
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `minio.enabled` | Enable MinIO storage | `false` |
+| `minio.endpoint` | External MinIO endpoint; when set, the chart uses remote MinIO instead of expecting a local MinIO service | `""` |
+| `minio.publicEndpoint` | Public MinIO endpoint used by DocReader-generated file URLs; defaults to `minio.endpoint` | `""` |
+| `minio.accessKeyId` | External MinIO access key id | `""` |
+| `minio.accessKeySecret` | External MinIO secret access key | `""` |
+| `minio.bucketName` | Default bucket name injected into app/docreader env | `""` |
+| `minio.pathPrefix` | Default object key prefix for DocReader uploads | `""` |
+| `minio.useSSL` | Use SSL when the MinIO SDK connects | `false` |
 | `neo4j.enabled` | Enable Neo4j (GraphRAG) | `false` |
 | `qdrant.enabled` | Enable Qdrant vector DB | `false` |
 | `jaeger.enabled` | Enable Jaeger tracing | `false` |
+
+### External MinIO Example
+
+If you want to use an existing MinIO service instead of a local Docker image, set MinIO as the storage backend and provide the remote endpoint:
+
+```yaml
+app:
+  env:
+    STORAGE_TYPE: minio
+
+docreader:
+  env:
+    STORAGE_TYPE: minio
+
+minio:
+  enabled: true
+  accessKeyId: admin
+  accessKeySecret: hlsa2019
+  endpoint: http://192.168.1.212:9000
+```
+
+If DocReader should return a different externally accessible download address, also set `minio.publicEndpoint`.
 
 ## Security Best Practices
 

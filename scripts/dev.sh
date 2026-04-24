@@ -92,15 +92,30 @@ append_profile() {
     fi
 }
 
+is_local_minio_endpoint() {
+    local endpoint="$1"
+    case "$endpoint" in
+        ""|minio:9000|localhost:9000|127.0.0.1:9000|http://localhost:9000|http://127.0.0.1:9000)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 auto_detect_profiles_from_env() {
     local retrieve_driver="${RETRIEVE_DRIVER:-postgres}"
     local storage_type="${STORAGE_TYPE:-local}"
+    local minio_endpoint="${MINIO_ENDPOINT:-}"
     local enable_graph_rag="${ENABLE_GRAPH_RAG:-false}"
     local neo4j_enable="${NEO4J_ENABLE:-false}"
 
     case "$storage_type" in
         minio)
-            append_profile "minio"
+            if is_local_minio_endpoint "$minio_endpoint"; then
+                append_profile "minio"
+            fi
             ;;
     esac
 
@@ -341,7 +356,9 @@ start_app() {
     export DB_HOST=localhost
     export DOCREADER_ADDR=localhost:50051
     export DOCREADER_TRANSPORT=grpc
-    export MINIO_ENDPOINT=localhost:9000
+    if [ -z "$MINIO_ENDPOINT" ] || [ "$MINIO_ENDPOINT" = "minio:9000" ] || [ "$MINIO_ENDPOINT" = "localhost:9000" ]; then
+        export MINIO_ENDPOINT=localhost:9000
+    fi
     export REDIS_ADDR=localhost:6379
     export MILVUS_ADDRESS=localhost:19530
     export OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317

@@ -610,7 +610,7 @@ const loadKBData = async () => {
         parentChunkSize: kb.chunking_config?.parent_chunk_size || 4096,
         childChunkSize: kb.chunking_config?.child_chunk_size || 384
       },
-      storageProvider: (kb.storage_provider_config?.provider || kb.storage_config?.provider || 'local') as string,
+      storageProvider: (kb.storage_provider_config?.provider || kb.storage_config?.provider || '') as string,
       multimodalConfig: {
         enabled: !!kb.vlm_config?.enabled,
         vllmModelId: kb.vlm_config?.model_id || ''
@@ -778,7 +778,7 @@ const handleAddWikiModel = () => {
 
 const handleStorageProviderUpdate = (value: string) => {
   if (formData.value) {
-    formData.value.storageProvider = value || 'local'
+    formData.value.storageProvider = value || ''
   }
 }
 
@@ -898,10 +898,10 @@ const buildSubmitData = () => {
   // 存储引擎：仅传 provider，参数从全局设置读取
   // Write to storage_provider_config (authoritative) + storage_config (legacy dual-write)
   data.storage_provider_config = {
-    provider: formData.value.storageProvider || 'local'
+    provider: formData.value.storageProvider || ''
   }
   data.storage_config = {
-    provider: formData.value.storageProvider || 'local'
+    provider: formData.value.storageProvider || ''
   }
 
   // 添加知识图谱配置 — now synced via indexingStrategy.graphEnabled
@@ -1058,7 +1058,7 @@ const doSubmit = async () => {
         multimodal: {
           enabled: !!data.vlm_config?.enabled
         },
-        storageProvider: data.storage_provider_config?.provider || data.storage_config?.provider || 'local',
+        storageProvider: data.storage_provider_config?.provider || data.storage_config?.provider || '',
         nodeExtract: {
           enabled: data.extract_config?.enabled || false,
           text: data.extract_config?.text || '',

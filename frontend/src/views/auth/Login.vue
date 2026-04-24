@@ -45,29 +45,6 @@
       <span class="logo-sub">智枢</span>
     </div>
 
-    <!-- Header Links -->
-    <div class="header-links">
-      <div class="language-switch">
-        <button @click="toggleLanguageMenu" class="header-link"
-          :title="languageOptions.find(l => l.value === currentLanguage)?.label">
-          <span class="lang-flag-icon">{{languageOptions.find(l => l.value === currentLanguage)?.flag}}</span>
-          <span class="link-text">{{languageOptions.find(l => l.value === currentLanguage)?.shortLabel}}</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-            stroke-linecap="round">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
-        <div v-if="showLanguageMenu" class="language-dropdown">
-          <div v-for="lang in languageOptions" :key="lang.value" @click="selectLanguage(lang.value)"
-            class="language-option" :class="{ active: currentLanguage === lang.value }">
-            <span class="lang-flag">{{ lang.flag }}</span>
-            <span class="lang-label">{{ lang.label }}</span>
-            <span v-if="currentLanguage === lang.value" class="check-icon">✓</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Left Brand Showcase -->
     <div class="showcase-section">
       <div class="showcase-content">
@@ -137,9 +114,9 @@
           </div>
 
           <div class="form-content">
-            <t-form ref="formRef" :data="formData" :rules="formRules" @submit="handleLogin" layout="vertical">
-              <t-form-item :label="$t('auth.email')" name="email">
-                <t-input v-model="formData.email" :placeholder="$t('auth.emailPlaceholder')" type="email" size="large"
+            <t-form ref="formRef" class="login-form" :data="formData" :rules="formRules" @submit="handleLogin" layout="vertical">
+              <t-form-item :label="$t('auth.username')" name="account">
+                <t-input v-model="formData.account" :placeholder="$t('auth.accountPlaceholder')" type="text" size="large"
                   :disabled="loading" />
               </t-form-item>
 
@@ -148,9 +125,24 @@
                   size="large" :disabled="loading" @keydown.enter="handleLogin" />
               </t-form-item>
 
-              <t-button type="submit" theme="primary" size="large" block :loading="loading" class="submit-button">
-                {{ loading ? $t('auth.loggingIn') : $t('auth.login') }}
-              </t-button>
+              <div class="remember-row">
+                <span class="form-spacer" aria-hidden="true"></span>
+                <div class="remember-control">
+                  <t-checkbox v-model="rememberAccount" :disabled="loading" @change="handleRememberAccountChange">
+                    {{ $t('auth.rememberUsername') }}
+                  </t-checkbox>
+                  <t-checkbox v-model="rememberPassword" :disabled="loading" @change="handleRememberPasswordChange">
+                    {{ $t('auth.rememberPassword') }}
+                  </t-checkbox>
+                </div>
+              </div>
+
+              <div class="submit-row">
+                <span class="form-spacer" aria-hidden="true"></span>
+                <t-button type="submit" theme="primary" size="large" block :loading="loading" class="submit-button">
+                  {{ loading ? $t('auth.loggingIn') : $t('auth.login') }}
+                </t-button>
+              </div>
             </t-form>
 
 
@@ -183,11 +175,12 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { login, register } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
-import { onBeforeUnmount } from 'vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
-const { t, locale } = useI18n()
+const { t } = useI18n()
+
+const REMEMBERED_LOGIN_KEY = 'weknora_remembered_login'
 
 // Form references
 const formRef = ref()
@@ -196,23 +189,12 @@ const registerFormRef = ref()
 // State management
 const loading = ref(false)
 const isRegisterMode = ref(false)
-const showLanguageMenu = ref(false)
-
-// Language options
-interface LangOption { value: string; label: string; shortLabel: string; flag: string }
-const languageOptions: LangOption[] = [
-  { value: 'zh-CN', label: '简体中文', shortLabel: '中文', flag: '🇨🇳' },
-  { value: 'en-US', label: 'English', shortLabel: 'EN', flag: '🇺🇸' },
-  { value: 'ru-RU', label: 'Русский', shortLabel: 'RU', flag: '🇷🇺' },
-  { value: 'ko-KR', label: '한국어', shortLabel: '한국어', flag: '🇰🇷' }
-]
-
-// Current language computed from i18n
-const currentLanguage = computed(() => locale.value)
+const rememberAccount = ref(false)
+const rememberPassword = ref(false)
 
 // Login form data
 const formData = reactive<{ [key: string]: any }>({
-  email: '',
+  account: '',
   password: '',
 })
 
@@ -226,9 +208,8 @@ const registerData = reactive<{ [key: string]: any }>({
 
 // Login form validation rules
 const formRules = computed(() => ({
-  email: [
-    { required: true, message: t('auth.emailRequired'), type: 'error' },
-    { email: true, message: t('auth.emailInvalid'), type: 'error' }
+  account: [
+    { required: true, message: t('auth.accountRequired'), type: 'error' },
   ],
   password: [
     { required: true, message: t('auth.passwordRequired'), type: 'error' },
@@ -280,34 +261,68 @@ const toggleMode = () => {
   })
 }
 
-// Toggle language menu
-const toggleLanguageMenu = () => {
-  showLanguageMenu.value = !showLanguageMenu.value
+const clearRememberedCredentials = () => {
+  localStorage.removeItem(REMEMBERED_LOGIN_KEY)
 }
 
-// Select language
-const selectLanguage = (lang: string) => {
-  locale.value = lang
-  localStorage.setItem('locale', lang)
-  showLanguageMenu.value = false
-  MessagePlugin.success(t('language.languageSaved'))
+const saveRememberedCredentials = () => {
+  localStorage.setItem(REMEMBERED_LOGIN_KEY, JSON.stringify({
+    rememberAccount: rememberAccount.value,
+    rememberPassword: rememberPassword.value,
+    account: rememberAccount.value ? formData.account : '',
+    password: rememberPassword.value ? formData.password : '',
+  }))
 }
 
-// Close language menu when clicking outside
-const handleClickOutside = (event: MouseEvent) => {
-  const target = event.target as HTMLElement
-  if (!target.closest('.language-switch')) {
-    showLanguageMenu.value = false
+const loadRememberedCredentials = () => {
+  const remembered = localStorage.getItem(REMEMBERED_LOGIN_KEY)
+  if (!remembered) return
+
+  try {
+    const parsed = JSON.parse(remembered)
+    const rememberedAccount = typeof parsed?.account === 'string'
+      ? parsed.account
+      : typeof parsed?.email === 'string'
+        ? parsed.email
+        : ''
+
+    if (rememberedAccount) {
+      formData.account = rememberedAccount
+    }
+    if (typeof parsed?.password === 'string') {
+      formData.password = parsed.password
+    }
+
+    rememberAccount.value = parsed?.rememberAccount === true || !!rememberedAccount
+    rememberPassword.value = parsed?.rememberPassword === true && typeof parsed?.password === 'string' && parsed.password.length > 0
+
+    if (rememberPassword.value && !rememberAccount.value) {
+      rememberAccount.value = true
+    }
+  } catch {
+    clearRememberedCredentials()
   }
 }
 
-onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
-})
+const handleRememberAccountChange = (checked: boolean | string | number) => {
+  const enabled = !!checked
+  if (!enabled && rememberPassword.value) {
+    rememberPassword.value = false
+  }
+  if (!enabled) {
+    clearRememberedCredentials()
+  }
+}
 
-onBeforeUnmount(() => {
-  document.removeEventListener('click', handleClickOutside)
-})
+const handleRememberPasswordChange = (checked: boolean | string | number) => {
+  const enabled = !!checked
+  if (enabled && !rememberAccount.value) {
+    rememberAccount.value = true
+  }
+  if (!enabled && !rememberAccount.value) {
+    clearRememberedCredentials()
+  }
+}
 
 // Handle login
 const handleLogin = async () => {
@@ -318,7 +333,7 @@ const handleLogin = async () => {
     loading.value = true
 
     const response = await login({
-      email: formData.email,
+      email: formData.account,
       password: formData.password,
     })
 
@@ -346,6 +361,13 @@ const handleLogin = async () => {
           created_at: response.tenant.created_at || new Date().toISOString(),
           updated_at: response.tenant.updated_at || new Date().toISOString()
         })
+        authStore.setSelectedTenant(null, null)
+
+        if (rememberAccount.value || rememberPassword.value) {
+          saveRememberedCredentials()
+        } else {
+          clearRememberedCredentials()
+        }
       }
 
       MessagePlugin.success(t('auth.loginSuccess'))
@@ -379,7 +401,7 @@ const handleRegister = async () => {
     if (response.success) {
       MessagePlugin.success(t('auth.registerSuccess'))
       isRegisterMode.value = false
-      formData.email = registerData.email
+      formData.account = registerData.email
       Object.keys(registerData).forEach(key => {
         (registerData as any)[key] = ''
       })
@@ -396,6 +418,8 @@ const handleRegister = async () => {
 
 // Check if already logged in
 onMounted(() => {
+  loadRememberedCredentials()
+
   if (authStore.isLoggedIn) {
     router.replace('/platform/tenant/knowledge-bases')
   }
@@ -430,6 +454,46 @@ onMounted(() => {
     pointer-events: none;
     z-index: 0;
   }
+}
+
+.remember-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 16px;
+  margin: -2px 0 10px;
+
+  .remember-control {
+    min-width: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    flex-wrap: nowrap;
+    gap: 20px;
+  }
+
+  :deep(.t-checkbox) {
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 13px;
+    margin-right: 0;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  :deep(.t-checkbox + .t-checkbox) {
+    margin-left: 0;
+  }
+}
+
+.submit-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  column-gap: 16px;
+  align-items: center;
+}
+
+.form-spacer {
+  display: block;
 }
 
 /* ── Animated Background ── */
@@ -725,123 +789,6 @@ onMounted(() => {
   z-index: 100;
 }
 
-.header-link {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 15px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: "PingFang SC", sans-serif;
-  transition: all 0.25s ease;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-
-  .link-text {
-    line-height: 1;
-  }
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(0, 212, 255, 0.3);
-    color: #FFFFFF;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 212, 255, 0.15);
-  }
-}
-
-.language-switch {
-  position: relative;
-
-  button {
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(8px);
-    color: rgba(255, 255, 255, 0.8);
-
-    .lang-flag-icon {
-      font-size: 16px;
-      line-height: 1;
-      flex-shrink: 0;
-    }
-
-    &:hover {
-      background: rgba(255, 255, 255, 0.12);
-      border-color: rgba(0, 212, 255, 0.3);
-      color: #FFFFFF;
-    }
-  }
-}
-
-.language-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  min-width: 160px;
-  background: rgba(20, 20, 25, 0.95);
-  backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  overflow: hidden;
-  z-index: 1000;
-  animation: dropdownFadeIn 0.2s ease-out;
-}
-
-.language-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 13px;
-  font-family: "PingFang SC", sans-serif;
-  color: rgba(255, 255, 255, 0.7);
-
-  .lang-flag {
-    font-size: 16px;
-    flex-shrink: 0;
-  }
-
-  .lang-label {
-    flex: 1;
-  }
-
-  .check-icon {
-    color: #00D4FF;
-    font-weight: 700;
-    font-size: 14px;
-  }
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  &.active {
-    background: rgba(0, 212, 255, 0.1);
-    color: #00D4FF;
-  }
-}
-
-@keyframes dropdownFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 /* ── Left Showcase Section ── */
 .showcase-section {
   flex: 0 0 52%;
@@ -1007,12 +954,27 @@ onMounted(() => {
 
 .form-content {
 
+  :deep(.login-form) {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  :deep(.login-form .t-form-item) {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    column-gap: 16px;
+    align-items: start;
+    margin-bottom: 0;
+  }
+
   /* Form labels - force white text */
   :deep(.t-form-item__label) {
     font-size: 14px !important;
     color: rgba(255, 255, 255, 0.85) !important;
     font-weight: 500;
-    margin-bottom: 8px;
+    margin-bottom: 0;
+    padding-top: 12px;
     font-family: "PingFang SC", sans-serif;
     display: block;
     text-align: left;
@@ -1097,6 +1059,10 @@ onMounted(() => {
   :deep(.t-form-item__control) {
     width: 100%;
   }
+
+  :deep(.t-form-item__controls) {
+    min-width: 0;
+  }
 }
 
 .submit-button {
@@ -1105,7 +1071,7 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 600;
   font-family: "PingFang SC", sans-serif;
-  margin: 24px 0 16px 0;
+  margin: 0 0 16px 0;
   transition: all 0.3s ease;
   overflow: hidden;
 
@@ -1381,6 +1347,26 @@ onMounted(() => {
 
   .form-header {
     margin-bottom: 24px;
+  }
+
+  .remember-row,
+  .submit-row,
+  .form-content :deep(.login-form .t-form-item) {
+    grid-template-columns: 1fr;
+    row-gap: 8px;
+  }
+
+  .remember-row .remember-control {
+    flex-wrap: wrap;
+    gap: 10px 16px;
+  }
+
+  .form-content :deep(.t-form-item__label) {
+    padding-top: 0;
+  }
+
+  .form-spacer {
+    display: none;
   }
 }
 </style>
