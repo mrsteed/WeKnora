@@ -588,7 +588,6 @@ func (t *DataAnalysisTool) LoadFromKnowledge(ctx context.Context, knowledge *typ
 		return nil, fmt.Errorf("unsupported file type: %s (supported types: csv, xlsx, xls)", fileType)
 	}
 }
-
 // materializeKnowledgeFile copies the knowledge's backing blob into a fresh
 // temp file on the local filesystem so DuckDB can open it with ordinary path
 // semantics. It returns the temp path and a cleanup closure that removes the
@@ -641,49 +640,6 @@ func (t *DataAnalysisTool) materializeKnowledgeFile(ctx context.Context, knowled
 
 	return tmpPath, cleanup, nil
 }
-
-// downloadToTempFile downloads the file from storage to a local temporary file.
-// Returns the local file path. Caller is responsible for removing the temp file.
-func (t *DataAnalysisTool) downloadToTempFile(ctx context.Context, filePath string, fileType string) (string, error) {
-	reader, err := t.fileService.GetFile(ctx, filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to get file from storage: %w", err)
-	}
-	defer reader.Close()
-
-	// Determine file extension
-	ext := "." + fileType
-	if ext == "." {
-		ext = ".tmp"
-	}
-
-	// Create temp file
-	tmpFile, err := os.CreateTemp("", "weknora_data_*"+ext)
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-
-	if _, err := io.Copy(tmpFile, reader); err != nil {
-		_ = tmpFile.Close()
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("failed to write to temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("failed to finalize temp file: %w", err)
-	}
-
-	// Ensure the path is absolute for DuckDB
-	absPath, err := filepath.Abs(tmpPath)
-	if err != nil {
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("failed to get absolute path: %w", err)
-	}
-
-	return absPath, nil
-}
-
 // convertXlsToCSV converts an old .xls binary format file to a CSV temp file.
 // DuckDB's st_read (GDAL) does not support the legacy .xls format, so we use
 // the extrame/xls library to read .xls and write it out as CSV.
@@ -744,8 +700,7 @@ func (t *DataAnalysisTool) convertXlsToCSV(ctx context.Context, xlsPath string) 
 
 	logger.Infof(ctx, "[Tool][DataAnalysis] Successfully converted .xls to CSV at '%s' for session %s", absPath, t.sessionID)
 	return absPath, nil
-}
-
+	}
 // LoadFromKnowledgeID loads data from a Knowledge ID into a DuckDB table and returns the table schema
 // Parameters:
 //   - ctx: context for cancellation and timeout
