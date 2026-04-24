@@ -208,20 +208,20 @@ func (s *userService) CreateUserByAdmin(ctx context.Context, req *types.CreateUs
 // Login authenticates a user and returns tokens
 func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*types.LoginResponse, error) {
 	logger.Info(ctx, "Start user login")
-	// Get user by email
-	user, err := s.userRepo.GetUserByEmail(ctx, req.Email)
+	identifier := strings.TrimSpace(req.Email)
+	user, err := s.findUserForLogin(ctx, identifier)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get user by email: %v", err)
+		logger.Errorf(ctx, "Failed to get user by login identifier: %v", err)
 		return &types.LoginResponse{
 			Success: false,
-			Message: "Invalid email or password",
+			Message: "Invalid account or password",
 		}, nil
 	}
 	if user == nil {
-		logger.Warn(ctx, "User not found for email")
+		logger.Warn(ctx, "User not found for login identifier")
 		return &types.LoginResponse{
 			Success: false,
-			Message: "Invalid email or password",
+			Message: "Invalid account or password",
 		}, nil
 	}
 
@@ -240,7 +240,7 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 		logger.Warn(ctx, "Password verification failed")
 		return &types.LoginResponse{
 			Success: false,
-			Message: "Invalid email or password",
+			Message: "Invalid account or password",
 		}, nil
 	}
 	logger.Info(ctx, "Password verification successful")
@@ -274,6 +274,26 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 		Token:        accessToken,
 		RefreshToken: refreshToken,
 	}, nil
+}
+
+func (s *userService) findUserForLogin(ctx context.Context, identifier string) (*types.User, error) {
+	lookups := []func(context.Context, string) (*types.User, error){
+		s.userRepo.GetUserByEmail,
+		s.userRepo.GetUserByPhone,
+		s.userRepo.GetUserByUsername,
+	}
+
+	for _, lookup := range lookups {
+		user, err := lookup(ctx, identifier)
+		if err == nil && user != nil {
+			return user, nil
+		}
+		if err != nil && !errors.Is(err, apprepo.ErrUserNotFound) {
+			return nil, err
+		}
+	}
+
+	return nil, nil
 }
 
 // GetOIDCAuthorizationURL builds the OIDC authorization URL.

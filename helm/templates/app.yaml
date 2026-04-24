@@ -116,6 +116,18 @@ spec:
               value: {{ .Values.app.env.STORAGE_TYPE | quote }}
             - name: LOCAL_STORAGE_BASE_DIR
               value: {{ .Values.app.env.LOCAL_STORAGE_BASE_DIR | quote }}
+            {{- if eq (include "weknora.minio.external" .) "true" }}
+            - name: MINIO_ENDPOINT
+              value: {{ .Values.minio.endpoint | quote }}
+            - name: MINIO_ACCESS_KEY_ID
+              value: {{ .Values.minio.accessKeyId | quote }}
+            - name: MINIO_SECRET_ACCESS_KEY
+              value: {{ .Values.minio.accessKeySecret | quote }}
+            - name: MINIO_BUCKET_NAME
+              value: {{ .Values.minio.bucketName | quote }}
+            - name: MINIO_USE_SSL
+              value: {{ ternary "true" "false" .Values.minio.useSSL | quote }}
+            {{- end }}
             # Document reader
             - name: DOCREADER_ADDR
               value: "docreader:50051"

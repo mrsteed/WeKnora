@@ -127,6 +127,24 @@ Return the docreader image with tag.
 {{- end }}
 
 {{/*
+Whether MinIO should be treated as an external service.
+*/}}
+{{- define "weknora.minio.external" -}}
+{{- if and .Values.minio.enabled .Values.minio.endpoint }}true{{- end }}
+{{- end }}
+
+{{/*
+Resolve the MinIO public endpoint used by DocReader-generated URLs.
+*/}}
+{{- define "weknora.minio.publicEndpoint" -}}
+{{- if .Values.minio.publicEndpoint -}}
+{{- .Values.minio.publicEndpoint -}}
+{{- else -}}
+{{- .Values.minio.endpoint -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Return the PostgreSQL image with tag.
 */}}
 {{- define "weknora.postgresql.image" -}}

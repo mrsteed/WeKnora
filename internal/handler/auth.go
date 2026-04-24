@@ -156,6 +156,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	if response.User != nil {
+		crossTenantEnabled := h.configInfo != nil && h.configInfo.Tenant != nil && h.configInfo.Tenant.EnableCrossTenantAccess
+		response.User.CanAccessAllTenants = response.User.CanAccessAllTenants && crossTenantEnabled
+	}
+
 	// User is already in the correct format from service
 
 	logger.Infof(ctx, "User logged in successfully, email: %s", email)

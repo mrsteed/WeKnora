@@ -69,7 +69,11 @@ Components deployed:
 
 Optional components enabled:
 {{- if .Values.minio.enabled }}
-  - MinIO (S3-compatible storage)
+  {{- if .Values.minio.endpoint }}
+  - External MinIO endpoint: {{ .Values.minio.endpoint }}
+  {{- else }}
+  - MinIO integration enabled
+  {{- end }}
 {{- end }}
 {{- if .Values.neo4j.enabled }}
   - Neo4j (Knowledge Graph)

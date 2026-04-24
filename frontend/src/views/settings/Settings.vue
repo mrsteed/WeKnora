@@ -42,19 +42,6 @@
                       <line x1="2.94" y1="5.5" x2="15.06" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
                       <line x1="2.94" y1="12.5" x2="15.06" y2="12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
                     </svg>
-                    <!-- WeKnora Cloud 使用自定义 W 图标 -->
-                    <svg
-                      v-else-if="item.key === 'weknoracloud'"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 18 18"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="nav-icon"
-                    >
-                      <rect x="1.5" y="1.5" width="15" height="15" rx="3.5" stroke="currentColor" stroke-width="1.2" fill="none"/>
-                      <path d="M4.5 5.5L6.5 12.5L9 7.5L11.5 12.5L13.5 5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-                    </svg>
                     <t-icon v-else :name="item.icon" class="nav-icon" />
                     <span class="nav-label">{{ item.label }}</span>
                     <t-icon 
@@ -95,11 +82,6 @@
                 <!-- Ollama 设置 -->
                 <div v-if="currentSection === 'ollama'" class="section">
                   <OllamaSettings />
-                </div>
-
-                <!-- WeKnora Cloud -->
-                <div v-if="currentSection === 'weknoracloud'" class="section">
-                  <WeKnoraCloudSettings />
                 </div>
 
                 <!-- 模型配置 -->
@@ -178,7 +160,6 @@ import ChatHistorySettings from './ChatHistorySettings.vue'
 import VectorStoreSettings from './VectorStoreSettings.vue'
 import ParserEngineSettings from './ParserEngineSettings.vue'
 import StorageEngineSettings from './StorageEngineSettings.vue'
-import WeKnoraCloudSettings from './WeKnoraCloudSettings.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -205,7 +186,6 @@ const allNavItems = computed(() => [
     ]
   },
   { key: 'ollama', icon: 'server', label: 'Ollama', superAdminOnly: true },
-  { key: 'weknoracloud', icon: 'cloud', label: 'WeKnora Cloud', superAdminOnly: true },
   { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig'), superAdminOnly: true },
   { key: 'chathistory', icon: 'chat', label: t('chatHistorySettings.title'), superAdminOnly: true },
   { key: 'vectorstore', icon: 'data-base', label: t('settings.vectorStoreEngine'), superAdminOnly: true },
