@@ -444,8 +444,14 @@ func buildExcelCreateTableSQL(tableName, filename string, sheetNames []string) s
 	)
 }
 
-// LoadFromKnowledge loads data from a Knowledge entity into a DuckDB table and returns the table schema
-// It automatically determines the file type and calls the appropriate loading method
+// LoadFromKnowledge loads data from a Knowledge entity into a DuckDB table and returns the table schema.
+// It automatically determines the file type and calls the appropriate loading method.
+//
+// The source file is first materialized to a local temp file via FileService.GetFile
+// so DuckDB's st_read / read_xlsx / read_csv_auto can open it directly. This
+// side-steps provider-specific URL schemes (e.g. the local:// URL returned by
+// the local file service) that DuckDB's extensions cannot resolve on their own.
+//
 // Parameters:
 //   - ctx: context for cancellation and timeout
 //   - knowledge: the Knowledge entity containing file information
@@ -465,16 +471,11 @@ func (t *DataAnalysisTool) LoadFromKnowledge(ctx context.Context, knowledge *typ
 	logger.Infof(ctx, "[Tool][DataAnalysis] Loading knowledge '%s' (type: %s) into table '%s' for session %s",
 		knowledge.ID, fileType, tableName, t.sessionID)
 
-	// Download file to a local temp file first, since DuckDB (especially st_read for Excel)
-	// cannot read from HTTP URLs without the httpfs extension.
-	localPath, err := t.downloadToTempFile(ctx, knowledge.FilePath, fileType)
+	localPath, cleanup, err := t.materializeKnowledgeFile(ctx, knowledge)
 	if err != nil {
-		return nil, fmt.Errorf("failed to download file for knowledge '%s': %w", knowledge.ID, err)
+		return nil, fmt.Errorf("failed to materialize knowledge '%s' for DuckDB: %w", knowledge.ID, err)
 	}
-	// Schedule cleanup of the temp file after loading
-	defer os.Remove(localPath)
-
-	logger.Infof(ctx, "[Tool][DataAnalysis] Downloaded knowledge '%s' to temp file '%s'", knowledge.ID, localPath)
+	defer cleanup()
 
 	switch fileType {
 	case "csv":
@@ -495,46 +496,6 @@ func (t *DataAnalysisTool) LoadFromKnowledge(ctx context.Context, knowledge *typ
 			fileType, knowledge.ID, t.sessionID)
 		return nil, fmt.Errorf("unsupported file type: %s (supported types: csv, xlsx, xls)", fileType)
 	}
-}
-
-// downloadToTempFile downloads the file from storage to a local temporary file.
-// Returns the local file path. Caller is responsible for removing the temp file.
-func (t *DataAnalysisTool) downloadToTempFile(ctx context.Context, filePath string, fileType string) (string, error) {
-	reader, err := t.fileService.GetFile(ctx, filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to get file from storage: %w", err)
-	}
-	defer reader.Close()
-
-	// Determine file extension
-	ext := "." + fileType
-	if ext == "." {
-		ext = ".tmp"
-	}
-
-	// Create temp file
-	tmpFile, err := os.CreateTemp("", "weknora_data_*"+ext)
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-
-	// Copy content to temp file
-	if _, err := io.Copy(tmpFile, reader); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("failed to write to temp file: %w", err)
-	}
-	tmpFile.Close()
-
-	// Ensure the path is absolute for DuckDB
-	absPath, err := filepath.Abs(tmpPath)
-	if err != nil {
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("failed to get absolute path: %w", err)
-	}
-
-	return absPath, nil
 }
 
 // convertXlsToCSV converts an old .xls binary format file to a CSV temp file.
@@ -597,6 +558,59 @@ func (t *DataAnalysisTool) convertXlsToCSV(ctx context.Context, xlsPath string) 
 
 	logger.Infof(ctx, "[Tool][DataAnalysis] Successfully converted .xls to CSV at '%s' for session %s", absPath, t.sessionID)
 	return absPath, nil
+	}
+
+// materializeKnowledgeFile copies the knowledge's backing blob into a fresh
+// temp file on the local filesystem so DuckDB can open it with ordinary path
+// semantics. It returns the temp path and a cleanup closure that removes the
+// temp file; the closure is always safe to call and is a no-op on failure.
+//
+// This hides storage-backend-specific URL schemes (local://, oss://, s3://,
+// minio://, cos://, …) behind the FileService.GetFile abstraction, so the
+// Data Analysis tool works identically across all deployments.
+func (t *DataAnalysisTool) materializeKnowledgeFile(ctx context.Context, knowledge *types.Knowledge) (string, func(), error) {
+	noop := func() {}
+
+	reader, err := t.fileService.GetFile(ctx, knowledge.FilePath)
+	if err != nil {
+		return "", noop, fmt.Errorf("failed to open file for knowledge '%s': %w", knowledge.ID, err)
+	}
+	defer reader.Close()
+
+	// Preserve the file extension so DuckDB's format auto-detection still
+	// works (e.g. the CSV reader expects .csv, xlsx reader expects .xlsx).
+	suffix := ""
+	if ext := strings.ToLower(strings.TrimSpace(knowledge.FileType)); ext != "" {
+		suffix = "." + ext
+	}
+
+	tmp, err := os.CreateTemp("", "weknora-data-analysis-*"+suffix)
+	if err != nil {
+		return "", noop, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	cleanup := func() {
+		// Best-effort cleanup; a missing file is fine, any other error is
+		// only logged to avoid masking the original operation's result.
+		if err := os.Remove(tmpPath); err != nil && !os.IsNotExist(err) {
+			logger.Warnf(ctx, "[Tool][DataAnalysis] Failed to remove temp file %s: %v", tmpPath, err)
+		}
+	}
+
+	if _, err := io.Copy(tmp, reader); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return "", noop, fmt.Errorf("failed to copy knowledge '%s' to temp file: %w", knowledge.ID, err)
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return "", noop, fmt.Errorf("failed to finalize temp file for knowledge '%s': %w", knowledge.ID, err)
+	}
+
+	logger.Infof(ctx, "[Tool][DataAnalysis] Materialized knowledge '%s' to temp file %s for session %s",
+		knowledge.ID, tmpPath, t.sessionID)
+
+	return tmpPath, cleanup, nil
 }
 
 // LoadFromKnowledgeID loads data from a Knowledge ID into a DuckDB table and returns the table schema
