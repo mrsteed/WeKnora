@@ -18,6 +18,7 @@ const authStore = useAuthStore();
 const router = useRouter();
 import {
   batchQueryKnowledge,
+  downKnowledgeDetails,
   getKnowledgeBaseById,
   listKnowledgeTags,
   updateKnowledgeTagBatch,
@@ -858,7 +859,182 @@ type KnowledgeCard = {
   metadata?: any;
   error_message?: string;
   tag_id?: string;
+  file_size?: number;
+  source?: string;
+  created_at?: string;
+  channel?: string;
 };
+type DocumentViewMode = 'card' | 'list';
+type DocumentListSortKey = 'name' | 'file_size' | 'status' | 'updated_at';
+type DocumentListSortOrder = 'asc' | 'desc';
+const DOCUMENT_VIEW_MODE_STORAGE_KEY = 'weknora_knowledge_document_view_mode';
+const readStoredDocumentViewMode = (): DocumentViewMode => {
+  if (typeof window === 'undefined') return 'card';
+  const storedMode = window.localStorage.getItem(DOCUMENT_VIEW_MODE_STORAGE_KEY);
+  return storedMode === 'list' ? 'list' : 'card';
+};
+const documentViewMode = ref<DocumentViewMode>(readStoredDocumentViewMode());
+const documentListSortKey = ref<DocumentListSortKey>('updated_at');
+const documentListSortOrder = ref<DocumentListSortOrder>('desc');
+const hoveredListRowId = ref<string | null>(null);
+const downloadingKnowledgeIds = ref<string[]>([]);
+
+const isDownloadingKnowledge = (id?: string) => !!id && downloadingKnowledgeIds.value.includes(id);
+
+const getKnowledgeDisplayName = (item: KnowledgeCard) => {
+  return item.file_name || item.display_name || item.title || t('knowledgeBase.untitledDocument');
+};
+
+const getKnowledgeDescription = (item: KnowledgeCard) => {
+  return item.description || '';
+};
+
+const getKnowledgeItemIndex = (item: KnowledgeCard) => {
+  return cardList.value.findIndex(card => card.id === item.id);
+};
+
+const getKnowledgeStatusWeight = (item: KnowledgeCard) => {
+  if (item.parse_status === 'failed') return 0;
+  if (item.parse_status === 'processing' || item.parse_status === 'pending') return 1;
+  if (item.parse_status === 'draft') return 2;
+  if (item.parse_status === 'completed' && (item.summary_status === 'pending' || item.summary_status === 'processing')) return 3;
+  return 4;
+};
+
+const compareDocumentValues = (left: KnowledgeCard, right: KnowledgeCard, sortKey: DocumentListSortKey) => {
+  if (sortKey === 'name') {
+    return getKnowledgeDisplayName(left).localeCompare(getKnowledgeDisplayName(right), 'zh-CN');
+  }
+  if (sortKey === 'file_size') {
+    return Number(left.file_size || 0) - Number(right.file_size || 0);
+  }
+  if (sortKey === 'status') {
+    return getKnowledgeStatusWeight(left) - getKnowledgeStatusWeight(right);
+  }
+  return new Date(left.updated_at || 0).getTime() - new Date(right.updated_at || 0).getTime();
+};
+
+const sortedDocumentList = computed(() => {
+  const orderFactor = documentListSortOrder.value === 'asc' ? 1 : -1;
+  return [...cardList.value].sort((left, right) => {
+    const result = compareDocumentValues(left, right, documentListSortKey.value);
+    if (result !== 0) return result * orderFactor;
+    return getKnowledgeDisplayName(left).localeCompare(getKnowledgeDisplayName(right), 'zh-CN');
+  });
+});
+
+const toggleDocumentListSort = (sortKey: DocumentListSortKey) => {
+  if (documentListSortKey.value === sortKey) {
+    documentListSortOrder.value = documentListSortOrder.value === 'asc' ? 'desc' : 'asc';
+    return;
+  }
+  documentListSortKey.value = sortKey;
+  documentListSortOrder.value = sortKey === 'name' ? 'asc' : 'desc';
+};
+
+const getDocumentSortDirection = (sortKey: DocumentListSortKey) => {
+  if (documentListSortKey.value !== sortKey) return 'none';
+  return documentListSortOrder.value;
+};
+
+const handleListRowMouseEnter = (item: KnowledgeCard) => {
+  hoveredListRowId.value = item.id || null;
+};
+
+const handleListRowMouseLeave = () => {
+  hoveredListRowId.value = null;
+};
+
+const isDownloadableKnowledge = (item: KnowledgeCard) => {
+  if (!item?.id) return false;
+  const normalizedType = String(item.type || '').toLowerCase();
+  const normalizedFileType = String(item.file_type || '').toLowerCase();
+  if (normalizedType === 'manual' || normalizedFileType === 'manual') return false;
+  if (normalizedType === 'url' || normalizedType === 'web') return false;
+  return !!(item.original_file_name || item.file_name);
+};
+
+const getKnowledgeSourceText = (item: KnowledgeCard) => {
+  if (isDownloadableKnowledge(item)) {
+    return item.original_file_name || item.file_name || t('knowledgeBase.sourceUnavailable');
+  }
+  if (String(item.type || '').toLowerCase() === 'manual') {
+    return t('knowledgeBase.sourceTypeManual');
+  }
+  if (item.source) {
+    return item.source;
+  }
+  return t('knowledgeBase.sourceUnavailable');
+};
+
+const getKnowledgeSourceKind = (item: KnowledgeCard) => {
+  if (isDownloadableKnowledge(item)) return t('knowledgeBase.sourceTypeFile');
+  if (String(item.type || '').toLowerCase() === 'manual') return t('knowledgeBase.sourceTypeManual');
+  if (item.source) return t('knowledgeBase.sourceTypeUrl');
+  return t('knowledgeBase.sourceTypeUnknown');
+};
+
+const getKnowledgeStatusText = (item: KnowledgeCard) => {
+  if (item.parse_status === 'processing' || item.parse_status === 'pending') {
+    return t('knowledgeBase.parsingInProgress');
+  }
+  if (item.parse_status === 'failed') {
+    return t('knowledgeBase.parsingFailed');
+  }
+  if (item.parse_status === 'draft') {
+    return t('knowledgeBase.draft');
+  }
+  if (item.parse_status === 'completed' && (item.summary_status === 'pending' || item.summary_status === 'processing')) {
+    return t('knowledgeBase.generatingSummary');
+  }
+  return t('knowledgeBase.completed');
+};
+
+const getKnowledgeStatusClass = (item: KnowledgeCard) => {
+  if (item.parse_status === 'processing' || item.parse_status === 'pending') return 'parsing';
+  if (item.parse_status === 'failed') return 'failure';
+  if (item.parse_status === 'draft') return 'draft';
+  if (item.parse_status === 'completed' && (item.summary_status === 'pending' || item.summary_status === 'processing')) return 'summary';
+  return 'completed';
+};
+
+const triggerBlobDownload = (blob: Blob, filename: string) => {
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.style.display = 'none';
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  nextTick(() => {
+    document.body.removeChild(link);
+    URL.revokeObjectURL(blobUrl);
+  });
+};
+
+const handleDownloadKnowledgeSource = async (item: KnowledgeCard) => {
+  if (!isDownloadableKnowledge(item)) {
+    MessagePlugin.warning(t('knowledgeBase.downloadSourceUnsupported'));
+    return;
+  }
+  if (!item.id || isDownloadingKnowledge(item.id)) return;
+  downloadingKnowledgeIds.value = [...downloadingKnowledgeIds.value, item.id];
+  try {
+    const blob = await downKnowledgeDetails(item.id) as unknown as Blob;
+    const filename = item.original_file_name || `${getKnowledgeDisplayName(item)}.${String(item.file_type || '').toLowerCase()}`;
+    triggerBlobDownload(blob, filename);
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('knowledgeBase.downloadFailed'));
+  } finally {
+    downloadingKnowledgeIds.value = downloadingKnowledgeIds.value.filter(currentId => currentId !== item.id);
+  }
+};
+
+watch(documentViewMode, (mode) => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(DOCUMENT_VIEW_MODE_STORAGE_KEY, mode);
+});
+
 const updateStatus = (analyzeList: KnowledgeCard[]) => {
   if (timeout !== null) {
     clearTimeout(timeout);
@@ -1994,6 +2170,26 @@ async function createNewSession(value: string): Promise<void> {
                 class="doc-type-select"
                 clearable
               />
+              <div class="doc-view-toggle" role="tablist" :aria-label="$t('knowledgeBase.viewMode')">
+                <button
+                  type="button"
+                  class="view-toggle-btn"
+                  :class="{ active: documentViewMode === 'card' }"
+                  @click="documentViewMode = 'card'"
+                >
+                  <t-icon name="app" size="14px" />
+                  <span>{{ $t('knowledgeBase.cardView') }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="view-toggle-btn"
+                  :class="{ active: documentViewMode === 'list' }"
+                  @click="documentViewMode = 'list'"
+                >
+                  <t-icon name="bulletpoint" size="14px" />
+                  <span>{{ $t('knowledgeBase.listView') }}</span>
+                </button>
+              </div>
               <div v-if="canEdit" class="doc-filter-actions">
                 <t-tooltip :content="$t('knowledgeBase.addDocument')" placement="top">
                   <t-dropdown
@@ -2016,7 +2212,7 @@ async function createNewSession(value: string): Promise<void> {
               @scroll="handleScroll"
             >
               <!-- 文档骨架屏 -->
-              <div v-if="docListLoading && cardList.length === 0" class="doc-card-list doc-card-list-animated">
+              <div v-if="docListLoading && cardList.length === 0 && documentViewMode === 'card'" class="doc-card-list doc-card-list-animated">
                 <div v-for="n in 8" :key="'doc-skel-'+n" class="knowledge-card knowledge-card-skeleton">
                   <div class="card-content">
                     <div class="card-content-nav">
@@ -2029,7 +2225,12 @@ async function createNewSession(value: string): Promise<void> {
                   </div>
                 </div>
               </div>
-              <template v-else-if="cardList.length">
+              <div v-else-if="docListLoading && cardList.length === 0" class="doc-list-skeleton">
+                <div v-for="n in 8" :key="'doc-list-skel-'+n" class="doc-list-skeleton-row">
+                  <t-skeleton animation="gradient" :row-col="[[{ width: '20%', height: '14px' }, { width: '16%', height: '14px' }, { width: '10%', height: '14px' }, { width: '10%', height: '14px' }, { width: '10%', height: '14px' }, { width: '12%', height: '14px' }, { width: '12%', height: '14px' }, { width: '10%', height: '14px' }]]" />
+                </div>
+              </div>
+              <template v-else-if="cardList.length && documentViewMode === 'card'">
                 <div class="doc-card-list doc-card-list-animated">
                   <!-- 现有文档卡片 -->
                   <div
@@ -2208,7 +2409,7 @@ async function createNewSession(value: string): Promise<void> {
                 <!-- 悬停卡片时跟随鼠标的详情气泡 -->
                 <Teleport to="body">
                   <div
-                    v-show="hoveredCardItem"
+                    v-show="hoveredCardItem && documentViewMode === 'card'"
                     class="knowledge-card-hover-popover"
                     :style="{ left: cardPopoverPos.x + 'px', top: cardPopoverPos.y + 'px' }"
                   >
@@ -2248,6 +2449,230 @@ async function createNewSession(value: string): Promise<void> {
                     </template>
                   </div>
                 </Teleport>
+              </template>
+              <template v-else-if="cardList.length">
+                <div class="doc-list-view">
+                  <div class="doc-list-header">
+                    <button
+                      type="button"
+                      class="doc-sort-btn col-name"
+                      :class="`sort-${getDocumentSortDirection('name')}`"
+                      @click="toggleDocumentListSort('name')"
+                    >
+                      <span>{{ $t('knowledgeBase.documentName') }}</span>
+                      <span class="doc-sort-indicator" aria-hidden="true"></span>
+                    </button>
+                    <span class="col-source">{{ $t('knowledgeBase.sourceFile') }}</span>
+                    <span class="col-type">{{ $t('knowledgeBase.fileType') }}</span>
+                    <button
+                      type="button"
+                      class="doc-sort-btn col-size"
+                      :class="`sort-${getDocumentSortDirection('file_size')}`"
+                      @click="toggleDocumentListSort('file_size')"
+                    >
+                      <span>{{ $t('knowledgeBase.fileSize') }}</span>
+                      <span class="doc-sort-indicator" aria-hidden="true"></span>
+                    </button>
+                    <span class="col-tag">{{ $t('knowledgeBase.category') }}</span>
+                    <button
+                      type="button"
+                      class="doc-sort-btn col-status"
+                      :class="`sort-${getDocumentSortDirection('status')}`"
+                      @click="toggleDocumentListSort('status')"
+                    >
+                      <span>{{ $t('knowledgeBase.status') }}</span>
+                      <span class="doc-sort-indicator" aria-hidden="true"></span>
+                    </button>
+                    <button
+                      type="button"
+                      class="doc-sort-btn col-updated"
+                      :class="`sort-${getDocumentSortDirection('updated_at')}`"
+                      @click="toggleDocumentListSort('updated_at')"
+                    >
+                      <span>{{ $t('knowledgeBase.updatedAt') }}</span>
+                      <span class="doc-sort-indicator" aria-hidden="true"></span>
+                    </button>
+                    <span class="col-actions">{{ $t('knowledgeBase.actions') }}</span>
+                  </div>
+                  <div
+                    v-for="item in sortedDocumentList"
+                    :key="item.id"
+                    class="doc-list-row"
+                    :class="{ 'is-hovered': hoveredListRowId === item.id }"
+                    @mouseenter="handleListRowMouseEnter(item)"
+                    @mouseleave="handleListRowMouseLeave"
+                  >
+                    <div class="doc-list-cell col-name">
+                      <t-tooltip :content="getKnowledgeDisplayName(item)" placement="top">
+                        <button type="button" class="doc-name-btn" @click="openCardDetails(item)">
+                          {{ getKnowledgeDisplayName(item) }}
+                        </button>
+                      </t-tooltip>
+                      <t-tooltip v-if="getKnowledgeDescription(item)" :content="getKnowledgeDescription(item)" placement="top">
+                        <span class="doc-name-desc">{{ getKnowledgeDescription(item) }}</span>
+                      </t-tooltip>
+                      <div class="doc-hover-actions" :class="{ visible: hoveredListRowId === item.id }">
+                        <t-tooltip :content="$t('knowledgeBase.viewDetails')" placement="top">
+                          <button type="button" class="doc-hover-icon-btn" @click.stop="openCardDetails(item)">
+                            <t-icon name="browse" size="14px" />
+                          </button>
+                        </t-tooltip>
+                        <t-tooltip v-if="isDownloadableKnowledge(item)" :content="$t('knowledgeBase.downloadSource')" placement="top">
+                          <button
+                            type="button"
+                            class="doc-hover-icon-btn brand"
+                            :disabled="isDownloadingKnowledge(item.id)"
+                            @click.stop="handleDownloadKnowledgeSource(item)"
+                          >
+                            <t-icon name="download" size="14px" />
+                          </button>
+                        </t-tooltip>
+                        <t-tooltip v-if="canEdit" :content="$t('knowledgeBase.rebuildDocument')" placement="top">
+                          <button
+                            type="button"
+                            class="doc-hover-icon-btn"
+                            @click.stop="handleKnowledgeReparse(getKnowledgeItemIndex(item), item)"
+                          >
+                            <t-icon name="refresh" size="14px" />
+                          </button>
+                        </t-tooltip>
+                      </div>
+                    </div>
+                    <div class="doc-list-cell col-source">
+                      <span class="doc-source-name" :title="getKnowledgeSourceText(item)">{{ getKnowledgeSourceText(item) }}</span>
+                      <span class="doc-source-kind">{{ getKnowledgeSourceKind(item) }}</span>
+                    </div>
+                    <div class="doc-list-cell col-type">
+                      <span class="doc-inline-tag type">{{ getKnowledgeType(item) }}</span>
+                    </div>
+                    <div class="doc-list-cell col-size">{{ formatFileSize(item.file_size) || '--' }}</div>
+                    <div class="doc-list-cell col-tag">
+                      <span class="doc-inline-tag tag">{{ getTagName(item.tag_id) }}</span>
+                    </div>
+                    <div class="doc-list-cell col-status">
+                      <span class="doc-status-chip" :class="getKnowledgeStatusClass(item)" :title="item.error_message || ''">{{ getKnowledgeStatusText(item) }}</span>
+                    </div>
+                    <div class="doc-list-cell col-updated">{{ formatDocTime(item.updated_at) }}</div>
+                    <div class="doc-list-cell col-actions">
+                      <button type="button" class="doc-action-btn neutral" @click.stop="openCardDetails(item)">{{ $t('knowledgeBase.viewDetails') }}</button>
+                      <button
+                        v-if="isDownloadableKnowledge(item)"
+                        type="button"
+                        class="doc-action-btn brand"
+                        :disabled="isDownloadingKnowledge(item.id)"
+                        @click.stop="handleDownloadKnowledgeSource(item)"
+                      >
+                        {{ isDownloadingKnowledge(item.id) ? $t('knowledgeBase.downloading') : $t('knowledgeBase.downloadSource') }}
+                      </button>
+                      <t-popup
+                        v-if="canEdit"
+                        v-model="item.isMore"
+                        overlayClassName="card-more"
+                        :on-visible-change="onVisibleChange"
+                        trigger="click"
+                        destroy-on-close
+                        placement="bottom-right"
+                      >
+                        <button
+                          type="button"
+                          class="doc-action-btn ghost more"
+                          :class="[moreIndex == getKnowledgeItemIndex(item) ? 'active-more' : '']"
+                          @click.stop="openMore(getKnowledgeItemIndex(item))"
+                        >
+                          {{ $t('knowledgeBase.moreActions') }}
+                        </button>
+                        <template #content>
+                          <div v-if="moveMenuMode === 'normal'" class="card-menu">
+                            <div
+                              v-if="item.type === 'manual'"
+                              class="card-menu-item"
+                              @click.stop="handleManualEdit(getKnowledgeItemIndex(item), item)"
+                            >
+                              <t-icon class="icon" name="edit" />
+                              <span>{{ t('knowledgeBase.editDocument') }}</span>
+                            </div>
+                            <div class="card-menu-item" @click.stop="handleKnowledgeReparse(getKnowledgeItemIndex(item), item)">
+                              <t-icon class="icon" name="refresh" />
+                              <span>{{ t('knowledgeBase.rebuildDocument') }}</span>
+                            </div>
+                            <div class="card-menu-item" @click.stop="handleMoveKnowledge(item)">
+                              <t-icon class="icon" name="swap" />
+                              <span>{{ t('knowledgeBase.moveDocument') }}</span>
+                            </div>
+                            <div class="card-menu-item danger" @click.stop="delCard(getKnowledgeItemIndex(item), item)">
+                              <t-icon class="icon" name="delete" />
+                              <span>{{ t('knowledgeBase.deleteDocument') }}</span>
+                            </div>
+                          </div>
+
+                          <div v-else-if="moveMenuMode === 'targets'" class="card-menu move-menu">
+                            <div class="move-menu-header" @click.stop="handleMoveBack">
+                              <t-icon name="chevron-left" size="16px" />
+                              <span>{{ t('knowledgeBase.moveToKnowledgeBase') }}</span>
+                            </div>
+                            <div v-if="moveTargetsLoading" class="move-menu-loading">
+                              <t-loading size="small" />
+                            </div>
+                            <div v-else-if="moveTargetKbs.length === 0" class="move-menu-empty">
+                              {{ t('knowledgeBase.moveNoTargets') }}
+                            </div>
+                            <template v-else>
+                              <div
+                                v-for="kb in moveTargetKbs"
+                                :key="kb.id"
+                                class="card-menu-item"
+                                @click.stop="handleMoveSelectTarget(kb)"
+                              >
+                                <t-icon class="icon" name="root-list" />
+                                <span class="move-target-name">{{ kb.name }}</span>
+                                <span v-if="kb.knowledge_count !== undefined" class="move-target-count">{{ kb.knowledge_count }}</span>
+                              </div>
+                            </template>
+                          </div>
+
+                          <div v-else-if="moveMenuMode === 'confirm'" class="card-menu move-menu">
+                            <div class="move-menu-header" @click.stop="handleMoveBack">
+                              <t-icon name="chevron-left" size="16px" />
+                              <span>{{ t('knowledgeBase.moveConfirmTitle') }}</span>
+                            </div>
+                            <div class="move-confirm-body">
+                              <div class="move-target-info">
+                                <t-icon name="arrow-right" size="14px" />
+                                <span>{{ moveSelectedTargetName }}</span>
+                              </div>
+                              <div
+                                class="move-mode-item"
+                                :class="{ active: moveMode === 'reuse_vectors' }"
+                                @click.stop="moveMode = 'reuse_vectors'"
+                              >
+                                <t-radio :checked="moveMode === 'reuse_vectors'" />
+                                <div class="move-mode-text">
+                                  <span class="move-mode-label">{{ t('knowledgeBase.moveModeReuseVectors') }}</span>
+                                  <span class="move-mode-desc">{{ t('knowledgeBase.moveModeReuseVectorsDesc') }}</span>
+                                </div>
+                              </div>
+                              <div
+                                class="move-mode-item"
+                                :class="{ active: moveMode === 'reparse' }"
+                                @click.stop="moveMode = 'reparse'"
+                              >
+                                <t-radio :checked="moveMode === 'reparse'" />
+                                <div class="move-mode-text">
+                                  <span class="move-mode-label">{{ t('knowledgeBase.moveModeReparse') }}</span>
+                                  <span class="move-mode-desc">{{ t('knowledgeBase.moveModeReparseDesc') }}</span>
+                                </div>
+                              </div>
+                              <div class="move-confirm-actions">
+                                <t-button size="small" variant="outline" @click.stop="handleMoveBack">{{ t('common.cancel') }}</t-button>
+                                <t-button size="small" theme="primary" :loading="moveSubmitting" @click.stop="handleMoveConfirm">{{ t('knowledgeBase.moveConfirm') }}</t-button>
+                              </div>
+                            </div>
+                          </div>
+                        </template>
+                      </t-popup>
+                    </div>
+                  </div>
+                </div>
               </template>
               <template v-else-if="!docListLoading">
                 <div class="doc-empty-state">
@@ -2832,6 +3257,7 @@ async function createNewSession(value: string): Promise<void> {
   display: flex;
   gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
 
   .doc-search-input {
     flex: 1;
@@ -2841,6 +3267,43 @@ async function createNewSession(value: string): Promise<void> {
   .doc-type-select {
     width: 140px;
     flex-shrink: 0;
+  }
+
+  .doc-view-toggle {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(7, 192, 95, 0.08) 0%, rgba(7, 192, 95, 0.03) 100%);
+    border: 1px solid rgba(7, 192, 95, 0.08);
+  }
+
+  .view-toggle-btn {
+    height: 32px;
+    padding: 0 12px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--td-text-color-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.16s ease;
+    font-size: 12px;
+    font-weight: 600;
+
+    &:hover {
+      color: var(--td-brand-color);
+    }
+
+    &.active {
+      color: var(--td-brand-color);
+      background: var(--td-bg-color-container);
+      box-shadow: 0 4px 12px rgba(7, 192, 95, 0.12);
+    }
   }
 
   .doc-filter-actions {
@@ -2903,6 +3366,19 @@ async function createNewSession(value: string): Promise<void> {
     justify-content: center;
     overflow-y: hidden;
   }
+}
+
+.doc-list-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.doc-list-skeleton-row {
+  padding: 14px 16px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 10px;
+  background: var(--td-bg-color-container);
 }
 
 // Header 样式（无底部分割线，留更多空间给下方内容区）
@@ -3241,6 +3717,419 @@ async function createNewSession(value: string): Promise<void> {
 
   &.doc-card-list-animated {
     animation: contentFadeIn 0.32s ease-out;
+  }
+}
+
+.doc-list-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  animation: contentFadeIn 0.32s ease-out;
+}
+
+.doc-list-header,
+.doc-list-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.9fr) minmax(240px, 1.8fr) 88px 104px 90px 120px 128px minmax(188px, 1.25fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.doc-sort-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--td-brand-color);
+  }
+
+  &.col-size,
+  &.col-updated {
+    justify-content: center;
+  }
+}
+
+.doc-sort-indicator {
+  position: relative;
+  width: 10px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.5;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    left: 1px;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+  }
+
+  &::before {
+    top: 0;
+    border-bottom: 5px solid currentColor;
+  }
+
+  &::after {
+    bottom: 0;
+    border-top: 5px solid currentColor;
+  }
+}
+
+.sort-asc .doc-sort-indicator,
+.sort-desc .doc-sort-indicator {
+  opacity: 1;
+}
+
+.sort-asc .doc-sort-indicator::after,
+.sort-desc .doc-sort-indicator::before {
+  opacity: 0.24;
+}
+
+.doc-list-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 4px 18px 10px;
+  color: var(--td-text-color-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(247, 250, 248, 0.92) 100%);
+  backdrop-filter: blur(8px);
+}
+
+.doc-list-row {
+  padding: 16px 18px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #fcfcfc 100%);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+
+  &:hover {
+    border-color: var(--td-brand-color);
+    box-shadow: 0 8px 24px rgba(7, 192, 95, 0.12);
+  }
+
+  &.is-hovered {
+    .col-actions {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+}
+
+.doc-list-cell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--td-text-color-primary);
+  font-size: 13px;
+}
+
+.doc-name-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  text-align: left;
+  color: var(--td-text-color-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  cursor: pointer;
+  overflow: hidden;
+
+  &:hover {
+    color: var(--td-brand-color);
+  }
+}
+
+.doc-name-desc,
+.doc-source-name {
+  color: var(--td-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-name-desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.doc-source-name {
+  white-space: nowrap;
+}
+
+.doc-hover-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+
+  &.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+}
+
+.doc-hover-icon-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--td-text-color-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.16s ease;
+
+  &:hover:not(:disabled) {
+    color: var(--td-brand-color);
+    border-color: var(--td-brand-color);
+    background: var(--td-success-color-light);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  &.brand {
+    color: #fff;
+    border-color: var(--td-brand-color);
+    background: linear-gradient(135deg, var(--td-brand-color) 0%, var(--td-brand-color-active) 100%);
+
+    &:hover:not(:disabled) {
+      color: #fff;
+      background: linear-gradient(135deg, var(--td-brand-color-active) 0%, #05974a 100%);
+    }
+  }
+}
+
+.doc-source-kind {
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(7, 192, 95, 0.08);
+  color: var(--td-brand-color);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.doc-inline-tag {
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--td-text-color-secondary);
+  background: var(--td-bg-color-secondarycontainer);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &.tag {
+    color: var(--td-brand-color);
+    background: var(--td-success-color-light);
+  }
+}
+
+.doc-status-chip {
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 600;
+
+  &.parsing,
+  &.summary {
+    color: var(--td-brand-color);
+    background: var(--td-success-color-light);
+  }
+
+  &.failure {
+    color: var(--td-error-color);
+    background: var(--td-error-color-light);
+  }
+
+  &.draft {
+    color: var(--td-warning-color);
+    background: var(--td-warning-color-light);
+  }
+
+  &.completed {
+    color: var(--td-text-color-secondary);
+    background: var(--td-bg-color-secondarycontainer);
+  }
+}
+
+.col-size,
+.col-updated {
+  justify-content: center;
+  color: var(--td-text-color-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.col-actions {
+  flex-direction: row;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  opacity: 0.72;
+  transform: translateX(4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.doc-action-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--td-component-stroke);
+  background: var(--td-bg-color-container);
+  color: var(--td-text-color-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+
+  &:hover:not(:disabled),
+  &.active-more {
+    color: var(--td-brand-color);
+    border-color: var(--td-brand-color);
+    background: var(--td-success-color-light);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  &.neutral {
+    background: #fff;
+  }
+
+  &.brand {
+    color: #fff;
+    border-color: var(--td-brand-color);
+    background: linear-gradient(135deg, var(--td-brand-color) 0%, var(--td-brand-color-active) 100%);
+
+    &:hover:not(:disabled) {
+      color: #fff;
+      border-color: var(--td-brand-color-active);
+      background: linear-gradient(135deg, var(--td-brand-color-active) 0%, #05974a 100%);
+    }
+  }
+
+  &.ghost {
+    background: transparent;
+  }
+
+  &.more {
+    white-space: nowrap;
+    min-width: 54px;
+  }
+}
+
+@media (max-width: 1280px) {
+  .doc-list-header,
+  .doc-list-row {
+    grid-template-columns: minmax(220px, 1.8fr) minmax(200px, 1.5fr) 84px 96px 84px 112px 108px minmax(176px, 1.1fr);
+  }
+}
+
+@media (max-width: 1080px) {
+  .doc-list-header {
+    display: none;
+  }
+
+  .doc-list-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+
+    .col-actions {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .doc-list-cell {
+    position: relative;
+    padding-left: 88px;
+    min-height: 22px;
+  }
+
+  .col-name::after,
+  .col-source::after,
+  .col-type::after,
+  .col-size::after,
+  .col-tag::after,
+  .col-status::after,
+  .col-updated::after,
+  .col-actions::after {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 76px;
+    color: var(--td-text-color-secondary);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .col-name::after { content: '名称'; }
+  .col-source::after { content: '源文件'; }
+  .col-type::after { content: '类型'; }
+  .col-size::after { content: '大小'; }
+  .col-tag::after { content: '分类'; }
+  .col-status::after { content: '状态'; }
+  .col-updated::after { content: '更新'; }
+  .col-actions::after { content: '操作'; }
+
+  .col-size,
+  .col-updated {
+    justify-content: flex-start;
+  }
+
+  .col-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .doc-hover-actions {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
   }
 }
 

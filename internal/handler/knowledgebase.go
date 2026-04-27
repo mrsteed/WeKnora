@@ -335,6 +335,19 @@ func (h *KnowledgeBaseHandler) GetKnowledgeBase(c *gin.Context) {
 // @Router       /knowledge-bases [get]
 func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 	ctx := c.Request.Context()
+	organizationID := c.Query("organization_id")
+	filterByOrganization := func(kbs []*types.KnowledgeBase) []*types.KnowledgeBase {
+		if organizationID == "" {
+			return kbs
+		}
+		filtered := make([]*types.KnowledgeBase, 0, len(kbs))
+		for _, kb := range kbs {
+			if kb != nil && kb.OrganizationID == organizationID {
+				filtered = append(filtered, kb)
+			}
+		}
+		return filtered
+	}
 
 	agentID := c.Query("agent_id")
 	if agentID != "" {
@@ -384,6 +397,7 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 			}
 			kbs = filtered
 		}
+		kbs = filterByOrganization(kbs)
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data":    kbs,
@@ -429,6 +443,7 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 			return
 		}
 	}
+	kbs = filterByOrganization(kbs)
 
 	// Get share counts for all knowledge bases
 	if len(kbs) > 0 && h.kbShareService != nil {
