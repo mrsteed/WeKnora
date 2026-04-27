@@ -28,6 +28,7 @@ type kbShareService struct {
 	kbRepo    interfaces.KnowledgeBaseRepository
 	kgRepo    interfaces.KnowledgeRepository
 	chunkRepo interfaces.ChunkRepository
+	userRepo  interfaces.UserRepository
 }
 
 // NewKBShareService creates a new knowledge base share service
@@ -37,6 +38,7 @@ func NewKBShareService(
 	kbRepo interfaces.KnowledgeBaseRepository,
 	kgRepo interfaces.KnowledgeRepository,
 	chunkRepo interfaces.ChunkRepository,
+	userRepo interfaces.UserRepository,
 ) interfaces.KBShareService {
 	return &kbShareService{
 		shareRepo: shareRepo,
@@ -44,6 +46,7 @@ func NewKBShareService(
 		kbRepo:    kbRepo,
 		kgRepo:    kgRepo,
 		chunkRepo: chunkRepo,
+		userRepo:  userRepo,
 	}
 }
 
@@ -282,9 +285,14 @@ func (s *kbShareService) ListSharedKnowledgeBases(ctx context.Context, userID st
 
 	// Convert map to slice
 	result := make([]*types.SharedKnowledgeBaseInfo, 0, len(kbInfoMap))
+	knowledgeBases := make([]*types.KnowledgeBase, 0, len(kbInfoMap))
 	for _, info := range kbInfoMap {
 		result = append(result, info)
+		if info.KnowledgeBase != nil {
+			knowledgeBases = append(knowledgeBases, info.KnowledgeBase)
+		}
 	}
+	fillKnowledgeBaseCreatorNicknames(ctx, s.userRepo, knowledgeBases)
 
 	return result, nil
 }
@@ -305,6 +313,7 @@ func (s *kbShareService) ListSharedKnowledgeBasesInOrganization(ctx context.Cont
 	}
 
 	result := make([]*types.OrganizationSharedKnowledgeBaseItem, 0, len(shares))
+	knowledgeBases := make([]*types.KnowledgeBase, 0, len(shares))
 	for _, share := range shares {
 		if share.KnowledgeBase == nil {
 			continue
@@ -344,7 +353,9 @@ func (s *kbShareService) ListSharedKnowledgeBasesInOrganization(ctx context.Cont
 			IsMine: share.SourceTenantID == currentTenantID,
 		}
 		result = append(result, item)
+		knowledgeBases = append(knowledgeBases, kb)
 	}
+	fillKnowledgeBaseCreatorNicknames(ctx, s.userRepo, knowledgeBases)
 	return result, nil
 }
 

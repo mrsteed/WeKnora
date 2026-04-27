@@ -24,6 +24,7 @@ type knowledgeBaseService struct {
 	kgRepo         interfaces.KnowledgeRepository
 	chunkRepo      interfaces.ChunkRepository
 	shareRepo      interfaces.KBShareRepository
+	userRepo       interfaces.UserRepository
 	kbShareService interfaces.KBShareService
 	modelService   interfaces.ModelService
 	retrieveEngine interfaces.RetrieveEngineRegistry
@@ -38,6 +39,7 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 	kgRepo interfaces.KnowledgeRepository,
 	chunkRepo interfaces.ChunkRepository,
 	shareRepo interfaces.KBShareRepository,
+	userRepo interfaces.UserRepository,
 	kbShareService interfaces.KBShareService,
 	modelService interfaces.ModelService,
 	retrieveEngine interfaces.RetrieveEngineRegistry,
@@ -51,6 +53,7 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 		kgRepo:         kgRepo,
 		chunkRepo:      chunkRepo,
 		shareRepo:      shareRepo,
+		userRepo:       userRepo,
 		kbShareService: kbShareService,
 		modelService:   modelService,
 		retrieveEngine: retrieveEngine,
@@ -207,6 +210,7 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 			kb.ProcessingCount = processingCount
 		}
 	}
+	fillKnowledgeBaseCreatorNicknames(ctx, s.userRepo, kbs)
 	return kbs, nil
 }
 
@@ -236,6 +240,7 @@ func (s *knowledgeBaseService) ListKnowledgeBasesByTenantID(ctx context.Context,
 			kb.ProcessingCount = processingCount
 		}
 	}
+	fillKnowledgeBaseCreatorNicknames(ctx, s.userRepo, kbs)
 	return kbs, nil
 }
 
