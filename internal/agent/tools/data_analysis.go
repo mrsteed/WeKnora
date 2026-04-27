@@ -701,6 +701,7 @@ func (t *DataAnalysisTool) convertXlsToCSV(ctx context.Context, xlsPath string) 
 	logger.Infof(ctx, "[Tool][DataAnalysis] Successfully converted .xls to CSV at '%s' for session %s", absPath, t.sessionID)
 	return absPath, nil
 	}
+
 // LoadFromKnowledgeID loads data from a Knowledge ID into a DuckDB table and returns the table schema
 // Parameters:
 //   - ctx: context for cancellation and timeout
