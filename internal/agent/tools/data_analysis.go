@@ -6,11 +6,12 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	filesvc "github.com/Tencent/WeKnora/internal/application/service/file"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	filesvc "github.com/Tencent/WeKnora/internal/application/service/file"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
