@@ -49,6 +49,7 @@ func (s *kbVisibilityService) ListAccessibleKBs(ctx context.Context, userID stri
 			return nil, fmt.Errorf("failed to list KBs: %w", err)
 		}
 		s.fillKnowledgeCounts(ctx, kbs)
+		s.fillCreatorNicknames(ctx, kbs)
 		return kbs, nil
 	}
 
@@ -230,49 +231,7 @@ func (s *kbVisibilityService) CanManageKB(ctx context.Context, userID string, te
 	return false, nil
 }
 
-// fillCreatorNicknames fills the CreatedByNickname field for each knowledge base
+// fillCreatorNicknames fills the CreatedByNickname field for each knowledge base.
 func (s *kbVisibilityService) fillCreatorNicknames(ctx context.Context, kbs []*types.KnowledgeBase) {
-	// Batch query all creator IDs
-	creatorIDs := make(map[string]bool)
-	for _, kb := range kbs {
-		if kb != nil && kb.CreatedBy != "" {
-			creatorIDs[kb.CreatedBy] = true
-		}
-	}
-
-	// Query users by IDs
-	userMap := make(map[string]string)
-	for creatorID := range creatorIDs {
-		// Check for built-in system knowledge bases
-		if types.IsBuiltinAgentID(creatorID) || creatorID == "system" {
-			userMap[creatorID] = "系统"
-			continue
-		}
-
-		user, err := s.userRepo.GetUserByID(ctx, creatorID)
-		if err != nil {
-			logger.Warnf(ctx, "Failed to get user %s: %v", creatorID, err)
-			continue
-		}
-		if user != nil {
-			// Use username as nickname
-			userMap[creatorID] = user.Username
-		}
-	}
-
-	// Fill nicknames
-	for _, kb := range kbs {
-		if kb == nil {
-			continue
-		}
-		if kb.Visibility == types.KBVisibilityGlobal {
-			// Global knowledge bases show "系统"
-			kb.CreatedByNickname = "系统"
-		} else if nickname, ok := userMap[kb.CreatedBy]; ok {
-			kb.CreatedByNickname = nickname
-		} else if kb.CreatedBy != "" {
-			// Fallback: show user ID if username not found
-			kb.CreatedByNickname = kb.CreatedBy
-		}
-	}
+	fillKnowledgeBaseCreatorNicknames(ctx, s.userRepo, kbs)
 }
