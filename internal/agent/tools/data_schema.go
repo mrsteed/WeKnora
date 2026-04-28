@@ -133,7 +133,7 @@ func (t *DataSchemaTool) getSchemaFromChunks(ctx context.Context, knowledge *typ
 
 // getSchemaFromDuckDB dynamically loads the knowledge data into DuckDB and returns schema
 func (t *DataSchemaTool) getSchemaFromDuckDB(ctx context.Context, knowledge *types.Knowledge) (*types.ToolResult, error) {
-	daTool := NewDataAnalysisTool(t.knowledgeService, t.fileService, t.db, t.sessionID)
+	daTool := NewDataAnalysisTool(nil, t.knowledgeService, nil, t.fileService, t.db, t.sessionID)
 	// Note: we do NOT defer Cleanup here because the data_analysis tool in the same
 	// agent session will reuse the loaded table and clean up at session end.
 
