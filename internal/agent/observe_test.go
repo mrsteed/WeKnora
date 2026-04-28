@@ -126,7 +126,6 @@ func TestAnalyzeResponse_NonFinalAnswerTool_DoesNotTerminate(t *testing.T) {
 	assert.False(t, verdict.isDone,
 		"non-terminal tool calls must keep the loop running")
 }
-
 // TestAppendToolResults_PreservesReasoningContent verifies that the assistant
 // message produced by appendToolResults carries the reasoning_content emitted
 // by the model in the same round. Without this, MiMo and DeepSeek V3.2+

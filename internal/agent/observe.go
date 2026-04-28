@@ -494,6 +494,11 @@ func (e *AgentEngine) buildMessagesWithLLMContext(
 			if msg.Role == "system" {
 				continue
 			}
+			if msg.Role == "assistant" && len(msg.ToolCalls) > 0 && msg.ReasoningContent == "" && msg.Content != "" {
+				// Backfill reasoning_content for older cached history that was
+				// persisted before the DeepSeek thinking replay fix.
+				msg.ReasoningContent = msg.Content
+			}
 			if msg.Role == "user" || msg.Role == "assistant" || msg.Role == "tool" {
 				messages = append(messages, msg)
 			}

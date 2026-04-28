@@ -892,11 +892,16 @@ watch(eventStream, (stream) => {
 }, { deep: true, immediate: true });
 
 
-// Check if conversation is done (based on answer event with done=true or stop event)
+// Check if conversation is done.
+// Agent streams can finish either with an answer done event, a complete event, or an explicit stop.
 const isConversationDone = computed(() => {
   const stream = eventStream.value;
   if (props.session?.is_failed) {
     console.log('[Collapse] Session marked failed, conversation done');
+    return true;
+  }
+  if (props.session?.is_completed) {
+    console.log('[Collapse] Session marked completed, conversation done');
     return true;
   }
   if (!stream || stream.length === 0) {
@@ -911,9 +916,10 @@ const isConversationDone = computed(() => {
     return true;
   }
 
-  const completeEvent = stream.find((e: any) => e.type === 'agent_complete');
-  if (completeEvent) {
-    console.log('[Collapse] Found complete event, conversation done');
+<<<<<<< HEAD
+  const agentCompleteEvent = stream.find((e: any) => e.type === 'agent_complete');
+  if (agentCompleteEvent) {
+    console.log('[Collapse] Found agent_complete event, conversation done');
     return true;
   }
   

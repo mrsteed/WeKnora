@@ -73,6 +73,16 @@ func (e *AgentEngine) streamLLMToEventBus(
 			}
 		}
 
+		if chunk.ResponseType == types.ResponseTypeThinking && chunk.Content != "" {
+			source := ""
+			if chunk.Data != nil {
+				source, _ = chunk.Data["source"].(string)
+			}
+			if source == "" {
+				result.ReasoningContent += chunk.Content
+			}
+		}
+
 		if len(chunk.ToolCalls) > 0 {
 			result.ToolCalls = chunk.ToolCalls
 		}
