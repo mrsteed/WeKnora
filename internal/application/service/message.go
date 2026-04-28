@@ -64,6 +64,8 @@ func sessionTenantIDForLookup(ctx context.Context) (uint64, bool) {
 	return 0, false
 }
 
+// sessionUserIDForLookup returns the user ID to use for session ownership checks.
+// When absent, repositories fall back to tenant-only filtering.
 func sessionUserIDForLookup(ctx context.Context) string {
 	userID, _ := types.UserIDFromContext(ctx)
 	return userID
