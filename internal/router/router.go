@@ -966,25 +966,6 @@ func RegisterWeKnoraCloudRoutes(r *gin.RouterGroup, handler *handler.WeKnoraClou
 	r.POST("/weknoracloud/credentials", handler.SaveCredentials)
 	r.GET("/models/weknoracloud/status", handler.Status)
 }
-// RegisterOrgTreeRoutes registers organization tree management routes (super admin only)
-func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
-	orgTree := r.Group("/org-tree")
-	{
-		orgTree.GET("", orgTreeHandler.GetOrgTree)
-		orgTree.POST("", orgTreeHandler.CreateOrgNode)
-		orgTree.GET("/:id", orgTreeHandler.GetOrgNode)
-		orgTree.PUT("/:id", orgTreeHandler.UpdateOrgNode)
-		orgTree.DELETE("/:id", orgTreeHandler.DeleteOrgNode)
-		orgTree.POST("/:id/move", orgTreeHandler.MoveOrgNode)
-		orgTree.POST("/:id/members", orgTreeHandler.AssignUser)
-		orgTree.POST("/:id/create-user", orgTreeHandler.CreateUserInOrg)
-		orgTree.PUT("/:id/users/:user_id", orgTreeHandler.UpdateUserInOrg)
-		orgTree.DELETE("/:id/members/:user_id", orgTreeHandler.RemoveUser)
-		orgTree.PUT("/:id/admin", orgTreeHandler.SetOrgAdmin)
-		orgTree.GET("/:id/members", orgTreeHandler.ListOrgMembers)
-		orgTree.GET("/search-users", orgTreeHandler.SearchUsersForAssign)
-	}
-}
 
 // RegisterWikiPageRoutes registers wiki page related routes
 func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHandler) {
@@ -1014,6 +995,7 @@ func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHan
 		// Issues
 		wiki.GET("/issues", wikiHandler.ListIssues)
 		wiki.PUT("/issues/:issue_id/status", wikiHandler.UpdateIssueStatus)
+	}
 }
 
 // RegisterOrgTreeRoutes registers organization tree management routes (super admin only)

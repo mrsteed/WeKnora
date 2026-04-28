@@ -303,9 +303,10 @@ func (s *sessionService) BatchDeleteSessions(ctx context.Context, ids []string) 
 // DeleteAllSessions deletes all sessions for the current tenant
 func (s *sessionService) DeleteAllSessions(ctx context.Context) error {
 	tenantID := types.MustTenantIDFromContext(ctx)
+	userID, _ := types.UserIDFromContext(ctx)
 	logger.Infof(ctx, "Deleting all sessions for tenant %d", tenantID)
 
-	sessions, err := s.sessionRepo.GetByTenantID(ctx, tenantID)
+	sessions, err := s.sessionRepo.GetByTenantAndUser(ctx, tenantID, userID)
 	if err != nil {
 		logger.Warnf(ctx, "Failed to list sessions for cleanup: %v", err)
 	} else {
@@ -334,9 +335,15 @@ func (s *sessionService) DeleteAllSessions(ctx context.Context) error {
 		}
 	}
 
-	if err := s.sessionRepo.DeleteAllByTenantID(ctx, tenantID); err != nil {
+	ids := make([]string, 0, len(sessions))
+	for _, session := range sessions {
+		ids = append(ids, session.ID)
+	}
+
+	if err := s.sessionRepo.BatchDelete(ctx, tenantID, ids); err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenantID,
+			"user_id":   userID,
 		})
 		return err
 	}

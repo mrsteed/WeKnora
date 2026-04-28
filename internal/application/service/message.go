@@ -64,14 +64,22 @@ func sessionTenantIDForLookup(ctx context.Context) (uint64, bool) {
 	return 0, false
 }
 
+// sessionUserIDForLookup returns the user ID to use for session ownership checks.
+// When absent, repositories fall back to tenant-only filtering.
+func sessionUserIDForLookup(ctx context.Context) string {
+	userID, _ := types.UserIDFromContext(ctx)
+	return userID
+}
+
 // CreateMessage creates a new message within an existing session
 func (s *messageService) CreateMessage(ctx context.Context, message *types.Message) (*types.Message, error) {
 	logger.Info(ctx, "Start creating message")
 	logger.Infof(ctx, "Creating message for session ID: %s", message.SessionID)
 
 	tenantID := types.MustTenantIDFromContext(ctx)
+	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d, session ID: %s", tenantID, message.SessionID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, message.SessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, userID, message.SessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -96,8 +104,9 @@ func (s *messageService) GetMessage(ctx context.Context, sessionID string, messa
 	logger.Infof(ctx, "Getting message, session ID: %s, message ID: %s", sessionID, messageID)
 
 	tenantID := types.MustTenantIDFromContext(ctx)
+	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -125,8 +134,9 @@ func (s *messageService) GetMessagesBySession(ctx context.Context,
 	logger.Infof(ctx, "Getting messages for session ID: %s, page: %d, pageSize: %d", sessionID, page, pageSize)
 
 	tenantID := types.MustTenantIDFromContext(ctx)
+	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -160,7 +170,7 @@ func (s *messageService) GetRecentMessagesBySession(ctx context.Context,
 		return nil, errors.New("tenant ID not found in context")
 	}
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, sessionUserIDForLookup(ctx), sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -193,7 +203,7 @@ func (s *messageService) GetMessagesBySessionBeforeTime(ctx context.Context,
 		return nil, errors.New("tenant ID not found in context")
 	}
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, sessionUserIDForLookup(ctx), sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -220,8 +230,9 @@ func (s *messageService) UpdateMessage(ctx context.Context, message *types.Messa
 	logger.Infof(ctx, "Updating message, ID: %s, session ID: %s", message.ID, message.SessionID)
 
 	tenantID := types.MustTenantIDFromContext(ctx)
+	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, message.SessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, userID, message.SessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return err
@@ -257,8 +268,9 @@ func (s *messageService) DeleteMessage(ctx context.Context, sessionID string, me
 	logger.Infof(ctx, "Deleting message, session ID: %s, message ID: %s", sessionID, messageID)
 
 	tenantID := types.MustTenantIDFromContext(ctx)
+	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, sessionID)
+	_, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return err
@@ -298,7 +310,8 @@ func (s *messageService) ClearSessionMessages(ctx context.Context, sessionID str
 	logger.Infof(ctx, "Start clearing all messages for session: %s", sessionID)
 
 	tenantID := types.MustTenantIDFromContext(ctx)
-	if _, err := s.sessionRepo.Get(ctx, tenantID, sessionID); err != nil {
+	userID := sessionUserIDForLookup(ctx)
+	if _, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID); err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return err
 	}
