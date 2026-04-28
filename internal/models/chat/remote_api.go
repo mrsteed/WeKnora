@@ -193,6 +193,10 @@ func (c *RemoteAPIChat) ConvertMessages(messages []Message) []openai.ChatComplet
 			openaiMsg.Content = msg.Content
 		}
 
+		if msg.ReasoningContent != "" {
+			openaiMsg.ReasoningContent = msg.ReasoningContent
+		}
+
 		if len(msg.ToolCalls) > 0 {
 			openaiMsg.ToolCalls = make([]openai.ToolCall, 0, len(msg.ToolCalls))
 			for _, tc := range msg.ToolCalls {

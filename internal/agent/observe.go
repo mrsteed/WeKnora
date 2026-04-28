@@ -378,8 +378,9 @@ func (e *AgentEngine) appendToolResults(
 	// Add assistant message with tool calls (if any)
 	if step.Thought != "" || len(step.ToolCalls) > 0 {
 		assistantMsg := chat.Message{
-			Role:    "assistant",
-			Content: step.Thought,
+			Role:             "assistant",
+			Content:          step.Thought,
+			ReasoningContent: step.ReasoningContent,
 		}
 
 		// Add tool calls to assistant message (following OpenAI format)
@@ -509,6 +510,11 @@ func (e *AgentEngine) buildMessagesWithLLMContext(
 		for _, msg := range sanitized {
 			if msg.Role == "system" {
 				continue
+			}
+			if msg.Role == "assistant" && len(msg.ToolCalls) > 0 && msg.ReasoningContent == "" && msg.Content != "" {
+				// Backfill reasoning_content for older cached history that was
+				// persisted before the DeepSeek thinking replay fix.
+				msg.ReasoningContent = msg.Content
 			}
 			if msg.Role == "user" || msg.Role == "assistant" || msg.Role == "tool" {
 				messages = append(messages, msg)

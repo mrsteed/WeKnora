@@ -2,8 +2,8 @@ package llmcontext
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -19,8 +19,6 @@ import (
 // because user+assistant messages are paired by RequestID and some
 // incomplete pairs are discarded.
 const dbFallbackFetchCount = 200
-
-var regThinkTags = regexp.MustCompile(`(?s)<think>.*?</think>`)
 
 // contextManager implements the ContextManager interface.
 // It is a cache-backed storage layer: messages are persisted per session in
@@ -111,9 +109,11 @@ func (cm *contextManager) rebuildFromDB(ctx context.Context, sessionID string) (
 
 	// Group by RequestID into Q&A pairs, same logic as chat_pipeline/common.go
 	type pair struct {
-		query     string
-		answer    string
-		createdAt time.Time
+		query      string
+		answer     string
+		reasoning  string
+		agentSteps types.AgentSteps
+		createdAt  time.Time
 	}
 	pairMap := make(map[string]*pair)
 	for _, msg := range dbMessages {
@@ -134,13 +134,14 @@ func (cm *contextManager) rebuildFromDB(ctx context.Context, sessionID string) (
 				p.query += "\n\n[用户上传图片内容]\n" + desc
 			}
 		case "assistant":
-			p.answer = regThinkTags.ReplaceAllString(msg.Content, "")
+			p.answer, p.reasoning = chat.SplitContentAndReasoning(msg.Content)
+			p.agentSteps = msg.AgentSteps
 		}
 	}
 
 	pairs := make([]*pair, 0, len(pairMap))
 	for _, p := range pairMap {
-		if p.query != "" && p.answer != "" {
+		if p.query != "" && (p.answer != "" || len(p.agentSteps) > 0) {
 			pairs = append(pairs, p)
 		}
 	}
@@ -151,13 +152,66 @@ func (cm *contextManager) rebuildFromDB(ctx context.Context, sessionID string) (
 
 	result := make([]chat.Message, 0, len(pairs)*2)
 	for _, p := range pairs {
-		result = append(result,
-			chat.Message{Role: "user", Content: p.query},
-			chat.Message{Role: "assistant", Content: p.answer},
-		)
+		result = append(result, chat.Message{Role: "user", Content: p.query})
+		if len(p.agentSteps) > 0 {
+			result = append(result, rebuildAgentStepMessages(p.agentSteps)...)
+			continue
+		}
+		result = append(result, chat.Message{Role: "assistant", Content: p.answer, ReasoningContent: p.reasoning})
 	}
 
 	return result, nil
+}
+
+func rebuildAgentStepMessages(steps types.AgentSteps) []chat.Message {
+	messages := make([]chat.Message, 0, len(steps)*2)
+	for _, step := range steps {
+		reasoningContent := step.ReasoningContent
+		if reasoningContent == "" {
+			reasoningContent = step.Thought
+		}
+		assistantMsg := chat.Message{
+			Role:             "assistant",
+			Content:          step.Thought,
+			ReasoningContent: reasoningContent,
+		}
+
+		if len(step.ToolCalls) > 0 {
+			assistantMsg.ToolCalls = make([]chat.ToolCall, 0, len(step.ToolCalls))
+			for _, tc := range step.ToolCalls {
+				argsJSON, _ := json.Marshal(tc.Args)
+				assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, chat.ToolCall{
+					ID:   tc.ID,
+					Type: "function",
+					Function: chat.FunctionCall{
+						Name:      tc.Name,
+						Arguments: string(argsJSON),
+					},
+				})
+			}
+		}
+
+		if assistantMsg.Content != "" || assistantMsg.ReasoningContent != "" || len(assistantMsg.ToolCalls) > 0 {
+			messages = append(messages, assistantMsg)
+		}
+
+		for _, tc := range step.ToolCalls {
+			resultContent := ""
+			if tc.Result != nil {
+				resultContent = tc.Result.Output
+				if !tc.Result.Success {
+					resultContent = fmt.Sprintf("Error: %s", tc.Result.Error)
+				}
+			}
+			messages = append(messages, chat.Message{
+				Role:       "tool",
+				Content:    resultContent,
+				ToolCallID: tc.ID,
+				Name:       tc.Name,
+			})
+		}
+	}
+	return messages
 }
 
 // extractImageCaptions concatenates non-empty Caption fields from message

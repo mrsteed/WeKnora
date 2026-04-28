@@ -121,7 +121,7 @@ const uiStore = useUIStore();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 const { t } = useI18n();
 const { menuArr, isFirstSession, firstQuery, firstMentionedItems, firstModelId, firstImageFiles, firstAttachmentFiles } = storeToRefs(usemenuStore);
-const { output, onChunk, isStreaming, isLoading, error, startStream, stopStream } = useStream();
+const { output, onChunk, onClose, isStreaming, isLoading, error, startStream, stopStream } = useStream();
 const route = useRoute();
 const router = useRouter();
 const session_id = ref(props.session_id || route.params.chatid);
@@ -284,6 +284,35 @@ const resetReplyState = () => {
     isReplying.value = false;
     fullContent.value = '';
     currentAssistantMessageId.value = '';
+};
+
+const finalizeActiveAssistantOnStreamClose = () => {
+    if (!isReplying.value && !loading.value) {
+        return;
+    }
+
+    const message = findActiveAssistantMessage();
+    if (!message) {
+        resetReplyState();
+        return;
+    }
+
+    const hasAnswerContent = Boolean(message.content && String(message.content).trim());
+    const hasAgentTerminalSignal = Boolean(
+        message.isAgentMode &&
+        Array.isArray(message.agentEventStream) &&
+        message.agentEventStream.some((event) =>
+            event.type === 'agent_complete' ||
+            event.type === 'stop' ||
+            (event.type === 'answer' && (event.done || (event.content && String(event.content).trim())))
+        )
+    );
+
+    if ((hasAnswerContent || hasAgentTerminalSignal) && !message.is_failed) {
+        message.is_completed = true;
+    }
+
+    resetReplyState();
 };
 
 const markAssistantFailed = (errorMessage) => {
@@ -791,6 +820,10 @@ watch(error, (newError) => {
     }
 });
 
+onClose(() => {
+    finalizeActiveAssistantOnStreamClose();
+});
+
 // 处理流式数据
 onChunk((data) => {
     // 日志：打印接收到的事件
@@ -1245,6 +1278,7 @@ const handleAgentChunk = (data) => {
             // 只在第一次收到 done:true 时标记完成，忽略后续重复的完成事件
             if (data.done && !answerEvent.done) {
                 answerEvent.done = true;
+                message.is_completed = true;
                 console.log('[Agent] Answer done, content length:', message.content?.length || 0, 'answerEvent.content length:', answerEvent.content?.length || 0);
                 
                 // 完成 - 关闭所有状态
@@ -1260,14 +1294,21 @@ const handleAgentChunk = (data) => {
         case 'complete':
             // 整个流式响应完成事件 - 确保状态正确关闭
             console.log('[Agent] Complete event received');
+            message.is_completed = true;
             resetReplyState();
             // 将 total_duration_ms 存入事件流供 AgentStreamDisplay 使用
             if (data.data?.total_duration_ms && message.agentEventStream) {
-                message.agentEventStream.push({
-                    type: 'agent_complete',
-                    total_duration_ms: data.data.total_duration_ms,
-                    total_steps: data.data.total_steps,
-                });
+                const existingCompleteEvent = message.agentEventStream.find((event) => event.type === 'agent_complete');
+                if (existingCompleteEvent) {
+                    existingCompleteEvent.total_duration_ms = data.data.total_duration_ms;
+                    existingCompleteEvent.total_steps = data.data.total_steps;
+                } else {
+                    message.agentEventStream.push({
+                        type: 'agent_complete',
+                        total_duration_ms: data.data.total_duration_ms,
+                        total_steps: data.data.total_steps,
+                    });
+                }
             }
             break;
             
@@ -1275,6 +1316,7 @@ const handleAgentChunk = (data) => {
             // 停止事件 - 添加到事件流并标记对话完成
             console.log('[Agent] Stop event received');
             if (!message.agentEventStream) message.agentEventStream = [];
+            message.is_completed = true;
             
             // Add stop event to stream
             message.agentEventStream.push({

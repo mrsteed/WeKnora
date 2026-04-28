@@ -2,7 +2,6 @@ package chatpipeline
 
 import (
 	"context"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -14,8 +13,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
-
-var regThinkTags = regexp.MustCompile(`(?s)<think>.*?</think>`)
 
 // pipelineInfo logs pipeline info level entries.
 func pipelineInfo(ctx context.Context, stage, action string, fields map[string]interface{}) {
@@ -78,7 +75,11 @@ func prepareMessagesWithHistory(chatManage *types.ChatManage) []chat.Message {
 	// Add conversation history (already limited by maxRounds in load_history/rewrite plugins)
 	for _, history := range chatManage.History {
 		chatMessages = append(chatMessages, chat.Message{Role: "user", Content: history.Query})
-		chatMessages = append(chatMessages, chat.Message{Role: "assistant", Content: history.Answer})
+		chatMessages = append(chatMessages, chat.Message{
+			Role:             "assistant",
+			Content:          history.Answer,
+			ReasoningContent: history.ReasoningContent,
+		})
 	}
 
 	// Add current user message. Only include images when the chat model supports
@@ -124,7 +125,7 @@ func loadAndProcessHistory(
 				h.Query += "\n\n[用户上传图片内容]\n" + desc
 			}
 		} else {
-			h.Answer = regThinkTags.ReplaceAllString(message.Content, "")
+			h.Answer, h.ReasoningContent = chat.SplitContentAndReasoning(message.Content)
 			h.KnowledgeReferences = message.KnowledgeReferences
 		}
 		historyMap[message.RequestID] = h

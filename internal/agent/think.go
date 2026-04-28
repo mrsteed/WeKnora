@@ -15,10 +15,11 @@ import (
 
 // streamLLMResult holds accumulated output from a streaming LLM call.
 type streamLLMResult struct {
-	Content      string
-	ToolCalls    []types.LLMToolCall
-	Usage        *types.TokenUsage
-	FinishReason string // actual finish_reason from LLM (captured from last stream chunk)
+	Content          string
+	ReasoningContent string
+	ToolCalls        []types.LLMToolCall
+	Usage            *types.TokenUsage
+	FinishReason     string // actual finish_reason from LLM (captured from last stream chunk)
 }
 
 // streamLLMToEventBus streams LLM response through EventBus (generic method)
@@ -56,6 +57,16 @@ func (e *AgentEngine) streamLLMToEventBus(
 			isExtracted := chunk.Data != nil && chunk.Data["source"] != nil
 			if !isExtracted {
 				result.Content += chunk.Content
+			}
+		}
+
+		if chunk.ResponseType == types.ResponseTypeThinking && chunk.Content != "" {
+			source := ""
+			if chunk.Data != nil {
+				source, _ = chunk.Data["source"].(string)
+			}
+			if source == "" {
+				result.ReasoningContent += chunk.Content
 			}
 		}
 
@@ -219,9 +230,10 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	}
 
 	resp := &types.ChatResponse{
-		Content:      fullContent,
-		ToolCalls:    llmResult.ToolCalls,
-		FinishReason: finishReason,
+		Content:          fullContent,
+		ReasoningContent: llmResult.ReasoningContent,
+		ToolCalls:        llmResult.ToolCalls,
+		FinishReason:     finishReason,
 	}
 	if llmResult.Usage != nil {
 		resp.Usage = *llmResult.Usage

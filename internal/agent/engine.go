@@ -548,10 +548,11 @@ func (e *AgentEngine) runReActIteration(
 
 	// Create agent step
 	step := types.AgentStep{
-		Iteration: state.CurrentRound,
-		Thought:   response.Content,
-		ToolCalls: make([]types.ToolCall, 0),
-		Timestamp: time.Now(),
+		Iteration:        state.CurrentRound,
+		Thought:          response.Content,
+		ReasoningContent: response.ReasoningContent,
+		ToolCalls:        make([]types.ToolCall, 0),
+		Timestamp:        time.Now(),
 	}
 
 	// 2. Analyze: Check for stop conditions (natural stop or final_answer tool)
