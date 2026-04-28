@@ -160,6 +160,9 @@ export function useStream() {
 
         onclose: () => {
           stopStream();
+          if (closeHandler) {
+            closeHandler();
+          }
         },
       });
     } catch (err) {
@@ -169,9 +172,15 @@ export function useStream() {
   }
 
   let chunkHandler: ((data: any) => void) | null = null
+  let closeHandler: (() => void) | null = null
   // 注册块处理器
   const onChunk = (handler: () => void) => {
     chunkHandler = handler
+  }
+
+  // 注册流关闭处理器
+  const onClose = (handler: () => void) => {
+    closeHandler = handler
   }
 
 
@@ -192,6 +201,7 @@ export function useStream() {
     isLoading,       // 初始连接状态
     error,
     onChunk,
+    onClose,
     startStream,     // 启动流
     stopStream       // 手动停止
   }

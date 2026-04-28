@@ -6,9 +6,37 @@ import (
 	"time"
 
 	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/assert"
 )
+
+type captureContextManager struct {
+	messages []chat.Message
+}
+
+func (c *captureContextManager) AddMessage(_ context.Context, _ string, message chat.Message) error {
+	c.messages = append(c.messages, message)
+	return nil
+}
+
+func (c *captureContextManager) GetContext(context.Context, string) ([]chat.Message, error) {
+	return c.messages, nil
+}
+
+func (c *captureContextManager) ClearContext(context.Context, string) error {
+	c.messages = nil
+	return nil
+}
+
+func (c *captureContextManager) GetContextStats(context.Context, string) (*interfaces.ContextStats, error) {
+	return &interfaces.ContextStats{MessageCount: len(c.messages)}, nil
+}
+
+func (c *captureContextManager) SetSystemPrompt(context.Context, string, string) error {
+	return nil
+}
 
 // newFinalAnswerResponse builds a ChatResponse that carries a single
 // final_answer tool call with the given raw JSON arguments.
@@ -123,4 +151,31 @@ func TestAnalyzeResponse_NonFinalAnswerTool_DoesNotTerminate(t *testing.T) {
 
 	assert.False(t, verdict.isDone,
 		"non-terminal tool calls must keep the loop running")
+}
+
+func TestAppendToolResults_PreservesReasoningContentInContext(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	ctxManager := &captureContextManager{}
+	engine.contextManager = ctxManager
+
+	step := types.AgentStep{
+		Thought:          "需要调用工具查询信息",
+		ReasoningContent: "需要调用工具查询信息",
+		ToolCalls: []types.ToolCall{{
+			ID:   "tool-1",
+			Name: agenttools.ToolKnowledgeSearch,
+			Args: map[string]interface{}{"query": "消防产品"},
+			Result: &types.ToolResult{
+				Success: true,
+				Output:  "tool result",
+			},
+		}},
+	}
+
+	messages := engine.appendToolResults(context.Background(), nil, step)
+	assert.Len(t, messages, 2)
+	assert.Len(t, ctxManager.messages, 2)
+	assert.Equal(t, "assistant", ctxManager.messages[0].Role)
+	assert.Equal(t, "需要调用工具查询信息", ctxManager.messages[0].ReasoningContent)
+	assert.Equal(t, "tool", ctxManager.messages[1].Role)
 }

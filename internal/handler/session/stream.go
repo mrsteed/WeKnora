@@ -295,8 +295,8 @@ func (h *Handler) StopSession(c *gin.Context) {
 
 // handleAgentEventsForSSE handles agent events for SSE streaming using an existing handler
 // The handler is already subscribed to events and AgentQA is already running
-// This function polls StreamManager and pushes events to SSE, allowing graceful handling of disconnections
-// waitForTitle: if true, wait for title event after completion (for new sessions without title)
+// This function polls StreamManager and pushes events to SSE, allowing graceful handling of disconnections.
+// waitForTitle is kept for compatibility, but session title generation must not block stream completion.
 func (h *Handler) handleAgentEventsForSSE(
 	ctx context.Context,
 	c *gin.Context,
@@ -389,46 +389,15 @@ func (h *Handler) handleAgentEventsForSSE(
 			// Update offset
 			lastOffset = newOffset
 
-			// Check if stream is completed - wait for title event only if needed and not already received
+			// Check if stream is completed.
+			// Session title generation is best-effort metadata and must not delay closing the answer stream.
 			if streamCompleted {
 				if waitForTitle && !titleReceived {
-					log.Infof("Stream completed for session=%s, message=%s, waiting for title event", sessionID, assistantMessageID)
-					// Wait up to 3 seconds for title event after completion
-					titleTimeout := time.After(3 * time.Second)
-				titleWaitLoop:
-					for {
-						select {
-						case <-titleTimeout:
-							log.Info("Title wait timeout, closing stream")
-							break titleWaitLoop
-						case <-c.Request.Context().Done():
-							log.Info("Connection closed while waiting for title")
-							return
-						default:
-							// Check for new events (title event)
-							events, newOff, err := h.streamManager.GetEvents(c.Request.Context(), sessionID, assistantMessageID, lastOffset)
-							if err != nil {
-								log.Warnf("Error getting events while waiting for title: %v", err)
-								break titleWaitLoop
-							}
-							if len(events) > 0 {
-								for _, evt := range events {
-									response := buildStreamResponse(evt, requestID)
-									c.SSEvent("message", response)
-									c.Writer.Flush()
-									// If we got the title, we can exit
-									if evt.Type == types.ResponseTypeSessionTitle {
-										log.Infof("Title event received: %s", evt.Content)
-										break titleWaitLoop
-									}
-								}
-								lastOffset = newOff
-							} else {
-								// No events, wait a bit before checking again
-								time.Sleep(100 * time.Millisecond)
-							}
-						}
-					}
+					log.Infof(
+						"Stream completed for session=%s, message=%s; closing immediately without waiting for title event",
+						sessionID,
+						assistantMessageID,
+					)
 				} else {
 					log.Infof("Stream completed for session=%s, message=%s", sessionID, assistantMessageID)
 				}

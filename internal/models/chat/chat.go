@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/models/provider"
@@ -56,13 +57,42 @@ type ImageURL struct {
 
 // Message 表示聊天消息
 type Message struct {
-	Role         string               `json:"role"`                    // 角色：system, user, assistant, tool
-	Content      string               `json:"content"`                 // 消息内容
-	MultiContent []MessageContentPart `json:"multi_content,omitempty"` // 多内容消息（文本+图片）
-	Name         string               `json:"name,omitempty"`          // Function/tool name (for tool role)
-	ToolCallID   string               `json:"tool_call_id,omitempty"`  // Tool call ID (for tool role)
-	ToolCalls    []ToolCall           `json:"tool_calls,omitempty"`    // Tool calls (for assistant role)
-	Images       []string             `json:"images,omitempty"`        // Image URLs for multimodal (only for current user message)
+	Role             string               `json:"role"`                        // 角色：system, user, assistant, tool
+	Content          string               `json:"content"`                     // 消息内容
+	ReasoningContent string               `json:"reasoning_content,omitempty"` // 助手历史消息中的推理内容，thinking 模型多轮续聊时需要原样回传
+	MultiContent     []MessageContentPart `json:"multi_content,omitempty"`     // 多内容消息（文本+图片）
+	Name             string               `json:"name,omitempty"`              // Function/tool name (for tool role)
+	ToolCallID       string               `json:"tool_call_id,omitempty"`      // Tool call ID (for tool role)
+	ToolCalls        []ToolCall           `json:"tool_calls,omitempty"`        // Tool calls (for assistant role)
+	Images           []string             `json:"images,omitempty"`            // Image URLs for multimodal (only for current user message)
+}
+
+var thinkBlockRe = regexp.MustCompile(`(?s)<think>(.*?)</think>`)
+
+// SplitContentAndReasoning 将带 <think> 块的助手消息拆分为可见答案和隐藏推理。
+func SplitContentAndReasoning(content string) (visibleContent string, reasoningContent string) {
+	if content == "" {
+		return "", ""
+	}
+
+	matches := thinkBlockRe.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return content, ""
+	}
+
+	reasoningParts := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		part := strings.TrimSpace(match[1])
+		if part != "" {
+			reasoningParts = append(reasoningParts, part)
+		}
+	}
+
+	visible := strings.TrimSpace(thinkBlockRe.ReplaceAllString(content, ""))
+	return visible, strings.Join(reasoningParts, "\n\n")
 }
 
 // ToolCall represents a tool call in a message
