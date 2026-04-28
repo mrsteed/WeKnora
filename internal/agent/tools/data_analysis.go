@@ -588,6 +588,7 @@ func (t *DataAnalysisTool) LoadFromKnowledge(ctx context.Context, knowledge *typ
 		return nil, fmt.Errorf("unsupported file type: %s (supported types: csv, xlsx, xls)", fileType)
 	}
 }
+
 // materializeKnowledgeFile copies the knowledge's backing blob into a fresh
 // temp file on the local filesystem so DuckDB can open it with ordinary path
 // semantics. It returns the temp path and a cleanup closure that removes the
@@ -640,6 +641,7 @@ func (t *DataAnalysisTool) materializeKnowledgeFile(ctx context.Context, knowled
 
 	return tmpPath, cleanup, nil
 }
+
 // convertXlsToCSV converts an old .xls binary format file to a CSV temp file.
 // DuckDB's st_read (GDAL) does not support the legacy .xls format, so we use
 // the extrame/xls library to read .xls and write it out as CSV.
@@ -700,7 +702,7 @@ func (t *DataAnalysisTool) convertXlsToCSV(ctx context.Context, xlsPath string) 
 
 	logger.Infof(ctx, "[Tool][DataAnalysis] Successfully converted .xls to CSV at '%s' for session %s", absPath, t.sessionID)
 	return absPath, nil
-	}
+}
 
 // LoadFromKnowledgeID loads data from a Knowledge ID into a DuckDB table and returns the table schema
 // Parameters:
