@@ -1432,12 +1432,6 @@ import {
   type ScopeCapabilities,
 } from '@/utils/tool-capabilities';
 import OrgTreeSelector from '@/components/OrgTreeSelector.vue';
-import {
-  evaluateToolRequirement,
-  deriveKbFilterFromTools,
-  type RequirementMissKind,
-  type ScopeCapabilities,
-} from '@/utils/tool-capabilities';
 
 const uiStore = useUIStore();
 const authStore = useAuthStore();
