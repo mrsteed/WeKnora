@@ -1029,3 +1029,4 @@ func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHa
 // RegisterOrgTreeSuperAdminRoutes registers org-tree routes that require super admin privileges.
 func RegisterOrgTreeSuperAdminRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
 	r.PUT("/org-tree/super-admin", orgTreeHandler.SetSuperAdmin)
+	}
