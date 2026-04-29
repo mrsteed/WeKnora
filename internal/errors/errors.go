@@ -22,6 +22,7 @@ const (
 	ErrServiceUnavailable ErrorCode = 1008
 	ErrTimeout            ErrorCode = 1009
 	ErrValidation         ErrorCode = 1010
+	ErrRequestTooLarge    ErrorCode = 1011
 
 	// Tenant related error codes (2000-2099)
 	ErrTenantNotFound      ErrorCode = 2000
@@ -115,12 +116,48 @@ func NewInternalServerError(message string) *AppError {
 	}
 }
 
+// NewServiceUnavailableError creates a service unavailable error
+func NewServiceUnavailableError(message string) *AppError {
+	if message == "" {
+		message = "服务暂不可用"
+	}
+	return &AppError{
+		Code:     ErrServiceUnavailable,
+		Message:  message,
+		HTTPCode: http.StatusServiceUnavailable,
+	}
+}
+
+// NewTimeoutError creates a timeout error
+func NewTimeoutError(message string) *AppError {
+	if message == "" {
+		message = "请求处理超时"
+	}
+	return &AppError{
+		Code:     ErrTimeout,
+		Message:  message,
+		HTTPCode: http.StatusRequestTimeout,
+	}
+}
+
 // NewValidationError creates a validation error
 func NewValidationError(message string) *AppError {
 	return &AppError{
 		Code:     ErrValidation,
 		Message:  message,
 		HTTPCode: http.StatusBadRequest,
+	}
+}
+
+// NewRequestTooLargeError creates a request entity too large error
+func NewRequestTooLargeError(message string) *AppError {
+	if message == "" {
+		message = "请求内容过大"
+	}
+	return &AppError{
+		Code:     ErrRequestTooLarge,
+		Message:  message,
+		HTTPCode: http.StatusRequestEntityTooLarge,
 	}
 }
 

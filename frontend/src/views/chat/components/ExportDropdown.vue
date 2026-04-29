@@ -22,7 +22,9 @@
           v-for="format in exportFormats"
           :key="format.value"
           class="export-menu-item"
-          @click="handleExport(format.value)"
+          :class="{ 'is-disabled': format.disabled }"
+          :title="format.title"
+          @click="!format.disabled && handleExport(format.value)"
         >
           <t-icon :name="format.icon" size="16px" />
           <span class="export-menu-label">{{ format.label }}</span>
@@ -42,6 +44,10 @@ import {
   exportAsWord,
   exportAsXLSX,
   generateFilename,
+  type ExportCapability,
+  getExportCapabilities,
+  type ExportCapabilities,
+  type ExportFormat,
 } from '@/utils/exportUtils';
 
 interface Props {
@@ -58,13 +64,23 @@ const props = withDefaults(defineProps<Props>(), {
 const { t } = useI18n();
 const menuVisible = ref(false);
 const exporting = ref(false);
+const exportCapabilities = ref<ExportCapabilities>({
+  markdown: { available: true, engine: 'builtin', maxContentBytes: 2 * 1024 * 1024, timeoutSeconds: 5 },
+  pdf: { available: true, engine: 'chromium', maxContentBytes: 1024 * 1024, timeoutSeconds: 45 },
+  docx: { available: true, engine: 'pandoc', maxContentBytes: 1024 * 1024, timeoutSeconds: 30 },
+  xlsx: { available: true, engine: 'excelize', maxContentBytes: 1024 * 1024, timeoutSeconds: 10 },
+});
 
 const exportFormats = computed(() => [
-  { value: 'pdf',      icon: 'file-pdf',   label: t('chatExport.pdf') },
-  { value: 'markdown', icon: 'file',        label: t('chatExport.markdown') },
-  { value: 'word',     icon: 'file-word',   label: t('chatExport.word') },
-  { value: 'xlsx',     icon: 'file-excel',  label: t('chatExport.xlsx') },
+  buildFormatItem('pdf', 'file-pdf', t('chatExport.pdf'), exportCapabilities.value.pdf),
+  buildFormatItem('markdown', 'file', t('chatExport.markdown'), exportCapabilities.value.markdown),
+  buildFormatItem('docx', 'file-word', t('chatExport.word'), exportCapabilities.value.docx),
+  buildFormatItem('xlsx', 'file-excel', t('chatExport.xlsx'), exportCapabilities.value.xlsx),
 ]);
+
+const loadCapabilities = async () => {
+  exportCapabilities.value = await getExportCapabilities();
+};
 
 const toggleMenu = () => {
   menuVisible.value = !menuVisible.value;
@@ -79,16 +95,22 @@ const onDocumentClick = () => {
 
 onMounted(() => {
   document.addEventListener('click', onDocumentClick);
+  void loadCapabilities();
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick);
 });
 
-const handleExport = async (format: string) => {
+const handleExport = async (format: ExportFormat) => {
   menuVisible.value = false;
   if (!props.content) {
     MessagePlugin.warning(t('chatExport.emptyContent'));
+    return;
+  }
+
+  if (!exportCapabilities.value[format].available) {
+    MessagePlugin.warning(exportCapabilities.value[format].reason || t('chatExport.failed'));
     return;
   }
 
@@ -100,23 +122,36 @@ const handleExport = async (format: string) => {
         await exportAsPDF(props.content, filename);
         break;
       case 'markdown':
-        exportAsMarkdown(props.content, filename);
+        await exportAsMarkdown(props.content, filename);
         break;
-      case 'word':
+      case 'docx':
         await exportAsWord(props.content, filename);
         break;
       case 'xlsx':
-        exportAsXLSX(props.content, filename);
+        await exportAsXLSX(props.content, filename);
         break;
     }
     MessagePlugin.success(t('chatExport.success'));
   } catch (err) {
     console.error('Export failed:', err);
-    MessagePlugin.error(t('chatExport.failed'));
+    MessagePlugin.error((err as any)?.message || t('chatExport.failed'));
   } finally {
     exporting.value = false;
   }
 };
+
+const buildFormatItem = (
+  value: ExportFormat,
+  icon: string,
+  label: string,
+  capability: ExportCapability,
+) => ({
+  value,
+  icon,
+  label,
+  disabled: !capability.available,
+  title: capability.available ? label : `${label}\n${capability.reason || ''}`.trim(),
+});
 </script>
 
 <style lang="less" scoped>
@@ -136,6 +171,15 @@ const handleExport = async (format: string) => {
 
     &:hover {
       background: #f2f3f5;
+    }
+
+    &.is-disabled {
+      cursor: not-allowed;
+      color: #bbb;
+
+      &:hover {
+        background: transparent;
+      }
     }
 
     .export-menu-label {

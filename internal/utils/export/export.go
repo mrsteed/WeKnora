@@ -1,21 +1,27 @@
 // Package export provides document export utilities for converting
 // Markdown content to PDF and DOCX formats using backend tools
-// (wkhtmltopdf for PDF, pandoc for DOCX).
+// (Chromium print-to-PDF for PDF, pandoc for DOCX).
 package export
 
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/chromedp"
 )
+
+const exportChromeBinEnv = "WEKNORA_EXPORT_CHROME_BIN"
 
 // MarkdownToPDF converts Markdown content to PDF.
 // It first converts Markdown to styled HTML using goldmark,
-// then uses wkhtmltopdf to render HTML to PDF.
+// then uses headless Chromium to render HTML to PDF.
 func MarkdownToPDF(ctx context.Context, markdown string) ([]byte, error) {
 	// Step 1: Convert Markdown to styled HTML
 	styledHTML, err := MarkdownToStyledHTML(markdown)
@@ -23,7 +29,7 @@ func MarkdownToPDF(ctx context.Context, markdown string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to convert markdown to HTML: %w", err)
 	}
 
-	// Step 2: Convert HTML to PDF using wkhtmltopdf
+	// Step 2: Convert HTML to PDF using headless Chromium
 	return htmlToPDF(ctx, styledHTML)
 }
 
@@ -33,69 +39,71 @@ func MarkdownToDocx(ctx context.Context, markdown string) ([]byte, error) {
 	return markdownToDocxViaPandoc(ctx, markdown)
 }
 
-// htmlToPDF converts HTML to PDF using wkhtmltopdf.
-// If wkhtmltopdf is not available, returns a descriptive error.
+// MarkdownToXLSX converts Markdown content to a workbook that keeps
+// narrative text on an overview sheet and extracts standard Markdown tables
+// into dedicated sheets for server-side download.
+func MarkdownToXLSX(ctx context.Context, markdown string) ([]byte, error) {
+	data, err := markdownToXLSX(ctx, markdown)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Infof(ctx, "[Export] Successfully generated XLSX, size: %d bytes", len(data))
+	return data, nil
+}
+
+// htmlToPDF converts HTML to PDF using headless Chromium.
+// If Chromium is not available, returns a descriptive error.
 func htmlToPDF(ctx context.Context, html string) ([]byte, error) {
-	if !IsWkhtmltopdfAvailable() {
-		return nil, fmt.Errorf("wkhtmltopdf is not installed. Please install it: apt-get install -y wkhtmltopdf")
+	chromePath, ok := findChromiumExecutable()
+	if !ok {
+		return nil, fmt.Errorf("chromium is not installed. Set %s or install chromium/google-chrome on the server", exportChromeBinEnv)
 	}
 
-	// Write HTML to temp file
-	htmlFile, err := os.CreateTemp("", "weknora_export_*.html")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp HTML file: %w", err)
-	}
-	defer os.Remove(htmlFile.Name())
-
-	if _, err := htmlFile.WriteString(html); err != nil {
-		htmlFile.Close()
-		return nil, fmt.Errorf("failed to write HTML temp file: %w", err)
-	}
-	htmlFile.Close()
-
-	// Create temp output file for PDF
-	pdfFile, err := os.CreateTemp("", "weknora_export_*.pdf")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp PDF file: %w", err)
-	}
-	pdfFile.Close()
-	defer os.Remove(pdfFile.Name())
-
-	// Run wkhtmltopdf
-	// Options:
-	//   --encoding utf-8        : UTF-8 encoding
-	//   --page-size A4          : A4 page size
-	//   --margin-top 15mm       : margins
-	//   --margin-bottom 15mm
-	//   --margin-left 15mm
-	//   --margin-right 15mm
-	//   --enable-local-file-access : allow local file access for images
-	//   --quiet                 : suppress output
-	cmd := exec.CommandContext(ctx, "wkhtmltopdf",
-		"--encoding", "utf-8",
-		"--page-size", "A4",
-		"--margin-top", "15mm",
-		"--margin-bottom", "15mm",
-		"--margin-left", "15mm",
-		"--margin-right", "15mm",
-		"--enable-local-file-access",
-		"--quiet",
-		htmlFile.Name(),
-		pdfFile.Name(),
+	htmlURL := buildHTMLDataURL(html)
+	allocatorOptions := append(
+		chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath(chromePath),
+		chromedp.Flag("headless", true),
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("disable-setuid-sandbox", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("hide-scrollbars", true),
 	)
 
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	allocatorCtx, cancel := chromedp.NewExecAllocator(ctx, allocatorOptions...)
+	defer cancel()
 
-	if err := cmd.Run(); err != nil {
-		logger.Errorf(ctx, "[Export] wkhtmltopdf failed: %v, stderr: %s", err, stderr.String())
-		return nil, fmt.Errorf("wkhtmltopdf failed: %w (stderr: %s)", err, stderr.String())
-	}
+	browserCtx, cancel := chromedp.NewContext(allocatorCtx)
+	defer cancel()
 
-	// Read the generated PDF
-	data, err := os.ReadFile(pdfFile.Name())
+	var (
+		data []byte
+		err  error
+	)
+	err = chromedp.Run(browserCtx,
+		chromedp.Navigate(htmlURL),
+		chromedp.WaitReady("body", chromedp.ByQuery),
+		chromedp.ActionFunc(func(runCtx context.Context) error {
+			pdfData, _, err := page.PrintToPDF().
+				WithPrintBackground(true).
+				WithPreferCSSPageSize(true).
+				WithMarginTop(0.4).
+				WithMarginBottom(0.55).
+				WithMarginLeft(0.4).
+				WithMarginRight(0.4).
+				Do(runCtx)
+			if err != nil {
+				return err
+			}
+			data = pdfData
+			return nil
+		}),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read generated PDF: %w", err)
+		logger.Errorf(ctx, "[Export] chromium print-to-pdf failed: %v", err)
+		return nil, fmt.Errorf("chromium print-to-pdf failed: %w", err)
 	}
 
 	logger.Infof(ctx, "[Export] Successfully generated PDF, size: %d bytes", len(data))
@@ -161,14 +169,35 @@ func markdownToDocxViaPandoc(ctx context.Context, markdown string) ([]byte, erro
 	return data, nil
 }
 
-// IsWkhtmltopdfAvailable checks if wkhtmltopdf is installed and available in PATH.
-func IsWkhtmltopdfAvailable() bool {
-	_, err := exec.LookPath("wkhtmltopdf")
-	return err == nil
+// IsChromiumAvailable checks if a Chromium-compatible executable is installed and available.
+func IsChromiumAvailable() bool {
+	_, ok := findChromiumExecutable()
+	return ok
 }
 
 // IsPandocAvailable checks if pandoc is installed and available in PATH.
 func IsPandocAvailable() bool {
 	_, err := exec.LookPath("pandoc")
 	return err == nil
+}
+
+func findChromiumExecutable() (string, bool) {
+	if configured := strings.TrimSpace(os.Getenv(exportChromeBinEnv)); configured != "" {
+		if path, err := exec.LookPath(configured); err == nil {
+			return path, true
+		}
+	}
+
+	for _, candidate := range []string{"chromium", "chromium-browser", "google-chrome", "google-chrome-stable"} {
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path, true
+		}
+	}
+
+	return "", false
+}
+
+func buildHTMLDataURL(html string) string {
+	encodedHTML := base64.StdEncoding.EncodeToString([]byte(html))
+	return "data:text/html;charset=utf-8;base64," + encodedHTML
 }
