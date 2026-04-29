@@ -93,6 +93,10 @@ function redirectToLogin() {
 
 instance.interceptors.response.use(
   (response) => {
+    if ((response.config as any)?.rawResponse) {
+      return response;
+    }
+
     // 根据业务状态码处理逻辑
     const { status, data } = response;
     if (status >= 200 && status < 300) {
@@ -183,16 +187,31 @@ instance.interceptors.response.use(
       }
     }
     
-    // 处理 Nginx 413 Request Entity Too Large
-    if (error.response.status === 413) {
+    const { status, data } = error.response;
+    if (data instanceof Blob && data.type?.includes('application/json')) {
+      try {
+        const text = await data.text();
+        const parsed = JSON.parse(text);
+        return Promise.reject({
+          status,
+          message: parsed?.error?.message || parsed?.message,
+          ...(typeof parsed === 'object' ? parsed : {}),
+        });
+      } catch {
+        // ignore JSON parse error and fall through to generic handling
+      }
+    }
+
+    // 处理 Nginx 413 Request Entity Too Large。
+    // 如果后端已经返回了标准 JSON 错误结构，上面的 Blob 解析会保留 request_id/details；
+    // 只有拿不到结构化错误体时，才回退到通用提示。
+    if (status === 413) {
       return Promise.reject({ 
         status: 413, 
         message: t('error.fileSizeExceeded'),
         success: false
       });
     }
-
-    const { status, data } = error.response;
     // 将HTTP状态码一并抛出，方便上层判断401等场景
     // 后端返回格式: { success: false, error: { code, message, details } }
     // 提取 error.message 作为顶层 message，方便前端使用 error?.message 获取
@@ -258,10 +277,11 @@ export function del<T = any>(url: string, data?: any): Promise<T> {
   return instance.delete(url, { data }) as Promise<T>;
 }
 
-export async function postBlob(url: string, data = {}) {
+export async function postBlob(url: string, data = {}, options?: { rawResponse?: boolean }) {
   const res = await instance.post(url, data, {
     responseType: "blob",
     timeout: 120000, // 导出可能较慢，120s超时
-  });
+    rawResponse: options?.rawResponse === true,
+  } as any);
   return res;
 }

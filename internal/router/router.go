@@ -349,7 +349,7 @@ func RegisterMessageRoutes(r *gin.RouterGroup, handler *handler.MessageHandler) 
 func RegisterExportRoutes(r *gin.RouterGroup, h *handler.ExportHandler) {
 	exportGroup := r.Group("/export")
 	{
-		// 导出文档（PDF/DOCX）
+		// 导出文档（Markdown/PDF/DOCX/XLSX）
 		exportGroup.POST("/document", h.ExportDocument)
 		// 查询导出能力（检查后端工具是否可用）
 		exportGroup.GET("/capabilities", h.ExportCapabilities)

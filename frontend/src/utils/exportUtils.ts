@@ -1,15 +1,30 @@
-import { marked } from 'marked';
-import * as XLSX from 'xlsx';
 import { postBlob, get } from './request';
 
+export type ExportFormat = 'markdown' | 'pdf' | 'docx' | 'xlsx';
+
+export interface ExportCapability {
+  available: boolean;
+  engine: string;
+  reason?: string;
+  maxContentBytes: number;
+  timeoutSeconds: number;
+}
+
+export interface ExportCapabilities {
+  markdown: ExportCapability;
+  pdf: ExportCapability;
+  docx: ExportCapability;
+  xlsx: ExportCapability;
+}
+
 /**
- * 生成带时间戳的文件名
+ * 生成导出文件名前缀。
+ *
+ * 后端接口会统一追加时间戳并补齐扩展名，这里只负责提供可读的业务前缀，
+ * 避免前后端重复追加时间戳导致文件名出现双时间戳。
  */
 export const generateFilename = (prefix?: string): string => {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  return `${prefix || '对话导出'}_${timestamp}`;
+  return prefix?.trim() || '对话导出';
 };
 
 /**
@@ -26,257 +41,159 @@ export const triggerDownload = (blob: Blob, filename: string): void => {
   URL.revokeObjectURL(url);
 };
 
-/**
- * 将 Markdown 转换为带样式的 HTML 字符串（前端版本，用于前端降级）
- */
-export const markdownToStyledHTML = (markdown: string): string => {
-  const rawHTML = marked.parse(markdown) as string;
-  return `
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
-               line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; color: #333; }
-        h1, h2, h3, h4, h5, h6 { margin-top: 1.2em; margin-bottom: 0.6em; }
-        code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
-        pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
-        pre code { background: none; padding: 0; }
-        blockquote { border-left: 4px solid #ddd; margin: 1em 0; padding: 0.5em 1em; color: #666; }
-        table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-        th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
-        th { background: #f5f5f5; font-weight: 600; }
-        img { max-width: 100%; }
-        ul, ol { padding-left: 2em; }
-        a { color: #0066cc; }
-      </style>
-    </head>
-    <body>${rawHTML}</body>
-    </html>
-  `;
-};
-
-/**
- * 导出为 Markdown 文件 (.md)
- */
-export const exportAsMarkdown = (content: string, filename: string): void => {
-  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-  triggerDownload(blob, `${filename}.md`);
-};
-
 // ============================================================
 // 后端导出能力缓存
 // ============================================================
-let _capabilities: { pdf: boolean; docx: boolean } | null = null;
+let _capabilities: ExportCapabilities | null = null;
+
+const EXPORT_EXTENSION_MAP: Record<ExportFormat, string> = {
+  markdown: 'md',
+  pdf: 'pdf',
+  docx: 'docx',
+  xlsx: 'xlsx',
+};
 
 /**
- * 查询后端导出能力（是否安装 wkhtmltopdf / pandoc）
- * 结果会被缓存，只请求一次
+ * 查询后端导出能力。
+ * 当能力探测失败时保留默认可用状态，避免探测异常直接屏蔽导出入口。
  */
-export const getExportCapabilities = async (): Promise<{ pdf: boolean; docx: boolean }> => {
+export const getExportCapabilities = async (): Promise<ExportCapabilities> => {
   if (_capabilities) return _capabilities;
   try {
     const res = await get('/api/v1/export/capabilities');
     const data = (res as any).data?.data || (res as any).data;
     _capabilities = {
-      pdf: data?.pdf?.available === true,
-      docx: data?.docx?.available === true,
+      markdown: normalizeCapability(data?.markdown, true, 'builtin', 2 * 1024 * 1024, 5),
+      pdf: normalizeCapability(data?.pdf, false, 'chromium', 1024 * 1024, 45),
+      docx: normalizeCapability(data?.docx, false, 'pandoc', 1024 * 1024, 30),
+      xlsx: normalizeCapability(data?.xlsx, true, 'excelize', 1024 * 1024, 10),
     };
   } catch {
-    _capabilities = { pdf: false, docx: false };
+    _capabilities = {
+      markdown: normalizeCapability(undefined, true, 'builtin', 2 * 1024 * 1024, 5),
+      pdf: normalizeCapability(undefined, true, 'chromium', 1024 * 1024, 45),
+      docx: normalizeCapability(undefined, true, 'pandoc', 1024 * 1024, 30),
+      xlsx: normalizeCapability(undefined, true, 'excelize', 1024 * 1024, 10),
+    };
   }
   return _capabilities;
 };
 
+const normalizeCapability = (
+  raw: any,
+  fallbackAvailable: boolean,
+  fallbackEngine: string,
+  fallbackMaxContentBytes: number,
+  fallbackTimeoutSeconds: number,
+): ExportCapability => ({
+  available: raw?.available ?? fallbackAvailable,
+  engine: raw?.engine || raw?.tool || fallbackEngine,
+  reason: raw?.reason,
+  maxContentBytes: raw?.max_content_bytes ?? fallbackMaxContentBytes,
+  timeoutSeconds: raw?.timeout_seconds ?? fallbackTimeoutSeconds,
+});
+
 /**
- * 通过后端 API 导出文档（PDF / DOCX）
- * 后端使用 wkhtmltopdf（PDF）或 pandoc（DOCX）生成高质量文档
+ * 通过统一后端接口导出文档。
  */
 const exportViaBackend = async (
   content: string,
-  format: 'pdf' | 'docx',
+  format: ExportFormat,
   filename: string,
 ): Promise<void> => {
-  const res = await postBlob('/api/v1/export/document', {
-    content,
-    format,
-    filename_prefix: filename,
-  });
+  let res: any;
+  try {
+    res = await postBlob('/api/v1/export/document', {
+      content,
+      format,
+      filename_prefix: filename,
+    }, { rawResponse: true });
+  } catch (error) {
+    throw normalizeExportError(error);
+  }
 
-  // axios interceptor 的 success handler 已返回 response.data，
-  // 所以 res 直接就是 Blob（responseType: "blob" 时）。
-  // 如果 res 不是 Blob（例如 interceptor 返回了完整 response），则取 .data。
-  const rawData = res instanceof Blob ? res : (res as any).data || res;
+  const rawData = res instanceof Blob ? res : res.data || (res as any);
 
-  // 检查是否实际拿到了有效的二进制数据
   if (!(rawData instanceof Blob) || rawData.size === 0) {
     throw new Error('Backend returned empty or invalid response');
   }
 
-  // 如果后端返回了 JSON 错误（Content-Type 为 application/json），则解析并抛出
   if (rawData.type && rawData.type.includes('application/json')) {
     const text = await rawData.text();
-    let errMsg = 'Backend export failed';
+    let parsed: any;
     try {
-      const json = JSON.parse(text);
-      errMsg = json?.error?.message || json?.message || errMsg;
-    } catch { /* ignore parse error */ }
-    throw new Error(errMsg);
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error('Backend export failed');
+    }
+    throw normalizeExportError(parsed);
   }
 
-  const blob = new Blob([rawData], {
-    type: format === 'pdf'
-      ? 'application/pdf'
-      : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  });
-
-  const ext = format === 'pdf' ? 'pdf' : 'docx';
-  triggerDownload(blob, `${filename}.${ext}`);
+  const blob = rawData instanceof Blob ? rawData : new Blob([rawData]);
+  const downloadFilename =
+    extractFilenameFromDisposition(res instanceof Blob ? undefined : res.headers?.['content-disposition']) ||
+    buildFallbackFilename(filename, format);
+  triggerDownload(blob, downloadFilename);
 };
 
 /**
- * 前端降级：使用 html2pdf.js 生成 PDF（当后端 wkhtmltopdf 不可用时）
+ * 导出为 Markdown 文件。
  */
-const exportAsPDFFallback = async (content: string, filename: string): Promise<void> => {
-  const html2pdf = (await import('html2pdf.js')).default;
-  const styledHTML = markdownToStyledHTML(content);
-
-  const container = document.createElement('div');
-  container.innerHTML = styledHTML;
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
-  container.style.width = '800px';
-  document.body.appendChild(container);
-
-  try {
-    await html2pdf()
-      .set({
-        margin: [15, 15, 15, 15],
-        filename: `${filename}.pdf`,
-        image: { type: 'jpeg', quality: 0.95 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-        },
-        jsPDF: {
-          unit: 'mm',
-          format: 'a4',
-          orientation: 'portrait',
-        },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-      } as any)
-      .from(container)
-      .save();
-  } finally {
-    document.body.removeChild(container);
-  }
+export const exportAsMarkdown = async (content: string, filename: string): Promise<void> => {
+  await exportViaBackend(content, 'markdown', filename);
 };
 
 /**
- * 前端降级：使用 html-docx-js-typescript 生成 DOCX（当后端 pandoc 不可用时）
- */
-const exportAsWordFallback = async (content: string, filename: string): Promise<void> => {
-  const { asBlob } = await import('html-docx-js-typescript');
-  const styledHTML = markdownToStyledHTML(content);
-  const result = asBlob(styledHTML);
-  // asBlob may return a Blob or an ArrayBuffer depending on the version;
-  // ensure we always pass a proper Blob to triggerDownload.
-  const docxBlob = result instanceof Blob
-    ? result
-    : new Blob([result], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
-  triggerDownload(docxBlob, `${filename}.docx`);
-};
-
-/**
- * 导出为 PDF 文件
- * 优先使用后端 wkhtmltopdf（高质量），失败时降级到前端 html2pdf.js
+ * 导出为 PDF 文件。
  */
 export const exportAsPDF = async (content: string, filename: string): Promise<void> => {
-  try {
-    await exportViaBackend(content, 'pdf', filename);
-  } catch (err) {
-    console.warn('[Export] Backend PDF export failed, falling back to frontend html2pdf.js:', err);
-    await exportAsPDFFallback(content, filename);
-  }
+  await exportViaBackend(content, 'pdf', filename);
 };
 
 /**
- * 导出为 Word DOCX 文件
- * 优先使用后端 pandoc（高质量），失败时降级到前端 html-docx-js-typescript
+ * 导出为 Word DOCX 文件。
  */
 export const exportAsWord = async (content: string, filename: string): Promise<void> => {
-  try {
-    await exportViaBackend(content, 'docx', filename);
-  } catch (err) {
-    console.warn('[Export] Backend DOCX export failed, falling back to frontend html-docx-js-typescript:', err);
-    await exportAsWordFallback(content, filename);
-  }
+  await exportViaBackend(content, 'docx', filename);
 };
 
 /**
- * 从 Markdown 文本中提取表格数据
+ * 导出为 XLSX 文件。
  */
-const extractTablesFromMarkdown = (content: string): string[][][] => {
-  const tables: string[][][] = [];
-  const lines = content.split('\n');
-  let currentTable: string[][] = [];
-  let inTable = false;
+export const exportAsXLSX = async (content: string, filename: string): Promise<void> => {
+  await exportViaBackend(content, 'xlsx', filename);
+};
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
-      // 跳过分隔行 (|---|---|)
-      const inner = trimmed.slice(1, -1);
-      if (/^[\s\-:|]+$/.test(inner)) {
-        continue;
-      }
-      const cells = inner.split('|').map(cell => cell.trim());
-      currentTable.push(cells);
-      inTable = true;
-    } else {
-      if (inTable && currentTable.length > 0) {
-        tables.push(currentTable);
-        currentTable = [];
-      }
-      inTable = false;
+const normalizeExportError = (error: any): Error => {
+  const message = error?.error?.message || error?.message || 'Backend export failed';
+  const requestId = error?.error?.details?.request_id || error?.details?.request_id;
+  if (!requestId) {
+    return new Error(message);
+  }
+  return new Error(`${message} (Request ID: ${requestId})`);
+};
+
+const extractFilenameFromDisposition = (contentDisposition?: string): string | null => {
+  if (!contentDisposition) {
+    return null;
+  }
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
     }
   }
-  if (currentTable.length > 0) {
-    tables.push(currentTable);
-  }
-  return tables;
+
+  const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+  return plainMatch?.[1] || null;
 };
 
-/**
- * 导出为 XLSX 文件
- */
-export const exportAsXLSX = (content: string, filename: string): void => {
-  const workbook = XLSX.utils.book_new();
-  const tables = extractTablesFromMarkdown(content);
-
-  if (tables.length > 0) {
-    tables.forEach((table, index) => {
-      const worksheet = XLSX.utils.aoa_to_sheet(table);
-      const colWidths = table[0]?.map((_, colIdx) => {
-        const maxLen = Math.max(
-          ...table.map(row => (row[colIdx] || '').length)
-        );
-        return { wch: Math.min(Math.max(maxLen + 2, 10), 50) };
-      });
-      if (colWidths) worksheet['!cols'] = colWidths;
-
-      const sheetName = tables.length === 1 ? 'Sheet1' : `表格${index + 1}`;
-      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-    });
-  } else {
-    const rows = content.split('\n').map(line => [line]);
-    const worksheet = XLSX.utils.aoa_to_sheet([['内容'], ...rows]);
-    worksheet['!cols'] = [{ wch: 80 }];
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
-  }
-
-  XLSX.writeFile(workbook, `${filename}.xlsx`);
+const buildFallbackFilename = (prefix: string, format: ExportFormat): string => {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `${prefix}_${timestamp}.${EXPORT_EXTENSION_MAP[format]}`;
 };
