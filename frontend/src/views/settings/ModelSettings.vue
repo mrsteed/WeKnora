@@ -469,12 +469,13 @@ onMounted(() => {
 }
 
 .builtin-hint-text {
-  margin: 0 0 6px 0;
+  margin: 0;
   font-size: 13px;
   line-height: 1.55;
   color: var(--td-text-color-secondary);
 }
 
+<<<<<<< HEAD
 .builtin-models-hint .doc-link {
   font-size: 13px;
 }

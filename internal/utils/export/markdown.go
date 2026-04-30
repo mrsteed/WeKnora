@@ -113,26 +113,11 @@ func MarkdownToStyledHTML(markdown string) (string, error) {
       border-bottom: 1px solid var(--border-subtle);
     }
 
-    .export-eyebrow {
-      margin: 0 0 10px;
-      font-size: 12px;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      font-weight: 700;
-      color: var(--heading-accent);
-    }
-
     .export-title {
       margin: 0;
       font-size: 28px;
       line-height: 1.25;
       font-weight: 800;
-    }
-
-    .export-subtitle {
-      margin: 10px 0 0;
-      color: var(--text-secondary);
-      font-size: 13px;
     }
 
     .export-content {
@@ -242,9 +227,7 @@ func MarkdownToStyledHTML(markdown string) (string, error) {
   <div class="export-page">
     <main class="export-paper">
       <header class="export-header">
-        <p class="export-eyebrow">WeKnora Export</p>
         <h1 class="export-title">%s</h1>
-        <p class="export-subtitle">由 WeKnora 生成的导出文档，适用于打印与归档场景。</p>
       </header>
       <article class="export-content markdown-body">
 %s

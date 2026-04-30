@@ -17,6 +17,7 @@ const (
 	TypeManualProcess        = "manual:process"         // 手工知识更新任务（cleanup + 重新索引）
 	TypeDataSourceSync       = "datasource:sync"        // 数据源同步任务
 	TypeWikiIngest           = "wiki:ingest"            // Wiki 页面同步任务
+	TypeLongDocumentTask     = "long_document:task"     // 长文档任务执行
 )
 
 // ExtractChunkPayload represents the extract chunk task payload

@@ -30,6 +30,7 @@ type Config struct {
 	PromptTemplates *PromptTemplatesConfig `yaml:"prompt_templates" json:"prompt_templates"`
 	IM              *IMConfig              `yaml:"im"               json:"im"`
 	Agent           *AgentConfig           `yaml:"agent"            json:"agent"`
+	LongDocument    *LongDocumentConfig    `yaml:"long_document"    json:"long_document"`
 }
 
 // AgentConfig represents the global agent settings.
@@ -40,6 +41,16 @@ type AgentConfig struct {
 	// ToolApprovalTimeoutSeconds is how long the agent waits for human approval on a flagged MCP tool.
 	// 0 means default 600 (10 minutes).
 	ToolApprovalTimeoutSeconds int `yaml:"tool_approval_timeout_seconds" json:"tool_approval_timeout_seconds"`
+}
+
+type LongDocumentConfig struct {
+	EnableTaskRouter       bool `yaml:"enable_task_router" json:"enable_task_router"`
+	EnableTaskWorker       bool `yaml:"enable_task_worker" json:"enable_task_worker"`
+	EnableArtifactDownload bool `yaml:"enable_artifact_download" json:"enable_artifact_download"`
+	BatchChunkSize         int  `yaml:"batch_chunk_size" json:"batch_chunk_size"`
+	BatchMaxChars          int  `yaml:"batch_max_chars" json:"batch_max_chars"`
+	BatchRetryLimit        int  `yaml:"batch_retry_limit" json:"batch_retry_limit"`
+	TaskPollIntervalSec    int  `yaml:"task_poll_interval_sec" json:"task_poll_interval_sec"`
 }
 
 // IMConfig configures the IM integration service.
@@ -434,6 +445,7 @@ func LoadConfig() (*Config, error) {
 	// Validate configuration values
 	applyOIDCEnvOverrides(&cfg)
 	applyAgentEnvOverrides(&cfg)
+	applyLongDocumentDefaults(&cfg)
 
 	if err := ValidateConfig(&cfg); err != nil {
 		return nil, err
@@ -581,6 +593,37 @@ func applyAgentEnvOverrides(cfg *Config) {
 		} else if d, err := time.ParseDuration(value + "s"); err == nil {
 			cfg.Agent.ToolApprovalTimeoutSeconds = int(d.Seconds())
 		}
+	}
+}
+
+func applyLongDocumentDefaults(cfg *Config) {
+	if cfg.LongDocument == nil {
+		cfg.LongDocument = &LongDocumentConfig{
+			EnableTaskRouter:       true,
+			EnableTaskWorker:       true,
+			EnableArtifactDownload: true,
+		}
+	}
+	if cfg.LongDocument.BatchChunkSize <= 0 {
+		cfg.LongDocument.BatchChunkSize = 8
+	}
+	if cfg.LongDocument.BatchMaxChars <= 0 {
+		cfg.LongDocument.BatchMaxChars = 24000
+	}
+	if cfg.LongDocument.BatchRetryLimit <= 0 {
+		cfg.LongDocument.BatchRetryLimit = 3
+	}
+	if cfg.LongDocument.TaskPollIntervalSec <= 0 {
+		cfg.LongDocument.TaskPollIntervalSec = 3
+	}
+	if value := strings.TrimSpace(os.Getenv("WEKNORA_ENABLE_LONG_DOCUMENT_TASK_ROUTER")); value != "" {
+		cfg.LongDocument.EnableTaskRouter = strings.EqualFold(value, "true")
+	}
+	if value := strings.TrimSpace(os.Getenv("WEKNORA_ENABLE_LONG_DOCUMENT_TASK_WORKER")); value != "" {
+		cfg.LongDocument.EnableTaskWorker = strings.EqualFold(value, "true")
+	}
+	if value := strings.TrimSpace(os.Getenv("WEKNORA_ENABLE_LONG_DOCUMENT_ARTIFACT_DOWNLOAD")); value != "" {
+		cfg.LongDocument.EnableArtifactDownload = strings.EqualFold(value, "true")
 	}
 }
 

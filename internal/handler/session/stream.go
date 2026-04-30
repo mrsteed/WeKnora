@@ -253,8 +253,10 @@ func (h *Handler) StopSession(c *gin.Context) {
 		return
 	}
 
-	// Check if message is already completed (stopped)
-	if message.IsCompleted {
+	// Check if message is already in a terminal state.
+	// P1 keeps is_completed only for successful completion, so stop requests must
+	// also respect partial/failed/cancelled messages.
+	if message.IsTerminal() {
 		logger.Infof(ctx, "Message %s is already completed, no need to stop", assistantMessageID)
 		c.JSON(200, gin.H{
 			"success": true,

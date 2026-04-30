@@ -22,6 +22,7 @@ type AsynqTaskParams struct {
 	Server               *asynq.Server
 	KnowledgeService     interfaces.KnowledgeService
 	KnowledgeBaseService interfaces.KnowledgeBaseService
+	LongDocumentService  interfaces.LongDocumentTaskService
 	TagService           interfaces.KnowledgeTagService
 	DataSourceService    interfaces.DataSourceService
 	ChunkExtractor       interfaces.TaskHandler `name:"chunkExtractor"`
@@ -165,6 +166,9 @@ func RunAsynqServer(params AsynqTaskParams) *asynq.ServeMux {
 
 	// Register wiki ingest handler
 	mux.HandleFunc(types.TypeWikiIngest, params.WikiIngest.Handle)
+
+	// Register long document task handler
+	mux.HandleFunc(types.TypeLongDocumentTask, params.LongDocumentService.HandleTask)
 
 	go func() {
 		// Start the server

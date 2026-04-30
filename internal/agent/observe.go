@@ -59,10 +59,16 @@ func (e *AgentEngine) manageContextWindow(ctx context.Context, messages []chat.M
 // responseVerdict captures the result of analyzing an LLM response to determine
 // whether the agent loop should stop and what the final answer is (if any).
 type responseVerdict struct {
-	isDone       bool
-	finalAnswer  string
-	emptyContent bool // LLM returned stop with no tool calls and empty content
-	step         types.AgentStep
+	isDone           bool
+	finalAnswer      string
+	emptyContent     bool // LLM returned stop with no tool calls and empty content
+	completionStatus string
+	finishReason     string
+	isPartial        bool
+	allowIndexing    bool
+	allowComplete    bool
+	failureReason    string
+	step             types.AgentStep
 }
 
 // analyzeResponse inspects the LLM response for stop conditions:
@@ -93,29 +99,104 @@ func (e *AgentEngine) analyzeResponse(
 		}
 
 		answerID := generateEventID("answer")
+		if !response.AnswerStreamed && answer != "" {
+			e.eventBus.Emit(ctx, event.Event{
+				ID:        answerID,
+				Type:      event.EventAgentFinalAnswer,
+				SessionID: sessionID,
+				Data: event.AgentFinalAnswerData{
+					Content:          answer,
+					Done:             false,
+					CompletionStatus: "failed",
+					FinishReason:     "content_filter",
+					AllowIndexing:    false,
+					AllowComplete:    false,
+					FailureReason:    "content_filter",
+				},
+			})
+		}
 		e.eventBus.Emit(ctx, event.Event{
 			ID:        answerID,
 			Type:      event.EventAgentFinalAnswer,
 			SessionID: sessionID,
 			Data: event.AgentFinalAnswerData{
-				Content: answer,
-				Done:    false,
-			},
-		})
-		e.eventBus.Emit(ctx, event.Event{
-			ID:        answerID,
-			Type:      event.EventAgentFinalAnswer,
-			SessionID: sessionID,
-			Data: event.AgentFinalAnswerData{
-				Content: "",
-				Done:    true,
+				Content:          "",
+				Done:             true,
+				CompletionStatus: "failed",
+				FinishReason:     "content_filter",
+				AllowIndexing:    false,
+				AllowComplete:    false,
+				FailureReason:    "content_filter",
 			},
 		})
 
 		return responseVerdict{
-			isDone:      true,
-			finalAnswer: answer,
-			step:        step,
+			isDone:           true,
+			finalAnswer:      answer,
+			completionStatus: "failed",
+			finishReason:     "content_filter",
+			allowIndexing:    false,
+			allowComplete:    false,
+			failureReason:    "content_filter",
+			step:             step,
+		}
+	}
+
+	if response.FinishReason == "length" && len(response.ToolCalls) == 0 {
+		response.Content = agenttools.StripThinkBlocks(response.Content)
+		logger.Warnf(ctx, "[Agent][Round-%d] Agent response truncated by length: answer=%d chars, duration=%dms",
+			iteration+1, len(response.Content), time.Since(roundStart).Milliseconds())
+		common.PipelineWarn(ctx, "Agent", "round_partial_length", map[string]interface{}{
+			"iteration":     iteration,
+			"round":         iteration + 1,
+			"answer_len":    len(response.Content),
+			"finish_reason": response.FinishReason,
+		})
+
+		answerID := generateEventID("answer")
+		if !response.AnswerStreamed && response.Content != "" {
+			e.eventBus.Emit(ctx, event.Event{
+				ID:        answerID,
+				Type:      event.EventAgentFinalAnswer,
+				SessionID: sessionID,
+				Data: event.AgentFinalAnswerData{
+					Content:          response.Content,
+					Done:             false,
+					CompletionStatus: "partial",
+					FinishReason:     "length",
+					IsPartial:        true,
+					AllowIndexing:    false,
+					AllowComplete:    false,
+					FailureReason:    "length",
+				},
+			})
+		}
+		e.eventBus.Emit(ctx, event.Event{
+			ID:        answerID,
+			Type:      event.EventAgentFinalAnswer,
+			SessionID: sessionID,
+			Data: event.AgentFinalAnswerData{
+				Content:          "",
+				Done:             true,
+				CompletionStatus: "partial",
+				FinishReason:     "length",
+				IsPartial:        true,
+				AllowIndexing:    false,
+				AllowComplete:    false,
+				FailureReason:    "length",
+			},
+		})
+
+		return responseVerdict{
+			isDone:           true,
+			finalAnswer:      response.Content,
+			completionStatus: "partial",
+			finishReason:     "length",
+			isPartial:        true,
+			allowIndexing:    false,
+			allowComplete:    false,
+			failureReason:    "length",
+			step:             step,
 		}
 	}
 
@@ -134,14 +215,18 @@ func (e *AgentEngine) analyzeResponse(
 
 		// Emit answer as final answer event (thinking events were already streamed)
 		answerID := generateEventID("answer")
-		if response.Content != "" {
+		if !response.AnswerStreamed && response.Content != "" {
 			e.eventBus.Emit(ctx, event.Event{
 				ID:        answerID,
 				Type:      event.EventAgentFinalAnswer,
 				SessionID: sessionID,
 				Data: event.AgentFinalAnswerData{
-					Content: response.Content,
-					Done:    false,
+					Content:          response.Content,
+					Done:             false,
+					CompletionStatus: "completed",
+					FinishReason:     "stop",
+					AllowIndexing:    true,
+					AllowComplete:    true,
 				},
 			})
 		}
@@ -150,16 +235,24 @@ func (e *AgentEngine) analyzeResponse(
 			Type:      event.EventAgentFinalAnswer,
 			SessionID: sessionID,
 			Data: event.AgentFinalAnswerData{
-				Content: "",
-				Done:    true,
+				Content:          "",
+				Done:             true,
+				CompletionStatus: "completed",
+				FinishReason:     "stop",
+				AllowIndexing:    true,
+				AllowComplete:    true,
 			},
 		})
 
 		return responseVerdict{
-			isDone:       true,
-			finalAnswer:  response.Content,
-			emptyContent: response.Content == "",
-			step:         step,
+			isDone:           true,
+			finalAnswer:      response.Content,
+			emptyContent:     response.Content == "",
+			completionStatus: "completed",
+			finishReason:     "stop",
+			allowIndexing:    true,
+			allowComplete:    true,
+			step:             step,
 		}
 	}
 
@@ -212,8 +305,12 @@ func (e *AgentEngine) analyzeResponse(
 					Type:      event.EventAgentFinalAnswer,
 					SessionID: sessionID,
 					Data: event.AgentFinalAnswerData{
-						Content: answer,
-						Done:    false,
+						Content:          answer,
+						Done:             false,
+						CompletionStatus: "completed",
+						FinishReason:     response.FinishReason,
+						AllowIndexing:    true,
+						AllowComplete:    true,
 					},
 				})
 			}
@@ -222,8 +319,12 @@ func (e *AgentEngine) analyzeResponse(
 				Type:      event.EventAgentFinalAnswer,
 				SessionID: sessionID,
 				Data: event.AgentFinalAnswerData{
-					Content: "",
-					Done:    true,
+					Content:          "",
+					Done:             true,
+					CompletionStatus: "completed",
+					FinishReason:     response.FinishReason,
+					AllowIndexing:    true,
+					AllowComplete:    true,
 				},
 			})
 
@@ -241,9 +342,13 @@ func (e *AgentEngine) analyzeResponse(
 			}
 
 			return responseVerdict{
-				isDone:      true,
-				finalAnswer: answer,
-				step:        step,
+				isDone:           true,
+				finalAnswer:      answer,
+				completionStatus: "completed",
+				finishReason:     response.FinishReason,
+				allowIndexing:    true,
+				allowComplete:    true,
+				step:             step,
 			}
 		}
 	}

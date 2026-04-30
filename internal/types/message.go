@@ -203,6 +203,14 @@ type Message struct {
 	Attachments MessageAttachments `json:"attachments,omitempty" gorm:"type:jsonb;column:attachments"`
 	// Whether message generation is complete
 	IsCompleted bool `json:"is_completed"`
+	// CompletionStatus is the authoritative business completion state for the message.
+	// During the P1 transition, reads fall back to IsCompleted when this field is empty,
+	// and writes keep IsCompleted synchronized for legacy callers.
+	CompletionStatus string `json:"completion_status,omitempty" gorm:"type:varchar(32);column:completion_status"`
+	// FinishReason records the raw finish reason surfaced by the LLM or orchestration.
+	FinishReason string `json:"finish_reason,omitempty" gorm:"type:varchar(32);column:finish_reason"`
+	// FailureReason stores normalized failure or truncation context for UI and diagnostics.
+	FailureReason string `json:"failure_reason,omitempty" gorm:"type:text;column:failure_reason"`
 	// Whether this response is a fallback (no knowledge base match found)
 	IsFallback bool `json:"is_fallback,omitempty"`
 	// Agent total execution duration in milliseconds (from query start to answer start)
@@ -227,6 +235,55 @@ type Message struct {
 // AgentSteps represents a collection of agent execution steps
 // Used for storing agent reasoning process in database
 type AgentSteps []AgentStep
+
+const (
+	MessageCompletionStatusPending   = "pending"
+	MessageCompletionStatusCompleted = "completed"
+	MessageCompletionStatusPartial   = "partial"
+	MessageCompletionStatusFailed    = "failed"
+	MessageCompletionStatusCancelled = "cancelled"
+)
+
+// CompletionStatusOrLegacy returns the normalized completion state for the message.
+// When completion_status is absent on historical rows, it falls back to the legacy
+// is_completed flag so older records still participate in the new state machine.
+func (m *Message) CompletionStatusOrLegacy() string {
+	return normalizeMessageCompletionStatus(m.Role, m.IsCompleted, m.CompletionStatus)
+}
+
+// IsTerminal reports whether the message has reached a terminal business state.
+// This is broader than IsCompleted because partial, failed, and cancelled should
+// all stop further streaming or stop requests even though they are not successful.
+func (m *Message) IsTerminal() bool {
+	switch m.CompletionStatusOrLegacy() {
+	case MessageCompletionStatusCompleted,
+		MessageCompletionStatusPartial,
+		MessageCompletionStatusFailed,
+		MessageCompletionStatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *Message) syncCompletionFields() {
+	m.CompletionStatus = normalizeMessageCompletionStatus(m.Role, m.IsCompleted, m.CompletionStatus)
+	m.IsCompleted = m.CompletionStatus == MessageCompletionStatusCompleted
+}
+
+func normalizeMessageCompletionStatus(role string, isCompleted bool, completionStatus string) string {
+	status := strings.TrimSpace(completionStatus)
+	if status != "" {
+		return status
+	}
+	if role == "assistant" {
+		if isCompleted {
+			return MessageCompletionStatusCompleted
+		}
+		return MessageCompletionStatusPending
+	}
+	return MessageCompletionStatusCompleted
+}
 
 // Value implements the driver.Valuer interface for database serialization
 func (a AgentSteps) Value() (driver.Value, error) {
@@ -264,6 +321,7 @@ func (a *AgentSteps) Scan(value interface{}) error {
 //   - error: Any error encountered during the hook execution
 func (m *Message) BeforeCreate(tx *gorm.DB) (err error) {
 	m.ID = uuid.New().String()
+	m.syncCompletionFields()
 	if m.KnowledgeReferences == nil {
 		m.KnowledgeReferences = make(References, 0)
 	}
@@ -279,6 +337,28 @@ func (m *Message) BeforeCreate(tx *gorm.DB) (err error) {
 	if m.Attachments == nil {
 		m.Attachments = make(MessageAttachments, 0)
 	}
+	return nil
+}
+
+// BeforeSave keeps the legacy is_completed flag aligned with completion_status
+// so transitional code paths and older clients observe consistent semantics.
+func (m *Message) BeforeSave(tx *gorm.DB) error {
+	m.syncCompletionFields()
+	return nil
+}
+
+// AfterFind normalizes historical rows that only populated is_completed.
+// This keeps all in-memory read paths aligned on completion_status without
+// requiring every caller to duplicate compatibility logic.
+func (m *Message) AfterFind(tx *gorm.DB) error {
+	m.syncCompletionFields()
+	return nil
+}
+
+// AfterFind keeps embedded Message completion fields normalized when queries
+// load MessageWithSession through table joins instead of the plain Message model.
+func (m *MessageWithSession) AfterFind(tx *gorm.DB) error {
+	m.Message.syncCompletionFields()
 	return nil
 }
 
