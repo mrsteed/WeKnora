@@ -49,7 +49,11 @@ import (
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/database"
+	"github.com/Tencent/WeKnora/internal/databaseconnector"
+	mysqlDBConnector "github.com/Tencent/WeKnora/internal/databaseconnector/mysql"
+	postgresDBConnector "github.com/Tencent/WeKnora/internal/databaseconnector/postgres"
 	"github.com/Tencent/WeKnora/internal/datasource"
+	databaseDatasourceConnector "github.com/Tencent/WeKnora/internal/datasource/connector/database"
 	feishuConnector "github.com/Tencent/WeKnora/internal/datasource/connector/feishu"
 	notionConnector "github.com/Tencent/WeKnora/internal/datasource/connector/notion"
 	yuqueConnector "github.com/Tencent/WeKnora/internal/datasource/connector/yuque"
@@ -153,6 +157,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewWebSearchStateService))
 	must(container.Provide(repository.NewDataSourceRepository))
 	must(container.Provide(repository.NewSyncLogRepository))
+	must(container.Provide(repository.NewDatabaseSchemaRepository))
+	must(container.Provide(repository.NewDatabaseQueryAuditRepository))
 	must(container.Provide(repository.NewWikiPageRepository))
 
 	// MCP manager for managing MCP client connections
@@ -240,9 +246,12 @@ func BuildContainer(container *dig.Container) *dig.Container {
 
 	// Data source sync framework
 	logger.Debugf(ctx, "[Container] Registering data source sync framework...")
+	must(container.Provide(initDatabaseConnectorRegistry))
 	must(container.Provide(initConnectorRegistry))
 	must(container.Provide(datasource.NewScheduler))
 	must(container.Provide(service.NewDataSourceService))
+	must(container.Provide(service.NewSchemaRegistryService))
+	must(container.Provide(service.NewStructuredQueryService))
 	must(container.Invoke(startDataSourceScheduler))
 	logger.Debugf(ctx, "[Container] Data source sync framework registered")
 	must(container.Provide(chatpipeline.NewEventManager))
@@ -493,12 +502,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		// Run base migrations (all versioned migrations including embeddings)
 		// The embeddings migration will be conditionally executed based on skip_embedding parameter in DSN
 		if err := database.RunMigrationsWithOptions(migrateDSN, migrationOpts); err != nil {
-			// Log warning but don't fail startup - migrations might be handled externally
-			logger.Warnf(context.Background(), "Database migration failed: %v", err)
-			logger.Warnf(
-				context.Background(),
-				"Continuing with application startup. Please run migrations manually if needed.",
-			)
+			return nil, fmt.Errorf("database migration failed: %w", err)
 		}
 
 		// Post-migration: resolve __pending_env__ storage provider markers for historical KBs.
@@ -1265,7 +1269,7 @@ func registerIMAdapterFactories(imService *imPkg.Service) {
 // initConnectorRegistry creates and populates the connector registry with all available connectors.
 // Aggregates registration errors via errors.Join so a misconfigured or duplicated connector fails
 // container initialization loudly instead of silently disabling the feature at runtime.
-func initConnectorRegistry() (*datasource.ConnectorRegistry, error) {
+func initConnectorRegistry(dbRegistry *databaseconnector.Registry) (*datasource.ConnectorRegistry, error) {
 	registry := datasource.NewConnectorRegistry()
 
 	var errs error
@@ -1278,10 +1282,35 @@ func initConnectorRegistry() (*datasource.ConnectorRegistry, error) {
 	if err := registry.Register(yuqueConnector.NewConnector()); err != nil {
 		errs = errors.Join(errs, fmt.Errorf("register yuque connector: %w", err))
 	}
+	if err := registry.Register(databaseDatasourceConnector.NewAdapter(types.DatabaseTypeMySQL, dbRegistry)); err != nil {
+		errs = errors.Join(errs, fmt.Errorf("register mysql datasource adapter: %w", err))
+	}
+	if err := registry.Register(databaseDatasourceConnector.NewAdapter(types.DatabaseTypePostgreSQL, dbRegistry)); err != nil {
+		errs = errors.Join(errs, fmt.Errorf("register postgresql datasource adapter: %w", err))
+	}
 
 	// Future connectors will be registered here:
 	// if err := registry.Register(confluenceConnector.NewConnector()); err != nil { ... }
 	// if err := registry.Register(githubConnector.NewConnector()); err != nil { ... }
+
+	if errs != nil {
+		return nil, errs
+	}
+	return registry, nil
+}
+
+// initDatabaseConnectorRegistry creates and populates the realtime database connector registry.
+// MySQL and PostgreSQL are the MVP connectors for external structured-query access.
+func initDatabaseConnectorRegistry() (*databaseconnector.Registry, error) {
+	registry := databaseconnector.NewRegistry()
+
+	var errs error
+	if err := registry.Register(mysqlDBConnector.NewConnector()); err != nil {
+		errs = errors.Join(errs, fmt.Errorf("register mysql database connector: %w", err))
+	}
+	if err := registry.Register(postgresDBConnector.NewConnector()); err != nil {
+		errs = errors.Join(errs, fmt.Errorf("register postgresql database connector: %w", err))
+	}
 
 	if errs != nil {
 		return nil, errs

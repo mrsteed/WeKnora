@@ -18,6 +18,7 @@ export type DisplayType =
     | 'thinking'
     | 'plan'
     | 'database_query'
+    | 'external_database_query'
     | 'web_search_results'
     | 'web_fetch_results'
     | 'grep_results'
@@ -155,7 +156,7 @@ export interface PlanData {
 
 // Database query data
 export interface DatabaseQueryData {
-    display_type: 'database_query';
+    display_type: 'database_query' | 'external_database_query';
     columns: string[];
     rows: Array<Record<string, any>>;
     row_count: number;

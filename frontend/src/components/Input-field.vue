@@ -288,6 +288,7 @@ const kbToScopeCaps = (kb: any): Partial<ScopeCapabilities> => {
     return {
       vector: !!kb.capabilities.vector,
       keyword: !!kb.capabilities.keyword,
+      database: !!kb.capabilities.database,
       wiki: !!kb.capabilities.wiki,
       graph: !!kb.capabilities.graph,
       faq: !!kb.capabilities.faq,
@@ -297,6 +298,7 @@ const kbToScopeCaps = (kb: any): Partial<ScopeCapabilities> => {
   return {
     vector: s ? !!s.vector_enabled : false,
     keyword: s ? !!s.keyword_enabled : false,
+    database: kb?.type === 'database',
     wiki: s ? !!s.wiki_enabled : false,
     graph: s ? !!s.graph_enabled : false,
     faq: kb?.type === 'faq',
@@ -337,7 +339,7 @@ const isModelLockedByAgent = computed(() => {
 // Mention related state
 const showMention = ref(false);
 const mentionQuery = ref("");
-const mentionItems = ref<Array<{ id: string; name: string; type: 'kb' | 'file'; kbType?: 'document' | 'faq'; count?: number; kbName?: string; orgName?: string; kbId?: string }>>([]);
+const mentionItems = ref<Array<{ id: string; name: string; type: 'kb' | 'file'; kbType?: 'document' | 'faq' | 'database'; count?: number; kbName?: string; orgName?: string; kbId?: string }>>([]);
 /** 文件 ID -> 知识库 ID（用于批量查询时传 kb_id，支持共享知识库下的文档） */
 const fileIdToKbId = ref<Record<string, string>>({});
 const mentionActiveIndex = ref(0);
@@ -390,7 +392,7 @@ const selectedKbIds = computed(() => settingsStore.settings.selectedKnowledgeBas
 const selectedFileIds = computed(() => settingsStore.settings.selectedFiles || []);
 
 // 获取已选择的知识库信息
-const knowledgeBases = ref<Array<{ id: string; name: string; type?: 'document' | 'faq'; knowledge_count?: number; chunk_count?: number }>>([]);
+const knowledgeBases = ref<Array<{ id: string; name: string; type?: 'document' | 'faq' | 'database'; knowledge_count?: number; chunk_count?: number }>>([]);
 const fileList = ref<Array<{ id: string; name: string }>>([]);
 
 // 选中的知识库：包含自己的 + 组织共享的 + 共享智能体下的（用于展示已选列表与 org 角标）

@@ -14,6 +14,7 @@ const (
 	// KnowledgeBaseTypeDocument represents the document knowledge base type
 	KnowledgeBaseTypeDocument = "document"
 	KnowledgeBaseTypeFAQ      = "faq"
+	KnowledgeBaseTypeDatabase = "database"
 	KnowledgeBaseTypeWiki     = "wiki"
 )
 
@@ -115,6 +116,9 @@ type KnowledgeBase struct {
 	KnowledgeCount int64 `yaml:"knowledge_count"         json:"knowledge_count"         gorm:"-"`
 	// Chunk count (not stored in database, calculated on query)
 	ChunkCount int64 `yaml:"chunk_count"             json:"chunk_count"             gorm:"-"`
+	// BusinessTableCount indicates the number of non-view business tables in the
+	// latest schema snapshot for database knowledge bases.
+	BusinessTableCount int64 `yaml:"business_table_count"    json:"business_table_count"    gorm:"-"`
 	// IsProcessing indicates if there is a processing import task (for FAQ type knowledge bases)
 	IsProcessing bool `yaml:"is_processing"           json:"is_processing"           gorm:"-"`
 	// ProcessingCount indicates the number of knowledge items being processed (for document type knowledge bases)
@@ -536,7 +540,11 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 	// DefaultIndexingStrategy() (vector+keyword=true). This block handles the
 	// case where a fresh struct was created in-memory without touching DB.
 	if kb.IndexingStrategy.IsZero() {
-		kb.IndexingStrategy = DefaultIndexingStrategy()
+		if kb.Type == KnowledgeBaseTypeDatabase {
+			kb.IndexingStrategy = IndexingStrategy{}
+		} else {
+			kb.IndexingStrategy = DefaultIndexingStrategy()
+		}
 	}
 	// Sync legacy ExtractConfig.Enabled → IndexingStrategy.GraphEnabled
 	if kb.ExtractConfig != nil && kb.ExtractConfig.Enabled && !kb.IndexingStrategy.GraphEnabled {
@@ -553,6 +561,8 @@ type KBCapabilities struct {
 	Vector bool `json:"vector"`
 	// Keyword means BM25 / sparse keyword search is indexed.
 	Keyword bool `json:"keyword"`
+	// Database means the KB is a database-type KB that can expose structured query capabilities.
+	Database bool `json:"database"`
 	// Wiki means the wiki feature is enabled and authored pages exist / will be generated.
 	Wiki bool `json:"wiki"`
 	// Graph means knowledge-graph extraction is enabled.
@@ -568,11 +578,12 @@ func (kb *KnowledgeBase) Capabilities() KBCapabilities {
 		return KBCapabilities{}
 	}
 	return KBCapabilities{
-		Vector:  kb.IsVectorEnabled(),
-		Keyword: kb.IsKeywordEnabled(),
-		Wiki:    kb.IsWikiEnabled(),
-		Graph:   kb.IsGraphEnabled(),
-		FAQ:     kb.Type == KnowledgeBaseTypeFAQ,
+		Vector:   kb.IsVectorEnabled(),
+		Keyword:  kb.IsKeywordEnabled(),
+		Database: kb.IsDatabaseEnabled(),
+		Wiki:     kb.IsWikiEnabled(),
+		Graph:    kb.IsGraphEnabled(),
+		FAQ:      kb.Type == KnowledgeBaseTypeFAQ,
 	}
 }
 
@@ -589,6 +600,12 @@ func (kb *KnowledgeBase) MarshalJSON() ([]byte, error) {
 		Capabilities: kb.Capabilities(),
 	}
 	return json.Marshal(aux)
+}
+
+// IsDatabaseEnabled checks if the database capability is enabled for this knowledge base.
+// Database KBs are identified by KnowledgeBaseTypeDatabase instead of indexing strategy flags.
+func (kb *KnowledgeBase) IsDatabaseEnabled() bool {
+	return kb != nil && kb.Type == KnowledgeBaseTypeDatabase
 }
 
 // IsWikiEnabled checks if the wiki feature is enabled for this knowledge base.

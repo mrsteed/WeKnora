@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
@@ -31,6 +32,7 @@ type knowledgeBaseService struct {
 	tenantRepo     interfaces.TenantRepository
 	fileSvc        interfaces.FileService
 	graphEngine    interfaces.RetrieveGraphRepository
+	schemaRepo     interfaces.DatabaseSchemaRepository
 	asynqClient    interfaces.TaskEnqueuer
 }
 
@@ -46,6 +48,7 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 	tenantRepo interfaces.TenantRepository,
 	fileSvc interfaces.FileService,
 	graphEngine interfaces.RetrieveGraphRepository,
+	schemaRepo interfaces.DatabaseSchemaRepository,
 	asynqClient interfaces.TaskEnqueuer,
 ) interfaces.KnowledgeBaseService {
 	return &knowledgeBaseService{
@@ -60,7 +63,77 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 		tenantRepo:     tenantRepo,
 		fileSvc:        fileSvc,
 		graphEngine:    graphEngine,
+		schemaRepo:     schemaRepo,
 		asynqClient:    asynqClient,
+	}
+}
+
+func resolveDatabaseBusinessTableCount(
+	ctx context.Context,
+	schemaRepo interfaces.DatabaseSchemaRepository,
+	tenantID uint64,
+	kbID string,
+) int64 {
+	if schemaRepo == nil || tenantID == 0 || kbID == "" {
+		return 0
+	}
+	snapshot, err := schemaRepo.GetLatestSnapshotByKnowledgeBase(ctx, tenantID, kbID)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to get database schema snapshot for knowledge base %s: %v", kbID, err)
+		return 0
+	}
+	if snapshot == nil {
+		return 0
+	}
+	schema, err := snapshot.ParseSchema()
+	if err != nil {
+		logger.Warnf(ctx, "Failed to parse database schema snapshot for knowledge base %s: %v", kbID, err)
+		return 0
+	}
+	if schema == nil {
+		return 0
+	}
+	var count int64
+	for _, table := range schema.Tables {
+		if strings.EqualFold(table.Type, "view") {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+func fillKnowledgeBaseUsageCounts(
+	ctx context.Context,
+	kb *types.KnowledgeBase,
+	tenantID uint64,
+	kgRepo interfaces.KnowledgeRepository,
+	chunkRepo interfaces.ChunkRepository,
+	schemaRepo interfaces.DatabaseSchemaRepository,
+) {
+	if kb == nil {
+		return
+	}
+	kb.KnowledgeCount = 0
+	kb.ChunkCount = 0
+	kb.BusinessTableCount = 0
+	switch kb.Type {
+	case types.KnowledgeBaseTypeDocument:
+		knowledgeCount, err := kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, tenantID, kb.ID)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to get knowledge count for knowledge base %s: %v", kb.ID, err)
+			return
+		}
+		kb.KnowledgeCount = knowledgeCount
+	case types.KnowledgeBaseTypeFAQ:
+		chunkCount, err := chunkRepo.CountChunksByKnowledgeBaseID(ctx, tenantID, kb.ID)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to get chunk count for knowledge base %s: %v", kb.ID, err)
+			return
+		}
+		kb.ChunkCount = chunkCount
+	case types.KnowledgeBaseTypeDatabase:
+		kb.BusinessTableCount = resolveDatabaseBusinessTableCount(ctx, schemaRepo, tenantID, kb.ID)
 	}
 }
 
@@ -176,25 +249,7 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 	// Query knowledge count and chunk count for each knowledge base
 	for _, kb := range kbs {
 		kb.EnsureDefaults()
-
-		// Get knowledge count
-		switch kb.Type {
-		case types.KnowledgeBaseTypeDocument:
-			knowledgeCount, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, tenantID, kb.ID)
-			if err != nil {
-				logger.Warnf(ctx, "Failed to get knowledge count for knowledge base %s: %v", kb.ID, err)
-			} else {
-				kb.KnowledgeCount = knowledgeCount
-			}
-		case types.KnowledgeBaseTypeFAQ:
-			// Get chunk count
-			chunkCount, err := s.chunkRepo.CountChunksByKnowledgeBaseID(ctx, tenantID, kb.ID)
-			if err != nil {
-				logger.Warnf(ctx, "Failed to get chunk count for knowledge base %s: %v", kb.ID, err)
-			} else {
-				kb.ChunkCount = chunkCount
-			}
-		}
+		fillKnowledgeBaseUsageCounts(ctx, kb, tenantID, s.kgRepo, s.chunkRepo, s.schemaRepo)
 
 		// Check if there is a processing import task
 		processingCount, err := s.kgRepo.CountKnowledgeByStatus(
@@ -225,16 +280,7 @@ func (s *knowledgeBaseService) ListKnowledgeBasesByTenantID(ctx context.Context,
 	}
 	for _, kb := range kbs {
 		kb.EnsureDefaults()
-		switch kb.Type {
-		case types.KnowledgeBaseTypeDocument:
-			if cnt, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, tenantID, kb.ID); err == nil {
-				kb.KnowledgeCount = cnt
-			}
-		case types.KnowledgeBaseTypeFAQ:
-			if cnt, err := s.chunkRepo.CountChunksByKnowledgeBaseID(ctx, tenantID, kb.ID); err == nil {
-				kb.ChunkCount = cnt
-			}
-		}
+		fillKnowledgeBaseUsageCounts(ctx, kb, tenantID, s.kgRepo, s.chunkRepo, s.schemaRepo)
 		if processingCount, err := s.kgRepo.CountKnowledgeByStatus(ctx, tenantID, kb.ID, []string{"pending", "processing"}); err == nil {
 			kb.IsProcessing = processingCount > 0
 			kb.ProcessingCount = processingCount
@@ -251,16 +297,7 @@ func (s *knowledgeBaseService) FillKnowledgeBaseCounts(ctx context.Context, kb *
 	}
 	tenantID := kb.TenantID
 	kb.EnsureDefaults()
-	switch kb.Type {
-	case types.KnowledgeBaseTypeDocument:
-		if cnt, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, tenantID, kb.ID); err == nil {
-			kb.KnowledgeCount = cnt
-		}
-	case types.KnowledgeBaseTypeFAQ:
-		if cnt, err := s.chunkRepo.CountChunksByKnowledgeBaseID(ctx, tenantID, kb.ID); err == nil {
-			kb.ChunkCount = cnt
-		}
-	}
+	fillKnowledgeBaseUsageCounts(ctx, kb, tenantID, s.kgRepo, s.chunkRepo, s.schemaRepo)
 	if processingCount, err := s.kgRepo.CountKnowledgeByStatus(ctx, tenantID, kb.ID, []string{"pending", "processing"}); err == nil {
 		kb.IsProcessing = processingCount > 0
 		kb.ProcessingCount = processingCount

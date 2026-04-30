@@ -2187,8 +2187,9 @@ export default {
       typeLabel: "지식베이스 유형",
       typeDocument: "문서",
       typeFAQ: "Q&A",
+      typeDatabase: "데이터베이스",
       typeDescription:
-        "FAQ 유형은 구조화된 Q&A 데이터에 적합합니다. 문서 유형은 파일 파싱과 청킹을 지원합니다. Wiki 유형은 LLM을 통해 상호 연결된 지식 페이지를 자동으로 구축합니다.",
+        "FAQ 유형은 구조화된 Q&A 데이터에 적합합니다. 문서 유형은 파일 파싱과 청킹을 지원합니다. 데이터베이스 유형은 외부 데이터베이스를 연결해 실시간 읽기 전용 조회를 수행합니다. Wiki 유형은 LLM을 통해 상호 연결된 지식 페이지를 자동으로 구축합니다.",
       nameLabel: "지식베이스 이름",
       namePlaceholder: "지식베이스 이름을 입력해주세요",
       descriptionLabel: "지식베이스 설명",
@@ -3750,9 +3751,10 @@ export default {
       dangerTag: '쓰기',
       // 상태바
       statusNoKb: '연결된 지식베이스가 없습니다',
-      statusKb: '범위 내: RAG 지식베이스 {rag}개 · Wiki 지식베이스 {wiki}개',
+      statusKb: '범위 내: RAG 지식베이스 {rag}개 · Wiki 지식베이스 {wiki}개 · 데이터베이스 지식베이스 {database}개',
       kbMetricRag: 'RAG 지식베이스',
       kbMetricWiki: 'Wiki 지식베이스',
+      kbMetricDatabase: '데이터베이스 지식베이스',
       statusInactive: '{count}개의 체크된 도구가 현재 설정에서는 작동하지 않습니다',
       // 실제 활성 도구 미리보기
       effectiveLabel: '최종 활성 도구',

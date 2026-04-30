@@ -1,7 +1,7 @@
--- Migration: 000038_im_session_agent_id
+-- Migration: 000043_im_session_agent_id
 -- Description: Add agent_id to IM channel session unique indexes to isolate sessions per agent.
 -- Fixes: GitHub #1066 (cross-agent session contamination)
-DO $$ BEGIN RAISE NOTICE '[Migration 000038] Adding agent_id to IM channel session indexes'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000043] Adding agent_id to IM channel session indexes'; END $$;
 
 -- 1. User-mode lookup: include agent_id so the same user talking to
 --    different agents gets separate sessions.
@@ -16,4 +16,4 @@ CREATE UNIQUE INDEX idx_channel_thread_lookup
     ON im_channel_sessions (platform, chat_id, thread_id, tenant_id, agent_id)
     WHERE deleted_at IS NULL AND thread_id != '';
 
-DO $$ BEGIN RAISE NOTICE '[Migration 000038] IM session agent_id indexes updated'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000043] IM session agent_id indexes updated'; END $$;

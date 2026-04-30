@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/datasource"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -15,16 +16,40 @@ import (
 type DataSourceHandler struct {
 	service   interfaces.DataSourceService
 	kbService interfaces.KnowledgeBaseService
+	kbVisible interfaces.KBVisibilityService
+	schemaSvc interfaces.SchemaRegistryService
+	auditRepo interfaces.DatabaseQueryAuditRepository
 }
 
 // NewDataSourceHandler creates a new data source handler
 func NewDataSourceHandler(
 	service interfaces.DataSourceService,
 	kbService interfaces.KnowledgeBaseService,
+	kbVisible interfaces.KBVisibilityService,
+	schemaSvc interfaces.SchemaRegistryService,
+	auditRepo interfaces.DatabaseQueryAuditRepository,
 ) *DataSourceHandler {
 	return &DataSourceHandler{
 		service:   service,
 		kbService: kbService,
+		kbVisible: kbVisible,
+		schemaSvc: schemaSvc,
+		auditRepo: auditRepo,
+	}
+}
+
+func (h *DataSourceHandler) databaseSchemaErrorStatus(err error) (int, string) {
+	switch err {
+	case nil:
+		return http.StatusOK, ""
+	case service.ErrDatabaseDataSourceNotFound:
+		return http.StatusNotFound, err.Error()
+	case service.ErrDatabaseKnowledgeBaseRequired:
+		return http.StatusBadRequest, err.Error()
+	case service.ErrDatabaseSchemaSnapshotNotFound:
+		return http.StatusNotFound, err.Error()
+	default:
+		return http.StatusInternalServerError, err.Error()
 	}
 }
 
@@ -35,12 +60,28 @@ func (h *DataSourceHandler) getTenantID(c *gin.Context) uint64 {
 	return tenantID
 }
 
-// Data source settings contain connector credentials, so only the owning tenant can access them.
-func (h *DataSourceHandler) getOwnedKnowledgeBase(
+func (h *DataSourceHandler) getCurrentUser(c *gin.Context) (string, bool) {
+	if userVal, ok := c.Get(types.UserContextKey.String()); ok {
+		if user, ok := userVal.(*types.User); ok && user != nil {
+			return user.ID, user.IsSuperAdmin
+		}
+	}
+	if userID := c.GetString(types.UserIDContextKey.String()); userID != "" {
+		return userID, false
+	}
+	return "", false
+}
+
+func (h *DataSourceHandler) getAuthorizedKnowledgeBase(
 	ctx context.Context,
-	tenantID uint64,
+	c *gin.Context,
 	kbID string,
+	requireManage bool,
 ) (*types.KnowledgeBase, int, string) {
+	tenantID := h.getTenantID(c)
+	if tenantID == 0 {
+		return nil, http.StatusUnauthorized, "unauthorized"
+	}
 	if kbID == "" {
 		return nil, http.StatusBadRequest, "kb_id is required"
 	}
@@ -54,12 +95,38 @@ func (h *DataSourceHandler) getOwnedKnowledgeBase(
 		return nil, http.StatusForbidden, "access denied"
 	}
 
+	if h.kbVisible != nil {
+		userID, isSuperAdmin := h.getCurrentUser(c)
+		if userID != "" || isSuperAdmin {
+			var allowed bool
+			var permErr error
+			if requireManage {
+				allowed, permErr = h.kbVisible.CanManageKB(ctx, userID, tenantID, kbID, isSuperAdmin)
+			} else {
+				allowed, permErr = h.kbVisible.CanAccessKB(ctx, userID, tenantID, kbID, isSuperAdmin)
+			}
+			if permErr != nil || !allowed {
+				return nil, http.StatusForbidden, "access denied"
+			}
+		}
+	}
+
 	return kb, http.StatusOK, ""
 }
 
-func (h *DataSourceHandler) getOwnedDataSource(
+// Data source settings contain connector credentials, so management operations
+// require KB management permission rather than read-only visibility.
+func (h *DataSourceHandler) getManagedKnowledgeBase(ctx context.Context, c *gin.Context, kbID string) (*types.KnowledgeBase, int, string) {
+	return h.getAuthorizedKnowledgeBase(ctx, c, kbID, true)
+}
+
+func (h *DataSourceHandler) getReadableKnowledgeBase(ctx context.Context, c *gin.Context, kbID string) (*types.KnowledgeBase, int, string) {
+	return h.getAuthorizedKnowledgeBase(ctx, c, kbID, false)
+}
+
+func (h *DataSourceHandler) getManagedDataSource(
 	ctx context.Context,
-	tenantID uint64,
+	c *gin.Context,
 	id string,
 ) (*types.DataSource, int, string) {
 	ds, err := h.service.GetDataSource(ctx, id)
@@ -67,11 +134,36 @@ func (h *DataSourceHandler) getOwnedDataSource(
 		return nil, http.StatusNotFound, "data source not found"
 	}
 
-	if _, status, msg := h.getOwnedKnowledgeBase(ctx, tenantID, ds.KnowledgeBaseID); status != http.StatusOK {
+	if _, status, msg := h.getManagedKnowledgeBase(ctx, c, ds.KnowledgeBaseID); status != http.StatusOK {
 		return nil, status, msg
 	}
 
 	return ds, http.StatusOK, ""
+}
+
+func (h *DataSourceHandler) sanitizeDataSource(ds *types.DataSource) *types.DataSource {
+	if ds == nil {
+		return nil
+	}
+	clone := *ds
+	if cfg, err := clone.ParseDatabaseConnectionConfig(); err == nil && cfg != nil {
+		masked := cfg.MaskSensitiveFields()
+		if err := clone.SetDatabaseConnectionConfig(&masked); err == nil {
+			return &clone
+		}
+	}
+	return &clone
+}
+
+func (h *DataSourceHandler) sanitizeDataSources(items []*types.DataSource) []*types.DataSource {
+	if items == nil {
+		return nil
+	}
+	out := make([]*types.DataSource, 0, len(items))
+	for _, item := range items {
+		out = append(out, h.sanitizeDataSource(item))
+	}
+	return out
 }
 
 // CreateDataSource godoc
@@ -100,7 +192,7 @@ func (h *DataSourceHandler) CreateDataSource(c *gin.Context) {
 		return
 	}
 
-	if _, status, msg := h.getOwnedKnowledgeBase(ctx, tenantID, req.KnowledgeBaseID); status != http.StatusOK {
+	if _, status, msg := h.getManagedKnowledgeBase(ctx, c, req.KnowledgeBaseID); status != http.StatusOK {
 		c.JSON(status, gin.H{"error": msg})
 		return
 	}
@@ -114,7 +206,7 @@ func (h *DataSourceHandler) CreateDataSource(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, ds)
+	c.JSON(http.StatusCreated, h.sanitizeDataSource(ds))
 }
 
 // GetDataSource godoc
@@ -136,13 +228,13 @@ func (h *DataSourceHandler) GetDataSource(c *gin.Context) {
 
 	id := c.Param("id")
 
-	ds, status, msg := h.getOwnedDataSource(ctx, tenantID, id)
+	ds, status, msg := h.getManagedDataSource(ctx, c, id)
 	if status != http.StatusOK {
 		c.JSON(status, gin.H{"error": msg})
 		return
 	}
 
-	c.JSON(http.StatusOK, ds)
+	c.JSON(http.StatusOK, h.sanitizeDataSource(ds))
 }
 
 // ListDataSources godoc
@@ -165,7 +257,7 @@ func (h *DataSourceHandler) ListDataSources(c *gin.Context) {
 	}
 
 	kbID := c.Query("kb_id")
-	if _, status, msg := h.getOwnedKnowledgeBase(ctx, tenantID, kbID); status != http.StatusOK {
+	if _, status, msg := h.getManagedKnowledgeBase(ctx, c, kbID); status != http.StatusOK {
 		c.JSON(status, gin.H{"error": msg})
 		return
 	}
@@ -179,7 +271,7 @@ func (h *DataSourceHandler) ListDataSources(c *gin.Context) {
 	if dataSources == nil {
 		dataSources = make([]*types.DataSource, 0)
 	}
-	c.JSON(http.StatusOK, dataSources)
+	c.JSON(http.StatusOK, h.sanitizeDataSources(dataSources))
 }
 
 // UpdateDataSource godoc
@@ -209,7 +301,7 @@ func (h *DataSourceHandler) UpdateDataSource(c *gin.Context) {
 		return
 	}
 
-	existing, status, msg := h.getOwnedDataSource(ctx, tenantID, id)
+	existing, status, msg := h.getManagedDataSource(ctx, c, id)
 	if status != http.StatusOK {
 		c.JSON(status, gin.H{"error": msg})
 		return
@@ -224,7 +316,7 @@ func (h *DataSourceHandler) UpdateDataSource(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, ds)
+	c.JSON(http.StatusOK, h.sanitizeDataSource(ds))
 }
 
 // DeleteDataSource godoc
@@ -245,7 +337,7 @@ func (h *DataSourceHandler) DeleteDataSource(c *gin.Context) {
 
 	id := c.Param("id")
 
-	if _, status, msg := h.getOwnedDataSource(ctx, tenantID, id); status != http.StatusOK {
+	if _, status, msg := h.getManagedDataSource(ctx, c, id); status != http.StatusOK {
 		c.JSON(status, gin.H{"error": msg})
 		return
 	}
@@ -276,7 +368,7 @@ func (h *DataSourceHandler) ValidateConnection(c *gin.Context) {
 
 	id := c.Param("id")
 
-	if _, status, msg := h.getOwnedDataSource(ctx, tenantID, id); status != http.StatusOK {
+	if _, status, msg := h.getManagedDataSource(ctx, c, id); status != http.StatusOK {
 		c.JSON(status, gin.H{"error": msg})
 		return
 	}
@@ -287,6 +379,152 @@ func (h *DataSourceHandler) ValidateConnection(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "connected"})
+}
+
+// RefreshSchema godoc
+// @Summary Refresh database schema snapshot
+// @Description Discover and persist the latest schema for a database data source
+// @Tags DataSource
+// @Produce json
+// @Param id path string true "Data source ID"
+// @Success 200 {object} types.DatabaseSchema
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/v1/datasource/{id}/refresh-schema [post]
+func (h *DataSourceHandler) RefreshSchema(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenantID := h.getTenantID(c)
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	id := c.Param("id")
+	ds, status, msg := h.getManagedDataSource(ctx, c, id)
+	if status != http.StatusOK {
+		c.JSON(status, gin.H{"error": msg})
+		return
+	}
+
+	if err := h.schemaSvc.RefreshSchema(ctx, id); err != nil {
+		status, msg := h.databaseSchemaErrorStatus(err)
+		c.JSON(status, gin.H{"error": msg})
+		return
+	}
+
+	schema, err := h.schemaSvc.GetDatabaseSchema(ctx, ds.KnowledgeBaseID)
+	if err != nil {
+		status, msg := h.databaseSchemaErrorStatus(err)
+		c.JSON(status, gin.H{"error": msg})
+		return
+	}
+
+	c.JSON(http.StatusOK, schema)
+}
+
+// GetDatabaseSchema godoc
+// @Summary Get database schema snapshot
+// @Description Retrieve the latest persisted schema for a database knowledge base
+// @Tags DataSource
+// @Produce json
+// @Param id path string true "Knowledge base ID"
+// @Success 200 {object} types.DatabaseSchema
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/v1/knowledge-bases/{id}/database-schema [get]
+func (h *DataSourceHandler) GetDatabaseSchema(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenantID := h.getTenantID(c)
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	kbID := c.Param("id")
+	if _, status, msg := h.getReadableKnowledgeBase(ctx, c, kbID); status != http.StatusOK {
+		c.JSON(status, gin.H{"error": msg})
+		return
+	}
+
+	schema, err := h.schemaSvc.GetDatabaseSchema(ctx, kbID)
+	if err != nil {
+		status, msg := h.databaseSchemaErrorStatus(err)
+		c.JSON(status, gin.H{"error": msg})
+		return
+	}
+
+	c.JSON(http.StatusOK, schema)
+}
+
+// ListDatabaseQueryAudits godoc
+// @Summary List external database query audits
+// @Description List tenant-scoped audit logs for external database queries with pagination
+// @Tags DataSource
+// @Produce json
+// @Param knowledge_base_id query string false "Knowledge base ID"
+// @Param limit query int false "Limit (default: 20)"
+// @Param offset query int false "Offset (default: 0)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Router /api/v1/database-query-audits [get]
+func (h *DataSourceHandler) ListDatabaseQueryAudits(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenantID := h.getTenantID(c)
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	kbID := c.Query("knowledge_base_id")
+	if kbID == "" {
+		kbID = c.Query("kb_id")
+	}
+	if kbID != "" {
+		if _, status, msg := h.getReadableKnowledgeBase(ctx, c, kbID); status != http.StatusOK {
+			c.JSON(status, gin.H{"error": msg})
+			return
+		}
+	}
+
+	limit := 20
+	offset := 0
+	if v := c.Query("limit"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be a positive integer"})
+			return
+		}
+		limit = parsed
+	}
+	if v := c.Query("offset"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "offset must be a non-negative integer"})
+			return
+		}
+		offset = parsed
+	}
+
+	items, err := h.auditRepo.ListByTenant(ctx, tenantID, kbID, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	total, err := h.auditRepo.CountByTenant(ctx, tenantID, kbID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if items == nil {
+		items = make([]*types.DatabaseQueryAuditLog, 0)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":  items,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
 }
 
 // ValidateCredentials godoc
@@ -314,13 +552,14 @@ func (h *DataSourceHandler) ValidateCredentials(c *gin.Context) {
 	var req struct {
 		Type        string                 `json:"type" binding:"required"`
 		Credentials map[string]interface{} `json:"credentials" binding:"required"`
+		Settings    map[string]interface{} `json:"settings"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: type and credentials are required"})
 		return
 	}
 
-	if err := h.service.ValidateCredentials(ctx, req.Type, req.Credentials); err != nil {
+	if err := h.service.ValidateCredentials(ctx, req.Type, req.Credentials, req.Settings); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -346,7 +585,7 @@ func (h *DataSourceHandler) ListAvailableResources(c *gin.Context) {
 
 	id := c.Param("id")
 
-	if _, status, msg := h.getOwnedDataSource(ctx, tenantID, id); status != http.StatusOK {
+	if _, status, msg := h.getManagedDataSource(ctx, c, id); status != http.StatusOK {
 		c.JSON(status, gin.H{"error": msg})
 		return
 	}
@@ -381,7 +620,7 @@ func (h *DataSourceHandler) ManualSync(c *gin.Context) {
 
 	id := c.Param("id")
 
-	if _, status, msg := h.getOwnedDataSource(ctx, tenantID, id); status != http.StatusOK {
+	if _, status, msg := h.getManagedDataSource(ctx, c, id); status != http.StatusOK {
 		c.JSON(status, gin.H{"error": msg})
 		return
 	}
@@ -413,7 +652,7 @@ func (h *DataSourceHandler) PauseDataSource(c *gin.Context) {
 
 	id := c.Param("id")
 
-	if _, status, msg := h.getOwnedDataSource(ctx, tenantID, id); status != http.StatusOK {
+	if _, status, msg := h.getManagedDataSource(ctx, c, id); status != http.StatusOK {
 		c.JSON(status, gin.H{"error": msg})
 		return
 	}
@@ -444,7 +683,7 @@ func (h *DataSourceHandler) ResumeDataSource(c *gin.Context) {
 
 	id := c.Param("id")
 
-	if _, status, msg := h.getOwnedDataSource(ctx, tenantID, id); status != http.StatusOK {
+	if _, status, msg := h.getManagedDataSource(ctx, c, id); status != http.StatusOK {
 		c.JSON(status, gin.H{"error": msg})
 		return
 	}
@@ -470,15 +709,14 @@ func (h *DataSourceHandler) ResumeDataSource(c *gin.Context) {
 // @Router /api/v1/datasource/{id}/logs [get]
 func (h *DataSourceHandler) GetSyncLogs(c *gin.Context) {
 	ctx := c.Request.Context()
-	tenantID := h.getTenantID(c)
-	if tenantID == 0 {
+	if h.getTenantID(c) == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
 	id := c.Param("id")
 
-	if _, status, msg := h.getOwnedDataSource(ctx, tenantID, id); status != http.StatusOK {
+	if _, status, msg := h.getManagedDataSource(ctx, c, id); status != http.StatusOK {
 		c.JSON(status, gin.H{"error": msg})
 		return
 	}
@@ -535,7 +773,7 @@ func (h *DataSourceHandler) GetSyncLog(c *gin.Context) {
 		return
 	}
 
-	if _, status, msg := h.getOwnedDataSource(ctx, tenantID, log.DataSourceID); status != http.StatusOK {
+	if _, status, msg := h.getManagedDataSource(ctx, c, log.DataSourceID); status != http.StatusOK {
 		c.JSON(status, gin.H{"error": msg})
 		return
 	}

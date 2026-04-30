@@ -34,6 +34,7 @@ import {
 import FAQEntryManager from './components/FAQEntryManager.vue';
 import DocumentBatchBar from './components/DocumentBatchBar.vue';
 import WikiBrowser from './wiki/WikiBrowser.vue';
+import DatabaseKnowledgeOverview from './components/DatabaseKnowledgeOverview.vue';
 import { getWikiStats } from '@/api/wiki';
 import { listMoveTargets, moveKnowledge, getKnowledgeMoveProgress } from '@/api/knowledge-base';
 import { useI18n } from 'vue-i18n';
@@ -50,6 +51,7 @@ const uploading = ref(false);
 const kbLoading = ref(false);
 const docListLoading = ref(true);
 const isFAQ = computed(() => (kbInfo.value?.type || '') === 'faq');
+const isDatabase = computed(() => (kbInfo.value?.type || '') === 'database');
 const isWiki = computed(() => !!kbInfo.value?.indexing_strategy?.wiki_enabled);
 const validTabs = ['documents', 'wiki', 'graph'] as const
 type KbTab = typeof validTabs[number]
@@ -131,9 +133,31 @@ onUnmounted(() => {
   clearWikiStatusProbes()
 })
 const missingStorageEngine = computed(() => {
-  if (!kbInfo.value || isFAQ.value) return false
+  if (!kbInfo.value || isFAQ.value || isDatabase.value) return false
   const spc = kbInfo.value.storage_provider_config
   return !spc || !spc.provider
+})
+
+const knowledgeBaseTypeLabel = computed(() => {
+  if (isDatabase.value) return t('knowledgeEditor.basic.typeDatabase')
+  if (isFAQ.value) return t('knowledgeEditor.basic.typeFAQ')
+  return t('knowledgeEditor.basic.typeDocument')
+})
+
+const knowledgeBaseTypeTheme = computed<'primary' | 'warning' | 'success'>(() => {
+  if (isDatabase.value) return 'primary'
+  if (isFAQ.value) return 'warning'
+  return 'success'
+})
+
+const knowledgeBaseDetailLabel = computed(() => {
+  if (isDatabase.value) return t('knowledgeBase.databaseDetail.breadcrumb')
+  return t('knowledgeEditor.document.title')
+})
+
+const knowledgeBaseSubtitle = computed(() => {
+  if (isDatabase.value) return t('knowledgeBase.databaseDetail.subtitle')
+  return t('knowledgeEditor.document.subtitle')
 })
 const parserEngines = ref<ParserEngineInfo[]>([]);
 
@@ -642,7 +666,8 @@ const loadKnowledgeBaseInfo = async (targetKbId: string) => {
     selectedTagId.value = '';
     // 重置store中的标签选择状态，避免上传文档时自动带上之前选择的标签
     uiStore.setSelectedTagId('');
-    if (!isFAQ.value) {
+    const currentType = res?.data?.type || '';
+    if (currentType !== 'faq' && currentType !== 'database') {
       docListLoading.value = true;
       loadKnowledgeFiles(targetKbId);
     } else {
@@ -754,7 +779,7 @@ watch(selectedFileType, (newVal, oldVal) => {
 const handleFileUploaded = (event: CustomEvent) => {
   const uploadedKbId = event.detail.kbId;
   console.log('接收到文件上传事件，上传的知识库ID:', uploadedKbId, '当前知识库ID:', kbId.value);
-  if (uploadedKbId && uploadedKbId === kbId.value && !isFAQ.value) {
+  if (uploadedKbId && uploadedKbId === kbId.value && !isFAQ.value && !isDatabase.value) {
     console.log('匹配当前知识库，开始刷新文件列表');
     // 如果上传的文件属于当前知识库，使用 loadKnowledgeFiles 刷新文件列表
     page = 1; // Reset page counter when reloading files after upload
@@ -770,7 +795,7 @@ const handleFileUploaded = (event: CustomEvent) => {
 const handleOpenURLImportDialog = (event: CustomEvent) => {
   const eventKbId = event.detail.kbId;
   console.log('接收到URL导入对话框打开事件，知识库ID:', eventKbId, '当前知识库ID:', kbId.value);
-  if (eventKbId && eventKbId === kbId.value && !isFAQ.value) {
+  if (eventKbId && eventKbId === kbId.value && !isFAQ.value && !isDatabase.value) {
     urlDialogVisible.value = true;
   }
 };
@@ -1266,7 +1291,7 @@ const stopMovePoll = () => {
 };
 
 const manualEditorSuccess = ({ kbId: savedKbId }: { kbId: string; knowledgeId: string; status: 'draft' | 'publish' }) => {
-  if (savedKbId === kbId.value && !isFAQ.value) {
+  if (savedKbId === kbId.value && !isFAQ.value && !isDatabase.value) {
     page = 1; // Reset page counter when reloading files after manual edit
     loadKnowledgeFiles(savedKbId);
   }
@@ -1966,6 +1991,9 @@ async function createNewSession(value: string): Promise<void> {
                   </template>
                   <template v-else>
                     <span>{{ kbInfo.name }}</span>
+                    <t-tag size="small" variant="light-outline" :theme="knowledgeBaseTypeTheme" class="kb-type-tag">
+                      {{ knowledgeBaseTypeLabel }}
+                    </t-tag>
                     <t-icon name="chevron-down" />
                   </template>
                 </button>
@@ -1981,7 +2009,10 @@ async function createNewSession(value: string): Promise<void> {
                   <t-skeleton animation="gradient" :row-col="[{ width: '120px', height: '20px' }]" />
                 </template>
                 <template v-else>
-                  {{ kbInfo.name }}
+                  <span>{{ kbInfo.name }}</span>
+                  <t-tag size="small" variant="light-outline" :theme="knowledgeBaseTypeTheme" class="kb-type-tag">
+                    {{ knowledgeBaseTypeLabel }}
+                  </t-tag>
                 </template>
               </button>
               <t-icon name="chevron-right" class="breadcrumb-separator" />
@@ -2011,7 +2042,7 @@ async function createNewSession(value: string): Promise<void> {
                   </t-tooltip>
                 </span>
               </template>
-              <span v-else class="breadcrumb-current">{{ $t('knowledgeEditor.document.title') }}</span>
+              <span v-else class="breadcrumb-current">{{ knowledgeBaseDetailLabel }}</span>
             </h2>
             <!-- 身份与最后更新：紧凑单行，置于标题行右侧，悬停显示权限说明 -->
             <div v-if="kbInfo && !authStore.isLiteMode" class="kb-access-meta">
@@ -2049,13 +2080,13 @@ async function createNewSession(value: string): Promise<void> {
               </button>
             </t-tooltip>
           </div>
-          <p class="document-subtitle">{{ $t('knowledgeEditor.document.subtitle') }}</p>
-          <p v-if="unsupportedFileTypes.length" class="parser-hint" @click="goToParserSettings">
+          <p class="document-subtitle">{{ knowledgeBaseSubtitle }}</p>
+          <p v-if="!isDatabase && unsupportedFileTypes.length" class="parser-hint" @click="goToParserSettings">
             <t-icon name="info-circle" class="parser-hint-icon" />
             <span>{{ $t('knowledgeBase.unsupportedTypesHint', { types: unsupportedFileTypes.map(t => '.' + t).join('、') }) }}</span>
             <span class="parser-hint-link">{{ $t('knowledgeBase.goToParserSettings') }} →</span>
           </p>
-          <p v-if="missingStorageEngine" class="storage-engine-warning" @click="handleOpenKBSettings">
+          <p v-if="!isDatabase && missingStorageEngine" class="storage-engine-warning" @click="handleOpenKBSettings">
             <t-icon name="info-circle" class="warning-icon" />
             <span>{{ $t('knowledgeBase.missingStorageEngine') }}</span>
             <span class="warning-link">{{ $t('knowledgeBase.goToStorageSettings') }} →</span>
@@ -2068,7 +2099,11 @@ async function createNewSession(value: string): Promise<void> {
         <WikiBrowser v-if="kbId" :knowledge-base-id="kbId" :view="activeKbTab === 'graph' ? 'graph' : 'browser'" @open-source-doc="openSourceDoc" @status-change="onWikiStatusChange" />
       </div>
 
-      <template v-if="activeKbTab === 'documents' || !isWiki">
+      <template v-if="isDatabase">
+        <DatabaseKnowledgeOverview v-if="kbId" :kb-id="kbId" :kb-info="kbInfo" />
+      </template>
+
+      <template v-else-if="activeKbTab === 'documents' || !isWiki">
       <input
         ref="uploadInputRef"
         type="file"
@@ -3752,6 +3787,11 @@ async function createNewSession(value: string): Promise<void> {
       white-space: nowrap;
     }
   }
+}
+
+.kb-type-tag {
+  margin-left: 8px;
+  vertical-align: middle;
 }
 
 

@@ -137,6 +137,29 @@ func TestKnowledgeBaseEnsureDefaultsDocumentWithoutWiki(t *testing.T) {
 	}
 }
 
+func TestKnowledgeBaseEnsureDefaultsDatabase(t *testing.T) {
+	kb := &KnowledgeBase{
+		Type: KnowledgeBaseTypeDatabase,
+	}
+	kb.EnsureDefaults()
+
+	if kb.IndexingStrategy.VectorEnabled {
+		t.Error("Database KB should not enable vector indexing by default")
+	}
+	if kb.IndexingStrategy.KeywordEnabled {
+		t.Error("Database KB should not enable keyword indexing by default")
+	}
+	if !kb.IsDatabaseEnabled() {
+		t.Error("Database KB should report database capability")
+	}
+	if !kb.Capabilities().Database {
+		t.Error("Database KB capabilities should include database=true")
+	}
+	if kb.Capabilities().Vector {
+		t.Error("Database KB capabilities should not expose vector=true by default")
+	}
+}
+
 func TestWikiPageJSON(t *testing.T) {
 	page := WikiPage{
 		ID:         "test-id",

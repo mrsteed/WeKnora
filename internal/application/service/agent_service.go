@@ -44,21 +44,23 @@ func dedupStrings(in []string) []string {
 
 // agentService implements agent-related business logic
 type agentService struct {
-	cfg                   *config.Config
-	modelService          interfaces.ModelService
-	mcpServiceService     interfaces.MCPServiceService
-	mcpManager            *mcp.MCPManager
-	eventBus              *event.EventBus
-	db                    *gorm.DB
-	webSearchService      interfaces.WebSearchService
-	knowledgeBaseService  interfaces.KnowledgeBaseService
-	knowledgeService      interfaces.KnowledgeService
-	fileService           interfaces.FileService
-	chunkService          interfaces.ChunkService
-	duckdb                *sql.DB
-	webSearchStateService interfaces.WebSearchStateService
-	wikiPageService       interfaces.WikiPageService
-	tenantService         interfaces.TenantService
+	cfg                    *config.Config
+	modelService           interfaces.ModelService
+	mcpServiceService      interfaces.MCPServiceService
+	mcpManager             *mcp.MCPManager
+	eventBus               *event.EventBus
+	db                     *gorm.DB
+	webSearchService       interfaces.WebSearchService
+	knowledgeBaseService   interfaces.KnowledgeBaseService
+	knowledgeService       interfaces.KnowledgeService
+	fileService            interfaces.FileService
+	chunkService           interfaces.ChunkService
+	schemaRegistryService  interfaces.SchemaRegistryService
+	structuredQueryService interfaces.StructuredQueryService
+	duckdb                 *sql.DB
+	webSearchStateService  interfaces.WebSearchStateService
+	wikiPageService        interfaces.WikiPageService
+	tenantService          interfaces.TenantService
 }
 
 // NewAgentService creates a new agent service
@@ -69,6 +71,8 @@ func NewAgentService(
 	knowledgeService interfaces.KnowledgeService,
 	fileService interfaces.FileService,
 	chunkService interfaces.ChunkService,
+	schemaRegistryService interfaces.SchemaRegistryService,
+	structuredQueryService interfaces.StructuredQueryService,
 	mcpServiceService interfaces.MCPServiceService,
 	mcpManager *mcp.MCPManager,
 	eventBus *event.EventBus,
@@ -80,21 +84,23 @@ func NewAgentService(
 	tenantService interfaces.TenantService,
 ) interfaces.AgentService {
 	return &agentService{
-		cfg:                   cfg,
-		modelService:          modelService,
-		knowledgeBaseService:  knowledgeBaseService,
-		knowledgeService:      knowledgeService,
-		fileService:           fileService,
-		chunkService:          chunkService,
-		mcpServiceService:     mcpServiceService,
-		mcpManager:            mcpManager,
-		eventBus:              eventBus,
-		db:                    db,
-		webSearchService:      webSearchService,
-		duckdb:                duckdb,
-		webSearchStateService: webSearchStateService,
-		wikiPageService:       wikiPageService,
-		tenantService:         tenantService,
+		cfg:                    cfg,
+		modelService:           modelService,
+		knowledgeBaseService:   knowledgeBaseService,
+		knowledgeService:       knowledgeService,
+		fileService:            fileService,
+		chunkService:           chunkService,
+		schemaRegistryService:  schemaRegistryService,
+		structuredQueryService: structuredQueryService,
+		mcpServiceService:      mcpServiceService,
+		mcpManager:             mcpManager,
+		eventBus:               eventBus,
+		db:                     db,
+		webSearchService:       webSearchService,
+		duckdb:                 duckdb,
+		webSearchStateService:  webSearchStateService,
+		wikiPageService:        wikiPageService,
+		tenantService:          tenantService,
 	}
 }
 
@@ -363,7 +369,7 @@ func (s *agentService) registerTools(
 	}
 
 	// ---- Capability detection from SearchTargets ----
-	var hasVectorKB, hasWikiKB bool
+	var hasVectorKB, hasWikiKB, hasDatabaseKB bool
 	var wikiKBIDs []string
 	var wikiScopes []tools.WikiScope
 	for _, target := range config.SearchTargets {
@@ -386,6 +392,9 @@ func (s *agentService) registerTools(
 			}
 			wikiScopes = append(wikiScopes, scope)
 		}
+		if kb.IsDatabaseEnabled() {
+			hasDatabaseKB = true
+		}
 	}
 
 	// Filter out knowledge base tools if no knowledge bases or knowledge IDs are configured
@@ -393,14 +402,16 @@ func (s *agentService) registerTools(
 	if !hasKnowledge {
 		filteredTools := make([]string, 0)
 		kbTools := map[string]bool{
-			tools.ToolKnowledgeSearch:     true,
-			tools.ToolGrepChunks:          true,
-			tools.ToolListKnowledgeChunks: true,
-			tools.ToolQueryKnowledgeGraph: true,
-			tools.ToolGetDocumentInfo:     true,
-			tools.ToolDatabaseQuery:       true,
-			tools.ToolDataAnalysis:        true,
-			tools.ToolDataSchema:          true,
+			tools.ToolKnowledgeSearch:        true,
+			tools.ToolGrepChunks:             true,
+			tools.ToolListKnowledgeChunks:    true,
+			tools.ToolQueryKnowledgeGraph:    true,
+			tools.ToolGetDocumentInfo:        true,
+			tools.ToolDatabaseQuery:          true,
+			tools.ToolExternalDatabaseSchema: true,
+			tools.ToolExternalDatabaseQuery:  true,
+			tools.ToolDataAnalysis:           true,
+			tools.ToolDataSchema:             true,
 			// Wiki tools also require at least one KB in scope.
 			tools.ToolWikiReadPage:      true,
 			tools.ToolWikiSearch:        true,
@@ -448,6 +459,10 @@ func (s *agentService) registerTools(
 		tools.ToolGetDocumentInfo:     true,
 		tools.ToolDatabaseQuery:       true,
 	}
+	databaseToolSet := map[string]bool{
+		tools.ToolExternalDatabaseSchema: true,
+		tools.ToolExternalDatabaseQuery:  true,
+	}
 	allWikiToolSet := map[string]bool{
 		tools.ToolWikiReadPage:      true,
 		tools.ToolWikiSearch:        true,
@@ -494,6 +509,21 @@ func (s *agentService) registerTools(
 			logger.Warnf(ctx, "Dropped RAG tools %v because no RAG-capable KB is in scope", dropped)
 		}
 	}
+	if !hasDatabaseKB {
+		filtered := make([]string, 0, len(allowedTools))
+		dropped := make([]string, 0)
+		for _, t := range allowedTools {
+			if databaseToolSet[t] {
+				dropped = append(dropped, t)
+				continue
+			}
+			filtered = append(filtered, t)
+		}
+		allowedTools = filtered
+		if len(dropped) > 0 {
+			logger.Warnf(ctx, "Dropped database tools %v because no database-capable KB is in scope", dropped)
+		}
+	}
 
 	// Deduplicate while preserving original order.
 	allowedTools = dedupStrings(allowedTools)
@@ -530,6 +560,10 @@ func (s *agentService) registerTools(
 			toolToRegister = tools.NewGetDocumentInfoTool(s.knowledgeService, s.chunkService, config.SearchTargets)
 		case tools.ToolDatabaseQuery:
 			toolToRegister = tools.NewDatabaseQueryTool(s.db, config.SearchTargets)
+		case tools.ToolExternalDatabaseSchema:
+			toolToRegister = tools.NewExternalDatabaseSchemaTool(s.schemaRegistryService, config.SearchTargets)
+		case tools.ToolExternalDatabaseQuery:
+			toolToRegister = tools.NewExternalDatabaseQueryTool(s.structuredQueryService, config.SearchTargets)
 		case tools.ToolWebSearch:
 			toolToRegister = tools.NewWebSearchTool(
 				s.webSearchService,

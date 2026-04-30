@@ -472,6 +472,8 @@ const TOOL_NAME_KEYS: Record<string, string> = {
   data_analysis: 'agentStream.tools.dataAnalysis',
   data_schema: 'agentStream.tools.dataSchema',
   database_query: 'agentStream.tools.databaseQuery',
+  external_database_schema: 'agentStream.tools.dataSchema',
+  external_database_query: 'agentStream.tools.databaseQuery',
 };
 
 const getLocalizedToolName = (toolName?: string | null): string => {

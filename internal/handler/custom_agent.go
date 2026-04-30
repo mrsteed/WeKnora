@@ -528,7 +528,7 @@ func (h *CustomAgentHandler) GetPlaceholders(c *gin.Context) {
 
 // GetAgentTypePresets godoc
 // @Summary      获取智能体类型预设列表
-// @Description  返回所有 smart-reasoning 下可用的智能体类型预设（RAG/Wiki/Hybrid/Custom），用于编辑器自动填充系统提示词、工具和 KB 兼容性
+// @Description  返回所有 smart-reasoning 下可用的智能体类型预设（RAG/Wiki/Hybrid/Data/Database/Custom），用于编辑器自动填充系统提示词、工具和 KB 兼容性
 // @Tags         智能体
 // @Accept       json
 // @Produce      json

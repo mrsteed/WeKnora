@@ -49,12 +49,13 @@
                         >
                           <t-radio-button value="document">{{ $t('knowledgeEditor.basic.typeDocument') }}</t-radio-button>
                           <t-radio-button value="faq">{{ $t('knowledgeEditor.basic.typeFAQ') }}</t-radio-button>
+                          <t-radio-button value="database">{{ $t('knowledgeEditor.basic.typeDatabase') }}</t-radio-button>
                         </t-radio-group>
                         <p class="form-tip">{{ $t('knowledgeEditor.basic.typeDescription') }}</p>
                       </div>
 
                       <!-- 索引策略 (紧跟类型选择) -->
-                      <div v-if="!isFAQ" class="form-item">
+                      <div v-if="!isFAQ && !isDatabase" class="form-item">
                         <label class="form-label required">{{ $t('knowledgeEditor.indexing.title') }}</label>
                         <p class="form-tip">{{ $t('knowledgeEditor.indexing.description') }}</p>
                         <div class="indexing-checks" :class="{ 'is-locked': isIndexingLocked }">
@@ -94,7 +95,7 @@
                       </div>
 
                       <!-- Wiki 提取粒度 (仅当 Wiki 启用时显示) -->
-                      <div v-if="!isFAQ && formData.indexingStrategy.wikiEnabled" class="form-item">
+                      <div v-if="!isFAQ && !isDatabase && formData.indexingStrategy.wikiEnabled" class="form-item">
                         <label class="form-label">{{ $t('knowledgeEditor.wiki.extractionGranularityLabel') }}</label>
                         <p class="form-tip">{{ $t('knowledgeEditor.wiki.extractionGranularityTip') }}</p>
                         <t-radio-group
@@ -151,6 +152,166 @@
                   </div>
                 </div>
 
+                <div v-if="isDatabase && formData && mode === 'create'" v-show="currentSection === 'database'" class="section">
+                  <div class="section-content">
+                    <div class="section-header">
+                      <h3 class="section-title">{{ $t('knowledgeEditor.database.title') }}</h3>
+                      <p class="section-desc">{{ $t('knowledgeEditor.database.description') }}</p>
+                    </div>
+                    <div class="section-body">
+                      <div class="form-item">
+                        <label class="form-label required">{{ $t('knowledgeEditor.database.engineLabel') }}</label>
+                        <t-radio-group
+                          :value="formData.databaseConfig.connection.type"
+                          @change="handleDatabaseTypeChange"
+                        >
+                          <t-radio-button
+                            v-for="option in DATABASE_CONNECTOR_OPTIONS"
+                            :key="option.value"
+                            :value="option.value"
+                          >
+                            {{ option.label }}
+                          </t-radio-button>
+                        </t-radio-group>
+                        <p class="form-tip">{{ $t('knowledgeEditor.database.engineTip') }}</p>
+                      </div>
+
+                      <div class="form-item">
+                        <label class="form-label">{{ $t('knowledgeEditor.database.dataSourceNameLabel') }}</label>
+                        <t-input
+                          v-model="formData.databaseConfig.dataSourceName"
+                          :placeholder="$t('knowledgeEditor.database.dataSourceNamePlaceholder')"
+                        />
+                        <p class="form-tip">{{ $t('knowledgeEditor.database.dataSourceNameTip') }}</p>
+                      </div>
+
+                      <div class="database-connection-grid">
+                        <div class="form-item">
+                          <label class="form-label required">{{ $t('knowledgeEditor.database.hostLabel') }}</label>
+                          <t-input
+                            v-model="formData.databaseConfig.connection.settings.host"
+                            :placeholder="$t('knowledgeEditor.database.hostPlaceholder')"
+                          />
+                        </div>
+                        <div class="form-item">
+                          <label class="form-label required">{{ $t('knowledgeEditor.database.portLabel') }}</label>
+                          <t-input
+                            :model-value="String(formData.databaseConfig.connection.settings.port ?? '')"
+                            type="number"
+                            :placeholder="$t('knowledgeEditor.database.portPlaceholder')"
+                            @update:model-value="(value: string) => { if (formData?.databaseConfig?.connection?.settings) formData.databaseConfig.connection.settings.port = value === '' ? 0 : Number(value) }"
+                          />
+                        </div>
+                      </div>
+
+                      <div class="database-connection-grid">
+                        <div class="form-item">
+                          <label class="form-label required">{{ $t('knowledgeEditor.database.databaseNameLabel') }}</label>
+                          <t-input
+                            v-model="formData.databaseConfig.connection.settings.database"
+                            :placeholder="$t('knowledgeEditor.database.databaseNamePlaceholder')"
+                          />
+                        </div>
+                        <div v-if="isPostgreSQLDatabase" class="form-item">
+                          <label class="form-label">{{ $t('knowledgeEditor.database.schemaLabel') }}</label>
+                          <t-input
+                            v-model="formData.databaseConfig.connection.settings.schema"
+                            :placeholder="$t('knowledgeEditor.database.schemaPlaceholder')"
+                          />
+                        </div>
+                      </div>
+
+                      <div class="database-connection-grid">
+                        <div class="form-item">
+                          <label class="form-label required">{{ $t('knowledgeEditor.database.usernameLabel') }}</label>
+                          <t-input
+                            v-model="formData.databaseConfig.connection.credentials.username"
+                            :placeholder="$t('knowledgeEditor.database.usernamePlaceholder')"
+                          />
+                        </div>
+                        <div class="form-item">
+                          <label class="form-label">{{ $t('knowledgeEditor.database.passwordLabel') }}</label>
+                          <t-input
+                            v-model="formData.databaseConfig.connection.credentials.password"
+                            type="password"
+                            :placeholder="$t('knowledgeEditor.database.passwordPlaceholder')"
+                          />
+                        </div>
+                      </div>
+
+                      <div class="form-item">
+                        <label class="form-label">{{ $t('knowledgeEditor.database.sslModeLabel') }}</label>
+                        <t-input
+                          v-model="formData.databaseConfig.connection.settings.ssl_mode"
+                          :placeholder="$t('knowledgeEditor.database.sslModePlaceholder')"
+                        />
+                        <p class="form-tip">{{ $t('knowledgeEditor.database.sslModeTip') }}</p>
+                      </div>
+
+                      <div class="database-constraint-intro">
+                        <div class="database-constraint-title">{{ $t('knowledgeEditor.database.queryConstraintTitle') }}</div>
+                        <p class="form-tip">{{ $t('knowledgeEditor.database.queryConstraintDescription') }}</p>
+                      </div>
+
+                      <div class="form-item">
+                        <label class="form-label">{{ $t('knowledgeEditor.database.tableAllowlistLabel') }}</label>
+                        <t-textarea
+                          v-model="databaseTableAllowlistText"
+                          :autosize="{ minRows: 3, maxRows: 6 }"
+                          :placeholder="$t('knowledgeEditor.database.tableAllowlistPlaceholder')"
+                        />
+                        <p class="form-tip">{{ $t('knowledgeEditor.database.tableAllowlistTip') }}</p>
+                      </div>
+
+                      <div class="form-item">
+                        <label class="form-label">{{ $t('knowledgeEditor.database.columnDenylistLabel') }}</label>
+                        <t-textarea
+                          v-model="databaseColumnDenylistText"
+                          :autosize="{ minRows: 3, maxRows: 6 }"
+                          :placeholder="$t('knowledgeEditor.database.columnDenylistPlaceholder')"
+                        />
+                        <p class="form-tip">{{ $t('knowledgeEditor.database.columnDenylistTip') }}</p>
+                      </div>
+
+                      <div class="database-limit-grid">
+                        <div class="form-item">
+                          <label class="form-label">{{ $t('knowledgeEditor.database.maxRowsLabel') }}</label>
+                          <t-input
+                            :model-value="formData.databaseConfig.connection.settings.max_rows == null ? '' : String(formData.databaseConfig.connection.settings.max_rows)"
+                            type="number"
+                            :placeholder="$t('knowledgeEditor.database.maxRowsPlaceholder')"
+                            @update:model-value="(value: string) => { if (formData?.databaseConfig?.connection?.settings) formData.databaseConfig.connection.settings.max_rows = value === '' ? undefined : Number(value) }"
+                          />
+                        </div>
+                        <div class="form-item">
+                          <label class="form-label">{{ $t('knowledgeEditor.database.timeoutLabel') }}</label>
+                          <t-input
+                            :model-value="formData.databaseConfig.connection.settings.query_timeout_sec == null ? '' : String(formData.databaseConfig.connection.settings.query_timeout_sec)"
+                            type="number"
+                            :placeholder="$t('knowledgeEditor.database.timeoutPlaceholder')"
+                            @update:model-value="(value: string) => { if (formData?.databaseConfig?.connection?.settings) formData.databaseConfig.connection.settings.query_timeout_sec = value === '' ? undefined : Number(value) }"
+                          />
+                        </div>
+                      </div>
+
+                      <div class="database-test-row">
+                        <t-button variant="outline" :loading="databaseConnectionTesting" @click="testDatabaseConnection">
+                          {{ $t('knowledgeEditor.database.testConnection') }}
+                        </t-button>
+                        <span v-if="databaseConnectionValidated" class="database-test-success">
+                          <t-icon name="check-circle-filled" size="14px" />
+                          {{ $t('knowledgeEditor.database.testSuccess') }}
+                        </span>
+                      </div>
+
+                      <div v-if="databaseConnectionError" class="database-test-error">
+                        <t-icon name="error-circle-filled" size="16px" />
+                        <span>{{ databaseConnectionError }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- 模型配置 -->
                 <div v-show="currentSection === 'models'" class="section">
                   <KBModelConfig
@@ -201,7 +362,7 @@
                 </div>
 
                 <!-- 解析引擎 -->
-                <div v-if="!isFAQ && formData" v-show="currentSection === 'parser'" class="section">
+                <div v-if="!isFAQ && !isDatabase && formData" v-show="currentSection === 'parser'" class="section">
                   <KBParserSettings
                     :parser-engine-rules="formData.chunkingConfig.parserEngineRules"
                     @update:parser-engine-rules="handleParserEngineRulesUpdate"
@@ -209,7 +370,7 @@
                 </div>
 
                 <!-- 存储引擎 -->
-                <div v-if="!isFAQ && formData" v-show="currentSection === 'storage'" class="section">
+                <div v-if="!isFAQ && !isDatabase && formData" v-show="currentSection === 'storage'" class="section">
                   <KBStorageSettings
                     :storage-provider="formData.storageProvider"
                     :has-files="mode === 'edit' && hasFiles"
@@ -218,7 +379,7 @@
                 </div>
 
                 <!-- 分块设置 -->
-                <div v-if="!isFAQ" v-show="currentSection === 'chunking'" class="section">
+                <div v-if="!isFAQ && !isDatabase" v-show="currentSection === 'chunking'" class="section">
                   <KBChunkingSettings
                     v-if="formData"
                     :config="formData.chunkingConfig"
@@ -227,7 +388,7 @@
                 </div>
 
                 <!-- 多模态配置 -->
-                <div v-if="!isFAQ" v-show="currentSection === 'multimodal'" class="section">
+                <div v-if="!isFAQ && !isDatabase" v-show="currentSection === 'multimodal'" class="section">
                   <div v-if="formData" class="kb-multimodal-settings">
                     <div class="section-header">
                       <h2>{{ $t('knowledgeEditor.multimodal.title') }}</h2>
@@ -272,7 +433,7 @@
                 </div>
 
                 <!-- 音频处理（ASR）设置 -->
-                <div v-if="!isFAQ" v-show="currentSection === 'asr'" class="section">
+                <div v-if="!isFAQ && !isDatabase" v-show="currentSection === 'asr'" class="section">
                   <div v-if="formData" class="kb-multimodal-settings">
                     <div class="section-header">
                       <h2>{{ $t('knowledgeEditor.asr.title') }}</h2>
@@ -316,7 +477,7 @@
                 </div>
 
                 <!-- 知识图谱 -->
-                <div v-if="!isFAQ" v-show="currentSection === 'graph'" class="section">
+                <div v-if="!isFAQ && !isDatabase" v-show="currentSection === 'graph'" class="section">
                   <GraphSettings
                     v-if="formData"
                     :graph-extract="formData.nodeExtractConfig"
@@ -327,7 +488,7 @@
                 </div>
 
                 <!-- 高级设置 -->
-                <div v-if="!isFAQ" v-show="currentSection === 'advanced'" class="section">
+                <div v-if="!isFAQ && !isDatabase" v-show="currentSection === 'advanced'" class="section">
                   <KBAdvancedSettings
                     ref="advancedSettingsRef"
                     v-if="formData"
@@ -370,6 +531,7 @@
 import { ref, computed, watch } from 'vue'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { createKnowledgeBase, getKnowledgeBaseById, listKnowledgeFiles, updateKnowledgeBase, rebuildKBIndex } from '@/api/knowledge-base'
+import { validateCredentials } from '@/api/datasource'
 import { updateKBConfig, type KBModelConfigRequest } from '@/api/initialization'
 import { listModels } from '@/api/model'
 import { useUIStore } from '@/stores/ui'
@@ -397,7 +559,7 @@ const props = defineProps<{
   visible: boolean
   mode: 'create' | 'edit'
   kbId?: string
-  initialType?: 'document' | 'faq'
+  initialType?: 'document' | 'faq' | 'database'
   initialVisibility?: 'private' | 'org' | 'global'
 }>()
 
@@ -415,6 +577,9 @@ const hasFiles = ref(false)
 const initialStorageProvider = ref<string>('')
 const initialIndexingStrategy = ref<any>(null)
 const dsCount = ref(0)
+const databaseConnectionTesting = ref(false)
+const databaseConnectionValidated = ref(false)
+const databaseConnectionError = ref('')
 // 用户是否在分块设置中手动改过任何值。一旦为 true，就不再根据索引策略自动调整默认分块参数。
 const chunkingDirty = ref(false)
 
@@ -433,6 +598,90 @@ const DEFAULT_CHUNKING_PRESET = {
   enableParentChild: true,
 } as const
 
+type DatabaseConnectorType = 'mysql' | 'postgresql'
+
+interface DatabaseConnectionFormState {
+  dataSourceName: string
+  connection: {
+    type: DatabaseConnectorType
+    credentials: {
+      username: string
+      password: string
+    }
+    settings: {
+      host: string
+      port: number
+      database: string
+      schema: string
+      ssl_mode: string
+      table_allowlist: string[]
+      column_denylist: string[]
+      max_rows?: number
+      query_timeout_sec?: number
+    }
+  }
+}
+
+const DATABASE_CONNECTOR_OPTIONS: Array<{ value: DatabaseConnectorType; label: string }> = [
+  { value: 'mysql', label: 'MySQL' },
+  { value: 'postgresql', label: 'PostgreSQL' },
+]
+
+const buildDefaultDatabaseConfig = (connectorType: DatabaseConnectorType = 'mysql'): DatabaseConnectionFormState => ({
+  dataSourceName: '',
+  connection: {
+    type: connectorType,
+    credentials: {
+      username: '',
+      password: '',
+    },
+    settings: {
+      host: '',
+      port: connectorType === 'postgresql' ? 5432 : 3306,
+      database: '',
+      schema: connectorType === 'postgresql' ? 'public' : '',
+      ssl_mode: connectorType === 'postgresql' ? 'disable' : 'false',
+      table_allowlist: [],
+      column_denylist: [],
+      max_rows: undefined,
+      query_timeout_sec: undefined,
+    },
+  },
+})
+
+const normalizeDatabaseConfig = (raw?: Partial<DatabaseConnectionFormState> | null): DatabaseConnectionFormState => {
+  const connectorType: DatabaseConnectorType = raw?.connection?.type === 'postgresql' ? 'postgresql' : 'mysql'
+  const fallback = buildDefaultDatabaseConfig(connectorType)
+  return {
+    dataSourceName: raw?.dataSourceName || '',
+    connection: {
+      type: connectorType,
+      credentials: {
+        username: raw?.connection?.credentials?.username || '',
+        password: raw?.connection?.credentials?.password || '',
+      },
+      settings: {
+        host: raw?.connection?.settings?.host || '',
+        port: raw?.connection?.settings?.port || fallback.connection.settings.port,
+        database: raw?.connection?.settings?.database || '',
+        schema: connectorType === 'postgresql'
+          ? (raw?.connection?.settings?.schema || fallback.connection.settings.schema)
+          : '',
+        ssl_mode: raw?.connection?.settings?.ssl_mode || fallback.connection.settings.ssl_mode,
+        table_allowlist: Array.isArray(raw?.connection?.settings?.table_allowlist) ? raw.connection!.settings!.table_allowlist! : [],
+        column_denylist: Array.isArray(raw?.connection?.settings?.column_denylist) ? raw.connection!.settings!.column_denylist! : [],
+        max_rows: raw?.connection?.settings?.max_rows,
+        query_timeout_sec: raw?.connection?.settings?.query_timeout_sec,
+      },
+    },
+  }
+}
+
+const splitDatabaseMultilineList = (raw: string): string[] => raw
+  .split(/\r?\n|,/)
+  .map(item => item.trim())
+  .filter(Boolean)
+
 const navItems = computed(() => {
   const items: { key: string; icon: string; label: string; badge?: number }[] = [
     { key: 'basic', icon: 'info-circle', label: t('knowledgeEditor.sidebar.basic') },
@@ -440,6 +689,13 @@ const navItems = computed(() => {
   ]
   if (formData.value?.type === 'faq') {
     items.push({ key: 'faq', icon: 'help-circle', label: t('knowledgeEditor.sidebar.faq') })
+  } else if (formData.value?.type === 'database') {
+    if (props.mode === 'create') {
+      items.splice(1, 0, { key: 'database', icon: 'server', label: t('knowledgeEditor.sidebar.database') })
+    }
+    if (props.mode === 'edit' && props.kbId) {
+      items.push({ key: 'datasource', icon: 'cloud-download', label: t('knowledgeEditor.sidebar.datasource'), badge: dsCount.value || undefined })
+    }
   } else {
     items.push(
       { key: 'parser', icon: 'file-search', label: t('settings.parserEngine') },
@@ -467,6 +723,33 @@ const advancedSettingsRef = ref<InstanceType<typeof KBAdvancedSettings>>()
 // 表单数据
 const formData = ref<any>(null)
 const isFAQ = computed(() => formData.value?.type === 'faq')
+const isDatabase = computed(() => formData.value?.type === 'database')
+const isPostgreSQLDatabase = computed(() => formData.value?.databaseConfig?.connection?.type === 'postgresql')
+
+const databaseTableAllowlistText = computed({
+  get: () => (Array.isArray(formData.value?.databaseConfig?.connection?.settings?.table_allowlist)
+    ? formData.value.databaseConfig.connection.settings.table_allowlist.join('\n')
+    : ''),
+  set: (value: string) => {
+    if (!formData.value?.databaseConfig?.connection?.settings) return
+    formData.value.databaseConfig.connection.settings.table_allowlist = splitDatabaseMultilineList(value)
+  }
+})
+
+const databaseColumnDenylistText = computed({
+  get: () => (Array.isArray(formData.value?.databaseConfig?.connection?.settings?.column_denylist)
+    ? formData.value.databaseConfig.connection.settings.column_denylist.join('\n')
+    : ''),
+  set: (value: string) => {
+    if (!formData.value?.databaseConfig?.connection?.settings) return
+    formData.value.databaseConfig.connection.settings.column_denylist = splitDatabaseMultilineList(value)
+  }
+})
+
+const resetDatabaseConnectionValidation = () => {
+  databaseConnectionValidated.value = false
+  databaseConnectionError.value = ''
+}
 
 watch(
   () => formData.value?.type,
@@ -479,14 +762,67 @@ watch(
       if (!['basic', 'models', 'faq'].includes(currentSection.value)) {
         currentSection.value = 'faq'
       }
-    } else if (oldType === 'faq' && currentSection.value === 'faq') {
+      return
+    }
+
+    if (newType === 'database') {
+      formData.value.indexingStrategy = {
+        vectorEnabled: false,
+        keywordEnabled: false,
+        wikiEnabled: false,
+        graphEnabled: false,
+      }
+      formData.value.databaseConfig = normalizeDatabaseConfig(formData.value.databaseConfig)
+      formData.value.nodeExtractConfig = {
+        ...formData.value.nodeExtractConfig,
+        enabled: false,
+      }
+      if (!['basic', 'database', 'models', 'datasource'].includes(currentSection.value)) {
+        currentSection.value = 'basic'
+      }
+      resetDatabaseConnectionValidation()
+      return
+    }
+
+    if (
+      oldType === 'database' &&
+      !formData.value.indexingStrategy?.vectorEnabled &&
+      !formData.value.indexingStrategy?.keywordEnabled &&
+      !formData.value.indexingStrategy?.wikiEnabled &&
+      !formData.value.indexingStrategy?.graphEnabled
+    ) {
+      formData.value.indexingStrategy = {
+        vectorEnabled: true,
+        keywordEnabled: true,
+        wikiEnabled: false,
+        graphEnabled: false,
+      }
+    }
+
+    if (oldType === 'faq' && currentSection.value === 'faq') {
       currentSection.value = 'basic'
+    }
+
+    if (oldType === 'database') {
+      resetDatabaseConnectionValidation()
     }
   }
 )
 
+watch(
+  () => formData.value?.databaseConfig,
+  (current, previous) => {
+    if (!isDatabase.value || !current || !previous) return
+    if (JSON.stringify(current) !== JSON.stringify(previous)) {
+      resetDatabaseConnectionValidation()
+    }
+  },
+  { deep: true }
+)
+
 // 初始化表单数据
-const initFormData = (type: 'document' | 'faq' = 'document', visibility: 'private' | 'org' | 'global' = 'private') => {
+const initFormData = (type: 'document' | 'faq' | 'database' = 'document', visibility: 'private' | 'org' | 'global' = 'private') => {
+  const isDatabaseType = type === 'database'
   return {
     type,
     name: '',
@@ -497,6 +833,7 @@ const initFormData = (type: 'document' | 'faq' = 'document', visibility: 'privat
       indexMode: 'question_only',
       questionIndexMode: 'separate'
     },
+    databaseConfig: normalizeDatabaseConfig(isDatabaseType ? buildDefaultDatabaseConfig('mysql') : undefined),
     modelConfig: {
       llmModelId: '',
       embeddingModelId: '',
@@ -536,7 +873,7 @@ const initFormData = (type: 'document' | 'faq' = 'document', visibility: 'privat
       }>
     },
     questionGenerationConfig: {
-      enabled: true,
+      enabled: !isDatabaseType,
       questionCount: 3
     },
     wikiConfig: {
@@ -545,8 +882,8 @@ const initFormData = (type: 'document' | 'faq' = 'document', visibility: 'privat
       extractionGranularity: 'standard' as 'focused' | 'standard' | 'exhaustive',
     },
     indexingStrategy: {
-      vectorEnabled: true,
-      keywordEnabled: true,
+      vectorEnabled: !isDatabaseType,
+      keywordEnabled: !isDatabaseType,
       wikiEnabled: false,
       graphEnabled: false,
     },
@@ -585,7 +922,7 @@ const loadKBData = async () => {
     hasFiles.value = (filesResult as any)?.total > 0
     
     // 设置表单数据
-    const kbType = (kb.type as 'document' | 'faq') || 'document'
+    const kbType = (kb.type as 'document' | 'faq' | 'database') || 'document'
     formData.value = {
       type: kbType,
       name: kb.name || '',
@@ -596,6 +933,7 @@ const loadKBData = async () => {
         indexMode: kb.faq_config?.index_mode || 'question_only',
         questionIndexMode: kb.faq_config?.question_index_mode || 'separate'
       },
+      databaseConfig: normalizeDatabaseConfig(),
       modelConfig: {
         llmModelId: kb.summary_model_id || '',
         embeddingModelId: kb.embedding_model_id || '',
@@ -666,6 +1004,89 @@ const loadKBData = async () => {
 const handleModelConfigUpdate = (config: any) => {
   if (formData.value) {
     formData.value.modelConfig = { ...config }
+  }
+}
+
+const handleDatabaseTypeChange = (value: string | number | boolean) => {
+  if (!formData.value) return
+  const connectorType: DatabaseConnectorType = value === 'postgresql' ? 'postgresql' : 'mysql'
+  const previous = normalizeDatabaseConfig(formData.value.databaseConfig)
+  const next = buildDefaultDatabaseConfig(connectorType)
+  formData.value.databaseConfig = {
+    dataSourceName: previous.dataSourceName,
+    connection: {
+      type: connectorType,
+      credentials: {
+        username: previous.connection.credentials.username,
+        password: previous.connection.credentials.password,
+      },
+      settings: {
+        ...next.connection.settings,
+        host: previous.connection.settings.host,
+        database: previous.connection.settings.database,
+        table_allowlist: previous.connection.settings.table_allowlist,
+        column_denylist: previous.connection.settings.column_denylist,
+        max_rows: previous.connection.settings.max_rows,
+        query_timeout_sec: previous.connection.settings.query_timeout_sec,
+        port: previous.connection.type === connectorType ? previous.connection.settings.port : next.connection.settings.port,
+        schema: connectorType === 'postgresql'
+          ? (previous.connection.type === connectorType ? previous.connection.settings.schema : next.connection.settings.schema)
+          : '',
+        ssl_mode: previous.connection.type === connectorType ? previous.connection.settings.ssl_mode : next.connection.settings.ssl_mode,
+      },
+    },
+  }
+  resetDatabaseConnectionValidation()
+}
+
+const testDatabaseConnection = async () => {
+  if (!formData.value?.databaseConfig) return
+  const config = normalizeDatabaseConfig(formData.value.databaseConfig)
+  if (!config.connection.settings.host.trim()) {
+    MessagePlugin.warning(t('knowledgeEditor.database.hostRequired'))
+    currentSection.value = 'database'
+    return
+  }
+  if (!config.connection.settings.database.trim()) {
+    MessagePlugin.warning(t('knowledgeEditor.database.databaseNameRequired'))
+    currentSection.value = 'database'
+    return
+  }
+  if (!config.connection.credentials.username.trim()) {
+    MessagePlugin.warning(t('knowledgeEditor.database.usernameRequired'))
+    currentSection.value = 'database'
+    return
+  }
+
+  databaseConnectionTesting.value = true
+  databaseConnectionError.value = ''
+  try {
+    await validateCredentials(
+      config.connection.type,
+      {
+        username: config.connection.credentials.username,
+        password: config.connection.credentials.password,
+      },
+      {
+        host: config.connection.settings.host,
+        port: config.connection.settings.port,
+        database: config.connection.settings.database,
+        schema: config.connection.settings.schema,
+        ssl_mode: config.connection.settings.ssl_mode,
+        table_allowlist: config.connection.settings.table_allowlist,
+        column_denylist: config.connection.settings.column_denylist,
+        max_rows: config.connection.settings.max_rows,
+        query_timeout_sec: config.connection.settings.query_timeout_sec,
+      }
+    )
+    databaseConnectionValidated.value = true
+    MessagePlugin.success(t('knowledgeEditor.database.testSuccess'))
+  } catch (error: any) {
+    databaseConnectionValidated.value = false
+    databaseConnectionError.value = error?.message || error?.error || t('knowledgeEditor.database.testFailed')
+    MessagePlugin.error(t('knowledgeEditor.database.testFailed'))
+  } finally {
+    databaseConnectionTesting.value = false
   }
 }
 
@@ -805,8 +1226,32 @@ const validateForm = (): boolean => {
     return false
   }
 
+  if (isDatabase.value && props.mode === 'create') {
+    const dbConfig = normalizeDatabaseConfig(formData.value.databaseConfig)
+    if (!dbConfig.connection.settings.host.trim()) {
+      MessagePlugin.warning(t('knowledgeEditor.database.hostRequired'))
+      currentSection.value = 'database'
+      return false
+    }
+    if (!dbConfig.connection.settings.database.trim()) {
+      MessagePlugin.warning(t('knowledgeEditor.database.databaseNameRequired'))
+      currentSection.value = 'database'
+      return false
+    }
+    if (!dbConfig.connection.credentials.username.trim()) {
+      MessagePlugin.warning(t('knowledgeEditor.database.usernameRequired'))
+      currentSection.value = 'database'
+      return false
+    }
+    if (!databaseConnectionValidated.value) {
+      MessagePlugin.warning(t('knowledgeEditor.database.testRequired'))
+      currentSection.value = 'database'
+      return false
+    }
+  }
+
   // 验证索引策略 — 文档类型至少需要开启一种
-  if (formData.value.type !== 'faq') {
+  if (!isFAQ.value && !isDatabase.value) {
     const s = formData.value.indexingStrategy
     if (s && !s.vectorEnabled && !s.keywordEnabled && !s.wikiEnabled && !s.graphEnabled) {
       MessagePlugin.warning(t('knowledgeEditor.indexing.atLeastOne'))
@@ -816,7 +1261,7 @@ const validateForm = (): boolean => {
   }
 
   // 验证模型配置 - embedding 模型仅在检索索引启用时必须
-  const needsEmbedding = formData.value.indexingStrategy?.vectorEnabled || formData.value.indexingStrategy?.keywordEnabled
+  const needsEmbedding = !isDatabase.value && (formData.value.indexingStrategy?.vectorEnabled || formData.value.indexingStrategy?.keywordEnabled)
   if (needsEmbedding && !formData.value.modelConfig.embeddingModelId) {
     MessagePlugin.warning(t('knowledgeEditor.indexing.embeddingRequired'))
     currentSection.value = 'models'
@@ -837,7 +1282,7 @@ const validateForm = (): boolean => {
   }
 
   // 验证多模态配置（如果启用）
-  if (formData.value.multimodalConfig.enabled && !formData.value.multimodalConfig.vllmModelId) {
+  if (!isDatabase.value && formData.value.multimodalConfig.enabled && !formData.value.multimodalConfig.vllmModelId) {
     MessagePlugin.warning(t('knowledgeEditor.messages.multimodalInvalid'))
     currentSection.value = 'multimodal'
     return false
@@ -878,6 +1323,31 @@ const buildSubmitData = () => {
     summary_model_id: formData.value.modelConfig.llmModelId
   }
 
+  if (isDatabase.value && props.mode === 'create') {
+    const databaseConfig = normalizeDatabaseConfig(formData.value.databaseConfig)
+    data.database_config = {
+      data_source_name: databaseConfig.dataSourceName || undefined,
+      connection: {
+        type: databaseConfig.connection.type,
+        credentials: {
+          username: databaseConfig.connection.credentials.username,
+          password: databaseConfig.connection.credentials.password,
+        },
+        settings: {
+          host: databaseConfig.connection.settings.host,
+          port: databaseConfig.connection.settings.port,
+          database: databaseConfig.connection.settings.database,
+          schema: databaseConfig.connection.type === 'postgresql' ? databaseConfig.connection.settings.schema : undefined,
+          ssl_mode: databaseConfig.connection.settings.ssl_mode || undefined,
+          table_allowlist: databaseConfig.connection.settings.table_allowlist,
+          column_denylist: databaseConfig.connection.settings.column_denylist,
+          max_rows: databaseConfig.connection.settings.max_rows,
+          query_timeout_sec: databaseConfig.connection.settings.query_timeout_sec,
+        },
+      },
+    }
+  }
+
   // 添加多模态配置
   data.vlm_config = {
     enabled: formData.value.multimodalConfig.enabled,
@@ -908,7 +1378,7 @@ const buildSubmitData = () => {
   // extract_config is sent below along with indexing_strategy
 
   // 添加问题生成配置
-  if (formData.value.questionGenerationConfig?.enabled) {
+  if (!isDatabase.value && formData.value.questionGenerationConfig?.enabled) {
     data.question_generation_config = {
       enabled: true,
       question_count: formData.value.questionGenerationConfig.questionCount || 3
@@ -924,7 +1394,7 @@ const buildSubmitData = () => {
 
   // Wiki enablement is carried solely by indexing_strategy.wiki_enabled.
   // wiki_config only holds wiki-specific tunables.
-  if (formData.value.type !== 'faq') {
+  if (!isFAQ.value && !isDatabase.value) {
     data.wiki_config = {
       synthesis_model_id: formData.value.modelConfig?.wikiSynthesisModelId || '',
       max_pages_per_ingest: formData.value.wikiConfig?.maxPagesPerIngest || 0,
@@ -933,7 +1403,7 @@ const buildSubmitData = () => {
   }
 
   // Send indexing strategy
-  if (formData.value.type !== 'faq') {
+  if (!isFAQ.value && !isDatabase.value) {
     data.indexing_strategy = {
       vector_enabled: formData.value.indexingStrategy?.vectorEnabled ?? true,
       keyword_enabled: formData.value.indexingStrategy?.keywordEnabled ?? true,
@@ -943,7 +1413,7 @@ const buildSubmitData = () => {
   }
 
   // Sync extract_config.enabled from indexingStrategy.graphEnabled
-  if (formData.value.indexingStrategy?.graphEnabled && formData.value.nodeExtractConfig?.enabled) {
+  if (!isDatabase.value && formData.value.indexingStrategy?.graphEnabled && formData.value.nodeExtractConfig?.enabled) {
     data.extract_config = {
       enabled: true,
       text: formData.value.nodeExtractConfig.text,
@@ -1019,14 +1489,14 @@ const doSubmit = async () => {
           question_index_mode: formData.value.faqConfig.questionIndexMode || 'separate'
         }
       }
-      if (formData.value.wikiConfig && formData.value.type !== 'faq') {
+      if (formData.value.wikiConfig && !isFAQ.value && !isDatabase.value) {
         updateConfig.wiki_config = {
           synthesis_model_id: formData.value.modelConfig?.wikiSynthesisModelId || '',
           max_pages_per_ingest: formData.value.wikiConfig.maxPagesPerIngest || 0,
           extraction_granularity: formData.value.wikiConfig.extractionGranularity || 'standard',
         }
       }
-      if (formData.value.type !== 'faq') {
+      if (!isFAQ.value && !isDatabase.value) {
         updateConfig.indexing_strategy = {
           vector_enabled: formData.value.indexingStrategy?.vectorEnabled ?? true,
           keyword_enabled: formData.value.indexingStrategy?.keywordEnabled ?? true,
@@ -1128,6 +1598,9 @@ const resetState = () => {
   hasFiles.value = false
   initialStorageProvider.value = ''
   initialIndexingStrategy.value = null
+  databaseConnectionTesting.value = false
+  databaseConnectionValidated.value = false
+  databaseConnectionError.value = ''
   saving.value = false
   loading.value = false
   chunkingDirty.value = false
@@ -1212,6 +1685,51 @@ watch(
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.database-connection-grid,
+.database-limit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.database-constraint-intro {
+  margin: 8px 0 12px;
+}
+
+.database-constraint-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.database-test-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.database-test-success {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--td-success-color);
+  font-size: 13px;
+}
+
+.database-test-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--td-error-color-1);
+  color: var(--td-error-color);
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .close-btn {
@@ -1533,6 +2051,13 @@ watch(
 
   .settings-modal {
     transform: scale(0.95);
+  }
+}
+
+@media (max-width: 900px) {
+  .database-connection-grid,
+  .database-limit-grid {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -6,7 +6,7 @@ export const useUIStore = defineStore('ui', {
     showKBEditorModal: false,
     kbEditorMode: 'create' as 'create' | 'edit',
     currentKBId: null as string | null,
-    kbEditorType: 'document' as 'document' | 'faq',
+    kbEditorType: 'document' as 'document' | 'faq' | 'database',
     kbEditorInitialVisibility: 'private' as 'private' | 'org' | 'global',
     // 当前选中的分类ID，用于文件上传时传递
     selectedTagId: '__untagged__' as string,
@@ -53,7 +53,7 @@ export const useUIStore = defineStore('ui', {
       this.openKBSettings(kbId, initialSection)
     },
 
-    openCreateKB(type: 'document' | 'faq' = 'document', visibility: 'private' | 'org' | 'global' = 'private') {
+    openCreateKB(type: 'document' | 'faq' | 'database' = 'document', visibility: 'private' | 'org' | 'global' = 'private') {
       this.currentKBId = null
       this.kbEditorMode = 'create'
       this.kbEditorType = type

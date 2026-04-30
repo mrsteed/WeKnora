@@ -44,6 +44,7 @@ export interface KnowledgeBaseShare {
   knowledge_base_type?: string
   knowledge_count?: number
   chunk_count?: number
+  business_table_count?: number
   organization_id: string
   organization_name?: string
   shared_by_user_id: string
@@ -67,6 +68,7 @@ export interface SharedKnowledgeBase {
     created_by_nickname?: string
     knowledge_count?: number
     chunk_count?: number
+    business_table_count?: number
   }
   share_id: string
   organization_id: string

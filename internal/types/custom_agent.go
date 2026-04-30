@@ -53,6 +53,9 @@ const (
 	// uploaded into the KB. Retrieval semantics (vector/wiki/…) are largely
 	// irrelevant — this type is about data_schema + data_analysis tools.
 	AgentTypeDataAnalysis = "data-analysis"
+	// AgentTypeDatabaseAnalysis runs schema discovery + read-only SQL analysis
+	// against external business databases bound through Database KBs.
+	AgentTypeDatabaseAnalysis = "database-analysis"
 	// AgentTypeCustom is the "no preset" option; user-configured end to end.
 	AgentTypeCustom = "custom"
 )

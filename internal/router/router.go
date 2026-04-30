@@ -954,6 +954,9 @@ func servePresignedFiles(r *gin.Engine, tenantService interfaces.TenantService) 
 
 // RegisterDataSourceRoutes 注册数据源相关的路由
 func RegisterDataSourceRoutes(r *gin.RouterGroup, handler *handler.DataSourceHandler) {
+	r.GET("/knowledge-bases/:id/database-schema", handler.GetDatabaseSchema)
+	r.GET("/database-query-audits", handler.ListDatabaseQueryAudits)
+
 	// Data source routes
 	ds := r.Group("/datasource")
 	{
@@ -972,6 +975,7 @@ func RegisterDataSourceRoutes(r *gin.RouterGroup, handler *handler.DataSourceHan
 
 		// Connection and resource management
 		ds.POST("/:id/validate", handler.ValidateConnection)
+		ds.POST("/:id/refresh-schema", handler.RefreshSchema)
 		ds.GET("/:id/resources", handler.ListAvailableResources)
 
 		// Sync management

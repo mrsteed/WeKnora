@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	stderrors "errors"
 	"net/http"
@@ -26,29 +27,132 @@ import (
 // KnowledgeBaseHandler defines the HTTP handler for knowledge base operations
 type KnowledgeBaseHandler struct {
 	service           interfaces.KnowledgeBaseService
+	dataSourceService interfaces.DataSourceService
 	knowledgeService  interfaces.KnowledgeService
 	kbShareService    interfaces.KBShareService
 	agentShareService interfaces.AgentShareService
 	kbVisibility      interfaces.KBVisibilityService
+	schemaSvc         interfaces.SchemaRegistryService
 	asynqClient       interfaces.TaskEnqueuer
+}
+
+type createKnowledgeBaseRequest struct {
+	types.KnowledgeBase
+	DatabaseConfig *types.DatabaseKnowledgeBaseConfig `json:"database_config,omitempty"`
+}
+
+func (req *createKnowledgeBaseRequest) UnmarshalJSON(data []byte) error {
+	if req == nil {
+		return nil
+	}
+	if err := json.Unmarshal(data, &req.KnowledgeBase); err != nil {
+		return err
+	}
+	var extra struct {
+		DatabaseConfig *types.DatabaseKnowledgeBaseConfig `json:"database_config,omitempty"`
+	}
+	if err := json.Unmarshal(data, &extra); err != nil {
+		return err
+	}
+	req.DatabaseConfig = extra.DatabaseConfig
+	return nil
 }
 
 // NewKnowledgeBaseHandler creates a new knowledge base handler instance
 func NewKnowledgeBaseHandler(
 	service interfaces.KnowledgeBaseService,
+	dataSourceService interfaces.DataSourceService,
 	knowledgeService interfaces.KnowledgeService,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
 	kbVisibility interfaces.KBVisibilityService,
+	schemaSvc interfaces.SchemaRegistryService,
 	asynqClient interfaces.TaskEnqueuer,
 ) *KnowledgeBaseHandler {
 	return &KnowledgeBaseHandler{
 		service:           service,
+		dataSourceService: dataSourceService,
 		knowledgeService:  knowledgeService,
 		kbShareService:    kbShareService,
 		agentShareService: agentShareService,
 		kbVisibility:      kbVisibility,
+		schemaSvc:         schemaSvc,
 		asynqClient:       asynqClient,
+	}
+}
+
+func (req *createKnowledgeBaseRequest) toKnowledgeBase() *types.KnowledgeBase {
+	if req == nil {
+		return nil
+	}
+	kb := req.KnowledgeBase
+	return &kb
+}
+
+func (req *createKnowledgeBaseRequest) validate() error {
+	if req == nil {
+		return apperrors.NewBadRequestError("request body is required")
+	}
+	if req.Type == types.KnowledgeBaseTypeDatabase {
+		if req.DatabaseConfig == nil {
+			return apperrors.NewBadRequestError("database_config is required for database knowledge bases")
+		}
+		if strings.TrimSpace(req.DatabaseConfig.Connection.Type) == "" {
+			return apperrors.NewBadRequestError("database_config.connection.type is required")
+		}
+		return nil
+	}
+	if req.DatabaseConfig != nil {
+		return apperrors.NewBadRequestError("database_config is only supported for database knowledge bases")
+	}
+	return nil
+}
+
+func (h *KnowledgeBaseHandler) createDatabaseDataSource(
+	ctx context.Context,
+	kb *types.KnowledgeBase,
+	databaseConfig *types.DatabaseKnowledgeBaseConfig,
+) (*types.DataSource, error) {
+	if kb == nil || databaseConfig == nil {
+		return nil, apperrors.NewBadRequestError("database configuration is required")
+	}
+
+	dataSourceName := strings.TrimSpace(databaseConfig.DataSourceName)
+	if dataSourceName == "" {
+		dataSourceName = strings.TrimSpace(kb.Name)
+	}
+
+	dataSource := &types.DataSource{
+		KnowledgeBaseID: kb.ID,
+		TenantID:        kb.TenantID,
+		Name:            dataSourceName,
+		Type:            strings.TrimSpace(databaseConfig.Connection.Type),
+		Status:          types.DataSourceStatusActive,
+	}
+
+	connection := databaseConfig.Connection
+	connection.Type = dataSource.Type
+	if err := dataSource.SetDatabaseConnectionConfig(&connection); err != nil {
+		return nil, err
+	}
+
+	created, err := h.dataSourceService.CreateDataSource(ctx, dataSource)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.schemaSvc.RefreshSchema(ctx, created.ID); err != nil {
+		_ = h.dataSourceService.DeleteDataSource(ctx, created.ID)
+		return nil, err
+	}
+	return created, nil
+}
+
+func (h *KnowledgeBaseHandler) rollbackCreateKnowledgeBase(ctx context.Context, kbID string) {
+	if strings.TrimSpace(kbID) == "" {
+		return
+	}
+	if err := h.service.DeleteKnowledgeBase(ctx, kbID); err != nil {
+		logger.Warnf(ctx, "failed to rollback knowledge base creation, kb=%s err=%v", kbID, err)
 	}
 }
 
@@ -123,13 +227,19 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 	logger.Info(ctx, "Start creating knowledge base")
 
 	// Parse request body
-	var req types.KnowledgeBase
+	var req createKnowledgeBaseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to parse request parameters", err)
 		c.Error(apperrors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
 		return
 	}
-	if err := validateExtractConfig(req.ExtractConfig); err != nil {
+	if err := req.validate(); err != nil {
+		logger.Error(ctx, "Invalid knowledge base creation request", err)
+		c.Error(err)
+		return
+	}
+	kbReq := req.toKnowledgeBase()
+	if err := validateExtractConfig(kbReq.ExtractConfig); err != nil {
 		logger.Error(ctx, "Invalid extract configuration", err)
 		c.Error(err)
 		return
@@ -143,14 +253,14 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 	// Set created_by from authenticated user
 	userIDVal, _ := c.Get(types.UserIDContextKey.String())
 	if userID, ok := userIDVal.(string); ok {
-		req.CreatedBy = userID
+		kbReq.CreatedBy = userID
 	}
 
 	// Validate visibility rules
-	if req.Visibility == "" {
-		req.Visibility = types.KBVisibilityPrivate
+	if kbReq.Visibility == "" {
+		kbReq.Visibility = types.KBVisibilityPrivate
 	}
-	switch req.Visibility {
+	switch kbReq.Visibility {
 	case types.KBVisibilityGlobal:
 		// Global visibility requires super admin
 		userVal, ok := c.Get(types.UserContextKey.String())
@@ -164,7 +274,7 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 		}
 	case types.KBVisibilityOrg:
 		// Org visibility requires organization_id
-		if req.OrganizationID == "" {
+		if kbReq.OrganizationID == "" {
 			c.Error(apperrors.NewBadRequestError("organization_id is required when visibility is 'org'"))
 			return
 		}
@@ -175,13 +285,25 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Creating knowledge base, name: %s, visibility: %s", secutils.SanitizeForLog(req.Name), req.Visibility)
+	logger.Infof(ctx, "Creating knowledge base, name: %s, visibility: %s", secutils.SanitizeForLog(kbReq.Name), kbReq.Visibility)
 	// Create knowledge base using the service
-	kb, err := h.service.CreateKnowledgeBase(ctx, &req)
+	kb, err := h.service.CreateKnowledgeBase(ctx, kbReq)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(apperrors.NewInternalServerError(err.Error()))
 		return
+	}
+
+	if kb.Type == types.KnowledgeBaseTypeDatabase {
+		if _, err := h.createDatabaseDataSource(ctx, kb, req.DatabaseConfig); err != nil {
+			h.rollbackCreateKnowledgeBase(ctx, kb.ID)
+			logger.ErrorWithFields(ctx, err, map[string]interface{}{
+				"knowledge_base_id":   kb.ID,
+				"knowledge_base_type": kb.Type,
+			})
+			c.Error(apperrors.NewBadRequestError(err.Error()))
+			return
+		}
 	}
 
 	logger.Infof(ctx, "Knowledge base created successfully, ID: %s, name: %s",
