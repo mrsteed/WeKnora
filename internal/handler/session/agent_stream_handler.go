@@ -439,6 +439,12 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 
 	// Update assistant message with final data
 	if data.MessageID == h.assistantMessageID {
+		streamedAnswer := h.finalAnswer
+		authoritativeAnswer := streamedAnswer
+		if data.CompletionStatus == types.MessageCompletionStatusCompleted && data.FinalAnswer != "" && (streamedAnswer == "" || (data.FinishReason == "tool_calls" && data.FinalAnswer != streamedAnswer)) {
+			authoritativeAnswer = data.FinalAnswer
+		}
+
 		h.assistantMessage.CompletionStatus = data.CompletionStatus
 		h.assistantMessage.FinishReason = data.FinishReason
 		h.assistantMessage.FailureReason = data.FailureReason
@@ -456,11 +462,10 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 			h.assistantMessage.KnowledgeReferences = knowledgeRefs
 		}
 
-		h.assistantMessage.Content = h.finalAnswer
-		if h.assistantMessage.Content == "" && data.FinalAnswer != "" && data.CompletionStatus == types.MessageCompletionStatusCompleted {
+		h.finalAnswer = authoritativeAnswer
+		h.assistantMessage.Content = authoritativeAnswer
+		if streamedAnswer == "" && authoritativeAnswer != "" && data.CompletionStatus == types.MessageCompletionStatusCompleted {
 			fallbackAnswer = data.FinalAnswer
-			h.finalAnswer = data.FinalAnswer
-			h.assistantMessage.Content = data.FinalAnswer
 		}
 
 		// Update agent steps if provided
@@ -521,6 +526,7 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 		Done:      true,
 		Timestamp: time.Now(),
 		Data: map[string]interface{}{
+			"final_answer":      h.assistantMessage.Content,
 			"total_steps":       data.TotalSteps,
 			"total_duration_ms": data.TotalDurationMs,
 			"completion_status": data.CompletionStatus,

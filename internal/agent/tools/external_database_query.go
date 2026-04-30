@@ -130,22 +130,31 @@ func formatExternalDatabaseQueryOutput(columns []string, rows []map[string]any, 
 	for index, row := range rows {
 		builder.WriteString(fmt.Sprintf("--- Record #%d ---\n", index+1))
 		for _, column := range columns {
-			value := row[column]
-			switch typed := value.(type) {
-			case nil:
-				builder.WriteString(fmt.Sprintf("  %s: <NULL>\n", column))
-			case string:
-				builder.WriteString(fmt.Sprintf("  %s: %s\n", column, typed))
-			default:
-				raw, err := json.Marshal(typed)
-				if err != nil {
-					builder.WriteString(fmt.Sprintf("  %s: %v\n", column, typed))
-				} else {
-					builder.WriteString(fmt.Sprintf("  %s: %s\n", column, string(raw)))
-				}
-			}
+			builder.WriteString(fmt.Sprintf("  %s: %s\n", column, formatQueryCellValue(row[column])))
 		}
 		builder.WriteString("\n")
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+func formatQueryCellValue(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return "<NULL>"
+	case string:
+		return typed
+	default:
+		raw, err := json.Marshal(typed)
+		if err != nil {
+			return fmt.Sprintf("%v", typed)
+		}
+		return string(raw)
+	}
+}
+
+func limitStringSlice(items []string, limit int) []string {
+	if len(items) <= limit {
+		return items
+	}
+	return items[:limit]
 }

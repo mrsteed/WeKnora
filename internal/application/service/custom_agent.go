@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -24,10 +25,11 @@ var (
 
 // customAgentService implements the CustomAgentService interface
 type customAgentService struct {
-	repo         interfaces.CustomAgentRepository
-	chunkRepo    interfaces.ChunkRepository
-	kbService    interfaces.KnowledgeBaseService
-	wikiPageRepo interfaces.WikiPageRepository
+	repo           interfaces.CustomAgentRepository
+	chunkRepo      interfaces.ChunkRepository
+	kbService      interfaces.KnowledgeBaseService
+	kbShareService interfaces.KBShareService
+	wikiPageRepo   interfaces.WikiPageRepository
 }
 
 // NewCustomAgentService creates a new custom agent service
@@ -35,13 +37,15 @@ func NewCustomAgentService(
 	repo interfaces.CustomAgentRepository,
 	chunkRepo interfaces.ChunkRepository,
 	kbService interfaces.KnowledgeBaseService,
+	kbShareService interfaces.KBShareService,
 	wikiPageRepo interfaces.WikiPageRepository,
 ) interfaces.CustomAgentService {
 	return &customAgentService{
-		repo:         repo,
-		chunkRepo:    chunkRepo,
-		kbService:    kbService,
-		wikiPageRepo: wikiPageRepo,
+		repo:           repo,
+		chunkRepo:      chunkRepo,
+		kbService:      kbService,
+		kbShareService: kbShareService,
+		wikiPageRepo:   wikiPageRepo,
 	}
 }
 
@@ -492,8 +496,24 @@ func (s *customAgentService) GetSuggestedQuestions(
 				// Return what we have so far (agent_config suggestions)
 				return s.truncateQuestions(result, limit), nil
 			}
-			for _, kb := range kbs {
-				effectiveKBIDs = append(effectiveKBIDs, kb.ID)
+			var skipped int
+			effectiveKBIDs, skipped = collectCompatibleKnowledgeBaseIDs(kbs, agent.Config.AllowedTools)
+			if s.kbShareService != nil {
+				if userID, ok := types.UserIDFromContext(ctx); ok {
+					sharedList, err := s.kbShareService.ListSharedKnowledgeBases(ctx, userID, tenantID)
+					if err != nil {
+						logger.Warnf(ctx, "List shared knowledge bases for suggested questions failed: %v", err)
+					} else {
+						var sharedSkipped int
+						effectiveKBIDs, sharedSkipped = appendCompatibleSharedKnowledgeBaseIDs(effectiveKBIDs, sharedList, agent.Config.AllowedTools)
+						skipped += sharedSkipped
+					}
+				}
+			}
+			if skipped > 0 {
+				logger.Infof(ctx,
+					"Suggested questions(agent=%s, mode=all): tool-capability filter removed %d KBs",
+					agentID, skipped)
 			}
 		case "selected":
 			effectiveKBIDs = agent.Config.KnowledgeBases
@@ -657,6 +677,46 @@ func (s *customAgentService) truncateQuestions(questions []types.SuggestedQuesti
 		return questions[:limit]
 	}
 	return questions
+}
+
+func collectCompatibleKnowledgeBaseIDs(kbs []*types.KnowledgeBase, allowedTools []string) ([]string, int) {
+	filter := tools.DeriveKBFilterFromTools(allowedTools)
+	ids := make([]string, 0, len(kbs))
+	skipped := 0
+	for _, kb := range kbs {
+		if kb == nil {
+			continue
+		}
+		if !filter.IsEmpty() && !tools.KBSatisfiesToolRequirements(kb.Capabilities(), allowedTools) {
+			skipped++
+			continue
+		}
+		ids = append(ids, kb.ID)
+	}
+	return ids, skipped
+}
+
+func appendCompatibleSharedKnowledgeBaseIDs(existingIDs []string, sharedList []*types.SharedKnowledgeBaseInfo, allowedTools []string) ([]string, int) {
+	seen := make(map[string]bool, len(existingIDs))
+	for _, id := range existingIDs {
+		seen[id] = true
+	}
+	sharedKBs := make([]*types.KnowledgeBase, 0, len(sharedList))
+	for _, info := range sharedList {
+		if info == nil || info.KnowledgeBase == nil || seen[info.KnowledgeBase.ID] {
+			continue
+		}
+		sharedKBs = append(sharedKBs, info.KnowledgeBase)
+	}
+	sharedIDs, skipped := collectCompatibleKnowledgeBaseIDs(sharedKBs, allowedTools)
+	for _, id := range sharedIDs {
+		if seen[id] {
+			continue
+		}
+		existingIDs = append(existingIDs, id)
+		seen[id] = true
+	}
+	return existingIDs, skipped
 }
 
 // wikiSuggestionFromPage converts a wiki page into a human-readable suggested

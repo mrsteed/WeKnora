@@ -2,14 +2,24 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
+	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
+)
+
+const (
+	finalAnswerToolOutputBudget   = 1800
+	finalAnswerRowPreviewLimit    = 3
+	finalAnswerColumnPreviewLimit = 6
 )
 
 func buildFinalAnswerEventData(state *types.AgentState, content string, done bool) event.AgentFinalAnswerData {
@@ -81,12 +91,13 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	for stepIdx, step := range state.RoundSteps {
 		for toolIdx, toolCall := range step.ToolCalls {
 			toolResultCount++
+			toolSummary := summarizeToolResultForFinalAnswer(toolCall)
 			messages = append(messages, chat.Message{
 				Role:    "user",
-				Content: fmt.Sprintf("Tool %s returned: %s", toolCall.Name, toolCall.Result.Output),
+				Content: fmt.Sprintf("Tool %s summary:\n%s", toolCall.Name, toolSummary),
 			})
 			logger.Debugf(ctx, "[Agent][FinalAnswer] Added tool result [Step-%d][Tool-%d]: %s (output: %d chars)",
-				stepIdx+1, toolIdx+1, toolCall.Name, len(toolCall.Result.Output))
+				stepIdx+1, toolIdx+1, toolCall.Name, len(toolSummary))
 		}
 	}
 
@@ -116,10 +127,11 @@ Now generate the final answer:`, query)
 	answerID := generateEventID("answer")
 	logger.Debugf(ctx, "[Agent][FinalAnswer] AnswerID: %s", answerID)
 
+	finalAnswerThinking := false
 	llmResult, err := e.streamLLMToEventBus(
 		ctx,
 		messages,
-		&chat.ChatOptions{Temperature: e.config.Temperature, Thinking: e.config.Thinking},
+		&chat.ChatOptions{Temperature: e.config.Temperature, Thinking: &finalAnswerThinking},
 		func(chunk *types.StreamResponse, fullContent string) {
 			if chunk.Content != "" {
 				logger.Debugf(ctx, "[Agent][FinalAnswer] Emitting answer chunk: %d chars", len(chunk.Content))
@@ -149,6 +161,223 @@ Now generate the final answer:`, query)
 	})
 	state.FinalAnswer = fullAnswer
 	return nil
+}
+
+func summarizeToolResultForFinalAnswer(toolCall types.ToolCall) string {
+	if toolCall.Result == nil {
+		return "(no tool result)"
+	}
+	if structured := summarizeStructuredToolResult(toolCall.Name, toolCall.Result); structured != "" {
+		return structured
+	}
+	if !toolCall.Result.Success && toolCall.Result.Error != "" {
+		return compactToolTextForFinalAnswer("Error: "+toolCall.Result.Error, finalAnswerToolOutputBudget)
+	}
+	return compactToolTextForFinalAnswer(toolCall.Result.Output, finalAnswerToolOutputBudget)
+}
+
+func summarizeStructuredToolResult(toolName string, result *types.ToolResult) string {
+	if result == nil || result.Data == nil {
+		return ""
+	}
+	switch toolName {
+	case agenttools.ToolExternalDatabaseSchema:
+		return summarizeDatabaseSchemaToolData(result.Data)
+	case agenttools.ToolExternalDatabaseQuery:
+		return summarizeDatabaseQueryToolData(result.Data)
+	default:
+		return ""
+	}
+}
+
+func summarizeDatabaseSchemaToolData(data map[string]interface{}) string {
+	var builder strings.Builder
+	builder.WriteString("Database schema summary\n")
+	if databaseName, _ := data["database_name"].(string); strings.TrimSpace(databaseName) != "" {
+		builder.WriteString(fmt.Sprintf("Database: %s\n", databaseName))
+	}
+	if schemaName, _ := data["schema_name"].(string); strings.TrimSpace(schemaName) != "" {
+		builder.WriteString(fmt.Sprintf("Schema: %s\n", schemaName))
+	}
+	if allowedTables := toStringSlice(data["allowed_tables"]); len(allowedTables) > 0 {
+		sort.Strings(allowedTables)
+		builder.WriteString(fmt.Sprintf("Tables: %s\n", strings.Join(limitStringSlice(allowedTables, 8), ", ")))
+		if len(allowedTables) > 8 {
+			builder.WriteString(fmt.Sprintf("Additional tables omitted: %d\n", len(allowedTables)-8))
+		}
+	}
+	if joinHints := toStringSlice(data["join_hints"]); len(joinHints) > 0 {
+		builder.WriteString("Join hints:\n")
+		for _, hint := range limitStringSlice(joinHints, 6) {
+			builder.WriteString("- ")
+			builder.WriteString(hint)
+			builder.WriteString("\n")
+		}
+	}
+	if sampleQueries := toStringSlice(data["sample_queries"]); len(sampleQueries) > 0 {
+		builder.WriteString("Sample queries:\n")
+		for _, query := range limitStringSlice(sampleQueries, 3) {
+			builder.WriteString("- ")
+			builder.WriteString(compactToolTextForFinalAnswer(query, 220))
+			builder.WriteString("\n")
+		}
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func summarizeDatabaseQueryToolData(data map[string]interface{}) string {
+	var builder strings.Builder
+	builder.WriteString("Database query summary\n")
+	columns := toStringSlice(data["columns"])
+	if len(columns) > 0 {
+		builder.WriteString(fmt.Sprintf("Columns: %s", strings.Join(limitStringSlice(columns, finalAnswerColumnPreviewLimit), ", ")))
+		if len(columns) > finalAnswerColumnPreviewLimit {
+			builder.WriteString(fmt.Sprintf(" (+%d more)", len(columns)-finalAnswerColumnPreviewLimit))
+		}
+		builder.WriteString("\n")
+	}
+	if rowCount, ok := toInt(data["row_count"]); ok {
+		builder.WriteString(fmt.Sprintf("Row count: %d\n", rowCount))
+	}
+	if truncated, ok := data["truncated"].(bool); ok && truncated {
+		builder.WriteString("Result truncated: true\n")
+	}
+	if durationMS, ok := toInt64(data["duration_ms"]); ok {
+		builder.WriteString(fmt.Sprintf("Duration: %d ms\n", durationMS))
+	}
+	rows, _ := data["rows"].([]map[string]interface{})
+	if len(rows) == 0 {
+		rows = toRowMaps(data["rows"])
+	}
+	if len(rows) > 0 {
+		builder.WriteString("Sample rows:\n")
+		for index, row := range rows {
+			if index >= finalAnswerRowPreviewLimit {
+				builder.WriteString(fmt.Sprintf("- ... %d more row(s) omitted\n", len(rows)-finalAnswerRowPreviewLimit))
+				break
+			}
+			builder.WriteString(fmt.Sprintf("- %s\n", summarizeGenericRow(columns, row, finalAnswerColumnPreviewLimit)))
+		}
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func summarizeGenericRow(columns []string, row map[string]interface{}, columnLimit int) string {
+	keys := columns
+	if len(keys) == 0 {
+		keys = make([]string, 0, len(row))
+		for key := range row {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+	}
+	items := make([]string, 0, minInt(len(keys), columnLimit)+1)
+	for index, key := range keys {
+		if index >= columnLimit {
+			items = append(items, fmt.Sprintf("... +%d more column(s)", len(keys)-columnLimit))
+			break
+		}
+		raw, err := json.Marshal(row[key])
+		if err != nil {
+			items = append(items, fmt.Sprintf("%s=%v", key, row[key]))
+			continue
+		}
+		items = append(items, fmt.Sprintf("%s=%s", key, compactToolTextForFinalAnswer(string(raw), 120)))
+	}
+	return strings.Join(items, "; ")
+}
+
+func compactToolTextForFinalAnswer(text string, maxChars int) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "(empty output)"
+	}
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	for strings.Contains(text, "\n\n\n") {
+		text = strings.ReplaceAll(text, "\n\n\n", "\n\n")
+	}
+	runes := []rune(text)
+	if maxChars <= 0 || len(runes) <= maxChars {
+		return text
+	}
+	head := maxChars * 2 / 3
+	tail := maxChars - head - len([]rune("\n... [truncated for synthesis] ...\n"))
+	if tail < 80 {
+		tail = 80
+		head = maxChars - tail - len([]rune("\n... [truncated for synthesis] ...\n"))
+	}
+	return strings.TrimSpace(string(runes[:head])) + "\n... [truncated for synthesis] ...\n" + strings.TrimSpace(string(runes[len(runes)-tail:]))
+}
+
+func toStringSlice(value interface{}) []string {
+	switch typed := value.(type) {
+	case []string:
+		return append([]string(nil), typed...)
+	case []interface{}:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if str, ok := item.(string); ok && strings.TrimSpace(str) != "" {
+				items = append(items, str)
+			}
+		}
+		return items
+	default:
+		return nil
+	}
+}
+
+func toInt(value interface{}) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func toInt64(value interface{}) (int64, bool) {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed), true
+	case int64:
+		return typed, true
+	case float64:
+		return int64(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func toRowMaps(value interface{}) []map[string]interface{} {
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	rows := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		if row, ok := item.(map[string]interface{}); ok {
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
+func limitStringSlice(items []string, limit int) []string {
+	if len(items) <= limit {
+		return items
+	}
+	return items[:limit]
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // handleMaxIterations generates a final answer when the agent loop exhausted all iterations

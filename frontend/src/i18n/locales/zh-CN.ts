@@ -3672,6 +3672,9 @@ export default {
       failed: "生成失败，请重试",
       cancelled: "已停止生成",
     },
+    loading: {
+      finalizing: "正在整理最终文档…",
+    },
     copy: {
       emptyContent: "当前回答为空，无法复制",
       success: "已复制到剪贴板",

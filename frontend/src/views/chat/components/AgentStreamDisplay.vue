@@ -309,6 +309,7 @@
         <span></span>
         <span></span>
       </div>
+      <div v-if="loadingStatusLabel" class="loading-label">{{ loadingStatusLabel }}</div>
     </div>
     </div>
     <div v-if="conversationStatusLabel" class="conversation-status" :class="`status-${completionStatus || 'pending'}`">
@@ -891,6 +892,17 @@ const conversationStatusLabel = computed(() => {
     default:
       return '';
   }
+});
+
+const loadingStatusLabel = computed(() => {
+  if (isConversationDone.value || !eventStream.value || eventStream.value.length === 0) {
+    return '';
+  }
+  const hasAnswerDoneEvent = eventStream.value.some((event: any) => event.type === 'answer' && event.done === true);
+  if (hasAnswerDoneEvent) {
+    return t('agentStream.loading.finalizing');
+  }
+  return '';
 });
 
 // Track whether answer has started streaming (for early collapse)
@@ -3278,6 +3290,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
 .loading-indicator {
   display: flex;
   align-items: center;
+  gap: 10px;
   padding: 12px 0;
   margin-top: 0;
   padding-left: 0;
@@ -3309,6 +3322,12 @@ const handleAddToKnowledge = (answerEvent: any) => {
         animation-delay: 0s;
       }
     }
+  }
+
+  .loading-label {
+    font-size: 12px;
+    color: var(--td-text-color-secondary);
+    line-height: 1.5;
   }
   
   // 打字机效果

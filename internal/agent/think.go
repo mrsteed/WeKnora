@@ -21,7 +21,6 @@ type streamLLMResult struct {
 	Usage            *types.TokenUsage
 	FinishReason     string // actual finish_reason from LLM (captured from last stream chunk)
 	StreamError      string // error message from stream (e.g., timeout), kept separate from Content
-	AnswerStreamed   bool
 }
 
 // streamLLMToEventBus streams LLM response through EventBus (generic method)
@@ -61,10 +60,6 @@ func (e *AgentEngine) streamLLMToEventBus(
 		if chunk.ResponseType == types.ResponseTypeError {
 			result.StreamError = chunk.Content
 			continue
-		}
-
-		if chunk.ResponseType == types.ResponseTypeAnswer && chunk.Content != "" {
-			result.AnswerStreamed = true
 		}
 
 		if chunk.Content != "" {
@@ -144,6 +139,8 @@ func (e *AgentEngine) streamThinkingToEventBus(
 
 	// Track which event types we emitted for diagnostics
 	emittedEventTypes := make(map[string]int)
+	answerStreamed := false
+	finalAnswerStreamed := false
 
 	// Generate IDs for this stream
 	thinkingID := generateEventID("thinking")
@@ -182,7 +179,13 @@ func (e *AgentEngine) streamThinkingToEventBus(
 							source = chunkSource
 						}
 					}
-					emittedEventTypes[source+"_chunk"]++
+					answerStreamed = true
+					if source == "final_answer_tool" {
+						finalAnswerStreamed = true
+						emittedEventTypes[source+"_chunk"]++
+					} else {
+						emittedEventTypes[source+"_chunk"]++
+					}
 					e.eventBus.Emit(ctx, event.Event{
 						ID:        answerID,
 						Type:      event.EventAgentFinalAnswer,
@@ -255,11 +258,12 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	}
 
 	resp := &types.ChatResponse{
-		Content:          fullContent,
-		ReasoningContent: llmResult.ReasoningContent,
-		ToolCalls:        llmResult.ToolCalls,
-		FinishReason:     finishReason,
-		AnswerStreamed:   llmResult.AnswerStreamed,
+		Content:             fullContent,
+		ReasoningContent:    llmResult.ReasoningContent,
+		ToolCalls:           llmResult.ToolCalls,
+		FinishReason:        finishReason,
+		AnswerStreamed:      answerStreamed,
+		FinalAnswerStreamed: finalAnswerStreamed,
 	}
 	if llmResult.Usage != nil {
 		resp.Usage = *llmResult.Usage

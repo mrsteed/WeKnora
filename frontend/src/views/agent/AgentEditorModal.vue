@@ -921,7 +921,7 @@
                         <t-radio-group v-model="kbSelectionMode">
                           <t-radio-button value="all">{{ $t('agent.editor.allKnowledgeBases') }}</t-radio-button>
                           <t-radio-button value="selected">{{ $t('agent.editor.selectedKnowledgeBases') }}</t-radio-button>
-                          <t-radio-button value="none">{{ $t('agent.editor.noKnowledgeBase') }}</t-radio-button>
+                          <t-radio-button value="none" :disabled="isDatabaseAnalysisAgent">{{ $t('agent.editor.noKnowledgeBase') }}</t-radio-button>
                         </t-radio-group>
                       </div>
                     </div>
@@ -1537,6 +1537,17 @@ const ensureDefaultBaseTools = (tools?: string[] | null): string[] => {
 // 数据库知识库相关工具列表（仅数据库型知识库进入作用域时 seed）
 const databaseKnowledgeBaseTools = ['external_database_schema', 'external_database_query'];
 
+const databaseAnalysisAllowedTools = new Set([
+  ...defaultBaseTools,
+  ...databaseKnowledgeBaseTools,
+  'final_answer',
+]);
+
+const sanitizeDatabaseAnalysisTools = (tools?: string[] | null): string[] => {
+  const currentTools = Array.isArray(tools) ? tools : [];
+  return currentTools.filter(tool => databaseAnalysisAllowedTools.has(tool));
+};
+
 // Wiki 读取类工具（用于 watch(agentMode) 切到 smart-reasoning 时 seed 默认工具）
 const wikiReadTools = ['wiki_search', 'wiki_read_page', 'wiki_read_source_doc', 'wiki_flag_issue'];
 
@@ -1619,10 +1630,13 @@ const shouldShowRetrievalSection = computed(() => {
 // 注意：用户可能选了 knowledge_bases（按库级），也可能选了 knowledge_ids（按文档级）
 // 这里仅用于 UI 上的工具可用性判定，按库级来计算
 const kbsInScope = computed(() => {
+  const presetScopedOptions = activeAgentTypePreset.value
+    ? filteredKbOptionsForPreset.value.filter(kb => !kb.disabled)
+    : kbOptions.value;
   if (kbSelectionMode.value === 'none') return [];
-  if (kbSelectionMode.value === 'all') return kbOptions.value;
+  if (kbSelectionMode.value === 'all') return presetScopedOptions;
   const selectedIds = formData.value.config.knowledge_bases || [];
-  return kbOptions.value.filter(kb => selectedIds.includes(kb.value));
+  return presetScopedOptions.filter(kb => selectedIds.includes(kb.value));
 });
 
 // 是否存在至少一个启用了 RAG 能力的知识库（向量 or 关键词）
@@ -1647,14 +1661,7 @@ const databaseKbCount = computed(() => kbsInScope.value.filter(kb => !!kb.capabi
 
 // 检测选择的知识库中是否包含 FAQ 类型
 const hasFaqKnowledgeBase = computed(() => {
-  if (kbSelectionMode.value === 'none') return false;
-  if (kbSelectionMode.value === 'all') {
-    // 全部知识库模式，检查是否有任何 FAQ 类型的知识库
-    return kbOptions.value.some(kb => kb.type === 'faq');
-  }
-  // 指定知识库模式，检查选中的知识库中是否有 FAQ 类型
-  const selectedKbIds = formData.value.config.knowledge_bases || [];
-  return kbOptions.value.some(kb => selectedKbIds.includes(kb.value) && kb.type === 'faq');
+  return kbsInScope.value.some(kb => kb.type === 'faq');
 });
 
 // 把"作用域内 KB 能力"聚合成一个 ScopeCapabilities 对象，交给
@@ -1703,10 +1710,11 @@ const availableTools = computed(() => {
   const hasAnyKb = hasKnowledgeBase.value;
   return allTools.value.map(tool => {
     const { ok, missKind } = evaluateToolRequirement(tool.value, scope, hasAnyKb);
+    const keepSelectable = tool.value === 'external_database_schema' || tool.value === 'external_database_query';
     return {
       ...tool,
-      disabled: !ok,
-      disabledReason: ok ? undefined : missKindToReason(missKind),
+      disabled: keepSelectable ? false : !ok,
+      disabledReason: keepSelectable || ok ? undefined : missKindToReason(missKind),
     };
   });
 });
@@ -1716,6 +1724,7 @@ const hideDisabledToolGroupsOnCreate = new Set(['rag', 'wiki_read', 'wiki_edit',
 // 按分组切片后的工具列表，用于模板分组渲染
 const groupedAvailableTools = computed(() => {
   const toolsToRender = availableTools.value.filter(tool => {
+    if (isDatabaseAnalysisAgent.value && tool.disabled) return false;
     if (props.mode !== 'create') return true;
     return !(hideDisabledToolGroupsOnCreate.has(tool.group || 'base') && tool.disabled);
   });
@@ -2134,6 +2143,10 @@ const incompatibleSelectedKbCount = computed(() => {
   return filteredKbOptionsForPreset.value.filter(kb => selected.has(kb.value) && kb.disabled).length;
 });
 
+const compatibleKbOptionCount = computed(() => {
+  return filteredKbOptionsForPreset.value.filter(kb => !kb.disabled).length;
+});
+
 // 应用一个预设的 config 到 formData.config（仅覆盖预设里明确设置的字段，其他不动）
 const applyAgentTypePreset = (preset: AgentTypePreset | null) => {
   if (!preset || !preset.config) return;
@@ -2451,6 +2464,18 @@ watch(kbSelectionMode, (mode) => {
   // selected 模式保持 knowledge_bases 不变
 });
 
+watch(isDatabaseAnalysisAgent, (isDatabaseAgent) => {
+  if (isDatabaseAgent && kbSelectionMode.value === 'none') {
+    kbSelectionMode.value = 'all';
+  }
+  if (!isDatabaseAgent) return;
+
+  const sanitizedTools = sanitizeDatabaseAnalysisTools(formData.value.config.allowed_tools);
+  if (sanitizedTools.length !== (formData.value.config.allowed_tools || []).length) {
+    formData.value.config.allowed_tools = sanitizedTools;
+  }
+});
+
 // 监听 MCP 选择模式变化
 watch(mcpSelectionMode, (mode) => {
   formData.value.config.mcp_selection_mode = mode;
@@ -2552,6 +2577,7 @@ watch(agentMode, (val, _oldVal) => {
 watch(hasKnowledgeBase, (hasKB, oldHasKB) => {
   // 初始化期间或非 Agent 模式下不自动调整工具
   if (isInitializing.value || !isAgentMode.value) return;
+  if (isDatabaseAnalysisAgent.value) return;
 
   if (hasKB && !oldHasKB) {
     // 从无知识库变为有知识库，seed 默认的 RAG 工具（仅补齐未勾的）
@@ -3657,17 +3683,23 @@ const handleSave = async () => {
   }
 
   if (agentType.value === 'database-analysis') {
-    if (kbSelectionMode.value !== 'selected') {
-      MessagePlugin.error('数据库分析智能体必须绑定至少一个 Database 知识库');
+    formData.value.config.allowed_tools = sanitizeDatabaseAnalysisTools(formData.value.config.allowed_tools);
+    if (kbSelectionMode.value === 'none') {
+      MessagePlugin.error('数据库分析智能体不能设置为不使用知识库');
       currentSection.value = 'knowledge';
       return;
     }
-    if (!formData.value.config.knowledge_bases || formData.value.config.knowledge_bases.length === 0) {
+    if (kbSelectionMode.value === 'all' && compatibleKbOptionCount.value === 0) {
+      MessagePlugin.error('当前没有可用的 Database 知识库，请先创建或共享数据库知识库');
+      currentSection.value = 'knowledge';
+      return;
+    }
+    if (kbSelectionMode.value === 'selected' && (!formData.value.config.knowledge_bases || formData.value.config.knowledge_bases.length === 0)) {
       MessagePlugin.error('请至少选择一个 Database 知识库');
       currentSection.value = 'knowledge';
       return;
     }
-    if (incompatibleSelectedKbCount.value > 0) {
+    if (kbSelectionMode.value === 'selected' && incompatibleSelectedKbCount.value > 0) {
       MessagePlugin.error('数据库分析智能体只能绑定 Database 知识库，请移除不兼容的知识库');
       currentSection.value = 'knowledge';
       return;

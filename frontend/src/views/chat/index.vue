@@ -295,6 +295,36 @@ const syncMessageCompletionState = (message, payload = {}) => {
     return nextStatus;
 };
 
+const upsertAgentCompleteEvent = (message, payload = {}) => {
+    if (!message) {
+        return;
+    }
+    if (!message.agentEventStream) {
+        message.agentEventStream = [];
+    }
+
+    const completionStatus = normalizeCompletionStatus({ ...message, ...payload });
+    const completePayload = payload?.data || payload;
+    const nextEvent = {
+        type: 'agent_complete',
+        total_duration_ms: completePayload?.total_duration_ms,
+        total_steps: completePayload?.total_steps,
+        completion_status: completionStatus,
+        finish_reason: completePayload?.finish_reason,
+        failure_reason: completePayload?.failure_reason,
+        is_partial: completionStatus === 'partial' || Boolean(completePayload?.is_partial),
+        final_answer: completePayload?.final_answer,
+    };
+
+    const existingCompleteEvent = message.agentEventStream.find((event) => event.type === 'agent_complete');
+    if (existingCompleteEvent) {
+        Object.assign(existingCompleteEvent, nextEvent);
+        return;
+    }
+
+    message.agentEventStream.push(nextEvent);
+};
+
 const isMessageTerminal = (message) => isTerminalCompletionStatus(normalizeCompletionStatus(message));
 
 const buildLocalAssistantMessage = (isAgentMode = false) => {
@@ -1561,6 +1591,19 @@ const handleAgentChunk = (data) => {
                 answerEvent.finish_reason = data.data.finish_reason;
                 answerEvent.failure_reason = data.data.failure_reason;
             }
+
+            const answerCompletionStatus = data.data?.completion_status || answerEvent.completion_status;
+            if (data.done && isTerminalCompletionStatus(answerCompletionStatus)) {
+                syncMessageCompletionState(message, data.data || {});
+                upsertAgentCompleteEvent(message, {
+                    completion_status: answerCompletionStatus,
+                    finish_reason: data.data?.finish_reason,
+                    failure_reason: data.data?.failure_reason,
+                    is_partial: data.data?.is_partial,
+                    final_answer: answerEvent.content || message.content,
+                });
+                resetReplyState();
+            }
             
             // 只在第一次收到 done:true 时标记 answer 流结束，真正完成态由 complete 事件决定。
             if (data.done && !answerEvent.done) {
@@ -1575,28 +1618,29 @@ const handleAgentChunk = (data) => {
             // 整个流式响应完成事件 - 确保状态正确关闭
             console.log('[Agent] Complete event received');
             syncMessageCompletionState(message, data.data || {});
+            if (data.data?.final_answer && data.data.final_answer !== message.content) {
+                message.content = data.data.final_answer;
+                if (!message.agentEventStream) message.agentEventStream = [];
+                let answerEvent = message.agentEventStream.find((event) => event.type === 'answer');
+                if (!answerEvent) {
+                    answerEvent = {
+                        type: 'answer',
+                        content: '',
+                        done: false,
+                        completion_status: data.data?.completion_status || 'completed'
+                    };
+                    message.agentEventStream.push(answerEvent);
+                }
+                answerEvent.content = data.data.final_answer;
+                answerEvent.done = true;
+                answerEvent.completion_status = data.data?.completion_status || answerEvent.completion_status;
+                answerEvent.finish_reason = data.data?.finish_reason;
+                answerEvent.failure_reason = data.data?.failure_reason;
+            }
             resetReplyState();
             // 将 total_duration_ms 存入事件流供 AgentStreamDisplay 使用
-            if (data.data?.total_duration_ms && message.agentEventStream) {
-                const existingCompleteEvent = message.agentEventStream.find((event) => event.type === 'agent_complete');
-                if (existingCompleteEvent) {
-                    existingCompleteEvent.total_duration_ms = data.data.total_duration_ms;
-                    existingCompleteEvent.total_steps = data.data.total_steps;
-                    existingCompleteEvent.completion_status = data.data.completion_status;
-                    existingCompleteEvent.finish_reason = data.data.finish_reason;
-                    existingCompleteEvent.failure_reason = data.data.failure_reason;
-                    existingCompleteEvent.is_partial = data.data.is_partial;
-                } else {
-                    message.agentEventStream.push({
-                        type: 'agent_complete',
-                        total_duration_ms: data.data.total_duration_ms,
-                        total_steps: data.data.total_steps,
-                        completion_status: data.data?.completion_status,
-                        finish_reason: data.data?.finish_reason,
-                        failure_reason: data.data?.failure_reason,
-                        is_partial: data.data?.is_partial,
-                    });
-                }
+            if (data.data) {
+                upsertAgentCompleteEvent(message, data.data);
             }
             break;
             

@@ -72,6 +72,30 @@ func TestAnalyzeResponse_FinalAnswer_ValidArgs(t *testing.T) {
 	assert.Equal(t, "Here is the answer.", verdict.finalAnswer)
 }
 
+func TestAnalyzeResponse_FinalAnswer_ValidArgs_EmitsAuthoritativeAnswer(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	resp := newFinalAnswerResponse(`{"answer": "Here is the answer."}`)
+
+	var emitted []event.AgentFinalAnswerData
+	engine.eventBus.On(event.EventAgentFinalAnswer, func(ctx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		require.True(t, ok)
+		emitted = append(emitted, data)
+		return nil
+	})
+
+	verdict := engine.analyzeResponse(
+		context.Background(), resp, types.AgentStep{}, 0, "sess-1", time.Now(),
+	)
+
+	require.True(t, verdict.isDone)
+	require.Len(t, emitted, 2)
+	assert.Equal(t, "Here is the answer.", emitted[0].Content)
+	assert.False(t, emitted[0].Done)
+	assert.Empty(t, emitted[1].Content)
+	assert.True(t, emitted[1].Done)
+}
+
 // TestAnalyzeResponse_FinalAnswer_MalformedJSON_RecoveredViaRepair covers the
 // common case reported in issue #1008: the LLM emits final_answer with a
 // trailing comma / missing brace. RepairJSON should recover the answer and
@@ -178,9 +202,10 @@ func TestAnalyzeResponse_LengthWithoutToolCalls_ReturnsPartial(t *testing.T) {
 func TestAnalyzeResponse_StopWithStreamedAnswer_OnlyEmitsDoneMarker(t *testing.T) {
 	engine := newTestEngine(t, &mockChat{})
 	resp := &types.ChatResponse{
-		Content:        "streamed answer",
-		FinishReason:   "stop",
-		AnswerStreamed: true,
+		Content:             "streamed answer",
+		FinishReason:        "stop",
+		AnswerStreamed:      true,
+		FinalAnswerStreamed: true,
 	}
 
 	var emitted []event.AgentFinalAnswerData
@@ -227,12 +252,87 @@ func TestStreamThinkingToEventBus_OrdinaryAnswerChunksStayOnAnswerChannel(t *tes
 	require.NoError(t, err)
 	require.NotNil(t, response)
 	assert.True(t, response.AnswerStreamed)
+	assert.False(t, response.FinalAnswerStreamed)
 	assert.Len(t, answers, 2)
 	assert.Empty(t, thoughts)
 	assert.Equal(t, "hello ", answers[0].Content)
 	assert.Equal(t, "world", answers[1].Content)
 	assert.False(t, answers[0].Done)
 	assert.False(t, answers[1].Done)
+}
+
+func TestStreamThinkingToEventBus_ToolCallingPrefaceStaysNonAuthoritative(t *testing.T) {
+	mock := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{
+		{ResponseType: types.ResponseTypeAnswer, Content: "Let me summarize the result first. "},
+		{
+			ResponseType: types.ResponseTypeToolCall,
+			Done:         true,
+			FinishReason: "tool_calls",
+			ToolCalls: []types.LLMToolCall{{
+				ID:   "call-1",
+				Type: "function",
+				Function: types.FunctionCall{
+					Name:      agenttools.ToolFinalAnswer,
+					Arguments: `{"answer":"full answer"}`,
+				},
+			}},
+			Data: map[string]interface{}{
+				"tool_call_id": "call-1",
+				"tool_name":    agenttools.ToolFinalAnswer,
+			},
+		},
+	}}}}
+	engine := newTestEngine(t, mock)
+
+	var answers []event.AgentFinalAnswerData
+	engine.eventBus.On(event.EventAgentFinalAnswer, func(ctx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		require.True(t, ok)
+		answers = append(answers, data)
+		return nil
+	})
+
+	response, err := engine.streamThinkingToEventBus(context.Background(), emptyMessages(), emptyTools(), 0, "sess-1")
+	require.NoError(t, err)
+	require.NotNil(t, response)
+	assert.True(t, response.AnswerStreamed)
+	assert.False(t, response.FinalAnswerStreamed)
+	assert.Len(t, response.ToolCalls, 1)
+	require.Len(t, answers, 1)
+	assert.Equal(t, "Let me summarize the result first. ", answers[0].Content)
+}
+
+func TestAnalyzeResponse_FinalAnswerToolStillEmitsAuthoritativeAnswerAfterPrefaceStream(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	resp := &types.ChatResponse{
+		Content:             "Let me summarize the result first. ",
+		FinishReason:        "tool_calls",
+		AnswerStreamed:      true,
+		FinalAnswerStreamed: false,
+		ToolCalls: []types.LLMToolCall{{
+			ID:   "call-1",
+			Type: "function",
+			Function: types.FunctionCall{
+				Name:      agenttools.ToolFinalAnswer,
+				Arguments: `{"answer":"full answer"}`,
+			},
+		}},
+	}
+
+	var emitted []event.AgentFinalAnswerData
+	engine.eventBus.On(event.EventAgentFinalAnswer, func(ctx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		require.True(t, ok)
+		emitted = append(emitted, data)
+		return nil
+	})
+
+	verdict := engine.analyzeResponse(context.Background(), resp, types.AgentStep{}, 0, "sess-1", time.Now())
+	require.True(t, verdict.isDone)
+	require.Len(t, emitted, 2)
+	assert.Equal(t, "full answer", emitted[0].Content)
+	assert.False(t, emitted[0].Done)
+	assert.True(t, emitted[1].Done)
 }
 
 func TestRunReActIteration_LengthResponseSchedulesContinuation(t *testing.T) {

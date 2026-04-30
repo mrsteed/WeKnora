@@ -128,7 +128,7 @@ func (r *ToolRegistry) ExecuteTool(
 
 	// Truncate large tool outputs to prevent context window poisoning.
 	maxOutput := r.getMaxToolOutput()
-	if result != nil && len(result.Output) > maxOutput {
+	if result != nil && len(result.Output) > maxOutput && !shouldSkipOutputTruncation(name) {
 		result.Output = TruncateToolOutput(result.Output, maxOutput)
 	}
 
@@ -156,6 +156,15 @@ func (r *ToolRegistry) ExecuteTool(
 	}
 
 	return result, execErr
+}
+
+func shouldSkipOutputTruncation(toolName string) bool {
+	switch toolName {
+	case ToolExternalDatabaseQuery:
+		return true
+	default:
+		return false
+	}
 }
 
 // Cleanup cleans up all registered tools that implement the types.Cleanable interface.

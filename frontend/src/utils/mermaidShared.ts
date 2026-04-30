@@ -44,9 +44,12 @@ export const ensureMermaidInitialized = () => {
 let mermaidCount = 0;
 
 export const createMermaidCodeRenderer = (idPrefix: string) => {
-  return (code: string, language?: string) => {
+  return (codeOrToken: any, language?: string) => {
+    const code = typeof codeOrToken === 'object' && codeOrToken !== null ? String(codeOrToken.text || '') : String(codeOrToken || '');
+    const tokenLanguage = typeof codeOrToken === 'object' && codeOrToken !== null ? codeOrToken.lang : undefined;
+    const languageName = language || tokenLanguage;
     let highlighted = '';
-    let highlightLang: string = language || 'Code';
+    let highlightLang: string = languageName || 'Code';
     if (highlightLang && hljs.getLanguage(highlightLang)) {
         try {
         highlighted = hljs.highlight(code, { language: highlightLang }).value;
@@ -60,7 +63,7 @@ export const createMermaidCodeRenderer = (idPrefix: string) => {
         highlighted = ret.value;
         highlightLang = ret.language || "Code";
     }
-    if (language === 'mermaid') {
+    if (languageName === 'mermaid') {
       const id = `${idPrefix}-${++mermaidCount}`;
       return `<pre id="${id}" data-mermaid="false"><code class="hljs language-${highlightLang}">${highlighted}</code></pre>`;
     }

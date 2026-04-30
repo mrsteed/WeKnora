@@ -101,10 +101,18 @@ func (t *ExternalDatabaseSchemaTool) Execute(ctx context.Context, args json.RawM
 			"join_hints":        joinHints,
 			"sample_queries":    sampleQueries,
 			"tables":            toExternalSchemaTableData(tables),
-			"prompt_schema":     promptSchema,
 		},
 	}, nil
 }
+
+const (
+	schemaOutputTableLimit       = 8
+	schemaOutputColumnLimit      = 8
+	schemaOutputJoinHintLimit    = 8
+	schemaOutputSampleQueryLimit = 4
+	schemaOutputCommentLimit     = 120
+	schemaDataIndexLimit         = 4
+)
 
 func normalizeSelectedTables(tables []string) []string {
 	if len(tables) == 0 {
@@ -144,25 +152,52 @@ func filterSchemaTables(tables []types.TableSchema, selected []string) []types.T
 }
 
 func toExternalSchemaTableData(tables []types.TableSchema) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(tables))
-	for _, table := range tables {
-		columns := make([]map[string]interface{}, 0, len(table.Columns))
-		for _, column := range table.Columns {
+	tableLimit := minInt(len(tables), schemaOutputTableLimit)
+	result := make([]map[string]interface{}, 0, tableLimit)
+	for tableIndex, table := range tables {
+		if tableIndex >= schemaOutputTableLimit {
+			break
+		}
+		columns := make([]map[string]interface{}, 0, minInt(len(table.Columns), schemaOutputColumnLimit))
+		sensitiveCount := 0
+		for columnIndex, column := range table.Columns {
+			if column.IsSensitive {
+				sensitiveCount++
+			}
+			if columnIndex >= schemaOutputColumnLimit {
+				continue
+			}
 			columns = append(columns, map[string]interface{}{
 				"name":         column.Name,
 				"data_type":    column.DataType,
 				"nullable":     column.Nullable,
-				"comment":      column.Comment,
+				"comment":      truncateSchemaText(column.Comment, schemaOutputCommentLimit),
 				"is_sensitive": column.IsSensitive,
 			})
 		}
+		indexes := make([]map[string]interface{}, 0, minInt(len(table.Indexes), schemaDataIndexLimit))
+		for indexIndex, index := range table.Indexes {
+			if indexIndex >= schemaDataIndexLimit {
+				break
+			}
+			indexes = append(indexes, map[string]interface{}{
+				"name":       index.Name,
+				"unique":     index.Unique,
+				"columns":    limitStringSlice(index.Columns, schemaOutputColumnLimit),
+				"index_type": index.IndexType,
+			})
+		}
 		result = append(result, map[string]interface{}{
-			"name":         table.Name,
-			"type":         table.Type,
-			"comment":      table.Comment,
-			"primary_keys": table.PrimaryKeys,
-			"indexes":      table.Indexes,
-			"columns":      columns,
+			"name":                       table.Name,
+			"type":                       table.Type,
+			"comment":                    truncateSchemaText(table.Comment, schemaOutputCommentLimit),
+			"primary_keys":               limitStringSlice(table.PrimaryKeys, schemaOutputColumnLimit),
+			"index_count":                len(table.Indexes),
+			"indexes":                    indexes,
+			"column_count":               len(table.Columns),
+			"columns":                    columns,
+			"additional_columns_omitted": maxInt(len(table.Columns)-schemaOutputColumnLimit, 0),
+			"sensitive_column_count":     sensitiveCount,
 		})
 	}
 	return result
@@ -296,4 +331,49 @@ func formatExternalDatabaseSchemaOutput(promptSchema string, allowedTables []str
 		}
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+func summarizeSchemaColumns(columns []types.ColumnSchema, limit int) string {
+	if len(columns) == 0 {
+		return "<no columns>"
+	}
+	items := make([]string, 0, minInt(limit, len(columns)))
+	for index, column := range columns {
+		if index >= limit {
+			break
+		}
+		nullability := "NOT NULL"
+		if column.Nullable {
+			nullability = "NULL"
+		}
+		segment := fmt.Sprintf("%s %s %s", column.Name, column.DataType, nullability)
+		if column.IsSensitive {
+			segment += " [sensitive]"
+		}
+		items = append(items, segment)
+	}
+	return strings.Join(items, "; ")
+}
+
+func truncateSchemaText(text string, limit int) string {
+	text = strings.TrimSpace(text)
+	if limit <= 0 || len([]rune(text)) <= limit {
+		return text
+	}
+	runes := []rune(text)
+	return strings.TrimSpace(string(runes[:limit])) + "..."
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

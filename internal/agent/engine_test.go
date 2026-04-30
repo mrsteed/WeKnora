@@ -22,14 +22,18 @@ type mockResponse struct {
 }
 
 type mockChat struct {
-	mu        sync.Mutex
-	responses []mockResponse
-	callCount int
+	mu           sync.Mutex
+	responses    []mockResponse
+	callCount    int
+	lastMessages []chat.Message
+	lastOptions  *chat.ChatOptions
 }
 
-func (m *mockChat) ChatStream(_ context.Context, _ []chat.Message, _ *chat.ChatOptions) (<-chan types.StreamResponse, error) {
+func (m *mockChat) ChatStream(_ context.Context, messages []chat.Message, opts *chat.ChatOptions) (<-chan types.StreamResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.lastMessages = append([]chat.Message(nil), messages...)
+	m.lastOptions = opts
 	if m.callCount >= len(m.responses) {
 		return nil, fmt.Errorf("unexpected ChatStream call #%d (only %d responses prepared)", m.callCount, len(m.responses))
 	}
@@ -44,7 +48,11 @@ func (m *mockChat) ChatStream(_ context.Context, _ []chat.Message, _ *chat.ChatO
 	return ch, nil
 }
 
-func (m *mockChat) Chat(_ context.Context, _ []chat.Message, _ *chat.ChatOptions) (*types.ChatResponse, error) {
+func (m *mockChat) Chat(_ context.Context, messages []chat.Message, opts *chat.ChatOptions) (*types.ChatResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lastMessages = append([]chat.Message(nil), messages...)
+	m.lastOptions = opts
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -60,6 +68,12 @@ type testEngineOption func(*types.AgentConfig)
 func withMaxIterations(n int) testEngineOption {
 	return func(cfg *types.AgentConfig) {
 		cfg.MaxIterations = n
+	}
+}
+
+func withThinking(enabled bool) testEngineOption {
+	return func(cfg *types.AgentConfig) {
+		cfg.Thinking = &enabled
 	}
 }
 
