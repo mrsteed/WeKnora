@@ -97,7 +97,7 @@ import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vu
 import InputField from '../../components/Input-field.vue';
 import botmsg from './components/botmsg.vue';
 import usermsg from './components/usermsg.vue';
-import { getMessageList, generateSessionsTitle, getSession } from "@/api/chat/index";
+import { createLongDocumentTask, getLongDocumentTasksBySession, getMessageList, generateSessionsTitle, getSession } from "@/api/chat/index";
 import { getSuggestedQuestions } from "@/api/agent/index";
 import { useStream } from '../../api/chat/streame'
 import { useMenuStore } from '@/stores/menu';
@@ -239,6 +239,64 @@ const getUserQuery = (index) => {
     return '';
 };
 
+const terminalCompletionStatuses = new Set(['completed', 'partial', 'failed', 'cancelled']);
+const longDocumentTaskTriggerRE = /(全文翻译|完整翻译|整篇翻译|翻译成\s*markdown|markdown文件|translate (the )?full document|translate to markdown|export markdown)/i;
+
+const normalizeCompletionStatus = (message = {}) => {
+    if (message?.data?.completion_status) {
+        return message.data.completion_status;
+    }
+    if (message?.completion_status) {
+        return message.completion_status;
+    }
+    if (message?.response_type === 'stop') {
+        return 'cancelled';
+    }
+    if (message?.is_failed) {
+        return 'failed';
+    }
+    if (message?.is_completed) {
+        return 'completed';
+    }
+    if (message?.role === 'assistant' || message?.isAgentMode) {
+        return 'pending';
+    }
+    return 'completed';
+};
+
+const isTerminalCompletionStatus = (completionStatus) => terminalCompletionStatuses.has(completionStatus || '');
+
+const syncMessageCompletionState = (message, payload = {}) => {
+    if (!message) {
+        return 'pending';
+    }
+
+    const nextStatus = normalizeCompletionStatus({ ...message, ...payload });
+    message.completion_status = nextStatus;
+
+    const finishReason = payload?.data?.finish_reason ?? payload.finish_reason;
+    if (finishReason !== undefined) {
+        message.finish_reason = finishReason;
+    }
+
+    const failureReason = payload?.data?.failure_reason ?? payload.failure_reason;
+    if (failureReason !== undefined) {
+        message.failure_reason = failureReason;
+    }
+
+    message.is_partial = nextStatus === 'partial' || Boolean(payload?.data?.is_partial ?? payload.is_partial);
+    message.is_completed = nextStatus === 'completed';
+    message.is_failed = nextStatus === 'failed';
+
+    if (message.is_failed && !message.error_message && message.failure_reason) {
+        message.error_message = message.failure_reason;
+    }
+
+    return nextStatus;
+};
+
+const isMessageTerminal = (message) => isTerminalCompletionStatus(normalizeCompletionStatus(message));
+
 const buildLocalAssistantMessage = (isAgentMode = false) => {
     const localId = `local-assistant-${Date.now()}`;
     return {
@@ -247,6 +305,9 @@ const buildLocalAssistantMessage = (isAgentMode = false) => {
         role: 'assistant',
         content: '',
         isAgentMode,
+        completion_status: 'pending',
+        finish_reason: '',
+        failure_reason: '',
         is_completed: false,
         is_failed: false,
         error_message: '',
@@ -257,6 +318,114 @@ const buildLocalAssistantMessage = (isAgentMode = false) => {
     };
 };
 
+const normalizeLongDocumentCompletionStatus = (status) => {
+    switch (status) {
+        case 'completed':
+            return 'completed';
+        case 'partial':
+            return 'partial';
+        case 'failed':
+            return 'failed';
+        case 'cancelled':
+            return 'cancelled';
+        default:
+            return 'pending';
+    }
+};
+
+const normalizeMessageTimestamp = (message) => {
+    const raw = message?.created_at || message?.updated_at;
+    const parsed = raw ? new Date(raw).getTime() : 0;
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const buildLongDocumentTaskMessage = (task) => {
+    const completionStatus = normalizeLongDocumentCompletionStatus(task?.status);
+    return {
+        id: `long-document-task-${task.id}`,
+        request_id: `long-document-task-${task.id}`,
+        role: 'assistant',
+        content: '',
+        long_document_task: task,
+        created_at: task.created_at || new Date().toISOString(),
+        updated_at: task.updated_at || task.created_at || new Date().toISOString(),
+        completion_status: completionStatus,
+        is_completed: completionStatus === 'completed',
+        is_failed: completionStatus === 'failed',
+        error_message: task?.error_message || '',
+        knowledge_references: []
+    };
+};
+
+const upsertLongDocumentTaskMessage = (task, sortByCreatedAt = false) => {
+    if (!task?.id) {
+        return;
+    }
+    const normalized = buildLongDocumentTaskMessage(task);
+    const existingIndex = messagesList.findIndex((item) => item.long_document_task?.id === task.id);
+    if (existingIndex >= 0) {
+        Object.assign(messagesList[existingIndex], normalized, {
+            long_document_task: task,
+        });
+    } else {
+        messagesList.push(normalized);
+    }
+    if (sortByCreatedAt) {
+        messagesList.sort((left, right) => normalizeMessageTimestamp(left) - normalizeMessageTimestamp(right));
+    }
+};
+
+const loadLongDocumentTasks = async (targetSessionId = session_id.value) => {
+    if (!targetSessionId) {
+        return;
+    }
+    try {
+        const res = await getLongDocumentTasksBySession(targetSessionId);
+        const tasks = res?.data?.data || [];
+        tasks.forEach((task) => upsertLongDocumentTaskMessage(task, true));
+    } catch (error) {
+        console.warn('[LongDocumentTask] Failed to load task list:', error);
+    }
+};
+
+const inferLongDocumentTargetLanguage = (query) => {
+    if (!query) {
+        return '';
+    }
+    if (/(英文|english)/i.test(query)) {
+        return 'English';
+    }
+    if (/(中文|简体中文|chinese)/i.test(query)) {
+        return 'Chinese (Simplified)';
+    }
+    if (/(日文|日语|japanese)/i.test(query)) {
+        return 'Japanese';
+    }
+    if (/(韩文|韩语|korean)/i.test(query)) {
+        return 'Korean';
+    }
+    if (/(法文|法语|french)/i.test(query)) {
+        return 'French';
+    }
+    if (/(德文|德语|german)/i.test(query)) {
+        return 'German';
+    }
+    return '';
+};
+
+const shouldCreateLongDocumentTask = (query, knowledgeIds = [], imageAttachments = [], attachmentUploads = []) => {
+    if (!longDocumentTaskTriggerRE.test(query || '')) {
+        return false;
+    }
+    if (knowledgeIds.length !== 1) {
+        return false;
+    }
+    if ((imageAttachments?.length || 0) > 0 || (attachmentUploads?.length || 0) > 0) {
+        return false;
+    }
+    return true;
+};
+
 const findActiveAssistantMessage = () => {
     if (currentAssistantMessageId.value) {
         const current = messagesList.findLast((item) => item.id === currentAssistantMessageId.value || item.request_id === currentAssistantMessageId.value);
@@ -265,7 +434,7 @@ const findActiveAssistantMessage = () => {
         }
     }
 
-    return messagesList.findLast((item) => item.role === 'assistant' && !item.is_completed && !item.is_failed);
+    return messagesList.findLast((item) => item.role === 'assistant' && !isMessageTerminal(item));
 };
 
 const ensureAssistantMessage = () => {
@@ -308,8 +477,12 @@ const finalizeActiveAssistantOnStreamClose = () => {
         )
     );
 
-    if ((hasAnswerContent || hasAgentTerminalSignal) && !message.is_failed) {
-        message.is_completed = true;
+    if ((hasAnswerContent || hasAgentTerminalSignal) && !isMessageTerminal(message)) {
+        syncMessageCompletionState(message, {
+            completion_status: 'partial',
+            finish_reason: message.finish_reason || 'stream_closed',
+            failure_reason: message.failure_reason || 'stream_closed'
+        });
     }
 
     resetReplyState();
@@ -319,9 +492,13 @@ const markAssistantFailed = (errorMessage) => {
     const normalizedError = errorMessage || t('chat.processError');
     const message = ensureAssistantMessage();
 
-    message.is_failed = true;
     message.error_message = normalizedError;
-    message.is_completed = true;
+    syncMessageCompletionState(message, {
+        completion_status: 'failed',
+        finish_reason: message.finish_reason || 'error',
+        failure_reason: normalizedError,
+        is_failed: true
+    });
     if (message.isAgentMode) {
         if (!message.agentEventStream) {
             message.agentEventStream = [];
@@ -503,13 +680,30 @@ const getmsgList = (data, isScrollType = false, scrollHeight) => {
         }
     }).finally(() => {
         historyLoading.value = false;
+        if (!isScrollType && !data.created_at) {
+            loadLongDocumentTasks(data.session_id);
+        }
     })
 }
 
 // Reconstruct agentEventStream from agent_steps stored in database
 // This allows the frontend to restore the exact conversation state including all agent reasoning steps
-const reconstructEventStreamFromSteps = (agentSteps, messageContent, isCompleted = false, isFallback = false, agentDurationMs = 0) => {
+const reconstructEventStreamFromSteps = (
+    agentSteps,
+    messageContent,
+    isCompleted = false,
+    isFallback = false,
+    agentDurationMs = 0,
+    completionStatus = '',
+    finishReason = '',
+    failureReason = ''
+) => {
     const events = [];
+    const normalizedCompletionStatus = normalizeCompletionStatus({
+        role: 'assistant',
+        completion_status: completionStatus,
+        is_completed: isCompleted
+    });
 
     // Process agent steps if they exist
     if (agentSteps && Array.isArray(agentSteps) && agentSteps.length > 0) {
@@ -557,10 +751,14 @@ const reconstructEventStreamFromSteps = (agentSteps, messageContent, isCompleted
     }
     
     // Add agent_complete event with duration info (before answer event)
-    if (agentDurationMs > 0) {
+    if (agentDurationMs > 0 || isTerminalCompletionStatus(normalizedCompletionStatus)) {
         events.push({
             type: 'agent_complete',
             total_duration_ms: agentDurationMs,
+            completion_status: normalizedCompletionStatus,
+            finish_reason: finishReason,
+            failure_reason: failureReason,
+            is_partial: normalizedCompletionStatus === 'partial',
         });
     }
 
@@ -570,11 +768,14 @@ const reconstructEventStreamFromSteps = (agentSteps, messageContent, isCompleted
         const answerEvent = {
             type: 'answer',
             content: messageContent,
-            done: true
+            done: true,
+            completion_status: normalizedCompletionStatus,
+            finish_reason: finishReason,
+            failure_reason: failureReason,
         };
         if (isFallback) answerEvent.is_fallback = true;
         events.push(answerEvent);
-    } else if (isCompleted) {
+    } else if (normalizedCompletionStatus === 'cancelled') {
         // 消息已完成但 content 为空：说明是"停止时尚未产出最终答案"的场景。
         // Push 一个 stop 事件，让 AgentStreamDisplay 的 isConversationDone 返回 true，
         // 但不产生 answer 内容，也就不会渲染最终答案的 toolbar。与实时 stop 分支保持一致。
@@ -595,13 +796,23 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
         item.agentEventStream = item.agentEventStream || [];
         item._eventMap = new Map();
         item._pendingToolCalls = new Map();
+        syncMessageCompletionState(item);
         
         // Check if this message has agent_steps from database (historical agent conversation)
         // If so, reconstruct the agentEventStream to restore the exact conversation state
         if (item.agent_steps && Array.isArray(item.agent_steps) && item.agent_steps.length > 0) {
             console.log('[Message Load] Reconstructing agent steps for message:', item.id, 'steps:', item.agent_steps.length);
             item.isAgentMode = true;
-            item.agentEventStream = reconstructEventStreamFromSteps(item.agent_steps, item.content, item.is_completed, item.is_fallback, item.agent_duration_ms || 0);
+            item.agentEventStream = reconstructEventStreamFromSteps(
+                item.agent_steps,
+                item.content,
+                item.is_completed,
+                item.is_fallback,
+                item.agent_duration_ms || 0,
+                item.completion_status,
+                item.finish_reason,
+                item.failure_reason
+            );
             // 隐藏最终答案内容，因为它已经包含在 agentEventStream 的 answer 事件中
             item.hideContent = true;
             console.log('[Message Load] Reconstructed', item.agentEventStream.length, 'events from agent steps');
@@ -780,6 +991,47 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         url: endpoint
     };
 
+    // 将@提及的知识库和文件信息存入用户消息，并保留本次请求参数以便失败后重试
+    messagesList.push({
+        content: value,
+        role: 'user',
+        mentioned_items: mentionedItems,
+        images: userImages,
+        attachments: attachmentDisplay,
+        channel: 'web',
+        created_at: new Date().toISOString()
+    });
+    userHasScrolledUp.value = false;
+    scrollToBottom(true);
+
+    if (shouldCreateLongDocumentTask(value, knowledgeIds, imageAttachments, attachmentUploads)) {
+        try {
+            const res = await createLongDocumentTask({
+                session_id: session_id.value,
+                knowledge_id: knowledgeIds[0],
+                user_query: value,
+                summary_model_id: modelId,
+                output_format: 'markdown',
+                options: {
+                    target_language: inferLongDocumentTargetLanguage(value)
+                }
+            });
+            const task = res?.data?.task || res?.data;
+            if (!task?.id) {
+                throw new Error(t('chat.processError'));
+            }
+            upsertLongDocumentTaskMessage(task);
+            resetReplyState();
+            scrollToBottom(true);
+            return;
+        } catch (error) {
+            const errorMessage = error?.message || '创建长文档任务失败';
+            MessagePlugin.error(errorMessage);
+            markAssistantFailed(errorMessage);
+            return;
+        }
+    }
+
     const retryPayload = {
         request: requestParams,
         display: {
@@ -789,20 +1041,8 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         }
     };
 
+    messagesList[messagesList.length - 1].retry_payload = retryPayload;
     lastRequestMeta.value = requestParams;
-
-    // 将@提及的知识库和文件信息存入用户消息，并保留本次请求参数以便失败后重试
-    messagesList.push({
-        content: value,
-        role: 'user',
-        mentioned_items: mentionedItems,
-        images: userImages,
-        attachments: attachmentDisplay,
-        channel: 'web',
-        retry_payload: retryPayload
-    });
-    userHasScrolledUp.value = false;
-    scrollToBottom(true);
     
     await startStream({ 
         ...requestParams
@@ -874,6 +1114,16 @@ onChunk((data) => {
             isNeedTitle.value = false;
         }
         // 不关闭 loading，等待实际内容
+        return;
+    }
+
+    if (data.response_type === 'long_document_task') {
+        const task = data.data?.task;
+        if (task?.id) {
+            upsertLongDocumentTaskMessage(task, true);
+            scrollToBottom(true);
+        }
+        resetReplyState();
         return;
     }
     
@@ -953,7 +1203,11 @@ onChunk((data) => {
             return item.id === data.id;
         });
         if (stoppedMessage) {
-            stoppedMessage.is_completed = true;
+            syncMessageCompletionState(stoppedMessage, {
+                completion_status: 'cancelled',
+                finish_reason: data.data?.reason || 'cancelled',
+                failure_reason: data.data?.reason || 'cancelled'
+            });
         }
         loading.value = false;
         isReplying.value = false;
@@ -971,13 +1225,20 @@ onChunk((data) => {
     });
     
     // 如果消息已完成且当前事件是完成事件（done=true 且无内容），直接忽略
-    if (existingMessage?.is_completed && data.done && !data.content) {
+    if (isMessageTerminal(existingMessage) && data.done && !data.content) {
         console.log('[Non-Agent] Ignoring duplicate completion event for completed message');
         return;
     }
     
     fullContent.value += data.content;
-    let obj = { ...data, content: '', role: 'assistant', showThink: false, is_completed: false };
+    let obj = {
+        ...data,
+        content: '',
+        role: 'assistant',
+        showThink: false,
+        completion_status: normalizeCompletionStatus({ ...data, role: 'assistant' }),
+        is_completed: false
+    };
 
     // 检查是否为 fallback 回答（未从知识库检索到内容）
     if (data.data?.is_fallback) {
@@ -1006,8 +1267,7 @@ onChunk((data) => {
     }
     
     if (data.done) {
-        // 标记消息已完成
-        obj.is_completed = true;
+        syncMessageCompletionState(obj, data.data?.completion_status ? data : { ...data, completion_status: 'completed' });
         // 标题生成已改为异步事件推送，不再需要在这里手动调用
         // 如果标题还未生成，前端会通过 SSE 事件接收
         isReplying.value = false;
@@ -1029,6 +1289,11 @@ const handleAgentChunk = (data) => {
             role: 'assistant',
             content: '',
             isAgentMode: true,
+            completion_status: 'pending',
+            finish_reason: '',
+            failure_reason: '',
+            is_completed: false,
+            is_failed: false,
             // Event stream: ordered list of all agent events (thinking, tool calls, etc)
             agentEventStream: [],
             // Map to track event by event_id for quick lookup
@@ -1272,7 +1537,8 @@ const handleAgentChunk = (data) => {
                 answerEvent = {
                     type: 'answer',
                     content: '',
-                    done: false
+                    done: false,
+                    completion_status: 'pending'
                 };
                 message.agentEventStream.push(answerEvent);
                 console.log('[Answer] Created new answer event in stream');
@@ -1289,18 +1555,17 @@ const handleAgentChunk = (data) => {
                 answerEvent.is_fallback = true;
                 message.is_fallback = true;
             }
+
+            if (data.data?.completion_status) {
+                answerEvent.completion_status = data.data.completion_status;
+                answerEvent.finish_reason = data.data.finish_reason;
+                answerEvent.failure_reason = data.data.failure_reason;
+            }
             
-            // 只在第一次收到 done:true 时标记完成，忽略后续重复的完成事件
+            // 只在第一次收到 done:true 时标记 answer 流结束，真正完成态由 complete 事件决定。
             if (data.done && !answerEvent.done) {
                 answerEvent.done = true;
-                message.is_completed = true;
                 console.log('[Agent] Answer done, content length:', message.content?.length || 0, 'answerEvent.content length:', answerEvent.content?.length || 0);
-                
-                // 完成 - 关闭所有状态
-                resetReplyState();
-                
-                // 标题生成已改为异步事件推送，不再需要在这里手动调用
-                // 如果标题还未生成，前端会通过 SSE 事件接收
             } else if (data.done && answerEvent.done) {
                 console.log('[Answer] Ignoring duplicate done event, current content preserved:', answerEvent.content?.length || 0);
             }
@@ -1309,7 +1574,7 @@ const handleAgentChunk = (data) => {
         case 'complete':
             // 整个流式响应完成事件 - 确保状态正确关闭
             console.log('[Agent] Complete event received');
-            message.is_completed = true;
+            syncMessageCompletionState(message, data.data || {});
             resetReplyState();
             // 将 total_duration_ms 存入事件流供 AgentStreamDisplay 使用
             if (data.data?.total_duration_ms && message.agentEventStream) {
@@ -1317,11 +1582,19 @@ const handleAgentChunk = (data) => {
                 if (existingCompleteEvent) {
                     existingCompleteEvent.total_duration_ms = data.data.total_duration_ms;
                     existingCompleteEvent.total_steps = data.data.total_steps;
+                    existingCompleteEvent.completion_status = data.data.completion_status;
+                    existingCompleteEvent.finish_reason = data.data.finish_reason;
+                    existingCompleteEvent.failure_reason = data.data.failure_reason;
+                    existingCompleteEvent.is_partial = data.data.is_partial;
                 } else {
                     message.agentEventStream.push({
                         type: 'agent_complete',
                         total_duration_ms: data.data.total_duration_ms,
                         total_steps: data.data.total_steps,
+                        completion_status: data.data?.completion_status,
+                        finish_reason: data.data?.finish_reason,
+                        failure_reason: data.data?.failure_reason,
+                        is_partial: data.data?.is_partial,
                     });
                 }
             }
@@ -1331,7 +1604,11 @@ const handleAgentChunk = (data) => {
             // 停止事件 - 添加到事件流并标记对话完成
             console.log('[Agent] Stop event received');
             if (!message.agentEventStream) message.agentEventStream = [];
-            message.is_completed = true;
+            syncMessageCompletionState(message, {
+                completion_status: 'cancelled',
+                finish_reason: data.data?.reason || 'cancelled',
+                failure_reason: data.data?.reason || 'cancelled'
+            });
             
             // Add stop event to stream
             message.agentEventStream.push({
@@ -1365,13 +1642,7 @@ const updateAssistantSession = (payload) => {
         if (payload.is_fallback) {
             message.is_fallback = true;
         }
-        // 更新完成状态
-        if (payload.is_completed) {
-            message.is_completed = true;
-        }
-        if (payload.is_failed) {
-            message.is_failed = true;
-        }
+        syncMessageCompletionState(message, payload);
         if (payload.error_message) {
             message.error_message = payload.error_message;
         }

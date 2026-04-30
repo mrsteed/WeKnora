@@ -311,6 +311,9 @@
       </div>
     </div>
     </div>
+    <div v-if="conversationStatusLabel" class="conversation-status" :class="`status-${completionStatus || 'pending'}`">
+      {{ conversationStatusLabel }}
+    </div>
   </div>
   <!-- 全局浮层：统一承载 Web/KB 的 hover 内容 -->
   <Teleport to="body">
@@ -734,6 +737,9 @@ interface SessionData {
   isAgentMode?: boolean;
   is_completed?: boolean;
   is_failed?: boolean;
+  completion_status?: string;
+  finish_reason?: string;
+  failure_reason?: string;
   agentEventStream?: any[];
   knowledge_references?: any[];
 }
@@ -837,6 +843,56 @@ watch(eventStream, (stream) => {
 // State for intermediate steps collapse
 const showIntermediateSteps = ref(false);
 
+const terminalCompletionStatuses = new Set(['completed', 'partial', 'failed', 'cancelled']);
+
+const isTerminalCompletionStatus = (completionStatus?: string): boolean => {
+  return terminalCompletionStatuses.has(completionStatus || '');
+};
+
+const completionStatus = computed(() => {
+  const stream = eventStream.value;
+
+  if (props.session?.completion_status) {
+    return props.session.completion_status;
+  }
+  if (props.session?.is_failed) {
+    return 'failed';
+  }
+  if (props.session?.is_completed) {
+    return 'completed';
+  }
+  if (!stream || stream.length === 0) {
+    return '';
+  }
+
+  const stopEvent = stream.find((e: any) => e.type === 'stop');
+  if (stopEvent) {
+    return 'cancelled';
+  }
+
+  const completeEvent = stream.find((e: any) => e.type === 'agent_complete');
+  if (completeEvent?.completion_status) {
+    return completeEvent.completion_status;
+  }
+
+  return '';
+});
+
+const conversationStatusLabel = computed(() => {
+  switch (completionStatus.value) {
+    case 'completed':
+      return t('agentStream.completion.completed');
+    case 'partial':
+      return t('agentStream.completion.partial');
+    case 'failed':
+      return t('agentStream.completion.failed');
+    case 'cancelled':
+      return t('agentStream.completion.cancelled');
+    default:
+      return '';
+  }
+});
+
 // Track whether answer has started streaming (for early collapse)
 const hasAnswerStarted = ref(false);
 const agentDurationMs = ref<number>(0);
@@ -861,15 +917,11 @@ watch(eventStream, (stream) => {
 
 
 // Check if conversation is done.
-// Agent streams can finish either with an answer done event, a complete event, or an explicit stop.
+// P1 protocol uses stop or completion_status as the terminal signal.
 const isConversationDone = computed(() => {
   const stream = eventStream.value;
-  if (props.session?.is_failed) {
-    console.log('[Collapse] Session marked failed, conversation done');
-    return true;
-  }
-  if (props.session?.is_completed) {
-    console.log('[Collapse] Session marked completed, conversation done');
+  if (isTerminalCompletionStatus(completionStatus.value)) {
+    console.log('[Collapse] Terminal completion status detected:', completionStatus.value);
     return true;
   }
   if (!stream || stream.length === 0) {
@@ -884,19 +936,7 @@ const isConversationDone = computed(() => {
     return true;
   }
 
-  const agentCompleteEvent = stream.find((e: any) => e.type === 'agent_complete');
-  if (agentCompleteEvent) {
-    console.log('[Collapse] Found agent_complete event, conversation done');
-    return true;
-  }
-  
-  // Check for answer event with done=true
-  const answerEvents = stream.filter((e: any) => e.type === 'answer');
-  const doneAnswer = answerEvents.find((e: any) => e.done === true);
-  
-  console.log('[Collapse] Answer events:', answerEvents.length, 'Done answer:', !!doneAnswer);
-  
-  return !!doneAnswer;
+  return false;
 });
 
 // Find the final content to display (last thinking or answer)
@@ -926,8 +966,7 @@ const finalContent = computed(() => {
   if (shouldShowCollapsedSteps.value) {
     return null;
   }
-  const wasStopped = stream.some((e: any) => e.type === 'stop');
-  if (wasStopped) {
+  if (completionStatus.value === 'cancelled' || stream.some((e: any) => e.type === 'stop')) {
     return null;
   }
 
@@ -3338,6 +3377,31 @@ const handleAddToKnowledge = (answerEvent: any) => {
     width: 24px;
     height: 18px;
     margin-left: 0;
+  }
+}
+
+.conversation-status {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+
+  &.status-completed {
+    background: rgba(7, 192, 95, 0.08);
+    color: var(--td-success-color);
+  }
+
+  &.status-partial {
+    background: rgba(237, 108, 2, 0.08);
+    color: var(--td-warning-color);
+  }
+
+  &.status-failed,
+  &.status-cancelled {
+    background: rgba(231, 76, 60, 0.08);
+    color: var(--td-error-color);
   }
 }
 

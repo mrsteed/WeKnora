@@ -70,6 +70,7 @@ type RouterParams struct {
 	WikiPageHandler          *handler.WikiPageHandler
 	OrgTreeHandler           *handler.OrgTreeHandler
 	ExportHandler            *handler.ExportHandler
+	LongDocumentTaskHandler  *handler.LongDocumentTaskHandler
 }
 
 // NewRouter 创建新的路由
@@ -162,6 +163,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler)
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler)
 		RegisterExportRoutes(v1, params.ExportHandler)
+		RegisterLongDocumentTaskRoutes(v1, params.LongDocumentTaskHandler)
 
 		// System info routes (accessible by all authenticated users)
 		RegisterSystemRoutes(v1, params.SystemHandler)

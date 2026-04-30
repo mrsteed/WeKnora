@@ -10,7 +10,7 @@
       variant="outline"
       shape="round"
       :loading="exporting"
-      :disabled="disabled || !content"
+      :disabled="disabled || !canExport"
       :title="$t('chatExport.title')"
       @click.stop="toggleMenu"
     >
@@ -51,12 +51,14 @@ import {
 } from '@/utils/exportUtils';
 
 interface Props {
-  content: string;
+  content?: string;
+  contentResolver?: () => Promise<string> | string;
   filenamePrefix?: string;
   disabled?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  content: '',
   filenamePrefix: '',
   disabled: false,
 });
@@ -70,6 +72,7 @@ const exportCapabilities = ref<ExportCapabilities>({
   docx: { available: true, engine: 'pandoc', maxContentBytes: 1024 * 1024, timeoutSeconds: 30 },
   xlsx: { available: true, engine: 'excelize', maxContentBytes: 1024 * 1024, timeoutSeconds: 10 },
 });
+const canExport = computed(() => Boolean(props.content || props.contentResolver));
 
 const exportFormats = computed(() => [
   buildFormatItem('pdf', 'file-pdf', t('chatExport.pdf'), exportCapabilities.value.pdf),
@@ -84,6 +87,16 @@ const loadCapabilities = async () => {
 
 const toggleMenu = () => {
   menuVisible.value = !menuVisible.value;
+};
+
+const resolveExportContent = async (): Promise<string> => {
+  if (props.content) {
+    return props.content;
+  }
+  if (props.contentResolver) {
+    return await props.contentResolver();
+  }
+  return '';
 };
 
 // 点击页面其他区域时关闭菜单
@@ -104,11 +117,6 @@ onBeforeUnmount(() => {
 
 const handleExport = async (format: ExportFormat) => {
   menuVisible.value = false;
-  if (!props.content) {
-    MessagePlugin.warning(t('chatExport.emptyContent'));
-    return;
-  }
-
   if (!exportCapabilities.value[format].available) {
     MessagePlugin.warning(exportCapabilities.value[format].reason || t('chatExport.failed'));
     return;
@@ -116,19 +124,25 @@ const handleExport = async (format: ExportFormat) => {
 
   exporting.value = true;
   try {
+    const content = await resolveExportContent();
+    if (!content || !content.trim()) {
+      MessagePlugin.warning(t('chatExport.emptyContent'));
+      return;
+    }
+
     const filename = generateFilename(props.filenamePrefix || undefined);
     switch (format) {
       case 'pdf':
-        await exportAsPDF(props.content, filename);
+        await exportAsPDF(content, filename);
         break;
       case 'markdown':
-        await exportAsMarkdown(props.content, filename);
+        await exportAsMarkdown(content, filename);
         break;
       case 'docx':
-        await exportAsWord(props.content, filename);
+        await exportAsWord(content, filename);
         break;
       case 'xlsx':
-        await exportAsXLSX(props.content, filename);
+        await exportAsXLSX(content, filename);
         break;
     }
     MessagePlugin.success(t('chatExport.success'));

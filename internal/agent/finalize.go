@@ -12,6 +12,35 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
+func buildFinalAnswerEventData(state *types.AgentState, content string, done bool) event.AgentFinalAnswerData {
+	completionStatus := state.CompletionStatus
+	finishReason := state.FinishReason
+	allowIndexing := state.AllowIndexing
+	allowComplete := state.AllowComplete
+
+	if completionStatus == "" {
+		completionStatus = "completed"
+	}
+	if finishReason == "" {
+		finishReason = "stop"
+	}
+	if completionStatus == "completed" && finishReason == "stop" && !state.AllowIndexing && !state.AllowComplete {
+		allowIndexing = true
+		allowComplete = true
+	}
+
+	return event.AgentFinalAnswerData{
+		Content:          content,
+		Done:             done,
+		CompletionStatus: completionStatus,
+		FinishReason:     finishReason,
+		IsPartial:        completionStatus == "partial",
+		AllowIndexing:    allowIndexing,
+		AllowComplete:    allowComplete,
+		FailureReason:    state.FailureReason,
+	}
+}
+
 // streamFinalAnswerToEventBus streams the final answer generation through EventBus
 func (e *AgentEngine) streamFinalAnswerToEventBus(
 	ctx context.Context,
@@ -98,10 +127,7 @@ Now generate the final answer:`, query)
 					ID:        answerID,
 					Type:      event.EventAgentFinalAnswer,
 					SessionID: sessionID,
-					Data: event.AgentFinalAnswerData{
-						Content: chunk.Content,
-						Done:    chunk.Done,
-					},
+					Data:      buildFinalAnswerEventData(state, chunk.Content, chunk.Done),
 				})
 			}
 		},
@@ -135,6 +161,11 @@ func (e *AgentEngine) handleMaxIterations(
 		"iterations": state.CurrentRound,
 		"max":        e.config.MaxIterations,
 	})
+	state.CompletionStatus = "partial"
+	state.FinishReason = "max_iterations"
+	state.FailureReason = "max_iterations"
+	state.AllowIndexing = false
+	state.AllowComplete = false
 
 	// Stream final answer generation through EventBus
 	if err := e.streamFinalAnswerToEventBus(ctx, query, state, sessionID); err != nil {
@@ -143,6 +174,9 @@ func (e *AgentEngine) handleMaxIterations(
 			"error": err.Error(),
 		})
 		state.FinalAnswer = "Sorry, I was unable to generate a complete answer."
+	}
+	if state.PartialAnswer != "" {
+		state.FinalAnswer = mergeContinuationAnswer(state.PartialAnswer, state.FinalAnswer)
 	}
 	state.IsComplete = true
 }
@@ -162,12 +196,18 @@ func (e *AgentEngine) emitCompletionEvent(
 		Type:      event.EventAgentComplete,
 		SessionID: sessionID,
 		Data: event.AgentCompleteData{
-			FinalAnswer:     state.FinalAnswer,
-			KnowledgeRefs:   knowledgeRefsInterface,
-			AgentSteps:      state.RoundSteps, // Include detailed execution steps for message storage
-			TotalSteps:      len(state.RoundSteps),
-			TotalDurationMs: time.Since(startTime).Milliseconds(),
-			MessageID:       messageID, // Include message ID for proper message update
+			FinalAnswer:      state.FinalAnswer,
+			CompletionStatus: state.CompletionStatus,
+			FinishReason:     state.FinishReason,
+			IsPartial:        state.CompletionStatus == "partial",
+			AllowIndexing:    state.AllowIndexing,
+			AllowComplete:    state.AllowComplete,
+			FailureReason:    state.FailureReason,
+			KnowledgeRefs:    knowledgeRefsInterface,
+			AgentSteps:       state.RoundSteps, // Include detailed execution steps for message storage
+			TotalSteps:       len(state.RoundSteps),
+			TotalDurationMs:  time.Since(startTime).Milliseconds(),
+			MessageID:        messageID, // Include message ID for proper message update
 		},
 	})
 

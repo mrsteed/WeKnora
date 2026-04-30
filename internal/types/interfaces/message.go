@@ -7,6 +7,15 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
+// MessageIndexOptions controls whether a message may be indexed into the chat
+// history knowledge base.
+type MessageIndexOptions struct {
+	CompletionStatus string
+	FinishReason     string
+	AllowIndexing    bool
+	TaskKind         string
+}
+
 // MessageService defines the message service interface
 type MessageService interface {
 	// CreateMessage creates a message
@@ -47,7 +56,7 @@ type MessageService interface {
 
 	// IndexMessageToKB indexes a message (Q&A pair) into the chat history knowledge base asynchronously.
 	// Called after assistant message is created to enable future vector search.
-	IndexMessageToKB(ctx context.Context, userQuery string, assistantAnswer string, messageID string, sessionID string)
+	IndexMessageToKB(ctx context.Context, userQuery string, assistantAnswer string, messageID string, sessionID string, options MessageIndexOptions)
 
 	// DeleteMessageKnowledge deletes the Knowledge entry associated with a message from the chat history KB.
 	DeleteMessageKnowledge(ctx context.Context, knowledgeID string)

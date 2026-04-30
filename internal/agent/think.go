@@ -21,6 +21,7 @@ type streamLLMResult struct {
 	Usage            *types.TokenUsage
 	FinishReason     string // actual finish_reason from LLM (captured from last stream chunk)
 	StreamError      string // error message from stream (e.g., timeout), kept separate from Content
+	AnswerStreamed   bool
 }
 
 // streamLLMToEventBus streams LLM response through EventBus (generic method)
@@ -60,6 +61,10 @@ func (e *AgentEngine) streamLLMToEventBus(
 		if chunk.ResponseType == types.ResponseTypeError {
 			result.StreamError = chunk.Content
 			continue
+		}
+
+		if chunk.ResponseType == types.ResponseTypeAnswer && chunk.Content != "" {
+			result.AnswerStreamed = true
 		}
 
 		if chunk.Content != "" {
@@ -169,10 +174,15 @@ func (e *AgentEngine) streamThinkingToEventBus(
 				}
 			}
 
-			// Handle final_answer tool's streaming answer content
 			if chunk.ResponseType == types.ResponseTypeAnswer {
-				if source, _ := chunk.Data["source"].(string); source == "final_answer_tool" {
-					emittedEventTypes["final_answer_chunk"]++
+				if chunk.Content != "" {
+					source := "answer"
+					if chunk.Data != nil {
+						if chunkSource, _ := chunk.Data["source"].(string); chunkSource != "" {
+							source = chunkSource
+						}
+					}
+					emittedEventTypes[source+"_chunk"]++
 					e.eventBus.Emit(ctx, event.Event{
 						ID:        answerID,
 						Type:      event.EventAgentFinalAnswer,
@@ -182,8 +192,8 @@ func (e *AgentEngine) streamThinkingToEventBus(
 							Done:    false,
 						},
 					})
-					return
 				}
+				return
 			}
 
 			// Handle thinking tool's streaming thought content
@@ -210,7 +220,7 @@ func (e *AgentEngine) streamThinkingToEventBus(
 				}
 			}
 
-			if chunk.Content != "" {
+			if chunk.ResponseType == types.ResponseTypeThinking && chunk.Content != "" {
 				emittedEventTypes["thought_chunk"]++
 				e.eventBus.Emit(ctx, event.Event{
 					ID:        thinkingID, // Same ID for all chunks in this stream
@@ -249,6 +259,7 @@ func (e *AgentEngine) streamThinkingToEventBus(
 		ReasoningContent: llmResult.ReasoningContent,
 		ToolCalls:        llmResult.ToolCalls,
 		FinishReason:     finishReason,
+		AnswerStreamed:   llmResult.AnswerStreamed,
 	}
 	if llmResult.Usage != nil {
 		resp.Usage = *llmResult.Usage
@@ -338,6 +349,11 @@ func (e *AgentEngine) callLLMWithRetry(
 				"steps":      len(state.RoundSteps),
 				"tool_calls": totalTC,
 			})
+			state.CompletionStatus = "failed"
+			state.FinishReason = "tool_error"
+			state.FailureReason = "tool_error"
+			state.AllowIndexing = false
+			state.AllowComplete = false
 			if synthErr := e.streamFinalAnswerToEventBus(ctx, query, state, sessionID); synthErr != nil {
 				logger.Errorf(ctx, "[Agent] Final answer synthesis also failed: %v", synthErr)
 				return nil, fmt.Errorf("LLM call failed: %w (synthesis also failed: %v)", err, synthErr)

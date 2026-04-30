@@ -18,10 +18,11 @@
                     <span class="tag_name">{{ item.name }}</span>
                 </span>
             </div>
+            <LongDocumentTaskCard v-if="session.long_document_task" :task="session.long_document_task" />
             <docInfo :session="session"></docInfo>
             <AgentStreamDisplay :session="session" :user-query="userQuery" v-if="session.isAgentMode"></AgentStreamDisplay>
             <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
-            <div v-if="session.is_failed" class="message-failed-state">
+            <div v-if="session.is_failed && !session.long_document_task" class="message-failed-state">
                 <div class="message-failed-text">{{ failureText }}</div>
                 <t-button size="small" variant="outline" theme="danger" shape="round" @click.stop="emitRetry">
                     {{ $t('chat.regenerate') }}
@@ -29,7 +30,7 @@
             </div>
         </div>
         <!-- 非 Agent 模式下才显示传统的 markdown 渲染 -->
-        <div ref="parentMd" v-if="!session.hideContent && !session.isAgentMode">
+        <div ref="parentMd" v-if="!session.hideContent && !session.isAgentMode && !session.long_document_task">
             <!-- 直接渲染完整内容，避免切分导致的问题，样式与 thinking 一致 -->
             <!-- 只有当有实际内容时才显示包围框 -->
             <div class="content-wrapper" v-if="hasActualContent">
@@ -77,6 +78,7 @@ import docInfo from './docInfo.vue';
 import deepThink from './deepThink.vue';
 import AgentStreamDisplay from './AgentStreamDisplay.vue';
 import ExportDropdown from './ExportDropdown.vue';
+import LongDocumentTaskCard from './LongDocumentTaskCard.vue';
 import picturePreview from '@/components/picture-preview.vue';
 import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL, hydrateProtectedFileImages } from '@/utils/security';
 import { useI18n } from 'vue-i18n';

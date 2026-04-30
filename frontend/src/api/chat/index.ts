@@ -1,4 +1,4 @@
-import { get, post, put, del, postChat } from "../../utils/request";
+import { get, post, put, del, postChat, getDown } from "../../utils/request";
 
 
 
@@ -63,4 +63,45 @@ export async function stopSession(session_id: string, message_id: string) {
 
 export async function clearSessionMessages(session_id: string) {
   return del(`/api/v1/sessions/${session_id}/messages`);
+}
+
+export async function createLongDocumentTask(data: {
+  session_id: string;
+  knowledge_id: string;
+  user_query: string;
+  summary_model_id?: string;
+  output_format?: string;
+  task_kind?: string;
+  idempotency_key?: string;
+  options?: Record<string, any>;
+}) {
+  return post('/api/v1/long-document-tasks', data);
+}
+
+export async function getLongDocumentTasksBySession(session_id: string, page = 1, page_size = 100) {
+  return get(`/api/v1/long-document-tasks?session_id=${encodeURIComponent(session_id)}&page=${page}&page_size=${page_size}`);
+}
+
+export async function getLongDocumentTask(task_id: string) {
+  return get(`/api/v1/long-document-tasks/${task_id}`);
+}
+
+export async function getLongDocumentTaskArtifact(task_id: string) {
+  return get(`/api/v1/long-document-tasks/${task_id}/artifact`);
+}
+
+export async function getLongDocumentTaskBatches(task_id: string) {
+  return get(`/api/v1/long-document-tasks/${task_id}/batches`);
+}
+
+export async function retryLongDocumentTask(task_id: string) {
+  return post(`/api/v1/long-document-tasks/${task_id}/retry`, {});
+}
+
+export async function cancelLongDocumentTask(task_id: string) {
+  return post(`/api/v1/long-document-tasks/${task_id}/cancel`, {});
+}
+
+export async function downloadLongDocumentArtifact(task_id: string) {
+  return getDown(`/api/v1/long-document-tasks/${task_id}/download`);
 }

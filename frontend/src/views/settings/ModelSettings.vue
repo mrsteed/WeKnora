@@ -21,14 +21,6 @@
       <div class="builtin-models-hint" role="note">
         <p class="builtin-hint-label">{{ $t('modelSettings.builtinModels.title') }}</p>
         <p class="builtin-hint-text">{{ $t('modelSettings.builtinModels.description') }}</p>
-        <a
-          class="builtin-hint-link"
-          href="https://github.com/Tencent/WeKnora/blob/main/docs/BUILTIN_MODELS.md"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {{ $t('modelSettings.builtinModels.viewGuide') }}
-        </a>
       </div>
     </div>
 
@@ -468,21 +460,10 @@ onMounted(() => {
 }
 
 .builtin-hint-text {
-  margin: 0 0 6px 0;
+  margin: 0;
   font-size: 13px;
   line-height: 1.55;
   color: var(--td-text-color-secondary);
-}
-
-.builtin-hint-link {
-  font-size: 13px;
-  color: var(--td-text-color-secondary);
-  text-decoration: none;
-
-  &:hover {
-    color: var(--td-brand-color);
-    text-decoration: underline;
-  }
 }
 
 .section-header__top {

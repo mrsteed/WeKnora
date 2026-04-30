@@ -30,6 +30,7 @@ type Config struct {
 	PromptTemplates *PromptTemplatesConfig `yaml:"prompt_templates" json:"prompt_templates"`
 	IM              *IMConfig              `yaml:"im"               json:"im"`
 	Agent           *AgentConfig           `yaml:"agent"            json:"agent"`
+	LongDocument    *LongDocumentConfig    `yaml:"long_document"    json:"long_document"`
 }
 
 // AgentConfig represents the global agent settings.
@@ -37,6 +38,16 @@ type AgentConfig struct {
 	// LLMCallTimeout is the default timeout for a single LLM call in seconds.
 	// Default: 120 (standard agents) or 300 (can be overridden by Env).
 	LLMCallTimeout int `yaml:"llm_call_timeout" json:"llm_call_timeout"`
+}
+
+type LongDocumentConfig struct {
+	EnableTaskRouter       bool `yaml:"enable_task_router" json:"enable_task_router"`
+	EnableTaskWorker       bool `yaml:"enable_task_worker" json:"enable_task_worker"`
+	EnableArtifactDownload bool `yaml:"enable_artifact_download" json:"enable_artifact_download"`
+	BatchChunkSize         int  `yaml:"batch_chunk_size" json:"batch_chunk_size"`
+	BatchMaxChars          int  `yaml:"batch_max_chars" json:"batch_max_chars"`
+	BatchRetryLimit        int  `yaml:"batch_retry_limit" json:"batch_retry_limit"`
+	TaskPollIntervalSec    int  `yaml:"task_poll_interval_sec" json:"task_poll_interval_sec"`
 }
 
 // IMConfig configures the IM integration service.
@@ -269,7 +280,9 @@ func DefaultTemplateByMode(templates []PromptTemplate, mode string) *PromptTempl
 
 // LocalizeTemplates returns a deep copy of the template list with Name and
 // Description replaced according to the given locale.  Fallback chain:
-//   locale → primary language (e.g. "zh" from "zh-CN") → original Name/Description.
+//
+//	locale → primary language (e.g. "zh" from "zh-CN") → original Name/Description.
+//
 // The returned slice is safe to serialise directly; it never mutates the original.
 func LocalizeTemplates(templates []PromptTemplate, locale string) []PromptTemplate {
 	if len(templates) == 0 {
@@ -429,6 +442,7 @@ func LoadConfig() (*Config, error) {
 	// Validate configuration values
 	applyOIDCEnvOverrides(&cfg)
 	applyAgentEnvOverrides(&cfg)
+	applyLongDocumentDefaults(&cfg)
 
 	if err := ValidateConfig(&cfg); err != nil {
 		return nil, err
@@ -567,6 +581,37 @@ func applyAgentEnvOverrides(cfg *Config) {
 			// Handle case where user just provides a number like "300"
 			cfg.Agent.LLMCallTimeout = int(sec.Seconds())
 		}
+	}
+}
+
+func applyLongDocumentDefaults(cfg *Config) {
+	if cfg.LongDocument == nil {
+		cfg.LongDocument = &LongDocumentConfig{
+			EnableTaskRouter:       true,
+			EnableTaskWorker:       true,
+			EnableArtifactDownload: true,
+		}
+	}
+	if cfg.LongDocument.BatchChunkSize <= 0 {
+		cfg.LongDocument.BatchChunkSize = 8
+	}
+	if cfg.LongDocument.BatchMaxChars <= 0 {
+		cfg.LongDocument.BatchMaxChars = 24000
+	}
+	if cfg.LongDocument.BatchRetryLimit <= 0 {
+		cfg.LongDocument.BatchRetryLimit = 3
+	}
+	if cfg.LongDocument.TaskPollIntervalSec <= 0 {
+		cfg.LongDocument.TaskPollIntervalSec = 3
+	}
+	if value := strings.TrimSpace(os.Getenv("WEKNORA_ENABLE_LONG_DOCUMENT_TASK_ROUTER")); value != "" {
+		cfg.LongDocument.EnableTaskRouter = strings.EqualFold(value, "true")
+	}
+	if value := strings.TrimSpace(os.Getenv("WEKNORA_ENABLE_LONG_DOCUMENT_TASK_WORKER")); value != "" {
+		cfg.LongDocument.EnableTaskWorker = strings.EqualFold(value, "true")
+	}
+	if value := strings.TrimSpace(os.Getenv("WEKNORA_ENABLE_LONG_DOCUMENT_ARTIFACT_DOWNLOAD")); value != "" {
+		cfg.LongDocument.EnableArtifactDownload = strings.EqualFold(value, "true")
 	}
 }
 

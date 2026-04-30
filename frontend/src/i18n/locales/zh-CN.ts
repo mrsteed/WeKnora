@@ -3666,6 +3666,12 @@ export default {
       called: "调用 {name}",
       calledFailed: "调用 {name} 失败",
     },
+    completion: {
+      completed: "已完成",
+      partial: "输出被截断，结果不完整",
+      failed: "生成失败，请重试",
+      cancelled: "已停止生成",
+    },
     copy: {
       emptyContent: "当前回答为空，无法复制",
       success: "已复制到剪贴板",

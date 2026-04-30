@@ -210,11 +210,18 @@ func (s *AgentStep) GetObservations() []string {
 
 // AgentState tracks the execution state of an agent across iterations
 type AgentState struct {
-	CurrentRound  int             `json:"current_round"`  // Current round number
-	RoundSteps    []AgentStep     `json:"round_steps"`    // All steps taken so far in the current round
-	IsComplete    bool            `json:"is_complete"`    // Whether agent has finished
-	FinalAnswer   string          `json:"final_answer"`   // The final answer to the query
-	KnowledgeRefs []*SearchResult `json:"knowledge_refs"` // Collected knowledge references
+	CurrentRound       int             `json:"current_round"`                 // Current round number
+	RoundSteps         []AgentStep     `json:"round_steps"`                   // All steps taken so far in the current round
+	IsComplete         bool            `json:"is_complete"`                   // Whether agent has finished
+	FinalAnswer        string          `json:"final_answer"`                  // The final answer to the query
+	CompletionStatus   string          `json:"completion_status,omitempty"`   // Business completion state for the generated answer
+	FinishReason       string          `json:"finish_reason,omitempty"`       // Raw finish reason surfaced by the LLM or orchestration
+	FailureReason      string          `json:"failure_reason,omitempty"`      // Normalized failure reason for downstream handlers
+	AllowIndexing      bool            `json:"allow_indexing,omitempty"`      // Whether the answer may be indexed into chat history KB
+	AllowComplete      bool            `json:"allow_complete,omitempty"`      // Whether the answer may be treated as formally completed
+	PartialAnswer      string          `json:"partial_answer,omitempty"`      // Accumulated partial answer content across length continuations
+	ContinuationRounds int             `json:"continuation_rounds,omitempty"` // Number of length-triggered continuation rounds already used
+	KnowledgeRefs      []*SearchResult `json:"knowledge_refs"`                // Collected knowledge references
 }
 
 // FunctionDefinition represents a function definition for LLM function calling

@@ -32,6 +32,7 @@ type ChatResponse struct {
 	ToolCalls        []LLMToolCall `json:"tool_calls,omitempty"`
 	FinishReason     string        `json:"finish_reason,omitempty"`
 	Usage            TokenUsage    `json:"usage"`
+	AnswerStreamed   bool          `json:"-"`
 }
 
 // Response type
@@ -40,6 +41,8 @@ type ResponseType string
 const (
 	// Answer response type
 	ResponseTypeAnswer ResponseType = "answer"
+	// Long document task response type
+	ResponseTypeLongDocumentTask ResponseType = "long_document_task"
 	// References response type
 	ResponseTypeReferences ResponseType = "references"
 	// Thinking response type (for agent thought process)

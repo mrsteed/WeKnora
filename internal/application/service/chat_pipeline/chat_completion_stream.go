@@ -11,6 +11,47 @@ import (
 	"github.com/google/uuid"
 )
 
+func answerCompletionEventData(response types.StreamResponse, content string, done bool) event.AgentFinalAnswerData {
+	completionStatus := "completed"
+	finishReason := response.FinishReason
+	allowIndexing := true
+	allowComplete := true
+	failureReason := ""
+
+	if finishReason == "" {
+		finishReason = "stop"
+	}
+
+	switch finishReason {
+	case "length":
+		completionStatus = "partial"
+		allowIndexing = false
+		allowComplete = false
+		failureReason = "length"
+	case "content_filter":
+		completionStatus = "failed"
+		allowIndexing = false
+		allowComplete = false
+		failureReason = "content_filter"
+	case "cancelled":
+		completionStatus = "cancelled"
+		allowIndexing = false
+		allowComplete = false
+		failureReason = "cancelled"
+	}
+
+	return event.AgentFinalAnswerData{
+		Content:          content,
+		Done:             done,
+		CompletionStatus: completionStatus,
+		FinishReason:     finishReason,
+		IsPartial:        completionStatus == "partial",
+		AllowIndexing:    allowIndexing,
+		AllowComplete:    allowComplete,
+		FailureReason:    failureReason,
+	}
+}
+
 // PluginChatCompletionStream implements streaming chat completion functionality
 // as a plugin that can be registered to EventManager
 type PluginChatCompletionStream struct {
@@ -117,10 +158,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 						ID:        answerID,
 						Type:      types.EventType(event.EventAgentFinalAnswer),
 						SessionID: chatManage.SessionID,
-						Data: event.AgentFinalAnswerData{
-							Content: "</think>",
-							Done:    true,
-						},
+						Data:      answerCompletionEventData(types.StreamResponse{FinishReason: "cancelled"}, "</think>", true),
 					})
 				}
 				pipelineInfo(ctx, "Stream", "context_cancelled", map[string]interface{}{
@@ -136,10 +174,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 							ID:        answerID,
 							Type:      types.EventType(event.EventAgentFinalAnswer),
 							SessionID: chatManage.SessionID,
-							Data: event.AgentFinalAnswerData{
-								Content: "</think>",
-								Done:    true,
-							},
+							Data:      answerCompletionEventData(types.StreamResponse{}, "</think>", true),
 						})
 					}
 					pipelineInfo(ctx, "Stream", "channel_close", map[string]interface{}{
@@ -181,10 +216,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 						ID:        answerID,
 						Type:      types.EventType(event.EventAgentFinalAnswer),
 						SessionID: chatManage.SessionID,
-						Data: event.AgentFinalAnswerData{
-							Content: content,
-							Done:    false,
-						},
+						Data:      answerCompletionEventData(response, content, false),
 					})
 					continue
 				}
@@ -197,10 +229,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 							ID:        answerID,
 							Type:      types.EventType(event.EventAgentFinalAnswer),
 							SessionID: chatManage.SessionID,
-							Data: event.AgentFinalAnswerData{
-								Content: "</think>",
-								Done:    false,
-							},
+							Data:      answerCompletionEventData(response, "</think>", false),
 						})
 					}
 					finalContent += response.Content
@@ -208,10 +237,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 						ID:        answerID,
 						Type:      types.EventType(event.EventAgentFinalAnswer),
 						SessionID: chatManage.SessionID,
-						Data: event.AgentFinalAnswerData{
-							Content: response.Content,
-							Done:    response.Done,
-						},
+						Data:      answerCompletionEventData(response, response.Content, response.Done),
 					})
 				}
 			}

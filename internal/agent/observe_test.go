@@ -6,10 +6,12 @@ import (
 	"time"
 
 	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type captureContextManager struct {
@@ -151,6 +153,165 @@ func TestAnalyzeResponse_NonFinalAnswerTool_DoesNotTerminate(t *testing.T) {
 
 	assert.False(t, verdict.isDone,
 		"non-terminal tool calls must keep the loop running")
+}
+
+func TestAnalyzeResponse_LengthWithoutToolCalls_ReturnsPartial(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	resp := &types.ChatResponse{
+		Content:      "partial answer",
+		FinishReason: "length",
+	}
+
+	verdict := engine.analyzeResponse(
+		context.Background(), resp, types.AgentStep{}, 0, "sess-1", time.Now(),
+	)
+
+	assert.True(t, verdict.isDone)
+	assert.Equal(t, "partial", verdict.completionStatus)
+	assert.Equal(t, "length", verdict.finishReason)
+	assert.True(t, verdict.isPartial)
+	assert.False(t, verdict.allowIndexing)
+	assert.False(t, verdict.allowComplete)
+	assert.Equal(t, "partial answer", verdict.finalAnswer)
+}
+
+func TestAnalyzeResponse_StopWithStreamedAnswer_OnlyEmitsDoneMarker(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	resp := &types.ChatResponse{
+		Content:        "streamed answer",
+		FinishReason:   "stop",
+		AnswerStreamed: true,
+	}
+
+	var emitted []event.AgentFinalAnswerData
+	engine.eventBus.On(event.EventAgentFinalAnswer, func(ctx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		require.True(t, ok)
+		emitted = append(emitted, data)
+		return nil
+	})
+
+	verdict := engine.analyzeResponse(
+		context.Background(), resp, types.AgentStep{}, 0, "sess-1", time.Now(),
+	)
+
+	require.True(t, verdict.isDone)
+	require.Len(t, emitted, 1)
+	assert.True(t, emitted[0].Done)
+	assert.Empty(t, emitted[0].Content)
+}
+
+func TestStreamThinkingToEventBus_OrdinaryAnswerChunksStayOnAnswerChannel(t *testing.T) {
+	mock := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{
+		{ResponseType: types.ResponseTypeAnswer, Content: "hello "},
+		{ResponseType: types.ResponseTypeAnswer, Content: "world", Done: true, FinishReason: "stop"},
+	}}}}
+	engine := newTestEngine(t, mock)
+
+	var answers []event.AgentFinalAnswerData
+	var thoughts []event.AgentThoughtData
+	engine.eventBus.On(event.EventAgentFinalAnswer, func(ctx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		require.True(t, ok)
+		answers = append(answers, data)
+		return nil
+	})
+	engine.eventBus.On(event.EventAgentThought, func(ctx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentThoughtData)
+		require.True(t, ok)
+		thoughts = append(thoughts, data)
+		return nil
+	})
+
+	response, err := engine.streamThinkingToEventBus(context.Background(), emptyMessages(), emptyTools(), 0, "sess-1")
+	require.NoError(t, err)
+	require.NotNil(t, response)
+	assert.True(t, response.AnswerStreamed)
+	assert.Len(t, answers, 2)
+	assert.Empty(t, thoughts)
+	assert.Equal(t, "hello ", answers[0].Content)
+	assert.Equal(t, "world", answers[1].Content)
+	assert.False(t, answers[0].Done)
+	assert.False(t, answers[1].Done)
+}
+
+func TestRunReActIteration_LengthResponseSchedulesContinuation(t *testing.T) {
+	mock := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{
+		{ResponseType: types.ResponseTypeAnswer, Content: "part-1", FinishReason: "length", Done: true},
+	}}}}
+	engine := newTestEngine(t, mock)
+	state := &types.AgentState{}
+	messages := emptyMessages()
+	emptyRetries := 0
+	consecutiveSameContent := 0
+	lastResponseContent := ""
+
+	outcome, err := engine.runReActIteration(
+		context.Background(),
+		state,
+		&messages,
+		emptyTools(),
+		"sess-1",
+		"test query",
+		&emptyRetries,
+		&consecutiveSameContent,
+		&lastResponseContent,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, iterOutcomeNext, outcome)
+	assert.Equal(t, 1, state.ContinuationRounds)
+	assert.Equal(t, "part-1", state.PartialAnswer)
+	require.Len(t, state.RoundSteps, 1)
+	require.Len(t, messages, 4)
+	assert.Equal(t, "assistant", messages[2].Role)
+	assert.Equal(t, "part-1", messages[2].Content)
+	assert.Equal(t, "user", messages[3].Role)
+	assert.Equal(t, lengthContinuationPrompt, messages[3].Content)
+}
+
+func TestRunReActIteration_ContinuationAnswerIsMergedOnFinalCompletion(t *testing.T) {
+	mock := &mockChat{responses: []mockResponse{
+		{chunks: []types.StreamResponse{{ResponseType: types.ResponseTypeAnswer, Content: "part-1", FinishReason: "length", Done: true}}},
+		{chunks: []types.StreamResponse{{ResponseType: types.ResponseTypeAnswer, Content: "part-2", FinishReason: "stop", Done: true}}},
+	}}
+	engine := newTestEngine(t, mock)
+	state := &types.AgentState{}
+	messages := emptyMessages()
+	emptyRetries := 0
+	consecutiveSameContent := 0
+	lastResponseContent := ""
+
+	outcome, err := engine.runReActIteration(
+		context.Background(),
+		state,
+		&messages,
+		emptyTools(),
+		"sess-1",
+		"test query",
+		&emptyRetries,
+		&consecutiveSameContent,
+		&lastResponseContent,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, iterOutcomeNext, outcome)
+	state.CurrentRound++
+
+	outcome, err = engine.runReActIteration(
+		context.Background(),
+		state,
+		&messages,
+		emptyTools(),
+		"sess-1",
+		"test query",
+		&emptyRetries,
+		&consecutiveSameContent,
+		&lastResponseContent,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, iterOutcomeBreak, outcome)
+	assert.Equal(t, "part-1part-2", state.FinalAnswer)
+	assert.Equal(t, types.MessageCompletionStatusCompleted, state.CompletionStatus)
 }
 
 func TestAppendToolResults_PreservesReasoningContentInContext(t *testing.T) {

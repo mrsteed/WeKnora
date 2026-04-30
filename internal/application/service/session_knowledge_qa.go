@@ -15,6 +15,18 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
+func fallbackAnswerEventData(content string, done bool) event.AgentFinalAnswerData {
+	return event.AgentFinalAnswerData{
+		Content:          content,
+		Done:             done,
+		IsFallback:       true,
+		CompletionStatus: "completed",
+		FinishReason:     "stop",
+		AllowIndexing:    true,
+		AllowComplete:    true,
+	}
+}
+
 // KnowledgeQA performs knowledge base question answering with LLM summarization
 // Events are emitted through eventBus (references, answer chunks, completion)
 // customAgent is optional - if provided, uses custom agent configuration for multiTurnEnabled and historyTurns
@@ -874,11 +886,7 @@ func (s *sessionService) consumeFallbackStream(
 				ID:        fallbackID,
 				Type:      types.EventType(event.EventAgentFinalAnswer),
 				SessionID: chatManage.SessionID,
-				Data: event.AgentFinalAnswerData{
-					Content:    response.Content,
-					Done:       response.Done,
-					IsFallback: true,
-				},
+				Data:      fallbackAnswerEventData(response.Content, response.Done),
 			}); err != nil {
 				logger.Errorf(ctx, "Failed to emit fallback answer chunk event: %v", err)
 			}
@@ -911,11 +919,7 @@ func (s *sessionService) emitFallbackAnswer(ctx context.Context, chatManage *typ
 		ID:        fallbackID,
 		Type:      types.EventType(event.EventAgentFinalAnswer),
 		SessionID: chatManage.SessionID,
-		Data: event.AgentFinalAnswerData{
-			Content:    content,
-			Done:       true,
-			IsFallback: true,
-		},
+		Data:      fallbackAnswerEventData(content, true),
 	}); err != nil {
 		logger.Errorf(ctx, "Failed to emit fallback answer event: %v", err)
 	} else {

@@ -315,6 +315,24 @@ func (h *AgentStreamHandler) handleFinalAnswer(ctx context.Context, evt event.Ev
 	if data.IsFallback {
 		metadata["is_fallback"] = true
 	}
+	if data.CompletionStatus != "" {
+		metadata["completion_status"] = data.CompletionStatus
+	}
+	if data.FinishReason != "" {
+		metadata["finish_reason"] = data.FinishReason
+	}
+	if data.IsPartial {
+		metadata["is_partial"] = data.IsPartial
+	}
+	if data.AllowIndexing {
+		metadata["allow_indexing"] = data.AllowIndexing
+	}
+	if data.AllowComplete {
+		metadata["allow_complete"] = data.AllowComplete
+	}
+	if data.FailureReason != "" {
+		metadata["failure_reason"] = data.FailureReason
+	}
 	h.mu.Unlock()
 
 	// Append this chunk to stream (frontend will accumulate by event ID)
@@ -417,12 +435,14 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 	}
 
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	fallbackAnswer := ""
 
 	// Update assistant message with final data
 	if data.MessageID == h.assistantMessageID {
-		// h.assistantMessage.Content = data.FinalAnswer
-		h.assistantMessage.IsCompleted = true
+		h.assistantMessage.CompletionStatus = data.CompletionStatus
+		h.assistantMessage.FinishReason = data.FinishReason
+		h.assistantMessage.FailureReason = data.FailureReason
+		h.assistantMessage.IsCompleted = data.CompletionStatus == types.MessageCompletionStatusCompleted
 		h.assistantMessage.AgentDurationMs = data.TotalDurationMs
 
 		// Update knowledge references if provided
@@ -436,7 +456,12 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 			h.assistantMessage.KnowledgeReferences = knowledgeRefs
 		}
 
-		h.assistantMessage.Content += data.FinalAnswer
+		h.assistantMessage.Content = h.finalAnswer
+		if h.assistantMessage.Content == "" && data.FinalAnswer != "" && data.CompletionStatus == types.MessageCompletionStatusCompleted {
+			fallbackAnswer = data.FinalAnswer
+			h.finalAnswer = data.FinalAnswer
+			h.assistantMessage.Content = data.FinalAnswer
+		}
 
 		// Update agent steps if provided
 		if data.AgentSteps != nil {
@@ -445,23 +470,25 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 			}
 		}
 	}
+	h.mu.Unlock()
 
 	// Fallback: if no answer events were streamed but we have a final answer,
 	// emit it as answer events so the frontend can render it properly.
-	// This guards against edge cases where the LLM stops without calling final_answer.
-	if h.finalAnswer == "" && data.FinalAnswer != "" {
+	// This is only allowed for completed answers; partial/failed/cancelled must not
+	// reintroduce body content from the complete event.
+	if fallbackAnswer != "" {
 		logger.GetLogger(h.ctx).Warnf(
 			"No answer events were streamed, emitting fallback answer (len=%d). "+
 				"This typically happens when: (1) model stopped naturally and content was sent as thought events, "+
 				"or (2) Ollama model returned tool calls non-incrementally. "+
 				"total_steps=%d, total_duration_ms=%d",
-			len(data.FinalAnswer), data.TotalSteps, data.TotalDurationMs,
+			len(fallbackAnswer), data.TotalSteps, data.TotalDurationMs,
 		)
 		fallbackID := fmt.Sprintf("answer-fallback-%d", time.Now().UnixMilli())
 		if err := h.streamManager.AppendEvent(h.ctx, h.sessionID, h.assistantMessageID, interfaces.StreamEvent{
 			ID:        fallbackID,
 			Type:      types.ResponseTypeAnswer,
-			Content:   data.FinalAnswer,
+			Content:   fallbackAnswer,
 			Done:      false,
 			Timestamp: time.Now(),
 			Data: map[string]interface{}{
@@ -496,6 +523,12 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 		Data: map[string]interface{}{
 			"total_steps":       data.TotalSteps,
 			"total_duration_ms": data.TotalDurationMs,
+			"completion_status": data.CompletionStatus,
+			"finish_reason":     data.FinishReason,
+			"is_partial":        data.IsPartial,
+			"allow_indexing":    data.AllowIndexing,
+			"allow_complete":    data.AllowComplete,
+			"failure_reason":    data.FailureReason,
 		},
 	}); err != nil {
 		logger.GetLogger(h.ctx).Errorf("Append complete event to stream failed: %v", err)

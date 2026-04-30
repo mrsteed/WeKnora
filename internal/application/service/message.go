@@ -17,6 +17,14 @@ import (
 // regThinkIndex matches <think>...</think> blocks for stripping from KB index content.
 var regThinkIndex = regexp.MustCompile(`(?s)<think>.*?</think>`)
 
+var messageIndexPlanTextFragments = []string{
+	"让我整理",
+	"我需要将其完整翻译",
+	"由于内容太多",
+	"let me organize",
+	"i need to provide the full translation",
+}
+
 // messageService implements the MessageService interface for managing messaging operations
 // It handles creating, retrieving, updating, and deleting messages within sessions.
 // It reads the chat history knowledge base configuration from the tenant's ChatHistoryConfig,
@@ -363,14 +371,22 @@ func (s *messageService) getRetrievalConfig(ctx context.Context) *types.Retrieva
 // It creates a Knowledge entry (passage) containing both the user query and assistant answer,
 // then links the message to the Knowledge entry via the knowledge_id field.
 // The KB ID is read from the tenant's ChatHistoryConfig — if not configured, indexing is skipped.
-func (s *messageService) IndexMessageToKB(ctx context.Context, userQuery string, assistantAnswer string, messageID string, sessionID string) {
+func (s *messageService) IndexMessageToKB(
+	ctx context.Context,
+	userQuery string,
+	assistantAnswer string,
+	messageID string,
+	sessionID string,
+	options interfaces.MessageIndexOptions,
+) {
 	// Strip thinking content (<think>...</think>) before indexing to avoid
 	// polluting the knowledge base with intermediate reasoning that would
 	// degrade retrieval quality.
 	assistantAnswer = regThinkIndex.ReplaceAllString(assistantAnswer, "")
 	assistantAnswer = strings.TrimSpace(assistantAnswer)
+	userQuery = strings.TrimSpace(userQuery)
 
-	if strings.TrimSpace(userQuery) == "" && assistantAnswer == "" {
+	if !shouldIndexMessageToKB(userQuery, assistantAnswer, options) {
 		return
 	}
 
@@ -400,6 +416,33 @@ func (s *messageService) IndexMessageToKB(ctx context.Context, userQuery string,
 	}
 
 	logger.Infof(ctx, "Message indexed to chat history KB: knowledge_id=%s, message_id=%s", knowledge.ID, messageID)
+}
+
+func shouldIndexMessageToKB(userQuery string, assistantAnswer string, options interfaces.MessageIndexOptions) bool {
+	if !options.AllowIndexing {
+		return false
+	}
+	if options.CompletionStatus != "" && options.CompletionStatus != "completed" {
+		return false
+	}
+	if options.FinishReason == "length" {
+		return false
+	}
+	if assistantAnswer == "" {
+		return false
+	}
+	if strings.EqualFold(options.TaskKind, "long_document") {
+		return false
+	}
+
+	lowerAnswer := strings.ToLower(assistantAnswer)
+	for _, fragment := range messageIndexPlanTextFragments {
+		if strings.Contains(lowerAnswer, strings.ToLower(fragment)) {
+			return false
+		}
+	}
+
+	return !(userQuery == "" && assistantAnswer == "")
 }
 
 // DeleteMessageKnowledge deletes the Knowledge entry associated with a message from the chat history KB.

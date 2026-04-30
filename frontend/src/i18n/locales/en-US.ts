@@ -3645,6 +3645,12 @@ export default {
       called: 'Called {name}',
       calledFailed: 'Failed to call {name}',
     },
+    completion: {
+      completed: 'Completed',
+      partial: 'Output was truncated and is incomplete',
+      failed: 'Generation failed. Please try again.',
+      cancelled: 'Generation stopped',
+    },
     copy: {
       emptyContent: 'Current response is empty, cannot copy',
       success: 'Copied to clipboard',

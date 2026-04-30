@@ -112,18 +112,18 @@ func buildStreamResponse(evt interfaces.StreamEvent, requestID string) *types.St
 			for _, ref := range refs {
 				if refMap, ok := ref.(map[string]interface{}); ok {
 					sr := &types.SearchResult{
-						ID:                getString(refMap, "id"),
-						Content:           getString(refMap, "content"),
-						KnowledgeID:       getString(refMap, "knowledge_id"),
-						ChunkIndex:        int(getFloat64(refMap, "chunk_index")),
-						KnowledgeTitle:    getString(refMap, "knowledge_title"),
-						StartAt:           int(getFloat64(refMap, "start_at")),
-						EndAt:             int(getFloat64(refMap, "end_at")),
-						Seq:               int(getFloat64(refMap, "seq")),
-						Score:             getFloat64(refMap, "score"),
-						ChunkType:         getString(refMap, "chunk_type"),
-						ParentChunkID:     getString(refMap, "parent_chunk_id"),
-						ImageInfo:         getString(refMap, "image_info"),
+						ID:                   getString(refMap, "id"),
+						Content:              getString(refMap, "content"),
+						KnowledgeID:          getString(refMap, "knowledge_id"),
+						ChunkIndex:           int(getFloat64(refMap, "chunk_index")),
+						KnowledgeTitle:       getString(refMap, "knowledge_title"),
+						StartAt:              int(getFloat64(refMap, "start_at")),
+						EndAt:                int(getFloat64(refMap, "end_at")),
+						Seq:                  int(getFloat64(refMap, "seq")),
+						Score:                getFloat64(refMap, "score"),
+						ChunkType:            getString(refMap, "chunk_type"),
+						ParentChunkID:        getString(refMap, "parent_chunk_id"),
+						ImageInfo:            getString(refMap, "image_info"),
 						KnowledgeFilename:    getString(refMap, "knowledge_filename"),
 						KnowledgeSource:      getString(refMap, "knowledge_source"),
 						KnowledgeDescription: getString(refMap, "knowledge_description"),
@@ -141,13 +141,27 @@ func buildStreamResponse(evt interfaces.StreamEvent, requestID string) *types.St
 
 // sendCompletionEvent sends a final completion event to the client
 // NOTE: This is now a no-op because:
-// 1. The 'complete' event from handleComplete already signals stream completion
-// 2. Sending an extra empty 'answer' event with done:true causes frontend issues
-//    (multiple done events can confuse state management)
+//  1. The 'complete' event from handleComplete already signals stream completion
+//  2. Sending an extra empty 'answer' event with done:true causes frontend issues
+//     (multiple done events can confuse state management)
+//
 // The frontend should use 'complete' response_type to detect stream completion
 func sendCompletionEvent(c *gin.Context, requestID string) {
 	// Intentionally empty - completion is signaled by the 'complete' event
 	// which is already sent before this function is called
+}
+
+func sendLongDocumentTaskEvent(c *gin.Context, task *types.LongDocumentTask) {
+	setSSEHeaders(c)
+	c.SSEvent("message", &types.StreamResponse{
+		ID:           task.ID,
+		ResponseType: types.ResponseTypeLongDocumentTask,
+		Done:         true,
+		Data: map[string]interface{}{
+			"task": task,
+		},
+	})
+	c.Writer.Flush()
 }
 
 // createAgentQueryEvent creates a standard agent query event
@@ -168,22 +182,26 @@ func createAgentQueryEvent(sessionID, assistantMessageID string) interfaces.Stre
 // createUserMessage creates a user message and returns the created message.
 func (h *Handler) createUserMessage(ctx context.Context, sessionID, query, requestID string, mentionedItems types.MentionedItems, images types.MessageImages, attachments types.MessageAttachments, channel string) (*types.Message, error) {
 	return h.messageService.CreateMessage(ctx, &types.Message{
-		SessionID:      sessionID,
-		Role:           "user",
-		Content:        query,
-		RequestID:      requestID,
-		CreatedAt:      time.Now(),
-		IsCompleted:    true,
-		MentionedItems: mentionedItems,
-		Images:         images,
-		Attachments:    attachments,
-		Channel:        channel,
+		SessionID:        sessionID,
+		Role:             "user",
+		Content:          query,
+		RequestID:        requestID,
+		CreatedAt:        time.Now(),
+		IsCompleted:      true,
+		CompletionStatus: types.MessageCompletionStatusCompleted,
+		MentionedItems:   mentionedItems,
+		Images:           images,
+		Attachments:      attachments,
+		Channel:          channel,
 	})
 }
 
 // createAssistantMessage creates an assistant message
 func (h *Handler) createAssistantMessage(ctx context.Context, assistantMessage *types.Message) (*types.Message, error) {
 	assistantMessage.CreatedAt = time.Now()
+	if assistantMessage.CompletionStatus == "" {
+		assistantMessage.CompletionStatus = types.MessageCompletionStatusPending
+	}
 	return h.messageService.CreateMessage(ctx, assistantMessage)
 }
 
@@ -220,7 +238,13 @@ func (h *Handler) setupStopEventHandler(
 			context.WithoutCancel(ctx),
 			types.TenantIDContextKey, sessionTenantID,
 		)
-		h.completeAssistantMessage(updateCtx, assistantMessage, "") // empty query: stopped conversations are not indexed
+		h.completeAssistantMessage(updateCtx, assistantMessage, "", assistantCompletionOptions{
+			CompletionStatus: "cancelled",
+			FinishReason:     "cancelled",
+			FailureReason:    "cancelled",
+			AllowIndexing:    false,
+			AllowComplete:    false,
+		}) // empty query: stopped conversations are not indexed
 		return nil
 	})
 }

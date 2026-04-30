@@ -385,6 +385,11 @@ loop:
 			if totalTC := countTotalToolCalls(state.RoundSteps); totalTC > 0 {
 				logger.Infof(ctx, "[Agent] Synthesizing final answer from %d existing tool results",
 					totalTC)
+				state.CompletionStatus = "cancelled"
+				state.FinishReason = "cancelled"
+				state.FailureReason = "cancelled"
+				state.AllowIndexing = false
+				state.AllowComplete = false
 				_ = e.streamFinalAnswerToEventBus(ctx, query, state, sessionID)
 				state.IsComplete = true
 			}
@@ -438,6 +443,24 @@ const (
 	// iterOutcomeBreak exits the loop (final answer, stuck loop, or end).
 	iterOutcomeBreak
 )
+
+const (
+	maxLengthContinuationRounds = 3
+	lengthContinuationPrompt    = "从中断位置继续，不要重复前文，保持相同格式"
+)
+
+func mergeContinuationAnswer(existing, current string) string {
+	if existing == "" {
+		return current
+	}
+	if current == "" {
+		return existing
+	}
+	if strings.HasPrefix(current, existing) {
+		return current
+	}
+	return existing + current
+}
 
 // runReActIteration executes one ReAct step: think → analyze → act → observe.
 // Extracted from executeLoop so the whole iteration body can live inside a
@@ -558,6 +581,14 @@ func (e *AgentEngine) runReActIteration(
 			logger.Warnf(ctx, "[Agent][Round-%d] Detected stuck loop: same content repeated %d times (finish=%s), stopping",
 				round, *consecutiveSameContent+1, response.FinishReason)
 			state.FinalAnswer = response.Content
+			state.CompletionStatus = "partial"
+			state.FinishReason = response.FinishReason
+			if state.FinishReason == "" {
+				state.FinishReason = "max_iterations"
+			}
+			state.FailureReason = state.FinishReason
+			state.AllowIndexing = false
+			state.AllowComplete = false
 			state.IsComplete = true
 			return iterOutcomeBreak, nil
 		}
@@ -595,6 +626,27 @@ func (e *AgentEngine) runReActIteration(
 	}
 
 	// 2. Analyze: Check for stop conditions (natural stop or final_answer tool)
+	if response.FinishReason == "length" && len(response.ToolCalls) == 0 && response.Content != "" &&
+		state.ContinuationRounds < maxLengthContinuationRounds {
+		logger.Warnf(ctx, "[Agent][Round-%d] Length truncation detected, scheduling continuation round %d/%d",
+			round, state.ContinuationRounds+1, maxLengthContinuationRounds)
+		state.PartialAnswer = mergeContinuationAnswer(state.PartialAnswer, response.Content)
+		state.ContinuationRounds++
+		state.RoundSteps = append(state.RoundSteps, step)
+		*messagesPtr = append(*messagesPtr,
+			chat.Message{Role: "assistant", Content: response.Content},
+			chat.Message{Role: "user", Content: lengthContinuationPrompt},
+		)
+		common.PipelineInfo(ctx, "Agent", "length_continuation_scheduled", map[string]interface{}{
+			"round":               round,
+			"continuation_round":  state.ContinuationRounds,
+			"max_continuations":   maxLengthContinuationRounds,
+			"partial_answer_len":  len(state.PartialAnswer),
+			"continuation_prompt": lengthContinuationPrompt,
+		})
+		return iterOutcomeNext, nil
+	}
+
 	verdict := e.analyzeResponse(ctx, response, step, state.CurrentRound, sessionID, roundStart)
 	if verdict.isDone {
 		// Guard against empty content: when the LLM stops naturally with no
@@ -615,11 +667,24 @@ func (e *AgentEngine) runReActIteration(
 			logger.Warnf(ctx, "[Agent][Round-%d] Empty content after %d retries - using fallback",
 				round, maxEmptyResponseRetries)
 			state.FinalAnswer = "I'm sorry, I was unable to generate a response. Please try again."
+			state.CompletionStatus = "failed"
+			state.FinishReason = response.FinishReason
+			if state.FinishReason == "" {
+				state.FinishReason = "empty_response"
+			}
+			state.FailureReason = "empty_response"
+			state.AllowIndexing = false
+			state.AllowComplete = false
 			state.IsComplete = true
 			state.RoundSteps = append(state.RoundSteps, verdict.step)
 			return iterOutcomeBreak, nil
 		}
-		state.FinalAnswer = verdict.finalAnswer
+		state.FinalAnswer = mergeContinuationAnswer(state.PartialAnswer, verdict.finalAnswer)
+		state.CompletionStatus = verdict.completionStatus
+		state.FinishReason = verdict.finishReason
+		state.FailureReason = verdict.failureReason
+		state.AllowIndexing = verdict.allowIndexing
+		state.AllowComplete = verdict.allowComplete
 		state.IsComplete = true
 		state.RoundSteps = append(state.RoundSteps, verdict.step)
 		return iterOutcomeBreak, nil

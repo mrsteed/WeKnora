@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,10 +14,91 @@ import (
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+type assistantCompletionOptions struct {
+	CompletionStatus string
+	FinishReason     string
+	FailureReason    string
+	AllowIndexing    bool
+	AllowComplete    bool
+}
+
+func defaultAssistantCompletionOptions() assistantCompletionOptions {
+	return assistantCompletionOptions{
+		CompletionStatus: "completed",
+		FinishReason:     "stop",
+		AllowIndexing:    true,
+		AllowComplete:    true,
+	}
+}
+
+func completionOptionsFromFinalAnswer(data event.AgentFinalAnswerData) assistantCompletionOptions {
+	options := defaultAssistantCompletionOptions()
+	if data.CompletionStatus != "" {
+		options.CompletionStatus = data.CompletionStatus
+		options.AllowIndexing = data.AllowIndexing
+		options.AllowComplete = data.AllowComplete
+	}
+	if data.FinishReason != "" {
+		options.FinishReason = data.FinishReason
+	}
+	if data.FailureReason != "" {
+		options.FailureReason = data.FailureReason
+	}
+	return options
+}
+
+func completionOptionsFromComplete(data event.AgentCompleteData) assistantCompletionOptions {
+	options := defaultAssistantCompletionOptions()
+	if data.CompletionStatus != "" {
+		options.CompletionStatus = data.CompletionStatus
+		options.AllowIndexing = data.AllowIndexing
+		options.AllowComplete = data.AllowComplete
+	}
+	if data.FinishReason != "" {
+		options.FinishReason = data.FinishReason
+	}
+	if data.FailureReason != "" {
+		options.FailureReason = data.FailureReason
+	}
+	return options
+}
+
+func completionOptionsFromError(data event.ErrorData) assistantCompletionOptions {
+	failureReason := data.Stage
+	if failureReason == "" {
+		failureReason = "error"
+	}
+
+	return assistantCompletionOptions{
+		CompletionStatus: types.MessageCompletionStatusFailed,
+		FinishReason:     "error",
+		FailureReason:    failureReason,
+		AllowIndexing:    false,
+		AllowComplete:    false,
+	}
+}
+
+func emitAssistantCompleteEvent(eventBus *event.EventBus, sessionID string, message *types.Message, options assistantCompletionOptions) {
+	eventBus.Emit(context.Background(), event.Event{
+		Type:      event.EventAgentComplete,
+		SessionID: sessionID,
+		Data: event.AgentCompleteData{
+			FinalAnswer:      message.Content,
+			CompletionStatus: options.CompletionStatus,
+			FinishReason:     options.FinishReason,
+			IsPartial:        options.CompletionStatus == types.MessageCompletionStatusPartial,
+			AllowIndexing:    options.AllowIndexing,
+			AllowComplete:    options.AllowComplete,
+			FailureReason:    options.FailureReason,
+		},
+	})
+}
 
 // qaRequestContext holds all the common data needed for QA requests
 type qaRequestContext struct {
@@ -34,10 +116,10 @@ type qaRequestContext struct {
 	webSearchEnabled  bool
 	enableMemory      bool // Whether memory feature is enabled
 	mentionedItems    types.MentionedItems
-	effectiveTenantID uint64            // when using shared agent, tenant ID for model/KB/MCP resolution; 0 = use context tenant
-	images            []ImageAttachment // Uploaded images with analysis text
-	userMessageID     string            // Created user message ID (populated after createUserMessage)
-	channel           string            // Source channel: "web", "api", "im", etc.
+	effectiveTenantID uint64                   // when using shared agent, tenant ID for model/KB/MCP resolution; 0 = use context tenant
+	images            []ImageAttachment        // Uploaded images with analysis text
+	userMessageID     string                   // Created user message ID (populated after createUserMessage)
+	channel           string                   // Source channel: "web", "api", "im", etc.
 	attachments       types.MessageAttachments // Processed file attachments
 }
 
@@ -209,11 +291,12 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		session:     session,
 		customAgent: customAgent,
 		assistantMessage: &types.Message{
-			SessionID:   sessionID,
-			Role:        "assistant",
-			RequestID:   c.GetString(types.RequestIDContextKey.String()),
-			IsCompleted: false,
-			Channel:     request.Channel,
+			SessionID:        sessionID,
+			Role:             "assistant",
+			RequestID:        c.GetString(types.RequestIDContextKey.String()),
+			IsCompleted:      false,
+			CompletionStatus: types.MessageCompletionStatusPending,
+			Channel:          request.Channel,
 		},
 		knowledgeBaseIDs:  secutils.SanitizeForLogArray(kbIDs),
 		knowledgeIDs:      secutils.SanitizeForLogArray(knowledgeIDs),
@@ -467,6 +550,12 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 		c.Error(err)
 		return
 	}
+	if handled, err := h.tryHandleLongDocumentTask(reqCtx, request); handled {
+		if err != nil {
+			c.Error(errors.NewBadRequestError(err.Error()))
+		}
+		return
+	}
 
 	// Execute normal mode QA, generate title unless disabled
 	h.executeQA(reqCtx, qaModeNormal, !request.DisableTitle)
@@ -492,6 +581,12 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		c.Error(err)
 		return
 	}
+	if handled, err := h.tryHandleLongDocumentTask(reqCtx, request); handled {
+		if err != nil {
+			c.Error(errors.NewBadRequestError(err.Error()))
+		}
+		return
+	}
 
 	// Determine if agent mode should be enabled
 	// Priority: customAgent.IsAgentMode() > request.AgentEnabled
@@ -509,6 +604,53 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		logger.Infof(reqCtx.ctx, "Agent mode disabled, delegating to normal mode for session: %s", reqCtx.sessionID)
 		h.executeQA(reqCtx, qaModeNormal, false)
 	}
+}
+
+func (h *Handler) tryHandleLongDocumentTask(reqCtx *qaRequestContext, request *CreateKnowledgeQARequest) (bool, error) {
+	if h.longDocumentService == nil || h.config == nil || h.config.LongDocument == nil || !h.config.LongDocument.EnableTaskRouter {
+		return false, nil
+	}
+	taskKind := h.longDocumentService.InferTaskKind(reqCtx.ctx, reqCtx.query, reqCtx.knowledgeIDs)
+	createReq := buildLongDocumentTaskCreateRequest(
+		reqCtx.sessionID,
+		reqCtx.query,
+		taskKind,
+		request.Channel,
+		reqCtx.knowledgeIDs,
+		request.SummaryModelID,
+		strings.TrimSpace(types.LanguageNameFromContext(reqCtx.ctx)),
+	)
+	if createReq == nil {
+		return false, nil
+	}
+	resp, err := h.longDocumentService.CreateTask(reqCtx.ctx, createReq)
+	if err != nil {
+		return true, err
+	}
+	if resp == nil || resp.Task == nil {
+		return true, fmt.Errorf("long document task created without task payload")
+	}
+	sendLongDocumentTaskEvent(reqCtx.c, resp.Task)
+	return true, nil
+}
+
+func buildLongDocumentTaskCreateRequest(sessionID, query, taskKind, channel string, knowledgeIDs []string, summaryModelID string, targetLanguage string) *types.CreateLongDocumentTaskRequest {
+	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(query) == "" || strings.TrimSpace(taskKind) == "" || len(knowledgeIDs) != 1 {
+		return nil
+	}
+	request := &types.CreateLongDocumentTaskRequest{
+		SessionID:      sessionID,
+		KnowledgeID:    knowledgeIDs[0],
+		TaskKind:       taskKind,
+		OutputFormat:   types.LongDocumentOutputFormatMarkdown,
+		UserQuery:      query,
+		SummaryModelID: strings.TrimSpace(summaryModelID),
+		Channel:        strings.TrimSpace(channel),
+	}
+	if targetLanguage != "" {
+		request.Options.TargetLanguage = targetLanguage
+	}
+	return request
 }
 
 // qaMode determines which QA execution path to use.
@@ -571,6 +713,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 	// (Agent mode handles completion in the defer block instead)
 	if mode == qaModeNormal {
 		var completionHandled bool
+		completionOptions := defaultAssistantCompletionOptions()
 		streamCtx.eventBus.On(event.EventAgentFinalAnswer, func(ctx context.Context, evt event.Event) error {
 			data, ok := evt.Data.(event.AgentFinalAnswerData)
 			if !ok {
@@ -580,6 +723,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 			if data.IsFallback {
 				streamCtx.assistantMessage.IsFallback = true
 			}
+			completionOptions = completionOptionsFromFinalAnswer(data)
 			if data.Done {
 				if completionHandled {
 					return nil
@@ -588,13 +732,43 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 
 				logger.Infof(streamCtx.asyncCtx, "Knowledge QA service completed for session: %s", sessionID)
 				updateCtx := context.WithValue(streamCtx.asyncCtx, types.TenantIDContextKey, reqCtx.session.TenantID)
-				h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query)
-				streamCtx.eventBus.Emit(streamCtx.asyncCtx, event.Event{
-					Type:      event.EventAgentComplete,
-					SessionID: sessionID,
-					Data:      event.AgentCompleteData{FinalAnswer: streamCtx.assistantMessage.Content},
-				})
+				if h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, completionOptions) {
+					emitAssistantCompleteEvent(streamCtx.eventBus, sessionID, streamCtx.assistantMessage, completionOptions)
+				}
 			}
+			return nil
+		})
+		streamCtx.eventBus.On(event.EventError, func(ctx context.Context, evt event.Event) error {
+			data, ok := evt.Data.(event.ErrorData)
+			if !ok || completionHandled {
+				return nil
+			}
+			completionHandled = true
+			options := completionOptionsFromError(data)
+			updateCtx := context.WithValue(context.WithoutCancel(streamCtx.asyncCtx), types.TenantIDContextKey, reqCtx.session.TenantID)
+			if h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, options) {
+				emitAssistantCompleteEvent(streamCtx.eventBus, sessionID, streamCtx.assistantMessage, options)
+			}
+			return nil
+		})
+	}
+
+	agentCompletionOptions := defaultAssistantCompletionOptions()
+	if mode == qaModeAgent {
+		streamCtx.eventBus.On(event.EventAgentComplete, func(ctx context.Context, evt event.Event) error {
+			data, ok := evt.Data.(event.AgentCompleteData)
+			if !ok {
+				return nil
+			}
+			agentCompletionOptions = completionOptionsFromComplete(data)
+			return nil
+		})
+		streamCtx.eventBus.On(event.EventError, func(ctx context.Context, evt event.Event) error {
+			data, ok := evt.Data.(event.ErrorData)
+			if !ok {
+				return nil
+			}
+			agentCompletionOptions = completionOptionsFromError(data)
 			return nil
 		})
 	}
@@ -624,7 +798,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 					context.WithoutCancel(streamCtx.asyncCtx),
 					types.TenantIDContextKey, reqCtx.session.TenantID,
 				)
-				h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query)
+				h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, agentCompletionOptions)
 				logger.Infof(streamCtx.asyncCtx, "Agent QA service completed for session: %s", sessionID)
 			}
 		}()
@@ -647,6 +821,9 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 
 		if serviceErr != nil {
 			logger.ErrorWithFields(streamCtx.asyncCtx, serviceErr, nil)
+			if mode == qaModeAgent {
+				agentCompletionOptions = completionOptionsFromError(event.ErrorData{Stage: stageName, Error: serviceErr.Error()})
+			}
 			streamCtx.eventBus.Emit(streamCtx.asyncCtx, event.Event{
 				Type:      event.EventError,
 				SessionID: sessionID,
@@ -736,13 +913,34 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 
 // completeAssistantMessage marks an assistant message as complete, updates it,
 // and asynchronously indexes the Q&A pair into the chat history knowledge base.
-func (h *Handler) completeAssistantMessage(ctx context.Context, assistantMessage *types.Message, userQuery string) {
+func (h *Handler) completeAssistantMessage(
+	ctx context.Context,
+	assistantMessage *types.Message,
+	userQuery string,
+	options assistantCompletionOptions,
+) bool {
+	if assistantMessage.IsTerminal() {
+		return false
+	}
 	assistantMessage.UpdatedAt = time.Now()
-	assistantMessage.IsCompleted = true
+	assistantMessage.CompletionStatus = options.CompletionStatus
+	assistantMessage.FinishReason = options.FinishReason
+	assistantMessage.FailureReason = options.FailureReason
+	assistantMessage.IsCompleted = options.AllowComplete && options.CompletionStatus == types.MessageCompletionStatusCompleted
 	_ = h.messageService.UpdateMessage(ctx, assistantMessage)
+
+	if !options.AllowIndexing {
+		return true
+	}
 
 	// Asynchronously index the Q&A pair into the chat history knowledge base for vector search.
 	// Use WithoutCancel so the goroutine survives after the HTTP request context is done.
 	bgCtx := context.WithoutCancel(ctx)
-	go h.messageService.IndexMessageToKB(bgCtx, userQuery, assistantMessage.Content, assistantMessage.ID, assistantMessage.SessionID)
+	go h.messageService.IndexMessageToKB(bgCtx, userQuery, assistantMessage.Content, assistantMessage.ID, assistantMessage.SessionID, interfaces.MessageIndexOptions{
+		CompletionStatus: options.CompletionStatus,
+		FinishReason:     options.FinishReason,
+		AllowIndexing:    options.AllowIndexing,
+	})
+
+	return true
 }
