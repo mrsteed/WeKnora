@@ -54,13 +54,19 @@ func TestHandleComplete_UsesStreamedAnswerWithoutAppendingCompletePayload(t *tes
 	assert.True(t, assistant.IsCompleted)
 
 	answerEvents := 0
+	completeEvents := 0
 	for _, evt := range streamStub.events {
 		if evt.Type == types.ResponseTypeAnswer {
 			answerEvents++
 			assert.NotEqual(t, "should-not-be-appended", evt.Content)
 		}
+		if evt.Type == types.ResponseTypeComplete {
+			completeEvents++
+			assert.Equal(t, "streamed answer", evt.Data["final_answer"])
+		}
 	}
 	assert.Equal(t, 1, answerEvents)
+	assert.Equal(t, 1, completeEvents)
 }
 
 func TestHandleComplete_FallbackAnswerOnlyForCompletedWithoutStreamedAnswer(t *testing.T) {
@@ -89,9 +95,50 @@ func TestHandleComplete_FallbackAnswerOnlyForCompletedWithoutStreamedAnswer(t *t
 			answerEvents++
 		case types.ResponseTypeComplete:
 			completeEvents++
+			assert.Equal(t, "fallback answer", evt.Data["final_answer"])
 		}
 	}
 	assert.Equal(t, 2, answerEvents)
+	assert.Equal(t, 1, completeEvents)
+}
+
+func TestHandleComplete_PrefersAuthoritativeCompleteAnswerOverPartialStreamedContent(t *testing.T) {
+	streamStub := &streamManagerStub{}
+	assistant := &types.Message{ID: "msg-1", SessionID: "sess-1", Role: "assistant"}
+	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", assistant, streamStub, event.NewEventBus())
+
+	require.NoError(t, handler.handleFinalAnswer(context.Background(), event.Event{
+		ID:   "answer-1",
+		Data: event.AgentFinalAnswerData{Content: "partial preface", Done: false},
+	}))
+	require.NoError(t, handler.handleComplete(context.Background(), event.Event{
+		ID: "complete-1",
+		Data: event.AgentCompleteData{
+			MessageID:        "msg-1",
+			FinalAnswer:      "authoritative full answer",
+			CompletionStatus: types.MessageCompletionStatusCompleted,
+			FinishReason:     "tool_calls",
+			TotalDurationMs:  321,
+		},
+	}))
+
+	assert.Equal(t, "authoritative full answer", assistant.Content)
+	assert.Equal(t, types.MessageCompletionStatusCompleted, assistant.CompletionStatus)
+	assert.Equal(t, "tool_calls", assistant.FinishReason)
+	assert.True(t, assistant.IsCompleted)
+
+	answerEvents := 0
+	completeEvents := 0
+	for _, evt := range streamStub.events {
+		if evt.Type == types.ResponseTypeAnswer {
+			answerEvents++
+		}
+		if evt.Type == types.ResponseTypeComplete {
+			completeEvents++
+			assert.Equal(t, "authoritative full answer", evt.Data["final_answer"])
+		}
+	}
+	assert.Equal(t, 1, answerEvents)
 	assert.Equal(t, 1, completeEvents)
 }
 

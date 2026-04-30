@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 type stubToolSchemaRegistry struct {
 	schema       *types.DatabaseSchema
 	promptSchema string
+	buildCalls   int
 	err          error
 }
 
@@ -25,6 +27,7 @@ func (s *stubToolSchemaRegistry) GetTableSchema(context.Context, string, string)
 	return nil, s.err
 }
 func (s *stubToolSchemaRegistry) BuildPromptSchema(context.Context, string, []string) (string, error) {
+	s.buildCalls++
 	return s.promptSchema, s.err
 }
 
@@ -60,6 +63,15 @@ func TestExternalDatabaseToolDefinitions(t *testing.T) {
 }
 
 func TestExternalDatabaseSchemaToolExecuteSuccess(t *testing.T) {
+	columns := make([]types.ColumnSchema, 0, 10)
+	for index := 0; index < 10; index++ {
+		columns = append(columns, types.ColumnSchema{
+			Name:        "col_" + string(rune('a'+index)),
+			DataType:    "varchar",
+			Comment:     "comment " + string(rune('a'+index)),
+			IsSensitive: index == 9,
+		})
+	}
 	tool := NewExternalDatabaseSchemaTool(&stubToolSchemaRegistry{
 		schema: &types.DatabaseSchema{
 			DatabaseName: "crm",
@@ -68,7 +80,7 @@ func TestExternalDatabaseSchemaToolExecuteSuccess(t *testing.T) {
 				Name:        "orders",
 				Type:        "table",
 				PrimaryKeys: []string{"id"},
-				Columns:     []types.ColumnSchema{{Name: "id", DataType: "bigint"}, {Name: "customer_id", DataType: "bigint"}},
+				Columns:     columns,
 			}},
 		},
 		promptSchema: "Database: crm\nTables:\n- orders (table)",
@@ -79,9 +91,23 @@ func TestExternalDatabaseSchemaToolExecuteSuccess(t *testing.T) {
 	require.NotNil(t, result)
 	assert.True(t, result.Success)
 	assert.Contains(t, result.Output, "External Database Schema")
+	assert.Contains(t, result.Output, "Database: crm")
+	assert.Contains(t, result.Output, "Allowed Query Scope")
 	assert.Equal(t, "external_database_schema", result.Data["display_type"])
 	assert.Equal(t, []string{"orders"}, result.Data["allowed_tables"])
 	assert.NotEmpty(t, result.Data["sample_queries"])
+	assert.NotContains(t, result.Data, "prompt_schema")
+	assert.Equal(t, 1, tool.schemaRegistry.(*stubToolSchemaRegistry).buildCalls)
+
+	tables, ok := result.Data["tables"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, tables, 1)
+	assert.Equal(t, 10, tables[0]["column_count"])
+	assert.Equal(t, 2, tables[0]["additional_columns_omitted"])
+	assert.Equal(t, 1, tables[0]["sensitive_column_count"])
+	dataColumns, ok := tables[0]["columns"].([]map[string]interface{})
+	require.True(t, ok)
+	assert.Len(t, dataColumns, 8)
 }
 
 func TestExternalDatabaseSchemaToolRejectsKBOutsideScope(t *testing.T) {
@@ -117,6 +143,9 @@ func TestExternalDatabaseQueryToolExecuteSuccess(t *testing.T) {
 	assert.Equal(t, "kb-db", service.req.KnowledgeBaseID)
 	assert.Equal(t, "test", service.req.Purpose)
 	assert.Contains(t, result.Output, "Returned 1 rows in 12 ms")
+	assert.Contains(t, result.Output, "Data Details")
+	assert.Contains(t, result.Output, "--- Record #1 ---")
+	assert.Contains(t, result.Output, "id: 1")
 }
 
 func TestExternalDatabaseQueryToolRequiresPurpose(t *testing.T) {
@@ -140,5 +169,30 @@ func TestExternalDatabaseQueryToolRejectsKBOutsideScope(t *testing.T) {
 func TestFormatExternalDatabaseQueryOutputIncludesTruncation(t *testing.T) {
 	output := formatExternalDatabaseQueryOutput([]string{"id"}, []map[string]any{{"id": 1}}, 1, true, int64((2 * time.Second).Milliseconds()))
 	assert.Contains(t, output, "truncated")
-	assert.Contains(t, output, "Record #1")
+	assert.Contains(t, output, "Data Details")
+	assert.Contains(t, output, "--- Record #1 ---")
+}
+
+func TestToolRegistry_DoesNotTruncateExternalDatabaseQueryOutput(t *testing.T) {
+	service := &stubToolStructuredQueryService{result: &types.QueryResult{
+		Columns:     []types.QueryColumn{{Name: "payload", DataType: "text"}},
+		Rows:        []map[string]any{{"payload": strings.Repeat("x", 120)}},
+		RowCount:    1,
+		Truncated:   false,
+		DurationMS:  9,
+		ExecutedSQL: "SELECT payload FROM orders LIMIT 1",
+	}}
+	registry := NewToolRegistry()
+	registry.SetMaxToolOutputSize(40)
+	registry.RegisterTool(NewExternalDatabaseQueryTool(service, types.SearchTargets{{KnowledgeBaseID: "kb-db"}}))
+
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	ctx = context.WithValue(ctx, types.UserIDContextKey, "user-1")
+
+	result, err := registry.ExecuteTool(ctx, ToolExternalDatabaseQuery, json.RawMessage(`{"knowledge_base_id":"kb-db","sql":"SELECT payload FROM orders LIMIT 1","purpose":"test"}`))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.NotContains(t, result.Output, "output truncated")
+	assert.Contains(t, result.Output, strings.Repeat("x", 120))
 }

@@ -35,7 +35,7 @@ func TestLoadAgentTypePresetsConfigIncludesDatabaseAnalysisPreset(t *testing.T) 
 	require.NotNil(t, preset.KBFilter)
 
 	assert.Equal(t, "database_analyst", preset.Config.SystemPromptID)
-	assert.Equal(t, "selected", preset.Config.KBSelectionMode)
+	assert.Equal(t, "all", preset.Config.KBSelectionMode)
 	assert.Equal(t, []string{"database"}, preset.KBFilter.AllOf)
 	assert.Contains(t, preset.Config.AllowedTools, "external_database_schema")
 	assert.Contains(t, preset.Config.AllowedTools, "external_database_query")
@@ -44,5 +44,5 @@ func TestLoadAgentTypePresetsConfigIncludesDatabaseAnalysisPreset(t *testing.T) 
 
 	localized := preset.I18n["zh-CN"]
 	assert.Equal(t, "数据库分析", localized.Label)
-	assert.Contains(t, localized.Description, "Database")
+	assert.Contains(t, localized.Description, "数据库知识库")
 }

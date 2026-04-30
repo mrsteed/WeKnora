@@ -188,13 +188,13 @@ agent_type_presets:
     i18n:
       default:
         label: "Database Analysis"
-        description: "Analyze external business databases through read-only schema inspection and SQL querying. Requires a Database KB."
+        description: "Analyze external business databases through read-only schema inspection and SQL querying. Defaults to all compatible Database KBs and can be narrowed to selected ones."
       zh-CN:
         label: "数据库分析"
-        description: "直接向模型提问数据库相关内容"
+        description: "默认关联全部可用的数据库知识库，可按需缩小范围，并执行只读结构查看与 SQL 查询。"
       zh-TW:
         label: "資料庫分析"
-        description: "直接向模型提問資料庫相關內容"
+        description: "預設關聯全部可用的資料庫知識庫，可按需縮小範圍，並執行唯讀結構查看與 SQL 查詢。"
     config:
       system_prompt_id: "database_analyst"
       temperature: 0.2
@@ -206,7 +206,7 @@ agent_type_presets:
         - "external_database_query"
         - "final_answer"
       web_search_enabled: false
-      kb_selection_mode: "selected"
+      kb_selection_mode: "all"
     kb_filter:
       all_of: ["database"]
 

@@ -3920,6 +3920,9 @@ export default {
       failed: 'Generation failed. Please try again.',
       cancelled: 'Generation stopped',
     },
+    loading: {
+      finalizing: 'Organizing the final document...',
+    },
     copy: {
       emptyContent: 'Current response is empty, cannot copy',
       success: 'Copied to clipboard',

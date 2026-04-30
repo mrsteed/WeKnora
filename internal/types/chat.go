@@ -35,6 +35,8 @@ type ChatResponse struct {
 	FinishReason     string        `json:"finish_reason,omitempty"`
 	Usage            TokenUsage    `json:"usage"`
 	AnswerStreamed   bool          `json:"-"`
+	// FinalAnswerStreamed 标记最终答案是否已经以流式事件发给前端，避免终态阶段重复补发一份完整答案。
+	FinalAnswerStreamed bool `json:"-"`
 }
 
 // Response type

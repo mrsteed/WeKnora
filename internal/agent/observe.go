@@ -99,7 +99,7 @@ func (e *AgentEngine) analyzeResponse(
 		}
 
 		answerID := generateEventID("answer")
-		if !response.AnswerStreamed && answer != "" {
+		if !response.FinalAnswerStreamed && answer != "" {
 			e.eventBus.Emit(ctx, event.Event{
 				ID:        answerID,
 				Type:      event.EventAgentFinalAnswer,
@@ -291,15 +291,12 @@ func (e *AgentEngine) analyzeResponse(
 					iteration+1, len(answer), time.Since(roundStart).Milliseconds())
 			}
 
-			// Always emit the final answer content and Done=true marker to the
-			// event bus. When strict parsing succeeded earlier in this turn,
-			// streamThinkingToEventBus already streamed the answer chunks, so
-			// we only need the Done marker in that common case. When we fell
-			// back to the generic message, however, the UI has not yet seen
-			// any answer content — emit both Content and Done to make the
-			// fallback visible to the user.
+			// Emit the authoritative final answer content unless this round has
+			// already streamed that exact final answer through the dedicated
+			// final_answer_tool channel. Ordinary pre-tool answer chunks do not
+			// count as a streamed final answer.
 			answerID := generateEventID("answer-done")
-			if !recovered {
+			if !response.FinalAnswerStreamed && answer != "" {
 				e.eventBus.Emit(ctx, event.Event{
 					ID:        answerID,
 					Type:      event.EventAgentFinalAnswer,
