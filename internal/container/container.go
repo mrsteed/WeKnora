@@ -655,11 +655,12 @@ func initFileService(cfg *config.Config, db *gorm.DB) (interfaces.FileService, e
 		if baseDir == "" {
 			baseDir = "/data/files"
 		}
+		externalURL := strings.TrimSpace(os.Getenv("APP_EXTERNAL_URL"))
 		logger.Warnf(context.Background(),
 			"Failed to initialize %s file service from environment: %v. Falling back to local file service at %s. Tenant-level storage settings will still be used when available.",
 			storageType, initErr, baseDir,
 		)
-		return file.NewLocalFileService(baseDir), nil
+		return file.NewLocalFileService(baseDir, externalURL), nil
 	}
 	switch storageType {
 	case "minio":
