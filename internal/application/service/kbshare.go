@@ -23,12 +23,13 @@ var (
 
 // kbShareService implements KBShareService interface
 type kbShareService struct {
-	shareRepo interfaces.KBShareRepository
-	orgRepo   interfaces.OrganizationRepository
-	kbRepo    interfaces.KnowledgeBaseRepository
-	kgRepo    interfaces.KnowledgeRepository
-	chunkRepo interfaces.ChunkRepository
-	userRepo  interfaces.UserRepository
+	shareRepo  interfaces.KBShareRepository
+	orgRepo    interfaces.OrganizationRepository
+	kbRepo     interfaces.KnowledgeBaseRepository
+	kgRepo     interfaces.KnowledgeRepository
+	chunkRepo  interfaces.ChunkRepository
+	schemaRepo interfaces.DatabaseSchemaRepository
+	userRepo   interfaces.UserRepository
 }
 
 // NewKBShareService creates a new knowledge base share service
@@ -38,15 +39,17 @@ func NewKBShareService(
 	kbRepo interfaces.KnowledgeBaseRepository,
 	kgRepo interfaces.KnowledgeRepository,
 	chunkRepo interfaces.ChunkRepository,
+	schemaRepo interfaces.DatabaseSchemaRepository,
 	userRepo interfaces.UserRepository,
 ) interfaces.KBShareService {
 	return &kbShareService{
-		shareRepo: shareRepo,
-		orgRepo:   orgRepo,
-		kbRepo:    kbRepo,
-		kgRepo:    kgRepo,
-		chunkRepo: chunkRepo,
-		userRepo:  userRepo,
+		shareRepo:  shareRepo,
+		orgRepo:    orgRepo,
+		kbRepo:     kbRepo,
+		kgRepo:     kgRepo,
+		chunkRepo:  chunkRepo,
+		schemaRepo: schemaRepo,
+		userRepo:   userRepo,
 	}
 }
 
@@ -233,23 +236,7 @@ func (s *kbShareService) ListSharedKnowledgeBases(ctx context.Context, userID st
 		}
 
 		kb := share.KnowledgeBase
-		// Calculate knowledge/chunk count based on type
-		switch kb.Type {
-		case types.KnowledgeBaseTypeDocument:
-			knowledgeCount, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, share.SourceTenantID, kb.ID)
-			if err != nil {
-				logger.Warnf(ctx, "Failed to get knowledge count for shared KB %s: %v", kb.ID, err)
-			} else {
-				kb.KnowledgeCount = knowledgeCount
-			}
-		case types.KnowledgeBaseTypeFAQ:
-			chunkCount, err := s.chunkRepo.CountChunksByKnowledgeBaseID(ctx, share.SourceTenantID, kb.ID)
-			if err != nil {
-				logger.Warnf(ctx, "Failed to get chunk count for shared KB %s: %v", kb.ID, err)
-			} else {
-				kb.ChunkCount = chunkCount
-			}
-		}
+		fillKnowledgeBaseUsageCounts(ctx, kb, share.SourceTenantID, s.kgRepo, s.chunkRepo, s.schemaRepo)
 
 		info := &types.SharedKnowledgeBaseInfo{
 			KnowledgeBase:  kb,
@@ -325,16 +312,7 @@ func (s *kbShareService) ListSharedKnowledgeBasesInOrganization(ctx context.Cont
 		}
 
 		kb := share.KnowledgeBase
-		switch kb.Type {
-		case types.KnowledgeBaseTypeDocument:
-			if count, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, share.SourceTenantID, kb.ID); err == nil {
-				kb.KnowledgeCount = count
-			}
-		case types.KnowledgeBaseTypeFAQ:
-			if count, err := s.chunkRepo.CountChunksByKnowledgeBaseID(ctx, share.SourceTenantID, kb.ID); err == nil {
-				kb.ChunkCount = count
-			}
-		}
+		fillKnowledgeBaseUsageCounts(ctx, kb, share.SourceTenantID, s.kgRepo, s.chunkRepo, s.schemaRepo)
 
 		orgName := ""
 		if share.Organization != nil {

@@ -157,6 +157,7 @@
           <!-- 卡片头部 -->
           <div class="card-header">
             <span class="card-title" :title="kb.name">{{ kb.name }}</span>
+              <t-tag size="small" variant="light-outline" :theme="getKnowledgeBaseTypeTheme(kb.type)" class="kb-type-pill">{{ getKnowledgeBaseTypeLabel(kb.type) }}</t-tag>
             <t-popup
               overlayClassName="card-more-popup"
               trigger="click"
@@ -196,10 +197,10 @@
           <div class="card-bottom">
             <div class="bottom-left">
               <div class="feature-badges">
-                <t-tooltip :content="kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')" placement="top">
-                  <div class="feature-badge" :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq' }">
-                    <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
-                    <span class="badge-count">{{ kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0) }}</span>
+                <t-tooltip :content="getKnowledgeBaseTypeLabel(kb.type)" placement="top">
+                  <div class="feature-badge" :class="getKnowledgeBasePrimaryBadgeClass(kb)">
+                    <t-icon :name="getKnowledgeBasePrimaryIcon(kb)" size="14px" />
+                    <span class="badge-count">{{ getKnowledgeBasePrimaryCount(kb, 0) }}</span>
                     <t-icon v-if="kb.isProcessing" name="loading" size="12px" class="processing-icon" />
                   </div>
                 </t-tooltip>
@@ -208,7 +209,7 @@
                     <t-icon name="relation" size="14px" />
                   </div>
                 </t-tooltip>
-                <t-tooltip v-if="kb.vlm_config?.enabled" :content="$t('knowledgeList.features.multimodal')" placement="top">
+                <t-tooltip v-if="shouldShowKnowledgeBaseMultimodalBadge(kb)" :content="$t('knowledgeList.features.multimodal')" placement="top">
                   <div class="feature-badge multimodal">
                     <t-icon name="image" size="14px" />
                   </div>
@@ -247,6 +248,7 @@
           <!-- 卡片头部 -->
           <div class="card-header">
             <span class="card-title" :title="kb.name">{{ kb.name }}</span>
+            <t-tag size="small" variant="light-outline" :theme="getKnowledgeBaseTypeTheme(kb.type)" class="kb-type-pill">{{ getKnowledgeBaseTypeLabel(kb.type) }}</t-tag>
             <t-tooltip :content="$t('knowledgeList.menu.viewDetails')" placement="top">
               <button type="button" class="shared-detail-trigger" @click.stop="openSharedDetailFromAll(kb)" :aria-label="$t('knowledgeList.menu.viewDetails')">
                 <t-icon name="info-circle" size="16px" />
@@ -265,10 +267,10 @@
           <div class="card-bottom">
             <div class="bottom-left">
               <div class="feature-badges">
-                <t-tooltip :content="kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')" placement="top">
-                  <div class="feature-badge" :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq' }">
-                    <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
-                    <span class="badge-count">{{ kb.type === 'faq' ? (kb.chunk_count || '-') : (kb.knowledge_count || '-') }}</span>
+                <t-tooltip :content="getKnowledgeBaseTypeLabel(kb.type)" placement="top">
+                  <div class="feature-badge" :class="getKnowledgeBasePrimaryBadgeClass(kb)">
+                    <t-icon :name="getKnowledgeBasePrimaryIcon(kb)" size="14px" />
+                    <span class="badge-count">{{ getKnowledgeBasePrimaryCount(kb, '-') }}</span>
                   </div>
                 </t-tooltip>
                 <t-tooltip v-if="kb.extract_config?.enabled" :content="$t('knowledgeList.features.knowledgeGraph')" placement="top">
@@ -276,7 +278,7 @@
                     <t-icon name="relation" size="14px" />
                   </div>
                 </t-tooltip>
-                <t-tooltip v-if="kb.vlm_config?.enabled || (kb.storage_provider_config?.provider && kb.storage_provider_config.provider !== 'local')" :content="$t('knowledgeList.features.multimodal')" placement="top">
+                <t-tooltip v-if="shouldShowKnowledgeBaseMultimodalBadge(kb)" :content="$t('knowledgeList.features.multimodal')" placement="top">
                   <div class="feature-badge multimodal">
                     <t-icon name="image" size="14px" />
                   </div>
@@ -316,6 +318,7 @@
       >
         <div class="card-header">
           <span class="card-title" :title="kb.name">{{ kb.name }}</span>
+          <t-tag size="small" variant="light-outline" :theme="getKnowledgeBaseTypeTheme(kb.type)" class="kb-type-pill">{{ getKnowledgeBaseTypeLabel(kb.type) }}</t-tag>
           <t-popup
             overlayClassName="card-more-popup"
             trigger="click"
@@ -347,10 +350,10 @@
         <div class="card-bottom">
           <div class="bottom-left">
             <div class="feature-badges">
-              <t-tooltip :content="kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')" placement="top">
-                <div class="feature-badge" :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq' }">
-                  <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
-                  <span class="badge-count">{{ kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0) }}</span>
+              <t-tooltip :content="getKnowledgeBaseTypeLabel(kb.type)" placement="top">
+                <div class="feature-badge" :class="getKnowledgeBasePrimaryBadgeClass(kb)">
+                  <t-icon :name="getKnowledgeBasePrimaryIcon(kb)" size="14px" />
+                  <span class="badge-count">{{ getKnowledgeBasePrimaryCount(kb, 0) }}</span>
                   <t-icon v-if="kb.isProcessing" name="loading" size="12px" class="processing-icon" />
                 </div>
               </t-tooltip>
@@ -359,7 +362,7 @@
                   <t-icon name="relation" size="14px" />
                 </div>
               </t-tooltip>
-              <t-tooltip v-if="kb.vlm_config?.enabled || (kb.cos_config?.provider && kb.cos_config?.bucket_name)" :content="$t('knowledgeList.features.multimodal')" placement="top">
+              <t-tooltip v-if="shouldShowKnowledgeBaseMultimodalBadge(kb)" :content="$t('knowledgeList.features.multimodal')" placement="top">
                 <div class="feature-badge multimodal">
                   <t-icon name="image" size="14px" />
                 </div>
@@ -403,6 +406,7 @@
       >
         <div class="card-header">
           <span class="card-title" :title="kb.name">{{ kb.name }}</span>
+          <t-tag size="small" variant="light-outline" :theme="getKnowledgeBaseTypeTheme(kb.type)" class="kb-type-pill">{{ getKnowledgeBaseTypeLabel(kb.type) }}</t-tag>
           <t-popup
             overlayClassName="card-more-popup"
             trigger="click"
@@ -434,10 +438,10 @@
         <div class="card-bottom">
           <div class="bottom-left">
             <div class="feature-badges">
-              <t-tooltip :content="kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')" placement="top">
-                <div class="feature-badge" :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq' }">
-                  <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
-                  <span class="badge-count">{{ kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0) }}</span>
+              <t-tooltip :content="getKnowledgeBaseTypeLabel(kb.type)" placement="top">
+                <div class="feature-badge" :class="getKnowledgeBasePrimaryBadgeClass(kb)">
+                  <t-icon :name="getKnowledgeBasePrimaryIcon(kb)" size="14px" />
+                  <span class="badge-count">{{ getKnowledgeBasePrimaryCount(kb, 0) }}</span>
                   <t-icon v-if="kb.isProcessing" name="loading" size="12px" class="processing-icon" />
                 </div>
               </t-tooltip>
@@ -446,7 +450,7 @@
                   <t-icon name="relation" size="14px" />
                 </div>
               </t-tooltip>
-              <t-tooltip v-if="kb.vlm_config?.enabled || (kb.cos_config?.provider && kb.cos_config?.bucket_name)" :content="$t('knowledgeList.features.multimodal')" placement="top">
+              <t-tooltip v-if="shouldShowKnowledgeBaseMultimodalBadge(kb)" :content="$t('knowledgeList.features.multimodal')" placement="top">
                 <div class="feature-badge multimodal">
                   <t-icon name="image" size="14px" />
                 </div>
@@ -506,6 +510,7 @@
         <!-- 卡片头部 -->
         <div class="card-header">
           <span class="card-title" :title="kb.name">{{ kb.name }}</span>
+          <t-tag size="small" variant="light-outline" :theme="getKnowledgeBaseTypeTheme(kb.type)" class="kb-type-pill">{{ getKnowledgeBaseTypeLabel(kb.type) }}</t-tag>
           <t-popup
             v-model="kb.showMore"
             overlayClassName="card-more-popup"
@@ -552,10 +557,10 @@
         <div class="card-bottom">
           <div class="bottom-left">
             <div class="feature-badges">
-              <t-tooltip :content="kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')" placement="top">
-                <div class="feature-badge" :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq' }">
-                  <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
-                  <span class="badge-count">{{ kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0) }}</span>
+              <t-tooltip :content="getKnowledgeBaseTypeLabel(kb.type)" placement="top">
+                <div class="feature-badge" :class="getKnowledgeBasePrimaryBadgeClass(kb)">
+                  <t-icon :name="getKnowledgeBasePrimaryIcon(kb)" size="14px" />
+                  <span class="badge-count">{{ getKnowledgeBasePrimaryCount(kb, 0) }}</span>
                   <t-icon v-if="kb.isProcessing" name="loading" size="12px" class="processing-icon" />
                 </div>
               </t-tooltip>
@@ -564,7 +569,7 @@
                   <t-icon name="relation" size="14px" />
                 </div>
               </t-tooltip>
-              <t-tooltip v-if="kb.vlm_config?.enabled || (kb.storage_provider_config?.provider && kb.storage_provider_config.provider !== 'local')" :content="$t('knowledgeList.features.multimodal')" placement="top">
+              <t-tooltip v-if="shouldShowKnowledgeBaseMultimodalBadge(kb)" :content="$t('knowledgeList.features.multimodal')" placement="top">
                 <div class="feature-badge multimodal">
                   <t-icon name="image" size="14px" />
                 </div>
@@ -607,6 +612,7 @@
       >
         <div class="card-header">
           <span class="card-title" :title="shared.knowledge_base.name">{{ shared.knowledge_base.name }}</span>
+          <t-tag size="small" variant="light-outline" :theme="getKnowledgeBaseTypeTheme(shared.knowledge_base.type)" class="kb-type-pill">{{ getKnowledgeBaseTypeLabel(shared.knowledge_base.type) }}</t-tag>
           <t-tooltip :content="$t('knowledgeList.menu.viewDetails')" placement="top">
             <button type="button" class="shared-detail-trigger" @click.stop="openSharedDetail(shared)" :aria-label="$t('knowledgeList.menu.viewDetails')">
               <t-icon name="info-circle" size="16px" />
@@ -621,10 +627,10 @@
         <div class="card-bottom">
           <div class="bottom-left">
             <div class="feature-badges">
-              <t-tooltip :content="shared.knowledge_base.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')" placement="top">
-                <div class="feature-badge" :class="{ 'type-document': (shared.knowledge_base.type || 'document') === 'document', 'type-faq': shared.knowledge_base.type === 'faq' }">
-                  <t-icon :name="shared.knowledge_base.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
-                  <span class="badge-count">{{ shared.knowledge_base.type === 'faq' ? (shared.knowledge_base.chunk_count || '-') : (shared.knowledge_base.knowledge_count || '-') }}</span>
+              <t-tooltip :content="getKnowledgeBaseTypeLabel(shared.knowledge_base.type)" placement="top">
+                <div class="feature-badge" :class="getKnowledgeBasePrimaryBadgeClass(shared.knowledge_base)">
+                  <t-icon :name="getKnowledgeBasePrimaryIcon(shared.knowledge_base)" size="14px" />
+                  <span class="badge-count">{{ getKnowledgeBasePrimaryCount(shared.knowledge_base, '-') }}</span>
                 </div>
               </t-tooltip>
             </div>
@@ -663,6 +669,7 @@
         <!-- 卡片头部 -->
         <div class="card-header">
           <span class="card-title" :title="shared.knowledge_base.name">{{ shared.knowledge_base.name }}</span>
+          <t-tag size="small" variant="light-outline" :theme="getKnowledgeBaseTypeTheme(shared.knowledge_base.type)" class="kb-type-pill">{{ getKnowledgeBaseTypeLabel(shared.knowledge_base.type) }}</t-tag>
           <t-tooltip v-if="shared.is_mine" :content="$t('knowledgeList.myLabel')" placement="top">
             <span class="shared-by-me-badge">{{ $t('knowledgeList.myLabel') }}</span>
           </t-tooltip>
@@ -684,10 +691,10 @@
         <div class="card-bottom">
           <div class="bottom-left">
             <div class="feature-badges">
-              <t-tooltip :content="shared.knowledge_base.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')" placement="top">
-                <div class="feature-badge" :class="{ 'type-document': (shared.knowledge_base.type || 'document') === 'document', 'type-faq': shared.knowledge_base.type === 'faq' }">
-                  <t-icon :name="shared.knowledge_base.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
-                  <span class="badge-count">{{ shared.knowledge_base.type === 'faq' ? (shared.knowledge_base.chunk_count ?? '-') : (shared.knowledge_base.knowledge_count ?? '-') }}</span>
+              <t-tooltip :content="getKnowledgeBaseTypeLabel(shared.knowledge_base.type)" placement="top">
+                <div class="feature-badge" :class="getKnowledgeBasePrimaryBadgeClass(shared.knowledge_base)">
+                  <t-icon :name="getKnowledgeBasePrimaryIcon(shared.knowledge_base)" size="14px" />
+                  <span class="badge-count">{{ getKnowledgeBasePrimaryCount(shared.knowledge_base, '-') }}</span>
                 </div>
               </t-tooltip>
             </div>
@@ -880,6 +887,64 @@ const authStore = useAuthStore()
 const orgStore = useOrganizationStore()
 const { t } = useI18n()
 
+type KnowledgeBadgeMeta = {
+  type?: string
+  knowledge_count?: number
+  chunk_count?: number
+  business_table_count?: number
+  vlm_config?: { enabled?: boolean }
+  storage_provider_config?: { provider?: string }
+  cos_config?: { provider?: string; bucket_name?: string }
+}
+
+const isDatabaseKnowledgeBase = (kb?: Pick<KnowledgeBadgeMeta, 'type'> | null) => kb?.type === 'database'
+
+const getKnowledgeBasePrimaryIcon = (kb: KnowledgeBadgeMeta) => {
+  if (isDatabaseKnowledgeBase(kb)) return 'table'
+  return kb.type === 'faq' ? 'chat-bubble-help' : 'folder'
+}
+
+const getKnowledgeBasePrimaryBadgeClass = (kb?: Pick<KnowledgeBadgeMeta, 'type'> | null) => ({
+  'type-document': (kb?.type || 'document') === 'document',
+  'type-faq': kb?.type === 'faq',
+  'type-database': kb?.type === 'database',
+})
+
+const getKnowledgeBasePrimaryCount = (kb: KnowledgeBadgeMeta, fallback: number | string = 0) => {
+  if (isDatabaseKnowledgeBase(kb)) return kb.business_table_count ?? fallback
+  if (kb.type === 'faq') return kb.chunk_count ?? fallback
+  return kb.knowledge_count ?? fallback
+}
+
+const shouldShowKnowledgeBaseMultimodalBadge = (kb: KnowledgeBadgeMeta) => {
+  if (isDatabaseKnowledgeBase(kb)) return false
+  if (kb.vlm_config?.enabled) return true
+  if (kb.storage_provider_config?.provider && kb.storage_provider_config.provider !== 'local') return true
+  return !!(kb.cos_config?.provider && kb.cos_config?.bucket_name)
+}
+
+const getKnowledgeBaseTypeLabel = (type?: string) => {
+  switch (type) {
+    case 'faq':
+      return t('knowledgeEditor.basic.typeFAQ')
+    case 'database':
+      return t('knowledgeEditor.basic.typeDatabase')
+    default:
+      return t('knowledgeEditor.basic.typeDocument')
+  }
+}
+
+const getKnowledgeBaseTypeTheme = (type?: string) => {
+  switch (type) {
+    case 'faq':
+      return 'warning'
+    case 'database':
+      return 'primary'
+    default:
+      return 'success'
+  }
+}
+
 // 左侧空间选择：我的 / 空间 ID（已去掉「全部」）
 const spaceSelection = ref<'all' | 'mine' | 'shared' | string>('mine')
 
@@ -891,7 +956,7 @@ interface KB {
   updated_at?: string;
   embedding_model_id?: string;
   summary_model_id?: string;
-  type?: 'document' | 'faq';
+  type?: 'document' | 'faq' | 'database';
   visibility?: 'global' | 'org' | 'private';
   showMore?: boolean;
   vlm_config?: { enabled?: boolean; model_id?: string };
@@ -901,10 +966,12 @@ interface KB {
   question_generation_config?: { enabled?: boolean; question_count?: number };
   knowledge_count?: number;
   chunk_count?: number;
+  business_table_count?: number;
   isProcessing?: boolean;
   processing_count?: number;
   share_count?: number;
   is_pinned?: boolean;
+  cos_config?: { provider?: string; bucket_name?: string };
 }
 
 const kbs = ref<KB[]>([])
@@ -1005,6 +1072,7 @@ const filteredKnowledgeBases = computed(() => {
       org_name: shared.org_name,
       knowledge_count: kb.knowledge_count,
       chunk_count: kb.chunk_count,
+      business_table_count: kb.business_table_count,
     } as any)
   })
   return result
@@ -2119,6 +2187,10 @@ const handleUploadFinishedEvent = (event: Event) => {
   min-width: 0;
 }
 
+.kb-type-pill {
+  flex-shrink: 0;
+}
+
 .more-wrap {
   display: flex;
   width: 24px;
@@ -2242,6 +2314,27 @@ const handleUploadFinishedEvent = (event: Event) => {
   }
 
   &.type-faq {
+    background: rgba(0, 82, 217, 0.08);
+    color: var(--td-brand-color);
+    width: auto;
+    padding: 0 6px;
+    gap: 3px;
+
+    &:hover {
+      background: rgba(0, 82, 217, 0.12);
+    }
+
+    .badge-count {
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .processing-icon {
+      animation: spin 1s linear infinite;
+    }
+  }
+
+  &.type-database {
     background: rgba(0, 82, 217, 0.08);
     color: var(--td-brand-color);
     width: auto;

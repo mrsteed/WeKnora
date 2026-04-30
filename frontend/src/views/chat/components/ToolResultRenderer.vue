@@ -51,7 +51,7 @@
     
     <!-- Database Query Display -->
     <DatabaseQuery 
-      v-else-if="displayType === 'database_query'" 
+      v-else-if="displayType === 'database_query' || displayType === 'external_database_query'" 
       :data="toolData as DatabaseQueryData" 
     />
     

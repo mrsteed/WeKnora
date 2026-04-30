@@ -182,6 +182,22 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		AuthType:     "none",
 		Capabilities: []string{},
 	},
+	types.DatabaseTypeMySQL: {
+		Type:         types.DatabaseTypeMySQL,
+		Name:         "MySQL",
+		Description:  "Validate connection and discover realtime database schema from MySQL",
+		Priority:     13,
+		AuthType:     "password",
+		Capabilities: []string{"schema_discovery", "validate"},
+	},
+	types.DatabaseTypePostgreSQL: {
+		Type:         types.DatabaseTypePostgreSQL,
+		Name:         "PostgreSQL",
+		Description:  "Validate connection and discover realtime database schema from PostgreSQL",
+		Priority:     14,
+		AuthType:     "password",
+		Capabilities: []string{"schema_discovery", "validate"},
+	},
 }
 
 // ListAvailableConnectors returns all available connector metadata

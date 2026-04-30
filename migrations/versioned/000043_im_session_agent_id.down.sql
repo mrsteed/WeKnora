@@ -1,4 +1,4 @@
--- Rollback: 000038_im_session_agent_id
+-- Rollback: 000043_im_session_agent_id
 -- Restores the original indexes without agent_id.
 
 DROP INDEX IF EXISTS idx_channel_lookup;

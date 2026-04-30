@@ -694,6 +694,12 @@
                           <span class="tools-status-metric">
                             <strong>{{ wikiKbCount }}</strong> {{ $t('agentEditor.tools.kbMetricWiki') }}
                           </span>
+                          <template v-if="databaseKbCount > 0">
+                            <span class="tools-status-sep">·</span>
+                            <span class="tools-status-metric">
+                              <strong>{{ databaseKbCount }}</strong> {{ $t('agentEditor.tools.kbMetricDatabase') }}
+                            </span>
+                          </template>
                         </template>
                       </div>
                       <div v-if="inactiveToolCount > 0" class="tools-status-chip tools-status-chip--warn">
@@ -961,8 +967,8 @@
                               :disabled="kb.disabled"
                             >
                               <div class="kb-option-item" :title="kb.disabled ? kb.disabledReason : ''">
-                                <span class="kb-option-icon" :class="kb.type === 'faq' ? 'faq-icon' : 'doc-icon'">
-                                  <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" />
+                                <span class="kb-option-icon" :class="getKnowledgeBaseOptionIconClass(kb.type)">
+                                  <t-icon :name="getKnowledgeBaseOptionIconName(kb.type)" />
                                 </span>
                                 <span class="kb-option-label">{{ kb.label }}</span>
                                 <span v-if="kb.ragEnabled" class="kb-option-tag tag-rag">RAG</span>
@@ -981,8 +987,8 @@
                               :disabled="kb.disabled"
                             >
                               <div class="kb-option-item" :title="kb.disabled ? kb.disabledReason : ''">
-                                <span class="kb-option-icon" :class="kb.type === 'faq' ? 'faq-icon' : 'doc-icon'">
-                                  <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" />
+                                <span class="kb-option-icon" :class="getKnowledgeBaseOptionIconClass(kb.type)">
+                                  <t-icon :name="getKnowledgeBaseOptionIconName(kb.type)" />
                                 </span>
                                 <span class="kb-option-label">{{ kb.label }}</span>
                                 <span v-if="kb.ragEnabled" class="kb-option-tag tag-rag">RAG</span>
@@ -1198,8 +1204,8 @@
                   </div>
                 </div>
 
-                <!-- 检索策略（仅在有知识库能力时显示） -->
-                <div v-show="currentSection === 'retrieval' && hasKnowledgeBase" class="section">
+                <!-- 检索策略（仅在有知识库能力且非数据库分析类型时显示） -->
+                <div v-show="currentSection === 'retrieval' && shouldShowRetrievalSection" class="section">
                   <div class="section-header">
                     <h2>{{ $t('agent.editor.retrievalStrategy') }}</h2>
                     <p class="section-description">{{ $t('agentEditor.desc.retrievalSection') }}</p>
@@ -1494,7 +1500,23 @@ const emit = defineEmits<{
 const currentSection = ref(props.initialSection || 'basic');
 const saving = ref(false);
 const allModels = ref<ModelConfig[]>([]);
-const kbOptions = ref<{ label: string; value: string; type?: 'document' | 'faq'; count?: number; shared?: boolean; orgName?: string; ragEnabled?: boolean; wikiEnabled?: boolean; capabilities?: KBCapabilities }[]>([]);
+const kbOptions = ref<{ label: string; value: string; type?: 'document' | 'faq' | 'database'; count?: number; shared?: boolean; orgName?: string; ragEnabled?: boolean; wikiEnabled?: boolean; capabilities?: KBCapabilities }[]>([]);
+
+const getKnowledgeBaseOptionCount = (kb: { type?: string; knowledge_count?: number; chunk_count?: number; business_table_count?: number }) => {
+  if (kb.type === 'faq') return kb.chunk_count || 0;
+  if (kb.type === 'database') return kb.business_table_count || 0;
+  return kb.knowledge_count || 0;
+};
+
+const getKnowledgeBaseOptionIconName = (type?: string) => {
+  if (type === 'database') return 'table';
+  return type === 'faq' ? 'chat-bubble-help' : 'folder';
+};
+
+const getKnowledgeBaseOptionIconClass = (type?: string) => {
+  if (type === 'database') return 'db-icon';
+  return type === 'faq' ? 'faq-icon' : 'doc-icon';
+};
 
 // 智能体类型预设（仅 smart-reasoning 模式下展示）
 const agentTypePresets = ref<AgentTypePreset[]>([]);
@@ -1542,6 +1564,19 @@ const defaultTemperature = ref(0.7);
 // 知识库相关工具列表（用于 watch(hasKnowledgeBase) 从"无"变"有"时 seed 默认工具）
 const knowledgeBaseTools = ['grep_chunks', 'knowledge_search', 'list_knowledge_chunks', 'query_knowledge_graph', 'get_document_info', 'database_query'];
 
+// 基础能力默认随智能推理工具集一起启用。
+const defaultBaseTools = ['thinking', 'todo_write'];
+
+const ensureDefaultBaseTools = (tools?: string[] | null): string[] => {
+  const currentTools = Array.isArray(tools) ? [...tools] : [];
+  const existingTools = new Set(currentTools);
+  const missingBaseTools = defaultBaseTools.filter(tool => !existingTools.has(tool));
+  return [...missingBaseTools, ...currentTools];
+};
+
+// 数据库知识库相关工具列表（仅数据库型知识库进入作用域时 seed）
+const databaseKnowledgeBaseTools = ['external_database_schema', 'external_database_query'];
+
 // Wiki 读取类工具（用于 watch(agentMode) 切到 smart-reasoning 时 seed 默认工具）
 const wikiReadTools = ['wiki_search', 'wiki_read_page', 'wiki_read_source_doc', 'wiki_flag_issue'];
 
@@ -1573,6 +1608,8 @@ const allTools = computed(() => [
   { value: 'query_knowledge_graph', label: t('agentEditor.tools.queryGraph'), description: t('agentEditor.tools.queryGraphDesc'), group: 'rag' },
   { value: 'get_document_info', label: t('agentEditor.tools.getDocInfo'), description: t('agentEditor.tools.getDocInfoDesc'), group: 'rag' },
   { value: 'database_query', label: t('agentEditor.tools.dbQuery'), description: t('agentEditor.tools.dbQueryDesc'), group: 'rag' },
+  { value: 'external_database_schema', label: '查看外部数据库结构', description: '读取数据库知识库中的表结构、字段、敏感列与示例查询。', group: 'data' },
+  { value: 'external_database_query', label: '查询外部数据库', description: '对数据库知识库执行只读 SQL 查询并返回结构化结果。', group: 'data' },
   // Wiki 读取类（阅读、搜索、标记问题）
   { value: 'wiki_search', label: t('agentEditor.tools.wikiSearch'), description: t('agentEditor.tools.wikiSearchDesc'), group: 'wiki_read' },
   { value: 'wiki_read_page', label: t('agentEditor.tools.wikiReadPage'), description: t('agentEditor.tools.wikiReadPageDesc'), group: 'wiki_read' },
@@ -1610,6 +1647,14 @@ const hasKnowledgeBase = computed(() => {
   return kbSelectionMode.value !== 'none';
 });
 
+const isDatabaseAnalysisAgent = computed(() => {
+  return isAgentMode.value && agentType.value === 'database-analysis';
+});
+
+const shouldShowRetrievalSection = computed(() => {
+  return hasKnowledgeBase.value && !isDatabaseAnalysisAgent.value;
+});
+
 // 当前配置下进入到智能体作用域的知识库列表
 // 注意：用户可能选了 knowledge_bases（按库级），也可能选了 knowledge_ids（按文档级）
 // 这里仅用于 UI 上的工具可用性判定，按库级来计算
@@ -1630,9 +1675,15 @@ const hasWikiKnowledgeBase = computed(() => {
   return kbsInScope.value.some(kb => kb.wikiEnabled);
 });
 
-// 作用域内 RAG/Wiki 知识库数量（用于顶部状态栏）
+// 是否存在至少一个数据库型知识库
+const hasDatabaseKnowledgeBase = computed(() => {
+  return kbsInScope.value.some(kb => !!kb.capabilities?.database || kb.type === 'database');
+});
+
+// 作用域内 RAG/Wiki/Database 知识库数量（用于顶部状态栏）
 const ragKbCount = computed(() => kbsInScope.value.filter(kb => kb.ragEnabled).length);
 const wikiKbCount = computed(() => kbsInScope.value.filter(kb => kb.wikiEnabled).length);
+const databaseKbCount = computed(() => kbsInScope.value.filter(kb => !!kb.capabilities?.database || kb.type === 'database').length);
 
 // 检测选择的知识库中是否包含 FAQ 类型
 const hasFaqKnowledgeBase = computed(() => {
@@ -1649,18 +1700,20 @@ const hasFaqKnowledgeBase = computed(() => {
 // 把"作用域内 KB 能力"聚合成一个 ScopeCapabilities 对象，交给
 // `evaluateToolRequirement` 统一判定；UI 上的所有可用性提示都应出自此处。
 const scopeCapabilities = computed<ScopeCapabilities>(() => {
-  const scope: ScopeCapabilities = { vector: false, keyword: false, wiki: false, graph: false, faq: false };
+  const scope: ScopeCapabilities = { vector: false, keyword: false, database: false, wiki: false, graph: false, faq: false };
   for (const kb of kbsInScope.value) {
     const caps = kb.capabilities;
     if (caps) {
       if (caps.vector) scope.vector = true;
       if (caps.keyword) scope.keyword = true;
+      if (caps.database) scope.database = true;
       if (caps.wiki) scope.wiki = true;
       if (caps.graph) scope.graph = true;
       if (caps.faq) scope.faq = true;
     } else {
       // 向后兼容：capabilities 尚未加载时，退回到 ragEnabled/wikiEnabled 推断
       if (kb.ragEnabled) { scope.vector = true; scope.keyword = true; }
+      if (kb.type === 'database') scope.database = true;
       if (kb.wikiEnabled) scope.wiki = true;
       if (kb.type === 'faq') scope.faq = true;
     }
@@ -1669,11 +1722,13 @@ const scopeCapabilities = computed<ScopeCapabilities>(() => {
 });
 
 // 把 evaluateToolRequirement 返回的 missKind 映射到 i18n 文案。
-// 新增的 needsGraph / needsFaq 暂时复用 requiresRagKb 文案（"需要 RAG 知识库"），
+// 新增的 needsDatabase / needsGraph / needsFaq 暂时复用现有通用文案，
 // 后续可按需增加独立的 i18n 键。
 const missKindToReason = (kind: RequirementMissKind): string | undefined => {
   switch (kind) {
     case 'needsKb':    return t('agentEditor.tools.requiresKb');
+    case 'needsDatabase':
+      return t('agentEditor.tools.requiresKb');
     case 'needsWiki':  return t('agentEditor.tools.requiresWikiKb');
     case 'needsRag':
     case 'needsGraph':
@@ -1696,10 +1751,16 @@ const availableTools = computed(() => {
   });
 });
 
+const hideDisabledToolGroupsOnCreate = new Set(['rag', 'wiki_read', 'wiki_edit', 'wiki_issue']);
+
 // 按分组切片后的工具列表，用于模板分组渲染
 const groupedAvailableTools = computed(() => {
+  const toolsToRender = availableTools.value.filter(tool => {
+    if (props.mode !== 'create') return true;
+    return !(hideDisabledToolGroupsOnCreate.has(tool.group || 'base') && tool.disabled);
+  });
   const map: Record<string, typeof availableTools.value> = {};
-  for (const tool of availableTools.value) {
+  for (const tool of toolsToRender) {
     const g = tool.group || 'base';
     if (!map[g]) map[g] = [];
     map[g].push(tool);
@@ -1842,8 +1903,8 @@ const navItems = computed(() => {
   if (isAgentMode.value && skillsAvailable.value) {
     items.push({ key: 'skills', icon: 'lightbulb', label: t('agent.editor.skillsConfig') });
   }
-  // 有知识库能力时才显示检索策略
-  if (hasKnowledgeBase.value) {
+  // 有知识库能力且当前不是数据库分析类型时才显示检索策略
+  if (shouldShowRetrievalSection.value) {
     items.push({ key: 'retrieval', icon: 'search', label: t('agent.editor.retrievalStrategy') });
   }
   // 网络搜索（独立菜单）
@@ -1886,7 +1947,7 @@ const defaultFormData = {
     // Agent模式设置
     max_iterations: 10,
     llm_call_timeout: 120,  // 120 seconds
-    allowed_tools: [] as string[],
+    allowed_tools: ensureDefaultBaseTools([]) as string[],
     reflection_enabled: false,
     // MCP 服务设置
     mcp_selection_mode: 'none' as 'all' | 'selected' | 'none',
@@ -2018,10 +2079,15 @@ const presetKbMismatchKeyMap: Record<string, string> = {
   'wiki-qa':         'wikiQa',
   'hybrid-rag-wiki': 'hybridRagWiki',
   'data-analysis':   'dataAnalysis',
+  'database-analysis': 'databaseAnalysis',
 };
 const presetKbMismatchReason = (preset: AgentTypePreset): string => {
   const subKey = presetKbMismatchKeyMap[preset.id];
-  if (subKey) return t(`agentEditor.agentType.kbMismatch.${subKey}`);
+  if (subKey) {
+    const key = `agentEditor.agentType.kbMismatch.${subKey}`;
+    const translated = t(key);
+    if (translated !== key) return translated;
+  }
   return t('agentEditor.agentType.kbMismatch.generic');
 };
 
@@ -2057,6 +2123,7 @@ const kbSatisfiesPresetFilter = (kb: { capabilities?: KBCapabilities; ragEnabled
   const caps = kb.capabilities || {
     vector: !!kb.ragEnabled,
     keyword: !!kb.ragEnabled,
+    database: kb.type === 'database',
     wiki: !!kb.wikiEnabled,
     graph: false,
     faq: kb.type === 'faq',
@@ -2065,6 +2132,7 @@ const kbSatisfiesPresetFilter = (kb: { capabilities?: KBCapabilities; ragEnabled
     switch (name) {
       case 'vector': return !!caps.vector;
       case 'keyword': return !!caps.keyword;
+      case 'database': return !!caps.database;
       case 'wiki': return !!caps.wiki;
       case 'graph': return !!caps.graph;
       case 'faq': return !!caps.faq;
@@ -2147,7 +2215,7 @@ const applyAgentTypePreset = (preset: AgentTypePreset | null) => {
   }
   if (typeof c.temperature === 'number') target.temperature = c.temperature;
   if (typeof c.max_iterations === 'number') target.max_iterations = c.max_iterations;
-  if (Array.isArray(c.allowed_tools)) target.allowed_tools = [...c.allowed_tools];
+  if (Array.isArray(c.allowed_tools)) target.allowed_tools = ensureDefaultBaseTools(c.allowed_tools);
   if (typeof c.retain_retrieval_history === 'boolean') target.retain_retrieval_history = c.retain_retrieval_history;
   if (typeof c.faq_priority_enabled === 'boolean') target.faq_priority_enabled = c.faq_priority_enabled;
   if (typeof c.web_search_enabled === 'boolean') target.web_search_enabled = c.web_search_enabled;
@@ -2267,6 +2335,9 @@ watch(() => props.visible, async (val) => {
         const isAgent = agentData.config.max_iterations > 1 || (agentData.config.allowed_tools && agentData.config.allowed_tools.length > 0);
         agentData.config.agent_mode = isAgent ? 'smart-reasoning' : 'quick-answer';
       }
+      if (agentData.config.agent_mode === 'smart-reasoning') {
+        agentData.config.allowed_tools = ensureDefaultBaseTools(agentData.config.allowed_tools);
+      }
 
       // 设置初始化标志，防止 watch 自动添加工具
       isInitializing.value = true;
@@ -2334,6 +2405,7 @@ watch(() => props.visible, async (val) => {
       // （补齐 system_prompt / allowed_tools / kb_selection_mode 等），
       // 否则用户在 modal 打开瞬间看到的"默认表单"和类型下拉显示的类型不一致。
       if (newFormData.config.agent_mode === 'smart-reasoning') {
+        newFormData.config.allowed_tools = ensureDefaultBaseTools(newFormData.config.allowed_tools);
         const defaultTypeId = newFormData.config.agent_type as AgentType;
         const preset = agentTypePresets.value.find(p => p.id === defaultTypeId) || null;
         if (defaultTypeId && defaultTypeId !== 'custom') {
@@ -2468,11 +2540,9 @@ watch(skillsSelectionMode, (mode) => {
 // 监听模式变化，自动调整配置
 watch(agentMode, (val, _oldVal) => {
   if (val === 'smart-reasoning') {
-    // 切换到 Agent 模式，根据知识库配置启用工具。
-    // 注意：默认不注入 thinking / todo_write —— 它们用于显式反思或多步计划，
-    // 会显著增加 token 消耗，用户按需手动勾选。
+    // 切换到 Agent 模式时，基础能力默认启用；检索类工具再按知识库能力补齐。
     if (formData.value.config.allowed_tools.length === 0) {
-      const tools: string[] = [];
+      const tools = ensureDefaultBaseTools([]);
       if (hasRagKnowledgeBase.value) {
         tools.push(
           'knowledge_search',
@@ -2482,6 +2552,9 @@ watch(agentMode, (val, _oldVal) => {
           'get_document_info',
           'database_query',
         );
+      }
+      if (hasDatabaseKnowledgeBase.value) {
+        tools.push(...databaseKnowledgeBaseTools);
       }
       if (hasWikiKnowledgeBase.value) {
         tools.push(...wikiReadTools);
@@ -2537,11 +2610,6 @@ watch(agentMode, (val, _oldVal) => {
 // `kb_selection_mode` 到 "selected"、但尚未勾具体 KB 的过渡期里静默丢失工具，
 // 对默认工具全是 wiki_* 的内置"维基问答"智能体尤为致命。
 watch(hasKnowledgeBase, (hasKB, oldHasKB) => {
-  // 如果当前在检索策略页面但没有知识库能力了，切换到基础设置
-  if (!hasKB && currentSection.value === 'retrieval') {
-    currentSection.value = 'basic';
-  }
-
   // 初始化期间或非 Agent 模式下不自动调整工具
   if (isInitializing.value || !isAgentMode.value) return;
 
@@ -2549,6 +2617,22 @@ watch(hasKnowledgeBase, (hasKB, oldHasKB) => {
     // 从无知识库变为有知识库，seed 默认的 RAG 工具（仅补齐未勾的）
     const currentTools = formData.value.config.allowed_tools || [];
     const toolsToAdd = knowledgeBaseTools.filter((tool: string) => !currentTools.includes(tool));
+    formData.value.config.allowed_tools = [...currentTools, ...toolsToAdd];
+  }
+});
+
+watch(shouldShowRetrievalSection, (visible) => {
+  if (!visible && currentSection.value === 'retrieval') {
+    currentSection.value = 'basic';
+  }
+});
+
+watch(hasDatabaseKnowledgeBase, (hasDB, oldHasDB) => {
+  if (isInitializing.value || !isAgentMode.value) return;
+
+  if (hasDB && !oldHasDB) {
+    const currentTools = formData.value.config.allowed_tools || [];
+    const toolsToAdd = databaseKnowledgeBaseTools.filter((tool: string) => !currentTools.includes(tool));
     formData.value.config.allowed_tools = [...currentTools, ...toolsToAdd];
   }
 });
@@ -2606,7 +2690,7 @@ const loadDependencies = async () => {
           label: kb.name,
           value: kb.id,
           type: kb.type || 'document',
-          count: kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0),
+          count: getKnowledgeBaseOptionCount(kb),
           shared: false,
           ragEnabled: caps ? (caps.vector || caps.keyword) : (!strategy || strategy.vector_enabled || strategy.keyword_enabled),
           wikiEnabled: caps ? caps.wiki : (strategy?.wiki_enabled || false),
@@ -2629,7 +2713,7 @@ const loadDependencies = async () => {
             label: kb.name,
             value: kb.id,
             type: kb.type || 'document',
-            count: kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0),
+            count: getKnowledgeBaseOptionCount(kb),
             shared: true,
             orgName: shared.org_name,
             ragEnabled: caps ? (caps.vector || caps.keyword) : (!kb.indexing_strategy || kb.indexing_strategy.vector_enabled || kb.indexing_strategy.keyword_enabled),
@@ -3628,6 +3712,24 @@ const handleSave = async () => {
   // ReRank 模型（可选）
   // 运行时若 rerank_model_id 为空会自动跳过 rerank，无需在保存时强制要求。
   // 仅当用户已选择 rerank 模型时，才校验相关参数。
+
+  if (agentType.value === 'database-analysis') {
+    if (kbSelectionMode.value !== 'selected') {
+      MessagePlugin.error('数据库分析智能体必须绑定至少一个 Database 知识库');
+      currentSection.value = 'knowledge';
+      return;
+    }
+    if (!formData.value.config.knowledge_bases || formData.value.config.knowledge_bases.length === 0) {
+      MessagePlugin.error('请至少选择一个 Database 知识库');
+      currentSection.value = 'knowledge';
+      return;
+    }
+    if (incompatibleSelectedKbCount.value > 0) {
+      MessagePlugin.error('数据库分析智能体只能绑定 Database 知识库，请移除不兼容的知识库');
+      currentSection.value = 'knowledge';
+      return;
+    }
+  }
 
   // 过滤空推荐问题
   if (formData.value.config.suggested_prompts) {
@@ -4683,6 +4785,11 @@ const handleSave = async () => {
   
   // FAQ KB
   &.faq-icon {
+    background: rgba(0, 82, 217, 0.1);
+    color: var(--td-brand-color);
+  }
+
+  &.db-icon {
     background: rgba(0, 82, 217, 0.1);
     color: var(--td-brand-color);
   }

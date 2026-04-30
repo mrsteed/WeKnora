@@ -15,6 +15,7 @@ type kbVisibilityService struct {
 	orgTreeService interfaces.OrgTreeService
 	kgRepo         interfaces.KnowledgeRepository
 	chunkRepo      interfaces.ChunkRepository
+	schemaRepo     interfaces.DatabaseSchemaRepository
 	userRepo       interfaces.UserRepository
 }
 
@@ -24,6 +25,7 @@ func NewKBVisibilityService(
 	orgTreeService interfaces.OrgTreeService,
 	kgRepo interfaces.KnowledgeRepository,
 	chunkRepo interfaces.ChunkRepository,
+	schemaRepo interfaces.DatabaseSchemaRepository,
 	userRepo interfaces.UserRepository,
 ) interfaces.KBVisibilityService {
 	return &kbVisibilityService{
@@ -31,6 +33,7 @@ func NewKBVisibilityService(
 		orgTreeService: orgTreeService,
 		kgRepo:         kgRepo,
 		chunkRepo:      chunkRepo,
+		schemaRepo:     schemaRepo,
 		userRepo:       userRepo,
 	}
 }
@@ -120,20 +123,7 @@ func (s *kbVisibilityService) fillKnowledgeCounts(ctx context.Context, kbs []*ty
 		kb.EnsureDefaults()
 		tenantID := kb.TenantID
 
-		switch kb.Type {
-		case types.KnowledgeBaseTypeDocument:
-			if cnt, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, tenantID, kb.ID); err == nil {
-				kb.KnowledgeCount = cnt
-			} else {
-				logger.Warnf(ctx, "Failed to get knowledge count for KB %s: %v", kb.ID, err)
-			}
-		case types.KnowledgeBaseTypeFAQ:
-			if cnt, err := s.chunkRepo.CountChunksByKnowledgeBaseID(ctx, tenantID, kb.ID); err == nil {
-				kb.ChunkCount = cnt
-			} else {
-				logger.Warnf(ctx, "Failed to get chunk count for KB %s: %v", kb.ID, err)
-			}
-		}
+		fillKnowledgeBaseUsageCounts(ctx, kb, tenantID, s.kgRepo, s.chunkRepo, s.schemaRepo)
 
 		// Check processing status
 		if processingCount, err := s.kgRepo.CountKnowledgeByStatus(ctx, tenantID, kb.ID, []string{"pending", "processing"}); err == nil {

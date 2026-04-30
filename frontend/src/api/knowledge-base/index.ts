@@ -1,4 +1,5 @@
 import { get, post, put, del, postUpload, getDown } from "../../utils/request";
+import type { DatabaseConnectionConfig } from '../datasource'
 
 // 知识库管理 API（列表、创建、获取、更新、删除、复制）
 export function listKnowledgeBases(params?: { agent_id?: string; organization_id?: string }) {
@@ -12,7 +13,7 @@ export function listKnowledgeBases(params?: { agent_id?: string; organization_id
 export function createKnowledgeBase(data: {
   name: string;
   description?: string;
-  type?: 'document' | 'faq';
+  type?: 'document' | 'faq' | 'database';
   visibility?: 'global' | 'org' | 'private';
   organization_id?: string;
   chunking_config?: any;
@@ -35,6 +36,10 @@ export function createKnowledgeBase(data: {
     synthesis_model_id?: string;
     max_pages_per_ingest?: number;
     extraction_granularity?: 'focused' | 'standard' | 'exhaustive';
+  };
+  database_config?: {
+    data_source_name?: string;
+    connection: DatabaseConnectionConfig;
   };
   indexing_strategy?: {
     vector_enabled: boolean;

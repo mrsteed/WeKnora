@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/textproto"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/datasource"
@@ -74,6 +75,9 @@ func (s *DataSourceService) CreateDataSource(ctx context.Context, ds *types.Data
 	// Validate connector type
 	_, err = s.connectorRegistry.Get(ds.Type)
 	if err != nil {
+		return nil, err
+	}
+	if err := prepareDatabaseDataSourceForStorage(ds, nil); err != nil {
 		return nil, err
 	}
 
@@ -151,6 +155,9 @@ func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.Data
 	}
 	if ds.TenantID != existing.TenantID {
 		return nil, datasource.ErrDataSourceInvalid
+	}
+	if err := prepareDatabaseDataSourceForStorage(ds, existing); err != nil {
+		return nil, err
 	}
 
 	// Validate new configuration if changed
@@ -277,6 +284,9 @@ func (s *DataSourceService) ManualSync(ctx context.Context, dsID string) (*types
 		ds.Status != types.DataSourceStatusError &&
 		ds.Status != types.DataSourceStatusPaused {
 		return nil, datasource.ErrDataSourceNotActive
+	}
+	if isDatabaseDataSourceType(ds.Type) {
+		return nil, datasource.ErrSyncNotSupported
 	}
 
 	// Create sync log
@@ -415,6 +425,15 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	}
 
 	wasPaused := ds.Status == types.DataSourceStatusPaused
+	if isDatabaseDataSourceType(ds.Type) {
+		syncLog.Status = types.SyncLogStatusFailed
+		syncLog.FinishedAt = timePtr(time.Now().UTC())
+		syncLog.ErrorMessage = datasource.ErrSyncNotSupported.Error()
+		_ = s.syncLogRepo.Update(ctx, syncLog)
+		ds.ErrorMessage = syncLog.ErrorMessage
+		_ = s.dsRepo.Update(ctx, ds)
+		return nil
+	}
 
 	// Get connector
 	connector, err := s.connectorRegistry.Get(ds.Type)
@@ -598,8 +617,14 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	return nil
 }
 
-// ValidateCredentials tests connectivity using raw credentials without persisting anything.
-func (s *DataSourceService) ValidateCredentials(ctx context.Context, connectorType string, credentials map[string]interface{}) error {
+// ValidateCredentials tests connectivity using raw credentials and optional
+// connector settings without persisting anything.
+func (s *DataSourceService) ValidateCredentials(
+	ctx context.Context,
+	connectorType string,
+	credentials map[string]interface{},
+	settings map[string]interface{},
+) error {
 	connector, err := s.connectorRegistry.Get(connectorType)
 	if err != nil {
 		return err
@@ -608,6 +633,7 @@ func (s *DataSourceService) ValidateCredentials(ctx context.Context, connectorTy
 	config := &types.DataSourceConfig{
 		Type:        connectorType,
 		Credentials: credentials,
+		Settings:    settings,
 	}
 
 	if err := connector.Validate(ctx, config); err != nil {
@@ -751,4 +777,99 @@ func bytesToFileHeader(data []byte, filename string) (*multipart.FileHeader, err
 func timePtr(t time.Time) *time.Time {
 	utc := t.UTC()
 	return &utc
+}
+
+// prepareDatabaseDataSourceForStorage normalizes database datasource payloads before validation/persistence.
+// It preserves an existing password when the update payload leaves it blank or masked, encrypts credentials via
+// SetDatabaseConnectionConfig, and strips sync-specific fields so realtime databases never enter the sync scheduler.
+func prepareDatabaseDataSourceForStorage(ds *types.DataSource, existing *types.DataSource) error {
+	if ds == nil || !isDatabaseDataSourceType(ds.Type) {
+		return nil
+	}
+
+	cfg, err := types.ParseDatabaseConnectionConfig(ds.Config)
+	if err != nil {
+		return datasource.ErrInvalidConfig
+	}
+	if cfg == nil {
+		cfg = &types.DatabaseConnectionConfig{}
+	}
+	cfg.Type = ds.Type
+
+	if existing != nil && isDatabaseDataSourceType(existing.Type) {
+		existingCfg, err := existing.ParseDatabaseConnectionConfig()
+		if err != nil {
+			return datasource.ErrInvalidConfig
+		}
+		if existingCfg != nil {
+			mergeDatabaseConnectionConfig(cfg, existingCfg)
+		}
+	}
+
+	ds.SyncSchedule = ""
+	ds.SyncMode = types.SyncModeIncremental
+	ds.ConflictStrategy = types.ConflictStrategyOverwrite
+	ds.SyncDeletions = false
+	return ds.SetDatabaseConnectionConfig(cfg)
+}
+
+func mergeDatabaseConnectionConfig(cfg *types.DatabaseConnectionConfig, existingCfg *types.DatabaseConnectionConfig) {
+	if cfg == nil || existingCfg == nil {
+		return
+	}
+
+	if strings.TrimSpace(cfg.Credentials.Username) == "" {
+		cfg.Credentials.Username = existingCfg.Credentials.Username
+	}
+	if preserveDatabasePassword(cfg.Credentials.Password) {
+		cfg.Credentials.Password = existingCfg.Credentials.Password
+	}
+
+	if strings.TrimSpace(cfg.Settings.Host) == "" {
+		cfg.Settings.Host = existingCfg.Settings.Host
+	}
+	if cfg.Settings.Port == 0 {
+		cfg.Settings.Port = existingCfg.Settings.Port
+	}
+	if strings.TrimSpace(cfg.Settings.Database) == "" {
+		cfg.Settings.Database = existingCfg.Settings.Database
+	}
+	if strings.TrimSpace(cfg.Settings.Schema) == "" {
+		cfg.Settings.Schema = existingCfg.Settings.Schema
+	}
+	if strings.TrimSpace(cfg.Settings.SSLMode) == "" {
+		cfg.Settings.SSLMode = existingCfg.Settings.SSLMode
+	}
+	if len(cfg.Settings.TableAllowlist) == 0 && len(existingCfg.Settings.TableAllowlist) > 0 {
+		cfg.Settings.TableAllowlist = append([]string(nil), existingCfg.Settings.TableAllowlist...)
+	}
+	if len(cfg.Settings.ColumnDenylist) == 0 && len(existingCfg.Settings.ColumnDenylist) > 0 {
+		cfg.Settings.ColumnDenylist = append([]string(nil), existingCfg.Settings.ColumnDenylist...)
+	}
+	if cfg.Settings.MaxRows == 0 {
+		cfg.Settings.MaxRows = existingCfg.Settings.MaxRows
+	}
+	if cfg.Settings.QueryTimeoutSec == 0 {
+		cfg.Settings.QueryTimeoutSec = existingCfg.Settings.QueryTimeoutSec
+	}
+	if cfg.Settings.SampleRows == 0 {
+		cfg.Settings.SampleRows = existingCfg.Settings.SampleRows
+	}
+	if strings.TrimSpace(cfg.Settings.SchemaRefreshCron) == "" {
+		cfg.Settings.SchemaRefreshCron = existingCfg.Settings.SchemaRefreshCron
+	}
+}
+
+func isDatabaseDataSourceType(dataSourceType string) bool {
+	switch strings.TrimSpace(dataSourceType) {
+	case types.DatabaseTypeMySQL, types.DatabaseTypePostgreSQL:
+		return true
+	default:
+		return false
+	}
+}
+
+func preserveDatabasePassword(password string) bool {
+	trimmed := strings.TrimSpace(password)
+	return trimmed == "" || trimmed == "***"
 }

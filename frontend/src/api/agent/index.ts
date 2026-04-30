@@ -6,7 +6,7 @@ import { get, post, put, del } from "../../utils/request";
 // 'wiki-qa'      : Wiki 图谱导航问答
 // 'hybrid-rag-wiki': Wiki + 分块混合检索
 // 'custom'       : 完全自定义（不应用预设）
-export type AgentType = 'rag-qa' | 'wiki-qa' | 'hybrid-rag-wiki' | 'data-analysis' | 'custom';
+export type AgentType = 'rag-qa' | 'wiki-qa' | 'hybrid-rag-wiki' | 'data-analysis' | 'database-analysis' | 'custom';
 
 export interface CustomAgentConfig {
   // ===== 基础设置 =====
@@ -213,6 +213,7 @@ export interface AgentTypeKBFilter {
 export interface KBCapabilities {
   vector: boolean;
   keyword: boolean;
+  database: boolean;
   wiki: boolean;
   graph: boolean;
   faq: boolean;

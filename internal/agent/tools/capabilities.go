@@ -21,11 +21,12 @@ import (
 type KBCapability string
 
 const (
-	CapVector  KBCapability = "vector"
-	CapKeyword KBCapability = "keyword"
-	CapWiki    KBCapability = "wiki"
-	CapGraph   KBCapability = "graph"
-	CapFAQ     KBCapability = "faq"
+	CapVector   KBCapability = "vector"
+	CapKeyword  KBCapability = "keyword"
+	CapDatabase KBCapability = "database"
+	CapWiki     KBCapability = "wiki"
+	CapGraph    KBCapability = "graph"
+	CapFAQ      KBCapability = "faq"
 )
 
 // ToolRequirement declares what a tool needs from the KB scope.
@@ -57,12 +58,14 @@ var ToolCapabilityRequirements = map[string]ToolRequirement{
 	"final_answer": {},
 
 	// ---- RAG / chunk retrieval (need at least one chunk-indexed KB) ----
-	"knowledge_search":      {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
-	"grep_chunks":           {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
-	"list_knowledge_chunks": {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
-	"query_knowledge_graph": {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
-	"get_document_info":     {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
-	"database_query":        {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"knowledge_search":         {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"grep_chunks":              {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"list_knowledge_chunks":    {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"query_knowledge_graph":    {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"get_document_info":        {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"database_query":           {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"external_database_schema": {AllOf: []KBCapability{CapDatabase}},
+	"external_database_query":  {AllOf: []KBCapability{CapDatabase}},
 
 	// ---- Wiki (operates on wiki pages; doesn't consume arbitrary file IDs) ----
 	"wiki_search":          {AllOf: []KBCapability{CapWiki}},
@@ -87,6 +90,8 @@ func hasCap(caps types.KBCapabilities, c KBCapability) bool {
 		return caps.Vector
 	case CapKeyword:
 		return caps.Keyword
+	case CapDatabase:
+		return caps.Database
 	case CapWiki:
 		return caps.Wiki
 	case CapGraph:

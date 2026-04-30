@@ -43,7 +43,7 @@
               <div class="detail-header">
                 <span class="detail-name">{{ detailCache[item.id].data.name }}</span>
                 <span class="detail-type-badge" :class="detailCache[item.id].data.type === 'faq' ? 'faq' : 'doc'">
-                  {{ detailCache[item.id].data.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument') }}
+                  {{ $t(getKnowledgeBaseTypeLabelKey(detailCache[item.id].data.type)) }}
                 </span>
               </div>
               <p v-if="detailCache[item.id].data.description" class="detail-desc">{{ detailCache[item.id].data.description }}</p>
@@ -166,7 +166,7 @@ type DetailState = { loading: boolean; error?: string; data?: any };
 const props = defineProps<{
   visible: boolean;
   style: any;
-  items: Array<{ id: string; name: string; type: 'kb' | 'file'; kbType?: 'document' | 'faq'; count?: number; kbName?: string; orgName?: string; kbId?: string }>;
+  items: Array<{ id: string; name: string; type: 'kb' | 'file'; kbType?: 'document' | 'faq' | 'database'; count?: number; kbName?: string; orgName?: string; kbId?: string }>;
   activeIndex: number;
   hasMore?: boolean;
   loading?: boolean;
@@ -197,6 +197,17 @@ const agentIdForDetail = computed(() => {
 
 const kbItems = computed(() => props.items.filter(item => item.type === 'kb'));
 const fileItems = computed(() => props.items.filter(item => item.type === 'file'));
+
+function getKnowledgeBaseTypeLabelKey(type?: 'document' | 'faq' | 'database') {
+  switch (type) {
+    case 'faq':
+      return 'knowledgeEditor.basic.typeFAQ';
+    case 'database':
+      return 'knowledgeEditor.basic.typeDatabase';
+    default:
+      return 'knowledgeEditor.basic.typeDocument';
+  }
+}
 
 async function fetchKbDetail(item: { id: string }) {
   if (detailCache.value[item.id]?.data || detailCache.value[item.id]?.loading) return;

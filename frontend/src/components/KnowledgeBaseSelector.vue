@@ -71,7 +71,7 @@ import { useI18n } from 'vue-i18n'
 interface KnowledgeBase {
   id: string
   name: string
-  type?: 'document' | 'faq'
+  type?: 'document' | 'faq' | 'database'
   knowledge_count?: number
   chunk_count?: number
   embedding_model_id?: string

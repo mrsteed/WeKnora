@@ -6,19 +6,21 @@ const maxFunctionNameLength = 64
 
 // Tool names constants
 const (
-	ToolThinking            = "thinking"
-	ToolTodoWrite           = "todo_write"
-	ToolGrepChunks          = "grep_chunks"
-	ToolKnowledgeSearch     = "knowledge_search"
-	ToolListKnowledgeChunks = "list_knowledge_chunks"
-	ToolQueryKnowledgeGraph = "query_knowledge_graph"
-	ToolGetDocumentInfo     = "get_document_info"
-	ToolDatabaseQuery       = "database_query"
-	ToolDataAnalysis        = "data_analysis"
-	ToolDataSchema          = "data_schema"
-	ToolWebSearch           = "web_search"
-	ToolWebFetch            = "web_fetch"
-	ToolFinalAnswer         = "final_answer"
+	ToolThinking               = "thinking"
+	ToolTodoWrite              = "todo_write"
+	ToolGrepChunks             = "grep_chunks"
+	ToolKnowledgeSearch        = "knowledge_search"
+	ToolListKnowledgeChunks    = "list_knowledge_chunks"
+	ToolQueryKnowledgeGraph    = "query_knowledge_graph"
+	ToolGetDocumentInfo        = "get_document_info"
+	ToolDatabaseQuery          = "database_query"
+	ToolExternalDatabaseSchema = "external_database_schema"
+	ToolExternalDatabaseQuery  = "external_database_query"
+	ToolDataAnalysis           = "data_analysis"
+	ToolDataSchema             = "data_schema"
+	ToolWebSearch              = "web_search"
+	ToolWebFetch               = "web_fetch"
+	ToolFinalAnswer            = "final_answer"
 	// Skills-related tools (only available when skills are enabled)
 	ToolExecuteSkillScript = "execute_skill_script"
 	ToolReadSkill          = "read_skill"
@@ -54,6 +56,8 @@ func AvailableToolDefinitions() []AvailableTool {
 		{Name: ToolQueryKnowledgeGraph, Label: "查询知识图谱", Description: "从知识图谱中查询关系"},
 		{Name: ToolGetDocumentInfo, Label: "获取文档信息", Description: "查看文档元数据"},
 		{Name: ToolDatabaseQuery, Label: "查询数据库", Description: "查询数据库中的信息"},
+		{Name: ToolExternalDatabaseSchema, Label: "查看外部数据库结构", Description: "获取外部数据库知识库中的表结构、字段和查询约束"},
+		{Name: ToolExternalDatabaseQuery, Label: "查询外部数据库", Description: "对外部数据库知识库执行只读 SQL 查询"},
 		{Name: ToolDataAnalysis, Label: "数据分析", Description: "理解数据文件并进行数据分析"},
 		{Name: ToolDataSchema, Label: "查看数据元信息", Description: "获取表格文件的元信息"},
 		{Name: ToolReadSkill, Label: "读取技能", Description: "按需读取技能内容以学习专业能力"},
@@ -83,6 +87,8 @@ func DefaultAllowedTools() []string {
 		ToolQueryKnowledgeGraph,
 		ToolGetDocumentInfo,
 		ToolDatabaseQuery,
+		ToolExternalDatabaseSchema,
+		ToolExternalDatabaseQuery,
 		ToolDataAnalysis,
 		ToolDataSchema,
 		ToolFinalAnswer,

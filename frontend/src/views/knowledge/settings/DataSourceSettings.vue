@@ -8,15 +8,23 @@ import {
   triggerSync,
   pauseDataSource,
   resumeDataSource,
+  refreshDataSourceSchema,
+  getDatabaseSchema,
   type DataSource,
+  type DatabaseSchema,
 } from '@/api/datasource'
 import { humanizeCron, relativeTime } from '@/utils/cronHumanize'
 import DataSourceEditorDialog from './DataSourceEditorDialog.vue'
 import DataSourceSyncLogs from './DataSourceSyncLogs.vue'
 import DataSourceTypeIcon from './DataSourceTypeIcon.vue'
+import DatabaseSchemaDialog from './DatabaseSchemaDialog.vue'
+import DatabaseQueryAuditDialog from './DatabaseQueryAuditDialog.vue'
 
 const props = defineProps<{ kbId: string }>()
-const emit = defineEmits<{ (e: 'count', value: number): void }>()
+const emit = defineEmits<{
+  (e: 'count', value: number): void
+  (e: 'database-change'): void
+}>()
 const { t } = useI18n()
 
 const dataSources = ref<DataSource[]>([])
@@ -26,7 +34,16 @@ const editingDs = ref<DataSource | null>(null)
 const logsVisible = ref(false)
 const logsDsId = ref('')
 const logsDsName = ref('')
+const databaseSchemaVisible = ref(false)
+const databaseAuditVisible = ref(false)
+const activeDatabaseSource = ref<DataSource | null>(null)
 const pollTimer = ref<number | null>(null)
+const databaseSchemaState = ref<Record<string, DatabaseSchema | null>>({})
+
+function translateOrFallback(key: string, fallback: string) {
+  const translated = t(key)
+  return translated === key ? fallback : translated
+}
 
 function stopPolling() {
   if (pollTimer.value !== null) {
@@ -47,6 +64,7 @@ async function loadList(silent = false) {
   try {
     const res = await listDataSources(props.kbId)
     dataSources.value = res?.data || res || []
+    await loadDatabaseSchemaState(dataSources.value)
     emit('count', dataSources.value.length)
 
     const hasRunningSync = dataSources.value.some(ds => ds.latest_sync_log?.status === 'running')
@@ -59,6 +77,26 @@ async function loadList(silent = false) {
     console.error(e)
   } finally {
     if (!silent) loading.value = false
+  }
+}
+
+async function loadDatabaseSchemaState(list: DataSource[]) {
+  const databaseSources = list.filter(isDatabaseSource)
+  if (!databaseSources.length) {
+    databaseSchemaState.value = {}
+    return
+  }
+
+  try {
+    const schemaRes = await getDatabaseSchema(props.kbId)
+    const latestSchema = schemaRes as DatabaseSchema | null
+    if (!latestSchema?.data_source_id) return
+    databaseSchemaState.value = {
+      ...databaseSchemaState.value,
+      [latestSchema.data_source_id]: latestSchema,
+    }
+  } catch (e) {
+    console.warn('load database schema state failed', e)
   }
 }
 
@@ -78,6 +116,16 @@ function openLogs(ds: DataSource) {
   logsVisible.value = true
 }
 
+function openDatabaseSchema(ds: DataSource) {
+  activeDatabaseSource.value = ds
+  databaseSchemaVisible.value = true
+}
+
+function openDatabaseAudits(ds: DataSource) {
+  activeDatabaseSource.value = ds
+  databaseAuditVisible.value = true
+}
+
 function handleDelete(ds: DataSource) {
   const confirmDialog = DialogPlugin.confirm({
     header: t('datasource.delete'),
@@ -89,6 +137,7 @@ function handleDelete(ds: DataSource) {
         await deleteDataSource(ds.id)
         MessagePlugin.success(t('datasource.deleteSuccess'))
         await loadList()
+        emit('database-change')
         confirmDialog.hide()
       } catch (e: any) {
         MessagePlugin.error(e?.message || e?.error || t('datasource.deleteFailed'))
@@ -127,6 +176,22 @@ async function handleResume(ds: DataSource) {
   }
 }
 
+async function handleRefreshSchema(ds: DataSource) {
+  try {
+    const schemaRes = await refreshDataSourceSchema(ds.id)
+    const latestSchema = schemaRes as DatabaseSchema | null
+    databaseSchemaState.value = {
+      ...databaseSchemaState.value,
+      [ds.id]: latestSchema,
+    }
+    MessagePlugin.success(translateOrFallback('datasource.refreshSchemaSuccess', 'Schema 已刷新'))
+    await loadList(true)
+    emit('database-change')
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || e?.error || translateOrFallback('datasource.refreshSchemaFailed', '刷新 Schema 失败'))
+  }
+}
+
 function statusTheme(status: string): 'success' | 'danger' | 'default' | 'warning' {
   if (status === 'active') return 'success'
   if (status === 'error') return 'danger'
@@ -142,8 +207,19 @@ function syncModeLabel(mode: string) {
   return t(`datasource.syncMode.${mode}`)
 }
 
+function isDatabaseSource(ds: DataSource) {
+  return ds.type === 'mysql' || ds.type === 'postgresql'
+}
+
 function connectorLabel(type: string) {
-  return t(`datasource.connector.${type}`) || type
+  const key = `datasource.connector.${type}`
+  const translated = t(key)
+  if (translated !== key) return translated
+  switch (type) {
+    case 'mysql': return 'MySQL'
+    case 'postgresql': return 'PostgreSQL'
+    default: return type
+  }
 }
 
 function scheduleLabel(cron: string) {
@@ -151,10 +227,18 @@ function scheduleLabel(cron: string) {
 }
 
 function lastSyncTime(ds: DataSource) {
+  if (isDatabaseSource(ds)) {
+    return relativeTime(databaseSchemaState.value[ds.id]?.refreshed_at || null, t)
+  }
   return relativeTime(ds.last_sync_at, t)
 }
 
 function lastSyncFullTime(ds: DataSource) {
+  if (isDatabaseSource(ds)) {
+    const refreshedAt = databaseSchemaState.value[ds.id]?.refreshed_at
+    if (!refreshedAt) return ''
+    return new Date(refreshedAt).toLocaleString()
+  }
   if (!ds.last_sync_at) return ''
   return new Date(ds.last_sync_at).toLocaleString()
 }
@@ -172,12 +256,20 @@ function syncResultPills(ds: DataSource) {
 }
 
 function lastSyncStatusLabel(ds: DataSource) {
+  if (isDatabaseSource(ds)) {
+    return databaseSchemaState.value[ds.id]?.refreshed_at
+      ? translateOrFallback('datasource.databaseLastStatusReady', '结构已更新')
+      : translateOrFallback('datasource.databaseLastStatusPending', '未采集结构')
+  }
   const log = ds.latest_sync_log
   if (!log) return '--'
   return t(`datasource.logStatus.${log.status}`)
 }
 
 function lastSyncStatusColor(ds: DataSource) {
+  if (isDatabaseSource(ds)) {
+    return databaseSchemaState.value[ds.id]?.refreshed_at ? 'var(--td-success-color)' : 'var(--td-text-color-placeholder)'
+  }
   const log = ds.latest_sync_log
   if (!log) return ''
   switch (log.status) {
@@ -196,6 +288,7 @@ function isSyncRunning(ds: DataSource) {
 function onEditorSaved() {
   editorVisible.value = false
   loadList()
+  emit('database-change')
 }
 
 onMounted(loadList)
@@ -243,7 +336,7 @@ onBeforeUnmount(stopPolling)
           </div>
           
           <div class="ds-card-actions">
-            <t-tooltip :content="isSyncRunning(ds) ? t('datasource.logStatus.running') : t('datasource.syncNow')">
+            <t-tooltip v-if="!isDatabaseSource(ds)" :content="isSyncRunning(ds) ? t('datasource.logStatus.running') : t('datasource.syncNow')">
               <t-button
                 size="small"
                 variant="text"
@@ -256,8 +349,23 @@ onBeforeUnmount(stopPolling)
                 </template>
               </t-button>
             </t-tooltip>
-            <t-tooltip :content="t('datasource.logs')">
+            <t-tooltip v-if="isDatabaseSource(ds)" :content="translateOrFallback('datasource.refreshSchema', '刷新 Schema')">
+              <t-button size="small" variant="text" theme="primary" @click="handleRefreshSchema(ds)">
+                <template #icon><t-icon name="refresh" /></template>
+              </t-button>
+            </t-tooltip>
+            <t-tooltip v-if="isDatabaseSource(ds)" :content="translateOrFallback('datasource.viewSchema', '查看 Schema')">
+              <t-button size="small" variant="text" @click="openDatabaseSchema(ds)">
+                <template #icon><t-icon name="table" /></template>
+              </t-button>
+            </t-tooltip>
+            <t-tooltip v-if="!isDatabaseSource(ds)" :content="t('datasource.logs')">
               <t-button size="small" variant="text" @click="openLogs(ds)">
+                <template #icon><t-icon name="root-list" /></template>
+              </t-button>
+            </t-tooltip>
+            <t-tooltip v-if="isDatabaseSource(ds)" :content="translateOrFallback('datasource.queryAudits', '查询审计')">
+              <t-button size="small" variant="text" @click="openDatabaseAudits(ds)">
                 <template #icon><t-icon name="root-list" /></template>
               </t-button>
             </t-tooltip>
@@ -273,13 +381,13 @@ onBeforeUnmount(stopPolling)
                     <t-icon name="edit" /> {{ t('datasource.edit') }}
                   </t-dropdown-item>
                   <t-dropdown-item
-                    v-if="ds.status === 'active'"
+                    v-if="!isDatabaseSource(ds) && ds.status === 'active'"
                     @click="handlePause(ds)"
                   >
                     <t-icon name="pause-circle" /> {{ t('datasource.pause') }}
                   </t-dropdown-item>
                   <t-dropdown-item
-                    v-else-if="ds.status === 'paused'"
+                    v-else-if="!isDatabaseSource(ds) && ds.status === 'paused'"
                     @click="handleResume(ds)"
                   >
                     <t-icon name="play-circle" /> {{ t('datasource.resume') }}
@@ -294,26 +402,37 @@ onBeforeUnmount(stopPolling)
         </div>
 
         <div class="ds-card-stats">
-          <div class="ds-stat-item">
+          <div v-if="!isDatabaseSource(ds)" class="ds-stat-item">
             <span class="ds-stat-label">{{ t('datasource.syncModeLabel') }}</span>
             <span class="ds-stat-value">{{ syncModeLabel(ds.sync_mode) }}</span>
           </div>
-          <div class="ds-stat-item">
+          <div v-if="isDatabaseSource(ds)" class="ds-stat-item">
+            <span class="ds-stat-label">{{ translateOrFallback('datasource.databaseName', '业务库') }}</span>
+            <span class="ds-stat-value">{{ databaseSchemaState[ds.id]?.database_name || (ds.config as any)?.settings?.database || '--' }}</span>
+          </div>
+          <div v-if="!isDatabaseSource(ds)" class="ds-stat-item">
             <span class="ds-stat-label">{{ t('datasource.schedule') }}</span>
             <span class="ds-stat-value">{{ scheduleLabel(ds.sync_schedule) }}</span>
           </div>
+          <div v-if="isDatabaseSource(ds)" class="ds-stat-item">
+            <span class="ds-stat-label">{{ translateOrFallback('datasource.databaseSchemaLabel', '结构范围') }}</span>
+            <span class="ds-stat-value">{{ databaseSchemaState[ds.id]?.schema_name || (ds.config as any)?.settings?.schema || translateOrFallback('datasource.databaseSchemaDefault', '默认 Schema') }}</span>
+          </div>
           <div class="ds-stat-item">
-            <span class="ds-stat-label">{{ t('datasource.lastSync') }}</span>
+            <span class="ds-stat-label">{{ isDatabaseSource(ds) ? translateOrFallback('datasource.databaseLastSync', '上次刷新结构') : t('datasource.lastSync') }}</span>
             <t-tooltip :content="lastSyncFullTime(ds)" :disabled="!lastSyncFullTime(ds)">
               <span class="ds-stat-value">{{ lastSyncTime(ds) }}</span>
             </t-tooltip>
           </div>
           <div class="ds-stat-item" style="flex: 1.2">
-            <span class="ds-stat-label">{{ t('datasource.lastStatus') }}</span>
+            <span class="ds-stat-label">{{ isDatabaseSource(ds) ? translateOrFallback('datasource.databaseLastStatus', '结构状态') : t('datasource.lastStatus') }}</span>
             <div class="ds-stat-value">
-              <template v-if="ds.latest_sync_log">
+              <template v-if="!isDatabaseSource(ds) && ds.latest_sync_log">
                 <span :style="{ color: lastSyncStatusColor(ds), fontWeight: 500 }">{{ lastSyncStatusLabel(ds) }}</span>
                 <span v-for="pill in syncResultPills(ds)" :key="pill.cls" :class="['ds-pill', pill.cls]">{{ pill.text }}</span>
+              </template>
+              <template v-else-if="isDatabaseSource(ds)">
+                <span :style="{ color: lastSyncStatusColor(ds), fontWeight: 500 }">{{ lastSyncStatusLabel(ds) }}</span>
               </template>
               <span v-else class="ds-stat-placeholder">--</span>
             </div>
@@ -345,6 +464,19 @@ onBeforeUnmount(stopPolling)
       v-model:visible="logsVisible"
       :data-source-id="logsDsId"
       :data-source-name="logsDsName"
+    />
+
+    <DatabaseSchemaDialog
+      v-model:visible="databaseSchemaVisible"
+      :kb-id="kbId"
+      :data-source-id="activeDatabaseSource?.id"
+      :data-source-name="activeDatabaseSource?.name"
+    />
+
+    <DatabaseQueryAuditDialog
+      v-model:visible="databaseAuditVisible"
+      :kb-id="kbId"
+      :data-source-name="activeDatabaseSource?.name"
     />
   </div>
 </template>
