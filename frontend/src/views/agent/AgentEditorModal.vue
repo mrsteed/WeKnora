@@ -2239,6 +2239,7 @@ const contextTemplatePlaceholder = computed(() => {
 
 // 是否需要配置 ReRank 模型（仅当关联的知识库中有 RAG 类型时需要）
 const needsRerankModel = computed(() => {
+  if (isDatabaseAnalysisAgent.value) return false;
   if (!hasKnowledgeBase.value) return false;
   const mode = kbSelectionMode.value;
   if (mode === 'all') {
