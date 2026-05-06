@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/errors"
@@ -91,10 +92,7 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 
 	if len(events) == 0 {
 		logger.Warnf(ctx, "No events found in stream, session ID: %s, message ID: %s", sessionID, messageID)
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"error":   "No stream events found",
-		})
+		h.recoverMissingStreamState(ctx, c, message)
 		return
 	}
 
@@ -173,6 +171,48 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 			}
 		}
 	}
+}
+
+func (h *Handler) recoverMissingStreamState(ctx context.Context, c *gin.Context, message *types.Message) {
+	completionStatus := message.CompletionStatusOrLegacy()
+	finishReason := message.FinishReason
+	failureReason := message.FailureReason
+
+	if !message.IsTerminal() {
+		options := assistantCompletionOptions{
+			AllowIndexing: false,
+			AllowComplete: false,
+		}
+		if strings.TrimSpace(message.Content) != "" {
+			options.CompletionStatus = types.MessageCompletionStatusPartial
+			options.FinishReason = "stream_unavailable"
+			options.FailureReason = "stream_unavailable"
+		} else {
+			options.CompletionStatus = types.MessageCompletionStatusFailed
+			options.FinishReason = "stream_unavailable"
+			options.FailureReason = "stream_unavailable"
+		}
+
+		h.completeAssistantMessage(ctx, message, "", options)
+		completionStatus = message.CompletionStatus
+		finishReason = message.FinishReason
+		failureReason = message.FailureReason
+	}
+
+	setSSEHeaders(c)
+	c.SSEvent("message", &types.StreamResponse{
+		ID:           message.RequestID,
+		ResponseType: types.ResponseTypeAnswer,
+		Content:      "",
+		Done:         true,
+		Data: map[string]interface{}{
+			"completion_status": completionStatus,
+			"finish_reason":     finishReason,
+			"failure_reason":    failureReason,
+			"is_partial":        completionStatus == types.MessageCompletionStatusPartial,
+		},
+	})
+	c.Writer.Flush()
 }
 
 // StopSession godoc

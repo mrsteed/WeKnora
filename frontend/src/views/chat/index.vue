@@ -1719,7 +1719,13 @@ const updateAssistantSession = (payload) => {
         return item.id === payload.id;
     });
     if (message) {
-        message.content = payload.content;
+        const shouldPreserveContent =
+            payload.content === '' &&
+            typeof message.content === 'string' &&
+            message.content.length > 0;
+        if (!shouldPreserveContent && payload.content !== undefined) {
+            message.content = payload.content;
+        }
         message.thinking = payload.thinking;
         message.thinkContent = payload.thinkContent;
         message.showThink = payload.showThink;

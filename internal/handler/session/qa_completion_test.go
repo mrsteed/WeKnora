@@ -14,11 +14,13 @@ import (
 )
 
 type messageServiceStub struct {
-	mu              sync.Mutex
-	updatedMessages []*types.Message
-	indexedCalls    int
-	indexedOptions  []interfaces.MessageIndexOptions
-	indexedCallCh   chan struct{}
+	mu               sync.Mutex
+	getMessageResult *types.Message
+	getMessageErr    error
+	updatedMessages  []*types.Message
+	indexedCalls     int
+	indexedOptions   []interfaces.MessageIndexOptions
+	indexedCallCh    chan struct{}
 }
 
 func (s *messageServiceStub) CreateMessage(context.Context, *types.Message) (*types.Message, error) {
@@ -26,7 +28,7 @@ func (s *messageServiceStub) CreateMessage(context.Context, *types.Message) (*ty
 }
 
 func (s *messageServiceStub) GetMessage(context.Context, string, string) (*types.Message, error) {
-	return nil, nil
+	return s.getMessageResult, s.getMessageErr
 }
 
 func (s *messageServiceStub) GetMessagesBySession(context.Context, string, int, int) ([]*types.Message, error) {
