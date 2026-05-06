@@ -26,6 +26,10 @@ type assistantCompletionOptions struct {
 	FailureReason    string
 	AllowIndexing    bool
 	AllowComplete    bool
+	AgentMode        bool
+	FinalAnswer      string
+	AgentSteps       types.AgentSteps
+	AgentDurationMs  int64
 }
 
 func defaultAssistantCompletionOptions() assistantCompletionOptions {
@@ -35,6 +39,12 @@ func defaultAssistantCompletionOptions() assistantCompletionOptions {
 		AllowIndexing:    true,
 		AllowComplete:    true,
 	}
+}
+
+func agentAssistantCompletionOptions() assistantCompletionOptions {
+	options := defaultAssistantCompletionOptions()
+	options.AgentMode = true
+	return options
 }
 
 func completionOptionsFromFinalAnswer(data event.AgentFinalAnswerData) assistantCompletionOptions {
@@ -54,7 +64,7 @@ func completionOptionsFromFinalAnswer(data event.AgentFinalAnswerData) assistant
 }
 
 func completionOptionsFromComplete(data event.AgentCompleteData) assistantCompletionOptions {
-	options := defaultAssistantCompletionOptions()
+	options := agentAssistantCompletionOptions()
 	if data.CompletionStatus != "" {
 		options.CompletionStatus = data.CompletionStatus
 		options.AllowIndexing = data.AllowIndexing
@@ -66,6 +76,45 @@ func completionOptionsFromComplete(data event.AgentCompleteData) assistantComple
 	if data.FailureReason != "" {
 		options.FailureReason = data.FailureReason
 	}
+	if strings.TrimSpace(data.FinalAnswer) != "" {
+		options.FinalAnswer = data.FinalAnswer
+	}
+	if steps := agentStepsFromEventPayload(data.AgentSteps); len(steps) > 0 {
+		options.AgentSteps = steps
+	}
+	if data.TotalDurationMs > 0 {
+		options.AgentDurationMs = data.TotalDurationMs
+	}
+	return options
+}
+
+func agentStepsFromEventPayload(value interface{}) types.AgentSteps {
+	switch steps := value.(type) {
+	case nil:
+		return nil
+	case types.AgentSteps:
+		return append(types.AgentSteps(nil), steps...)
+	case []types.AgentStep:
+		return append(types.AgentSteps(nil), steps...)
+	default:
+		raw, err := json.Marshal(value)
+		if err != nil || len(raw) == 0 || string(raw) == "null" {
+			return nil
+		}
+
+		var decoded types.AgentSteps
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return nil
+		}
+		if len(decoded) == 0 {
+			return nil
+		}
+		return decoded
+	}
+}
+
+func markAgentCompletion(options assistantCompletionOptions) assistantCompletionOptions {
+	options.AgentMode = true
 	return options
 }
 
@@ -96,6 +145,8 @@ func emitAssistantCompleteEvent(eventBus *event.EventBus, sessionID string, mess
 			AllowIndexing:    options.AllowIndexing,
 			AllowComplete:    options.AllowComplete,
 			FailureReason:    options.FailureReason,
+			AgentSteps:       message.AgentSteps,
+			TotalDurationMs:  message.AgentDurationMs,
 		},
 	})
 }
@@ -408,6 +459,10 @@ type sseStreamContext struct {
 	asyncCtx         context.Context
 	cancel           context.CancelFunc
 	assistantMessage *types.Message
+}
+
+func messageUpdateContext(ctx context.Context, tenantID uint64) context.Context {
+	return context.WithValue(context.WithoutCancel(ctx), types.TenantIDContextKey, tenantID)
 }
 
 // setupSSEStream sets up the SSE streaming context
@@ -736,7 +791,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 				completionHandled = true
 
 				logger.Infof(streamCtx.asyncCtx, "Knowledge QA service completed for session: %s", sessionID)
-				updateCtx := context.WithValue(streamCtx.asyncCtx, types.TenantIDContextKey, reqCtx.session.TenantID)
+				updateCtx := messageUpdateContext(streamCtx.asyncCtx, reqCtx.session.TenantID)
 				if h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, completionOptions) {
 					emitAssistantCompleteEvent(streamCtx.eventBus, sessionID, streamCtx.assistantMessage, completionOptions)
 				}
@@ -750,7 +805,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 			}
 			completionHandled = true
 			options := completionOptionsFromError(data)
-			updateCtx := context.WithValue(context.WithoutCancel(streamCtx.asyncCtx), types.TenantIDContextKey, reqCtx.session.TenantID)
+			updateCtx := messageUpdateContext(streamCtx.asyncCtx, reqCtx.session.TenantID)
 			if h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, options) {
 				emitAssistantCompleteEvent(streamCtx.eventBus, sessionID, streamCtx.assistantMessage, options)
 			}
@@ -758,7 +813,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 		})
 	}
 
-	agentCompletionOptions := defaultAssistantCompletionOptions()
+	agentCompletionOptions := agentAssistantCompletionOptions()
 	if mode == qaModeAgent {
 		streamCtx.eventBus.On(event.EventAgentComplete, func(ctx context.Context, evt event.Event) error {
 			data, ok := evt.Data.(event.AgentCompleteData)
@@ -773,7 +828,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 			if !ok {
 				return nil
 			}
-			agentCompletionOptions = completionOptionsFromError(data)
+			agentCompletionOptions = markAgentCompletion(completionOptionsFromError(data))
 			return nil
 		})
 	}
@@ -799,10 +854,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 				// AgentSteps/Content. Without this, cancelled-ctx makes
 				// GORM skip the write and the agent's intermediate steps
 				// (thinking / tool_call history) are lost on page refresh.
-				updateCtx := context.WithValue(
-					context.WithoutCancel(streamCtx.asyncCtx),
-					types.TenantIDContextKey, reqCtx.session.TenantID,
-				)
+				updateCtx := messageUpdateContext(streamCtx.asyncCtx, reqCtx.session.TenantID)
 				h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, agentCompletionOptions)
 				logger.Infof(streamCtx.asyncCtx, "Agent QA service completed for session: %s", sessionID)
 			}
@@ -827,7 +879,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 		if serviceErr != nil {
 			logger.ErrorWithFields(streamCtx.asyncCtx, serviceErr, nil)
 			if mode == qaModeAgent {
-				agentCompletionOptions = completionOptionsFromError(event.ErrorData{Stage: stageName, Error: serviceErr.Error()})
+				agentCompletionOptions = markAgentCompletion(completionOptionsFromError(event.ErrorData{Stage: stageName, Error: serviceErr.Error()}))
 			}
 			streamCtx.eventBus.Emit(streamCtx.asyncCtx, event.Event{
 				Type:      event.EventError,
@@ -927,12 +979,54 @@ func (h *Handler) completeAssistantMessage(
 	if assistantMessage.IsTerminal() {
 		return false
 	}
-	assistantMessage.UpdatedAt = time.Now()
-	assistantMessage.CompletionStatus = options.CompletionStatus
-	assistantMessage.FinishReason = options.FinishReason
-	assistantMessage.FailureReason = options.FailureReason
-	assistantMessage.IsCompleted = options.AllowComplete && options.CompletionStatus == types.MessageCompletionStatusCompleted
-	_ = h.messageService.UpdateMessage(ctx, assistantMessage)
+	updatedMessage := *assistantMessage
+	updatedMessage.UpdatedAt = time.Now()
+	updatedMessage.CompletionStatus = options.CompletionStatus
+	updatedMessage.FinishReason = options.FinishReason
+	updatedMessage.FailureReason = options.FailureReason
+	updatedMessage.IsCompleted = options.AllowComplete && options.CompletionStatus == types.MessageCompletionStatusCompleted
+	if options.AgentMode {
+		if updatedMessage.Content == "" && strings.TrimSpace(options.FinalAnswer) != "" {
+			updatedMessage.Content = options.FinalAnswer
+		}
+		if len(updatedMessage.AgentSteps) == 0 && len(options.AgentSteps) > 0 {
+			updatedMessage.AgentSteps = append(types.AgentSteps(nil), options.AgentSteps...)
+		}
+		if updatedMessage.AgentDurationMs == 0 && options.AgentDurationMs > 0 {
+			updatedMessage.AgentDurationMs = options.AgentDurationMs
+		}
+	}
+	agentStepsCount := len(updatedMessage.AgentSteps)
+	if options.AgentMode {
+		logger.Infof(ctx,
+			"Preparing agent assistant completion persistence, session_id: %s, message_id: %s, request_id: %s, agent_steps_count: %d, completion_status: %s, finish_reason: %s",
+			updatedMessage.SessionID, updatedMessage.ID, updatedMessage.RequestID, agentStepsCount,
+			options.CompletionStatus, options.FinishReason,
+		)
+		if options.AllowComplete && options.CompletionStatus == types.MessageCompletionStatusCompleted && agentStepsCount == 0 {
+			logger.Warnf(ctx,
+				"Agent completion is being persisted without agent_steps, session_id: %s, message_id: %s, request_id: %s, completion_status: %s, finish_reason: %s",
+				updatedMessage.SessionID, updatedMessage.ID, updatedMessage.RequestID,
+				options.CompletionStatus, options.FinishReason,
+			)
+		}
+	}
+	if err := h.messageService.UpdateMessage(ctx, &updatedMessage); err != nil {
+		logger.Errorf(ctx,
+			"Failed to persist assistant message completion state, session_id: %s, message_id: %s, request_id: %s, status: %s, finish_reason: %s, agent_mode: %t, agent_steps_count: %d, error: %v",
+			assistantMessage.SessionID, assistantMessage.ID, assistantMessage.RequestID,
+			options.CompletionStatus, options.FinishReason, options.AgentMode, agentStepsCount, err,
+		)
+		return false
+	}
+	*assistantMessage = updatedMessage
+	if options.AgentMode {
+		logger.Infof(ctx,
+			"Persisted agent assistant completion state, session_id: %s, message_id: %s, request_id: %s, agent_steps_count: %d, completion_status: %s, finish_reason: %s, update_success: true",
+			assistantMessage.SessionID, assistantMessage.ID, assistantMessage.RequestID, len(assistantMessage.AgentSteps),
+			assistantMessage.CompletionStatus, assistantMessage.FinishReason,
+		)
+	}
 
 	if !options.AllowIndexing {
 		return true

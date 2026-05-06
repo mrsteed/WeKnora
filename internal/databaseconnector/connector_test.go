@@ -12,7 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type stubConnector struct{ connectorType string }
+type stubConnector struct {
+	connectorType   string
+	invalidateCalls int
+}
 
 func (s *stubConnector) Type() string { return s.connectorType }
 
@@ -27,6 +30,11 @@ func (s *stubConnector) Query(context.Context, *types.DatabaseConnectionConfig, 
 }
 
 func (s *stubConnector) Dialect() types.SQLDialect { return types.SQLDialectMySQL }
+
+func (s *stubConnector) Invalidate(context.Context, *types.DatabaseConnectionConfig) error {
+	s.invalidateCalls++
+	return nil
+}
 
 func TestRegistry(t *testing.T) {
 	r := NewRegistry()
@@ -45,4 +53,6 @@ func TestRegistry(t *testing.T) {
 	require.True(t, errors.Is(err, ErrConnectorNotFound))
 
 	assert.Equal(t, []string{types.DatabaseTypeMySQL}, r.List())
+	require.NoError(t, r.Invalidate(context.Background(), types.DatabaseTypeMySQL, &types.DatabaseConnectionConfig{}))
+	assert.Equal(t, 1, conn.invalidateCalls)
 }

@@ -172,4 +172,35 @@ func TestContinueStream_RecoversMissingPendingStreamWithContentAsPartial(t *test
 	assert.Equal(t, true, response.Data["is_partial"])
 }
 
+func TestContinueStream_TerminalFailedMessageDoesNotRecoverAgain(t *testing.T) {
+	messageStub := &messageServiceStub{getMessageResult: &types.Message{
+		ID:               "msg-3",
+		SessionID:        "sess-1",
+		RequestID:        "req-3",
+		Role:             "assistant",
+		CompletionStatus: types.MessageCompletionStatusFailed,
+		FinishReason:     "stream_unavailable",
+		FailureReason:    "stream_unavailable",
+	}}
+	handler := &Handler{
+		sessionService: &continueStreamSessionServiceStub{session: &types.Session{ID: "sess-1"}},
+		messageService: messageStub,
+		streamManager:  &streamManagerStub{},
+	}
+
+	c, recorder := newContinueStreamTestContext(t, "sess-1", "msg-3")
+	handler.ContinueStream(c)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Empty(t, messageStub.updatedMessages)
+
+	response := decodeSSEPayload(t, recorder.Body.String())
+	assert.Equal(t, types.ResponseTypeAnswer, response.ResponseType)
+	assert.True(t, response.Done)
+	assert.Equal(t, types.MessageCompletionStatusFailed, response.Data["completion_status"])
+	assert.Equal(t, "stream_unavailable", response.Data["finish_reason"])
+	assert.Equal(t, "stream_unavailable", response.Data["failure_reason"])
+	assert.Equal(t, false, response.Data["is_partial"])
+}
+
 var _ interfaces.SessionService = (*continueStreamSessionServiceStub)(nil)

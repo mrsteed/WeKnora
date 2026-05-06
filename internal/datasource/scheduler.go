@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ type Scheduler struct {
 	dsRepo       interfaces.DataSourceRepository
 	syncLogRepo  interfaces.SyncLogRepository
 	taskEnqueuer interfaces.TaskEnqueuer
+	schemaSvc    interfaces.SchemaRegistryService
 
 	mu      sync.Mutex
 	entries map[string]cron.EntryID // dataSourceID → cron entry ID
@@ -51,6 +53,12 @@ func NewScheduler(
 	}
 }
 
+// SetSchemaRegistry wires optional schema refresh support for database
+// datasources that use settings.schema_refresh_cron instead of SyncSchedule.
+func (s *Scheduler) SetSchemaRegistry(schemaSvc interfaces.SchemaRegistryService) {
+	s.schemaSvc = schemaSvc
+}
+
 // Start loads all active data sources from the database and registers their
 // cron schedules. Then starts the cron runner in the background.
 func (s *Scheduler) Start(ctx context.Context) error {
@@ -60,12 +68,13 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	}
 
 	for _, ds := range dataSources {
-		if ds.SyncSchedule == "" {
+		schedule := scheduleForDataSource(ds)
+		if schedule == "" {
 			continue
 		}
 		if err := s.addEntry(ds); err != nil {
 			logger.Warnf(ctx, "[Scheduler] failed to register cron for ds=%s schedule=%q: %v",
-				ds.ID, ds.SyncSchedule, err)
+				ds.ID, schedule, err)
 		}
 	}
 
@@ -90,7 +99,7 @@ func (s *Scheduler) AddOrUpdate(ds *types.DataSource) error {
 		delete(s.entries, ds.ID)
 	}
 
-	if ds.Status != types.DataSourceStatusActive || ds.SyncSchedule == "" {
+	if ds.Status != types.DataSourceStatusActive || scheduleForDataSource(ds) == "" {
 		return nil
 	}
 
@@ -117,12 +126,16 @@ func (s *Scheduler) addEntry(ds *types.DataSource) error {
 func (s *Scheduler) addEntryLocked(ds *types.DataSource) error {
 	dsID := ds.ID
 	tenantID := ds.TenantID
+	schedule := scheduleForDataSource(ds)
+	if schedule == "" {
+		return nil
+	}
 
-	entryID, err := s.cron.AddFunc(ds.SyncSchedule, func() {
+	entryID, err := s.cron.AddFunc(schedule, func() {
 		s.triggerSync(dsID, tenantID)
 	})
 	if err != nil {
-		return fmt.Errorf("invalid cron expression %q: %w", ds.SyncSchedule, err)
+		return fmt.Errorf("invalid cron expression %q: %w", schedule, err)
 	}
 
 	s.entries[dsID] = entryID
@@ -143,6 +156,19 @@ func (s *Scheduler) triggerSync(dataSourceID string, tenantID uint64) {
 	ds, err := s.dsRepo.FindByID(ctx, dataSourceID)
 	if err != nil || ds == nil || ds.Status != types.DataSourceStatusActive {
 		logger.Infof(ctx, "[Scheduler] skipping sync for ds=%s (not active or not found)", dataSourceID)
+		return
+	}
+
+	if isDatabaseDataSource(ds) {
+		if s.schemaSvc == nil {
+			logger.Warnf(ctx, "[Scheduler] skipping schema refresh for ds=%s (schema service not configured)", dataSourceID)
+			return
+		}
+		if err := s.schemaSvc.RefreshSchema(ctx, dataSourceID); err != nil {
+			logger.Warnf(ctx, "[Scheduler] schema refresh failed for ds=%s: %v", dataSourceID, err)
+			return
+		}
+		logger.Infof(ctx, "[Scheduler] schema refresh executed for ds=%s", dataSourceID)
 		return
 	}
 
@@ -207,4 +233,33 @@ func (s *Scheduler) EntryCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.entries)
+}
+
+func scheduleForDataSource(ds *types.DataSource) string {
+	if ds == nil {
+		return ""
+	}
+	if schedule := strings.TrimSpace(ds.SyncSchedule); schedule != "" {
+		return schedule
+	}
+	if !isDatabaseDataSource(ds) {
+		return ""
+	}
+	cfg, err := ds.ParseDatabaseConnectionConfig()
+	if err != nil || cfg == nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.Settings.SchemaRefreshCron)
+}
+
+func isDatabaseDataSource(ds *types.DataSource) bool {
+	if ds == nil {
+		return false
+	}
+	switch ds.Type {
+	case types.DatabaseTypeMySQL, types.DatabaseTypePostgreSQL:
+		return true
+	default:
+		return false
+	}
 }

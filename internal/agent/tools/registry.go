@@ -160,8 +160,6 @@ func (r *ToolRegistry) ExecuteTool(
 
 func shouldSkipOutputTruncation(toolName string) bool {
 	switch toolName {
-	case ToolExternalDatabaseQuery:
-		return true
 	default:
 		return false
 	}

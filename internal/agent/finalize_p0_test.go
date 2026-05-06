@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
@@ -115,4 +116,64 @@ func TestStreamFinalAnswerToEventBus_DisablesThinkingForFinalSynthesis(t *testin
 	require.NotNil(t, mock.lastOptions.Thinking)
 	assert.False(t, *mock.lastOptions.Thinking)
 	assert.Equal(t, "part-1 part-2", state.FinalAnswer)
+}
+
+func TestFinalizeSummarizesBudgetedDatabaseQueryData(t *testing.T) {
+	longCell := strings.Repeat("detail-", 40)
+	summary := summarizeStructuredToolResult(agenttools.ToolExternalDatabaseQuery, &types.ToolResult{
+		Data: map[string]interface{}{
+			"columns":              []string{"id", "note"},
+			"rows":                 []map[string]interface{}{{"id": 1, "note": longCell}},
+			"row_count":            5,
+			"truncated":            true,
+			"output_truncated":     true,
+			"cell_truncated_count": 1,
+			"duration_ms":          int64(48),
+			"executed_sql":         "SELECT id, note FROM orders LIMIT 30",
+		},
+	})
+
+	assert.Contains(t, summary, "Database query summary")
+	assert.Contains(t, summary, "Columns: id, note")
+	assert.Contains(t, summary, "Row count: 5")
+	assert.Contains(t, summary, "Result truncated: true")
+	assert.Contains(t, summary, "Output truncated: true")
+	assert.Contains(t, summary, "Cells truncated: 1")
+	assert.Contains(t, summary, "Duration: 48 ms")
+	assert.Contains(t, summary, "Executed SQL: SELECT id, note FROM orders LIMIT 30")
+	assert.Contains(t, summary, "Sample rows:")
+	assert.Contains(t, summary, "truncated for synthesis")
+	assert.NotContains(t, summary, longCell)
+}
+
+func TestFinalizeSummarizesBudgetedDatabaseSchemaData(t *testing.T) {
+	summary := summarizeStructuredToolResult(agenttools.ToolExternalDatabaseSchema, &types.ToolResult{
+		Data: map[string]interface{}{
+			"database_name":              "crm",
+			"schema_name":                "public",
+			"schema_hash":                "hash-1",
+			"refreshed_at":               "2026-05-06T12:00:00Z",
+			"mode":                       "catalog",
+			"table_count":                21,
+			"additional_tables_omitted":  5,
+			"allowed_tables":             []string{"orders", "customers", "shipments"},
+			"foreign_keys":               []string{"orders.customer_id -> customers.id"},
+			"possible_join_hints":        []string{"shipments.order_id = orders.id"},
+			"additional_columns_omitted": 48,
+		},
+	})
+
+	assert.Contains(t, summary, "Database schema summary")
+	assert.Contains(t, summary, "Database: crm")
+	assert.Contains(t, summary, "Schema: public")
+	assert.Contains(t, summary, "Schema hash: hash-1")
+	assert.Contains(t, summary, "Refreshed at: 2026-05-06T12:00:00Z")
+	assert.Contains(t, summary, "Mode: catalog")
+	assert.Contains(t, summary, "Table count: 21")
+	assert.Contains(t, summary, "Additional tables omitted: 5")
+	assert.Contains(t, summary, "Tables: customers, orders, shipments")
+	assert.Contains(t, summary, "Foreign keys:")
+	assert.Contains(t, summary, "orders.customer_id -> customers.id")
+	assert.Contains(t, summary, "Possible join hints:")
+	assert.Contains(t, summary, "shipments.order_id = orders.id")
 }

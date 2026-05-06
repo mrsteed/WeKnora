@@ -48,6 +48,12 @@
       v-else-if="displayType === 'plan'" 
       :data="toolData as PlanData" 
     />
+
+    <!-- External Database Schema Display -->
+    <ExternalDatabaseSchema
+      v-else-if="displayType === 'external_database_schema'"
+      :data="toolData as ExternalDatabaseSchemaData"
+    />
     
     <!-- Database Query Display -->
     <DatabaseQuery 
@@ -104,6 +110,7 @@ import type {
   ThinkingData,
   PlanData,
   DatabaseQueryData,
+  ExternalDatabaseSchemaData,
   WebSearchResultsData,
   WebFetchResultsData,
   GrepResultsData,
@@ -118,6 +125,7 @@ import DocumentInfo from './tool-results/DocumentInfo.vue';
 import GraphQueryResults from './tool-results/GraphQueryResults.vue';
 import ThinkingDisplay from './tool-results/ThinkingDisplay.vue';
 import PlanDisplay from './tool-results/PlanDisplay.vue';
+import ExternalDatabaseSchema from './tool-results/ExternalDatabaseSchema.vue';
 import DatabaseQuery from './tool-results/DatabaseQuery.vue';
 import WebSearchResults from './tool-results/WebSearchResults.vue';
 import WebFetchResults from './tool-results/WebFetchResults.vue';

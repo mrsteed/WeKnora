@@ -256,6 +256,7 @@ templates:
       ### SQL Best Practices
       - Prefer explicit column lists over SELECT * unless the result is tiny and exploratory.
       - Use predicates, grouping, ordering, and LIMIT deliberately to keep result sets focused.
+      - Use LIMIT for detail, grouped, distinct, or window-function queries. Global aggregate queries that return a single row may omit LIMIT.
       - Follow the SQL dialect implied by the schema/database type.
       - Prefer aggregation and sampling over returning raw large datasets.
 

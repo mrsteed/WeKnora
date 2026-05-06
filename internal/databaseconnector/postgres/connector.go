@@ -79,6 +79,9 @@ func (c *Connector) DiscoverSchema(ctx context.Context, cfg *types.DatabaseConne
 	if err := fetchPrimaryKeys(ctx, db, schemaName, meta); err != nil {
 		return nil, err
 	}
+	if err := fetchForeignKeys(ctx, db, schemaName, meta); err != nil {
+		return nil, err
+	}
 	if err := fetchIndexes(ctx, db, schemaName, meta); err != nil {
 		return nil, err
 	}
@@ -101,14 +104,29 @@ func (c *Connector) Query(ctx context.Context, cfg *types.DatabaseConnectionConf
 	if err != nil {
 		return nil, err
 	}
-
-	queryCtx, cancel := withDefaultTimeout(ctx, normalizedTimeout(timeout, cfg.Settings.QueryTimeoutSec))
-	rows, err := db.QueryContext(queryCtx, query)
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
-		cancel()
 		return nil, err
 	}
 	return rows, nil
+}
+
+func (c *Connector) Invalidate(_ context.Context, cfg *types.DatabaseConnectionConfig) error {
+	dsn, err := buildDSN(cfg)
+	if err != nil {
+		return err
+	}
+
+	c.mu.Lock()
+	db, ok := c.clients[dsn]
+	if ok {
+		delete(c.clients, dsn)
+	}
+	c.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	return db.Close()
 }
 
 func (c *Connector) openDB(cfg *types.DatabaseConnectionConfig) (*sql.DB, error) {
@@ -307,6 +325,76 @@ func fetchPrimaryKeys(ctx context.Context, db *sql.DB, schemaName string, meta m
 		entry.Table.PrimaryKeys = append(entry.Table.PrimaryKeys, columnName)
 	}
 	return rows.Err()
+}
+
+func fetchForeignKeys(ctx context.Context, db *sql.DB, schemaName string, meta map[string]*tableAccumulator) error {
+	rows, err := db.QueryContext(ctx, `
+		SELECT src.relname,
+		       con.conname,
+		       src_col.attname,
+		       ref.relname,
+		       ref_col.attname,
+		       src_ord.ordinality
+		FROM pg_constraint con
+		JOIN pg_class src ON src.oid = con.conrelid
+		JOIN pg_namespace n ON n.oid = src.relnamespace
+		JOIN pg_class ref ON ref.oid = con.confrelid
+		JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS src_ord(attnum, ordinality) ON TRUE
+		JOIN LATERAL unnest(con.confkey) WITH ORDINALITY AS ref_ord(attnum, ordinality)
+		  ON ref_ord.ordinality = src_ord.ordinality
+		JOIN pg_attribute src_col ON src_col.attrelid = src.oid AND src_col.attnum = src_ord.attnum
+		JOIN pg_attribute ref_col ON ref_col.attrelid = ref.oid AND ref_col.attnum = ref_ord.attnum
+		WHERE con.contype = 'f' AND n.nspname = $1
+		ORDER BY src.relname, con.conname, src_ord.ordinality
+	`, schemaName)
+	if err != nil {
+		return fmt.Errorf("discover postgres foreign keys: %w", err)
+	}
+	defer rows.Close()
+
+	type foreignKeyGroup struct {
+		tableName  string
+		foreignKey types.ForeignKeySchema
+	}
+	groups := make(map[string]*foreignKeyGroup)
+	order := make([]string, 0)
+	for rows.Next() {
+		var tableName, constraintName, columnName, referencedTableName, referencedColumnName string
+		var ordinal int
+		if err := rows.Scan(&tableName, &constraintName, &columnName, &referencedTableName, &referencedColumnName, &ordinal); err != nil {
+			return fmt.Errorf("scan postgres foreign keys: %w", err)
+		}
+		if meta[tableName] == nil {
+			continue
+		}
+		key := tableName + "\x00" + constraintName
+		group, ok := groups[key]
+		if !ok {
+			group = &foreignKeyGroup{
+				tableName: tableName,
+				foreignKey: types.ForeignKeySchema{
+					Name:            constraintName,
+					ReferencedTable: referencedTableName,
+				},
+			}
+			groups[key] = group
+			order = append(order, key)
+		}
+		group.foreignKey.Columns = append(group.foreignKey.Columns, columnName)
+		group.foreignKey.ReferencedColumns = append(group.foreignKey.ReferencedColumns, referencedColumnName)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, key := range order {
+		group := groups[key]
+		entry := meta[group.tableName]
+		if entry == nil {
+			continue
+		}
+		entry.Table.ForeignKeys = append(entry.Table.ForeignKeys, group.foreignKey)
+	}
+	return nil
 }
 
 func fetchIndexes(ctx context.Context, db *sql.DB, schemaName string, meta map[string]*tableAccumulator) error {

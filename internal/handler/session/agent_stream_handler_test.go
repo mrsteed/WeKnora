@@ -170,3 +170,45 @@ func TestHandleComplete_PartialDoesNotFallbackFromCompletePayload(t *testing.T) 
 	}
 	assert.Equal(t, 0, answerEvents)
 }
+
+func TestHandleComplete_AppendsAgentStepsToCompletePayload(t *testing.T) {
+	streamStub := &streamManagerStub{}
+	assistant := &types.Message{ID: "msg-1", SessionID: "sess-1", Role: "assistant"}
+	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", assistant, streamStub, event.NewEventBus())
+
+	steps := []types.AgentStep{{
+		Iteration: 0,
+		Thought:   "first thought",
+	}}
+
+	require.NoError(t, handler.handleComplete(context.Background(), event.Event{
+		ID: "complete-1",
+		Data: event.AgentCompleteData{
+			MessageID:        "msg-1",
+			FinalAnswer:      "final answer",
+			CompletionStatus: types.MessageCompletionStatusCompleted,
+			FinishReason:     "stop",
+			TotalDurationMs:  456,
+			AgentSteps:       steps,
+			TotalSteps:       len(steps),
+		},
+	}))
+
+	require.Len(t, streamStub.events, 3)
+	completeEvent := streamStub.events[len(streamStub.events)-1]
+	require.Equal(t, types.ResponseTypeComplete, completeEvent.Type)
+	require.NotNil(t, completeEvent.Data)
+
+	assert.Equal(t, "final answer", completeEvent.Data["final_answer"])
+	assert.Equal(t, int64(456), completeEvent.Data["agent_duration_ms"])
+	assert.Equal(t, int64(456), completeEvent.Data["total_duration_ms"])
+
+	streamedSteps, ok := completeEvent.Data["agent_steps"].(types.AgentSteps)
+	if !ok {
+		legacySteps, ok := completeEvent.Data["agent_steps"].([]types.AgentStep)
+		require.True(t, ok)
+		assert.Equal(t, steps, legacySteps)
+		return
+	}
+	assert.Equal(t, types.AgentSteps(steps), streamedSteps)
+}

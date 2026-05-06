@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/databaseconnector"
 	"github.com/Tencent/WeKnora/internal/datasource"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
@@ -27,6 +28,9 @@ type DataSourceService struct {
 	kbService         interfaces.KnowledgeBaseService
 	taskEnqueuer      interfaces.TaskEnqueuer
 	connectorRegistry *datasource.ConnectorRegistry
+	databaseRegistry  *databaseconnector.Registry
+	schemaRegistry    interfaces.SchemaRegistryService
+	schemaRepo        interfaces.DatabaseSchemaRepository
 	scheduler         *datasource.Scheduler
 	tenantRepo        interfaces.TenantRepository
 	tagService        interfaces.KnowledgeTagService
@@ -40,10 +44,16 @@ func NewDataSourceService(
 	kbService interfaces.KnowledgeBaseService,
 	taskEnqueuer interfaces.TaskEnqueuer,
 	connectorRegistry *datasource.ConnectorRegistry,
+	databaseRegistry *databaseconnector.Registry,
+	schemaRegistry interfaces.SchemaRegistryService,
+	schemaRepo interfaces.DatabaseSchemaRepository,
 	scheduler *datasource.Scheduler,
 	tenantRepo interfaces.TenantRepository,
 	tagService interfaces.KnowledgeTagService,
 ) interfaces.DataSourceService {
+	if scheduler != nil && schemaRegistry != nil {
+		scheduler.SetSchemaRegistry(schemaRegistry)
+	}
 	return &DataSourceService{
 		dsRepo:            dsRepo,
 		syncLogRepo:       syncLogRepo,
@@ -51,6 +61,9 @@ func NewDataSourceService(
 		kbService:         kbService,
 		taskEnqueuer:      taskEnqueuer,
 		connectorRegistry: connectorRegistry,
+		databaseRegistry:  databaseRegistry,
+		schemaRegistry:    schemaRegistry,
+		schemaRepo:        schemaRepo,
 		scheduler:         scheduler,
 		tenantRepo:        tenantRepo,
 		tagService:        tagService,
@@ -93,7 +106,7 @@ func (s *DataSourceService) CreateDataSource(ctx context.Context, ds *types.Data
 	}
 
 	// Register cron schedule if configured
-	if ds.SyncSchedule != "" && ds.Status == types.DataSourceStatusActive {
+	if ds.Status == types.DataSourceStatusActive && s.scheduler != nil {
 		if err := s.scheduler.AddOrUpdate(ds); err != nil {
 			logger.Warnf(ctx, "failed to register cron for ds=%s: %v", ds.ID, err)
 		}
@@ -159,6 +172,8 @@ func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.Data
 	if err := prepareDatabaseDataSourceForStorage(ds, existing); err != nil {
 		return nil, err
 	}
+	shouldRefreshDatabaseSchema := isDatabaseDataSourceType(ds.Type) && (ds.Type != existing.Type || string(ds.Config) != string(existing.Config))
+	shouldInvalidateOldConnection := shouldRefreshDatabaseSchema && databaseConnectionIdentityChanged(existing, ds)
 
 	// Validate new configuration if changed
 	if ds.Type != existing.Type || string(ds.Config) != string(existing.Config) {
@@ -170,6 +185,15 @@ func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.Data
 	if err := s.dsRepo.Update(ctx, ds); err != nil {
 		logger.Errorf(ctx, "failed to update data source: %v", err)
 		return nil, err
+	}
+
+	if shouldInvalidateOldConnection {
+		s.invalidateDatabaseConnector(ctx, existing)
+	}
+	if shouldRefreshDatabaseSchema {
+		if err := s.refreshDatabaseSchema(ctx, ds); err != nil {
+			return ds, fmt.Errorf("data source updated but schema refresh failed: %w", err)
+		}
 	}
 
 	// Update cron schedule
@@ -184,7 +208,7 @@ func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.Data
 // DeleteDataSource deletes a data source (soft delete)
 func (s *DataSourceService) DeleteDataSource(ctx context.Context, id string) error {
 	// Verify data source exists
-	_, err := s.dsRepo.FindByID(ctx, id)
+	ds, err := s.dsRepo.FindByID(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -200,6 +224,15 @@ func (s *DataSourceService) DeleteDataSource(ctx context.Context, id string) err
 	// Cancel any pending/running sync logs so queued asynq tasks won't retry
 	if err := s.syncLogRepo.CancelPendingByDataSource(ctx, id); err != nil {
 		logger.Warnf(ctx, "failed to cancel pending sync logs for ds=%s: %v", id, err)
+	}
+
+	if isDatabaseDataSourceType(ds.Type) {
+		if s.schemaRepo != nil {
+			if err := s.schemaRepo.DeleteSnapshotsByDataSource(ctx, ds.TenantID, id); err != nil {
+				logger.Warnf(ctx, "failed to cleanup database schema snapshots for ds=%s: %v", id, err)
+			}
+		}
+		s.invalidateDatabaseConnector(ctx, ds)
 	}
 
 	logger.Infof(ctx, "data source deleted: id=%s", id)
@@ -872,4 +905,55 @@ func isDatabaseDataSourceType(dataSourceType string) bool {
 func preserveDatabasePassword(password string) bool {
 	trimmed := strings.TrimSpace(password)
 	return trimmed == "" || trimmed == "***"
+}
+
+func databaseConnectionIdentityChanged(existing *types.DataSource, updated *types.DataSource) bool {
+	if existing == nil || updated == nil {
+		return false
+	}
+	if existing.Type != updated.Type {
+		return true
+	}
+	if !isDatabaseDataSourceType(existing.Type) || !isDatabaseDataSourceType(updated.Type) {
+		return false
+	}
+	existingCfg, err := existing.ParseDatabaseConnectionConfig()
+	if err != nil || existingCfg == nil {
+		return true
+	}
+	updatedCfg, err := updated.ParseDatabaseConnectionConfig()
+	if err != nil || updatedCfg == nil {
+		return true
+	}
+	return existingCfg.Credentials.Username != updatedCfg.Credentials.Username ||
+		existingCfg.Credentials.Password != updatedCfg.Credentials.Password ||
+		existingCfg.Settings.Host != updatedCfg.Settings.Host ||
+		existingCfg.Settings.Port != updatedCfg.Settings.Port ||
+		existingCfg.Settings.Database != updatedCfg.Settings.Database ||
+		existingCfg.Settings.Schema != updatedCfg.Settings.Schema ||
+		existingCfg.Settings.SSLMode != updatedCfg.Settings.SSLMode
+}
+
+func (s *DataSourceService) refreshDatabaseSchema(ctx context.Context, ds *types.DataSource) error {
+	if s.schemaRegistry == nil || ds == nil || !isDatabaseDataSourceType(ds.Type) {
+		return nil
+	}
+	return s.schemaRegistry.RefreshSchema(ctx, ds.ID)
+}
+
+func (s *DataSourceService) invalidateDatabaseConnector(ctx context.Context, ds *types.DataSource) {
+	if s.databaseRegistry == nil || ds == nil || !isDatabaseDataSourceType(ds.Type) {
+		return
+	}
+	cfg, err := ds.ParseDatabaseConnectionConfig()
+	if err != nil {
+		logger.Warnf(ctx, "failed to parse database datasource config for invalidate: ds=%s err=%v", ds.ID, err)
+		return
+	}
+	if cfg == nil {
+		return
+	}
+	if err := s.databaseRegistry.Invalidate(ctx, ds.Type, cfg); err != nil {
+		logger.Warnf(ctx, "failed to invalidate database connector cache: ds=%s type=%s err=%v", ds.ID, ds.Type, err)
+	}
 }

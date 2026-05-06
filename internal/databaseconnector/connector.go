@@ -27,6 +27,12 @@ type DatabaseConnector interface {
 	Dialect() types.SQLDialect
 }
 
+// InvalidatableConnector is implemented by connectors that keep reusable
+// pooled clients and can explicitly drop the cached handle for one config.
+type InvalidatableConnector interface {
+	Invalidate(ctx context.Context, cfg *types.DatabaseConnectionConfig) error
+}
+
 // Registry stores the available realtime database connectors.
 // It mirrors the existing datasource connector registry so container wiring and
 // later adapters can follow the same lookup pattern.
@@ -58,6 +64,20 @@ func (r *Registry) Get(connectorType string) (DatabaseConnector, error) {
 		return nil, ErrConnectorNotFound
 	}
 	return connector, nil
+}
+
+// Invalidate asks one connector to close and forget the cached client bound to
+// the supplied config. Connectors that do not cache clients may simply ignore it.
+func (r *Registry) Invalidate(ctx context.Context, connectorType string, cfg *types.DatabaseConnectionConfig) error {
+	connector, err := r.Get(connectorType)
+	if err != nil {
+		return err
+	}
+	invalidatable, ok := connector.(InvalidatableConnector)
+	if !ok {
+		return nil
+	}
+	return invalidatable.Invalidate(ctx, cfg)
 }
 
 // List returns a stable, sorted list of registered connector type names.

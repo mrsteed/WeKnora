@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ type messageServiceStub struct {
 	getMessageResult *types.Message
 	getMessageErr    error
 	updatedMessages  []*types.Message
+	updateMessageErr error
 	indexedCalls     int
 	indexedOptions   []interfaces.MessageIndexOptions
 	indexedCallCh    chan struct{}
@@ -44,6 +46,9 @@ func (s *messageServiceStub) GetMessagesBySessionBeforeTime(context.Context, str
 }
 
 func (s *messageServiceStub) UpdateMessage(_ context.Context, message *types.Message) error {
+	if s.updateMessageErr != nil {
+		return s.updateMessageErr
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	copyMsg := *message
@@ -138,6 +143,84 @@ func TestCompleteAssistantMessage_CompletedIndexesWhenAllowed(t *testing.T) {
 	assert.True(t, stub.indexedOptions[0].AllowIndexing)
 }
 
+func TestCompleteAssistantMessage_AgentModePersistsExistingSteps(t *testing.T) {
+	stub := &messageServiceStub{}
+	handler := &Handler{messageService: stub}
+	message := &types.Message{
+		ID:         "msg-1",
+		SessionID:  "sess-1",
+		RequestID:  "req-1",
+		Role:       "assistant",
+		Content:    "final content",
+		AgentSteps: types.AgentSteps{{Iteration: 0, Thought: "first thought"}},
+	}
+
+	updated := handler.completeAssistantMessage(context.Background(), message, "query", assistantCompletionOptions{
+		CompletionStatus: types.MessageCompletionStatusCompleted,
+		FinishReason:     "stop",
+		AllowIndexing:    false,
+		AllowComplete:    true,
+		AgentMode:        true,
+	})
+
+	assert.True(t, updated)
+	require.Len(t, stub.updatedMessages, 1)
+	assert.True(t, message.IsCompleted)
+	assert.Equal(t, types.MessageCompletionStatusCompleted, message.CompletionStatus)
+	assert.Equal(t, types.AgentSteps{{Iteration: 0, Thought: "first thought"}}, message.AgentSteps)
+	assert.Equal(t, types.AgentSteps{{Iteration: 0, Thought: "first thought"}}, stub.updatedMessages[0].AgentSteps)
+	assert.Equal(t, 0, stub.indexedCalls)
+}
+
+func TestCompleteAssistantMessage_AgentModeHydratesCompletionPayload(t *testing.T) {
+	stub := &messageServiceStub{}
+	handler := &Handler{messageService: stub}
+	message := &types.Message{
+		ID:        "msg-1",
+		SessionID: "sess-1",
+		RequestID: "req-1",
+		Role:      "assistant",
+	}
+
+	updated := handler.completeAssistantMessage(context.Background(), message, "query", assistantCompletionOptions{
+		CompletionStatus: types.MessageCompletionStatusCompleted,
+		FinishReason:     "tool_calls",
+		AllowIndexing:    false,
+		AllowComplete:    true,
+		AgentMode:        true,
+		FinalAnswer:      "final content",
+		AgentSteps:       types.AgentSteps{{Iteration: 0, Thought: "first thought"}},
+		AgentDurationMs:  3210,
+	})
+
+	assert.True(t, updated)
+	require.Len(t, stub.updatedMessages, 1)
+	assert.Equal(t, "final content", message.Content)
+	assert.Equal(t, types.AgentSteps{{Iteration: 0, Thought: "first thought"}}, message.AgentSteps)
+	assert.Equal(t, int64(3210), message.AgentDurationMs)
+	assert.Equal(t, types.AgentSteps{{Iteration: 0, Thought: "first thought"}}, stub.updatedMessages[0].AgentSteps)
+	assert.Equal(t, int64(3210), stub.updatedMessages[0].AgentDurationMs)
+}
+
+func TestCompletionOptionsFromComplete_MarksAgentMode(t *testing.T) {
+	options := completionOptionsFromComplete(event.AgentCompleteData{
+		CompletionStatus: types.MessageCompletionStatusCompleted,
+		FinishReason:     "stop",
+		AllowIndexing:    true,
+		AllowComplete:    true,
+		FinalAnswer:      "final content",
+		AgentSteps:       []types.AgentStep{{Iteration: 0, Thought: "first thought"}},
+		TotalDurationMs:  4567,
+	})
+
+	assert.True(t, options.AgentMode)
+	assert.Equal(t, types.MessageCompletionStatusCompleted, options.CompletionStatus)
+	assert.Equal(t, "stop", options.FinishReason)
+	assert.Equal(t, "final content", options.FinalAnswer)
+	assert.Equal(t, types.AgentSteps{{Iteration: 0, Thought: "first thought"}}, options.AgentSteps)
+	assert.Equal(t, int64(4567), options.AgentDurationMs)
+}
+
 func TestCompleteAssistantMessage_DoesNotOverrideTerminalState(t *testing.T) {
 	stub := &messageServiceStub{}
 	handler := &Handler{messageService: stub}
@@ -162,6 +245,37 @@ func TestCompleteAssistantMessage_DoesNotOverrideTerminalState(t *testing.T) {
 	assert.Empty(t, stub.updatedMessages)
 	assert.Equal(t, types.MessageCompletionStatusCancelled, message.CompletionStatus)
 	assert.Equal(t, 0, stub.indexedCalls)
+}
+
+func TestCompleteAssistantMessage_ReturnsFalseWhenUpdateFails(t *testing.T) {
+	stub := &messageServiceStub{updateMessageErr: errors.New("update failed")}
+	handler := &Handler{messageService: stub}
+	message := &types.Message{ID: "msg-1", SessionID: "sess-1", Role: "assistant", Content: "final content"}
+
+	updated := handler.completeAssistantMessage(context.Background(), message, "query", assistantCompletionOptions{
+		CompletionStatus: types.MessageCompletionStatusCompleted,
+		FinishReason:     "stop",
+		AllowIndexing:    true,
+		AllowComplete:    true,
+	})
+
+	assert.False(t, updated)
+	assert.False(t, message.IsCompleted)
+	assert.Empty(t, message.CompletionStatus)
+	assert.Empty(t, stub.updatedMessages)
+	assert.Equal(t, 0, stub.indexedCalls)
+}
+
+func TestMessageUpdateContext_PreservesTenantAfterParentCancellation(t *testing.T) {
+	baseCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	updateCtx := messageUpdateContext(baseCtx, 42)
+
+	assert.NoError(t, updateCtx.Err())
+	tenantID, ok := updateCtx.Value(types.TenantIDContextKey).(uint64)
+	assert.True(t, ok)
+	assert.Equal(t, uint64(42), tenantID)
 }
 
 func TestCompletionOptionsFromError_MarksFailedAndDisablesIndexing(t *testing.T) {

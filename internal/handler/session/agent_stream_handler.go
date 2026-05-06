@@ -544,6 +544,10 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 		if data.AgentSteps != nil {
 			if steps, ok := data.AgentSteps.([]types.AgentStep); ok {
 				h.assistantMessage.AgentSteps = steps
+				logger.Infof(h.ctx,
+					"Agent completion steps captured, session_id: %s, message_id: %s, request_id: %s, agent_steps_count: %d, completion_status: %s, finish_reason: %s",
+					h.sessionID, h.assistantMessageID, h.requestID, len(steps), data.CompletionStatus, data.FinishReason,
+				)
 			}
 		}
 	}
@@ -599,6 +603,8 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 		Timestamp: time.Now(),
 		Data: map[string]interface{}{
 			"final_answer":      h.assistantMessage.Content,
+			"agent_steps":       h.assistantMessage.AgentSteps,
+			"agent_duration_ms": data.TotalDurationMs,
 			"total_steps":       data.TotalSteps,
 			"total_duration_ms": data.TotalDurationMs,
 			"completion_status": data.CompletionStatus,

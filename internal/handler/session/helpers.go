@@ -235,10 +235,7 @@ func (h *Handler) setupStopEventHandler(
 		// Preserve whatever has been streamed so far; do not overwrite Content.
 		// Use session's tenant for message update (ctx may have effectiveTenantID when using shared agent).
 		// Use WithoutCancel so the GORM UPDATE survives the upcoming ctx.Done triggered by cancel()/client disconnect.
-		updateCtx := context.WithValue(
-			context.WithoutCancel(ctx),
-			types.TenantIDContextKey, sessionTenantID,
-		)
+		updateCtx := messageUpdateContext(ctx, sessionTenantID)
 		h.completeAssistantMessage(updateCtx, assistantMessage, "", assistantCompletionOptions{
 			CompletionStatus: "cancelled",
 			FinishReason:     "cancelled",

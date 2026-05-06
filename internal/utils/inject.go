@@ -515,6 +515,10 @@ func WithDefaultSafeFunctions() SQLValidationOption {
 			"left":              true,
 			"right":             true,
 			"now":               true,
+			"date_add":          true,
+			"date_sub":          true,
+			"date_format":       true,
+			"str_to_date":       true,
 			"current_date":      true,
 			"current_timestamp": true,
 			"date_trunc":        true,
@@ -1330,7 +1334,8 @@ func (v *sqlValidator) validateNode(node *pg_query.Node, result *SQLValidationRe
 		}
 		if tc.TypeName != nil {
 			typeName := v.getTypeName(tc.TypeName)
-			if strings.HasPrefix(strings.ToLower(typeName), "pg_") {
+			normalizedTypeName := strings.ToLower(typeName)
+			if strings.HasPrefix(normalizedTypeName, "pg_") && normalizedTypeName != "pg_catalog.interval" {
 				return fmt.Errorf("casting to system type '%s' is not allowed", typeName)
 			}
 		}

@@ -40,6 +40,7 @@ func prepareChatModel(ctx context.Context, modelService interfaces.ModelService,
 		return nil, nil, err
 	}
 
+	thinking := false
 	opt := &chat.ChatOptions{
 		Temperature:         chatManage.SummaryConfig.Temperature,
 		TopP:                chatManage.SummaryConfig.TopP,
@@ -48,7 +49,7 @@ func prepareChatModel(ctx context.Context, modelService interfaces.ModelService,
 		MaxCompletionTokens: chatManage.SummaryConfig.MaxCompletionTokens,
 		FrequencyPenalty:    chatManage.SummaryConfig.FrequencyPenalty,
 		PresencePenalty:     chatManage.SummaryConfig.PresencePenalty,
-		Thinking:            chatManage.SummaryConfig.Thinking,
+		Thinking:            &thinking,
 	}
 
 	return chatModel, opt, nil

@@ -474,3 +474,17 @@ func TestAppendToolResults_PreservesReasoningContent(t *testing.T) {
 		assert.Equal(t, "thinking", out[2].ReasoningContent)
 	})
 }
+
+func TestRedactHistoryKBResultsRedactsExternalDatabaseTools(t *testing.T) {
+	messages := []chat.Message{
+		{Role: "tool", Name: agenttools.ToolExternalDatabaseSchema, Content: "Database schema summary\nDatabase: crm", ToolCallID: "call-schema"},
+		{Role: "tool", Name: agenttools.ToolExternalDatabaseQuery, Content: "Database query summary\nRow count: 5", ToolCallID: "call-query"},
+	}
+
+	redacted := redactHistoryKBResults(messages)
+	require.Len(t, redacted, 2)
+	assert.Contains(t, redacted[0].Content, "Database schema summary")
+	assert.Contains(t, redacted[0].Content, "Database state may have changed")
+	assert.Contains(t, redacted[1].Content, "Database query summary")
+	assert.Contains(t, redacted[1].Content, "Database state may have changed")
+}

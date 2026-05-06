@@ -24,6 +24,7 @@ var (
 )
 
 var wildcardSelectPattern = regexp.MustCompile(`(?is)(^|,)\s*(?:[a-zA-Z_][\w$]*\s*\.)?\*\s*(,|from\b)`)
+var mysqlIntervalPattern = regexp.MustCompile(`(?is)\bINTERVAL\s+([+-]?\d+)\s+([a-z_]+)\b`)
 
 type sqlGuard struct{}
 
@@ -58,8 +59,6 @@ func (g *sqlGuard) Validate(
 
 	policy := buildSQLGuardPolicy(schema, cfg, dialect, requestedMaxRows, requestedTimeoutSeconds)
 	normalizedSQL := normalizeSQLForValidation(trimmedSQL, policy.dialect)
-	cteNames := extractCTENames(normalizedSQL)
-	cteTables := extractCTEBaseTables(normalizedSQL)
 	parseResult, validation := utils.ValidateSQL(
 		normalizedSQL,
 		utils.WithInputValidation(6, 4096),
@@ -74,32 +73,24 @@ func (g *sqlGuard) Validate(
 	if parseResult == nil || !parseResult.IsSelect {
 		return nil, fmt.Errorf("%w: only SELECT queries are allowed", ErrStructuredQuerySQLRequired)
 	}
-	if !hasExplicitLimit(normalizedSQL) {
+	references, err := collectSQLReferences(normalizedSQL, policy)
+	if err != nil {
+		return nil, err
+	}
+	if !references.HasExplicitLimit && !references.PureGlobalAggregate {
 		return nil, ErrStructuredQueryLimitRequired
 	}
 	if limitValue, ok := extractLimitValue(normalizedSQL); ok && limitValue > policy.maxRows {
 		return nil, fmt.Errorf("%w: limit=%d max_rows=%d", ErrStructuredQueryLimitExceeded, limitValue, policy.maxRows)
 	}
 
-	cleanedTables := make([]string, 0, len(parseResult.TableNames))
+	cleanedTables := make([]string, 0, len(references.Tables))
 	seenTables := make(map[string]struct{})
-	for _, tableName := range parseResult.TableNames {
-		cleaned := normalizeIdentifier(tableName)
-		if cleaned == "" {
+	for _, tableRef := range references.Tables {
+		tableName := normalizeIdentifier(tableRef.Table)
+		if tableName == "" {
 			continue
 		}
-		if _, isCTE := cteNames[cleaned]; isCTE {
-			continue
-		}
-		if _, allowed := policy.allowedTables[cleaned]; !allowed {
-			return nil, fmt.Errorf("%w: %s", ErrStructuredQueryTableNotAllowed, tableName)
-		}
-		if _, seen := seenTables[cleaned]; !seen {
-			seenTables[cleaned] = struct{}{}
-			cleanedTables = append(cleanedTables, cleaned)
-		}
-	}
-	for _, tableName := range cteTables {
 		if _, allowed := policy.allowedTables[tableName]; !allowed {
 			return nil, fmt.Errorf("%w: %s", ErrStructuredQueryTableNotAllowed, tableName)
 		}
@@ -113,30 +104,32 @@ func (g *sqlGuard) Validate(
 		return nil, ErrStructuredQueryTableNotAllowed
 	}
 
-	selectedFields := normalizeIdentifiers(parseResult.SelectFields)
-	referencedFields := uniqueNormalizedIdentifiers(parseResult.SelectFields, parseResult.WhereFields)
-	if isWildcardSelect(normalizedSQL) {
-		for _, tableName := range cleanedTables {
-			if len(policy.deniedColumns[tableName]) > 0 || len(policy.sensitiveColumns[tableName]) > 0 {
-				return nil, fmt.Errorf("%w: wildcard selects are not allowed when protected columns exist on %s", ErrStructuredQuerySensitiveColumn, tableName)
-			}
+	selectedFields := uniqueNormalizedStrings(references.SelectFields)
+	for _, fieldRef := range references.Columns {
+		if fieldRef.Table == "" || fieldRef.Column == "" {
+			continue
 		}
-	} else {
-		for _, field := range referencedFields {
-			if field == "" {
+		if _, ok := policy.visibleColumns[fieldRef.Table][fieldRef.Column]; !ok {
+			return nil, fmt.Errorf("%w: %s.%s", ErrStructuredQueryColumnNotAllowed, fieldRef.Table, fieldRef.Column)
+		}
+		if _, denied := policy.deniedColumns[fieldRef.Table][fieldRef.Column]; denied {
+			return nil, fmt.Errorf("%w: %s.%s", ErrStructuredQuerySensitiveColumn, fieldRef.Table, fieldRef.Column)
+		}
+		if _, sensitive := policy.sensitiveColumns[fieldRef.Table][fieldRef.Column]; sensitive {
+			return nil, fmt.Errorf("%w: %s.%s", ErrStructuredQuerySensitiveColumn, fieldRef.Table, fieldRef.Column)
+		}
+	}
+	if references.HasWildcard {
+		wildcardTables := make(map[string]struct{})
+		for _, wildcardRef := range references.Wildcards {
+			if wildcardRef.Table == "" {
 				continue
 			}
-			matchedTables := matchingTablesForColumn(field, cleanedTables, policy.visibleColumns)
-			if len(matchedTables) == 0 {
-				return nil, fmt.Errorf("%w: %s", ErrStructuredQueryColumnNotAllowed, field)
-			}
-			for _, tableName := range matchedTables {
-				if _, denied := policy.deniedColumns[tableName][field]; denied {
-					return nil, fmt.Errorf("%w: %s.%s", ErrStructuredQuerySensitiveColumn, tableName, field)
-				}
-				if _, sensitive := policy.sensitiveColumns[tableName][field]; sensitive {
-					return nil, fmt.Errorf("%w: %s.%s", ErrStructuredQuerySensitiveColumn, tableName, field)
-				}
+			wildcardTables[wildcardRef.Table] = struct{}{}
+		}
+		for tableName := range wildcardTables {
+			if len(policy.deniedColumns[tableName]) > 0 || len(policy.sensitiveColumns[tableName]) > 0 {
+				return nil, fmt.Errorf("%w: wildcard selects are not allowed when protected columns exist on %s", ErrStructuredQuerySensitiveColumn, tableName)
 			}
 		}
 	}
@@ -214,6 +207,7 @@ func normalizeSQLForValidation(sqlText string, dialect types.SQLDialect) string 
 	normalized := strings.TrimSpace(sqlText)
 	if dialect == types.SQLDialectMySQL {
 		normalized = strings.ReplaceAll(normalized, "`", `"`)
+		normalized = mysqlIntervalPattern.ReplaceAllString(normalized, "INTERVAL '$1 $2'")
 	}
 	return normalized
 }

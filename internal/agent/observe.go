@@ -23,6 +23,8 @@ import (
 // on every subsequent round — the behavior reported in issue #1008.
 const finalAnswerParseFallback = "Sorry, the model's final answer could not be parsed due to malformed output. Please try again or rephrase your question."
 
+const historyToolSummaryBudget = 900
+
 // manageContextWindow consolidates or compresses messages if approaching the token limit.
 // currentTokens is the caller's best estimate of the current context size (using
 // API-reported Usage when available, falling back to BPE estimation).
@@ -540,14 +542,69 @@ func countTotalToolCalls(steps []types.AgentStep) int {
 // may become stale across turns (KB can be switched, updated, or deleted).
 // Historical results from these tools are redacted to force fresh retrieval.
 var kbToolNames = map[string]bool{
-	agenttools.ToolKnowledgeSearch:     true,
-	agenttools.ToolGrepChunks:          true,
-	agenttools.ToolListKnowledgeChunks: true,
-	agenttools.ToolQueryKnowledgeGraph: true,
-	agenttools.ToolGetDocumentInfo:     true,
-	agenttools.ToolWikiSearch:          true,
-	agenttools.ToolWikiReadPage:        true,
-	agenttools.ToolWikiReadSourceDoc:   true,
+	agenttools.ToolKnowledgeSearch:        true,
+	agenttools.ToolGrepChunks:             true,
+	agenttools.ToolListKnowledgeChunks:    true,
+	agenttools.ToolQueryKnowledgeGraph:    true,
+	agenttools.ToolGetDocumentInfo:        true,
+	agenttools.ToolExternalDatabaseSchema: true,
+	agenttools.ToolExternalDatabaseQuery:  true,
+	agenttools.ToolWikiSearch:             true,
+	agenttools.ToolWikiReadPage:           true,
+	agenttools.ToolWikiReadSourceDoc:      true,
+}
+
+func isHistoricalDatabaseTool(toolName string) bool {
+	switch toolName {
+	case agenttools.ToolExternalDatabaseSchema, agenttools.ToolExternalDatabaseQuery:
+		return true
+	default:
+		return false
+	}
+}
+
+func summarizeToolResultForHistory(toolCall types.ToolCall) string {
+	if toolCall.Result == nil {
+		return "(no tool result)"
+	}
+	if !isHistoricalDatabaseTool(toolCall.Name) {
+		if !toolCall.Result.Success && toolCall.Result.Error != "" {
+			return fmt.Sprintf("Error: %s", toolCall.Result.Error)
+		}
+		return toolCall.Result.Output
+	}
+
+	body := ""
+	if structured := summarizeStructuredToolResult(toolCall.Name, toolCall.Result); structured != "" {
+		body = structured
+	} else if !toolCall.Result.Success && toolCall.Result.Error != "" {
+		body = fmt.Sprintf("Error: %s", toolCall.Result.Error)
+	} else {
+		body = toolCall.Result.Output
+	}
+	body = compactToolTextForFinalAnswer(body, historyToolSummaryBudget)
+
+	header := "Historical database tool summary"
+	switch toolCall.Name {
+	case agenttools.ToolExternalDatabaseSchema:
+		header = "Historical database schema summary"
+	case agenttools.ToolExternalDatabaseQuery:
+		header = "Historical database query summary"
+	}
+
+	return strings.TrimSpace(header + "\n" + body + "\nDatabase state may have changed. Re-run this tool before relying on the result.")
+}
+
+func redactHistoricalDatabaseToolContent(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return "[Historical database result omitted — database state may have changed. Please perform a fresh schema/query call.]"
+	}
+	content = compactToolTextForFinalAnswer(content, historyToolSummaryBudget)
+	if strings.Contains(content, "Database state may have changed.") {
+		return content
+	}
+	return strings.TrimSpace(content + "\nDatabase state may have changed. Perform a fresh schema/query call before relying on this historical result.")
 }
 
 // redactHistoryKBResults replaces full KB tool results in historical context
@@ -557,6 +614,15 @@ func redactHistoryKBResults(llmContext []chat.Message) []chat.Message {
 	redacted := make([]chat.Message, 0, len(llmContext))
 	for _, msg := range llmContext {
 		if msg.Role == "tool" && kbToolNames[msg.Name] {
+			if isHistoricalDatabaseTool(msg.Name) {
+				redacted = append(redacted, chat.Message{
+					Role:       msg.Role,
+					Content:    redactHistoricalDatabaseToolContent(msg.Content),
+					ToolCallID: msg.ToolCallID,
+					Name:       msg.Name,
+				})
+				continue
+			}
 			redacted = append(redacted, chat.Message{
 				Role:       msg.Role,
 				Content:    "[Previous retrieval result omitted — knowledge base may have changed. Please perform a fresh search.]",
@@ -589,7 +655,7 @@ func (e *AgentEngine) buildMessagesWithLLMContext(
 			// Redact KB tool results from previous turns to prevent the LLM
 			// from reusing stale retrieval data when the KB has been modified.
 			sanitized = redactHistoryKBResults(llmContext)
-			logger.Infof(context.Background(), "Added %d history messages to context (KB tool results redacted)", len(llmContext))
+			logger.Infof(context.Background(), "Added %d history messages to context (KB tool history sanitized)", len(llmContext))
 		}
 
 		for _, msg := range sanitized {

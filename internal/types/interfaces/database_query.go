@@ -13,6 +13,7 @@ type SchemaRegistryService interface {
 	GetDatabaseSchema(ctx context.Context, kbID string) (*types.DatabaseSchema, error)
 	GetTableSchema(ctx context.Context, kbID string, tableName string) (*types.TableSchema, error)
 	BuildPromptSchema(ctx context.Context, kbID string, selectedTables []string) (string, error)
+	BuildPromptSchemaResult(ctx context.Context, kbID string, selectedTables []string, opts types.PromptSchemaOptions) (*types.PromptSchemaBuildResult, error)
 }
 
 // StructuredQueryService validates and executes realtime external database
@@ -65,6 +66,14 @@ type DatabaseSchemaRepository interface {
 		knowledgeBaseID string,
 		tableName string,
 	) ([]*types.DatabaseTableColumn, error)
+
+	// DeleteSnapshotsByDataSource soft-deletes persisted snapshots and flattened
+	// columns for one datasource so lifecycle cleanup does not leave stale rows.
+	DeleteSnapshotsByDataSource(
+		ctx context.Context,
+		tenantID uint64,
+		dataSourceID string,
+	) error
 }
 
 // DatabaseQueryAuditRepository persists and pages external database query audit

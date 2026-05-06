@@ -193,8 +193,15 @@ const hasActualContent = computed(() => {
     return text && text.trim().length > 0;
 });
 
+/** @type {Record<string, () => string>} */
+const internalFailureReasonMessages = {
+    stream_unavailable: () => t('chat.streamUnavailable'),
+};
+
 const failureText = computed(() => {
-    return props.session?.error_message || t('chat.processError');
+    const errorMessage = props.session?.error_message || props.session?.failure_reason || '';
+    const normalizedMessage = typeof errorMessage === 'string' ? errorMessage.trim() : '';
+    return internalFailureReasonMessages[normalizedMessage]?.() || normalizedMessage || t('chat.processError');
 });
 
 const emitRetry = () => {

@@ -220,16 +220,42 @@ func summarizeDatabaseSchemaToolData(data map[string]interface{}) string {
 	if schemaName, _ := data["schema_name"].(string); strings.TrimSpace(schemaName) != "" {
 		builder.WriteString(fmt.Sprintf("Schema: %s\n", schemaName))
 	}
+	if schemaHash, _ := data["schema_hash"].(string); strings.TrimSpace(schemaHash) != "" {
+		builder.WriteString(fmt.Sprintf("Schema hash: %s\n", schemaHash))
+	}
+	if refreshedAt, _ := data["refreshed_at"].(string); strings.TrimSpace(refreshedAt) != "" {
+		builder.WriteString(fmt.Sprintf("Refreshed at: %s\n", refreshedAt))
+	}
+	if mode, _ := data["mode"].(string); strings.TrimSpace(mode) != "" {
+		builder.WriteString(fmt.Sprintf("Mode: %s\n", mode))
+	}
+	if tableCount, ok := toInt(data["table_count"]); ok {
+		builder.WriteString(fmt.Sprintf("Table count: %d\n", tableCount))
+	}
 	if allowedTables := toStringSlice(data["allowed_tables"]); len(allowedTables) > 0 {
 		sort.Strings(allowedTables)
 		builder.WriteString(fmt.Sprintf("Tables: %s\n", strings.Join(limitStringSlice(allowedTables, 8), ", ")))
-		if len(allowedTables) > 8 {
+		if additionalTables, ok := toInt(data["additional_tables_omitted"]); ok && additionalTables > 0 {
+			builder.WriteString(fmt.Sprintf("Additional tables omitted: %d\n", additionalTables))
+		} else if len(allowedTables) > 8 {
 			builder.WriteString(fmt.Sprintf("Additional tables omitted: %d\n", len(allowedTables)-8))
 		}
 	}
-	if joinHints := toStringSlice(data["join_hints"]); len(joinHints) > 0 {
-		builder.WriteString("Join hints:\n")
-		for _, hint := range limitStringSlice(joinHints, 6) {
+	if foreignKeys := toStringSlice(data["foreign_keys"]); len(foreignKeys) > 0 {
+		builder.WriteString("Foreign keys:\n")
+		for _, hint := range limitStringSlice(foreignKeys, 6) {
+			builder.WriteString("- ")
+			builder.WriteString(hint)
+			builder.WriteString("\n")
+		}
+	}
+	possibleJoinHints := toStringSlice(data["possible_join_hints"])
+	if len(possibleJoinHints) == 0 {
+		possibleJoinHints = toStringSlice(data["join_hints"])
+	}
+	if len(possibleJoinHints) > 0 {
+		builder.WriteString("Possible join hints:\n")
+		for _, hint := range limitStringSlice(possibleJoinHints, 6) {
 			builder.WriteString("- ")
 			builder.WriteString(hint)
 			builder.WriteString("\n")
@@ -263,8 +289,17 @@ func summarizeDatabaseQueryToolData(data map[string]interface{}) string {
 	if truncated, ok := data["truncated"].(bool); ok && truncated {
 		builder.WriteString("Result truncated: true\n")
 	}
+	if outputTruncated, ok := data["output_truncated"].(bool); ok && outputTruncated {
+		builder.WriteString("Output truncated: true\n")
+	}
+	if cellTruncatedCount, ok := toInt(data["cell_truncated_count"]); ok && cellTruncatedCount > 0 {
+		builder.WriteString(fmt.Sprintf("Cells truncated: %d\n", cellTruncatedCount))
+	}
 	if durationMS, ok := toInt64(data["duration_ms"]); ok {
 		builder.WriteString(fmt.Sprintf("Duration: %d ms\n", durationMS))
+	}
+	if executedSQL, _ := data["executed_sql"].(string); strings.TrimSpace(executedSQL) != "" {
+		builder.WriteString(fmt.Sprintf("Executed SQL: %s\n", compactToolTextForFinalAnswer(executedSQL, 240)))
 	}
 	rows, _ := data["rows"].([]map[string]interface{})
 	if len(rows) == 0 {

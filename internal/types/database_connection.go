@@ -45,6 +45,7 @@ type DatabaseSourceSettings struct {
 	SSLMode           string   `json:"ssl_mode,omitempty"`
 	TableAllowlist    []string `json:"table_allowlist,omitempty"`
 	ColumnDenylist    []string `json:"column_denylist,omitempty"`
+	BusinessJoinHints []string `json:"business_join_hints,omitempty"`
 	MaxRows           int      `json:"max_rows,omitempty"`
 	QueryTimeoutSec   int      `json:"query_timeout_sec,omitempty"`
 	SampleRows        int      `json:"sample_rows,omitempty"`

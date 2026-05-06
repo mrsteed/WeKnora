@@ -252,6 +252,47 @@ func TestDatabaseSchemaRepositorySkipsSoftDeletedDataSource(t *testing.T) {
 	assert.Empty(t, columns)
 }
 
+func TestDatabaseSchemaRepositoryDeleteSnapshotsByDataSource(t *testing.T) {
+	ctx := context.Background()
+	db := setupDatabaseSchemaRepoDB(t)
+	repo := NewDatabaseSchemaRepository(db)
+	ds := newSchemaTestDataSource()
+	require.NoError(t, db.Create(ds).Error)
+
+	snapshot := &types.DatabaseSchemaSnapshot{
+		TenantID:        1,
+		KnowledgeBaseID: "kb-1",
+		DataSourceID:    ds.ID,
+		DatabaseType:    types.DatabaseTypeMySQL,
+		DatabaseName:    "crm",
+		SchemaHash:      "hash-v1",
+		RefreshedAt:     time.Now().UTC(),
+	}
+	require.NoError(t, snapshot.SetSchema(&types.DatabaseSchema{DatabaseName: "crm", DatabaseType: types.DatabaseTypeMySQL}))
+	require.NoError(t, repo.ReplaceSnapshot(ctx, snapshot, []*types.DatabaseTableColumn{{
+		Table:           "orders",
+		ColumnName:      "id",
+		DataType:        "bigint",
+		OrdinalPosition: 1,
+	}}))
+
+	require.NoError(t, repo.DeleteSnapshotsByDataSource(ctx, 1, ds.ID))
+
+	latest, err := repo.GetLatestSnapshotByDataSource(ctx, 1, ds.ID)
+	require.NoError(t, err)
+	assert.Nil(t, latest)
+
+	columns, err := repo.ListColumnsByKnowledgeBase(ctx, 1, "kb-1")
+	require.NoError(t, err)
+	assert.Empty(t, columns)
+
+	var activeSnapshots int64
+	require.NoError(t, db.Model(&types.DatabaseSchemaSnapshot{}).
+		Where("tenant_id = ? AND data_source_id = ? AND deleted_at IS NULL", 1, ds.ID).
+		Count(&activeSnapshots).Error)
+	assert.Equal(t, int64(0), activeSnapshots)
+}
+
 func TestDatabaseSchemaRepositoryReplaceSnapshotRollsBackWhenNewColumnsInvalid(t *testing.T) {
 	ctx := context.Background()
 	db := setupDatabaseSchemaRepoDB(t)

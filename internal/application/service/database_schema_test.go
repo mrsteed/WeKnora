@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -101,8 +102,10 @@ func (s *stubDataSourceRepo) FindActive(context.Context) ([]*types.DataSource, e
 }
 
 type stubDatabaseSchemaRepo struct {
-	snapshot *types.DatabaseSchemaSnapshot
-	columns  []*types.DatabaseTableColumn
+	snapshot            *types.DatabaseSchemaSnapshot
+	columns             []*types.DatabaseTableColumn
+	deletedTenantID     uint64
+	deletedDataSourceID string
 }
 
 func (s *stubDatabaseSchemaRepo) ReplaceSnapshot(_ context.Context, snapshot *types.DatabaseSchemaSnapshot, columns []*types.DatabaseTableColumn) error {
@@ -127,6 +130,14 @@ func (s *stubDatabaseSchemaRepo) ListColumnsByTable(_ context.Context, _ uint64,
 		}
 	}
 	return filtered, nil
+}
+
+func (s *stubDatabaseSchemaRepo) DeleteSnapshotsByDataSource(_ context.Context, tenantID uint64, dataSourceID string) error {
+	s.deletedTenantID = tenantID
+	s.deletedDataSourceID = dataSourceID
+	s.snapshot = nil
+	s.columns = nil
+	return nil
 }
 
 func TestSchemaRegistryServiceRefreshSchemaFiltersAndPersists(t *testing.T) {
@@ -255,4 +266,95 @@ func TestSchemaRegistryServiceGetDatabaseSchemaRejectsMissingDatabaseDataSource(
 
 	_, err = svc.BuildPromptSchema(ctx, "kb-1", nil)
 	require.ErrorIs(t, err, ErrDatabaseDataSourceNotFound)
+}
+
+func TestBuildPromptSchemaFromSchemaUsesCatalogForLargeSchemas(t *testing.T) {
+	tables := make([]types.TableSchema, 0, 21)
+	for tableIndex := 0; tableIndex < 21; tableIndex++ {
+		columns := make([]types.ColumnSchema, 0, 8)
+		for columnIndex := 0; columnIndex < 8; columnIndex++ {
+			columns = append(columns, types.ColumnSchema{Name: fmt.Sprintf("col_%d", columnIndex), DataType: "varchar"})
+		}
+		tables = append(tables, types.TableSchema{Name: fmt.Sprintf("table_%02d", tableIndex), Type: "table", Columns: columns})
+	}
+
+	result, err := BuildPromptSchemaFromSchema(&types.DatabaseSchema{
+		DatabaseName: "crm",
+		SchemaName:   "public",
+		SchemaHash:   "hash-1",
+		RefreshedAt:  time.Unix(100, 0).UTC(),
+		Tables:       tables,
+	}, nil, types.PromptSchemaOptions{Mode: types.PromptSchemaModeAuto})
+	require.NoError(t, err)
+	assert.Equal(t, types.PromptSchemaModeCatalog, result.Mode)
+	assert.Equal(t, 21, result.TableCount)
+	assert.Equal(t, 168, result.ColumnCount)
+	assert.Equal(t, 48, result.AdditionalColumnsOmitted)
+	assert.Contains(t, result.Prompt, "Schema snapshot:")
+	assert.Contains(t, result.Prompt, "Schema output mode: catalog")
+	assert.Contains(t, result.Prompt, "Additional tables omitted from this view")
+}
+
+func TestBuildPromptSchemaFromSchemaUsesDetailForSelectedTables(t *testing.T) {
+	result, err := BuildPromptSchemaFromSchema(&types.DatabaseSchema{
+		DatabaseName: "crm",
+		SchemaName:   "public",
+		Tables: []types.TableSchema{
+			{Name: "orders", Type: "table", Columns: []types.ColumnSchema{{Name: "id", DataType: "bigint"}, {Name: "status", DataType: "varchar"}, {Name: "amount", DataType: "decimal"}}},
+			{Name: "customers", Type: "table", Columns: []types.ColumnSchema{{Name: "id", DataType: "bigint"}}},
+		},
+	}, []string{"orders"}, types.PromptSchemaOptions{Mode: types.PromptSchemaModeAuto})
+	require.NoError(t, err)
+	assert.Equal(t, types.PromptSchemaModeDetail, result.Mode)
+	assert.Equal(t, 1, result.TableCount)
+	assert.Equal(t, 3, result.ColumnCount)
+	assert.Contains(t, result.Prompt, "Columns:")
+	assert.NotContains(t, result.Prompt, "Representative columns")
+}
+
+func TestBuildPromptSchemaFromSchemaIncludesDialectForeignKeysAndJoinHints(t *testing.T) {
+	result, err := BuildPromptSchemaFromSchema(&types.DatabaseSchema{
+		DatabaseType:      types.DatabaseTypeMySQL,
+		DatabaseName:      "crm",
+		SchemaName:        "public",
+		BusinessJoinHints: []string{"orders.customer_id = customers.id"},
+		Tables: []types.TableSchema{{
+			Name:        "orders",
+			Type:        "table",
+			Columns:     []types.ColumnSchema{{Name: "id", DataType: "bigint"}, {Name: "customer_id", DataType: "bigint"}},
+			PrimaryKeys: []string{"id"},
+			ForeignKeys: []types.ForeignKeySchema{{Name: "fk_orders_customer", Columns: []string{"customer_id"}, ReferencedTable: "customers", ReferencedColumns: []string{"id"}}},
+		}, {
+			Name:    "customers",
+			Type:    "table",
+			Columns: []types.ColumnSchema{{Name: "id", DataType: "bigint"}},
+		}},
+	}, nil, types.PromptSchemaOptions{Mode: types.PromptSchemaModeDetail})
+	require.NoError(t, err)
+	assert.Contains(t, result.Prompt, "SQL dialect: mysql")
+	assert.Contains(t, result.Prompt, "Dialect note:")
+	assert.Contains(t, result.Prompt, "Foreign keys:")
+	assert.Contains(t, result.Prompt, "orders.customer_id -> customers.id")
+	assert.Contains(t, result.Prompt, "Possible join hints:")
+	assert.Contains(t, result.Prompt, "orders.customer_id = customers.id")
+}
+
+func TestBuildPromptSchemaFromSchemaFiltersPossibleJoinHintsToSelectedTables(t *testing.T) {
+	result, err := BuildPromptSchemaFromSchema(&types.DatabaseSchema{
+		DatabaseName: "crm",
+		SchemaName:   "public",
+		BusinessJoinHints: []string{
+			"orders.customer_id = customers.id",
+			"invoices.customer_id = customers.id",
+		},
+		Tables: []types.TableSchema{
+			{Name: "orders", Type: "table", Columns: []types.ColumnSchema{{Name: "id", DataType: "bigint"}, {Name: "customer_id", DataType: "bigint"}}},
+			{Name: "customers", Type: "table", Columns: []types.ColumnSchema{{Name: "id", DataType: "bigint"}}},
+			{Name: "invoices", Type: "table", Columns: []types.ColumnSchema{{Name: "id", DataType: "bigint"}, {Name: "customer_id", DataType: "bigint"}}},
+		},
+	}, []string{"orders", "customers"}, types.PromptSchemaOptions{Mode: types.PromptSchemaModeDetail})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"orders.customer_id = customers.id"}, result.PossibleJoinHints)
+	assert.Contains(t, result.Prompt, "orders.customer_id = customers.id")
+	assert.NotContains(t, result.Prompt, "invoices.customer_id = customers.id")
 }

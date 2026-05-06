@@ -9,7 +9,28 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/hibiken/asynq"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+type fakeSchemaRegistry struct{ refreshedID string }
+
+func (f *fakeSchemaRegistry) RefreshSchema(_ context.Context, dataSourceID string) error {
+	f.refreshedID = dataSourceID
+	return nil
+}
+func (f *fakeSchemaRegistry) GetDatabaseSchema(context.Context, string) (*types.DatabaseSchema, error) {
+	return nil, nil
+}
+func (f *fakeSchemaRegistry) GetTableSchema(context.Context, string, string) (*types.TableSchema, error) {
+	return nil, nil
+}
+func (f *fakeSchemaRegistry) BuildPromptSchema(context.Context, string, []string) (string, error) {
+	return "", nil
+}
+func (f *fakeSchemaRegistry) BuildPromptSchemaResult(context.Context, string, []string, types.PromptSchemaOptions) (*types.PromptSchemaBuildResult, error) {
+	return nil, nil
+}
 
 // ──────────────────────────────────────────────────────────────────────
 // Fake implementations for testing
@@ -65,7 +86,7 @@ func (r *fakeDataSourceRepo) FindActive(_ context.Context) ([]*types.DataSource,
 	defer r.mu.Unlock()
 	var result []*types.DataSource
 	for _, ds := range r.dataSources {
-		if ds.Status == types.DataSourceStatusActive && ds.SyncSchedule != "" {
+		if ds.Status == types.DataSourceStatusActive {
 			result = append(result, ds)
 		}
 	}
@@ -158,6 +179,23 @@ func TestScheduler_StartWithActiveDataSources(t *testing.T) {
 		Status:       types.DataSourceStatusActive,
 		SyncSchedule: "*/2 * * * * *", // every 2 seconds (6-field cron with seconds)
 	})
+	dbSource := &types.DataSource{
+		ID:       "ds-db",
+		TenantID: 1,
+		Type:     types.DatabaseTypeMySQL,
+		Status:   types.DataSourceStatusActive,
+	}
+	require.NoError(t, dbSource.SetDatabaseConnectionConfig(&types.DatabaseConnectionConfig{
+		Type:        types.DatabaseTypeMySQL,
+		Credentials: types.DatabaseCredentials{Username: "readonly", Password: "secret"},
+		Settings: types.DatabaseSourceSettings{
+			Host:              "127.0.0.1",
+			Port:              3306,
+			Database:          "crm",
+			SchemaRefreshCron: "*/5 * * * * *",
+		},
+	}))
+	_ = repo.Create(context.Background(), dbSource)
 	_ = repo.Create(context.Background(), &types.DataSource{
 		ID:           "ds-2",
 		TenantID:     1,
@@ -173,9 +211,9 @@ func TestScheduler_StartWithActiveDataSources(t *testing.T) {
 	}
 	defer scheduler.Stop()
 
-	// Only ds-1 should be registered (ds-2 is paused, not returned by FindActive)
-	if scheduler.EntryCount() != 1 {
-		t.Errorf("EntryCount() = %d, want 1", scheduler.EntryCount())
+	// ds-1 and ds-db should both be registered; ds-2 is paused.
+	if scheduler.EntryCount() != 2 {
+		t.Errorf("EntryCount() = %d, want 2", scheduler.EntryCount())
 	}
 }
 
@@ -357,4 +395,35 @@ func TestScheduler_TriggerSync_NotFound(t *testing.T) {
 	if enqueuer.count.Load() != 0 {
 		t.Error("should not enqueue for non-existent data source")
 	}
+}
+
+func TestScheduler_TriggerSync_DatabaseSchemaRefresh(t *testing.T) {
+	repo := newFakeDataSourceRepo()
+	ds := &types.DataSource{
+		ID:       "ds-db",
+		TenantID: 1,
+		Type:     types.DatabaseTypeMySQL,
+		Status:   types.DataSourceStatusActive,
+	}
+	require.NoError(t, ds.SetDatabaseConnectionConfig(&types.DatabaseConnectionConfig{
+		Type:        types.DatabaseTypeMySQL,
+		Credentials: types.DatabaseCredentials{Username: "readonly", Password: "secret"},
+		Settings: types.DatabaseSourceSettings{
+			Host:              "127.0.0.1",
+			Port:              3306,
+			Database:          "crm",
+			SchemaRefreshCron: "*/5 * * * * *",
+		},
+	}))
+	require.NoError(t, repo.Create(context.Background(), ds))
+
+	enqueuer := &fakeTaskEnqueuer{}
+	scheduler := NewScheduler(repo, newFakeSyncLogRepo(), enqueuer)
+	schemaSvc := &fakeSchemaRegistry{}
+	scheduler.SetSchemaRegistry(schemaSvc)
+
+	scheduler.triggerSync("ds-db", 1)
+
+	assert.Equal(t, "ds-db", schemaSvc.refreshedID)
+	assert.Equal(t, int64(0), enqueuer.count.Load())
 }

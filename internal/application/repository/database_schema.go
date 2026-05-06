@@ -191,6 +191,30 @@ func (r *databaseSchemaRepository) ListColumnsByTable(
 	return columns, err
 }
 
+func (r *databaseSchemaRepository) DeleteSnapshotsByDataSource(
+	ctx context.Context,
+	tenantID uint64,
+	dataSourceID string,
+) error {
+	if tenantID == 0 {
+		return errors.New("tenant id is required")
+	}
+	if dataSourceID == "" {
+		return errors.New("data source id is empty")
+	}
+	now := time.Now().UTC()
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&types.DatabaseSchemaSnapshot{}).
+			Where("tenant_id = ? AND data_source_id = ? AND deleted_at IS NULL", tenantID, dataSourceID).
+			Update("deleted_at", now).Error; err != nil {
+			return err
+		}
+		return tx.Model(&types.DatabaseTableColumn{}).
+			Where("tenant_id = ? AND data_source_id = ? AND deleted_at IS NULL", tenantID, dataSourceID).
+			Update("deleted_at", now).Error
+	})
+}
+
 func (r *databaseSchemaRepository) baseSnapshotQuery(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx).
 		Model(&types.DatabaseSchemaSnapshot{}).

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -30,6 +31,7 @@ Rules:
 type ExternalDatabaseSchemaInput struct {
 	KnowledgeBaseID string   `json:"knowledge_base_id" jsonschema:"Database knowledge base ID to inspect."`
 	Tables          []string `json:"tables,omitempty" jsonschema:"Optional table names to narrow the schema output."`
+	Mode            string   `json:"mode,omitempty" jsonschema:"Optional output mode: auto, catalog, or detail."`
 }
 
 // ExternalDatabaseSchemaTool exposes prompt-friendly schema metadata for database KBs.
@@ -67,51 +69,63 @@ func (t *ExternalDatabaseSchemaTool) Execute(ctx context.Context, args json.RawM
 	}
 
 	selectedTables := normalizeSelectedTables(input.Tables)
-	promptSchema, err := t.schemaRegistry.BuildPromptSchema(ctx, kbID, selectedTables)
+	buildResult, err := t.schemaRegistry.BuildPromptSchemaResult(
+		ctx,
+		kbID,
+		selectedTables,
+		types.PromptSchemaOptions{Mode: types.PromptSchemaMode(input.Mode)},
+	)
 	if err != nil {
 		return &types.ToolResult{Success: false, Error: "Failed to build prompt schema: " + err.Error()}, nil
 	}
 
-	schema, err := t.schemaRegistry.GetDatabaseSchema(ctx, kbID)
-	if err != nil {
-		return &types.ToolResult{Success: false, Error: "Failed to load database schema: " + err.Error()}, nil
-	}
-
-	tables := filterSchemaTables(schema.Tables, selectedTables)
-	if len(tables) == 0 {
-		return &types.ToolResult{Success: false, Error: "No tables matched the requested scope"}, nil
-	}
-
-	allowedTables := make([]string, 0, len(tables))
-	for _, table := range tables {
+	allowedTables := make([]string, 0, len(buildResult.AllTables))
+	for _, table := range buildResult.AllTables {
 		allowedTables = append(allowedTables, table.Name)
 	}
-	joinHints := inferJoinHints(tables)
-	sampleQueries := buildSampleQueries(tables)
+	visibleAllowedTables := make([]string, 0, len(buildResult.DisplayTables))
+	for _, table := range buildResult.DisplayTables {
+		visibleAllowedTables = append(visibleAllowedTables, table.Name)
+	}
+	foreignKeys := flattenForeignKeys(buildResult.DisplayTables)
+	possibleJoinHints := buildPossibleJoinHints(buildResult.DisplayTables, buildResult.PossibleJoinHints, foreignKeys)
+	sampleQueries := buildSampleQueries(buildResult.DisplayTables)
+	tableData, _ := toExternalSchemaTableData(buildResult.DisplayTables, buildResult.Mode)
 
 	return &types.ToolResult{
 		Success: true,
-		Output:  formatExternalDatabaseSchemaOutput(promptSchema, allowedTables, joinHints, sampleQueries),
+		Output:  formatExternalDatabaseSchemaOutput(buildResult, allowedTables, foreignKeys, possibleJoinHints, sampleQueries),
 		Data: map[string]interface{}{
-			"display_type":      "external_database_schema",
-			"knowledge_base_id": kbID,
-			"database_name":     schema.DatabaseName,
-			"schema_name":       schema.SchemaName,
-			"allowed_tables":    allowedTables,
-			"join_hints":        joinHints,
-			"sample_queries":    sampleQueries,
-			"tables":            toExternalSchemaTableData(tables),
+			"display_type":               "external_database_schema",
+			"knowledge_base_id":          kbID,
+			"database_name":              buildResult.DatabaseName,
+			"schema_name":                buildResult.SchemaName,
+			"schema_hash":                buildResult.SchemaHash,
+			"refreshed_at":               formatSchemaTimestamp(buildResult.RefreshedAt),
+			"mode":                       string(buildResult.Mode),
+			"table_count":                buildResult.TableCount,
+			"column_count":               buildResult.ColumnCount,
+			"additional_tables_omitted":  buildResult.AdditionalTablesOmitted,
+			"additional_columns_omitted": buildResult.AdditionalColumnsOmitted,
+			"allowed_tables":             allowedTables,
+			"foreign_keys":               foreignKeys,
+			"possible_join_hints":        possibleJoinHints,
+			"join_hints":                 possibleJoinHints,
+			"sample_queries":             sampleQueries,
+			"tables":                     tableData,
 		},
 	}, nil
 }
 
 const (
-	schemaOutputTableLimit       = 8
+	schemaOutputTableLimit       = 20
 	schemaOutputColumnLimit      = 8
 	schemaOutputJoinHintLimit    = 8
 	schemaOutputSampleQueryLimit = 4
 	schemaOutputCommentLimit     = 120
 	schemaDataIndexLimit         = 4
+	schemaCatalogColumnLimit     = 6
+	schemaCatalogIndexLimit      = 3
 )
 
 func normalizeSelectedTables(tables []string) []string {
@@ -134,37 +148,27 @@ func normalizeSelectedTables(tables []string) []string {
 	return items
 }
 
-func filterSchemaTables(tables []types.TableSchema, selected []string) []types.TableSchema {
-	if len(selected) == 0 {
-		return append([]types.TableSchema(nil), tables...)
-	}
-	selectedSet := make(map[string]struct{}, len(selected))
-	for _, table := range selected {
-		selectedSet[table] = struct{}{}
-	}
-	filtered := make([]types.TableSchema, 0, len(tables))
-	for _, table := range tables {
-		if _, ok := selectedSet[strings.ToLower(table.Name)]; ok {
-			filtered = append(filtered, table)
-		}
-	}
-	return filtered
-}
-
-func toExternalSchemaTableData(tables []types.TableSchema) []map[string]interface{} {
+func toExternalSchemaTableData(tables []types.TableSchema, mode types.PromptSchemaMode) ([]map[string]interface{}, int) {
 	tableLimit := minInt(len(tables), schemaOutputTableLimit)
 	result := make([]map[string]interface{}, 0, tableLimit)
+	totalColumnOmitted := 0
 	for tableIndex, table := range tables {
 		if tableIndex >= schemaOutputTableLimit {
 			break
 		}
-		columns := make([]map[string]interface{}, 0, minInt(len(table.Columns), schemaOutputColumnLimit))
+		columnLimit := len(table.Columns)
+		indexLimit := len(table.Indexes)
+		if mode == types.PromptSchemaModeCatalog {
+			columnLimit = minInt(len(table.Columns), schemaCatalogColumnLimit)
+			indexLimit = minInt(len(table.Indexes), schemaCatalogIndexLimit)
+		}
+		columns := make([]map[string]interface{}, 0, columnLimit)
 		sensitiveCount := 0
 		for columnIndex, column := range table.Columns {
 			if column.IsSensitive {
 				sensitiveCount++
 			}
-			if columnIndex >= schemaOutputColumnLimit {
+			if columnIndex >= columnLimit {
 				continue
 			}
 			columns = append(columns, map[string]interface{}{
@@ -175,32 +179,108 @@ func toExternalSchemaTableData(tables []types.TableSchema) []map[string]interfac
 				"is_sensitive": column.IsSensitive,
 			})
 		}
-		indexes := make([]map[string]interface{}, 0, minInt(len(table.Indexes), schemaDataIndexLimit))
+		indexes := make([]map[string]interface{}, 0, indexLimit)
 		for indexIndex, index := range table.Indexes {
-			if indexIndex >= schemaDataIndexLimit {
+			if indexIndex >= indexLimit {
 				break
 			}
 			indexes = append(indexes, map[string]interface{}{
 				"name":       index.Name,
 				"unique":     index.Unique,
-				"columns":    limitStringSlice(index.Columns, schemaOutputColumnLimit),
+				"columns":    limitStringSlice(index.Columns, schemaCatalogColumnLimit),
 				"index_type": index.IndexType,
 			})
 		}
+		additionalColumnsOmitted := maxInt(len(table.Columns)-columnLimit, 0)
+		totalColumnOmitted += additionalColumnsOmitted
 		result = append(result, map[string]interface{}{
 			"name":                       table.Name,
 			"type":                       table.Type,
 			"comment":                    truncateSchemaText(table.Comment, schemaOutputCommentLimit),
 			"primary_keys":               limitStringSlice(table.PrimaryKeys, schemaOutputColumnLimit),
+			"foreign_keys":               toExternalForeignKeyData(table.ForeignKeys),
+			"row_estimate":               table.RowEstimate,
 			"index_count":                len(table.Indexes),
 			"indexes":                    indexes,
 			"column_count":               len(table.Columns),
 			"columns":                    columns,
-			"additional_columns_omitted": maxInt(len(table.Columns)-schemaOutputColumnLimit, 0),
+			"additional_columns_omitted": additionalColumnsOmitted,
 			"sensitive_column_count":     sensitiveCount,
 		})
 	}
-	return result
+	return result, totalColumnOmitted
+}
+
+func toExternalForeignKeyData(foreignKeys []types.ForeignKeySchema) []map[string]interface{} {
+	items := make([]map[string]interface{}, 0, len(foreignKeys))
+	for _, fk := range foreignKeys {
+		items = append(items, map[string]interface{}{
+			"name":               fk.Name,
+			"columns":            append([]string(nil), fk.Columns...),
+			"referenced_table":   fk.ReferencedTable,
+			"referenced_columns": append([]string(nil), fk.ReferencedColumns...),
+		})
+	}
+	return items
+}
+
+func flattenForeignKeys(tables []types.TableSchema) []string {
+	items := make([]string, 0)
+	for _, table := range tables {
+		for _, fk := range table.ForeignKeys {
+			items = append(items, formatExternalForeignKeyHint(table.Name, fk))
+		}
+	}
+	sort.Strings(items)
+	return items
+}
+
+func formatExternalForeignKeyHint(tableName string, fk types.ForeignKeySchema) string {
+	return tableName + "." + formatExternalForeignKeyTarget(fk)
+}
+
+func formatExternalForeignKeyTarget(fk types.ForeignKeySchema) string {
+	sourceColumns := strings.Join(fk.Columns, ", ")
+	targetColumns := strings.Join(fk.ReferencedColumns, ", ")
+	if len(fk.Columns) == 1 && len(fk.ReferencedColumns) == 1 {
+		return fmt.Sprintf("%s -> %s.%s", sourceColumns, fk.ReferencedTable, targetColumns)
+	}
+	return fmt.Sprintf("(%s) -> %s(%s)", sourceColumns, fk.ReferencedTable, targetColumns)
+}
+
+func buildPossibleJoinHints(tables []types.TableSchema, configuredHints []string, foreignKeys []string) []string {
+	seenForeignKeys := make(map[string]struct{}, len(foreignKeys))
+	for _, item := range foreignKeys {
+		seenForeignKeys[item] = struct{}{}
+	}
+	seen := make(map[string]struct{})
+	items := make([]string, 0, len(configuredHints))
+	for _, hint := range configuredHints {
+		trimmed := strings.TrimSpace(hint)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seenForeignKeys[trimmed]; ok {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		items = append(items, trimmed)
+	}
+	for _, hint := range inferJoinHints(tables) {
+		if _, ok := seenForeignKeys[hint]; ok {
+			continue
+		}
+		if _, ok := seen[hint]; ok {
+			continue
+		}
+		seen[hint] = struct{}{}
+		items = append(items, hint)
+	}
+	sort.Strings(items)
+	return items
 }
 
 func inferJoinHints(tables []types.TableSchema) []string {
@@ -304,19 +384,40 @@ func buildSampleQueries(tables []types.TableSchema) []string {
 	return queries
 }
 
-func formatExternalDatabaseSchemaOutput(promptSchema string, allowedTables []string, joinHints []string, sampleQueries []string) string {
+func formatExternalDatabaseSchemaOutput(
+	buildResult *types.PromptSchemaBuildResult,
+	allowedTables []string,
+	foreignKeys []string,
+	possibleJoinHints []string,
+	sampleQueries []string,
+) string {
 	var builder strings.Builder
 	builder.WriteString("=== External Database Schema ===\n\n")
-	builder.WriteString(promptSchema)
+	if buildResult != nil {
+		builder.WriteString(buildResult.Prompt)
+	}
 	builder.WriteString("\n\n=== Allowed Query Scope ===\n")
-	for _, table := range allowedTables {
+	visibleTables := limitStringSlice(allowedTables, schemaOutputTableLimit)
+	for _, table := range visibleTables {
 		builder.WriteString("- ")
 		builder.WriteString(table)
 		builder.WriteString("\n")
 	}
-	if len(joinHints) > 0 {
-		builder.WriteString("\n=== Join Hints ===\n")
-		for _, hint := range joinHints {
+	if len(allowedTables) > len(visibleTables) {
+		builder.WriteString(fmt.Sprintf("Additional tables omitted from scope list: %d\n", len(allowedTables)-len(visibleTables)))
+	}
+	if len(foreignKeys) > 0 {
+		builder.WriteString("\n=== Foreign Keys ===\n")
+		for _, hint := range limitStringSlice(foreignKeys, schemaOutputJoinHintLimit) {
+			builder.WriteString("- ")
+			builder.WriteString(hint)
+			builder.WriteString("\n")
+		}
+	}
+	if len(possibleJoinHints) > 0 {
+		builder.WriteString("\n=== Possible Join Hints ===\n")
+		builder.WriteString("Treat these as candidate relationships that still need confirmation from business semantics.\n")
+		for _, hint := range limitStringSlice(possibleJoinHints, schemaOutputJoinHintLimit) {
 			builder.WriteString("- ")
 			builder.WriteString(hint)
 			builder.WriteString("\n")
@@ -324,13 +425,20 @@ func formatExternalDatabaseSchemaOutput(promptSchema string, allowedTables []str
 	}
 	if len(sampleQueries) > 0 {
 		builder.WriteString("\n=== Sample Queries ===\n")
-		for _, query := range sampleQueries {
+		for _, query := range limitStringSlice(sampleQueries, schemaOutputSampleQueryLimit) {
 			builder.WriteString("- ")
 			builder.WriteString(query)
 			builder.WriteString("\n")
 		}
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+func formatSchemaTimestamp(ts time.Time) string {
+	if ts.IsZero() {
+		return ""
+	}
+	return ts.UTC().Format(time.RFC3339)
 }
 
 func summarizeSchemaColumns(columns []types.ColumnSchema, limit int) string {

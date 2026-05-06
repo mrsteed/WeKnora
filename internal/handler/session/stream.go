@@ -82,6 +82,12 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 		return
 	}
 
+	if message.IsTerminal() {
+		logger.Infof(ctx, "Message is already terminal, returning terminal stream state, session ID: %s, message ID: %s", sessionID, messageID)
+		h.emitTerminalStreamState(c, message)
+		return
+	}
+
 	// Get initial events from stream (offset 0)
 	events, currentOffset, err := h.streamManager.GetEvents(ctx, sessionID, messageID, 0)
 	if err != nil {
@@ -174,30 +180,28 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 }
 
 func (h *Handler) recoverMissingStreamState(ctx context.Context, c *gin.Context, message *types.Message) {
+	options := assistantCompletionOptions{
+		AllowIndexing: false,
+		AllowComplete: false,
+	}
+	if strings.TrimSpace(message.Content) != "" {
+		options.CompletionStatus = types.MessageCompletionStatusPartial
+		options.FinishReason = "stream_unavailable"
+		options.FailureReason = "stream_unavailable"
+	} else {
+		options.CompletionStatus = types.MessageCompletionStatusFailed
+		options.FinishReason = "stream_unavailable"
+		options.FailureReason = "stream_unavailable"
+	}
+
+	h.completeAssistantMessage(ctx, message, "", options)
+	h.emitTerminalStreamState(c, message)
+}
+
+func (h *Handler) emitTerminalStreamState(c *gin.Context, message *types.Message) {
 	completionStatus := message.CompletionStatusOrLegacy()
 	finishReason := message.FinishReason
 	failureReason := message.FailureReason
-
-	if !message.IsTerminal() {
-		options := assistantCompletionOptions{
-			AllowIndexing: false,
-			AllowComplete: false,
-		}
-		if strings.TrimSpace(message.Content) != "" {
-			options.CompletionStatus = types.MessageCompletionStatusPartial
-			options.FinishReason = "stream_unavailable"
-			options.FailureReason = "stream_unavailable"
-		} else {
-			options.CompletionStatus = types.MessageCompletionStatusFailed
-			options.FinishReason = "stream_unavailable"
-			options.FailureReason = "stream_unavailable"
-		}
-
-		h.completeAssistantMessage(ctx, message, "", options)
-		completionStatus = message.CompletionStatus
-		finishReason = message.FinishReason
-		failureReason = message.FailureReason
-	}
 
 	setSSEHeaders(c)
 	c.SSEvent("message", &types.StreamResponse{

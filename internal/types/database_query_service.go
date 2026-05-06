@@ -2,6 +2,15 @@ package types
 
 import "time"
 
+const (
+	QueryLLMRowDetailLimit     = 30
+	QueryLLMColumnDetailLimit  = 12
+	QueryLLMCellCharLimit      = 300
+	QueryLLMOutputCharBudget   = 12000
+	QueryFrontendRowLimit      = 200
+	QueryFrontendCellCharLimit = 1000
+)
+
 // ValidateSQLRequest carries the minimum inputs required to validate one
 // candidate SQL statement for a database knowledge base before execution.
 // MaxRows and TimeoutSeconds are optional per-call overrides that are clamped

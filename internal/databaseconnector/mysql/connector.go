@@ -75,6 +75,9 @@ func (c *Connector) DiscoverSchema(ctx context.Context, cfg *types.DatabaseConne
 	if err := fetchPrimaryKeys(ctx, db, cfg.Settings.Database, meta); err != nil {
 		return nil, err
 	}
+	if err := fetchForeignKeys(ctx, db, cfg.Settings.Database, meta); err != nil {
+		return nil, err
+	}
 	if err := fetchIndexes(ctx, db, cfg.Settings.Database, meta); err != nil {
 		return nil, err
 	}
@@ -98,14 +101,29 @@ func (c *Connector) Query(ctx context.Context, cfg *types.DatabaseConnectionConf
 	if err != nil {
 		return nil, err
 	}
-
-	queryCtx, cancel := withDefaultTimeout(ctx, normalizedTimeout(timeout, cfg.Settings.QueryTimeoutSec))
-	rows, err := db.QueryContext(queryCtx, query)
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
-		cancel()
 		return nil, err
 	}
 	return rows, nil
+}
+
+func (c *Connector) Invalidate(_ context.Context, cfg *types.DatabaseConnectionConfig) error {
+	dsn, err := buildDSN(cfg)
+	if err != nil {
+		return err
+	}
+
+	c.mu.Lock()
+	db, ok := c.clients[dsn]
+	if ok {
+		delete(c.clients, dsn)
+	}
+	c.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	return db.Close()
 }
 
 func (c *Connector) openDB(cfg *types.DatabaseConnectionConfig) (*sql.DB, error) {
@@ -305,6 +323,63 @@ func fetchPrimaryKeys(ctx context.Context, db *sql.DB, databaseName string, meta
 		entry.Table.PrimaryKeys = append(entry.Table.PrimaryKeys, columnName)
 	}
 	return rows.Err()
+}
+
+func fetchForeignKeys(ctx context.Context, db *sql.DB, databaseName string, meta map[string]*tableAccumulator) error {
+	rows, err := db.QueryContext(ctx, `
+		SELECT table_name, constraint_name, column_name, referenced_table_name, referenced_column_name, ordinal_position
+		FROM information_schema.key_column_usage
+		WHERE table_schema = ? AND referenced_table_name IS NOT NULL
+		ORDER BY table_name, constraint_name, ordinal_position
+	`, databaseName)
+	if err != nil {
+		return fmt.Errorf("discover mysql foreign keys: %w", err)
+	}
+	defer rows.Close()
+
+	type foreignKeyGroup struct {
+		tableName  string
+		foreignKey types.ForeignKeySchema
+	}
+	groups := make(map[string]*foreignKeyGroup)
+	order := make([]string, 0)
+	for rows.Next() {
+		var tableName, constraintName, columnName, referencedTableName, referencedColumnName string
+		var ordinal int
+		if err := rows.Scan(&tableName, &constraintName, &columnName, &referencedTableName, &referencedColumnName, &ordinal); err != nil {
+			return fmt.Errorf("scan mysql foreign keys: %w", err)
+		}
+		if meta[tableName] == nil {
+			continue
+		}
+		key := tableName + "\x00" + constraintName
+		group, ok := groups[key]
+		if !ok {
+			group = &foreignKeyGroup{
+				tableName: tableName,
+				foreignKey: types.ForeignKeySchema{
+					Name:            constraintName,
+					ReferencedTable: referencedTableName,
+				},
+			}
+			groups[key] = group
+			order = append(order, key)
+		}
+		group.foreignKey.Columns = append(group.foreignKey.Columns, columnName)
+		group.foreignKey.ReferencedColumns = append(group.foreignKey.ReferencedColumns, referencedColumnName)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, key := range order {
+		group := groups[key]
+		entry := meta[group.tableName]
+		if entry == nil {
+			continue
+		}
+		entry.Table.ForeignKeys = append(entry.Table.ForeignKeys, group.foreignKey)
+	}
+	return nil
 }
 
 func fetchIndexes(ctx context.Context, db *sql.DB, databaseName string, meta map[string]*tableAccumulator) error {

@@ -34,6 +34,9 @@ func (s *stubSchemaRegistryService) GetTableSchema(context.Context, string, stri
 func (s *stubSchemaRegistryService) BuildPromptSchema(context.Context, string, []string) (string, error) {
 	return "", nil
 }
+func (s *stubSchemaRegistryService) BuildPromptSchemaResult(context.Context, string, []string, types.PromptSchemaOptions) (*types.PromptSchemaBuildResult, error) {
+	return nil, nil
+}
 
 type stubDatabaseQueryAuditRepo struct {
 	logs []*types.DatabaseQueryAuditLog
@@ -227,6 +230,26 @@ func TestStructuredQueryServiceValidateSQLSupportsMySQLQuotedIdentifiers(t *test
 	assert.Equal(t, []string{"id"}, validated.SelectFields)
 }
 
+func TestStructuredQueryServiceValidateSQLSupportsMySQLDateFunctions(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypeMySQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables: []types.TableSchema{{
+			Name:    "orders",
+			Columns: []types.ColumnSchema{{Name: "id"}, {Name: "created_at"}},
+		}},
+	})
+
+	validated, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "SELECT DATE_FORMAT(DATE_SUB(created_at, INTERVAL 7 DAY), '%Y-%m-%d') FROM orders LIMIT 10",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, types.SQLDialectMySQL, validated.Dialect)
+	assert.Equal(t, []string{"orders"}, validated.Tables)
+}
+
 func TestStructuredQueryServiceValidateSQLClampsRequestToDataSourcePolicy(t *testing.T) {
 	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
 	svc, _ := newStructuredQueryServiceForTestWithSettings(t, connector, &types.DatabaseSchema{
@@ -309,6 +332,261 @@ func TestStructuredQueryServiceValidateSQLSupportsSchemaQualifiedAndPostgresQuot
 	require.NoError(t, err)
 	assert.Equal(t, []string{"orders"}, validated.Tables)
 	assert.Equal(t, []string{"id"}, validated.SelectFields)
+}
+
+func TestStructuredQueryServiceRejectsSensitiveColumnInOrderBy(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables: []types.TableSchema{{
+			Name: "customers",
+			Columns: []types.ColumnSchema{{
+				Name: "id",
+			}, {
+				Name:        "phone",
+				IsSensitive: true,
+			}},
+		}},
+	})
+
+	_, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "SELECT id FROM customers ORDER BY phone LIMIT 10",
+	})
+	require.ErrorIs(t, err, ErrStructuredQuerySensitiveColumn)
+}
+
+func TestStructuredQueryServiceRejectsSensitiveColumnInGroupBy(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables: []types.TableSchema{{
+			Name: "customers",
+			Columns: []types.ColumnSchema{{
+				Name: "id",
+			}, {
+				Name:        "phone",
+				IsSensitive: true,
+			}},
+		}},
+	})
+
+	_, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "SELECT COUNT(*) FROM customers GROUP BY phone LIMIT 10",
+	})
+	require.ErrorIs(t, err, ErrStructuredQuerySensitiveColumn)
+}
+
+func TestStructuredQueryServiceRejectsSensitiveColumnInHaving(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables: []types.TableSchema{{
+			Name: "customers",
+			Columns: []types.ColumnSchema{{
+				Name: "id",
+			}, {
+				Name:        "phone",
+				IsSensitive: true,
+			}},
+		}},
+	})
+
+	_, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "SELECT COUNT(*) FROM customers GROUP BY id HAVING MAX(phone) IS NOT NULL LIMIT 10",
+	})
+	require.ErrorIs(t, err, ErrStructuredQuerySensitiveColumn)
+}
+
+func TestStructuredQueryServiceRejectsSensitiveColumnInJoinOn(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables: []types.TableSchema{{
+			Name: "customers",
+			Columns: []types.ColumnSchema{{
+				Name: "id",
+			}, {
+				Name:        "phone",
+				IsSensitive: true,
+			}},
+		}, {
+			Name: "orders",
+			Columns: []types.ColumnSchema{{
+				Name: "id",
+			}, {
+				Name: "customer_phone",
+			}},
+		}},
+	})
+
+	_, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "SELECT orders.id FROM orders JOIN customers ON orders.customer_phone = customers.phone LIMIT 10",
+	})
+	require.ErrorIs(t, err, ErrStructuredQuerySensitiveColumn)
+}
+
+func TestStructuredQueryServiceRejectsSensitiveColumnBesideSafeWildcard(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables: []types.TableSchema{{
+			Name:    "orders",
+			Columns: []types.ColumnSchema{{Name: "id"}, {Name: "customer_id"}},
+		}, {
+			Name: "customers",
+			Columns: []types.ColumnSchema{{
+				Name: "id",
+			}, {
+				Name:        "phone",
+				IsSensitive: true,
+			}},
+		}},
+	})
+
+	_, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "SELECT orders.*, customers.phone FROM orders JOIN customers ON orders.customer_id = customers.id LIMIT 10",
+	})
+	require.ErrorIs(t, err, ErrStructuredQuerySensitiveColumn)
+}
+
+func TestStructuredQueryServiceRejectsAmbiguousUnqualifiedColumnInMultiTableQuery(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables: []types.TableSchema{{
+			Name:    "orders",
+			Columns: []types.ColumnSchema{{Name: "id"}, {Name: "status"}},
+		}, {
+			Name:    "shipments",
+			Columns: []types.ColumnSchema{{Name: "id"}, {Name: "status"}},
+		}},
+	})
+
+	_, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "SELECT orders.id FROM orders JOIN shipments ON orders.id = shipments.id ORDER BY status LIMIT 10",
+	})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "ambiguous")
+}
+
+func TestStructuredQueryServiceAllowsGlobalAggregateWithoutLimit(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables:       []types.TableSchema{{Name: "orders", Columns: []types.ColumnSchema{{Name: "id"}}}},
+	})
+
+	validated, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "SELECT COUNT(*) FROM orders",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, validated)
+}
+
+func TestStructuredQueryServiceAllowsDistinctGlobalAggregateWithoutLimit(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables:       []types.TableSchema{{Name: "orders", Columns: []types.ColumnSchema{{Name: "id"}}}},
+	})
+
+	validated, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "SELECT DISTINCT COUNT(*) FROM orders",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, validated)
+}
+
+func TestStructuredQueryServiceRequiresLimitForGroupedAggregate(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables:       []types.TableSchema{{Name: "orders", Columns: []types.ColumnSchema{{Name: "status"}}}},
+	})
+
+	_, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "SELECT status, COUNT(*) FROM orders GROUP BY status",
+	})
+	require.ErrorIs(t, err, ErrStructuredQueryLimitRequired)
+}
+
+func TestStructuredQueryServiceRejectsUnknownColumnInOrderBy(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables:       []types.TableSchema{{Name: "orders", Columns: []types.ColumnSchema{{Name: "id"}, {Name: "status"}}}},
+	})
+
+	_, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "SELECT id FROM orders ORDER BY created_at LIMIT 10",
+	})
+	require.ErrorIs(t, err, ErrStructuredQueryColumnNotAllowed)
+}
+
+func TestStructuredQueryServiceRejectsSensitiveColumnInWindowClause(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables: []types.TableSchema{{
+			Name: "customers",
+			Columns: []types.ColumnSchema{{
+				Name: "id",
+			}, {
+				Name:        "phone",
+				IsSensitive: true,
+			}},
+		}},
+	})
+
+	_, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "SELECT ROW_NUMBER() OVER (PARTITION BY phone ORDER BY id) FROM customers LIMIT 10",
+	})
+	require.ErrorIs(t, err, ErrStructuredQuerySensitiveColumn)
+}
+
+func TestStructuredQueryServiceRejectsSensitiveColumnInsideCTE(t *testing.T) {
+	connector := &stubQueryConnector{typeName: types.DatabaseTypePostgreSQL}
+	svc, _ := newStructuredQueryServiceForTest(t, connector, &types.DatabaseSchema{
+		TenantID:     1,
+		DataSourceID: "ds-1",
+		Tables: []types.TableSchema{{
+			Name: "customers",
+			Columns: []types.ColumnSchema{{
+				Name: "id",
+			}, {
+				Name:        "phone",
+				IsSensitive: true,
+			}},
+		}},
+	})
+
+	_, err := svc.ValidateSQL(context.Background(), types.ValidateSQLRequest{
+		KnowledgeBaseID: "kb-1",
+		SQL:             "WITH recent_customers AS (SELECT phone FROM customers) SELECT phone FROM recent_customers LIMIT 10",
+	})
+	require.ErrorIs(t, err, ErrStructuredQuerySensitiveColumn)
 }
 
 func newStructuredQueryServiceForTest(

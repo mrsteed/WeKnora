@@ -241,6 +241,14 @@ const getUserQuery = (index) => {
 
 const terminalCompletionStatuses = new Set(['completed', 'partial', 'failed', 'cancelled']);
 const longDocumentTaskTriggerRE = /(全文翻译|完整翻译|整篇翻译|翻译成\s*markdown|markdown文件|translate (the )?full document|translate to markdown|export markdown)/i;
+const internalFailureReasonMessages = {
+    stream_unavailable: () => t('chat.streamUnavailable'),
+};
+
+const normalizeFailureMessage = (reason) => {
+    const normalizedReason = typeof reason === 'string' ? reason.trim() : '';
+    return internalFailureReasonMessages[normalizedReason]?.() || normalizedReason;
+};
 
 const normalizeCompletionStatus = (message = {}) => {
     if (message?.data?.completion_status) {
@@ -289,7 +297,7 @@ const syncMessageCompletionState = (message, payload = {}) => {
     message.is_failed = nextStatus === 'failed';
 
     if (message.is_failed && !message.error_message && message.failure_reason) {
-        message.error_message = message.failure_reason;
+        message.error_message = normalizeFailureMessage(message.failure_reason);
     }
 
     return nextStatus;
@@ -326,6 +334,46 @@ const upsertAgentCompleteEvent = (message, payload = {}) => {
 };
 
 const isMessageTerminal = (message) => isTerminalCompletionStatus(normalizeCompletionStatus(message));
+
+const findMessageByStreamId = (streamId) => {
+    if (!streamId) {
+        return null;
+    }
+    return messagesList.findLast((item) => item.request_id === streamId || item.id === streamId) || null;
+};
+
+const getRecoverableAssistantMessages = (items = []) => {
+    return items.filter((message) => message?.role === 'assistant' && !isMessageTerminal(message));
+};
+
+const recoverHistoricalAssistantMessages = async (items = []) => {
+    const recoverableMessages = getRecoverableAssistantMessages(items);
+    if (!recoverableMessages.length) {
+        return;
+    }
+
+    const previousAssistantMessageId = currentAssistantMessageId.value;
+    const previousReplying = isReplying.value;
+    const previousLoading = loading.value;
+
+    try {
+        for (const message of recoverableMessages) {
+            if (!message?.id || isMessageTerminal(message)) {
+                continue;
+            }
+            await startStream({
+                session_id: session_id.value,
+                query: message.id,
+                method: 'GET',
+                url: '/api/v1/sessions/continue-stream'
+            });
+        }
+    } finally {
+        currentAssistantMessageId.value = previousAssistantMessageId;
+        isReplying.value = previousReplying;
+        loading.value = previousLoading;
+    }
+};
 
 const buildLocalAssistantMessage = (isAgentMode = false) => {
     const localId = `local-assistant-${Date.now()}`;
@@ -830,6 +878,7 @@ const reconstructEventStreamFromSteps = (
 };
 const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
     let chatlist = data.reverse()
+    const loadedMessages = [];
     for (let i = 0, len = chatlist.length; i < len; i++) {
         let item = chatlist[i];
         item.isAgentMode = false; // Agent 模式标记
@@ -884,6 +933,7 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
         // 保持为空；botmsg.vue 会因 hasActualContent=false 不渲染内容区和 toolbar。
         // 此前这里会兜底为 "chat.cannotAnswer"，会让停止场景显示误导性文案并出现复制按钮。
         messagesList.unshift(item);
+        loadedMessages.push(item);
         if (isFirstEnter.value) {
             scrollToBottom(true);
         } else if (isScrollType) {
@@ -893,16 +943,8 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
             })
         }
     }
-    if (messagesList[messagesList.length - 1] && !messagesList[messagesList.length - 1].is_completed) {
-        isReplying.value = true;
-        // 保存正在 stream 的消息 ID，以便停止时使用
-        const lastMessage = messagesList[messagesList.length - 1];
-        if (lastMessage.role === 'assistant') {
-            currentAssistantMessageId.value = lastMessage.id;
-            console.log('[Continue Stream] Set assistant message ID:', lastMessage.id);
-        }
-        await startStream({ session_id: session_id.value, query: lastMessage.id, method: 'GET', url: '/api/v1/sessions/continue-stream' });
-    }
+
+    await recoverHistoricalAssistantMessages(loadedMessages);
 
 }
 const checkmenuTitle = (session_id) => {
@@ -1176,8 +1218,8 @@ onChunk((data) => {
                                data.response_type === 'reflection';
     
     // 检查当前消息是否已经是 Agent 模式
-    const lastMessage = messagesList[messagesList.length - 1];
-    const isCurrentlyAgentMode = lastMessage?.isAgentMode === true;
+    const targetMessage = findMessageByStreamId(data.id);
+    const isCurrentlyAgentMode = targetMessage?.isAgentMode === true;
     
     // 如果是 Agent 专有的响应类型，或者当前消息已经是 Agent 模式，则走 Agent 处理
     const shouldHandleAsAgent = isAgentOnlyResponse || isCurrentlyAgentMode;

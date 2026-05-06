@@ -52,6 +52,26 @@ func answerCompletionEventData(response types.StreamResponse, content string, do
 	}
 }
 
+func emitFinalAnswerEvent(
+	ctx context.Context,
+	eventBus types.EventBusInterface,
+	answerID string,
+	chatManage *types.ChatManage,
+	response types.StreamResponse,
+	content string,
+	done bool,
+) {
+	if eventBus == nil || chatManage == nil {
+		return
+	}
+	_ = eventBus.Emit(ctx, types.Event{
+		ID:        answerID,
+		Type:      types.EventType(event.EventAgentFinalAnswer),
+		SessionID: chatManage.SessionID,
+		Data:      answerCompletionEventData(response, content, done),
+	})
+}
+
 // PluginChatCompletionStream implements streaming chat completion functionality
 // as a plugin that can be registered to EventManager
 type PluginChatCompletionStream struct {
@@ -149,18 +169,31 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 		var finalContent string
 		var thinkingStarted bool
 		var thinkingEnded bool
+		var completionEmitted bool
+
+		emitCompletionIfMissing := func(finishReason string) {
+			if completionEmitted {
+				return
+			}
+			if finishReason == "" {
+				finishReason = "stop"
+			}
+			if thinkingStarted && !thinkingEnded {
+				thinkingEnded = true
+				finalContent += "</think>"
+				emitFinalAnswerEvent(ctx, eventBus, answerID, chatManage, types.StreamResponse{FinishReason: finishReason}, "</think>", false)
+			}
+			if finalContent != "" {
+				chatManage.ChatResponse = &types.ChatResponse{Content: finalContent}
+			}
+			completionEmitted = true
+			emitFinalAnswerEvent(ctx, eventBus, answerID, chatManage, types.StreamResponse{FinishReason: finishReason}, "", true)
+		}
 
 		for {
 			select {
 			case <-ctx.Done():
-				if thinkingStarted && !thinkingEnded {
-					eventBus.Emit(ctx, types.Event{
-						ID:        answerID,
-						Type:      types.EventType(event.EventAgentFinalAnswer),
-						SessionID: chatManage.SessionID,
-						Data:      answerCompletionEventData(types.StreamResponse{FinishReason: "cancelled"}, "</think>", true),
-					})
-				}
+				emitCompletionIfMissing("cancelled")
 				pipelineInfo(ctx, "Stream", "context_cancelled", map[string]interface{}{
 					"session_id": chatManage.SessionID,
 				})
@@ -168,15 +201,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 
 			case response, ok := <-responseChan:
 				if !ok {
-					if thinkingStarted && !thinkingEnded {
-						finalContent += "</think>"
-						eventBus.Emit(ctx, types.Event{
-							ID:        answerID,
-							Type:      types.EventType(event.EventAgentFinalAnswer),
-							SessionID: chatManage.SessionID,
-							Data:      answerCompletionEventData(types.StreamResponse{}, "</think>", true),
-						})
-					}
+					emitCompletionIfMissing("stop")
 					pipelineInfo(ctx, "Stream", "channel_close", map[string]interface{}{
 						"session_id": chatManage.SessionID,
 					})
@@ -212,12 +237,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 						thinkingEnded = true
 					}
 					finalContent += content
-					eventBus.Emit(ctx, types.Event{
-						ID:        answerID,
-						Type:      types.EventType(event.EventAgentFinalAnswer),
-						SessionID: chatManage.SessionID,
-						Data:      answerCompletionEventData(response, content, false),
-					})
+					emitFinalAnswerEvent(ctx, eventBus, answerID, chatManage, response, content, false)
 					continue
 				}
 
@@ -225,20 +245,14 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 					if thinkingStarted && !thinkingEnded {
 						thinkingEnded = true
 						finalContent += "</think>"
-						eventBus.Emit(ctx, types.Event{
-							ID:        answerID,
-							Type:      types.EventType(event.EventAgentFinalAnswer),
-							SessionID: chatManage.SessionID,
-							Data:      answerCompletionEventData(response, "</think>", false),
-						})
+						emitFinalAnswerEvent(ctx, eventBus, answerID, chatManage, response, "</think>", false)
 					}
 					finalContent += response.Content
-					eventBus.Emit(ctx, types.Event{
-						ID:        answerID,
-						Type:      types.EventType(event.EventAgentFinalAnswer),
-						SessionID: chatManage.SessionID,
-						Data:      answerCompletionEventData(response, response.Content, response.Done),
-					})
+					if response.Done {
+						completionEmitted = true
+						chatManage.ChatResponse = &types.ChatResponse{Content: finalContent}
+					}
+					emitFinalAnswerEvent(ctx, eventBus, answerID, chatManage, response, response.Content, response.Done)
 				}
 			}
 		}

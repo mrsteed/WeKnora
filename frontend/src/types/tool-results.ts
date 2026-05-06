@@ -19,6 +19,7 @@ export type DisplayType =
     | 'plan'
     | 'database_query'
     | 'external_database_query'
+    | 'external_database_schema'
     | 'web_search_results'
     | 'web_fetch_results'
     | 'grep_results'
@@ -160,6 +161,70 @@ export interface DatabaseQueryData {
     columns: string[];
     rows: Array<Record<string, any>>;
     row_count: number;
+    display_row_count?: number;
+    truncated?: boolean;
+    output_truncated?: boolean;
+    cell_truncated_count?: number;
+    duration_ms?: number;
+    executed_sql?: string;
+    column_definitions?: Array<{ name: string; data_type?: string }>;
+}
+
+export interface ExternalDatabaseSchemaColumn {
+    name: string;
+    data_type: string;
+    nullable?: boolean;
+    comment?: string;
+    is_sensitive?: boolean;
+}
+
+export interface ExternalDatabaseSchemaIndex {
+    name: string;
+    unique?: boolean;
+    columns?: string[];
+    index_type?: string;
+}
+
+export interface ExternalDatabaseSchemaForeignKey {
+    name?: string;
+    columns?: string[];
+    referenced_table: string;
+    referenced_columns?: string[];
+}
+
+export interface ExternalDatabaseSchemaTable {
+    name: string;
+    type: string;
+    comment?: string;
+    primary_keys?: string[];
+    row_estimate?: number;
+    index_count?: number;
+    column_count?: number;
+    columns?: ExternalDatabaseSchemaColumn[];
+    indexes?: ExternalDatabaseSchemaIndex[];
+    foreign_keys?: ExternalDatabaseSchemaForeignKey[];
+    additional_columns_omitted?: number;
+    sensitive_column_count?: number;
+}
+
+export interface ExternalDatabaseSchemaData {
+    display_type: 'external_database_schema';
+    knowledge_base_id: string;
+    database_name: string;
+    schema_name?: string;
+    schema_hash?: string;
+    refreshed_at?: string;
+    mode?: 'auto' | 'catalog' | 'detail' | string;
+    table_count?: number;
+    column_count?: number;
+    additional_tables_omitted?: number;
+    additional_columns_omitted?: number;
+    allowed_tables?: string[];
+    foreign_keys?: string[];
+    possible_join_hints?: string[];
+    join_hints?: string[];
+    sample_queries?: string[];
+    tables?: ExternalDatabaseSchemaTable[];
 }
 
 // Web search result item
@@ -273,6 +338,7 @@ export type ToolResultData =
     | ThinkingData
     | PlanData
     | DatabaseQueryData
+    | ExternalDatabaseSchemaData
     | WebSearchResultsData
     | WebFetchResultsData
     | GrepResultsData

@@ -95,13 +95,13 @@ func (r *DataSourceRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// FindActive retrieves all active data sources (used for scheduling)
+// FindActive retrieves all active data sources so the scheduler can decide
+// whether to register document sync or database schema refresh cron entries.
 func (r *DataSourceRepository) FindActive(ctx context.Context) ([]*types.DataSource, error) {
 	var dataSources []*types.DataSource
 	if err := r.db.WithContext(ctx).
 		Where("status = ?", types.DataSourceStatusActive).
 		Where("deleted_at IS NULL").
-		Where("sync_schedule != ''").
 		Order("created_at DESC").
 		Find(&dataSources).Error; err != nil {
 		return nil, err

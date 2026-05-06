@@ -1,8 +1,12 @@
 package handler
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
+	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +23,7 @@ import (
 type MessageHandler struct {
 	MessageService interfaces.MessageService // Service that implements message business logic
 	SessionService interfaces.SessionService // Service for verifying session ownership
+	StreamManager  interfaces.StreamManager  // Stream manager used to reconcile stale pending assistant messages
 }
 
 // NewMessageHandler creates a new message handler instance with the required service
@@ -27,10 +32,217 @@ type MessageHandler struct {
 //   - sessionService: Service for verifying session ownership
 //
 // Returns a pointer to a new MessageHandler
-func NewMessageHandler(messageService interfaces.MessageService, sessionService interfaces.SessionService) *MessageHandler {
+func NewMessageHandler(messageService interfaces.MessageService, sessionService interfaces.SessionService, streamManager interfaces.StreamManager) *MessageHandler {
 	return &MessageHandler{
 		MessageService: messageService,
 		SessionService: sessionService,
+		StreamManager:  streamManager,
+	}
+}
+
+func (h *MessageHandler) reconcilePendingAssistantMessages(ctx context.Context, messages []*types.Message) {
+	if h.StreamManager == nil {
+		return
+	}
+
+	for _, message := range messages {
+		if !shouldReconcileAssistantMessage(message) {
+			continue
+		}
+
+		repaired, err := h.reconcilePendingAssistantMessage(ctx, message)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to reconcile pending assistant message, session ID: %s, message ID: %s, error: %v",
+				message.SessionID, message.ID, err)
+			continue
+		}
+		if repaired {
+			logger.Infof(ctx, "Reconciled stale assistant message on load, session ID: %s, message ID: %s, completion_status: %s",
+				message.SessionID, message.ID, message.CompletionStatusOrLegacy())
+		}
+	}
+}
+
+func (h *MessageHandler) reconcilePendingAssistantMessage(ctx context.Context, message *types.Message) (bool, error) {
+	events, _, err := h.StreamManager.GetEvents(ctx, message.SessionID, message.ID, 0)
+	if err != nil {
+		return false, err
+	}
+
+	updatedMessage := *message
+	answerContent := ""
+	terminalDetected := false
+	hasAnswerDone := false
+
+	for _, evt := range events {
+		if evt.Type == types.ResponseTypeAnswer {
+			answerContent += evt.Content
+			if evt.Done {
+				hasAnswerDone = true
+			}
+		}
+
+		if evt.Type != types.ResponseTypeComplete {
+			continue
+		}
+
+		terminalDetected = true
+		completionStatus := strings.TrimSpace(streamEventString(evt.Data, "completion_status"))
+		if completionStatus == "" {
+			completionStatus = types.MessageCompletionStatusCompleted
+		}
+		updatedMessage.CompletionStatus = completionStatus
+		updatedMessage.IsCompleted = completionStatus == types.MessageCompletionStatusCompleted
+		updatedMessage.FinishReason = strings.TrimSpace(streamEventString(evt.Data, "finish_reason"))
+		updatedMessage.FailureReason = strings.TrimSpace(streamEventString(evt.Data, "failure_reason"))
+		if len(updatedMessage.AgentSteps) == 0 {
+			updatedMessage.AgentSteps = streamEventAgentSteps(evt.Data, "agent_steps")
+		}
+		if updatedMessage.AgentDurationMs == 0 {
+			updatedMessage.AgentDurationMs = streamEventInt64(evt.Data, "agent_duration_ms")
+			if updatedMessage.AgentDurationMs == 0 {
+				updatedMessage.AgentDurationMs = streamEventInt64(evt.Data, "total_duration_ms")
+			}
+		}
+
+		finalAnswer := strings.TrimSpace(streamEventString(evt.Data, "final_answer"))
+		if updatedMessage.Content == "" {
+			switch {
+			case finalAnswer != "":
+				updatedMessage.Content = finalAnswer
+			case strings.TrimSpace(answerContent) != "":
+				updatedMessage.Content = answerContent
+			}
+		}
+	}
+
+	if !terminalDetected && hasAnswerDone {
+		terminalDetected = true
+		updatedMessage.CompletionStatus = types.MessageCompletionStatusCompleted
+		updatedMessage.IsCompleted = true
+		if strings.TrimSpace(updatedMessage.FinishReason) == "" {
+			updatedMessage.FinishReason = "stop"
+		}
+		if updatedMessage.Content == "" && strings.TrimSpace(answerContent) != "" {
+			updatedMessage.Content = answerContent
+		}
+	}
+
+	if !terminalDetected && len(events) == 0 {
+		terminalDetected = true
+		updatedMessage.IsCompleted = false
+		updatedMessage.FinishReason = "stream_unavailable"
+		updatedMessage.FailureReason = "stream_unavailable"
+		if strings.TrimSpace(updatedMessage.Content) != "" {
+			updatedMessage.CompletionStatus = types.MessageCompletionStatusPartial
+		} else {
+			updatedMessage.CompletionStatus = types.MessageCompletionStatusFailed
+		}
+	}
+
+	if !terminalDetected {
+		return false, nil
+	}
+
+	if updatedMessage.Content == message.Content &&
+		updatedMessage.IsCompleted == message.IsCompleted &&
+		updatedMessage.CompletionStatus == message.CompletionStatus &&
+		updatedMessage.FinishReason == message.FinishReason &&
+		updatedMessage.FailureReason == message.FailureReason &&
+		updatedMessage.AgentDurationMs == message.AgentDurationMs &&
+		reflect.DeepEqual(updatedMessage.AgentSteps, message.AgentSteps) {
+		return false, nil
+	}
+
+	updatedMessage.UpdatedAt = time.Now()
+	if err := h.MessageService.UpdateMessage(context.WithoutCancel(ctx), &updatedMessage); err != nil {
+		return false, err
+	}
+	*message = updatedMessage
+	return true, nil
+}
+
+func shouldReconcileAssistantMessage(message *types.Message) bool {
+	if message == nil || message.Role != "assistant" {
+		return false
+	}
+	if !message.IsTerminal() {
+		return true
+	}
+	if strings.TrimSpace(message.Content) == "" {
+		return true
+	}
+	return len(message.AgentSteps) == 0 && strings.TrimSpace(message.FinishReason) == "tool_calls"
+}
+
+func streamEventString(data map[string]interface{}, key string) string {
+	if data == nil {
+		return ""
+	}
+	value, ok := data[key]
+	if !ok {
+		return ""
+	}
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return text
+}
+
+func streamEventInt64(data map[string]interface{}, key string) int64 {
+	if data == nil {
+		return 0
+	}
+	value, ok := data[key]
+	if !ok {
+		return 0
+	}
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int32:
+		return int64(typed)
+	case int64:
+		return typed
+	case float32:
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	default:
+		return 0
+	}
+}
+
+func streamEventAgentSteps(data map[string]interface{}, key string) types.AgentSteps {
+	if data == nil {
+		return nil
+	}
+	value, ok := data[key]
+	if !ok {
+		return nil
+	}
+	switch steps := value.(type) {
+	case nil:
+		return nil
+	case types.AgentSteps:
+		return append(types.AgentSteps(nil), steps...)
+	case []types.AgentStep:
+		return append(types.AgentSteps(nil), steps...)
+	default:
+		raw, err := json.Marshal(value)
+		if err != nil || len(raw) == 0 || string(raw) == "null" {
+			return nil
+		}
+
+		var decoded types.AgentSteps
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return nil
+		}
+		if len(decoded) == 0 {
+			return nil
+		}
+		return decoded
 	}
 }
 
@@ -87,6 +299,7 @@ func (h *MessageHandler) LoadMessages(c *gin.Context) {
 			c.Error(errors.NewInternalServerError(err.Error()))
 			return
 		}
+		h.reconcilePendingAssistantMessages(ctx, messages)
 
 		logger.Infof(
 			ctx,
@@ -121,6 +334,7 @@ func (h *MessageHandler) LoadMessages(c *gin.Context) {
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
+	h.reconcilePendingAssistantMessages(ctx, messages)
 
 	logger.Infof(
 		ctx,
