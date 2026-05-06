@@ -32,6 +32,8 @@ type UserService interface {
 	DeleteUser(ctx context.Context, id string) error
 	// ChangePassword changes user password
 	ChangePassword(ctx context.Context, userID string, oldPassword, newPassword string) error
+	// AdminSetPassword resets another user's password without requiring the old password.
+	AdminSetPassword(ctx context.Context, userID string, newPassword string) error
 	// ValidatePassword validates user password
 	ValidatePassword(ctx context.Context, userID string, password string) error
 	// GenerateTokens generates access and refresh tokens for user

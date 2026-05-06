@@ -54,6 +54,7 @@
             @set-admin="handleSetAdmin"
             @set-super-admin="handleSetSuperAdmin"
             @edit="handleEditMember"
+            @reset-password="handleResetPassword"
           />
         </template>
       </div>
@@ -80,6 +81,14 @@
       :user="editingUser"
       @success="handleEditUserSuccess"
     />
+
+    <ResetUserPasswordDialog
+      v-model:visible="showResetPasswordDialog"
+      :org-id="selectedOrgId || ''"
+      :org-name="selectedOrgName"
+      :user="editingUser"
+      @success="handleEditUserSuccess"
+    />
   </div>
 </template>
 
@@ -95,6 +104,7 @@ import MemberTable from './components/MemberTable.vue'
 import AssignOrgDialog from './components/AssignOrgDialog.vue'
 import CreateUserDialog from './components/CreateUserDialog.vue'
 import EditUserDialog from './components/EditUserDialog.vue'
+import ResetUserPasswordDialog from './components/ResetUserPasswordDialog.vue'
 
 const orgTreeStore = useOrgTreeStore()
 const { t } = useI18n()
@@ -103,6 +113,7 @@ const selectedOrgId = ref<string | null>(null)
 const showAssignDialog = ref(false)
 const showCreateUserDialog = ref(false)
 const showEditUserDialog = ref(false)
+const showResetPasswordDialog = ref(false)
 const editingUser = ref<any>(null)
 const memberRefreshKey = ref(0)
 
@@ -181,6 +192,11 @@ const handleCreateUserSuccess = () => {
 const handleEditMember = (member: any) => {
   editingUser.value = member
   showEditUserDialog.value = true
+}
+
+const handleResetPassword = (member: any) => {
+  editingUser.value = member
+  showResetPasswordDialog.value = true
 }
 
 const handleEditUserSuccess = () => {

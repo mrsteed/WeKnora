@@ -74,6 +74,16 @@
           <t-button
             size="small"
             variant="text"
+            theme="primary"
+            :disabled="member.user_id === authStore.currentUserId"
+            :title="member.user_id === authStore.currentUserId ? $t('admin.member.cannotResetOwnPassword') : ''"
+            @click="$emit('resetPassword', member)"
+          >
+            {{ $t('admin.member.resetPassword') }}
+          </t-button>
+          <t-button
+            size="small"
+            variant="text"
             :theme="member.is_admin ? 'default' : 'primary'"
             @click="$emit('setAdmin', member.user_id, !member.is_admin)"
           >
@@ -116,6 +126,7 @@ defineEmits<{
   (e: 'setAdmin', userId: string, isAdmin: boolean): void
   (e: 'setSuperAdmin', userId: string, isSuperAdmin: boolean): void
   (e: 'edit', member: OrgMember): void
+  (e: 'resetPassword', member: OrgMember): void
 }>()
 
 const members = ref<OrgMember[]>([])

@@ -1102,6 +1102,7 @@ func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHa
 		orgTree.POST("/:id/members", orgTreeHandler.AssignUser)
 		orgTree.POST("/:id/create-user", orgTreeHandler.CreateUserInOrg)
 		orgTree.PUT("/:id/users/:user_id", orgTreeHandler.UpdateUserInOrg)
+		orgTree.PUT("/:id/users/:user_id/password", orgTreeHandler.UpdateUserPasswordInOrg)
 		orgTree.DELETE("/:id/members/:user_id", orgTreeHandler.RemoveUser)
 		orgTree.PUT("/:id/admin", orgTreeHandler.SetOrgAdmin)
 	}

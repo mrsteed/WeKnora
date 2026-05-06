@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +36,8 @@ type oidcAuthorizationState struct {
 var (
 	jwtSecretOnce sync.Once
 	jwtSecret     string
+	passwordDigit = regexp.MustCompile(`\d`)
+	passwordAlpha = regexp.MustCompile(`[A-Za-z]`)
 )
 
 // getJwtSecret retrieves the JWT secret from the environment, falling back to a securely generated random secret.
@@ -85,6 +88,9 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	// Validate input
 	if req.Username == "" || req.Email == "" || req.Password == "" {
 		return nil, errors.New("username, email and password are required")
+	}
+	if err := validateLoginPassword(req.Password, req.Username); err != nil {
+		return nil, err
 	}
 
 	// Check if user already exists
@@ -152,6 +158,9 @@ func (s *userService) CreateUserByAdmin(ctx context.Context, req *types.CreateUs
 
 	if req.Username == "" || req.Password == "" {
 		return nil, errors.New("username and password are required")
+	}
+	if err := validateLoginPassword(req.Password, req.Username); err != nil {
+		return nil, err
 	}
 
 	// Check username uniqueness
@@ -447,8 +456,32 @@ func (s *userService) ChangePassword(ctx context.Context, userID string, oldPass
 	if err != nil {
 		return errors.New("invalid old password")
 	}
+	if err := validateLoginPassword(newPassword, user.Username); err != nil {
+		return err
+	}
 
 	// Hash new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	user.PasswordHash = string(hashedPassword)
+	user.UpdatedAt = time.Now()
+
+	return s.userRepo.UpdateUser(ctx, user)
+}
+
+// AdminSetPassword resets another user's password without requiring their old password.
+func (s *userService) AdminSetPassword(ctx context.Context, userID string, newPassword string) error {
+	user, err := s.userRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := validateLoginPassword(newPassword, user.Username); err != nil {
+		return err
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -468,6 +501,23 @@ func (s *userService) ValidatePassword(ctx context.Context, userID string, passw
 	}
 
 	return bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+}
+
+func validateLoginPassword(password string, username string) error {
+	trimmedPassword := strings.TrimSpace(password)
+	if trimmedPassword == "" {
+		return errors.New("password cannot be empty or whitespace only")
+	}
+	if len(password) < 8 || len(password) > 32 {
+		return errors.New("password must be 8-32 characters long")
+	}
+	if strings.EqualFold(password, username) {
+		return errors.New("password cannot be the same as username")
+	}
+	if !passwordAlpha.MatchString(password) || !passwordDigit.MatchString(password) {
+		return errors.New("password must contain both letters and numbers")
+	}
+	return nil
 }
 
 // GenerateTokens generates access and refresh tokens for user

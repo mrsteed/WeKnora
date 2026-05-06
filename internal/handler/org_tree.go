@@ -620,6 +620,97 @@ func (h *OrgTreeHandler) UpdateUserInOrg(c *gin.Context) {
 	})
 }
 
+// UpdateUserPasswordInOrg resets a direct member's login password in the specified organization.
+// @Summary      重置组织内用户登录密码
+// @Description  组织管理员为当前组织内直属成员重置登录密码，不需要旧密码
+// @Tags         OrgTree
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                                   true   "组织节点ID"
+// @Param        user_id  path      string                                   true   "用户ID"
+// @Param        request  body      types.UpdateUserPasswordInOrgRequest     true   "重置登录密码请求"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      403      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /org-tree/{id}/users/{user_id}/password [put]
+func (h *OrgTreeHandler) UpdateUserPasswordInOrg(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	orgID := c.Param("id")
+	userID := c.Param("user_id")
+
+	var req types.UpdateUserPasswordInOrgRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Errorf(ctx, "Invalid request parameters: %v", err)
+		c.Error(apperrors.NewValidationError("Invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	currentUser, ok := h.getUserFromContext(c)
+	if !ok {
+		return
+	}
+
+	if currentUser.ID == userID {
+		c.Error(apperrors.NewForbiddenError("Please use the self-service change password endpoint for your own account"))
+		return
+	}
+
+	if req.NewPassword != req.ConfirmPassword {
+		c.Error(apperrors.NewValidationError("New password and confirm password do not match"))
+		return
+	}
+
+	if !h.isOrgAdminOf(c, currentUser, orgID, tenantID) {
+		c.Error(apperrors.NewForbiddenError("You do not have permission to update passwords in this organization"))
+		return
+	}
+
+	user, err := h.userService.GetUserByID(ctx, userID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get user: %v", err)
+		c.Error(apperrors.NewNotFoundError("User not found").WithDetails(err.Error()))
+		return
+	}
+
+	if user.TenantID != tenantID {
+		c.Error(apperrors.NewForbiddenError("User does not belong to your tenant"))
+		return
+	}
+
+	members, err := h.orgTreeService.ListOrgMembers(ctx, orgID, tenantID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to list org members: %v", err)
+		c.Error(apperrors.NewInternalServerError("Failed to verify organization members").WithDetails(err.Error()))
+		return
+	}
+
+	isDirectMember := false
+	for _, member := range members {
+		if member.UserID == userID {
+			isDirectMember = true
+			break
+		}
+	}
+	if !isDirectMember {
+		c.Error(apperrors.NewForbiddenError("Target user is not a direct member of this organization"))
+		return
+	}
+
+	if err := h.userService.AdminSetPassword(ctx, userID, req.NewPassword); err != nil {
+		logger.Errorf(ctx, "Failed to update user password: %v", err)
+		c.Error(apperrors.NewBadRequestError("Failed to update user password").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "User password updated successfully",
+	})
+}
+
 // RemoveUser removes a user from an organization in the tree
 // @Summary      从组织移除用户
 // @Description  将用户从组织树中的某个节点移除

@@ -62,6 +62,11 @@ export interface UpdateUserInOrgRequest {
   role?: 'admin' | 'editor' | 'viewer'
 }
 
+export interface UpdateUserPasswordInOrgRequest {
+  new_password: string
+  confirm_password: string
+}
+
 export interface CreateUserInOrgResponse {
   success: boolean
   message?: string
@@ -252,5 +257,14 @@ export async function updateUserInOrg(orgId: string, userId: string, data: Updat
     return await put(`/api/v1/org-tree/${orgId}/users/${userId}`, data) as unknown as CreateUserInOrgResponse
   } catch (error: any) {
     return { success: false, message: error.message || 'Failed to update user' }
+  }
+}
+
+/** Reset a user's login password in an organization */
+export async function updateUserPasswordInOrg(orgId: string, userId: string, data: UpdateUserPasswordInOrgRequest): Promise<ApiResponse<null>> {
+  try {
+    return await put(`/api/v1/org-tree/${orgId}/users/${userId}/password`, data) as unknown as ApiResponse<null>
+  } catch (error: any) {
+    return { success: false, message: error.message || 'Failed to update user password' }
   }
 }
