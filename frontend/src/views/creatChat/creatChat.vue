@@ -228,8 +228,8 @@ const navigateToSession = async (sessionId: string, value: string, modelId: stri
     router.push(`/platform/chat/${sessionId}`);
 }
 
-const handleKBEditorSuccess = (kbId: string) => {
-    navigateToKnowledgeBaseList(kbId)
+const handleKBEditorSuccess = (payload: string | { id: string }) => {
+    navigateToKnowledgeBaseList(typeof payload === 'string' ? payload : payload.id)
 }
 
 </script>

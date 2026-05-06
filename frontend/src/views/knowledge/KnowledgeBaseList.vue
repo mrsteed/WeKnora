@@ -1098,12 +1098,8 @@ interface UploadSummary {
 
 const fetchList = () => {
   loading.value = true
-  const listParams: { organization_id?: string } = {}
-  if (orgStore.currentOrganizationId) {
-    listParams.organization_id = orgStore.currentOrganizationId
-  }
   return Promise.all([
-    listKnowledgeBases(listParams).then((res: any) => {
+    listKnowledgeBases().then((res: any) => {
       const data = res.data || []
       // 格式化时间，并初始化 showMore 状态
       // is_processing 字段由后端返回
@@ -1143,11 +1139,6 @@ watch(spaceSelection, (val) => {
     spaceKbsLoading.value = false
   })
 }, { immediate: true })
-
-// 组织切换时自动刷新知识库列表
-watch(() => orgStore.currentOrganizationId, () => {
-  fetchList()
-})
 
 onMounted(() => {
   fetchList().then(() => {
@@ -1481,14 +1472,26 @@ const handleCreateKnowledgeBase = () => {
   uiStore.openCreateKB('document', visibility)
 }
 
+type KnowledgeBaseOperationSuccess = string | (Partial<KB> & { id: string })
+
 // 知识库编辑器成功回调（创建或编辑成功）
-const handleKBEditorSuccess = (kbId: string) => {
+const handleKBEditorSuccess = (payload: KnowledgeBaseOperationSuccess) => {
+  const kbId = typeof payload === 'string' ? payload : payload.id
   console.log('[KnowledgeBaseList] knowledge operation success:', kbId)
+
+  if (typeof payload !== 'string') {
+    if (payload.visibility === 'global') {
+      spaceSelection.value = 'global'
+    } else if (payload.visibility === 'org') {
+      spaceSelection.value = 'org'
+    } else {
+      spaceSelection.value = 'mine'
+    }
+  }
+
   fetchList().then(() => {
-    // 如果是从路由参数中获取的高亮ID，触发闪烁效果
+    triggerHighlightFlash(kbId)
     if (route.query.highlightKbId === kbId) {
-      triggerHighlightFlash(kbId)
-      // 清除 URL 中的查询参数
       router.replace({ query: {} })
     }
   })

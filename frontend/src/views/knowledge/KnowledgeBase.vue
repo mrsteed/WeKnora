@@ -2043,7 +2043,8 @@ watch(cardList, () => {
 }, { deep: false });
 
 // 处理知识库编辑成功后的回调
-const handleKBEditorSuccess = (kbIdValue: string) => {
+const handleKBEditorSuccess = (payload: string | { id: string }) => {
+  const kbIdValue = typeof payload === 'string' ? payload : payload.id;
   if (kbIdValue === kbId.value) {
     loadKnowledgeBaseInfo(kbIdValue);
   }

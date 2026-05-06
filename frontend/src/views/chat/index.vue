@@ -150,8 +150,8 @@ const isNearBottom = () => {
     return scrollHeight - scrollTop - clientHeight < SCROLL_BOTTOM_THRESHOLD;
 }
 
-const handleKBEditorSuccess = (kbId) => {
-    navigateToKnowledgeBaseList(kbId)
+const handleKBEditorSuccess = (payload) => {
+    navigateToKnowledgeBaseList(typeof payload === 'string' ? payload : payload.id)
 }
 
 // ===== 推荐问题 =====

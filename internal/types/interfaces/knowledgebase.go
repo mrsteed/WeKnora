@@ -65,11 +65,13 @@ type KnowledgeBaseService interface {
 	//   - name: New knowledge base name
 	//   - description: New knowledge base description
 	//   - config: Knowledge base configuration, including chunking strategy, vectorization settings, etc.
+	//   - visibility: Optional visibility update. Empty means keep the current value.
+	//   - organizationID: Organization ID used when visibility is org. Private visibility clears it.
 	// Returns:
 	//   - Updated knowledge base object
 	//   - Possible errors such as not existing, insufficient permissions, etc.
 	UpdateKnowledgeBase(ctx context.Context,
-		id string, name string, description string, config *types.KnowledgeBaseConfig,
+		id string, name string, description string, config *types.KnowledgeBaseConfig, visibility string, organizationID string,
 	) (*types.KnowledgeBase, error)
 
 	// DeleteKnowledgeBase deletes a knowledge base

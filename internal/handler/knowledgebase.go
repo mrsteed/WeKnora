@@ -662,9 +662,11 @@ func (h *KnowledgeBaseHandler) TogglePinKnowledgeBase(c *gin.Context) {
 
 // UpdateKnowledgeBaseRequest defines the request body structure for updating a knowledge base
 type UpdateKnowledgeBaseRequest struct {
-	Name        string                     `json:"name"        binding:"required"`
-	Description string                     `json:"description"`
-	Config      *types.KnowledgeBaseConfig `json:"config"`
+	Name           string                     `json:"name"        binding:"required"`
+	Description    string                     `json:"description"`
+	Visibility     string                     `json:"visibility"`
+	OrganizationID string                     `json:"organization_id"`
+	Config         *types.KnowledgeBaseConfig `json:"config"`
 }
 
 // UpdateKnowledgeBase godoc
@@ -730,11 +732,38 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		return
 	}
 
+	if req.Visibility != "" {
+		switch req.Visibility {
+		case types.KBVisibilityGlobal:
+			if !user.IsSuperAdmin {
+				c.Error(apperrors.NewForbiddenError("Only super admins can set global knowledge base visibility"))
+				return
+			}
+		case types.KBVisibilityOrg:
+			if strings.TrimSpace(req.OrganizationID) == "" {
+				c.Error(apperrors.NewBadRequestError("organization_id is required when visibility is 'org'"))
+				return
+			}
+		case types.KBVisibilityPrivate:
+		default:
+			c.Error(apperrors.NewBadRequestError("Invalid visibility value, must be 'global', 'org', or 'private'"))
+			return
+		}
+	}
+
 	logger.Infof(ctx, "Updating knowledge base, ID: %s, name: %s",
 		secutils.SanitizeForLog(id), secutils.SanitizeForLog(req.Name))
 
 	// Update the knowledge base
-	updatedKb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config)
+	updatedKb, err := h.service.UpdateKnowledgeBase(
+		ctx,
+		id,
+		req.Name,
+		req.Description,
+		req.Config,
+		req.Visibility,
+		req.OrganizationID,
+	)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(apperrors.NewInternalServerError(err.Error()))

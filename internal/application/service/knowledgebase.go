@@ -311,6 +311,8 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	name string,
 	description string,
 	config *types.KnowledgeBaseConfig,
+	visibility string,
+	organizationID string,
 ) (*types.KnowledgeBase, error) {
 	if id == "" {
 		logger.Error(ctx, "Knowledge base ID is empty")
@@ -331,6 +333,25 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	// Update the knowledge base properties
 	kb.Name = name
 	kb.Description = description
+	if visibility != "" {
+		switch visibility {
+		case types.KBVisibilityGlobal:
+			kb.Visibility = visibility
+			kb.OrganizationID = strings.TrimSpace(organizationID)
+		case types.KBVisibilityOrg:
+			organizationID = strings.TrimSpace(organizationID)
+			if organizationID == "" {
+				return nil, errors.New("organization_id is required when visibility is org")
+			}
+			kb.Visibility = visibility
+			kb.OrganizationID = organizationID
+		case types.KBVisibilityPrivate:
+			kb.Visibility = visibility
+			kb.OrganizationID = ""
+		default:
+			return nil, errors.New("invalid knowledge base visibility")
+		}
+	}
 	if config != nil {
 		kb.ChunkingConfig = config.ChunkingConfig
 		kb.ImageProcessingConfig = config.ImageProcessingConfig

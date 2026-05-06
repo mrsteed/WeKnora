@@ -566,7 +566,7 @@ const props = defineProps<{
 // Emits
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
-  (e: 'success', kbId: string): void
+  (e: 'success', payload: string | { id: string; visibility?: 'private' | 'org' | 'global'; organization_id?: string }): void
 }>()
 
 const currentSection = ref<string>('basic')
@@ -1497,7 +1497,7 @@ const doSubmit = async () => {
         throw new Error(result.message || t('knowledgeEditor.messages.createFailed'))
       }
       MessagePlugin.success(t('knowledgeEditor.messages.createSuccess'))
-      emit('success', result.data.id)
+      emit('success', result.data)
     } else {
       // 编辑模式：分别更新基本信息和配置
       if (!props.kbId) {
@@ -1530,6 +1530,8 @@ const doSubmit = async () => {
       await updateKnowledgeBase(props.kbId, {
         name: data.name,
         description: data.description,
+        visibility: data.visibility,
+        organization_id: data.organization_id,
         config: updateConfig
       })
 
