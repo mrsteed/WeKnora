@@ -83,8 +83,16 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 	}
 
 	if message.IsTerminal() {
+		var events []interfaces.StreamEvent
+		if h.streamManager != nil {
+			events, _, err = h.streamManager.GetEvents(ctx, sessionID, messageID, 0)
+			if err != nil {
+				logger.Warnf(ctx, "Failed to load terminal stream events, session ID: %s, message ID: %s, error: %v", sessionID, messageID, err)
+				events = nil
+			}
+		}
 		logger.Infof(ctx, "Message is already terminal, returning terminal stream state, session ID: %s, message ID: %s", sessionID, messageID)
-		h.emitTerminalStreamState(c, message)
+		h.emitTerminalStreamState(c, message, events)
 		return
 	}
 
@@ -110,10 +118,10 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 	// Set headers for SSE
 	setSSEHeaders(c)
 
-	// Check if stream is already completed
+	// Check if stream is already terminal
 	streamCompleted := false
 	for _, evt := range events {
-		if evt.Type == "complete" {
+		if evt.Type == types.ResponseTypeComplete || evt.Type == types.ResponseType(event.EventStop) {
 			streamCompleted = true
 			break
 		}
@@ -156,8 +164,8 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 			// Send new events
 			streamCompletedNow := false
 			for _, evt := range newEvents {
-				// Check for completion event
-				if evt.Type == "complete" {
+				// Check for terminal event
+				if evt.Type == types.ResponseTypeComplete || evt.Type == types.ResponseType(event.EventStop) {
 					streamCompletedNow = true
 				}
 
@@ -195,15 +203,102 @@ func (h *Handler) recoverMissingStreamState(ctx context.Context, c *gin.Context,
 	}
 
 	h.completeAssistantMessage(ctx, message, "", options)
-	h.emitTerminalStreamState(c, message)
+	h.emitTerminalStreamState(c, message, nil)
 }
 
-func (h *Handler) emitTerminalStreamState(c *gin.Context, message *types.Message) {
+func isAgentTerminalReplayEvent(evtType types.ResponseType) bool {
+	switch evtType {
+	case types.ResponseTypeAgentQuery,
+		types.ResponseTypeThinking,
+		types.ResponseTypeToolCall,
+		types.ResponseTypeToolResult,
+		types.ResponseTypeReflection,
+		types.ResponseTypeComplete,
+		types.ResponseType(event.EventStop):
+		return true
+	default:
+		return false
+	}
+}
+
+func findTerminalReplayEvent(events []interfaces.StreamEvent) (interfaces.StreamEvent, bool) {
+	for idx := len(events) - 1; idx >= 0; idx-- {
+		evt := events[idx]
+		if evt.Type == types.ResponseTypeComplete || evt.Type == types.ResponseType(event.EventStop) {
+			return evt, true
+		}
+	}
+	return interfaces.StreamEvent{}, false
+}
+
+func messageNeedsAgentTerminalReplay(message *types.Message, events []interfaces.StreamEvent) bool {
+	if message == nil {
+		return false
+	}
+	if len(message.AgentSteps) > 0 || message.AgentDurationMs > 0 {
+		return true
+	}
+	for _, evt := range events {
+		if isAgentTerminalReplayEvent(evt.Type) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handler) emitTerminalStreamState(c *gin.Context, message *types.Message, events []interfaces.StreamEvent) {
 	completionStatus := message.CompletionStatusOrLegacy()
 	finishReason := message.FinishReason
 	failureReason := message.FailureReason
 
 	setSSEHeaders(c)
+	if evt, ok := findTerminalReplayEvent(events); ok {
+		c.SSEvent("message", buildStreamResponse(evt, message.RequestID))
+		c.Writer.Flush()
+		return
+	}
+
+	if messageNeedsAgentTerminalReplay(message, events) {
+		responseType := types.ResponseTypeComplete
+		data := map[string]interface{}{
+			"completion_status": completionStatus,
+			"finish_reason":     finishReason,
+			"failure_reason":    failureReason,
+			"is_partial":        completionStatus == types.MessageCompletionStatusPartial,
+		}
+		if strings.TrimSpace(message.Content) != "" {
+			data["final_answer"] = message.Content
+		}
+		if len(message.AgentSteps) > 0 {
+			data["agent_steps"] = message.AgentSteps
+		}
+		if message.AgentDurationMs > 0 {
+			data["agent_duration_ms"] = message.AgentDurationMs
+			data["total_duration_ms"] = message.AgentDurationMs
+		}
+		if completionStatus == types.MessageCompletionStatusCancelled {
+			responseType = types.ResponseType(event.EventStop)
+			cancelReason := finishReason
+			if cancelReason == "" {
+				cancelReason = failureReason
+			}
+			if cancelReason == "" {
+				cancelReason = "cancelled"
+			}
+			data["reason"] = cancelReason
+		}
+
+		c.SSEvent("message", &types.StreamResponse{
+			ID:           message.RequestID,
+			ResponseType: responseType,
+			Content:      "",
+			Done:         true,
+			Data:         data,
+		})
+		c.Writer.Flush()
+		return
+	}
+
 	c.SSEvent("message", &types.StreamResponse{
 		ID:           message.RequestID,
 		ResponseType: types.ResponseTypeAnswer,

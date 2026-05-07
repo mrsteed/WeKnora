@@ -345,6 +345,30 @@ const getRecoverableAssistantMessages = (items = []) => {
     return items.filter((message) => message?.role === 'assistant' && !isMessageTerminal(message));
 };
 
+const isHistoricalAgentMessage = (message) => {
+    if (!message || message.role !== 'assistant') {
+        return false;
+    }
+
+    if (Array.isArray(message.agent_steps) && message.agent_steps.length > 0) {
+        return true;
+    }
+
+    if (Number(message.agent_duration_ms || 0) > 0) {
+        return true;
+    }
+
+    if (typeof message.finish_reason === 'string' && message.finish_reason.trim() === 'tool_calls') {
+        return true;
+    }
+
+    if (Array.isArray(message.agentEventStream) && message.agentEventStream.length > 0) {
+        return true;
+    }
+
+    return false;
+};
+
 const recoverHistoricalAssistantMessages = async (items = []) => {
     const recoverableMessages = getRecoverableAssistantMessages(items);
     if (!recoverableMessages.length) {
@@ -529,6 +553,31 @@ const resetReplyState = () => {
     currentAssistantMessageId.value = '';
 };
 
+const getAgentStreamSignals = (message) => {
+    const stream = Array.isArray(message?.agentEventStream) ? message.agentEventStream : [];
+    const completeEvent = stream.find((event) => event.type === 'agent_complete') || null;
+    const stopEvent = stream.find((event) => event.type === 'stop') || null;
+    const hasAnswerDone = stream.some((event) => event.type === 'answer' && event.done === true);
+    const hasAnswerContent = Boolean(
+        (message?.content && String(message.content).trim()) ||
+        stream.some((event) => event.type === 'answer' && event.content && String(event.content).trim())
+    );
+    const hasAgentProgress = stream.some((event) =>
+        event.type === 'thinking' ||
+        event.type === 'tool_call' ||
+        event.type === 'tool_result' ||
+        event.type === 'reflection'
+    );
+
+    return {
+        completeEvent,
+        stopEvent,
+        hasAnswerDone,
+        hasAnswerContent,
+        hasAgentProgress,
+    };
+};
+
 const finalizeActiveAssistantOnStreamClose = () => {
     if (!isReplying.value && !loading.value) {
         return;
@@ -540,23 +589,36 @@ const finalizeActiveAssistantOnStreamClose = () => {
         return;
     }
 
-    const hasAnswerContent = Boolean(message.content && String(message.content).trim());
-    const hasAgentTerminalSignal = Boolean(
-        message.isAgentMode &&
-        Array.isArray(message.agentEventStream) &&
-        message.agentEventStream.some((event) =>
-            event.type === 'agent_complete' ||
-            event.type === 'stop' ||
-            (event.type === 'answer' && (event.done || (event.content && String(event.content).trim())))
-        )
-    );
+    if (!isMessageTerminal(message)) {
+        if (message.isAgentMode) {
+            const { completeEvent, stopEvent, hasAnswerDone, hasAnswerContent, hasAgentProgress } = getAgentStreamSignals(message);
 
-    if ((hasAnswerContent || hasAgentTerminalSignal) && !isMessageTerminal(message)) {
-        syncMessageCompletionState(message, {
-            completion_status: 'partial',
-            finish_reason: message.finish_reason || 'stream_closed',
-            failure_reason: message.failure_reason || 'stream_closed'
-        });
+            if (completeEvent) {
+                syncMessageCompletionState(message, completeEvent);
+            } else if (stopEvent) {
+                const stopReason = stopEvent.reason || message.finish_reason || message.failure_reason || 'cancelled';
+                syncMessageCompletionState(message, {
+                    completion_status: 'cancelled',
+                    finish_reason: stopReason,
+                    failure_reason: stopReason,
+                });
+            } else if (hasAnswerDone || hasAnswerContent || hasAgentProgress) {
+                syncMessageCompletionState(message, {
+                    completion_status: 'partial',
+                    finish_reason: message.finish_reason || 'stream_closed',
+                    failure_reason: message.failure_reason || 'stream_closed'
+                });
+            }
+        } else {
+            const hasAnswerContent = Boolean(message.content && String(message.content).trim());
+            if (hasAnswerContent) {
+                syncMessageCompletionState(message, {
+                    completion_status: 'partial',
+                    finish_reason: message.finish_reason || 'stream_closed',
+                    failure_reason: message.failure_reason || 'stream_closed'
+                });
+            }
+        }
     }
 
     resetReplyState();
@@ -834,8 +896,10 @@ const reconstructEventStreamFromSteps = (
     });
     }
     
-    // Add agent_complete event with duration info (before answer event)
-    if (agentDurationMs > 0 || isTerminalCompletionStatus(normalizedCompletionStatus)) {
+    // Add agent_complete event with duration info (before answer event).
+    // Cancelled conversations are represented by stop, not agent_complete,
+    // so recovery paths must not synthesize an extra agent_complete event.
+    if (normalizedCompletionStatus !== 'cancelled' && (agentDurationMs > 0 || isTerminalCompletionStatus(normalizedCompletionStatus))) {
         events.push({
             type: 'agent_complete',
             total_duration_ms: agentDurationMs,
@@ -859,14 +923,16 @@ const reconstructEventStreamFromSteps = (
         };
         if (isFallback) answerEvent.is_fallback = true;
         events.push(answerEvent);
-    } else if (normalizedCompletionStatus === 'cancelled') {
-        // 消息已完成但 content 为空：说明是"停止时尚未产出最终答案"的场景。
-        // Push 一个 stop 事件，让 AgentStreamDisplay 的 isConversationDone 返回 true，
-        // 但不产生 answer 内容，也就不会渲染最终答案的 toolbar。与实时 stop 分支保持一致。
+    }
+
+    if (normalizedCompletionStatus === 'cancelled') {
+        const cancelReason = finishReason || failureReason || 'cancelled';
+        // 取消态恢复路径始终要保留一个 stop 事件。
+        // 即使已有 answer 内容，也仍应和实时流保持一致：答案正文 + stop 终态。
         events.push({
             type: 'stop',
             timestamp: Date.now(),
-            reason: 'user_requested'
+            reason: cancelReason
         });
     }
     
@@ -883,10 +949,12 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
         item._pendingToolCalls = new Map();
         syncMessageCompletionState(item);
         
-        // Check if this message has agent_steps from database (historical agent conversation)
-        // If so, reconstruct the agentEventStream to restore the exact conversation state
-        if (item.agent_steps && Array.isArray(item.agent_steps) && item.agent_steps.length > 0) {
-            console.log('[Message Load] Reconstructing agent steps for message:', item.id, 'steps:', item.agent_steps.length);
+        // Reconstruct historical agent conversations from persisted execution metadata.
+        // Older records may be missing agent_steps but still preserve agent_duration_ms
+        // or finish_reason=tool_calls, which is enough to rebuild a protocol-compatible
+        // agent event stream during refresh/reload.
+        if (isHistoricalAgentMessage(item)) {
+            console.log('[Message Load] Reconstructing agent history for message:', item.id, 'steps:', item.agent_steps?.length || 0);
             item.isAgentMode = true;
             item.agentEventStream = reconstructEventStreamFromSteps(
                 item.agent_steps,
@@ -900,7 +968,7 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
             );
             // 隐藏最终答案内容，因为它已经包含在 agentEventStream 的 answer 事件中
             item.hideContent = true;
-            console.log('[Message Load] Reconstructed', item.agentEventStream.length, 'events from agent steps');
+            console.log('[Message Load] Reconstructed', item.agentEventStream.length, 'events from agent history');
         }
         
         if (item.content) {
@@ -1183,6 +1251,10 @@ onChunk((data) => {
         loading.value = true;
             console.log('[Agent Query] New message, setting loading=true');
         } else {
+            existingMessage.isAgentMode = true;
+            existingMessage.agentEventStream = existingMessage.agentEventStream || [];
+            existingMessage._eventMap = existingMessage._eventMap || new Map();
+            existingMessage._pendingToolCalls = existingMessage._pendingToolCalls || new Map();
             // 继续流式传输（刷新页面场景），不设置 loading，因为消息已经在列表中
             console.log('[Agent Query] Continuing stream for existing message, keeping current loading state');
         }
@@ -1217,11 +1289,12 @@ onChunk((data) => {
     
     // 判断是否是 Agent 模式的响应
     // 注意：'answer', 'complete', 'references' 类型可能在两种模式下都存在
-    // 只有 'thinking', 'tool_call', 'tool_result', 'reflection' 是 Agent 专有的
+    // 其中 'complete' 目前也是 Agent 专有终态事件，用于恢复路径与实时流收口。
     const isAgentOnlyResponse = data.response_type === 'thinking' || 
                                data.response_type === 'tool_call' || 
                                data.response_type === 'tool_result' ||
-                               data.response_type === 'reflection';
+                               data.response_type === 'reflection' ||
+                               data.response_type === 'complete';
     
     // 检查当前消息是否已经是 Agent 模式
     const targetMessage = findMessageByStreamId(data.id);
@@ -1682,19 +1755,6 @@ const handleAgentChunk = (data) => {
                 answerEvent.failure_reason = data.data.failure_reason;
             }
 
-            const answerCompletionStatus = data.data?.completion_status || answerEvent.completion_status;
-            if (data.done && isTerminalCompletionStatus(answerCompletionStatus)) {
-                syncMessageCompletionState(message, data.data || {});
-                upsertAgentCompleteEvent(message, {
-                    completion_status: answerCompletionStatus,
-                    finish_reason: data.data?.finish_reason,
-                    failure_reason: data.data?.failure_reason,
-                    is_partial: data.data?.is_partial,
-                    final_answer: answerEvent.content || message.content,
-                });
-                resetReplyState();
-            }
-            
             // 只在第一次收到 done:true 时标记 answer 流结束，真正完成态由 complete 事件决定。
             if (data.done && !answerEvent.done) {
                 answerEvent.done = true;

@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -73,13 +74,30 @@ func (h *MessageHandler) reconcilePendingAssistantMessage(ctx context.Context, m
 	answerContent := ""
 	terminalDetected := false
 	hasAnswerDone := false
+	hasAgentStream := len(updatedMessage.AgentSteps) > 0 || updatedMessage.AgentDurationMs > 0
 
 	for _, evt := range events {
+		if isAgentMessageStreamEvent(evt.Type) {
+			hasAgentStream = true
+		}
 		if evt.Type == types.ResponseTypeAnswer {
 			answerContent += evt.Content
 			if evt.Done {
 				hasAnswerDone = true
 			}
+		}
+
+		if evt.Type == types.ResponseType(event.EventStop) {
+			terminalDetected = true
+			updatedMessage.CompletionStatus = types.MessageCompletionStatusCancelled
+			updatedMessage.IsCompleted = false
+			cancelReason := strings.TrimSpace(streamEventString(evt.Data, "reason"))
+			if cancelReason == "" {
+				cancelReason = types.MessageCompletionStatusCancelled
+			}
+			updatedMessage.FinishReason = cancelReason
+			updatedMessage.FailureReason = cancelReason
+			continue
 		}
 
 		if evt.Type != types.ResponseTypeComplete {
@@ -118,10 +136,25 @@ func (h *MessageHandler) reconcilePendingAssistantMessage(ctx context.Context, m
 
 	if !terminalDetected && hasAnswerDone {
 		terminalDetected = true
-		updatedMessage.CompletionStatus = types.MessageCompletionStatusCompleted
-		updatedMessage.IsCompleted = true
-		if strings.TrimSpace(updatedMessage.FinishReason) == "" {
-			updatedMessage.FinishReason = "stop"
+		if hasAgentStream {
+			updatedMessage.IsCompleted = false
+			if strings.TrimSpace(answerContent) != "" {
+				updatedMessage.CompletionStatus = types.MessageCompletionStatusPartial
+			} else {
+				updatedMessage.CompletionStatus = types.MessageCompletionStatusFailed
+			}
+			if strings.TrimSpace(updatedMessage.FinishReason) == "" {
+				updatedMessage.FinishReason = "stream_closed"
+			}
+			if strings.TrimSpace(updatedMessage.FailureReason) == "" {
+				updatedMessage.FailureReason = "stream_closed"
+			}
+		} else {
+			updatedMessage.CompletionStatus = types.MessageCompletionStatusCompleted
+			updatedMessage.IsCompleted = true
+			if strings.TrimSpace(updatedMessage.FinishReason) == "" {
+				updatedMessage.FinishReason = "stop"
+			}
 		}
 		if updatedMessage.Content == "" && strings.TrimSpace(answerContent) != "" {
 			updatedMessage.Content = answerContent
@@ -173,6 +206,21 @@ func shouldReconcileAssistantMessage(message *types.Message) bool {
 		return true
 	}
 	return len(message.AgentSteps) == 0 && strings.TrimSpace(message.FinishReason) == "tool_calls"
+}
+
+func isAgentMessageStreamEvent(evtType types.ResponseType) bool {
+	switch evtType {
+	case types.ResponseTypeAgentQuery,
+		types.ResponseTypeThinking,
+		types.ResponseTypeToolCall,
+		types.ResponseTypeToolResult,
+		types.ResponseTypeReflection,
+		types.ResponseTypeComplete,
+		types.ResponseType(event.EventStop):
+		return true
+	default:
+		return false
+	}
 }
 
 func streamEventString(data map[string]interface{}, key string) string {

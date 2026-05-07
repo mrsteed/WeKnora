@@ -113,6 +113,20 @@ func decodeSSEPayload(t *testing.T, body string) types.StreamResponse {
 	return response
 }
 
+func decodeLastSSEPayload(t *testing.T, body string) types.StreamResponse {
+	t.Helper()
+	const prefix = "data:"
+	idx := strings.LastIndex(body, prefix)
+	require.NotEqual(t, -1, idx, "expected SSE payload in response body")
+	dataLine := body[idx+len(prefix):]
+	if newline := strings.IndexByte(dataLine, '\n'); newline >= 0 {
+		dataLine = dataLine[:newline]
+	}
+	var response types.StreamResponse
+	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(dataLine)), &response))
+	return response
+}
+
 func TestContinueStream_RecoversMissingPendingStreamAsFailed(t *testing.T) {
 	messageStub := &messageServiceStub{getMessageResult: &types.Message{
 		ID:               "msg-1",
@@ -201,6 +215,110 @@ func TestContinueStream_TerminalFailedMessageDoesNotRecoverAgain(t *testing.T) {
 	assert.Equal(t, "stream_unavailable", response.Data["finish_reason"])
 	assert.Equal(t, "stream_unavailable", response.Data["failure_reason"])
 	assert.Equal(t, false, response.Data["is_partial"])
+}
+
+func TestContinueStream_TerminalAgentMessageReplaysCompleteProtocol(t *testing.T) {
+	messageStub := &messageServiceStub{getMessageResult: &types.Message{
+		ID:               "msg-agent-1",
+		SessionID:        "sess-1",
+		RequestID:        "req-agent-1",
+		Role:             "assistant",
+		Content:          "final answer",
+		CompletionStatus: types.MessageCompletionStatusCompleted,
+		FinishReason:     "tool_calls",
+		IsCompleted:      true,
+		AgentSteps: types.AgentSteps{{
+			Iteration: 0,
+			Thought:   "step one",
+		}},
+		AgentDurationMs: 456,
+	}}
+	streamStub := &streamManagerStub{events: []interfaces.StreamEvent{
+		{Type: types.ResponseTypeAgentQuery, Done: true},
+		{Type: types.ResponseTypeComplete, Done: true, Data: map[string]interface{}{
+			"completion_status": types.MessageCompletionStatusCompleted,
+			"finish_reason":     "tool_calls",
+			"final_answer":      "final answer",
+			"agent_duration_ms": int64(456),
+		}},
+	}}
+	handler := &Handler{
+		sessionService: &continueStreamSessionServiceStub{session: &types.Session{ID: "sess-1"}},
+		messageService: messageStub,
+		streamManager:  streamStub,
+	}
+
+	c, recorder := newContinueStreamTestContext(t, "sess-1", "msg-agent-1")
+	handler.ContinueStream(c)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	response := decodeSSEPayload(t, recorder.Body.String())
+	assert.Equal(t, types.ResponseTypeComplete, response.ResponseType)
+	assert.True(t, response.Done)
+	assert.Equal(t, types.MessageCompletionStatusCompleted, response.Data["completion_status"])
+	assert.Equal(t, "tool_calls", response.Data["finish_reason"])
+	assert.Equal(t, "final answer", response.Data["final_answer"])
+	assert.Equal(t, float64(456), response.Data["agent_duration_ms"])
+}
+
+func TestContinueStream_TerminalCancelledAgentMessageSynthesizesStopProtocol(t *testing.T) {
+	messageStub := &messageServiceStub{getMessageResult: &types.Message{
+		ID:               "msg-agent-2",
+		SessionID:        "sess-1",
+		RequestID:        "req-agent-2",
+		Role:             "assistant",
+		CompletionStatus: types.MessageCompletionStatusCancelled,
+		FinishReason:     "user_requested",
+		FailureReason:    "user_requested",
+		AgentSteps: types.AgentSteps{{
+			Iteration: 0,
+			Thought:   "step one",
+		}},
+	}}
+	handler := &Handler{
+		sessionService: &continueStreamSessionServiceStub{session: &types.Session{ID: "sess-1"}},
+		messageService: messageStub,
+		streamManager:  &streamManagerStub{events: []interfaces.StreamEvent{{Type: types.ResponseTypeAgentQuery, Done: true}}},
+	}
+
+	c, recorder := newContinueStreamTestContext(t, "sess-1", "msg-agent-2")
+	handler.ContinueStream(c)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	response := decodeLastSSEPayload(t, recorder.Body.String())
+	assert.Equal(t, types.ResponseType(event.EventStop), response.ResponseType)
+	assert.True(t, response.Done)
+	assert.Equal(t, "user_requested", response.Data["reason"])
+}
+
+func TestContinueStream_ReplaysExistingStopEventAsTerminal(t *testing.T) {
+	messageStub := &messageServiceStub{getMessageResult: &types.Message{
+		ID:               "msg-stop-1",
+		SessionID:        "sess-1",
+		RequestID:        "req-stop-1",
+		Role:             "assistant",
+		CompletionStatus: types.MessageCompletionStatusPending,
+	}}
+	streamStub := &streamManagerStub{events: []interfaces.StreamEvent{
+		{Type: types.ResponseTypeAgentQuery, Done: true},
+		{Type: types.ResponseType(event.EventStop), Done: true, Data: map[string]interface{}{
+			"reason": "user_requested",
+		}},
+	}}
+	handler := &Handler{
+		sessionService: &continueStreamSessionServiceStub{session: &types.Session{ID: "sess-1"}},
+		messageService: messageStub,
+		streamManager:  streamStub,
+	}
+
+	c, recorder := newContinueStreamTestContext(t, "sess-1", "msg-stop-1")
+	handler.ContinueStream(c)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	response := decodeLastSSEPayload(t, recorder.Body.String())
+	assert.Equal(t, types.ResponseType(event.EventStop), response.ResponseType)
+	assert.True(t, response.Done)
+	assert.Equal(t, "user_requested", response.Data["reason"])
 }
 
 var _ interfaces.SessionService = (*continueStreamSessionServiceStub)(nil)

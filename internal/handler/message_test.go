@@ -311,6 +311,79 @@ func TestLoadMessages_ReconcilesCompletedAssistantMissingAgentStepsFromStream(t 
 	assert.Equal(t, int64(3210), response.Data[0].AgentDurationMs)
 }
 
+func TestLoadMessages_DoesNotPromoteAgentAnswerDoneWithoutCompleteToCompleted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	messageService := &messageHandlerMessageServiceStub{recentMessages: []*types.Message{{
+		ID:               "assistant-agent-1",
+		SessionID:        "sess-1",
+		RequestID:        "req-agent-1",
+		Role:             "assistant",
+		CompletionStatus: types.MessageCompletionStatusPending,
+	}}}
+	handler := NewMessageHandler(
+		messageService,
+		&messageHandlerSessionServiceStub{},
+		&messageHandlerStreamManagerStub{eventsByMessageID: map[string][]interfaces.StreamEvent{
+			"assistant-agent-1": {
+				{Type: types.ResponseTypeAgentQuery, Done: true},
+				{Type: types.ResponseTypeAnswer, Content: "还在处理中", Done: true},
+			},
+		}},
+	)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/messages/sess-1/load?limit=20", nil)
+	ctx.Params = gin.Params{{Key: "session_id", Value: "sess-1"}}
+
+	handler.LoadMessages(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Len(t, messageService.updatedMessages, 1)
+	assert.Equal(t, types.MessageCompletionStatusPartial, messageService.updatedMessages[0].CompletionStatus)
+	assert.False(t, messageService.updatedMessages[0].IsCompleted)
+	assert.Equal(t, "stream_closed", messageService.updatedMessages[0].FinishReason)
+	assert.Equal(t, "stream_closed", messageService.updatedMessages[0].FailureReason)
+	assert.Equal(t, "还在处理中", messageService.updatedMessages[0].Content)
+}
+
+func TestLoadMessages_ReconcilesAgentStopEventAsCancelled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	messageService := &messageHandlerMessageServiceStub{recentMessages: []*types.Message{{
+		ID:               "assistant-agent-2",
+		SessionID:        "sess-1",
+		RequestID:        "req-agent-2",
+		Role:             "assistant",
+		CompletionStatus: types.MessageCompletionStatusPending,
+	}}}
+	handler := NewMessageHandler(
+		messageService,
+		&messageHandlerSessionServiceStub{},
+		&messageHandlerStreamManagerStub{eventsByMessageID: map[string][]interfaces.StreamEvent{
+			"assistant-agent-2": {
+				{Type: types.ResponseTypeAgentQuery, Done: true},
+				{Type: types.ResponseType(event.EventStop), Done: true, Data: map[string]interface{}{
+					"reason": "user_requested",
+				}},
+			},
+		}},
+	)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/messages/sess-1/load?limit=20", nil)
+	ctx.Params = gin.Params{{Key: "session_id", Value: "sess-1"}}
+
+	handler.LoadMessages(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Len(t, messageService.updatedMessages, 1)
+	assert.Equal(t, types.MessageCompletionStatusCancelled, messageService.updatedMessages[0].CompletionStatus)
+	assert.False(t, messageService.updatedMessages[0].IsCompleted)
+	assert.Equal(t, "user_requested", messageService.updatedMessages[0].FinishReason)
+	assert.Equal(t, "user_requested", messageService.updatedMessages[0].FailureReason)
+}
+
 var _ interfaces.MessageService = (*messageHandlerMessageServiceStub)(nil)
 var _ interfaces.SessionService = (*messageHandlerSessionServiceStub)(nil)
 var _ interfaces.StreamManager = (*messageHandlerStreamManagerStub)(nil)
