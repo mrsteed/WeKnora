@@ -45,6 +45,7 @@ const imageUploading = ref(false);
 // Attachment upload state
 const attachmentUploadRef = ref<InstanceType<typeof AttachmentUpload>>();
 const uploadedAttachments = ref<AttachmentFile[]>([]);
+const longDocumentTranslateEnabled = ref(false);
 const CHAT_FILE_DROP_EVENT = 'weknora:chat-file-drop';
 
 const isImageFile = (file: File) => {
@@ -117,6 +118,11 @@ const removeImage = (index: number) => {
 const triggerImageUpload = () => {
   imageInputRef.value?.click();
 };
+
+const toggleLongDocumentTranslate = () => {
+  longDocumentTranslateEnabled.value = !longDocumentTranslateEnabled.value;
+};
+
 const atButtonRef = ref<HTMLElement>();
 const showAgentModeSelector = ref(false);
 const agentModeButtonRef = ref<HTMLElement>();
@@ -1504,7 +1510,7 @@ watch([selectedKbIds, selectedFileIds], ([kbIds, fileIds]) => {
 }, { deep: true });
 
 const emit = defineEmits<{
-  (e: 'send-msg', query: string, modelId: string, mentionedItems: any[], imageFiles: File[], attachmentFiles: AttachmentFile[]): void;
+  (e: 'send-msg', query: string, modelId: string, mentionedItems: any[], imageFiles: File[], attachmentFiles: AttachmentFile[], longDocumentTranslateEnabled: boolean): void;
   (e: 'stop-generation'): void;
 }>();
 
@@ -1550,7 +1556,7 @@ const createSession = async (val: string) => {
   // detached DOM element (which causes getComputedStyle to throw).
   const textarea = getTextareaEl();
   if (textarea) textarea.blur();
-  emit('send-msg', val, selectedModelId.value, mentionedItems, imageFiles, attachmentFiles);
+  emit('send-msg', val, selectedModelId.value, mentionedItems, imageFiles, attachmentFiles, longDocumentTranslateEnabled.value);
   
   // Clean up image previews
   uploadedImages.value.forEach(img => URL.revokeObjectURL(img.preview));
@@ -2238,6 +2244,25 @@ defineExpose({
           </div>
         </t-tooltip>
 
+        <!-- 长文档翻译模式按钮 -->
+        <t-tooltip placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
+          <template #content>
+            <span>{{ $t('chat.longDocumentTranslateTooltip') }}</span>
+          </template>
+          <div
+            class="control-btn long-document-translate-btn"
+            :class="{ 'active': longDocumentTranslateEnabled }"
+            @click.stop="toggleLongDocumentTranslate"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="control-icon">
+              <path d="M5 5.5V3M5 5.5H9M5 5.5H1M2 14.2C5.8 12.4 8.8 9.5 10.7 5.9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M4.8 8.4C6.2 11 8.3 13.2 10.9 14.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M22 21L17.5 11.5L13 21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M15.1 18.5H19.9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </div>
+        </t-tooltip>
+
         <!-- 模型显示 -->
         <t-tooltip :content="isModelLockedByAgent ? $t('input.modelLockedByAgent') : ''" :disabled="!isModelLockedByAgent">
           <div class="model-display" :class="{ 'agent-controlled': isModelLockedByAgent }">
@@ -2802,6 +2827,29 @@ const getImgSrc = (url: string) => {
     align-items: center;
     justify-content: center;
     line-height: 1;
+  }
+}
+
+/* Long document translate */
+.long-document-translate-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  min-width: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  color: var(--td-text-color-secondary, #666);
+
+  &:hover {
+    background: var(--td-bg-color-secondarycontainer-hover, #f0f0f0);
+    color: var(--td-text-color-primary, #333);
+  }
+
+  &.active {
+    background: rgba(16, 185, 129, 0.1);
+    color: #07C05F;
   }
 }
 

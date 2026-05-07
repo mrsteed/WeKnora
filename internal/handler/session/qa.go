@@ -610,12 +610,6 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 		c.Error(err)
 		return
 	}
-	if handled, err := h.tryHandleLongDocumentTask(reqCtx, request); handled {
-		if err != nil {
-			c.Error(errors.NewBadRequestError(err.Error()))
-		}
-		return
-	}
 
 	// Execute normal mode QA, generate title unless disabled
 	h.executeQA(reqCtx, qaModeNormal, !request.DisableTitle)
@@ -641,12 +635,6 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		c.Error(err)
 		return
 	}
-	if handled, err := h.tryHandleLongDocumentTask(reqCtx, request); handled {
-		if err != nil {
-			c.Error(errors.NewBadRequestError(err.Error()))
-		}
-		return
-	}
 
 	// Determine if agent mode should be enabled
 	// Priority: customAgent.IsAgentMode() > request.AgentEnabled
@@ -664,53 +652,6 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		logger.Infof(reqCtx.ctx, "Agent mode disabled, delegating to normal mode for session: %s", reqCtx.sessionID)
 		h.executeQA(reqCtx, qaModeNormal, false)
 	}
-}
-
-func (h *Handler) tryHandleLongDocumentTask(reqCtx *qaRequestContext, request *CreateKnowledgeQARequest) (bool, error) {
-	if h.longDocumentService == nil || h.config == nil || h.config.LongDocument == nil || !h.config.LongDocument.EnableTaskRouter {
-		return false, nil
-	}
-	taskKind := h.longDocumentService.InferTaskKind(reqCtx.ctx, reqCtx.query, reqCtx.knowledgeIDs)
-	createReq := buildLongDocumentTaskCreateRequest(
-		reqCtx.sessionID,
-		reqCtx.query,
-		taskKind,
-		request.Channel,
-		reqCtx.knowledgeIDs,
-		request.SummaryModelID,
-		strings.TrimSpace(types.LanguageNameFromContext(reqCtx.ctx)),
-	)
-	if createReq == nil {
-		return false, nil
-	}
-	resp, err := h.longDocumentService.CreateTask(reqCtx.ctx, createReq)
-	if err != nil {
-		return true, err
-	}
-	if resp == nil || resp.Task == nil {
-		return true, fmt.Errorf("long document task created without task payload")
-	}
-	sendLongDocumentTaskEvent(reqCtx.c, resp.Task)
-	return true, nil
-}
-
-func buildLongDocumentTaskCreateRequest(sessionID, query, taskKind, channel string, knowledgeIDs []string, summaryModelID string, targetLanguage string) *types.CreateLongDocumentTaskRequest {
-	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(query) == "" || strings.TrimSpace(taskKind) == "" || len(knowledgeIDs) != 1 {
-		return nil
-	}
-	request := &types.CreateLongDocumentTaskRequest{
-		SessionID:      sessionID,
-		KnowledgeID:    knowledgeIDs[0],
-		TaskKind:       taskKind,
-		OutputFormat:   types.LongDocumentOutputFormatMarkdown,
-		UserQuery:      query,
-		SummaryModelID: strings.TrimSpace(summaryModelID),
-		Channel:        strings.TrimSpace(channel),
-	}
-	if targetLanguage != "" {
-		request.Options.TargetLanguage = targetLanguage
-	}
-	return request
 }
 
 // qaMode determines which QA execution path to use.

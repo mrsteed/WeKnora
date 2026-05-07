@@ -42,6 +42,7 @@ export const useMenuStore = defineStore('menuStore', () => {
   const firstModelId = ref('')
   const firstImageFiles = ref<any[]>([])
   const firstAttachmentFiles = ref<any[]>([])
+  const firstLongDocumentTranslateEnabled = ref(false)
   const prefillQuery = ref('')
 
   const applyMenuTranslations = () => {
@@ -127,12 +128,13 @@ export const useMenuStore = defineStore('menuStore', () => {
     isFirstSession.value = payload
   }
 
-  const changeFirstQuery = (payload: string, mentionedItems: any[] = [], modelId: string = '', imageFiles: any[] = [], attachmentFiles: any[] = []) => {
+  const changeFirstQuery = (payload: string, mentionedItems: any[] = [], modelId: string = '', imageFiles: any[] = [], attachmentFiles: any[] = [], longDocumentTranslateEnabled: boolean = false) => {
     firstQuery.value = payload
     firstMentionedItems.value = mentionedItems
     firstModelId.value = modelId
     firstImageFiles.value = imageFiles
     firstAttachmentFiles.value = attachmentFiles
+    firstLongDocumentTranslateEnabled.value = longDocumentTranslateEnabled
   }
 
   const setPrefillQuery = (q: string) => {
@@ -154,6 +156,7 @@ export const useMenuStore = defineStore('menuStore', () => {
     firstModelId,
     firstImageFiles,
     firstAttachmentFiles,
+    firstLongDocumentTranslateEnabled,
     prefillQuery,
     clearMenuArr,
     updatemenuArr,

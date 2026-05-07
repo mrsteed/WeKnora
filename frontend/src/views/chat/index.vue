@@ -72,7 +72,7 @@
         <div class="input-container" :class="{ 'is-embedded': embeddedMode }">
             <InputField
                 ref="inputFieldRef"
-                @send-msg="(query, modelId, mentionedItems, imageFiles, attachmentFiles) => sendMsg(query, modelId, mentionedItems, imageFiles, attachmentFiles)"
+                @send-msg="(query, modelId, mentionedItems, imageFiles, attachmentFiles, longDocumentTranslateEnabled) => sendMsg(query, modelId, mentionedItems, imageFiles, attachmentFiles, longDocumentTranslateEnabled)"
                 @stop-generation="handleStopGeneration"
                 :isReplying="isReplying"
                 :sessionId="session_id"
@@ -120,7 +120,7 @@ const useSettingsStoreInstance = useSettingsStore();
 const uiStore = useUIStore();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 const { t } = useI18n();
-const { menuArr, isFirstSession, firstQuery, firstMentionedItems, firstModelId, firstImageFiles, firstAttachmentFiles } = storeToRefs(usemenuStore);
+const { menuArr, isFirstSession, firstQuery, firstMentionedItems, firstModelId, firstImageFiles, firstAttachmentFiles, firstLongDocumentTranslateEnabled } = storeToRefs(usemenuStore);
 const { output, onChunk, onClose, isStreaming, isLoading, error, startStream, stopStream } = useStream();
 const route = useRoute();
 const router = useRouter();
@@ -240,7 +240,6 @@ const getUserQuery = (index) => {
 };
 
 const terminalCompletionStatuses = new Set(['completed', 'partial', 'failed', 'cancelled']);
-const longDocumentTaskTriggerRE = /(全文翻译|完整翻译|整篇翻译|翻译成\s*markdown|markdown文件|translate (the )?full document|translate to markdown|export markdown)/i;
 const internalFailureReasonMessages = {
     stream_unavailable: () => t('chat.streamUnavailable'),
 };
@@ -491,17 +490,14 @@ const inferLongDocumentTargetLanguage = (query) => {
     return '';
 };
 
-const shouldCreateLongDocumentTask = (query, knowledgeIds = [], imageAttachments = [], attachmentUploads = []) => {
-    if (!longDocumentTaskTriggerRE.test(query || '')) {
-        return false;
-    }
+const validateLongDocumentTranslationMode = (knowledgeIds = [], imageAttachments = [], attachmentUploads = []) => {
     if (knowledgeIds.length !== 1) {
-        return false;
+        return t('chat.longDocumentTranslateRequiresSingleFile');
     }
     if ((imageAttachments?.length || 0) > 0 || (attachmentUploads?.length || 0) > 0) {
-        return false;
+        return t('chat.longDocumentTranslateNoAttachments');
     }
-    return true;
+    return '';
 };
 
 const findActiveAssistantMessage = () => {
@@ -964,7 +960,7 @@ const handleStopGeneration = () => {
     // API 调用成功后，后端的 stop 事件会清空它
 };
 
-const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = [], attachmentFiles = []) => {
+const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = [], attachmentFiles = [], longDocumentTranslateEnabled = false) => {
     userquery.value = value;
     isReplying.value = true;
     loading.value = true;
@@ -1073,6 +1069,15 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         url: endpoint
     };
 
+    if (longDocumentTranslateEnabled) {
+        const validationError = validateLongDocumentTranslationMode(knowledgeIds, imageAttachments, attachmentUploads);
+        if (validationError) {
+            resetReplyState();
+            MessagePlugin.warning(validationError);
+            return;
+        }
+    }
+
     // 将@提及的知识库和文件信息存入用户消息，并保留本次请求参数以便失败后重试
     messagesList.push({
         content: value,
@@ -1086,13 +1091,14 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     userHasScrolledUp.value = false;
     scrollToBottom(true);
 
-    if (shouldCreateLongDocumentTask(value, knowledgeIds, imageAttachments, attachmentUploads)) {
+    if (longDocumentTranslateEnabled) {
         try {
             const res = await createLongDocumentTask({
                 session_id: session_id.value,
                 knowledge_id: knowledgeIds[0],
                 user_query: value,
                 summary_model_id: modelId,
+                task_kind: 'translation',
                 output_format: 'markdown',
                 options: {
                     target_language: inferLongDocumentTargetLanguage(value)
@@ -1827,7 +1833,7 @@ onMounted(async () => {
     if (firstQuery.value) {
         scrollLock.value = true;
         historyLoading.value = false;
-         sendMsg(firstQuery.value, firstModelId.value || '', firstMentionedItems.value || [], firstImageFiles.value || [], firstAttachmentFiles.value || []);
+         sendMsg(firstQuery.value, firstModelId.value || '', firstMentionedItems.value || [], firstImageFiles.value || [], firstAttachmentFiles.value || [], Boolean(firstLongDocumentTranslateEnabled.value));
         usemenuStore.changeFirstQuery('', [], '', [], []);
     } else {
         scrollLock.value = false;

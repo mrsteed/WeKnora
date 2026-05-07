@@ -509,10 +509,13 @@ export default {
     imageTypeSizeError: "JPG/PNG/GIF/WEBP 형식만 지원하며, 단일 파일 10MB 이하",
     imageUploadTooltip: "이미지 업로드 (붙여넣기/드래그 지원)",
     attachmentUploadTooltip: "첨부 파일 업로드 (문서, 오디오 등)",
+    longDocumentTranslateTooltip: "장문 문서 번역 모드",
     attachmentWithCount: "{count}개 파일 업로드됨",
     attachmentTooMany: "최대 {max}개 파일까지 업로드 가능합니다",
     attachmentTooLarge: "파일 {name}이(가) {max}MB 제한을 초과합니다",
     attachmentTypeNotSupported: "지원하지 않는 파일 형식: {name}",
+    longDocumentTranslateRequiresSingleFile: "장문 문서 번역 모드에서는 파일을 정확히 하나 선택해야 합니다",
+    longDocumentTranslateNoAttachments: "장문 문서 번역 모드에서는 이미지나 첨부 파일을 지원하지 않습니다",
   },
   settings: {
     title: "설정",

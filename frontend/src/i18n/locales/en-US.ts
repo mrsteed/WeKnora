@@ -2422,10 +2422,13 @@ export default {
     imageTypeSizeError: 'Only JPG/PNG/GIF/WEBP under 10MB supported',
     imageUploadTooltip: 'Upload image (paste/drop supported)',
     attachmentUploadTooltip: 'Upload attachment (documents, audio, etc.)',
+    longDocumentTranslateTooltip: 'Long document translation mode',
     attachmentWithCount: '{count} attachment(s) uploaded',
     attachmentTooMany: 'Maximum {max} attachments allowed',
     attachmentTooLarge: 'File {name} exceeds {max}MB limit',
     attachmentTypeNotSupported: 'Unsupported file type: {name}',
+    longDocumentTranslateRequiresSingleFile: 'Long document translation mode requires exactly one selected file',
+    longDocumentTranslateNoAttachments: 'Long document translation mode does not support images or attachments',
   },
   tenant: {
     title: 'Tenant Information',

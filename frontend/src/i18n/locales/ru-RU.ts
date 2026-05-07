@@ -2525,10 +2525,13 @@ export default {
     imageTypeSizeError: 'Поддерживаются только JPG/PNG/GIF/WEBP до 10 МБ',
     imageUploadTooltip: 'Загрузить изображение (вставка/перетаскивание)',
     attachmentUploadTooltip: 'Загрузить вложение (документы, аудио и т.д.)',
+    longDocumentTranslateTooltip: 'Режим перевода длинного документа',
     attachmentWithCount: 'Загружено файлов: {count}',
     attachmentTooMany: 'Максимум {max} файлов',
     attachmentTooLarge: 'Файл {name} превышает лимит {max} МБ',
     attachmentTypeNotSupported: 'Неподдерживаемый тип файла: {name}',
+    longDocumentTranslateRequiresSingleFile: 'Для режима перевода длинного документа нужно выбрать ровно один файл',
+    longDocumentTranslateNoAttachments: 'Режим перевода длинного документа не поддерживает изображения и вложения',
     thinkingAlt: 'Обдумывание...',
     deepThoughtCompleted: 'Глубокий анализ завершён',
     deepThoughtAlt: 'Глубокий анализ'

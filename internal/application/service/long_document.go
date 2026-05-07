@@ -126,7 +126,7 @@ func (s *longDocumentTaskService) CreateTask(ctx context.Context, req *types.Cre
 	}
 	taskKind := strings.TrimSpace(req.TaskKind)
 	if taskKind == "" {
-		taskKind = s.InferTaskKind(ctx, req.UserQuery, []string{req.KnowledgeID})
+		taskKind = types.LongDocumentTaskKindTranslation
 	}
 	if taskKind != types.LongDocumentTaskKindTranslation {
 		return nil, fmt.Errorf("unsupported long document task kind")
