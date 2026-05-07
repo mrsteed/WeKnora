@@ -77,6 +77,10 @@ func (s *stubToolSchemaRegistry) BuildPromptSchemaResult(_ context.Context, _ st
 		if mode == types.PromptSchemaModeCatalog {
 			prompt += "\nCatalog view: representative columns are shown first."
 		}
+		prompt += "\nQuery planning rules:\n"
+		prompt += "- Add LIMIT to any query that can return multiple rows. This includes detail previews, JOIN inspections, DISTINCT value lists, GROUP BY/HAVING summaries, ORDER BY top-N checks, window-function queries, and multi-row CTE outputs.\n"
+		prompt += "- Only pure global aggregates that return one row may omit LIMIT, such as COUNT(*), SUM(amount), AVG(score), MIN(created_at), MAX(created_at), or DISTINCT COUNT(*), with no GROUP BY and no window clause.\n"
+		prompt += "- For exploratory inspection, start with LIMIT 10 or LIMIT 20 and tighten WHERE conditions before widening scope."
 	}
 	displayTables := append([]types.TableSchema(nil), tables...)
 	if mode == types.PromptSchemaModeCatalog && len(displayTables) > schemaOutputTableLimit {
@@ -137,11 +141,102 @@ func TestExternalDatabaseToolDefinitions(t *testing.T) {
 		seen[def.Name] = true
 	}
 	assert.True(t, seen[ToolExternalDatabaseSchema])
+	assert.True(t, seen[ToolExternalDatabaseSearchTables])
 	assert.True(t, seen[ToolExternalDatabaseQuery])
 	assert.Equal(t, ToolRequirement{AllOf: []KBCapability{CapDatabase}}, ToolCapabilityRequirements[ToolExternalDatabaseSchema])
+	assert.Equal(t, ToolRequirement{AllOf: []KBCapability{CapDatabase}}, ToolCapabilityRequirements[ToolExternalDatabaseSearchTables])
 	assert.Equal(t, ToolRequirement{AllOf: []KBCapability{CapDatabase}}, ToolCapabilityRequirements[ToolExternalDatabaseQuery])
 	assert.LessOrEqual(t, len(ToolExternalDatabaseSchema), maxFunctionNameLength)
+	assert.LessOrEqual(t, len(ToolExternalDatabaseSearchTables), maxFunctionNameLength)
 	assert.LessOrEqual(t, len(ToolExternalDatabaseQuery), maxFunctionNameLength)
+}
+
+func TestExternalDatabaseSearchTablesToolExecuteSuccess(t *testing.T) {
+	tool := NewExternalDatabaseSearchTablesTool(&stubToolSchemaRegistry{
+		schema: &types.DatabaseSchema{
+			DatabaseName: "crm",
+			SchemaName:   "public",
+			SchemaHash:   "hash-1",
+			Tables: []types.TableSchema{
+				{Name: "emergency_plans", Type: "table", Comment: "预案主数据", Columns: []types.ColumnSchema{{Name: "id", DataType: "bigint"}, {Name: "plan_name", DataType: "varchar", Comment: "预案名称"}}},
+				{Name: "emergency_plan_calls", Type: "table", Comment: "预案调用记录", Columns: []types.ColumnSchema{{Name: "plan_id", DataType: "bigint", Comment: "预案ID"}, {Name: "call_count", DataType: "int"}}},
+				{Name: "orders", Type: "table", Comment: "订单表", Columns: []types.ColumnSchema{{Name: "id", DataType: "bigint"}}},
+			},
+		},
+	}, types.SearchTargets{{KnowledgeBaseID: "kb-db"}})
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"knowledge_base_id":"kb-db","keyword":"预案","limit":5}`))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.Contains(t, result.Output, "External Database Table Search")
+	assert.Contains(t, result.Output, "Matched table count: 2")
+	assert.Contains(t, result.Output, "emergency_plan_calls")
+	assert.Contains(t, result.Output, "Match reasons")
+	assert.Equal(t, "external_database_search_tables", result.Data["display_type"])
+	assert.Equal(t, 3, result.Data["scope_table_count"])
+	assert.Equal(t, 2, result.Data["matched_table_count"])
+	assert.Equal(t, 2, result.Data["returned_hit_count"])
+	assert.Equal(t, "预案", result.Data["keyword"])
+
+	matchedTables, ok := result.Data["matched_tables"].([]string)
+	require.True(t, ok)
+	require.Len(t, matchedTables, 2)
+	assert.Contains(t, matchedTables, "emergency_plans")
+	assert.Contains(t, matchedTables, "emergency_plan_calls")
+
+	results, ok := result.Data["results"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, results, 2)
+	assert.Equal(t, "emergency_plan_calls", results[0]["table_name"])
+	assert.Equal(t, "fact_log", results[0]["likely_role"])
+	assert.NotEmpty(t, results[0]["matched_columns"])
+	assert.NotEmpty(t, results[0]["match_reasons"])
+}
+
+func TestExternalDatabaseSearchTablesToolRequiresFilter(t *testing.T) {
+	tool := NewExternalDatabaseSearchTablesTool(&stubToolSchemaRegistry{
+		schema: &types.DatabaseSchema{DatabaseName: "crm", Tables: []types.TableSchema{{Name: "orders", Type: "table"}}},
+	}, types.SearchTargets{{KnowledgeBaseID: "kb-db"}})
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"knowledge_base_id":"kb-db"}`))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	assert.Contains(t, result.Error, "at least one search filter is required")
+}
+
+func TestExternalDatabaseSearchTablesToolMatchedTablesKeepFullSetWhenResultsAreLimited(t *testing.T) {
+	tables := make([]types.TableSchema, 0, 5)
+	for index := 0; index < 5; index++ {
+		tables = append(tables, types.TableSchema{
+			Name:    fmt.Sprintf("plan_table_%d", index),
+			Type:    "table",
+			Comment: "预案相关表",
+			Columns: []types.ColumnSchema{{Name: "plan_id", DataType: "bigint", Comment: "预案ID"}},
+		})
+	}
+	tool := NewExternalDatabaseSearchTablesTool(&stubToolSchemaRegistry{
+		schema: &types.DatabaseSchema{DatabaseName: "crm", SchemaName: "public", Tables: tables},
+	}, types.SearchTargets{{KnowledgeBaseID: "kb-db"}})
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"knowledge_base_id":"kb-db","keyword":"预案","limit":2}`))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.Equal(t, 5, result.Data["matched_table_count"])
+	assert.Equal(t, 2, result.Data["returned_hit_count"])
+	assert.Equal(t, 3, result.Data["additional_matches_omitted"])
+
+	matchedTables, ok := result.Data["matched_tables"].([]string)
+	require.True(t, ok)
+	require.Len(t, matchedTables, 5)
+	assert.Contains(t, matchedTables, "plan_table_4")
+
+	results, ok := result.Data["results"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, results, 2)
+	assert.Contains(t, result.Output, "Additional matches omitted: 3")
 }
 
 func TestExternalDatabaseSchemaToolExecuteSuccess(t *testing.T) {
@@ -177,6 +272,8 @@ func TestExternalDatabaseSchemaToolExecuteSuccess(t *testing.T) {
 	assert.Contains(t, result.Output, "External Database Schema")
 	assert.Contains(t, result.Output, "Database: crm")
 	assert.Contains(t, result.Output, "Schema output mode: detail")
+	assert.Contains(t, result.Output, "Query planning rules:")
+	assert.Contains(t, result.Output, "LIMIT 10 or LIMIT 20")
 	assert.Contains(t, result.Output, "Allowed Query Scope")
 	assert.Contains(t, result.Output, "Foreign Keys")
 	assert.Contains(t, result.Output, "Possible Join Hints")
@@ -330,9 +427,12 @@ func TestExternalDatabaseSchemaToolAutoModeUsesCatalogForLargeSchema(t *testing.
 	require.NotNil(t, result)
 	assert.Equal(t, "catalog", result.Data["mode"])
 	assert.Equal(t, 21, result.Data["table_count"])
+	assert.Equal(t, 20, result.Data["display_table_count"])
 	assert.Equal(t, 1, result.Data["additional_tables_omitted"])
 	assert.Equal(t, 48, result.Data["additional_columns_omitted"])
 	assert.Contains(t, result.Output, "Catalog view")
+	assert.Contains(t, result.Output, "Current view table count: 20 / 21")
+	assert.Contains(t, result.Output, "external_database_search_tables")
 
 	allowedTables, ok := result.Data["allowed_tables"].([]string)
 	require.True(t, ok)
@@ -369,6 +469,79 @@ func TestExternalDatabaseSchemaToolAutoModeUsesDetailForSelectedTables(t *testin
 	require.True(t, ok)
 	assert.Len(t, dataColumns, 7)
 	assert.Equal(t, 0, dataTables[0]["additional_columns_omitted"])
+}
+
+func TestExternalDatabaseSchemaToolTableNameLikeFindsTablesOutsideCatalogWindow(t *testing.T) {
+	tables := make([]types.TableSchema, 0, 30)
+	for tableIndex := 0; tableIndex < 30; tableIndex++ {
+		table := types.TableSchema{
+			Name:    fmt.Sprintf("table_%02d", tableIndex),
+			Type:    "table",
+			Columns: []types.ColumnSchema{{Name: "id", DataType: "bigint"}},
+		}
+		if tableIndex == 27 {
+			table.Name = "emergency_plan_calls"
+			table.Comment = "预案调用记录"
+			table.Columns = []types.ColumnSchema{{Name: "plan_id", DataType: "bigint", Comment: "预案ID"}, {Name: "call_count", DataType: "int"}}
+		}
+		tables = append(tables, table)
+	}
+	tool := NewExternalDatabaseSchemaTool(&stubToolSchemaRegistry{
+		schema: &types.DatabaseSchema{DatabaseName: "crm", SchemaName: "public", Tables: tables},
+	}, types.SearchTargets{{KnowledgeBaseID: "kb-db"}})
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"knowledge_base_id":"kb-db","mode":"auto","table_name_like":"plan"}`))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.Contains(t, result.Output, "Matched tables")
+	assert.Contains(t, result.Output, "emergency_plan_calls")
+	assert.Equal(t, 1, result.Data["matched_table_count"])
+	assert.Equal(t, 30, result.Data["scope_table_count"])
+	assert.Equal(t, "plan", result.Data["table_name_like"])
+
+	matchedTables, ok := result.Data["matched_tables"].([]string)
+	require.True(t, ok)
+	assert.Equal(t, []string{"emergency_plan_calls"}, matchedTables)
+
+	dataTables, ok := result.Data["tables"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, dataTables, 1)
+	assert.Equal(t, "emergency_plan_calls", dataTables[0]["name"])
+	assert.Equal(t, 2, dataTables[0]["column_count"])
+}
+
+func TestExternalDatabaseSchemaToolListOnlyReturnsFullTableList(t *testing.T) {
+	tables := make([]types.TableSchema, 0, 25)
+	for tableIndex := 0; tableIndex < 25; tableIndex++ {
+		tables = append(tables, types.TableSchema{
+			Name:    fmt.Sprintf("table_%02d", tableIndex),
+			Type:    "table",
+			Columns: []types.ColumnSchema{{Name: "id", DataType: "bigint"}},
+		})
+	}
+	tool := NewExternalDatabaseSchemaTool(&stubToolSchemaRegistry{
+		schema: &types.DatabaseSchema{DatabaseName: "crm", SchemaName: "public", Tables: tables},
+	}, types.SearchTargets{{KnowledgeBaseID: "kb-db"}})
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"knowledge_base_id":"kb-db","mode":"auto","list_only":true}`))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.Contains(t, result.Output, "Full table list returned: 25")
+	assert.Contains(t, result.Output, "table_24")
+	assert.NotContains(t, result.Output, "Additional tables omitted from scope list")
+	assert.Equal(t, true, result.Data["list_only"])
+	assert.Equal(t, 25, result.Data["matched_table_count"])
+
+	matchedTables, ok := result.Data["matched_tables"].([]string)
+	require.True(t, ok)
+	require.Len(t, matchedTables, 25)
+	assert.Equal(t, "table_24", matchedTables[24])
+
+	dataTables, ok := result.Data["tables"].([]map[string]interface{})
+	require.True(t, ok)
+	assert.Len(t, dataTables, 0)
 }
 
 func TestExternalDatabaseQueryOutputCellBudget(t *testing.T) {

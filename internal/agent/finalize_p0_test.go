@@ -155,6 +155,9 @@ func TestFinalizeSummarizesBudgetedDatabaseSchemaData(t *testing.T) {
 			"refreshed_at":               "2026-05-06T12:00:00Z",
 			"mode":                       "catalog",
 			"table_count":                21,
+			"display_table_count":        20,
+			"scope_table_count":          21,
+			"matched_table_count":        21,
 			"additional_tables_omitted":  5,
 			"allowed_tables":             []string{"orders", "customers", "shipments"},
 			"foreign_keys":               []string{"orders.customer_id -> customers.id"},
@@ -170,10 +173,68 @@ func TestFinalizeSummarizesBudgetedDatabaseSchemaData(t *testing.T) {
 	assert.Contains(t, summary, "Refreshed at: 2026-05-06T12:00:00Z")
 	assert.Contains(t, summary, "Mode: catalog")
 	assert.Contains(t, summary, "Table count: 21")
-	assert.Contains(t, summary, "Additional tables omitted: 5")
-	assert.Contains(t, summary, "Tables: customers, orders, shipments")
+	assert.Contains(t, summary, "Current view table count: 20")
+	assert.Contains(t, summary, "Scope table count: 21")
+	assert.Contains(t, summary, "Matched table count: 21")
+	assert.Contains(t, summary, "Additional tables omitted from current view: 5")
+	assert.Contains(t, summary, "Table preview: customers, orders, shipments")
 	assert.Contains(t, summary, "Foreign keys:")
 	assert.Contains(t, summary, "orders.customer_id -> customers.id")
 	assert.Contains(t, summary, "Possible join hints:")
 	assert.Contains(t, summary, "shipments.order_id = orders.id")
+	assert.Contains(t, summary, "Retrieval hint:")
+}
+
+func TestSummarizeStructuredToolResultForExternalDatabaseSchemaListOnlyAndFilters(t *testing.T) {
+	summary := summarizeStructuredToolResult(agenttools.ToolExternalDatabaseSchema, &types.ToolResult{
+		Data: map[string]interface{}{
+			"database_name":       "crm",
+			"schema_name":         "public",
+			"mode":                "detail",
+			"table_count":         1,
+			"scope_table_count":   82,
+			"matched_table_count": 1,
+			"allowed_tables":      []string{"table_01", "table_02", "emergency_plan_calls"},
+			"matched_tables":      []string{"emergency_plan_calls"},
+			"table_name_like":     "plan",
+			"list_only":           true,
+		},
+	})
+
+	assert.Contains(t, summary, "Database schema summary")
+	assert.Contains(t, summary, "Scope table count: 82")
+	assert.Contains(t, summary, "Matched table count: 1")
+	assert.Contains(t, summary, "Table name filter: plan")
+	assert.Contains(t, summary, "Table preview: emergency_plan_calls")
+	assert.Contains(t, summary, "list_only mode")
+	assert.NotContains(t, summary, "table_01, table_02")
+}
+
+func TestSummarizeStructuredToolResultForExternalDatabaseSearchTables(t *testing.T) {
+	summary := summarizeStructuredToolResult(agenttools.ToolExternalDatabaseSearchTables, &types.ToolResult{
+		Data: map[string]interface{}{
+			"database_name":              "crm",
+			"schema_name":                "public",
+			"scope_table_count":          82,
+			"matched_table_count":        4,
+			"returned_hit_count":         2,
+			"additional_matches_omitted": 2,
+			"keyword":                    "预案",
+			"matched_tables":             []string{"emergency_plan_calls", "emergency_plan_links", "emergency_plan_logs", "emergency_plans"},
+			"results": []map[string]interface{}{
+				{"table_name": "emergency_plan_calls", "likely_role": "fact_log", "matched_columns": []string{"plan_id", "call_count"}},
+			},
+		},
+	})
+
+	assert.Contains(t, summary, "Database table search summary")
+	assert.Contains(t, summary, "Scope table count: 82")
+	assert.Contains(t, summary, "Matched table count: 4")
+	assert.Contains(t, summary, "Returned hit count: 2")
+	assert.Contains(t, summary, "Keyword filter: 预案")
+	assert.Contains(t, summary, "Candidate tables: emergency_plan_calls, emergency_plan_links, emergency_plan_logs, emergency_plans")
+	assert.Contains(t, summary, "Additional candidate tables omitted: 2")
+	assert.Contains(t, summary, "Top matches:")
+	assert.Contains(t, summary, "emergency_plan_calls [fact_log]")
+	assert.Contains(t, summary, "Retrieval hint:")
 }

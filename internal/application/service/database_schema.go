@@ -306,6 +306,7 @@ func renderPromptSchema(schema *types.DatabaseSchema, result *types.PromptSchema
 	if result.Mode == types.PromptSchemaModeCatalog {
 		builder.WriteString("Catalog view: representative columns are shown first. Request detail mode with specific tables when you need full column lists.\n")
 	}
+	builder.WriteString(renderPromptQueryGuidance())
 	builder.WriteString("Tables:\n")
 	for _, table := range result.DisplayTables {
 		builder.WriteString(renderPromptSchemaTable(table, result.Mode))
@@ -335,6 +336,15 @@ func renderPromptSchema(schema *types.DatabaseSchema, result *types.PromptSchema
 		builder.WriteString("If required tables or columns are missing, call external_database_schema again with tables=[...] and mode=detail, or refresh schema when the snapshot looks stale.\n")
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+func renderPromptQueryGuidance() string {
+	var builder strings.Builder
+	builder.WriteString("Query planning rules:\n")
+	builder.WriteString("- Add LIMIT to any query that can return multiple rows. This includes detail previews, JOIN inspections, DISTINCT value lists, GROUP BY/HAVING summaries, ORDER BY top-N checks, window-function queries, and multi-row CTE outputs.\n")
+	builder.WriteString("- Only pure global aggregates that return one row may omit LIMIT, such as COUNT(*), SUM(amount), AVG(score), MIN(created_at), MAX(created_at), or DISTINCT COUNT(*), with no GROUP BY and no window clause.\n")
+	builder.WriteString("- For exploratory inspection, start with LIMIT 10 or LIMIT 20 and tighten WHERE conditions before widening scope.\n")
+	return builder.String()
 }
 
 func renderPromptSchemaTable(table types.TableSchema, mode types.PromptSchemaMode) string {

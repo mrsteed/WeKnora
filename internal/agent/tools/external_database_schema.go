@@ -19,6 +19,8 @@ var externalDatabaseSchemaTool = BaseTool{
 
 Use this tool first when you need to understand which tables and columns are available in an external business database.
 
+When the database has many tables or the target business entity is still unclear, prefer calling external_database_search_tables first, then rerun external_database_schema with tables=[...] and mode=detail.
+
 Rules:
 - Only query database knowledge bases already in the current agent scope.
 - Prefer calling this tool before external_database_query.
@@ -32,6 +34,16 @@ type ExternalDatabaseSchemaInput struct {
 	KnowledgeBaseID string   `json:"knowledge_base_id" jsonschema:"Database knowledge base ID to inspect."`
 	Tables          []string `json:"tables,omitempty" jsonschema:"Optional table names to narrow the schema output."`
 	Mode            string   `json:"mode,omitempty" jsonschema:"Optional output mode: auto, catalog, or detail."`
+	Keyword         string   `json:"keyword,omitempty" jsonschema:"Optional keyword used to search table names, table comments, column names, and column comments."`
+	TableNameLike   string   `json:"table_name_like,omitempty" jsonschema:"Optional case-insensitive substring filter applied to table names."`
+	CommentLike     string   `json:"comment_like,omitempty" jsonschema:"Optional case-insensitive substring filter applied to table comments."`
+	ListOnly        bool     `json:"list_only,omitempty" jsonschema:"When true, return the full matched table name list without expanding table structure details."`
+}
+
+type externalSchemaSearchFilter struct {
+	keyword       string
+	tableNameLike string
+	commentLike   string
 }
 
 // ExternalDatabaseSchemaTool exposes prompt-friendly schema metadata for database KBs.
@@ -79,39 +91,53 @@ func (t *ExternalDatabaseSchemaTool) Execute(ctx context.Context, args json.RawM
 		return &types.ToolResult{Success: false, Error: "Failed to build prompt schema: " + err.Error()}, nil
 	}
 
+	searchFilter := normalizeExternalSchemaSearchFilter(input)
+	viewResult := buildExternalSchemaViewResult(buildResult, searchFilter, input.ListOnly, types.PromptSchemaMode(input.Mode))
+
 	allowedTables := make([]string, 0, len(buildResult.AllTables))
 	for _, table := range buildResult.AllTables {
 		allowedTables = append(allowedTables, table.Name)
 	}
-	visibleAllowedTables := make([]string, 0, len(buildResult.DisplayTables))
-	for _, table := range buildResult.DisplayTables {
-		visibleAllowedTables = append(visibleAllowedTables, table.Name)
+	matchedTables := make([]string, 0, len(viewResult.AllTables))
+	for _, table := range viewResult.AllTables {
+		matchedTables = append(matchedTables, table.Name)
 	}
-	foreignKeys := flattenForeignKeys(buildResult.DisplayTables)
-	possibleJoinHints := buildPossibleJoinHints(buildResult.DisplayTables, buildResult.PossibleJoinHints, foreignKeys)
-	sampleQueries := buildSampleQueries(buildResult.DisplayTables)
-	tableData, _ := toExternalSchemaTableData(buildResult.DisplayTables, buildResult.Mode)
+	foreignKeys := flattenForeignKeys(viewResult.DisplayTables)
+	possibleJoinHints := buildPossibleJoinHints(viewResult.DisplayTables, buildResult.PossibleJoinHints, foreignKeys)
+	sampleQueries := buildSampleQueries(viewResult.DisplayTables)
+	tableData := make([]map[string]interface{}, 0)
+	if !input.ListOnly {
+		tableData, _ = toExternalSchemaTableData(viewResult.DisplayTables, viewResult.Mode)
+	}
 
 	return &types.ToolResult{
 		Success: true,
-		Output:  formatExternalDatabaseSchemaOutput(buildResult, allowedTables, foreignKeys, possibleJoinHints, sampleQueries),
+		Output:  formatExternalDatabaseSchemaOutput(viewResult, allowedTables, matchedTables, foreignKeys, possibleJoinHints, sampleQueries, input.ListOnly, searchFilter),
 		Data: map[string]interface{}{
 			"display_type":               "external_database_schema",
 			"knowledge_base_id":          kbID,
-			"database_name":              buildResult.DatabaseName,
-			"schema_name":                buildResult.SchemaName,
-			"schema_hash":                buildResult.SchemaHash,
-			"refreshed_at":               formatSchemaTimestamp(buildResult.RefreshedAt),
-			"mode":                       string(buildResult.Mode),
-			"table_count":                buildResult.TableCount,
-			"column_count":               buildResult.ColumnCount,
-			"additional_tables_omitted":  buildResult.AdditionalTablesOmitted,
-			"additional_columns_omitted": buildResult.AdditionalColumnsOmitted,
+			"database_name":              viewResult.DatabaseName,
+			"schema_name":                viewResult.SchemaName,
+			"schema_hash":                viewResult.SchemaHash,
+			"refreshed_at":               formatSchemaTimestamp(viewResult.RefreshedAt),
+			"mode":                       string(viewResult.Mode),
+			"table_count":                viewResult.TableCount,
+			"column_count":               viewResult.ColumnCount,
+			"display_table_count":        len(viewResult.DisplayTables),
+			"additional_tables_omitted":  viewResult.AdditionalTablesOmitted,
+			"additional_columns_omitted": viewResult.AdditionalColumnsOmitted,
+			"scope_table_count":          len(buildResult.AllTables),
 			"allowed_tables":             allowedTables,
+			"matched_tables":             matchedTables,
+			"matched_table_count":        len(matchedTables),
 			"foreign_keys":               foreignKeys,
 			"possible_join_hints":        possibleJoinHints,
 			"join_hints":                 possibleJoinHints,
 			"sample_queries":             sampleQueries,
+			"keyword":                    searchFilter.keyword,
+			"table_name_like":            searchFilter.tableNameLike,
+			"comment_like":               searchFilter.commentLike,
+			"list_only":                  input.ListOnly,
 			"tables":                     tableData,
 		},
 	}, nil
@@ -146,6 +172,260 @@ func normalizeSelectedTables(tables []string) []string {
 		items = append(items, normalized)
 	}
 	return items
+}
+
+func normalizeExternalSchemaSearchFilter(input ExternalDatabaseSchemaInput) externalSchemaSearchFilter {
+	return externalSchemaSearchFilter{
+		keyword:       strings.ToLower(strings.TrimSpace(input.Keyword)),
+		tableNameLike: strings.ToLower(strings.TrimSpace(input.TableNameLike)),
+		commentLike:   strings.ToLower(strings.TrimSpace(input.CommentLike)),
+	}
+}
+
+func (f externalSchemaSearchFilter) active() bool {
+	return f.keyword != "" || f.tableNameLike != "" || f.commentLike != ""
+}
+
+func buildExternalSchemaViewResult(
+	base *types.PromptSchemaBuildResult,
+	filter externalSchemaSearchFilter,
+	listOnly bool,
+	requestedMode types.PromptSchemaMode,
+) *types.PromptSchemaBuildResult {
+	if base == nil {
+		return nil
+	}
+	matchedTables := append([]types.TableSchema(nil), base.AllTables...)
+	if filter.active() {
+		matchedTables = filterExternalSchemaTables(matchedTables, filter)
+	}
+	mode := resolveExternalSchemaViewMode(requestedMode, matchedTables, listOnly)
+	displayTables := append([]types.TableSchema(nil), matchedTables...)
+	if listOnly {
+		displayTables = nil
+	} else if mode == types.PromptSchemaModeCatalog && len(displayTables) > schemaOutputTableLimit {
+		displayTables = displayTables[:schemaOutputTableLimit]
+	}
+	columnCount := countExternalSchemaColumns(matchedTables)
+	additionalColumns := 0
+	if mode == types.PromptSchemaModeCatalog {
+		displayedColumns := 0
+		for _, table := range displayTables {
+			displayedColumns += minInt(len(table.Columns), schemaCatalogColumnLimit)
+		}
+		additionalColumns = maxInt(columnCount-displayedColumns, 0)
+	}
+	result := &types.PromptSchemaBuildResult{
+		Prompt:                   renderExternalSchemaViewPrompt(base, matchedTables, displayTables, mode, filter, listOnly),
+		Mode:                     mode,
+		DatabaseName:             base.DatabaseName,
+		SchemaName:               base.SchemaName,
+		SchemaHash:               base.SchemaHash,
+		RefreshedAt:              base.RefreshedAt,
+		AllTables:                matchedTables,
+		DisplayTables:            displayTables,
+		PossibleJoinHints:        append([]string(nil), base.PossibleJoinHints...),
+		TableCount:               len(matchedTables),
+		ColumnCount:              columnCount,
+		AdditionalTablesOmitted:  maxInt(len(matchedTables)-len(displayTables), 0),
+		AdditionalColumnsOmitted: additionalColumns,
+	}
+	return result
+}
+
+func resolveExternalSchemaViewMode(mode types.PromptSchemaMode, tables []types.TableSchema, listOnly bool) types.PromptSchemaMode {
+	if listOnly {
+		return types.PromptSchemaModeDetail
+	}
+	switch types.PromptSchemaMode(strings.ToLower(strings.TrimSpace(string(mode)))) {
+	case types.PromptSchemaModeCatalog:
+		return types.PromptSchemaModeCatalog
+	case types.PromptSchemaModeDetail:
+		return types.PromptSchemaModeDetail
+	}
+	if len(tables) <= 12 && countExternalSchemaColumns(tables) <= 160 {
+		return types.PromptSchemaModeDetail
+	}
+	return types.PromptSchemaModeCatalog
+}
+
+func filterExternalSchemaTables(tables []types.TableSchema, filter externalSchemaSearchFilter) []types.TableSchema {
+	if !filter.active() {
+		return tables
+	}
+	matched := make([]types.TableSchema, 0, len(tables))
+	for _, table := range tables {
+		if externalSchemaTableMatches(table, filter) {
+			matched = append(matched, table)
+		}
+	}
+	return matched
+}
+
+func externalSchemaTableMatches(table types.TableSchema, filter externalSchemaSearchFilter) bool {
+	name := strings.ToLower(strings.TrimSpace(table.Name))
+	comment := strings.ToLower(strings.TrimSpace(table.Comment))
+	if filter.tableNameLike != "" && !strings.Contains(name, filter.tableNameLike) {
+		return false
+	}
+	if filter.commentLike != "" && !strings.Contains(comment, filter.commentLike) {
+		return false
+	}
+	if filter.keyword == "" {
+		return true
+	}
+	if strings.Contains(name, filter.keyword) || strings.Contains(comment, filter.keyword) {
+		return true
+	}
+	for _, column := range table.Columns {
+		columnName := strings.ToLower(strings.TrimSpace(column.Name))
+		columnComment := strings.ToLower(strings.TrimSpace(column.Comment))
+		if strings.Contains(columnName, filter.keyword) || strings.Contains(columnComment, filter.keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func countExternalSchemaColumns(tables []types.TableSchema) int {
+	total := 0
+	for _, table := range tables {
+		total += len(table.Columns)
+	}
+	return total
+}
+
+func renderExternalSchemaViewPrompt(
+	base *types.PromptSchemaBuildResult,
+	matchedTables []types.TableSchema,
+	displayTables []types.TableSchema,
+	mode types.PromptSchemaMode,
+	filter externalSchemaSearchFilter,
+	listOnly bool,
+) string {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("Database: %s\n", base.DatabaseName))
+	if strings.TrimSpace(base.SchemaName) != "" {
+		builder.WriteString(fmt.Sprintf("Schema: %s\n", base.SchemaName))
+	}
+	if !base.RefreshedAt.IsZero() || strings.TrimSpace(base.SchemaHash) != "" {
+		parts := make([]string, 0, 2)
+		if !base.RefreshedAt.IsZero() {
+			parts = append(parts, fmt.Sprintf("refreshed_at=%s", base.RefreshedAt.UTC().Format(time.RFC3339)))
+		}
+		if strings.TrimSpace(base.SchemaHash) != "" {
+			parts = append(parts, fmt.Sprintf("schema_hash=%s", base.SchemaHash))
+		}
+		builder.WriteString("Schema snapshot: ")
+		builder.WriteString(strings.Join(parts, ", "))
+		builder.WriteString("\n")
+	}
+	if listOnly {
+		builder.WriteString("Schema output mode: list_only\n")
+	} else {
+		builder.WriteString(fmt.Sprintf("Schema output mode: %s\n", mode))
+	}
+	builder.WriteString(fmt.Sprintf("Scope summary: %d matched tables, %d columns\n", len(matchedTables), countExternalSchemaColumns(matchedTables)))
+	if listOnly {
+		builder.WriteString(fmt.Sprintf("Current view table count: %d / %d (names only)\n", len(matchedTables), len(matchedTables)))
+	} else {
+		builder.WriteString(fmt.Sprintf("Current view table count: %d / %d\n", len(displayTables), len(matchedTables)))
+	}
+	if filter.active() {
+		builder.WriteString("Applied filters:\n")
+		if filter.keyword != "" {
+			builder.WriteString(fmt.Sprintf("- keyword=%s\n", filter.keyword))
+		}
+		if filter.tableNameLike != "" {
+			builder.WriteString(fmt.Sprintf("- table_name_like=%s\n", filter.tableNameLike))
+		}
+		if filter.commentLike != "" {
+			builder.WriteString(fmt.Sprintf("- comment_like=%s\n", filter.commentLike))
+		}
+	}
+	if listOnly {
+		builder.WriteString("List-only view: returning the full matched table name list without expanding columns.\n")
+		return strings.TrimSpace(builder.String())
+	}
+	if mode == types.PromptSchemaModeCatalog {
+		builder.WriteString("Catalog view: representative columns are shown first. If the target table is unclear, call external_database_search_tables first; once candidate tables are known, rerun external_database_schema with tables=[...] and mode=detail.\n")
+	}
+	builder.WriteString(renderExternalSchemaQueryGuidance())
+	if len(displayTables) == 0 {
+		builder.WriteString("No tables matched the current filters.\n")
+		return strings.TrimSpace(builder.String())
+	}
+	builder.WriteString("Tables:\n")
+	for _, table := range displayTables {
+		builder.WriteString(renderExternalSchemaTable(table, mode))
+	}
+	if len(matchedTables) > len(displayTables) {
+		builder.WriteString(fmt.Sprintf("Additional matched tables omitted from this view: %d\n", len(matchedTables)-len(displayTables)))
+		builder.WriteString("Next step hint: use external_database_search_tables to narrow candidate tables, then rerun external_database_schema with tables=[...] and mode=detail for full columns.\n")
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func renderExternalSchemaQueryGuidance() string {
+	var builder strings.Builder
+	builder.WriteString("Query planning rules:\n")
+	builder.WriteString("- Add LIMIT to any query that can return multiple rows. This includes detail previews, JOIN inspections, DISTINCT value lists, GROUP BY/HAVING summaries, ORDER BY top-N checks, window-function queries, and multi-row CTE outputs.\n")
+	builder.WriteString("- Only pure global aggregates that return one row may omit LIMIT, such as COUNT(*), SUM(amount), AVG(score), MIN(created_at), MAX(created_at), or DISTINCT COUNT(*), with no GROUP BY and no window clause.\n")
+	builder.WriteString("- For exploratory inspection, start with LIMIT 10 or LIMIT 20 and tighten WHERE conditions before widening scope.\n")
+	return builder.String()
+}
+
+func renderExternalSchemaTable(table types.TableSchema, mode types.PromptSchemaMode) string {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("- %s (%s)", table.Name, table.Type))
+	if comment := truncateSchemaText(table.Comment, schemaOutputCommentLimit); comment != "" {
+		builder.WriteString(": ")
+		builder.WriteString(comment)
+	}
+	builder.WriteString("\n")
+	if len(table.PrimaryKeys) > 0 {
+		builder.WriteString(fmt.Sprintf("  Primary keys: %s\n", strings.Join(table.PrimaryKeys, ", ")))
+	}
+	if table.RowEstimate > 0 {
+		builder.WriteString(fmt.Sprintf("  Row estimate: %d\n", table.RowEstimate))
+	}
+	if mode == types.PromptSchemaModeCatalog {
+		builder.WriteString(fmt.Sprintf("  Representative columns: %s\n", summarizeSchemaColumns(table.Columns, schemaCatalogColumnLimit)))
+		if len(table.ForeignKeys) > 0 {
+			builder.WriteString(fmt.Sprintf("  Foreign keys: %s\n", summarizePromptSchemaTableForeignKeys(table.ForeignKeys, schemaCatalogIndexLimit)))
+		}
+		if omitted := maxInt(len(table.Columns)-schemaCatalogColumnLimit, 0); omitted > 0 {
+			builder.WriteString(fmt.Sprintf("  Additional columns omitted: %d\n", omitted))
+		}
+		return builder.String()
+	}
+	builder.WriteString("  Columns:\n")
+	for _, column := range table.Columns {
+		nullability := "NOT NULL"
+		if column.Nullable {
+			nullability = "NULL"
+		}
+		builder.WriteString(fmt.Sprintf("  - %s %s %s", column.Name, column.DataType, nullability))
+		if column.IsSensitive {
+			builder.WriteString(" [sensitive]")
+		}
+		if comment := truncateSchemaText(column.Comment, schemaOutputCommentLimit); comment != "" {
+			builder.WriteString(fmt.Sprintf(" -- %s", comment))
+		}
+		builder.WriteString("\n")
+	}
+	return builder.String()
+}
+
+func summarizePromptSchemaTableForeignKeys(foreignKeys []types.ForeignKeySchema, limit int) string {
+	items := make([]string, 0, minInt(limit, len(foreignKeys)))
+	for index, fk := range foreignKeys {
+		if index >= limit {
+			break
+		}
+		items = append(items, formatExternalForeignKeyTarget(fk))
+	}
+	return strings.Join(items, "; ")
 }
 
 func toExternalSchemaTableData(tables []types.TableSchema, mode types.PromptSchemaMode) ([]map[string]interface{}, int) {
@@ -387,24 +667,45 @@ func buildSampleQueries(tables []types.TableSchema) []string {
 func formatExternalDatabaseSchemaOutput(
 	buildResult *types.PromptSchemaBuildResult,
 	allowedTables []string,
+	matchedTables []string,
 	foreignKeys []string,
 	possibleJoinHints []string,
 	sampleQueries []string,
+	listOnly bool,
+	filter externalSchemaSearchFilter,
 ) string {
 	var builder strings.Builder
 	builder.WriteString("=== External Database Schema ===\n\n")
 	if buildResult != nil {
 		builder.WriteString(buildResult.Prompt)
 	}
-	builder.WriteString("\n\n=== Allowed Query Scope ===\n")
-	visibleTables := limitStringSlice(allowedTables, schemaOutputTableLimit)
-	for _, table := range visibleTables {
+	sectionTitle := "\n\n=== Allowed Query Scope ===\n"
+	sectionTables := limitStringSlice(allowedTables, schemaOutputTableLimit)
+	showAllTables := listOnly
+	if listOnly {
+		sectionTables = allowedTables
+	}
+	if filter.active() {
+		sectionTitle = "\n\n=== Matched Tables ===\n"
+		sectionTables = matchedTables
+		showAllTables = true
+	}
+	builder.WriteString(sectionTitle)
+	for _, table := range sectionTables {
 		builder.WriteString("- ")
 		builder.WriteString(table)
 		builder.WriteString("\n")
 	}
-	if len(allowedTables) > len(visibleTables) {
-		builder.WriteString(fmt.Sprintf("Additional tables omitted from scope list: %d\n", len(allowedTables)-len(visibleTables)))
+	if !showAllTables && len(allowedTables) > len(sectionTables) {
+		builder.WriteString(fmt.Sprintf("Additional tables omitted from scope list: %d\n", len(allowedTables)-len(sectionTables)))
+	}
+	if filter.active() {
+		builder.WriteString(fmt.Sprintf("Matched tables: %d / scope tables: %d\n", len(matchedTables), len(allowedTables)))
+	} else if listOnly {
+		builder.WriteString(fmt.Sprintf("Full table list returned: %d\n", len(sectionTables)))
+	}
+	if listOnly {
+		return strings.TrimSpace(builder.String())
 	}
 	if len(foreignKeys) > 0 {
 		builder.WriteString("\n=== Foreign Keys ===\n")

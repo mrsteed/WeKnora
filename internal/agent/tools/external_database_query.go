@@ -21,7 +21,8 @@ Use this tool only after checking the schema with external_database_schema.
 Rules:
 - Only SELECT or WITH ... SELECT queries are allowed.
 - Use only tables and columns already returned by external_database_schema.
-- Use LIMIT for detail, grouped, distinct, or window-function queries. Global aggregate queries that return a single row may omit LIMIT.
+- Add LIMIT to any query that can return multiple rows. This includes detail previews, JOIN inspections, DISTINCT value lists, GROUP BY/HAVING summaries, ORDER BY top-N checks, window-function queries, and multi-row CTE outputs.
+- Only pure global aggregates that return a single row may omit LIMIT, such as COUNT(*), SUM(amount), AVG(score), MIN(created_at), MAX(created_at), or DISTINCT COUNT(*), with no GROUP BY and no window clause.
 - Sensitive fields and disallowed columns are rejected.
 - DDL and DML statements are forbidden.
 `,
@@ -30,7 +31,7 @@ Rules:
 
 type ExternalDatabaseQueryInput struct {
 	KnowledgeBaseID string `json:"knowledge_base_id" jsonschema:"Database knowledge base ID to query."`
-	SQL             string `json:"sql" jsonschema:"Read-only SQL to execute against the external database. Use LIMIT for detail, grouped, distinct, or window-function queries. Global aggregate queries may omit LIMIT."`
+	SQL             string `json:"sql" jsonschema:"Read-only SQL to execute against the external database. Add LIMIT to any multi-row query, including detail previews, joins, DISTINCT lists, GROUP BY/HAVING summaries, ORDER BY top-N checks, window functions, and multi-row CTE outputs. Only pure single-row global aggregates may omit LIMIT."`
 	Purpose         string `json:"purpose" jsonschema:"Short explanation of why this query is being executed."`
 	MaxRows         int    `json:"max_rows,omitempty" jsonschema:"Optional tighter max rows for this query."`
 	TimeoutSeconds  int    `json:"timeout_seconds,omitempty" jsonschema:"Optional tighter timeout in seconds for this query."`

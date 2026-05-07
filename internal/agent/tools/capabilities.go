@@ -58,14 +58,15 @@ var ToolCapabilityRequirements = map[string]ToolRequirement{
 	"final_answer": {},
 
 	// ---- RAG / chunk retrieval (need at least one chunk-indexed KB) ----
-	"knowledge_search":         {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
-	"grep_chunks":              {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
-	"list_knowledge_chunks":    {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
-	"query_knowledge_graph":    {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
-	"get_document_info":        {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
-	"database_query":           {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
-	"external_database_schema": {AllOf: []KBCapability{CapDatabase}},
-	"external_database_query":  {AllOf: []KBCapability{CapDatabase}},
+	"knowledge_search":                {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"grep_chunks":                     {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"list_knowledge_chunks":           {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"query_knowledge_graph":           {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"get_document_info":               {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"database_query":                  {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+	"external_database_schema":        {AllOf: []KBCapability{CapDatabase}},
+	"external_database_search_tables": {AllOf: []KBCapability{CapDatabase}},
+	"external_database_query":         {AllOf: []KBCapability{CapDatabase}},
 
 	// ---- Wiki (operates on wiki pages; doesn't consume arbitrary file IDs) ----
 	"wiki_search":          {AllOf: []KBCapability{CapWiki}},

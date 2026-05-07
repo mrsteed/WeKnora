@@ -567,6 +567,8 @@ func (s *agentService) registerTools(
 			toolToRegister = tools.NewDatabaseQueryTool(s.db, config.SearchTargets)
 		case tools.ToolExternalDatabaseSchema:
 			toolToRegister = tools.NewExternalDatabaseSchemaTool(s.schemaRegistryService, config.SearchTargets)
+		case tools.ToolExternalDatabaseSearchTables:
+			toolToRegister = tools.NewExternalDatabaseSearchTablesTool(s.schemaRegistryService, config.SearchTargets)
 		case tools.ToolExternalDatabaseQuery:
 			toolToRegister = tools.NewExternalDatabaseQueryTool(s.structuredQueryService, config.SearchTargets)
 		case tools.ToolWebSearch:

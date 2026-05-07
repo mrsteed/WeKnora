@@ -204,6 +204,8 @@ func summarizeStructuredToolResult(toolName string, result *types.ToolResult) st
 	switch toolName {
 	case agenttools.ToolExternalDatabaseSchema:
 		return summarizeDatabaseSchemaToolData(result.Data)
+	case agenttools.ToolExternalDatabaseSearchTables:
+		return summarizeDatabaseTableSearchToolData(result.Data)
 	case agenttools.ToolExternalDatabaseQuery:
 		return summarizeDatabaseQueryToolData(result.Data)
 	default:
@@ -232,14 +234,53 @@ func summarizeDatabaseSchemaToolData(data map[string]interface{}) string {
 	if tableCount, ok := toInt(data["table_count"]); ok {
 		builder.WriteString(fmt.Sprintf("Table count: %d\n", tableCount))
 	}
-	if allowedTables := toStringSlice(data["allowed_tables"]); len(allowedTables) > 0 {
-		sort.Strings(allowedTables)
-		builder.WriteString(fmt.Sprintf("Tables: %s\n", strings.Join(limitStringSlice(allowedTables, 8), ", ")))
+	matchedTables := toStringSlice(data["matched_tables"])
+	allowedTables := toStringSlice(data["allowed_tables"])
+	if len(matchedTables) == 0 {
+		matchedTables = append([]string(nil), allowedTables...)
+	}
+	scopeTableCount, hasScopeTableCount := toInt(data["scope_table_count"])
+	matchedTableCount, hasMatchedTableCount := toInt(data["matched_table_count"])
+	if !hasMatchedTableCount {
+		matchedTableCount = len(matchedTables)
+	}
+	if !hasScopeTableCount {
+		scopeTableCount = len(allowedTables)
+	}
+	if hasScopeTableCount && scopeTableCount > 0 {
+		builder.WriteString(fmt.Sprintf("Scope table count: %d\n", scopeTableCount))
+	}
+	if hasMatchedTableCount || len(matchedTables) > 0 {
+		builder.WriteString(fmt.Sprintf("Matched table count: %d\n", matchedTableCount))
+	}
+	if displayTableCount, ok := toInt(data["display_table_count"]); ok {
+		builder.WriteString(fmt.Sprintf("Current view table count: %d\n", displayTableCount))
+	}
+	if keyword, _ := data["keyword"].(string); strings.TrimSpace(keyword) != "" {
+		builder.WriteString(fmt.Sprintf("Keyword filter: %s\n", keyword))
+	}
+	if tableNameLike, _ := data["table_name_like"].(string); strings.TrimSpace(tableNameLike) != "" {
+		builder.WriteString(fmt.Sprintf("Table name filter: %s\n", tableNameLike))
+	}
+	if commentLike, _ := data["comment_like"].(string); strings.TrimSpace(commentLike) != "" {
+		builder.WriteString(fmt.Sprintf("Comment filter: %s\n", commentLike))
+	}
+	if len(matchedTables) > 0 {
+		sort.Strings(matchedTables)
+		previewTables := limitStringSlice(matchedTables, 8)
+		builder.WriteString(fmt.Sprintf("Table preview: %s\n", strings.Join(previewTables, ", ")))
 		if additionalTables, ok := toInt(data["additional_tables_omitted"]); ok && additionalTables > 0 {
-			builder.WriteString(fmt.Sprintf("Additional tables omitted: %d\n", additionalTables))
-		} else if len(allowedTables) > 8 {
-			builder.WriteString(fmt.Sprintf("Additional tables omitted: %d\n", len(allowedTables)-8))
+			builder.WriteString(fmt.Sprintf("Additional tables omitted from current view: %d\n", additionalTables))
+		} else if len(matchedTables) > len(previewTables) {
+			builder.WriteString(fmt.Sprintf("Additional tables omitted from summary preview: %d\n", len(matchedTables)-len(previewTables)))
 		}
+	}
+	if listOnly, _ := data["list_only"].(bool); listOnly {
+		builder.WriteString("Retrieval hint: full matched table list was returned in list_only mode; choose target tables and rerun external_database_schema with tables=[...] and mode=detail for full columns.\n")
+	} else if scopeTableCount > matchedTableCount && matchedTableCount > 0 {
+		builder.WriteString("Retrieval hint: current summary is narrowed relative to the full scope; call external_database_search_tables first to narrow candidate tables, or use keyword/table_name_like/comment_like or list_only=true, then rerun with tables=[...] and mode=detail for full columns.\n")
+	} else if matchedTableCount > 8 {
+		builder.WriteString("Retrieval hint: summary preview is truncated; use external_database_search_tables or list_only=true for the full candidate list, then rerun external_database_schema with tables=[...] and mode=detail for the tables you need.\n")
 	}
 	if foreignKeys := toStringSlice(data["foreign_keys"]); len(foreignKeys) > 0 {
 		builder.WriteString("Foreign keys:\n")
@@ -269,6 +310,69 @@ func summarizeDatabaseSchemaToolData(data map[string]interface{}) string {
 			builder.WriteString("\n")
 		}
 	}
+	return strings.TrimSpace(builder.String())
+}
+
+func summarizeDatabaseTableSearchToolData(data map[string]interface{}) string {
+	var builder strings.Builder
+	builder.WriteString("Database table search summary\n")
+	if databaseName, _ := data["database_name"].(string); strings.TrimSpace(databaseName) != "" {
+		builder.WriteString(fmt.Sprintf("Database: %s\n", databaseName))
+	}
+	if schemaName, _ := data["schema_name"].(string); strings.TrimSpace(schemaName) != "" {
+		builder.WriteString(fmt.Sprintf("Schema: %s\n", schemaName))
+	}
+	if scopeTableCount, ok := toInt(data["scope_table_count"]); ok {
+		builder.WriteString(fmt.Sprintf("Scope table count: %d\n", scopeTableCount))
+	}
+	if matchedTableCount, ok := toInt(data["matched_table_count"]); ok {
+		builder.WriteString(fmt.Sprintf("Matched table count: %d\n", matchedTableCount))
+	}
+	if returnedHitCount, ok := toInt(data["returned_hit_count"]); ok {
+		builder.WriteString(fmt.Sprintf("Returned hit count: %d\n", returnedHitCount))
+	}
+	if keyword, _ := data["keyword"].(string); strings.TrimSpace(keyword) != "" {
+		builder.WriteString(fmt.Sprintf("Keyword filter: %s\n", keyword))
+	}
+	if tableNameLike, _ := data["table_name_like"].(string); strings.TrimSpace(tableNameLike) != "" {
+		builder.WriteString(fmt.Sprintf("Table name filter: %s\n", tableNameLike))
+	}
+	if commentLike, _ := data["comment_like"].(string); strings.TrimSpace(commentLike) != "" {
+		builder.WriteString(fmt.Sprintf("Comment filter: %s\n", commentLike))
+	}
+	if columnNameLike, _ := data["column_name_like"].(string); strings.TrimSpace(columnNameLike) != "" {
+		builder.WriteString(fmt.Sprintf("Column name filter: %s\n", columnNameLike))
+	}
+	if columnCommentLike, _ := data["column_comment_like"].(string); strings.TrimSpace(columnCommentLike) != "" {
+		builder.WriteString(fmt.Sprintf("Column comment filter: %s\n", columnCommentLike))
+	}
+	if matchedTables := toStringSlice(data["matched_tables"]); len(matchedTables) > 0 {
+		sort.Strings(matchedTables)
+		builder.WriteString(fmt.Sprintf("Candidate tables: %s\n", strings.Join(limitStringSlice(matchedTables, 8), ", ")))
+		if additionalMatches, ok := toInt(data["additional_matches_omitted"]); ok && additionalMatches > 0 {
+			builder.WriteString(fmt.Sprintf("Additional candidate tables omitted: %d\n", additionalMatches))
+		} else if len(matchedTables) > 8 {
+			builder.WriteString(fmt.Sprintf("Additional candidate tables omitted: %d\n", len(matchedTables)-8))
+		}
+	}
+	if results, ok := data["results"].([]map[string]interface{}); ok && len(results) > 0 {
+		builder.WriteString("Top matches:\n")
+		for _, result := range results[:minInt(len(results), 3)] {
+			tableName, _ := result["table_name"].(string)
+			likelyRole, _ := result["likely_role"].(string)
+			matchedColumns := toStringSlice(result["matched_columns"])
+			builder.WriteString("- ")
+			builder.WriteString(tableName)
+			if strings.TrimSpace(likelyRole) != "" {
+				builder.WriteString(fmt.Sprintf(" [%s]", likelyRole))
+			}
+			if len(matchedColumns) > 0 {
+				builder.WriteString(fmt.Sprintf(" matched columns: %s", strings.Join(limitStringSlice(matchedColumns, 4), ", ")))
+			}
+			builder.WriteString("\n")
+		}
+	}
+	builder.WriteString("Retrieval hint: inspect the top candidate tables, then rerun external_database_schema with tables=[...] and mode=detail before writing SQL.\n")
 	return strings.TrimSpace(builder.String())
 }
 

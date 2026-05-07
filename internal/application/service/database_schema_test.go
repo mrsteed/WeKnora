@@ -292,6 +292,9 @@ func TestBuildPromptSchemaFromSchemaUsesCatalogForLargeSchemas(t *testing.T) {
 	assert.Equal(t, 48, result.AdditionalColumnsOmitted)
 	assert.Contains(t, result.Prompt, "Schema snapshot:")
 	assert.Contains(t, result.Prompt, "Schema output mode: catalog")
+	assert.Contains(t, result.Prompt, "Query planning rules:")
+	assert.Contains(t, result.Prompt, "Add LIMIT to any query that can return multiple rows")
+	assert.Contains(t, result.Prompt, "Only pure global aggregates that return one row may omit LIMIT")
 	assert.Contains(t, result.Prompt, "Additional tables omitted from this view")
 }
 
