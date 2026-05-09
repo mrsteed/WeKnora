@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/event"
@@ -65,6 +66,39 @@ func TestStreamFinalAnswerToEventBus_UsesStateCompletionMetadata(t *testing.T) {
 	assert.False(t, emitted[0].AllowComplete)
 	assert.Equal(t, "max_iterations", emitted[0].FailureReason)
 	assert.True(t, emitted[0].Done)
+}
+
+func TestEmitCompletionEvent_NormalizesRecoveredToolErrorState(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	state := &types.AgentState{
+		FinalAnswer:            "recovered answer",
+		FinalAnswerSynthesized: true,
+		CompletionStatus:       types.MessageCompletionStatusFailed,
+		FinishReason:           "tool_error",
+		FailureReason:          "tool_error",
+		AllowIndexing:          false,
+		AllowComplete:          false,
+		RoundSteps:             []types.AgentStep{{Iteration: 0}},
+	}
+
+	var emitted []event.AgentCompleteData
+	engine.eventBus.On(event.EventAgentComplete, func(ctx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentCompleteData)
+		require.True(t, ok)
+		emitted = append(emitted, data)
+		return nil
+	})
+
+	engine.emitCompletionEvent(context.Background(), state, "sess-1", "msg-1", time.Now().Add(-time.Second))
+
+	require.Len(t, emitted, 1)
+	assert.Equal(t, types.MessageCompletionStatusPartial, emitted[0].CompletionStatus)
+	assert.Equal(t, "fallback_stop", emitted[0].FinishReason)
+	assert.Empty(t, emitted[0].FailureReason)
+	assert.True(t, emitted[0].IsPartial)
+	assert.False(t, emitted[0].AllowIndexing)
+	assert.False(t, emitted[0].AllowComplete)
+	assert.Equal(t, "recovered answer", emitted[0].FinalAnswer)
 }
 
 func TestStreamFinalAnswerToEventBus_CompressesLargeToolOutputsInSynthesisContext(t *testing.T) {

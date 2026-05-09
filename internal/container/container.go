@@ -167,6 +167,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewWikiLogEntryRepository))
 	must(container.Provide(repository.NewTaskPendingOpsRepository))
 	must(container.Provide(repository.NewTaskDeadLetterRepository))
+	must(container.Provide(repository.NewChatDocumentArtifactRepository))
 	must(container.Provide(repository.NewLongDocumentTaskRepository))
 
 	// MCP manager for managing MCP client connections
@@ -208,6 +209,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewWikiIngestService, dig.Name("wikiIngest")))
 	must(container.Provide(service.NewWikiLintService))
 	must(container.Provide(service.NewAgentVisibilityService))
+	must(container.Provide(service.NewChatDocumentArtifactService))
 	must(container.Provide(service.NewLongDocumentTaskService))
 
 	// Web search service (needed by AgentService)

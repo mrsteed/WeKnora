@@ -15,18 +15,19 @@ import (
 
 // Handler handles all HTTP requests related to conversation sessions
 type Handler struct {
-	messageService       interfaces.MessageService          // Service for managing messages
-	sessionService       interfaces.SessionService          // Service for managing sessions
-	streamManager        interfaces.StreamManager           // Manager for handling streaming responses
-	config               *config.Config                     // Application configuration
-	knowledgebaseService interfaces.KnowledgeBaseService    // Service for managing knowledge bases
-	customAgentService   interfaces.CustomAgentService      // Service for managing custom agents
-	tenantService        interfaces.TenantService           // Service for loading tenant (shared agent context)
-	agentShareService    interfaces.AgentShareService       // Service for resolving shared agents (KB scope in retrieval)
-	longDocumentService  interfaces.LongDocumentTaskService // Service for long document task routing
-	fileService          interfaces.FileService             // Service for file storage (image uploads)
-	modelService         interfaces.ModelService            // Service for model management (VLM access)
-	attachmentProcessor  *AttachmentProcessor               // Processor for file attachments
+	messageService              interfaces.MessageService              // Service for managing messages
+	sessionService              interfaces.SessionService              // Service for managing sessions
+	streamManager               interfaces.StreamManager               // Manager for handling streaming responses
+	config                      *config.Config                         // Application configuration
+	knowledgebaseService        interfaces.KnowledgeBaseService        // Service for managing knowledge bases
+	customAgentService          interfaces.CustomAgentService          // Service for managing custom agents
+	tenantService               interfaces.TenantService               // Service for loading tenant (shared agent context)
+	agentShareService           interfaces.AgentShareService           // Service for resolving shared agents (KB scope in retrieval)
+	chatDocumentArtifactService interfaces.ChatDocumentArtifactService // Service for session document artifact persistence and lookup
+	longDocumentService         interfaces.LongDocumentTaskService     // Service for long document task routing
+	fileService                 interfaces.FileService                 // Service for file storage (image uploads)
+	modelService                interfaces.ModelService                // Service for model management (VLM access)
+	attachmentProcessor         *AttachmentProcessor                   // Processor for file attachments
 }
 
 // NewHandler creates a new instance of Handler with all necessary dependencies
@@ -39,6 +40,7 @@ func NewHandler(
 	customAgentService interfaces.CustomAgentService,
 	tenantService interfaces.TenantService,
 	agentShareService interfaces.AgentShareService,
+	chatDocumentArtifactService interfaces.ChatDocumentArtifactService,
 	longDocumentService interfaces.LongDocumentTaskService,
 	fileService interfaces.FileService,
 	modelService interfaces.ModelService,
@@ -46,17 +48,18 @@ func NewHandler(
 	imageResolver *docparser.ImageResolver,
 ) *Handler {
 	return &Handler{
-		sessionService:       sessionService,
-		messageService:       messageService,
-		streamManager:        streamManager,
-		config:               config,
-		knowledgebaseService: knowledgebaseService,
-		customAgentService:   customAgentService,
-		tenantService:        tenantService,
-		agentShareService:    agentShareService,
-		longDocumentService:  longDocumentService,
-		fileService:          fileService,
-		modelService:         modelService,
+		sessionService:              sessionService,
+		messageService:              messageService,
+		streamManager:               streamManager,
+		config:                      config,
+		knowledgebaseService:        knowledgebaseService,
+		customAgentService:          customAgentService,
+		tenantService:               tenantService,
+		agentShareService:           agentShareService,
+		chatDocumentArtifactService: chatDocumentArtifactService,
+		longDocumentService:         longDocumentService,
+		fileService:                 fileService,
+		modelService:                modelService,
 		attachmentProcessor: NewAttachmentProcessor(
 			fileService,
 			documentReader,

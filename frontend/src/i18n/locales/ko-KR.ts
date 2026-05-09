@@ -501,6 +501,7 @@ export default {
     selectKnowledgeBaseWarning: "최소 하나의 지식베이스를 선택하세요",
     processError: "처리 오류",
     streamUnavailable: "이 답변 생성이 중단되어 실시간 스트림 기록을 복구할 수 없습니다. 다시 생성하여 새 답변을 받을 수 있습니다.",
+    recoveredPartialHint: "복구 가능한 도구 문제가 발생했지만 현재 생성된 내용은 보존되었습니다. 이어서 보완하거나 다시 생성할 수 있습니다.",
     sessionExcerpt: "대화 발췌",
     noAnswerContent: "(답변 내용 없음)",
     noMatchFound: "일치하는 내용을 찾을 수 없습니다",

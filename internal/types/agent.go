@@ -218,6 +218,7 @@ type AgentState struct {
 	RoundSteps         []AgentStep     `json:"round_steps"`                   // All steps taken so far in the current round
 	IsComplete         bool            `json:"is_complete"`                   // Whether agent has finished
 	FinalAnswer        string          `json:"final_answer"`                  // The final answer to the query
+	FinalAnswerSynthesized bool        `json:"final_answer_synthesized,omitempty"` // Whether a synthesized final answer was successfully generated
 	CompletionStatus   string          `json:"completion_status,omitempty"`   // Business completion state for the generated answer
 	FinishReason       string          `json:"finish_reason,omitempty"`       // Raw finish reason surfaced by the LLM or orchestration
 	FailureReason      string          `json:"failure_reason,omitempty"`      // Normalized failure reason for downstream handlers

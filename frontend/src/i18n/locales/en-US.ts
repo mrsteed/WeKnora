@@ -2417,6 +2417,7 @@ export default {
     selectKnowledgeBaseWarning: 'Please select at least one knowledge base',
     processError: 'Processing error',
     streamUnavailable: 'This answer was interrupted and its live stream history is no longer available. Regenerate it to get a new answer.',
+    recoveredPartialHint: 'A recoverable tool issue occurred. The generated content has been kept. You can continue from here or regenerate.',
     sessionExcerpt: 'Session Excerpt',
     noAnswerContent: '(No answer content)',
     noMatchFound: 'No matching content found',

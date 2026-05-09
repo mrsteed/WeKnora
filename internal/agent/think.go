@@ -357,12 +357,15 @@ func (e *AgentEngine) callLLMWithRetry(
 				"steps":      len(state.RoundSteps),
 				"tool_calls": totalTC,
 			})
-			state.CompletionStatus = "failed"
-			state.FinishReason = "tool_error"
-			state.FailureReason = "tool_error"
+			state.CompletionStatus = "partial"
+			state.FinishReason = "fallback_stop"
+			state.FailureReason = ""
 			state.AllowIndexing = false
 			state.AllowComplete = false
 			if synthErr := e.streamFinalAnswerToEventBus(ctx, query, state, sessionID); synthErr != nil {
+				state.CompletionStatus = "failed"
+				state.FinishReason = "tool_error"
+				state.FailureReason = "tool_error"
 				logger.Errorf(ctx, "[Agent] Final answer synthesis also failed: %v", synthErr)
 				return nil, fmt.Errorf("LLM call failed: %w (synthesis also failed: %v)", err, synthErr)
 			}

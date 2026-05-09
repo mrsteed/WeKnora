@@ -22,6 +22,18 @@
             <docInfo :session="session"></docInfo>
             <AgentStreamDisplay :session="session" :user-query="userQuery" v-if="session.isAgentMode"></AgentStreamDisplay>
             <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
+            <ChatDocumentArtifactCard
+                v-if="session.chat_document_artifact"
+                :artifact="session.chat_document_artifact"
+                :preview-content="artifactDocumentContent"
+                :selected-artifact-id="selectedArtifactId"
+                @view-revisions="emit('view-artifact-revisions', $event)"
+                @use-as-base="emit('use-artifact-as-base', $event)"
+                @clear-base="emit('clear-artifact-base', $event)"
+            />
+            <div v-if="showRecoveredState" class="message-recovered-state">
+                <div class="message-recovered-text">{{ recoveredStateText }}</div>
+            </div>
             <div v-if="session.is_failed && !session.long_document_task" class="message-failed-state">
                 <div class="message-failed-text">{{ failureText }}</div>
                 <t-button size="small" variant="outline" theme="danger" shape="round" @click.stop="emitRetry">
@@ -46,7 +58,7 @@
                 </div>
             </div>
             <!-- 复制和添加到知识库按钮 - 非 Agent 模式下显示 -->
-            <div v-if="session.is_completed && (content || session.content)" class="answer-toolbar">
+            <div v-if="session.is_completed && exportableContent" class="answer-toolbar">
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer" :title="$t('agent.copy')">
                     <t-icon name="copy" />
                 </t-button>
@@ -60,8 +72,8 @@
                     </t-button>
                 </t-tooltip>
                 <ExportDropdown
-                    :content="getActualContent()"
-                    :filename-prefix="formatManualTitle(userQuery)"
+                    :content="exportableContent"
+                    :filename-prefix="exportFilenamePrefix"
                 />
             </div>
             <div v-if="isImgLoading" class="img_loading"><t-loading size="small"></t-loading><span>{{ $t('common.loading') }}</span></div>
@@ -77,6 +89,7 @@ import 'katex/dist/katex.min.css';
 import docInfo from './docInfo.vue';
 import deepThink from './deepThink.vue';
 import AgentStreamDisplay from './AgentStreamDisplay.vue';
+import ChatDocumentArtifactCard from './ChatDocumentArtifactCard.vue';
 import ExportDropdown from './ExportDropdown.vue';
 import LongDocumentTaskCard from './LongDocumentTaskCard.vue';
 import picturePreview from '@/components/picture-preview.vue';
@@ -113,7 +126,7 @@ const preprocessMathDelimiters = (rawText) => {
 
 ensureMermaidInitialized();
 
-const emit = defineEmits(['scroll-bottom', 'retry'])
+const emit = defineEmits(['scroll-bottom', 'retry', 'view-artifact-revisions', 'use-artifact-as-base', 'clear-artifact-base'])
 const { t } = useI18n()
 const uiStore = useUIStore();
 const renderer = new marked.Renderer();
@@ -143,6 +156,10 @@ const props = defineProps({
     embeddedMode: {
         type: Boolean,
         default: false
+    },
+    selectedArtifactId: {
+        type: String,
+        default: ''
     }
 });
 
@@ -204,13 +221,41 @@ const failureText = computed(() => {
     return internalFailureReasonMessages[normalizedMessage]?.() || normalizedMessage || t('chat.processError');
 });
 
+const showRecoveredState = computed(() => {
+    const finishReason = props.session?.finish_reason || '';
+    const completionStatus = props.session?.completion_status || '';
+    return hasActualContent.value && !props.session?.is_failed && ((props.session?.is_recovered) || (completionStatus === 'partial' && finishReason === 'fallback_stop'));
+});
+
+const recoveredStateText = computed(() => t('chat.recoveredPartialHint'));
+
 const emitRetry = () => {
     emit('retry', props.session);
 };
+
+const artifactDocumentContent = computed(() => {
+    const content = props.session?.final_document_content || props.session?.chat_document_artifact?.content_snapshot || '';
+    return typeof content === 'string' ? content.trim() : '';
+});
+
 // 获取实际内容
 const getActualContent = () => {
     return (props.content || props.session?.content || '').trim();
 };
+
+const exportableContent = computed(() => {
+    return artifactDocumentContent.value || getActualContent();
+});
+
+const exportFilenamePrefix = computed(() => {
+    const artifactTitle = typeof props.session?.chat_document_artifact?.title === 'string'
+        ? props.session.chat_document_artifact.title.trim()
+        : '';
+    if (artifactTitle) {
+        return artifactTitle;
+    }
+    return formatManualTitle(props.userQuery || '');
+});
 
 // 复制回答内容
 const handleCopyAnswer = async () => {
@@ -341,6 +386,23 @@ onBeforeUnmount(() => {
 
 .message-failed-text {
     color: var(--td-error-color);
+    font-size: 13px;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.message-recovered-state {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--td-warning-color) 28%, transparent);
+    background: color-mix(in srgb, var(--td-warning-color) 8%, var(--td-bg-color-container));
+}
+
+.message-recovered-text {
+    color: var(--td-text-color-primary);
     font-size: 13px;
     line-height: 1.5;
     word-break: break-word;

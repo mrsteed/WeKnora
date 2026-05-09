@@ -22,32 +22,63 @@ const (
 	finalAnswerColumnPreviewLimit = 6
 )
 
-func buildFinalAnswerEventData(state *types.AgentState, content string, done bool) event.AgentFinalAnswerData {
+type completionEventState struct {
+	completionStatus string
+	finishReason     string
+	failureReason    string
+	allowIndexing    bool
+	allowComplete    bool
+}
+
+func normalizeCompletionEventState(state *types.AgentState) completionEventState {
 	completionStatus := state.CompletionStatus
 	finishReason := state.FinishReason
+	failureReason := state.FailureReason
 	allowIndexing := state.AllowIndexing
 	allowComplete := state.AllowComplete
 
+	if state.FinalAnswerSynthesized && strings.TrimSpace(state.FinalAnswer) != "" &&
+		completionStatus == types.MessageCompletionStatusFailed &&
+		(finishReason == "tool_error" || failureReason == "tool_error") {
+		completionStatus = types.MessageCompletionStatusPartial
+		finishReason = "fallback_stop"
+		failureReason = ""
+		allowIndexing = false
+		allowComplete = false
+	}
+
 	if completionStatus == "" {
-		completionStatus = "completed"
+		completionStatus = types.MessageCompletionStatusCompleted
 	}
 	if finishReason == "" {
 		finishReason = "stop"
 	}
-	if completionStatus == "completed" && finishReason == "stop" && !state.AllowIndexing && !state.AllowComplete {
+	if completionStatus == types.MessageCompletionStatusCompleted && finishReason == "stop" && !allowIndexing && !allowComplete {
 		allowIndexing = true
 		allowComplete = true
 	}
 
+	return completionEventState{
+		completionStatus: completionStatus,
+		finishReason:     finishReason,
+		failureReason:    failureReason,
+		allowIndexing:    allowIndexing,
+		allowComplete:    allowComplete,
+	}
+}
+
+func buildFinalAnswerEventData(state *types.AgentState, content string, done bool) event.AgentFinalAnswerData {
+	normalized := normalizeCompletionEventState(state)
+
 	return event.AgentFinalAnswerData{
 		Content:          content,
 		Done:             done,
-		CompletionStatus: completionStatus,
-		FinishReason:     finishReason,
-		IsPartial:        completionStatus == "partial",
-		AllowIndexing:    allowIndexing,
-		AllowComplete:    allowComplete,
-		FailureReason:    state.FailureReason,
+		CompletionStatus: normalized.completionStatus,
+		FinishReason:     normalized.finishReason,
+		IsPartial:        normalized.completionStatus == types.MessageCompletionStatusPartial,
+		AllowIndexing:    normalized.allowIndexing,
+		AllowComplete:    normalized.allowComplete,
+		FailureReason:    normalized.failureReason,
 	}
 }
 
@@ -181,6 +212,7 @@ Now generate the final answer:`, query)
 		"answer_len": len(fullAnswer),
 	})
 	state.FinalAnswer = fullAnswer
+	state.FinalAnswerSynthesized = true
 	return nil
 }
 
@@ -579,6 +611,7 @@ func (e *AgentEngine) emitCompletionEvent(
 	for _, ref := range state.KnowledgeRefs {
 		knowledgeRefsInterface = append(knowledgeRefsInterface, ref)
 	}
+	normalized := normalizeCompletionEventState(state)
 
 	e.eventBus.Emit(ctx, event.Event{
 		ID:        generateEventID("complete"),
@@ -586,12 +619,12 @@ func (e *AgentEngine) emitCompletionEvent(
 		SessionID: sessionID,
 		Data: event.AgentCompleteData{
 			FinalAnswer:      state.FinalAnswer,
-			CompletionStatus: state.CompletionStatus,
-			FinishReason:     state.FinishReason,
-			IsPartial:        state.CompletionStatus == "partial",
-			AllowIndexing:    state.AllowIndexing,
-			AllowComplete:    state.AllowComplete,
-			FailureReason:    state.FailureReason,
+			CompletionStatus: normalized.completionStatus,
+			FinishReason:     normalized.finishReason,
+			IsPartial:        normalized.completionStatus == types.MessageCompletionStatusPartial,
+			AllowIndexing:    normalized.allowIndexing,
+			AllowComplete:    normalized.allowComplete,
+			FailureReason:    normalized.failureReason,
 			KnowledgeRefs:    knowledgeRefsInterface,
 			AgentSteps:       state.RoundSteps, // Include detailed execution steps for message storage
 			TotalSteps:       len(state.RoundSteps),

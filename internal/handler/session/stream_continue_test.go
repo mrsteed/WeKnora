@@ -261,6 +261,115 @@ func TestContinueStream_TerminalAgentMessageReplaysCompleteProtocol(t *testing.T
 	assert.Equal(t, float64(456), response.Data["agent_duration_ms"])
 }
 
+func TestContinueStream_TerminalNonAgentMessageSynthesizesCompleteWithChatDocumentMetadata(t *testing.T) {
+	messageStub := &messageServiceStub{getMessageResult: &types.Message{
+		ID:               "msg-doc-1",
+		SessionID:        "sess-1",
+		RequestID:        "req-doc-1",
+		Role:             "assistant",
+		Content:          "本轮增量内容",
+		CompletionStatus: types.MessageCompletionStatusPartial,
+		FinishReason:     "fallback_stop",
+		FailureReason:    "",
+		IsCompleted:      true,
+	}}
+	artifactStub := &chatDocumentArtifactServiceStub{sessionArtifacts: []*types.ChatDocumentArtifact{{
+		ID:               "artifact-1",
+		SessionID:        "sess-1",
+		SourceMessageID:  "msg-doc-1",
+		RevisionNo:       2,
+		Title:            "技术方案",
+		ArtifactKind:     types.ChatDocumentArtifactKindMarkdown,
+		ContentType:      "text/markdown",
+		ContentSnapshot:  "# 完整文档\n\n## 第一章\n\n正文",
+		Status:           types.ChatDocumentArtifactStatusPartial,
+		CompletionStatus: types.MessageCompletionStatusPartial,
+		Operation:        types.ChatDocumentOperationRevise,
+	}}}
+	handler := &Handler{
+		sessionService:              &continueStreamSessionServiceStub{session: &types.Session{ID: "sess-1"}},
+		messageService:              messageStub,
+		streamManager:               &streamManagerStub{},
+		chatDocumentArtifactService: artifactStub,
+	}
+
+	c, recorder := newContinueStreamTestContext(t, "sess-1", "msg-doc-1")
+	handler.ContinueStream(c)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	response := decodeSSEPayload(t, recorder.Body.String())
+	assert.Equal(t, types.ResponseTypeComplete, response.ResponseType)
+	assert.True(t, response.Done)
+	assert.Equal(t, types.MessageCompletionStatusPartial, response.Data["completion_status"])
+	assert.Equal(t, "fallback_stop", response.Data["finish_reason"])
+	assert.Equal(t, "本轮增量内容", response.Data["final_answer"])
+	assert.Equal(t, types.ChatDocumentFinalDocumentModeInlineSnapshot, response.Data["final_document_mode"])
+	assert.Equal(t, "artifact-1", response.Data["final_document_artifact_id"])
+	assert.Equal(t, "# 完整文档\n\n## 第一章\n\n正文", response.Data["final_document"])
+	artifact, ok := response.Data["chat_document_artifact"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "artifact-1", artifact["id"])
+	assert.Equal(t, float64(2), artifact["revision_no"])
+	assert.Equal(t, types.ChatDocumentOperationRevise, artifact["operation"])
+	assert.Equal(t, types.ChatDocumentArtifactStatusPartial, artifact["status"])
+}
+
+func TestContinueStream_TerminalAgentReplayFallbackIncludesChatDocumentMetadata(t *testing.T) {
+	messageStub := &messageServiceStub{getMessageResult: &types.Message{
+		ID:               "msg-agent-doc-1",
+		SessionID:        "sess-1",
+		RequestID:        "req-agent-doc-1",
+		Role:             "assistant",
+		Content:          "最终回答",
+		CompletionStatus: types.MessageCompletionStatusCompleted,
+		FinishReason:     "tool_calls",
+		IsCompleted:      true,
+		AgentSteps: types.AgentSteps{{
+			Iteration: 0,
+			Thought:   "step one",
+		}},
+		AgentDurationMs: 789,
+	}}
+	artifactStub := &chatDocumentArtifactServiceStub{sessionArtifacts: []*types.ChatDocumentArtifact{{
+		ID:               "artifact-agent-1",
+		SessionID:        "sess-1",
+		SourceMessageID:  "msg-agent-doc-1",
+		RevisionNo:       3,
+		Title:            "技术方案",
+		ArtifactKind:     types.ChatDocumentArtifactKindMarkdown,
+		ContentType:      "text/markdown",
+		ContentSnapshot:  strings.Repeat("章节内容", types.ChatDocumentArtifactInlineContinuationMaxChars/4+20),
+		Status:           types.ChatDocumentArtifactStatusAvailable,
+		CompletionStatus: types.MessageCompletionStatusCompleted,
+		Operation:        types.ChatDocumentOperationContinue,
+	}}}
+	handler := &Handler{
+		sessionService:              &continueStreamSessionServiceStub{session: &types.Session{ID: "sess-1"}},
+		messageService:              messageStub,
+		streamManager:               &streamManagerStub{events: []interfaces.StreamEvent{{Type: types.ResponseTypeAgentQuery, Done: true}}},
+		chatDocumentArtifactService: artifactStub,
+	}
+
+	c, recorder := newContinueStreamTestContext(t, "sess-1", "msg-agent-doc-1")
+	handler.ContinueStream(c)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	response := decodeLastSSEPayload(t, recorder.Body.String())
+	assert.Equal(t, types.ResponseTypeComplete, response.ResponseType)
+	assert.True(t, response.Done)
+	assert.Equal(t, "最终回答", response.Data["final_answer"])
+	assert.Equal(t, float64(789), response.Data["agent_duration_ms"])
+	assert.Equal(t, types.ChatDocumentFinalDocumentModeFetchArtifactSnapshot, response.Data["final_document_mode"])
+	assert.Equal(t, "artifact-agent-1", response.Data["final_document_artifact_id"])
+	_, hasInlineSnapshot := response.Data["final_document"]
+	assert.False(t, hasInlineSnapshot)
+	artifact, ok := response.Data["chat_document_artifact"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "artifact-agent-1", artifact["id"])
+	assert.Equal(t, types.ChatDocumentOperationContinue, artifact["operation"])
+	assert.Equal(t, types.ChatDocumentArtifactStatusAvailable, artifact["status"])
+}
+
 func TestContinueStream_TerminalCancelledAgentMessageSynthesizesStopProtocol(t *testing.T) {
 	messageStub := &messageServiceStub{getMessageResult: &types.Message{
 		ID:               "msg-agent-2",

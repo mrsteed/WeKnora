@@ -134,21 +134,24 @@ type AgentQueryData struct {
 
 // AgentCompleteData represents agent completion event data
 type AgentCompleteData struct {
-	SessionID        string                 `json:"session_id"`
-	TotalSteps       int                    `json:"total_steps"`
-	FinalAnswer      string                 `json:"final_answer"`
-	CompletionStatus string                 `json:"completion_status,omitempty"`
-	FinishReason     string                 `json:"finish_reason,omitempty"`
-	IsPartial        bool                   `json:"is_partial,omitempty"`
-	AllowIndexing    bool                   `json:"allow_indexing,omitempty"`
-	AllowComplete    bool                   `json:"allow_complete,omitempty"`
-	FailureReason    string                 `json:"failure_reason,omitempty"`
-	KnowledgeRefs    []interface{}          `json:"knowledge_refs,omitempty"` // []*types.SearchResult
-	AgentSteps       interface{}            `json:"agent_steps,omitempty"`    // []types.AgentStep - detailed execution steps
-	TotalDurationMs  int64                  `json:"total_duration_ms"`
-	MessageID        string                 `json:"message_id,omitempty"` // Assistant message ID
-	RequestID        string                 `json:"request_id,omitempty"`
-	Extra            map[string]interface{} `json:"extra,omitempty"`
+	SessionID               string                 `json:"session_id"`
+	TotalSteps              int                    `json:"total_steps"`
+	FinalAnswer             string                 `json:"final_answer"`
+	CompletionStatus        string                 `json:"completion_status,omitempty"`
+	FinishReason            string                 `json:"finish_reason,omitempty"`
+	IsPartial               bool                   `json:"is_partial,omitempty"`
+	AllowIndexing           bool                   `json:"allow_indexing,omitempty"`
+	AllowComplete           bool                   `json:"allow_complete,omitempty"`
+	FailureReason           string                 `json:"failure_reason,omitempty"`
+	KnowledgeRefs           []interface{}          `json:"knowledge_refs,omitempty"` // []*types.SearchResult
+	AgentSteps              interface{}            `json:"agent_steps,omitempty"`    // []types.AgentStep - detailed execution steps
+	TotalDurationMs         int64                  `json:"total_duration_ms"`
+	MessageID               string                 `json:"message_id,omitempty"` // Assistant message ID
+	FinalDocumentMode       string                 `json:"final_document_mode,omitempty"`
+	FinalDocument           string                 `json:"final_document,omitempty"`
+	FinalDocumentArtifactID string                 `json:"final_document_artifact_id,omitempty"`
+	RequestID               string                 `json:"request_id,omitempty"`
+	Extra                   map[string]interface{} `json:"extra,omitempty"`
 }
 
 // === Streaming Event Data Structures ===

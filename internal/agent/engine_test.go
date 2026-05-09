@@ -263,3 +263,48 @@ func TestStreamFinalAnswerToEventBus_EmitsDoneWhenProviderEndsWithEmptyChunk(t *
 	assert.True(t, finalAnswerEvents[1].Done)
 	assert.Equal(t, "final answer", state.FinalAnswer)
 }
+
+func TestCallLLMWithRetry_GracefulDegradationRewritesRecoveredState(t *testing.T) {
+	mock := &mockChat{
+		responses: []mockResponse{
+			{chunks: []types.StreamResponse{{ResponseType: types.ResponseTypeError, Content: "tool backend failed"}}},
+			{chunks: []types.StreamResponse{{ResponseType: types.ResponseTypeAnswer, Content: "recovered answer", Done: true}}},
+		},
+	}
+
+	engine := newTestEngine(t, mock)
+	state := &types.AgentState{
+		RoundSteps: []types.AgentStep{{
+			Iteration: 0,
+			ToolCalls: []types.ToolCall{{
+				Name:   "knowledge_retrieval",
+				Result: &types.ToolResult{Success: true, Output: "retrieved context"},
+			}},
+		}},
+	}
+
+	var finalAnswerEvents []event.AgentFinalAnswerData
+	engine.eventBus.On(event.EventAgentFinalAnswer, func(_ context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		require.True(t, ok)
+		finalAnswerEvents = append(finalAnswerEvents, data)
+		return nil
+	})
+
+	resp, err := engine.callLLMWithRetry(context.Background(), emptyMessages(), emptyTools(), state, "test query", 0, "sess-1")
+	require.NoError(t, err)
+	assert.Nil(t, resp)
+	assert.True(t, state.IsComplete)
+	assert.Equal(t, "partial", state.CompletionStatus)
+	assert.Equal(t, "fallback_stop", state.FinishReason)
+	assert.Empty(t, state.FailureReason)
+	assert.False(t, state.AllowIndexing)
+	assert.False(t, state.AllowComplete)
+	assert.Equal(t, "recovered answer", state.FinalAnswer)
+	require.NotEmpty(t, finalAnswerEvents)
+	assert.Equal(t, "partial", finalAnswerEvents[0].CompletionStatus)
+	assert.Equal(t, "fallback_stop", finalAnswerEvents[0].FinishReason)
+	assert.Empty(t, finalAnswerEvents[0].FailureReason)
+	assert.False(t, finalAnswerEvents[0].AllowIndexing)
+	assert.False(t, finalAnswerEvents[0].AllowComplete)
+}

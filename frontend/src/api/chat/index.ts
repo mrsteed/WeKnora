@@ -65,6 +65,22 @@ export async function getSession(session_id: string) {
   return get(`/api/v1/sessions/${session_id}`);
 }
 
+export async function getLatestChatDocumentArtifact(session_id: string) {
+	return get(`/api/v1/chat-document-artifacts/latest?session_id=${encodeURIComponent(session_id)}`);
+}
+
+export async function getChatDocumentArtifacts(session_id: string, limit = 20) {
+	return get(`/api/v1/chat-document-artifacts?session_id=${encodeURIComponent(session_id)}&limit=${limit}`);
+}
+
+export async function getChatDocumentArtifact(artifact_id: string) {
+  return get(`/api/v1/chat-document-artifacts/${encodeURIComponent(artifact_id)}`);
+}
+
+export async function getChatDocumentArtifactRevisions(artifact_id: string) {
+  return get(`/api/v1/chat-document-artifacts/${encodeURIComponent(artifact_id)}/revisions`);
+}
+
 export async function stopSession(session_id: string, message_id: string) {
   return post(`/api/v1/sessions/${session_id}/stop`, { message_id });
 }

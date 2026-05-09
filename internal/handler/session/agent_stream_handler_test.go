@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,7 +32,7 @@ func (s *streamManagerStub) GetEvents(ctx context.Context, sessionID, messageID 
 func TestHandleComplete_UsesStreamedAnswerWithoutAppendingCompletePayload(t *testing.T) {
 	streamStub := &streamManagerStub{}
 	assistant := &types.Message{ID: "msg-1", SessionID: "sess-1", Role: "assistant"}
-	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", assistant, streamStub, event.NewEventBus())
+	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", time.Time{}, assistant, streamStub, event.NewEventBus(), nil)
 
 	require.NoError(t, handler.handleFinalAnswer(context.Background(), event.Event{
 		ID:   "answer-1",
@@ -72,7 +73,7 @@ func TestHandleComplete_UsesStreamedAnswerWithoutAppendingCompletePayload(t *tes
 func TestHandleComplete_FallbackAnswerOnlyForCompletedWithoutStreamedAnswer(t *testing.T) {
 	streamStub := &streamManagerStub{}
 	assistant := &types.Message{ID: "msg-1", SessionID: "sess-1", Role: "assistant"}
-	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", assistant, streamStub, event.NewEventBus())
+	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", time.Time{}, assistant, streamStub, event.NewEventBus(), nil)
 
 	require.NoError(t, handler.handleComplete(context.Background(), event.Event{
 		ID: "complete-1",
@@ -105,7 +106,7 @@ func TestHandleComplete_FallbackAnswerOnlyForCompletedWithoutStreamedAnswer(t *t
 func TestHandleComplete_PrefersAuthoritativeCompleteAnswerOverPartialStreamedContent(t *testing.T) {
 	streamStub := &streamManagerStub{}
 	assistant := &types.Message{ID: "msg-1", SessionID: "sess-1", Role: "assistant"}
-	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", assistant, streamStub, event.NewEventBus())
+	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", time.Time{}, assistant, streamStub, event.NewEventBus(), nil)
 
 	require.NoError(t, handler.handleFinalAnswer(context.Background(), event.Event{
 		ID:   "answer-1",
@@ -145,7 +146,7 @@ func TestHandleComplete_PrefersAuthoritativeCompleteAnswerOverPartialStreamedCon
 func TestHandleComplete_PartialDoesNotFallbackFromCompletePayload(t *testing.T) {
 	streamStub := &streamManagerStub{}
 	assistant := &types.Message{ID: "msg-1", SessionID: "sess-1", Role: "assistant"}
-	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", assistant, streamStub, event.NewEventBus())
+	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", time.Time{}, assistant, streamStub, event.NewEventBus(), nil)
 
 	require.NoError(t, handler.handleComplete(context.Background(), event.Event{
 		ID: "complete-1",
@@ -171,10 +172,49 @@ func TestHandleComplete_PartialDoesNotFallbackFromCompletePayload(t *testing.T) 
 	assert.Equal(t, 0, answerEvents)
 }
 
+func TestHandleComplete_RecoveredPartialFallsBackFromCompletePayload(t *testing.T) {
+	streamStub := &streamManagerStub{}
+	assistant := &types.Message{ID: "msg-1", SessionID: "sess-1", Role: "assistant"}
+	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", time.Time{}, assistant, streamStub, event.NewEventBus(), nil)
+
+	require.NoError(t, handler.handleComplete(context.Background(), event.Event{
+		ID: "complete-1",
+		Data: event.AgentCompleteData{
+			MessageID:        "msg-1",
+			FinalAnswer:      "recovered partial final answer",
+			CompletionStatus: types.MessageCompletionStatusPartial,
+			FinishReason:     "fallback_stop",
+			FailureReason:    "",
+			TotalDurationMs:  time.Second.Milliseconds(),
+		},
+	}))
+
+	assert.Equal(t, "recovered partial final answer", assistant.Content)
+	assert.Equal(t, types.MessageCompletionStatusPartial, assistant.CompletionStatus)
+	assert.Equal(t, "fallback_stop", assistant.FinishReason)
+	assert.False(t, assistant.IsCompleted)
+
+	answerEvents := 0
+	completeEvents := 0
+	for _, evt := range streamStub.events {
+		switch evt.Type {
+		case types.ResponseTypeAnswer:
+			answerEvents++
+		case types.ResponseTypeComplete:
+			completeEvents++
+			assert.Equal(t, "recovered partial final answer", evt.Data["final_answer"])
+			assert.Equal(t, types.MessageCompletionStatusPartial, evt.Data["completion_status"])
+			assert.Equal(t, "fallback_stop", evt.Data["finish_reason"])
+		}
+	}
+	assert.Equal(t, 2, answerEvents)
+	assert.Equal(t, 1, completeEvents)
+}
+
 func TestHandleComplete_AppendsAgentStepsToCompletePayload(t *testing.T) {
 	streamStub := &streamManagerStub{}
 	assistant := &types.Message{ID: "msg-1", SessionID: "sess-1", Role: "assistant"}
-	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", assistant, streamStub, event.NewEventBus())
+	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", time.Time{}, assistant, streamStub, event.NewEventBus(), nil)
 
 	steps := []types.AgentStep{{
 		Iteration: 0,
@@ -211,4 +251,86 @@ func TestHandleComplete_AppendsAgentStepsToCompletePayload(t *testing.T) {
 		return
 	}
 	assert.Equal(t, types.AgentSteps(steps), streamedSteps)
+}
+
+func TestHandleComplete_IncludesChatDocumentArtifactMetadata(t *testing.T) {
+	streamStub := &streamManagerStub{}
+	assistant := &types.Message{ID: "msg-1", SessionID: "sess-1", Role: "assistant"}
+	handler := NewAgentStreamHandler(
+		context.Background(),
+		"sess-1",
+		"msg-1",
+		"req-1",
+		time.Time{},
+		assistant,
+		streamStub,
+		event.NewEventBus(),
+		func() *types.ChatDocumentArtifact {
+			return &types.ChatDocumentArtifact{ID: "artifact-1", SessionID: "sess-1", SourceMessageID: "msg-1", RevisionNo: 2, Title: "技术方案", Status: types.ChatDocumentArtifactStatusAvailable, Operation: types.ChatDocumentOperationContinue, CanInlineContinue: true, QualityIssues: []string{"unclosed_code_fence"}, UserHint: "检测到末尾代码块未闭合，系统已自动补全代码围栏。", ContentSnapshot: "# 完整文档\n\n## 第一章"}
+		},
+	)
+
+	require.NoError(t, handler.handleComplete(context.Background(), event.Event{
+		ID: "complete-1",
+		Data: event.AgentCompleteData{
+			MessageID:        "msg-1",
+			FinalAnswer:      "final answer",
+			CompletionStatus: types.MessageCompletionStatusCompleted,
+			FinishReason:     "stop",
+		},
+	}))
+
+	completeEvent := streamStub.events[len(streamStub.events)-1]
+	require.Equal(t, types.ResponseTypeComplete, completeEvent.Type)
+	artifact, ok := completeEvent.Data["chat_document_artifact"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "artifact-1", artifact["id"])
+	assert.Equal(t, "msg-1", artifact["source_message_id"])
+	assert.Equal(t, types.ChatDocumentOperationContinue, artifact["operation"])
+	assert.Equal(t, true, artifact["can_inline_continue"])
+	assert.Equal(t, "检测到末尾代码块未闭合，系统已自动补全代码围栏。", artifact["user_hint"])
+	assert.Equal(t, types.ChatDocumentFinalDocumentModeInlineSnapshot, completeEvent.Data["final_document_mode"])
+	assert.Equal(t, "artifact-1", completeEvent.Data["final_document_artifact_id"])
+	assert.Equal(t, "# 完整文档\n\n## 第一章", completeEvent.Data["final_document"])
+}
+
+func TestHandleComplete_UsesFetchModeForOversizedArtifactSnapshot(t *testing.T) {
+	streamStub := &streamManagerStub{}
+	assistant := &types.Message{ID: "msg-1", SessionID: "sess-1", Role: "assistant"}
+	handler := NewAgentStreamHandler(
+		context.Background(),
+		"sess-1",
+		"msg-1",
+		"req-1",
+		time.Time{},
+		assistant,
+		streamStub,
+		event.NewEventBus(),
+		func() *types.ChatDocumentArtifact {
+			return &types.ChatDocumentArtifact{
+				ID:              "artifact-oversized",
+				SessionID:       "sess-1",
+				SourceMessageID: "msg-1",
+				RevisionNo:      4,
+				ContentSnapshot: strings.Repeat("超长正文", types.ChatDocumentArtifactInlineContinuationMaxChars/4+10),
+			}
+		},
+	)
+
+	require.NoError(t, handler.handleComplete(context.Background(), event.Event{
+		ID: "complete-1",
+		Data: event.AgentCompleteData{
+			MessageID:        "msg-1",
+			FinalAnswer:      "final answer",
+			CompletionStatus: types.MessageCompletionStatusCompleted,
+			FinishReason:     "stop",
+		},
+	}))
+
+	completeEvent := streamStub.events[len(streamStub.events)-1]
+	require.Equal(t, types.ResponseTypeComplete, completeEvent.Type)
+	assert.Equal(t, types.ChatDocumentFinalDocumentModeFetchArtifactSnapshot, completeEvent.Data["final_document_mode"])
+	assert.Equal(t, "artifact-oversized", completeEvent.Data["final_document_artifact_id"])
+	_, hasInlineDocument := completeEvent.Data["final_document"]
+	assert.False(t, hasInlineDocument)
 }

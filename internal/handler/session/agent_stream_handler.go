@@ -25,6 +25,7 @@ type AgentStreamHandler struct {
 	ttfbLogged         bool      // Guards one-shot TTFB log on first answer chunk
 	assistantMessage   *types.Message
 	streamManager      interfaces.StreamManager
+	artifactProvider   func() *types.ChatDocumentArtifact
 
 	eventBus *event.EventBus
 
@@ -35,6 +36,30 @@ type AgentStreamHandler struct {
 	mu              sync.Mutex
 }
 
+func shouldUseAuthoritativeCompleteAnswer(data event.AgentCompleteData, streamedAnswer string) bool {
+	if data.FinalAnswer == "" {
+		return false
+	}
+
+	if data.CompletionStatus == types.MessageCompletionStatusCompleted {
+		return streamedAnswer == "" || (data.FinishReason == "tool_calls" && data.FinalAnswer != streamedAnswer)
+	}
+
+	return data.CompletionStatus == types.MessageCompletionStatusPartial && data.FinishReason == "fallback_stop" && data.FinalAnswer != streamedAnswer
+}
+
+func shouldFallbackAnswerFromComplete(data event.AgentCompleteData, streamedAnswer, authoritativeAnswer string) bool {
+	if streamedAnswer != "" || authoritativeAnswer == "" {
+		return false
+	}
+
+	if data.CompletionStatus == types.MessageCompletionStatusCompleted {
+		return true
+	}
+
+	return data.CompletionStatus == types.MessageCompletionStatusPartial && data.FinishReason == "fallback_stop"
+}
+
 // NewAgentStreamHandler creates a new handler for agent SSE streaming
 func NewAgentStreamHandler(
 	ctx context.Context,
@@ -43,6 +68,7 @@ func NewAgentStreamHandler(
 	assistantMessage *types.Message,
 	streamManager interfaces.StreamManager,
 	eventBus *event.EventBus,
+	artifactProvider func() *types.ChatDocumentArtifact,
 ) *AgentStreamHandler {
 	return &AgentStreamHandler{
 		ctx:                ctx,
@@ -52,6 +78,7 @@ func NewAgentStreamHandler(
 		receivedAt:         receivedAt,
 		assistantMessage:   assistantMessage,
 		streamManager:      streamManager,
+		artifactProvider:   artifactProvider,
 		eventBus:           eventBus,
 		knowledgeRefs:      make([]*types.SearchResult, 0),
 		eventStartTimes:    make(map[string]time.Time),
@@ -513,7 +540,7 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 	if data.MessageID == h.assistantMessageID {
 		streamedAnswer := h.finalAnswer
 		authoritativeAnswer := streamedAnswer
-		if data.CompletionStatus == types.MessageCompletionStatusCompleted && data.FinalAnswer != "" && (streamedAnswer == "" || (data.FinishReason == "tool_calls" && data.FinalAnswer != streamedAnswer)) {
+		if shouldUseAuthoritativeCompleteAnswer(data, streamedAnswer) {
 			authoritativeAnswer = data.FinalAnswer
 		}
 
@@ -536,7 +563,7 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 
 		h.finalAnswer = authoritativeAnswer
 		h.assistantMessage.Content = authoritativeAnswer
-		if streamedAnswer == "" && authoritativeAnswer != "" && data.CompletionStatus == types.MessageCompletionStatusCompleted {
+		if shouldFallbackAnswerFromComplete(data, streamedAnswer, authoritativeAnswer) {
 			fallbackAnswer = data.FinalAnswer
 		}
 
@@ -555,8 +582,9 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 
 	// Fallback: if no answer events were streamed but we have a final answer,
 	// emit it as answer events so the frontend can render it properly.
-	// This is only allowed for completed answers; partial/failed/cancelled must not
-	// reintroduce body content from the complete event.
+	// This is allowed for completed answers and recovered partial answers where
+	// fallback_stop indicates the final answer synthesis succeeded but no answer
+	// chunks reached the frontend.
 	if fallbackAnswer != "" {
 		logger.GetLogger(h.ctx).Warnf(
 			"No answer events were streamed, emitting fallback answer (len=%d). "+
@@ -595,25 +623,37 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 	}
 
 	// Send completion event to stream manager so SSE can detect completion
+	completeData := map[string]interface{}{
+		"final_answer":      h.assistantMessage.Content,
+		"agent_steps":       h.assistantMessage.AgentSteps,
+		"agent_duration_ms": data.TotalDurationMs,
+		"total_steps":       data.TotalSteps,
+		"total_duration_ms": data.TotalDurationMs,
+		"completion_status": data.CompletionStatus,
+		"finish_reason":     data.FinishReason,
+		"is_partial":        data.IsPartial,
+		"allow_indexing":    data.AllowIndexing,
+		"allow_complete":    data.AllowComplete,
+		"failure_reason":    data.FailureReason,
+	}
+	if h.artifactProvider != nil {
+		if artifact := h.artifactProvider(); artifact != nil {
+			completeData["chat_document_artifact"] = chatDocumentArtifactMetadata(artifact)
+			finalDocumentMode, finalDocument, finalDocumentArtifactID := buildFinalDocumentDelivery(artifact)
+			completeData["final_document_mode"] = finalDocumentMode
+			if finalDocument != "" {
+				completeData["final_document"] = finalDocument
+			}
+			completeData["final_document_artifact_id"] = finalDocumentArtifactID
+		}
+	}
 	if err := h.streamManager.AppendEvent(h.ctx, h.sessionID, h.assistantMessageID, interfaces.StreamEvent{
 		ID:        evt.ID,
 		Type:      types.ResponseTypeComplete,
 		Content:   "",
 		Done:      true,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
-			"final_answer":      h.assistantMessage.Content,
-			"agent_steps":       h.assistantMessage.AgentSteps,
-			"agent_duration_ms": data.TotalDurationMs,
-			"total_steps":       data.TotalSteps,
-			"total_duration_ms": data.TotalDurationMs,
-			"completion_status": data.CompletionStatus,
-			"finish_reason":     data.FinishReason,
-			"is_partial":        data.IsPartial,
-			"allow_indexing":    data.AllowIndexing,
-			"allow_complete":    data.AllowComplete,
-			"failure_reason":    data.FailureReason,
-		},
+		Data:      completeData,
 	}); err != nil {
 		logger.GetLogger(h.ctx).Errorf("Append complete event to stream failed: %v", err)
 	}

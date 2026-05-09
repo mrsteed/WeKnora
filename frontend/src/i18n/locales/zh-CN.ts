@@ -602,6 +602,7 @@ export default {
     selectKnowledgeBaseWarning: "请至少选择一个知识库",
     processError: "处理出错",
     streamUnavailable: "该回答的实时生成已中断，历史内容无法恢复。可以重新生成获取新的回答。",
+    recoveredPartialHint: "工具执行中出现了可恢复问题，系统已保留当前生成内容。你可以继续补全，或重新生成。",
     sessionExcerpt: "会话摘录",
     noAnswerContent: "（无回答内容）",
     noMatchFound: "未找到匹配的内容",

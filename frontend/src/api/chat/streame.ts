@@ -30,7 +30,7 @@ export function useStream() {
   let renderTimer: number | null = null
 
   // 启动流式请求
-  const startStream = async (params: { session_id: any; query: any; knowledge_base_ids?: string[]; knowledge_ids?: string[]; agent_enabled?: boolean; agent_id?: string; web_search_enabled?: boolean; enable_memory?: boolean; summary_model_id?: string; mcp_service_ids?: string[]; mentioned_items?: Array<{id: string; name: string; type: string; kb_type?: string}>; images?: Array<{data: string}>; attachment_uploads?: Array<{data: string; file_name: string; file_size: number}>; method: string; url: string }) => {
+  const startStream = async (params: { session_id: any; query: any; knowledge_base_ids?: string[]; knowledge_ids?: string[]; intent_hint?: string; base_artifact_id?: string; document_output_mode?: string; agent_enabled?: boolean; agent_id?: string; web_search_enabled?: boolean; enable_memory?: boolean; summary_model_id?: string; mcp_service_ids?: string[]; mentioned_items?: Array<{id: string; name: string; type: string; kb_type?: string}>; images?: Array<{data: string}>; attachment_uploads?: Array<{data: string; file_name: string; file_size: number}>; method: string; url: string }) => {
     // 重置状态
     output.value = '';
     error.value = null;
@@ -93,6 +93,15 @@ export function useStream() {
         query: params.query,
         agent_enabled: params.agent_enabled !== undefined ? params.agent_enabled : true
       };
+      if (params.intent_hint) {
+        postBody.intent_hint = params.intent_hint;
+      }
+      if (params.base_artifact_id) {
+        postBody.base_artifact_id = params.base_artifact_id;
+      }
+      if (params.document_output_mode) {
+        postBody.document_output_mode = params.document_output_mode;
+      }
       // Always include knowledge_base_ids for agent-chat (already validated above)
       if (params.knowledge_base_ids !== undefined && params.knowledge_base_ids.length > 0) {
         postBody.knowledge_base_ids = params.knowledge_base_ids;

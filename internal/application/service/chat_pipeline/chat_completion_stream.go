@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/Tencent/WeKnora/internal/event"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/google/uuid"
@@ -170,8 +171,9 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 		var thinkingStarted bool
 		var thinkingEnded bool
 		var completionEmitted bool
+		requestID, _ := types.RequestIDFromContext(ctx)
 
-		emitCompletionIfMissing := func(finishReason string) {
+		emitCompletionIfMissing := func(finishReason string, reasonSource string) {
 			if completionEmitted {
 				return
 			}
@@ -186,6 +188,10 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 			if finalContent != "" {
 				chatManage.ChatResponse = &types.ChatResponse{Content: finalContent}
 			}
+			logger.Infof(ctx,
+				"Streaming completion emitted, session_id: %s, request_id: %s, answer_id: %s, finish_reason: %s, reason_source: %s, final_content_len: %d, thinking_started: %t, thinking_ended: %t",
+				chatManage.SessionID, requestID, answerID, finishReason, reasonSource, len([]rune(finalContent)), thinkingStarted, thinkingEnded,
+			)
 			completionEmitted = true
 			emitFinalAnswerEvent(ctx, eventBus, answerID, chatManage, types.StreamResponse{FinishReason: finishReason}, "", true)
 		}
@@ -193,7 +199,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 		for {
 			select {
 			case <-ctx.Done():
-				emitCompletionIfMissing("cancelled")
+				emitCompletionIfMissing("cancelled", "context_cancelled")
 				pipelineInfo(ctx, "Stream", "context_cancelled", map[string]interface{}{
 					"session_id": chatManage.SessionID,
 				})
@@ -201,7 +207,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 
 			case response, ok := <-responseChan:
 				if !ok {
-					emitCompletionIfMissing("stop")
+					emitCompletionIfMissing("stop", "channel_close_default_stop")
 					pipelineInfo(ctx, "Stream", "channel_close", map[string]interface{}{
 						"session_id": chatManage.SessionID,
 					})
@@ -249,6 +255,14 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 					}
 					finalContent += response.Content
 					if response.Done {
+						reasonSource := "response_done_default_stop"
+						if response.FinishReason != "" {
+							reasonSource = "response_done_model_finish_reason"
+						}
+						logger.Infof(ctx,
+							"Streaming answer reached done state, session_id: %s, request_id: %s, answer_id: %s, finish_reason: %s, reason_source: %s, chunk_len: %d, accumulated_content_len: %d",
+							chatManage.SessionID, requestID, answerID, response.FinishReason, reasonSource, len([]rune(response.Content)), len([]rune(finalContent)),
+						)
 						completionEmitted = true
 						chatManage.ChatResponse = &types.ChatResponse{Content: finalContent}
 					}

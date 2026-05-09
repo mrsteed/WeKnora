@@ -21,15 +21,17 @@ import (
 )
 
 type assistantCompletionOptions struct {
-	CompletionStatus string
-	FinishReason     string
-	FailureReason    string
-	AllowIndexing    bool
-	AllowComplete    bool
-	AgentMode        bool
-	FinalAnswer      string
-	AgentSteps       types.AgentSteps
-	AgentDurationMs  int64
+	CompletionStatus        string
+	FinishReason            string
+	FailureReason           string
+	AllowIndexing           bool
+	AllowComplete           bool
+	AgentMode               bool
+	FinalAnswer             string
+	AgentSteps              types.AgentSteps
+	AgentDurationMs         int64
+	RegisterArtifactOptions types.RegisterChatDocumentArtifactOptions
+	ArtifactObserver        func(*types.ChatDocumentArtifact)
 }
 
 func defaultAssistantCompletionOptions() assistantCompletionOptions {
@@ -133,51 +135,135 @@ func completionOptionsFromError(data event.ErrorData) assistantCompletionOptions
 	}
 }
 
-func emitAssistantCompleteEvent(eventBus *event.EventBus, sessionID string, message *types.Message, options assistantCompletionOptions) {
+func shouldUseAgentFinalAnswerContent(currentContent string, options assistantCompletionOptions) bool {
+	finalAnswer := strings.TrimSpace(options.FinalAnswer)
+	if finalAnswer == "" {
+		return false
+	}
+
+	trimmedCurrent := strings.TrimSpace(currentContent)
+	if trimmedCurrent == "" {
+		return true
+	}
+
+	if options.FinishReason == "fallback_stop" {
+		return true
+	}
+
+	if options.CompletionStatus == types.MessageCompletionStatusFailed || options.CompletionStatus == types.MessageCompletionStatusCancelled {
+		return false
+	}
+
+	return len([]rune(finalAnswer)) > len([]rune(trimmedCurrent))
+}
+
+func emitAssistantCompleteEvent(eventBus *event.EventBus, sessionID string, message *types.Message, options assistantCompletionOptions, artifact *types.ChatDocumentArtifact) {
+	completeData := event.AgentCompleteData{
+		FinalAnswer:      message.Content,
+		CompletionStatus: options.CompletionStatus,
+		FinishReason:     options.FinishReason,
+		IsPartial:        options.CompletionStatus == types.MessageCompletionStatusPartial,
+		AllowIndexing:    options.AllowIndexing,
+		AllowComplete:    options.AllowComplete,
+		FailureReason:    options.FailureReason,
+		AgentSteps:       message.AgentSteps,
+		TotalDurationMs:  message.AgentDurationMs,
+	}
+	if artifact != nil {
+		completeData.FinalDocumentMode, completeData.FinalDocument, completeData.FinalDocumentArtifactID = buildFinalDocumentDelivery(artifact)
+		completeData.Extra = map[string]interface{}{
+			"chat_document_artifact": chatDocumentArtifactMetadata(artifact),
+		}
+	}
+
 	eventBus.Emit(context.Background(), event.Event{
 		Type:      event.EventAgentComplete,
 		SessionID: sessionID,
-		Data: event.AgentCompleteData{
-			FinalAnswer:      message.Content,
-			CompletionStatus: options.CompletionStatus,
-			FinishReason:     options.FinishReason,
-			IsPartial:        options.CompletionStatus == types.MessageCompletionStatusPartial,
-			AllowIndexing:    options.AllowIndexing,
-			AllowComplete:    options.AllowComplete,
-			FailureReason:    options.FailureReason,
-			AgentSteps:       message.AgentSteps,
-			TotalDurationMs:  message.AgentDurationMs,
-		},
+		Data:      completeData,
 	})
+}
+
+func buildFinalDocumentDelivery(artifact *types.ChatDocumentArtifact) (string, string, string) {
+	if artifact == nil {
+		return "", "", ""
+	}
+
+	snapshot := strings.TrimSpace(artifact.ContentSnapshot)
+	if snapshot == "" {
+		return types.ChatDocumentFinalDocumentModeFetchArtifactSnapshot, "", artifact.ID
+	}
+
+	if len([]rune(snapshot)) <= types.ChatDocumentArtifactInlineContinuationMaxChars {
+		return types.ChatDocumentFinalDocumentModeInlineSnapshot, snapshot, artifact.ID
+	}
+
+	return types.ChatDocumentFinalDocumentModeFetchArtifactSnapshot, "", artifact.ID
+}
+
+func chatDocumentArtifactMetadata(artifact *types.ChatDocumentArtifact) map[string]interface{} {
+	if artifact == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"id":                  artifact.ID,
+		"tenant_id":           artifact.TenantID,
+		"session_id":          artifact.SessionID,
+		"source_message_id":   artifact.SourceMessageID,
+		"source_request_id":   artifact.SourceRequestID,
+		"parent_artifact_id":  artifact.ParentArtifactID,
+		"revision_no":         artifact.RevisionNo,
+		"title":               artifact.Title,
+		"artifact_kind":       artifact.ArtifactKind,
+		"content_type":        artifact.ContentType,
+		"status":              artifact.Status,
+		"completion_status":   artifact.CompletionStatus,
+		"operation":           artifact.Operation,
+		"snapshot_char_count": artifact.SnapshotCharCount,
+		"can_inline_continue": artifact.CanInlineContinue,
+		"quality_issues":      artifact.QualityIssues,
+		"user_hint":           artifact.UserHint,
+		"structure_info":      artifact.StructureInfo,
+		"created_by":          artifact.CreatedBy,
+		"created_at":          artifact.CreatedAt,
+		"updated_at":          artifact.UpdatedAt,
+	}
 }
 
 // qaRequestContext holds all the common data needed for QA requests
 type qaRequestContext struct {
-	ctx               context.Context
-	c                 *gin.Context
-	sessionID         string
-	requestID         string
-	receivedAt        time.Time // Wall-clock time the handler started processing the request
-	query             string
-	session           *types.Session
-	customAgent       *types.CustomAgent
-	assistantMessage  *types.Message
-	knowledgeBaseIDs  []string
-	knowledgeIDs      []string
-	summaryModelID    string
-	webSearchEnabled  bool
-	enableMemory      bool // Whether memory feature is enabled
-	mentionedItems    types.MentionedItems
-	effectiveTenantID uint64                   // when using shared agent, tenant ID for model/KB/MCP resolution; 0 = use context tenant
-	images            []ImageAttachment        // Uploaded images with analysis text
-	userMessageID     string                   // Created user message ID (populated after createUserMessage)
-	channel           string                   // Source channel: "web", "api", "im", etc.
-	attachments       types.MessageAttachments // Processed file attachments
+	ctx                   context.Context
+	c                     *gin.Context
+	sessionID             string
+	requestID             string
+	receivedAt            time.Time // Wall-clock time the handler started processing the request
+	query                 string
+	intentHint            string
+	baseArtifactID        string
+	documentIntent        string
+	documentOperation     string
+	documentOutputMode    string
+	baseArtifact          *types.ChatDocumentArtifact
+	documentQuotedContext string
+	session               *types.Session
+	customAgent           *types.CustomAgent
+	assistantMessage      *types.Message
+	knowledgeBaseIDs      []string
+	knowledgeIDs          []string
+	summaryModelID        string
+	webSearchEnabled      bool
+	enableMemory          bool // Whether memory feature is enabled
+	mentionedItems        types.MentionedItems
+	effectiveTenantID     uint64                   // when using shared agent, tenant ID for model/KB/MCP resolution; 0 = use context tenant
+	images                []ImageAttachment        // Uploaded images with analysis text
+	userMessageID         string                   // Created user message ID (populated after createUserMessage)
+	channel               string                   // Source channel: "web", "api", "im", etc.
+	attachments           types.MessageAttachments // Processed file attachments
 }
 
 // buildQARequest converts the qaRequestContext into a types.QARequest for service invocation.
 func (rc *qaRequestContext) buildQARequest() *types.QARequest {
 	imageURLs, imageDescription := extractImageURLsAndOCRText(rc.images)
+	quotedContext := appendQuotedContext("", rc.documentQuotedContext)
 	return &types.QARequest{
 		Session:            rc.session,
 		Query:              rc.query,
@@ -191,6 +277,11 @@ func (rc *qaRequestContext) buildQARequest() *types.QARequest {
 		UserMessageID:      rc.userMessageID,
 		WebSearchEnabled:   rc.webSearchEnabled,
 		EnableMemory:       rc.enableMemory,
+		QuotedContext:      quotedContext,
+		DocumentIntent:     rc.documentIntent,
+		BaseArtifactID:     rc.baseArtifactID,
+		DocumentOperation:  rc.documentOperation,
+		DocumentOutputMode: rc.documentOutputMode,
 		Attachments:        rc.attachments,
 	}
 }
@@ -338,14 +429,17 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 
 	// Build request context
 	reqCtx := &qaRequestContext{
-		ctx:         ctx,
-		c:           c,
-		sessionID:   sessionID,
-		requestID:   requestID,
-		receivedAt:  receivedAt,
-		query:       secutils.SanitizeForLog(request.Query),
-		session:     session,
-		customAgent: customAgent,
+		ctx:                ctx,
+		c:                  c,
+		sessionID:          sessionID,
+		requestID:          requestID,
+		receivedAt:         receivedAt,
+		query:              secutils.SanitizeForLog(request.Query),
+		intentHint:         secutils.SanitizeForLog(request.IntentHint),
+		baseArtifactID:     secutils.SanitizeForLog(request.BaseArtifactID),
+		documentOutputMode: secutils.SanitizeForLog(request.DocumentOutputMode),
+		session:            session,
+		customAgent:        customAgent,
 		assistantMessage: &types.Message{
 			SessionID:        sessionID,
 			Role:             "assistant",
@@ -364,6 +458,16 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		images:            request.Images,
 		channel:           request.Channel,
 		attachments:       processedAttachments,
+	}
+
+	documentPrep := h.prepareDocumentRequest(ctx, session, reqCtx.query, request.IntentHint, request.BaseArtifactID, request.DocumentOutputMode)
+	reqCtx.documentIntent = documentPrep.intent
+	reqCtx.documentOperation = documentPrep.operation
+	reqCtx.baseArtifact = documentPrep.baseArtifact
+	reqCtx.documentQuotedContext = documentPrep.quotedContext
+	reqCtx.documentOutputMode = normalizeDocumentOutputModeForRequest(request.DocumentOutputMode, reqCtx.documentIntent)
+	if documentPrep.baseArtifact != nil {
+		reqCtx.baseArtifactID = documentPrep.baseArtifact.ID
 	}
 
 	return reqCtx, &request, nil
@@ -495,11 +599,6 @@ func (h *Handler) setupSSEStream(reqCtx *qaRequestContext, generateTitle bool) *
 
 	// Setup stop event handler
 	h.setupStopEventHandler(eventBus, reqCtx.sessionID, reqCtx.session.TenantID, reqCtx.assistantMessage, cancel)
-
-	// Setup stream handler
-	h.setupStreamHandler(asyncCtx, reqCtx.sessionID, reqCtx.assistantMessage.ID,
-		reqCtx.requestID, reqCtx.receivedAt, reqCtx.assistantMessage, eventBus)
-
 	// Generate title if needed
 	if generateTitle && reqCtx.session.Title == "" {
 		// Use the same model as the conversation for title generation
@@ -709,12 +808,36 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 
 	// Setup SSE stream
 	streamCtx := h.setupSSEStream(reqCtx, generateTitle)
+	var artifactMu sync.RWMutex
+	var completedArtifact *types.ChatDocumentArtifact
+	setCompletedArtifact := func(artifact *types.ChatDocumentArtifact) {
+		if artifact == nil {
+			return
+		}
+		artifactMu.Lock()
+		completedArtifact = artifact
+		artifactMu.Unlock()
+	}
+	getCompletedArtifact := func() *types.ChatDocumentArtifact {
+		artifactMu.RLock()
+		defer artifactMu.RUnlock()
+		return completedArtifact
+	}
+	artifactOptions := types.RegisterChatDocumentArtifactOptions{
+		UserQuery:    reqCtx.query,
+		Intent:       reqCtx.documentIntent,
+		Operation:    reqCtx.documentOperation,
+		OutputMode:   reqCtx.documentOutputMode,
+		BaseArtifact: reqCtx.baseArtifact,
+	}
 
 	// Normal mode: register completion handler on EventAgentFinalAnswer
 	// (Agent mode handles completion in the defer block instead)
 	if mode == qaModeNormal {
 		var completionHandled bool
 		completionOptions := defaultAssistantCompletionOptions()
+		completionOptions.RegisterArtifactOptions = artifactOptions
+		completionOptions.ArtifactObserver = setCompletedArtifact
 		streamCtx.eventBus.On(event.EventAgentFinalAnswer, func(ctx context.Context, evt event.Event) error {
 			data, ok := evt.Data.(event.AgentFinalAnswerData)
 			if !ok {
@@ -724,7 +847,9 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 			if data.IsFallback {
 				streamCtx.assistantMessage.IsFallback = true
 			}
-			completionOptions = completionOptionsFromFinalAnswer(data)
+			nextOptions := completionOptionsFromFinalAnswer(data)
+			nextOptions.RegisterArtifactOptions = completionOptions.RegisterArtifactOptions
+			completionOptions = nextOptions
 			if data.Done {
 				if completionHandled {
 					return nil
@@ -734,7 +859,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 				logger.Infof(streamCtx.asyncCtx, "Knowledge QA service completed for session: %s", sessionID)
 				updateCtx := messageUpdateContext(streamCtx.asyncCtx, reqCtx.session.TenantID)
 				if h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, completionOptions) {
-					emitAssistantCompleteEvent(streamCtx.eventBus, sessionID, streamCtx.assistantMessage, completionOptions)
+					emitAssistantCompleteEvent(streamCtx.eventBus, sessionID, streamCtx.assistantMessage, completionOptions, getCompletedArtifact())
 				}
 			}
 			return nil
@@ -746,22 +871,30 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 			}
 			completionHandled = true
 			options := completionOptionsFromError(data)
+			options.ArtifactObserver = completionOptions.ArtifactObserver
 			updateCtx := messageUpdateContext(streamCtx.asyncCtx, reqCtx.session.TenantID)
 			if h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, options) {
-				emitAssistantCompleteEvent(streamCtx.eventBus, sessionID, streamCtx.assistantMessage, options)
+				emitAssistantCompleteEvent(streamCtx.eventBus, sessionID, streamCtx.assistantMessage, options, getCompletedArtifact())
 			}
 			return nil
 		})
 	}
 
 	agentCompletionOptions := agentAssistantCompletionOptions()
+	agentCompletionOptions.RegisterArtifactOptions = artifactOptions
+	agentCompletionOptions.ArtifactObserver = setCompletedArtifact
 	if mode == qaModeAgent {
 		streamCtx.eventBus.On(event.EventAgentComplete, func(ctx context.Context, evt event.Event) error {
 			data, ok := evt.Data.(event.AgentCompleteData)
 			if !ok {
 				return nil
 			}
-			agentCompletionOptions = completionOptionsFromComplete(data)
+			nextOptions := completionOptionsFromComplete(data)
+			nextOptions.RegisterArtifactOptions = agentCompletionOptions.RegisterArtifactOptions
+			nextOptions.ArtifactObserver = agentCompletionOptions.ArtifactObserver
+			agentCompletionOptions = nextOptions
+			updateCtx := messageUpdateContext(streamCtx.asyncCtx, reqCtx.session.TenantID)
+			h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query, agentCompletionOptions)
 			return nil
 		})
 		streamCtx.eventBus.On(event.EventError, func(ctx context.Context, evt event.Event) error {
@@ -769,10 +902,16 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 			if !ok {
 				return nil
 			}
-			agentCompletionOptions = markAgentCompletion(completionOptionsFromError(data))
+			nextOptions := markAgentCompletion(completionOptionsFromError(data))
+			nextOptions.RegisterArtifactOptions = agentCompletionOptions.RegisterArtifactOptions
+			nextOptions.ArtifactObserver = agentCompletionOptions.ArtifactObserver
+			agentCompletionOptions = nextOptions
 			return nil
 		})
 	}
+
+	h.setupStreamHandler(streamCtx.asyncCtx, reqCtx.sessionID, reqCtx.assistantMessage.ID,
+		reqCtx.requestID, reqCtx.receivedAt, reqCtx.assistantMessage, streamCtx.eventBus, getCompletedArtifact)
 
 	// Execute QA asynchronously
 	go func() {
@@ -927,7 +1066,7 @@ func (h *Handler) completeAssistantMessage(
 	updatedMessage.FailureReason = options.FailureReason
 	updatedMessage.IsCompleted = options.AllowComplete && options.CompletionStatus == types.MessageCompletionStatusCompleted
 	if options.AgentMode {
-		if updatedMessage.Content == "" && strings.TrimSpace(options.FinalAnswer) != "" {
+		if shouldUseAgentFinalAnswerContent(updatedMessage.Content, options) {
 			updatedMessage.Content = options.FinalAnswer
 		}
 		if len(updatedMessage.AgentSteps) == 0 && len(options.AgentSteps) > 0 {
@@ -938,6 +1077,12 @@ func (h *Handler) completeAssistantMessage(
 		}
 	}
 	agentStepsCount := len(updatedMessage.AgentSteps)
+	logger.Infof(ctx,
+		"Preparing assistant completion persistence, session_id: %s, message_id: %s, request_id: %s, completion_status: %s, finish_reason: %s, failure_reason: %s, allow_complete: %t, allow_indexing: %t, agent_mode: %t, content_len: %d, agent_steps_count: %d",
+		updatedMessage.SessionID, updatedMessage.ID, updatedMessage.RequestID,
+		options.CompletionStatus, options.FinishReason, options.FailureReason,
+		options.AllowComplete, options.AllowIndexing, options.AgentMode, len([]rune(updatedMessage.Content)), agentStepsCount,
+	)
 	if options.AgentMode {
 		logger.Infof(ctx,
 			"Preparing agent assistant completion persistence, session_id: %s, message_id: %s, request_id: %s, agent_steps_count: %d, completion_status: %s, finish_reason: %s",
@@ -961,12 +1106,38 @@ func (h *Handler) completeAssistantMessage(
 		return false
 	}
 	*assistantMessage = updatedMessage
+	logger.Infof(ctx,
+		"Persisted assistant completion state, session_id: %s, message_id: %s, request_id: %s, completion_status: %s, finish_reason: %s, failure_reason: %s, is_completed: %t, allow_indexing: %t, agent_mode: %t, content_len: %d",
+		assistantMessage.SessionID, assistantMessage.ID, assistantMessage.RequestID,
+		assistantMessage.CompletionStatus, assistantMessage.FinishReason, assistantMessage.FailureReason,
+		assistantMessage.IsCompleted, options.AllowIndexing, options.AgentMode, len([]rune(assistantMessage.Content)),
+	)
 	if options.AgentMode {
 		logger.Infof(ctx,
 			"Persisted agent assistant completion state, session_id: %s, message_id: %s, request_id: %s, agent_steps_count: %d, completion_status: %s, finish_reason: %s, update_success: true",
 			assistantMessage.SessionID, assistantMessage.ID, assistantMessage.RequestID, len(assistantMessage.AgentSteps),
 			assistantMessage.CompletionStatus, assistantMessage.FinishReason,
 		)
+	}
+	if h.chatDocumentArtifactService != nil {
+		artifactOptions := options.RegisterArtifactOptions
+		if artifactOptions.UserQuery == "" {
+			artifactOptions.UserQuery = userQuery
+		}
+		if artifact, err := h.chatDocumentArtifactService.RegisterFromAssistantMessage(ctx, assistantMessage, artifactOptions); err != nil {
+			logger.Warnf(ctx,
+				"Failed to register chat document artifact, session_id: %s, message_id: %s, request_id: %s, error: %v",
+				assistantMessage.SessionID, assistantMessage.ID, assistantMessage.RequestID, err,
+			)
+		} else if artifact != nil {
+			if options.ArtifactObserver != nil {
+				options.ArtifactObserver(artifact)
+			}
+			logger.Infof(ctx,
+				"Registered chat document artifact, session_id: %s, message_id: %s, artifact_id: %s, revision_no: %d, operation: %s",
+				assistantMessage.SessionID, assistantMessage.ID, artifact.ID, artifact.RevisionNo, artifact.Operation,
+			)
+		}
 	}
 
 	if !options.AllowIndexing {

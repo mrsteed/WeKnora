@@ -405,6 +405,14 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
 		agentChat.POST("/:session_id", handler.AgentQA)
 	}
 
+	chatDocumentArtifacts := r.Group("/chat-document-artifacts")
+	{
+		chatDocumentArtifacts.GET("", handler.ListChatDocumentArtifacts)
+		chatDocumentArtifacts.GET("/latest", handler.GetLatestChatDocumentArtifact)
+		chatDocumentArtifacts.GET("/:artifact_id", handler.GetChatDocumentArtifact)
+		chatDocumentArtifacts.GET("/:artifact_id/revisions", handler.ListChatDocumentArtifactRevisions)
+	}
+
 	// 新增知识检索接口，不需要session_id
 	knowledgeSearch := r.Group("/knowledge-search")
 	{

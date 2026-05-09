@@ -246,10 +246,23 @@ func messageNeedsAgentTerminalReplay(message *types.Message, events []interfaces
 	return false
 }
 
+func (h *Handler) findChatDocumentArtifactBySourceMessage(ctx context.Context, message *types.Message) *types.ChatDocumentArtifact {
+	if h == nil || h.chatDocumentArtifactService == nil || message == nil || strings.TrimSpace(message.ID) == "" {
+		return nil
+	}
+	artifact, err := h.chatDocumentArtifactService.GetArtifactBySourceMessageID(ctx, message.ID)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to load chat document artifact for terminal replay, session ID: %s, message ID: %s, error: %v", message.SessionID, message.ID, err)
+		return nil
+	}
+	return artifact
+}
+
 func (h *Handler) emitTerminalStreamState(c *gin.Context, message *types.Message, events []interfaces.StreamEvent) {
 	completionStatus := message.CompletionStatusOrLegacy()
 	finishReason := message.FinishReason
 	failureReason := message.FailureReason
+	artifact := h.findChatDocumentArtifactBySourceMessage(c.Request.Context(), message)
 
 	setSSEHeaders(c)
 	if evt, ok := findTerminalReplayEvent(events); ok {
@@ -258,7 +271,7 @@ func (h *Handler) emitTerminalStreamState(c *gin.Context, message *types.Message
 		return
 	}
 
-	if messageNeedsAgentTerminalReplay(message, events) {
+	if messageNeedsAgentTerminalReplay(message, events) || artifact != nil {
 		responseType := types.ResponseTypeComplete
 		data := map[string]interface{}{
 			"completion_status": completionStatus,
@@ -275,6 +288,17 @@ func (h *Handler) emitTerminalStreamState(c *gin.Context, message *types.Message
 		if message.AgentDurationMs > 0 {
 			data["agent_duration_ms"] = message.AgentDurationMs
 			data["total_duration_ms"] = message.AgentDurationMs
+		}
+		if artifact != nil {
+			data["chat_document_artifact"] = chatDocumentArtifactMetadata(artifact)
+			finalDocumentMode, finalDocument, finalDocumentArtifactID := buildFinalDocumentDelivery(artifact)
+			data["final_document_mode"] = finalDocumentMode
+			if finalDocument != "" {
+				data["final_document"] = finalDocument
+			}
+			if finalDocumentArtifactID != "" {
+				data["final_document_artifact_id"] = finalDocumentArtifactID
+			}
 		}
 		if completionStatus == types.MessageCompletionStatusCancelled {
 			responseType = types.ResponseType(event.EventStop)

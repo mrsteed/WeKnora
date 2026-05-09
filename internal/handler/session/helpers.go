@@ -212,10 +212,12 @@ func (h *Handler) setupStreamHandler(
 	receivedAt time.Time,
 	assistantMessage *types.Message,
 	eventBus *event.EventBus,
+	artifactProvider func() *types.ChatDocumentArtifact,
 ) *AgentStreamHandler {
 	streamHandler := NewAgentStreamHandler(
 		ctx, sessionID, assistantMessageID, requestID, receivedAt,
 		assistantMessage, h.streamManager, eventBus,
+		artifactProvider,
 	)
 	streamHandler.Subscribe()
 	return streamHandler
