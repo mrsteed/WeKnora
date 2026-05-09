@@ -475,7 +475,6 @@ onMounted(() => {
   color: var(--td-text-color-secondary);
 }
 
-<<<<<<< HEAD
 .builtin-models-hint .doc-link {
   font-size: 13px;
 }
