@@ -72,11 +72,10 @@
             {{ $t('common.edit') }}
           </t-button>
           <t-button
+            v-if="authStore.isSuperAdmin"
             size="small"
             variant="text"
             theme="primary"
-            :disabled="member.user_id === authStore.currentUserId"
-            :title="member.user_id === authStore.currentUserId ? $t('admin.member.cannotResetOwnPassword') : ''"
             @click="$emit('resetPassword', member)"
           >
             {{ $t('admin.member.resetPassword') }}

@@ -622,7 +622,7 @@ func (h *OrgTreeHandler) UpdateUserInOrg(c *gin.Context) {
 
 // UpdateUserPasswordInOrg resets a direct member's login password in the specified organization.
 // @Summary      重置组织内用户登录密码
-// @Description  组织管理员为当前组织内直属成员重置登录密码，不需要旧密码
+// @Description  超级管理员为当前组织内直属成员重置登录密码，重置前必须验证自己的当前密码
 // @Tags         OrgTree
 // @Accept       json
 // @Produce      json
@@ -653,13 +653,18 @@ func (h *OrgTreeHandler) UpdateUserPasswordInOrg(c *gin.Context) {
 		return
 	}
 
-	if currentUser.ID == userID {
-		c.Error(apperrors.NewForbiddenError("Please use the self-service change password endpoint for your own account"))
+	if req.NewPassword != req.ConfirmPassword {
+		c.Error(apperrors.NewValidationError("New password and confirm password do not match"))
 		return
 	}
 
-	if req.NewPassword != req.ConfirmPassword {
-		c.Error(apperrors.NewValidationError("New password and confirm password do not match"))
+	if !currentUser.IsSuperAdmin {
+		c.Error(apperrors.NewForbiddenError("Only super admins can reset organization user passwords"))
+		return
+	}
+
+	if err := h.userService.ValidatePassword(ctx, currentUser.ID, req.CurrentPassword); err != nil {
+		c.Error(apperrors.NewBadRequestError("Current password verification failed").WithDetails(err.Error()))
 		return
 	}
 
@@ -696,6 +701,20 @@ func (h *OrgTreeHandler) UpdateUserPasswordInOrg(c *gin.Context) {
 	}
 	if !isDirectMember {
 		c.Error(apperrors.NewForbiddenError("Target user is not a direct member of this organization"))
+		return
+	}
+
+	if currentUser.ID == userID {
+		if err := h.userService.ChangePassword(ctx, currentUser.ID, req.CurrentPassword, req.NewPassword); err != nil {
+			logger.Errorf(ctx, "Failed to update current user password in organization view: %v", err)
+			c.Error(apperrors.NewBadRequestError("Failed to update user password").WithDetails(err.Error()))
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "User password updated successfully",
+		})
 		return
 	}
 

@@ -1102,7 +1102,6 @@ func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHa
 		orgTree.POST("/:id/members", orgTreeHandler.AssignUser)
 		orgTree.POST("/:id/create-user", orgTreeHandler.CreateUserInOrg)
 		orgTree.PUT("/:id/users/:user_id", orgTreeHandler.UpdateUserInOrg)
-		orgTree.PUT("/:id/users/:user_id/password", orgTreeHandler.UpdateUserPasswordInOrg)
 		orgTree.DELETE("/:id/members/:user_id", orgTreeHandler.RemoveUser)
 		orgTree.PUT("/:id/admin", orgTreeHandler.SetOrgAdmin)
 	}
@@ -1111,4 +1110,5 @@ func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHa
 // RegisterOrgTreeSuperAdminRoutes registers org-tree routes that require super admin privileges.
 func RegisterOrgTreeSuperAdminRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
 	r.PUT("/org-tree/super-admin", orgTreeHandler.SetSuperAdmin)
+	r.PUT("/org-tree/:id/users/:user_id/password", orgTreeHandler.UpdateUserPasswordInOrg)
 }

@@ -98,7 +98,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { useOrgTreeStore } from '@/stores/orgTree'
 import { removeUserFromOrg, setOrgAdmin, setSuperAdmin } from '@/api/org-tree'
 import { useI18n } from 'vue-i18n'
-import type { OrgTreeNode } from '@/api/org-tree'
+import type { OrgMember, OrgTreeNode } from '@/api/org-tree'
 import OrgTreeSelectItem from './components/OrgTreeSelectItem.vue'
 import MemberTable from './components/MemberTable.vue'
 import AssignOrgDialog from './components/AssignOrgDialog.vue'
@@ -189,12 +189,12 @@ const handleCreateUserSuccess = () => {
   orgTreeStore.fetchTree()
 }
 
-const handleEditMember = (member: any) => {
+const handleEditMember = (member: OrgMember) => {
   editingUser.value = member
   showEditUserDialog.value = true
 }
 
-const handleResetPassword = (member: any) => {
+const handleResetPassword = (member: OrgMember) => {
   editingUser.value = member
   showResetPasswordDialog.value = true
 }
