@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
 // newFinalAnswerResponse builds a ChatResponse that carries a single
 // final_answer tool call with the given raw JSON arguments.
 func newFinalAnswerResponse(rawArgs string) *types.ChatResponse {
@@ -599,12 +600,12 @@ func TestRunReActIteration_FinalAnswerStreamErrorBreaksWithoutNextRound(t *testi
 		{
 			ResponseType: types.ResponseTypeAnswer,
 			Content:      "# 北海电厂二期智慧电厂项目\n\n",
-			Data: map[string]interface{}{"source": "final_answer_tool"},
+			Data:         map[string]interface{}{"source": "final_answer_tool"},
 		},
 		{
 			ResponseType: types.ResponseTypeAnswer,
 			Content:      "## 一、项目背景与总体思路",
-			Data: map[string]interface{}{"source": "final_answer_tool"},
+			Data:         map[string]interface{}{"source": "final_answer_tool"},
 		},
 		{ResponseType: types.ResponseTypeError, Content: "context deadline exceeded"},
 	}}}}
@@ -648,12 +649,12 @@ func TestRunReActIteration_DuplicateDocumentHeadBreaksWithoutNextRound(t *testin
 		{
 			ResponseType: types.ResponseTypeAnswer,
 			Content:      "# 北海电厂二期智慧电厂项目\n\n",
-			Data: map[string]interface{}{"source": "final_answer_tool"},
+			Data:         map[string]interface{}{"source": "final_answer_tool"},
 		},
 		{
 			ResponseType: types.ResponseTypeAnswer,
 			Content:      "## 一、项目背景与总体思路\n\n",
-			Data: map[string]interface{}{"source": "final_answer_tool"},
+			Data:         map[string]interface{}{"source": "final_answer_tool"},
 		},
 		{ResponseType: types.ResponseTypeAnswer, Done: true, FinishReason: "stop"},
 	}}}}
@@ -697,9 +698,9 @@ func TestAppendToolResults_PreservesReasoningContent(t *testing.T) {
 			Thought:          "I will call search.",
 			ReasoningContent: "Detailed chain of thought from MiMo/DeepSeek.",
 			ToolCalls: []types.ToolCall{{
-				ID:   "call_1",
-				Name: "knowledge_search",
-				Args: map[string]interface{}{"query": "hi"},
+				ID:     "call_1",
+				Name:   "knowledge_search",
+				Args:   map[string]interface{}{"query": "hi"},
 				Result: &types.ToolResult{Success: true, Output: "result text"},
 			}},
 			Timestamp: time.Now(),

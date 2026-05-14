@@ -186,17 +186,17 @@ type ToolCall struct {
 
 // AgentStep represents one iteration of the ReAct loop
 type AgentStep struct {
-	Iteration int    `json:"iteration"`         // Iteration number (0-indexed)
-	Thought   string `json:"thought"`           // LLM's reasoning/thinking (Think phase)
-	Stage     string `json:"stage,omitempty"`   // Synthetic stage label for long-document progress/history replay
+	Iteration int    `json:"iteration"`       // Iteration number (0-indexed)
+	Thought   string `json:"thought"`         // LLM's reasoning/thinking (Think phase)
+	Stage     string `json:"stage,omitempty"` // Synthetic stage label for long-document progress/history replay
 	// ReasoningContent stores the OpenAI-protocol reasoning_content emitted by the
 	// model in this round. Persisted on AgentStep so cross-turn replay can put it
 	// back on the assistant message — required by MiMo / DeepSeek V3.2+ thinking
 	// mode, ignored by providers that don't recognize the field.
 	ReasoningContent string     `json:"reasoning_content,omitempty"`
-	ToolCalls        []ToolCall `json:"tool_calls"`                 // Tools called in this step (Act phase)
-	Duration         int64      `json:"duration,omitempty"`         // Time spent in this step in milliseconds
-	Timestamp        time.Time  `json:"timestamp"`                  // When this step occurred
+	ToolCalls        []ToolCall `json:"tool_calls"`         // Tools called in this step (Act phase)
+	Duration         int64      `json:"duration,omitempty"` // Time spent in this step in milliseconds
+	Timestamp        time.Time  `json:"timestamp"`          // When this step occurred
 }
 
 // GetObservations returns observations from all tool calls in this step

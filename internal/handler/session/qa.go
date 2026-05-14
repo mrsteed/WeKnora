@@ -1140,12 +1140,12 @@ func chatDocumentArtifactMetadata(artifact *types.ChatDocumentArtifact) map[stri
 
 // qaRequestContext holds all the common data needed for QA requests
 type qaRequestContext struct {
-	ctx                   context.Context
-	c                     *gin.Context
-	sessionID             string
-	requestID             string
-	receivedAt            time.Time // Wall-clock time the handler started processing the request
-	query                 string
+	ctx                       context.Context
+	c                         *gin.Context
+	sessionID                 string
+	requestID                 string
+	receivedAt                time.Time // Wall-clock time the handler started processing the request
+	query                     string
 	titleSeedQuery            string
 	intentHint                string
 	baseArtifactID            string
@@ -1371,15 +1371,15 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 
 	// Build request context
 	reqCtx := &qaRequestContext{
-		ctx:                ctx,
-		c:                  c,
-		sessionID:          sessionID,
-		requestID:          requestID,
-		receivedAt:         receivedAt,
-		query:              secutils.SanitizeForLog(request.Query),
-		intentHint:         secutils.SanitizeForLog(request.IntentHint),
-		baseArtifactID:     secutils.SanitizeForLog(request.BaseArtifactID),
-		documentOutputMode: secutils.SanitizeForLog(request.DocumentOutputMode),
+		ctx:                       ctx,
+		c:                         c,
+		sessionID:                 sessionID,
+		requestID:                 requestID,
+		receivedAt:                receivedAt,
+		query:                     secutils.SanitizeForLog(request.Query),
+		intentHint:                secutils.SanitizeForLog(request.IntentHint),
+		baseArtifactID:            secutils.SanitizeForLog(request.BaseArtifactID),
+		documentOutputMode:        secutils.SanitizeForLog(request.DocumentOutputMode),
 		documentTaskKind:          secutils.SanitizeForLog(request.DocumentTaskKind),
 		translationOptions:        sanitizeTranslationOptions(request.TranslationOptions),
 		documentTargetHeading:     secutils.SanitizeForLog(request.DocumentTargetHeading),

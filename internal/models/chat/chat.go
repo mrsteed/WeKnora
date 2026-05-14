@@ -57,13 +57,13 @@ type ImageURL struct {
 
 // Message 表示聊天消息
 type Message struct {
-	Role         string               `json:"role"`                    // 角色：system, user, assistant, tool
-	Content      string               `json:"content"`                 // 消息内容
+	Role    string `json:"role"`    // 角色：system, user, assistant, tool
+	Content string `json:"content"` // 消息内容
 	// ReasoningContent 是 assistant 推理类模型（DeepSeek thinking、小米 MiMo、vLLM reasoning 等）
 	// 上一轮输出的思考内容。部分供应商（MiMo、DeepSeek V3.2/V4 thinking 模式）要求多轮对话中
 	// 把 assistant 的 reasoning_content 原样回传，否则会以 400 拒绝请求；其他不要求的供应商
 	// 会忽略未知字段，无副作用。
-	ReasoningContent string `json:"reasoning_content,omitempty"`
+	ReasoningContent string               `json:"reasoning_content,omitempty"`
 	MultiContent     []MessageContentPart `json:"multi_content,omitempty"` // 多内容消息（文本+图片）
 	Name             string               `json:"name,omitempty"`          // Function/tool name (for tool role)
 	ToolCallID       string               `json:"tool_call_id,omitempty"`  // Tool call ID (for tool role)
