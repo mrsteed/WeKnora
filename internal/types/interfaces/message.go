@@ -10,10 +10,14 @@ import (
 // MessageIndexOptions controls whether a message may be indexed into the chat
 // history knowledge base.
 type MessageIndexOptions struct {
-	CompletionStatus string
-	FinishReason     string
-	AllowIndexing    bool
-	TaskKind         string
+	CompletionStatus         string
+	FinishReason             string
+	AllowIndexing            bool
+	TaskKind                 string
+	DocumentGenerationStatus string
+	ArtifactID               string
+	DocumentTitle            string
+	DocumentSections         []string
 }
 
 // MessageService defines the message service interface

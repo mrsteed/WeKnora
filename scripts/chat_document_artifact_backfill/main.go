@@ -63,7 +63,8 @@ func run(args []string) error {
 
 	messageRepo := repository.NewMessageRepository(db)
 	artifactRepo := repository.NewChatDocumentArtifactRepository(db)
-	artifactService := service.NewChatDocumentArtifactService(artifactRepo)
+	evidenceRefRepo := repository.NewChatDocumentEvidenceRefRepository(db)
+	artifactService := service.NewChatDocumentArtifactService(artifactRepo, evidenceRefRepo)
 
 	messages, err := messageRepo.GetRecentMessagesBySession(ctx, sessionModel.ID, *limit)
 	if err != nil {

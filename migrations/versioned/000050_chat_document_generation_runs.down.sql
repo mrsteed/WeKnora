@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS chat_document_generation_runs;

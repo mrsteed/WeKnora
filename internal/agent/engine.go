@@ -45,8 +45,10 @@ type AgentEngine struct {
 	imageDescriber       ImageDescriberFunc        // VLM function for describing images in tool results (optional)
 	tokenEstimator       *agenttoken.Estimator     // Token estimator for context window management
 	memoryConsolidator   *agentmemory.Consolidator // Memory consolidator for LLM-powered summarization (optional)
-	lastUsage            types.TokenUsage          // Token usage from the most recent LLM call
-	lastSentMsgCount     int                       // Number of messages sent in the most recent LLM call
+	documentContext      *types.AgentDocumentContext
+	pendingContextGroups []chat.Message
+	lastUsage            types.TokenUsage // Token usage from the most recent LLM call
+	lastSentMsgCount     int              // Number of messages sent in the most recent LLM call
 }
 
 // ImageDescriberFunc generates a text description of an image.
@@ -133,6 +135,20 @@ func (e *AgentEngine) SetImageDescriber(fn ImageDescriberFunc) {
 	e.imageDescriber = fn
 }
 
+// SetDocumentContext carries document-generation metadata into fallback final
+// synthesis so recovery prompts keep continuation semantics.
+func (e *AgentEngine) SetDocumentContext(documentContext *types.AgentDocumentContext) {
+	if documentContext == nil {
+		e.documentContext = nil
+		return
+	}
+	copyContext := *documentContext
+	if strings.TrimSpace(copyContext.CompletionMarker) == "" {
+		copyContext.CompletionMarker = types.ChatDocumentCompletionMarker
+	}
+	e.documentContext = &copyContext
+}
+
 // SetSkillsManager sets the skills manager for the engine
 func (e *AgentEngine) SetSkillsManager(manager *skills.Manager) {
 	e.skillsManager = manager
@@ -211,11 +227,13 @@ func (e *AgentEngine) Execute(
 	ctx = spanCtx
 
 	// Initialize state
+	e.pendingContextGroups = nil
 	state := &types.AgentState{
-		RoundSteps:    []types.AgentStep{},
-		KnowledgeRefs: []*types.SearchResult{},
-		IsComplete:    false,
-		CurrentRound:  0,
+		RoundSteps:      []types.AgentStep{},
+		KnowledgeRefs:   []*types.SearchResult{},
+		DocumentContext: e.documentContext,
+		IsComplete:      false,
+		CurrentRound:    0,
 	}
 
 	// Build system prompt using progressive RAG prompt
@@ -381,17 +399,12 @@ loop:
 		case <-ctx.Done():
 			logger.Warnf(ctx, "[Agent] Context cancelled at round %d: %v",
 				state.CurrentRound+1, ctx.Err())
+			markCancelledAgentState(state)
 			// Try to salvage existing results
 			if totalTC := countTotalToolCalls(state.RoundSteps); totalTC > 0 {
 				logger.Infof(ctx, "[Agent] Synthesizing final answer from %d existing tool results",
 					totalTC)
-				state.CompletionStatus = "cancelled"
-				state.FinishReason = "cancelled"
-				state.FailureReason = "cancelled"
-				state.AllowIndexing = false
-				state.AllowComplete = false
 				_ = e.streamFinalAnswerToEventBus(ctx, query, state, sessionID)
-				state.IsComplete = true
 			}
 			return state, ctx.Err()
 		default:
@@ -404,12 +417,16 @@ loop:
 		outcome, iterErr := e.runReActIteration(ctx, state, &messages, tools,
 			sessionID, messageID, query, &emptyRetries, &consecutiveSameContent, &lastResponseContent)
 		if iterErr != nil {
+			markFailedAgentState(state, iterErr)
 			return state, iterErr
 		}
 		switch outcome {
 		case iterOutcomeContinue:
 			continue loop
 		case iterOutcomeBreak:
+			if ctx.Err() != nil && !state.IsComplete {
+				markCancelledAgentState(state)
+			}
 			break loop
 		case iterOutcomeNext:
 			state.CurrentRound++
@@ -427,6 +444,73 @@ loop:
 	}
 
 	return state, nil
+}
+
+func markFailedAgentState(state *types.AgentState, err error) {
+	if state == nil || err == nil {
+		return
+	}
+	if state.CompletionStatus == "" {
+		state.CompletionStatus = types.MessageCompletionStatusFailed
+	}
+	if state.FinishReason == "" {
+		state.FinishReason = classifyAgentExecutionError(err)
+	}
+	if state.FailureReason == "" {
+		state.FailureReason = state.FinishReason
+	}
+	state.AllowIndexing = false
+	state.AllowComplete = false
+	state.IsComplete = true
+}
+
+func markCancelledAgentState(state *types.AgentState) {
+	if state == nil {
+		return
+	}
+	if state.CompletionStatus == "" {
+		state.CompletionStatus = types.MessageCompletionStatusCancelled
+	}
+	if state.FinishReason == "" {
+		state.FinishReason = "cancelled"
+	}
+	if state.FailureReason == "" {
+		state.FailureReason = "cancelled"
+	}
+	state.AllowIndexing = false
+	state.AllowComplete = false
+	state.IsComplete = true
+}
+
+func classifyAgentExecutionError(err error) string {
+	if err == nil {
+		return "agent_error"
+	}
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "synthesis also failed") && (strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "timeout") || strings.Contains(lower, "timed out")) {
+		return "synthesis_timeout"
+	}
+	if strings.Contains(lower, "context deadline exceeded") || strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "timeout") || strings.Contains(lower, "timed out") {
+		return "llm_timeout"
+	}
+	if strings.Contains(lower, "llm call failed") {
+		return "llm_error"
+	}
+	return "agent_error"
+}
+
+func classifyFinalSynthesisError(err error) string {
+	if err == nil {
+		return "synthesis_error"
+	}
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "context deadline exceeded") || strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "timeout") || strings.Contains(lower, "timed out") {
+		return "synthesis_timeout"
+	}
+	if strings.Contains(lower, "llm") {
+		return "synthesis_llm_error"
+	}
+	return "synthesis_error"
 }
 
 // iterOutcome directs executeLoop's control flow after one ReAct iteration.
@@ -613,9 +697,9 @@ func (e *AgentEngine) runReActIteration(
 	// final answer — it would pollute Message.Content with mid-stream
 	// thinking and show up as a duplicate card next to the intermediate-
 	// steps tree. Preserve the partial thinking as an AgentStep and break
-	// out of the loop without marking state.IsComplete. executeLoop's
-	// deferred emitCompletionEvent will persist the step onto
-	// Message.AgentSteps so it still appears in the tree on refresh.
+	// out of the loop; executeLoop will mark the state as cancelled before
+	// its deferred emitCompletionEvent persists the step onto Message.AgentSteps
+	// so it still appears in the tree on refresh.
 	if ctx.Err() != nil {
 		logger.Warnf(ctx, "[Agent][Round-%d] Context cancelled during LLM call; preserving partial step",
 			round)

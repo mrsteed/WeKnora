@@ -1,5 +1,5 @@
 <template>
-    <div class="user_msg_container" ref="containerRef" :class="{ 'is-embedded': embeddedMode }">
+    <div class="user_msg_container" ref="containerRef" :class="{ 'is-embedded': embeddedMode, 'is-auto-continue': isAutoContinue }">
         <!-- 显示@的知识库和文件 -->
         <div v-if="mentioned_items && mentioned_items.length > 0" class="mentioned_items">
             <span 
@@ -46,6 +46,7 @@
                 </div>
             </div>
         </div>
+        <div v-if="isAutoContinue" class="auto_continue_label">系统自动续写</div>
         <div class="user_msg">
             {{ content }}
         </div>
@@ -86,6 +87,10 @@ const props = defineProps({
         default: ''
     },
     embeddedMode: {
+        type: Boolean,
+        default: false
+    },
+    isAutoContinue: {
         type: Boolean,
         default: false
     }
@@ -162,6 +167,19 @@ const closePreImg = () => {
     align-items: flex-end;
     gap: 6px;
     width: 100%;
+}
+
+.user_msg_container.is-auto-continue {
+    align-items: center;
+}
+
+.auto_continue_label {
+    font-size: 12px;
+    color: var(--td-text-color-secondary);
+    background: var(--td-bg-color-secondarycontainer);
+    border: 1px solid var(--td-component-border);
+    border-radius: 6px;
+    padding: 2px 8px;
 }
 
 .mentioned_items {

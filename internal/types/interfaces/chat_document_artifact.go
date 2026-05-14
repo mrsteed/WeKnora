@@ -19,7 +19,7 @@ type ChatDocumentArtifactService interface {
 	GetLatestArtifact(ctx context.Context, sessionID string) (*types.ChatDocumentArtifact, error)
 	GetArtifact(ctx context.Context, artifactID string) (*types.ChatDocumentArtifact, error)
 	GetArtifactBySourceMessageID(ctx context.Context, sourceMessageID string) (*types.ChatDocumentArtifact, error)
-	BuildQuotedContext(ctx context.Context, artifact *types.ChatDocumentArtifact, query string, intent string, outputMode string) (string, error)
+	BuildQuotedContext(ctx context.Context, artifact *types.ChatDocumentArtifact, query string, intent string, outputMode string, targetHeading string, mergeMode string) (string, error)
 	RegisterFromAssistantMessage(ctx context.Context, message *types.Message, options types.RegisterChatDocumentArtifactOptions) (*types.ChatDocumentArtifact, error)
 	ListBySession(ctx context.Context, sessionID string, limit int) ([]*types.ChatDocumentArtifact, error)
 	ListRevisions(ctx context.Context, artifactID string) ([]*types.ChatDocumentArtifact, error)

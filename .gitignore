@@ -27,6 +27,8 @@ tmp/
 temp/
 logs/
 *.pid
+test/
+my_docs/
 
 WeKnora
 WeKnora-lite

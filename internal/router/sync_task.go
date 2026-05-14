@@ -117,13 +117,13 @@ type SyncTaskParams struct {
 	Executor             *SyncTaskExecutor
 	KnowledgeService     interfaces.KnowledgeService
 	KnowledgeBaseService interfaces.KnowledgeBaseService
-	LongDocumentService  interfaces.LongDocumentTaskService
 	TagService           interfaces.KnowledgeTagService
 	DataSourceService    interfaces.DataSourceService
 	ChunkExtractor       interfaces.TaskHandler `name:"chunkExtractor"`
 	DataTableSummary     interfaces.TaskHandler `name:"dataTableSummary"`
 	ImageMultimodal      interfaces.TaskHandler `name:"imageMultimodal"`
 	KnowledgePostProcess interfaces.TaskHandler `name:"knowledgePostProcess"`
+	LongDocumentTask     interfaces.TaskHandler `name:"longDocumentTask"`
 	WikiIngest           interfaces.TaskHandler `name:"wikiIngest"`
 }
 
@@ -144,8 +144,8 @@ func RegisterSyncHandlers(params SyncTaskParams) {
 	params.Executor.RegisterHandler(types.TypeKBDelete, params.KnowledgeBaseService.ProcessKBDelete)
 	params.Executor.RegisterHandler(types.TypeImageMultimodal, params.ImageMultimodal.Handle)
 	params.Executor.RegisterHandler(types.TypeKnowledgePostProcess, params.KnowledgePostProcess.Handle)
+	params.Executor.RegisterHandler(types.TypeLongDocumentExecution, params.LongDocumentTask.Handle)
 	params.Executor.RegisterHandler(types.TypeDataSourceSync, params.DataSourceService.ProcessSync)
 	params.Executor.RegisterHandler(types.TypeWikiIngest, params.WikiIngest.Handle)
-	params.Executor.RegisterHandler(types.TypeLongDocumentTask, params.LongDocumentService.HandleTask)
 	logger.Infof(context.Background(), "[SyncTask] All task handlers registered (Lite mode, no Redis)")
 }

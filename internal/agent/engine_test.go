@@ -2,10 +2,12 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
 
+	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -59,6 +61,56 @@ func (m *mockChat) Chat(_ context.Context, messages []chat.Message, opts *chat.C
 func (m *mockChat) GetModelName() string { return "mock-model" }
 func (m *mockChat) GetModelID() string   { return "mock-id" }
 
+type errorChat struct {
+	mu           sync.Mutex
+	err          error
+	lastMessages []chat.Message
+	lastOptions  *chat.ChatOptions
+}
+
+func (e *errorChat) ChatStream(_ context.Context, messages []chat.Message, opts *chat.ChatOptions) (<-chan types.StreamResponse, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.lastMessages = append([]chat.Message(nil), messages...)
+	e.lastOptions = opts
+	return nil, e.err
+}
+
+func (e *errorChat) Chat(_ context.Context, messages []chat.Message, opts *chat.ChatOptions) (*types.ChatResponse, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.lastMessages = append([]chat.Message(nil), messages...)
+	e.lastOptions = opts
+	return nil, e.err
+}
+
+func (e *errorChat) GetModelName() string { return "error-model" }
+func (e *errorChat) GetModelID() string   { return "error-model-id" }
+
+type cancelOnStreamChat struct {
+	cancel context.CancelFunc
+	chunks []types.StreamResponse
+}
+
+func (m *cancelOnStreamChat) ChatStream(context.Context, []chat.Message, *chat.ChatOptions) (<-chan types.StreamResponse, error) {
+	ch := make(chan types.StreamResponse, len(m.chunks))
+	for _, chunk := range m.chunks {
+		ch <- chunk
+	}
+	if m.cancel != nil {
+		m.cancel()
+	}
+	close(ch)
+	return ch, nil
+}
+
+func (m *cancelOnStreamChat) Chat(context.Context, []chat.Message, *chat.ChatOptions) (*types.ChatResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *cancelOnStreamChat) GetModelName() string { return "cancel-on-stream-model" }
+func (m *cancelOnStreamChat) GetModelID() string   { return "cancel-on-stream-model-id" }
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
@@ -109,6 +161,12 @@ func emptyMessages() []chat.Message {
 
 func emptyTools() []chat.Tool {
 	return nil
+}
+
+func TestClassifyAgentExecutionErrorTimeouts(t *testing.T) {
+	assert.Equal(t, "llm_timeout", classifyAgentExecutionError(errors.New("LLM call failed: LLM stream error: context deadline exceeded")))
+	assert.Equal(t, "synthesis_timeout", classifyAgentExecutionError(errors.New("LLM call failed: foo (synthesis also failed: context deadline exceeded)")))
+	assert.Equal(t, "synthesis_timeout", classifyFinalSynthesisError(errors.New("LLM stream error: context deadline exceeded")))
 }
 
 // ---------------------------------------------------------------------------
@@ -307,4 +365,121 @@ func TestCallLLMWithRetry_GracefulDegradationRewritesRecoveredState(t *testing.T
 	assert.Empty(t, finalAnswerEvents[0].FailureReason)
 	assert.False(t, finalAnswerEvents[0].AllowIndexing)
 	assert.False(t, finalAnswerEvents[0].AllowComplete)
+}
+
+func TestCallLLMWithRetry_SanitizesMessagesBeforeProviderRequest(t *testing.T) {
+	errModel := &errorChat{err: errors.New("provider rejected request")}
+	engine := newTestEngine(t, errModel)
+	state := &types.AgentState{}
+	messages := []chat.Message{
+		{Role: "system", Content: "sys"},
+		{Role: "assistant", Content: "I searched", ToolCalls: []chat.ToolCall{{ID: "call-1", Function: chat.FunctionCall{Name: "search"}}}},
+		{Role: "tool", Content: "stale result", Name: "search"},
+		{Role: "user", Content: "next question"},
+	}
+
+	resp, err := engine.callLLMWithRetry(context.Background(), messages, emptyTools(), state, "test query", 0, "sess-1")
+	require.Error(t, err)
+	assert.Nil(t, resp)
+	assert.NotEmpty(t, errModel.lastMessages)
+	for _, msg := range errModel.lastMessages {
+		if msg.Role == "tool" {
+			t.Fatalf("unexpected tool message sent to provider: %+v", msg)
+		}
+	}
+	assert.Empty(t, agenttools.ValidateToolMessageProtocol(errModel.lastMessages))
+}
+
+func TestExecuteLoop_EmitsFailedCompletionOnLLMError(t *testing.T) {
+	errModel := &errorChat{err: errors.New("provider timeout")}
+	engine := newTestEngine(t, errModel)
+	state := &types.AgentState{}
+
+	var completes []event.AgentCompleteData
+	engine.eventBus.On(event.EventAgentComplete, func(_ context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentCompleteData)
+		require.True(t, ok)
+		completes = append(completes, data)
+		return nil
+	})
+
+	_, err := engine.executeLoop(context.Background(), state, "test query", emptyMessages(), emptyTools(), "sess-1", "msg-1")
+	require.Error(t, err)
+	require.Len(t, completes, 1)
+	assert.Equal(t, types.MessageCompletionStatusFailed, state.CompletionStatus)
+	assert.Equal(t, "llm_timeout", state.FinishReason)
+	assert.Equal(t, "llm_timeout", state.FailureReason)
+	assert.False(t, state.AllowIndexing)
+	assert.False(t, state.AllowComplete)
+	assert.Equal(t, types.MessageCompletionStatusFailed, completes[0].CompletionStatus)
+	assert.Equal(t, "llm_timeout", completes[0].FinishReason)
+	assert.Equal(t, "llm_timeout", completes[0].FailureReason)
+	assert.False(t, completes[0].AllowIndexing)
+	assert.False(t, completes[0].AllowComplete)
+}
+
+func TestExecuteLoop_EmitsCancelledCompletionWhenContextCancelledBeforeTools(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	state := &types.AgentState{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var completes []event.AgentCompleteData
+	engine.eventBus.On(event.EventAgentComplete, func(_ context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentCompleteData)
+		require.True(t, ok)
+		completes = append(completes, data)
+		return nil
+	})
+
+	_, err := engine.executeLoop(ctx, state, "test query", emptyMessages(), emptyTools(), "sess-1", "msg-1")
+	require.Error(t, err)
+	require.Len(t, completes, 1)
+	assert.Equal(t, types.MessageCompletionStatusCancelled, state.CompletionStatus)
+	assert.Equal(t, "cancelled", state.FinishReason)
+	assert.Equal(t, "cancelled", state.FailureReason)
+	assert.False(t, state.AllowIndexing)
+	assert.False(t, state.AllowComplete)
+	assert.Equal(t, types.MessageCompletionStatusCancelled, completes[0].CompletionStatus)
+	assert.Equal(t, "cancelled", completes[0].FinishReason)
+	assert.Equal(t, "cancelled", completes[0].FailureReason)
+	assert.False(t, completes[0].AllowIndexing)
+	assert.False(t, completes[0].AllowComplete)
+}
+
+func TestExecuteLoop_EmitsCancelledCompletionWhenContextCancelledDuringLLMStream(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	chatModel := &cancelOnStreamChat{
+		cancel: cancel,
+		chunks: []types.StreamResponse{
+			{ResponseType: types.ResponseTypeThinking, Content: "正在生成"},
+			{ResponseType: types.ResponseTypeAnswer, Content: "partial answer", FinishReason: "stop", Done: true},
+		},
+	}
+	engine := newTestEngine(t, chatModel)
+	state := &types.AgentState{}
+
+	var completes []event.AgentCompleteData
+	engine.eventBus.On(event.EventAgentComplete, func(_ context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentCompleteData)
+		require.True(t, ok)
+		completes = append(completes, data)
+		return nil
+	})
+
+	_, err := engine.executeLoop(ctx, state, "test query", emptyMessages(), emptyTools(), "sess-1", "msg-1")
+	require.NoError(t, err)
+	require.Len(t, completes, 1)
+	assert.Equal(t, types.MessageCompletionStatusCancelled, state.CompletionStatus)
+	assert.Equal(t, "cancelled", state.FinishReason)
+	assert.Equal(t, "cancelled", state.FailureReason)
+	assert.True(t, state.IsComplete)
+	assert.False(t, state.AllowIndexing)
+	assert.False(t, state.AllowComplete)
+	assert.Equal(t, types.MessageCompletionStatusCancelled, completes[0].CompletionStatus)
+	assert.Equal(t, "cancelled", completes[0].FinishReason)
+	assert.Equal(t, "cancelled", completes[0].FailureReason)
+	assert.False(t, completes[0].AllowIndexing)
+	assert.False(t, completes[0].AllowComplete)
+	require.Len(t, completes[0].AgentSteps, 1)
 }

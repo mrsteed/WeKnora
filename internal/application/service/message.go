@@ -25,6 +25,15 @@ var messageIndexPlanTextFragments = []string{
 	"i need to provide the full translation",
 }
 
+const (
+	messageIndexTaskKindLongDocument        = "long_document"
+	messageIndexLongDocumentSectionLimit    = 8
+	messageIndexLongDocumentQueryMaxRunes   = 600
+	messageIndexLongDocumentSummaryMaxRunes = 1200
+	messageIndexLongDocumentPassageMaxRunes = 3200
+	messageIndexLongDocumentHeadingMaxRunes = 200
+)
+
 // messageService implements the MessageService interface for managing messaging operations
 // It handles creating, retrieving, updating, and deleting messages within sessions.
 // It reads the chat history knowledge base configuration from the tenant's ChatHistoryConfig,
@@ -84,7 +93,11 @@ func (s *messageService) CreateMessage(ctx context.Context, message *types.Messa
 	logger.Info(ctx, "Start creating message")
 	logger.Infof(ctx, "Creating message for session ID: %s", message.SessionID)
 
-	tenantID := types.MustTenantIDFromContext(ctx)
+	tenantID, ok := sessionTenantIDForLookup(ctx)
+	if !ok {
+		logger.Error(ctx, "Tenant ID not found in context for session lookup")
+		return nil, errors.New("tenant ID not found in context")
+	}
 	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d, session ID: %s", tenantID, message.SessionID)
 	_, err := s.sessionRepo.Get(ctx, tenantID, userID, message.SessionID)
@@ -111,7 +124,11 @@ func (s *messageService) GetMessage(ctx context.Context, sessionID string, messa
 	logger.Info(ctx, "Start getting message")
 	logger.Infof(ctx, "Getting message, session ID: %s, message ID: %s", sessionID, messageID)
 
-	tenantID := types.MustTenantIDFromContext(ctx)
+	tenantID, ok := sessionTenantIDForLookup(ctx)
+	if !ok {
+		logger.Error(ctx, "Tenant ID not found in context for session lookup")
+		return nil, errors.New("tenant ID not found in context")
+	}
 	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
 	_, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID)
@@ -141,7 +158,11 @@ func (s *messageService) GetMessagesBySession(ctx context.Context,
 	logger.Info(ctx, "Start getting messages by session")
 	logger.Infof(ctx, "Getting messages for session ID: %s, page: %d, pageSize: %d", sessionID, page, pageSize)
 
-	tenantID := types.MustTenantIDFromContext(ctx)
+	tenantID, ok := sessionTenantIDForLookup(ctx)
+	if !ok {
+		logger.Error(ctx, "Tenant ID not found in context for session lookup")
+		return nil, errors.New("tenant ID not found in context")
+	}
 	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
 	_, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID)
@@ -239,7 +260,11 @@ func (s *messageService) UpdateMessage(ctx context.Context, message *types.Messa
 	logger.Info(ctx, "Start updating message")
 	logger.Infof(ctx, "Updating message, ID: %s, session ID: %s", message.ID, message.SessionID)
 
-	tenantID := types.MustTenantIDFromContext(ctx)
+	tenantID, ok := sessionTenantIDForLookup(ctx)
+	if !ok {
+		logger.Error(ctx, "Tenant ID not found in context for session lookup")
+		return errors.New("tenant ID not found in context")
+	}
 	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
 	_, err := s.sessionRepo.Get(ctx, tenantID, userID, message.SessionID)
@@ -277,7 +302,11 @@ func (s *messageService) DeleteMessage(ctx context.Context, sessionID string, me
 	logger.Info(ctx, "Start deleting message")
 	logger.Infof(ctx, "Deleting message, session ID: %s, message ID: %s", sessionID, messageID)
 
-	tenantID := types.MustTenantIDFromContext(ctx)
+	tenantID, ok := sessionTenantIDForLookup(ctx)
+	if !ok {
+		logger.Error(ctx, "Tenant ID not found in context for session lookup")
+		return errors.New("tenant ID not found in context")
+	}
 	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
 	_, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID)
@@ -388,21 +417,57 @@ func (s *messageService) IndexMessageToKB(
 	assistantAnswer = strings.TrimSpace(assistantAnswer)
 	userQuery = strings.TrimSpace(userQuery)
 
-	if !shouldIndexMessageToKB(userQuery, assistantAnswer, options) {
+	if skipReason := messageIndexSkipReason(userQuery, assistantAnswer, options); skipReason != "" {
+		logger.Infof(ctx,
+			"Skipped indexing message to chat history KB, message ID: %s, session ID: %s, reason: %s, task_kind: %s, completion_status: %s, document_generation_status: %s, artifact_id: %s",
+			messageID,
+			sessionID,
+			skipReason,
+			strings.TrimSpace(options.TaskKind),
+			strings.TrimSpace(options.CompletionStatus),
+			strings.TrimSpace(options.DocumentGenerationStatus),
+			strings.TrimSpace(options.ArtifactID),
+		)
 		return
 	}
 
 	cfg := s.getChatHistoryConfig(ctx)
 	if cfg == nil {
+		logger.Infof(ctx,
+			"Skipped indexing message to chat history KB, message ID: %s, session ID: %s, reason: chat_history_kb_not_configured, task_kind: %s, document_generation_status: %s, artifact_id: %s",
+			messageID,
+			sessionID,
+			strings.TrimSpace(options.TaskKind),
+			strings.TrimSpace(options.DocumentGenerationStatus),
+			strings.TrimSpace(options.ArtifactID),
+		)
 		return
 	}
 
-	logger.Infof(ctx, "Indexing message to chat history KB %s, message ID: %s, session ID: %s", cfg.KnowledgeBaseID, messageID, sessionID)
+	passages := buildMessageIndexPassages(userQuery, assistantAnswer, messageID, sessionID, options)
+	if len(passages) == 0 {
+		logger.Infof(ctx,
+			"Skipped indexing message to chat history KB, message ID: %s, session ID: %s, reason: no_passages, task_kind: %s, document_generation_status: %s, artifact_id: %s",
+			messageID,
+			sessionID,
+			strings.TrimSpace(options.TaskKind),
+			strings.TrimSpace(options.DocumentGenerationStatus),
+			strings.TrimSpace(options.ArtifactID),
+		)
+		return
+	}
 
-	// Build passage content: combine Q&A for better semantic search
-	var passages []string
-	passage := fmt.Sprintf("[Session: %s]\nQ: %s\nA: %s", sessionID, userQuery, assistantAnswer)
-	passages = append(passages, passage)
+	logger.Infof(ctx,
+		"Indexing message to chat history KB %s, message ID: %s, session ID: %s, task_kind: %s, completion_status: %s, document_generation_status: %s, artifact_id: %s, passage_count: %d",
+		cfg.KnowledgeBaseID,
+		messageID,
+		sessionID,
+		strings.TrimSpace(options.TaskKind),
+		strings.TrimSpace(options.CompletionStatus),
+		strings.TrimSpace(options.DocumentGenerationStatus),
+		strings.TrimSpace(options.ArtifactID),
+		len(passages),
+	)
 
 	// Use async (non-sync) passage creation so it doesn't block the response
 	knowledge, err := s.knowService.CreateKnowledgeFromPassage(ctx, cfg.KnowledgeBaseID, passages, "")
@@ -417,34 +482,245 @@ func (s *messageService) IndexMessageToKB(
 		return
 	}
 
-	logger.Infof(ctx, "Message indexed to chat history KB: knowledge_id=%s, message_id=%s", knowledge.ID, messageID)
+	logger.Infof(ctx,
+		"Message indexed to chat history KB: knowledge_id=%s, message_id=%s, task_kind=%s, document_generation_status=%s, artifact_id=%s",
+		knowledge.ID,
+		messageID,
+		strings.TrimSpace(options.TaskKind),
+		strings.TrimSpace(options.DocumentGenerationStatus),
+		strings.TrimSpace(options.ArtifactID),
+	)
 }
 
-func shouldIndexMessageToKB(userQuery string, assistantAnswer string, options interfaces.MessageIndexOptions) bool {
+func buildMessageIndexPassages(userQuery string, assistantAnswer string, messageID string, sessionID string, options interfaces.MessageIndexOptions) []string {
+	if isLongDocumentMessageIndex(options) {
+		passage := buildLongDocumentIndexPassage(userQuery, assistantAnswer, sessionID, options)
+		if strings.TrimSpace(passage) != "" {
+			return []string{passage}
+		}
+	}
+	return []string{fmt.Sprintf("[Session: %s]\nQ: %s\nA: %s", sessionID, userQuery, assistantAnswer)}
+}
+
+func isLongDocumentMessageIndex(options interfaces.MessageIndexOptions) bool {
+	if strings.EqualFold(strings.TrimSpace(options.TaskKind), messageIndexTaskKindLongDocument) {
+		return true
+	}
+	if strings.TrimSpace(options.DocumentGenerationStatus) != "" {
+		return true
+	}
+	if len(options.DocumentSections) > 0 {
+		return true
+	}
+	return false
+}
+
+func buildLongDocumentIndexPassage(userQuery string, assistantAnswer string, sessionID string, options interfaces.MessageIndexOptions) string {
+	title := firstNonEmptyMessageIndexValue(options.DocumentTitle, extractMarkdownDocumentTitle(assistantAnswer))
+	sections := uniqueNonEmptyMessageIndexSections(options.DocumentSections)
+	if len(sections) == 0 {
+		sections = extractMarkdownSectionHeadings(assistantAnswer, messageIndexLongDocumentSectionLimit)
+	}
+	status := ""
+	if strings.TrimSpace(options.DocumentGenerationStatus) != "" {
+		status = types.NormalizeChatDocumentGenerationStatus(options.DocumentGenerationStatus)
+	}
+	if status == "" {
+		status = strings.TrimSpace(options.CompletionStatus)
+	}
+	summary := buildLongDocumentIndexSummary(assistantAnswer)
+
+	lines := []string{
+		fmt.Sprintf("[Session: %s]", sessionID),
+		"Type: long_document",
+	}
+	if trimmed := truncateMessageIndexRunes(title, messageIndexLongDocumentHeadingMaxRunes); trimmed != "" {
+		lines = append(lines, "Title: "+trimmed)
+	}
+	if len(sections) > 0 {
+		lines = append(lines, "Outline: "+strings.Join(sections, "；"))
+	}
+	if trimmed := strings.TrimSpace(status); trimmed != "" {
+		lines = append(lines, "Status: "+trimmed)
+	}
+	if trimmed := strings.TrimSpace(options.ArtifactID); trimmed != "" {
+		lines = append(lines, "Artifact ID: "+trimmed)
+	}
+	if trimmed := truncateMessageIndexRunes(userQuery, messageIndexLongDocumentQueryMaxRunes); trimmed != "" {
+		lines = append(lines, "User Query: "+trimmed)
+	}
+
+	baseLines := append([]string(nil), lines...)
+	basePassage := strings.Join(baseLines, "\n")
+	availableSummaryRunes := messageIndexLongDocumentPassageMaxRunes - messageIndexRuneLen(basePassage) - messageIndexRuneLen("\nSummary: ")
+	if availableSummaryRunes > 0 {
+		if trimmed := truncateMessageIndexRunes(summary, minMessageIndexInt(messageIndexLongDocumentSummaryMaxRunes, availableSummaryRunes)); trimmed != "" {
+			lines = append(lines, "Summary: "+trimmed)
+		}
+	}
+
+	passage := strings.Join(lines, "\n")
+	if messageIndexRuneLen(passage) > messageIndexLongDocumentPassageMaxRunes {
+		return truncateMessageIndexRunes(passage, messageIndexLongDocumentPassageMaxRunes)
+	}
+	return passage
+}
+
+func buildLongDocumentIndexSummary(content string) string {
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	lines := strings.Split(normalized, "\n")
+	fragments := make([]string, 0, 8)
+	inCodeFence := false
+	for _, rawLine := range lines {
+		trimmed := strings.TrimSpace(rawLine)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "```") {
+			inCodeFence = !inCodeFence
+			continue
+		}
+		if inCodeFence {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		trimmed = strings.TrimSpace(strings.TrimLeft(trimmed, "-*0123456789. "))
+		trimmed = strings.Trim(trimmed, "`")
+		if trimmed == "" {
+			continue
+		}
+		fragments = append(fragments, trimmed)
+		if len(fragments) >= 5 {
+			break
+		}
+	}
+	return strings.Join(fragments, " ")
+}
+
+func extractMarkdownDocumentTitle(content string) string {
+	for _, rawLine := range strings.Split(strings.ReplaceAll(strings.ReplaceAll(content, "\r\n", "\n"), "\r", "\n"), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if strings.HasPrefix(line, "# ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "# "))
+		}
+	}
+	return ""
+}
+
+func extractMarkdownSectionHeadings(content string, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	sections := make([]string, 0, limit)
+	seen := make(map[string]struct{}, limit)
+	for _, rawLine := range strings.Split(strings.ReplaceAll(strings.ReplaceAll(content, "\r\n", "\n"), "\r", "\n"), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if !strings.HasPrefix(line, "## ") || strings.HasPrefix(line, "###") {
+			continue
+		}
+		section := strings.TrimSpace(strings.TrimPrefix(line, "## "))
+		if section == "" {
+			continue
+		}
+		if _, exists := seen[section]; exists {
+			continue
+		}
+		seen[section] = struct{}{}
+		sections = append(sections, truncateMessageIndexRunes(section, messageIndexLongDocumentHeadingMaxRunes))
+		if len(sections) >= limit {
+			break
+		}
+	}
+	return sections
+}
+
+func uniqueNonEmptyMessageIndexSections(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	sections := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := truncateMessageIndexRunes(value, messageIndexLongDocumentHeadingMaxRunes)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		sections = append(sections, trimmed)
+		if len(sections) >= messageIndexLongDocumentSectionLimit {
+			break
+		}
+	}
+	return sections
+}
+
+func truncateMessageIndexRunes(value string, limit int) string {
+	trimmed := strings.TrimSpace(value)
+	if limit <= 0 || messageIndexRuneLen(trimmed) <= limit {
+		return trimmed
+	}
+	runes := []rune(trimmed)
+	return strings.TrimSpace(string(runes[:limit]))
+}
+
+func messageIndexRuneLen(value string) int {
+	return len([]rune(strings.TrimSpace(value)))
+}
+
+func firstNonEmptyMessageIndexValue(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func minMessageIndexInt(left int, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func messageIndexSkipReason(userQuery string, assistantAnswer string, options interfaces.MessageIndexOptions) string {
 	if !options.AllowIndexing {
-		return false
+		return "allow_indexing_disabled"
 	}
 	if options.CompletionStatus != "" && options.CompletionStatus != "completed" {
-		return false
+		return "completion_status_" + strings.TrimSpace(options.CompletionStatus)
 	}
 	if options.FinishReason == "length" {
-		return false
+		return "finish_reason_length"
 	}
 	if assistantAnswer == "" {
-		return false
-	}
-	if strings.EqualFold(options.TaskKind, "long_document") {
-		return false
+		if userQuery == "" {
+			return "empty_query_and_answer"
+		}
+		return "empty_answer"
 	}
 
 	lowerAnswer := strings.ToLower(assistantAnswer)
 	for _, fragment := range messageIndexPlanTextFragments {
 		if strings.Contains(lowerAnswer, strings.ToLower(fragment)) {
-			return false
+			return "planning_content"
 		}
 	}
 
-	return !(userQuery == "" && assistantAnswer == "")
+	if userQuery == "" && assistantAnswer == "" {
+		return "empty_query_and_answer"
+	}
+	return ""
+}
+
+func shouldIndexMessageToKB(userQuery string, assistantAnswer string, options interfaces.MessageIndexOptions) bool {
+	return messageIndexSkipReason(userQuery, assistantAnswer, options) == ""
 }
 
 // DeleteMessageKnowledge deletes the Knowledge entry associated with a message from the chat history KB.

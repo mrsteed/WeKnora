@@ -30,7 +30,7 @@ export function useStream() {
   let renderTimer: number | null = null
 
   // 启动流式请求
-  const startStream = async (params: { session_id: any; query: any; knowledge_base_ids?: string[]; knowledge_ids?: string[]; intent_hint?: string; base_artifact_id?: string; document_output_mode?: string; agent_enabled?: boolean; agent_id?: string; web_search_enabled?: boolean; enable_memory?: boolean; summary_model_id?: string; mcp_service_ids?: string[]; mentioned_items?: Array<{id: string; name: string; type: string; kb_type?: string}>; images?: Array<{data: string}>; attachment_uploads?: Array<{data: string; file_name: string; file_size: number}>; method: string; url: string }) => {
+  const startStream = async (params: { session_id: any; query: any; knowledge_base_ids?: string[]; knowledge_ids?: string[]; intent_hint?: string; base_artifact_id?: string; document_output_mode?: string; document_task_kind?: string; translation_options?: { source_language?: string; target_language?: string; preserve_structure?: boolean; output_format?: string }; document_target_heading?: string; document_merge_mode?: string; auto_continue?: boolean; generation_run_id?: string; auto_continue_root_id?: string; auto_continue_round?: number; auto_continue_prompt?: string; auto_continue_original_query?: string; agent_enabled?: boolean; agent_id?: string; web_search_enabled?: boolean; enable_memory?: boolean; summary_model_id?: string; mcp_service_ids?: string[]; mentioned_items?: Array<{id: string; name: string; type: string; kb_type?: string}>; images?: Array<{data: string}>; attachment_uploads?: Array<{data: string; file_name: string; file_size: number}>; method: string; url: string }) => {
     // 重置状态
     output.value = '';
     error.value = null;
@@ -101,6 +101,36 @@ export function useStream() {
       }
       if (params.document_output_mode) {
         postBody.document_output_mode = params.document_output_mode;
+      }
+      if (params.document_task_kind) {
+        postBody.document_task_kind = params.document_task_kind;
+      }
+      if (params.translation_options) {
+        postBody.translation_options = params.translation_options;
+      }
+      if (params.document_target_heading) {
+        postBody.document_target_heading = params.document_target_heading;
+      }
+      if (params.document_merge_mode) {
+        postBody.document_merge_mode = params.document_merge_mode;
+      }
+      if (params.auto_continue !== undefined) {
+        postBody.auto_continue = params.auto_continue;
+      }
+      if (params.generation_run_id) {
+        postBody.generation_run_id = params.generation_run_id;
+      }
+      if (params.auto_continue_root_id) {
+        postBody.auto_continue_root_id = params.auto_continue_root_id;
+      }
+      if (params.auto_continue_round !== undefined) {
+        postBody.auto_continue_round = params.auto_continue_round;
+      }
+      if (params.auto_continue_prompt) {
+        postBody.auto_continue_prompt = params.auto_continue_prompt;
+      }
+      if (params.auto_continue_original_query) {
+        postBody.auto_continue_original_query = params.auto_continue_original_query;
       }
       // Always include knowledge_base_ids for agent-chat (already validated above)
       if (params.knowledge_base_ids !== undefined && params.knowledge_base_ids.length > 0) {

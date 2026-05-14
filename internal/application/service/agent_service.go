@@ -530,11 +530,11 @@ func (s *agentService) registerTools(
 		}
 	}
 
+	allowedTools = append(allowedTools, tools.ToolFinalAnswer)
 	// Deduplicate while preserving original order.
 	allowedTools = dedupStrings(allowedTools)
 
 	logger.Infof(ctx, "Registering tools: %v, webSearchEnabled: %v", allowedTools, config.WebSearchEnabled)
-	allowedTools = append(allowedTools, tools.ToolFinalAnswer)
 	// Register each allowed tool
 	for _, toolName := range allowedTools {
 		var toolToRegister types.Tool

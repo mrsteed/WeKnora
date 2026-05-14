@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/sashabaranov/go-openai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -267,6 +268,44 @@ func TestConvertMessages_ReasoningContentRoundTrip(t *testing.T) {
 		require.Len(t, out, 1)
 		assert.Empty(t, out[0].ReasoningContent)
 	})
+}
+
+func TestDeepseekRequestCustomizer_DisablesThinkingViaThinkingField(t *testing.T) {
+	thinking := false
+	req := &openai.ChatCompletionRequest{
+		Model:    "deepseek-v4-pro",
+		Messages: []openai.ChatCompletionMessage{{Role: "user", Content: "给出北海电厂的技术方案。"}},
+	}
+
+	customReq, useRawHTTP := deepseekRequestCustomizer(req, &ChatOptions{Thinking: &thinking}, false)
+
+	require.True(t, useRawHTTP)
+	typedReq, ok := customReq.(ThinkingChatCompletionRequest)
+	require.True(t, ok)
+	require.NotNil(t, typedReq.Thinking)
+	assert.Equal(t, "disabled", typedReq.Thinking.Type)
+
+	payload, err := json.Marshal(typedReq)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"给出北海电厂的技术方案。"}],"thinking":{"type":"disabled"}}`, string(payload))
+}
+
+func TestDeepseekRequestCustomizer_ClearsToolChoiceAndKeepsThinkingControl(t *testing.T) {
+	thinking := false
+	req := &openai.ChatCompletionRequest{
+		Model:      "deepseek-v4-pro",
+		Messages:   []openai.ChatCompletionMessage{{Role: "user", Content: "test"}},
+		ToolChoice: "auto",
+	}
+
+	customReq, useRawHTTP := deepseekRequestCustomizer(req, &ChatOptions{Thinking: &thinking, ToolChoice: "auto"}, false)
+
+	require.True(t, useRawHTTP)
+	typedReq, ok := customReq.(ThinkingChatCompletionRequest)
+	require.True(t, ok)
+	assert.Nil(t, typedReq.ToolChoice)
+	require.NotNil(t, typedReq.Thinking)
+	assert.Equal(t, "disabled", typedReq.Thinking.Type)
 }
 
 // TestRemoteAPIChat 综合测试 Remote API Chat 的所有功能

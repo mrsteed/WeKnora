@@ -14,26 +14,49 @@ import (
 )
 
 var (
-	chatDocumentContinueIntentRE   = regexp.MustCompile(`(?i)(继续生成|接着写|续写|从上次中断处继续|补全剩余|继续输出|继续补齐|继续补充|接着补齐|接着补充|补齐剩余|补充剩余|继续完善|继续扩写)`)
-	chatDocumentReviseIntentRE     = regexp.MustCompile(`(?i)(修改上一版|基于上一个文档修改|把上一份改成|调整上一版|完善上一版)`)
-	chatDocumentRegenerateIntentRE = regexp.MustCompile(`(?i)(重新生成|从头生成|重写一版|不要基于上一版)`)
-	chatDocumentHeadingRE          = regexp.MustCompile(`(?m)^(#{1,6})\s+(.+)$`)
-	chatDocumentCodeFenceRE        = regexp.MustCompile("(?m)^```")
-	chatDocumentListRE             = regexp.MustCompile(`(?m)^\s*(?:[-*+]\s+|\d+\.\s+)`)
-	chatDocumentTableRE            = regexp.MustCompile(`(?m)^\|.+\|\s*$`)
-	chatDocumentPatchEnvelopeRE    = regexp.MustCompile(`(?s)^\s*<document_patch>\s*(.*?)\s*</document_patch>\s*$`)
-	chatDocumentPatchOperationRE   = regexp.MustCompile(`(?s)<(replace|append|insert_after)\s+heading=(?:"([^"]+)"|'([^']+)')\s*>(.*?)</(replace|append|insert_after)>`)
-	chatDocumentQueryHintRE        = regexp.MustCompile(`(?i)(方案|文档|报告|markdown|技术方案|设计方案|plan|report|document)`)
-	chatDocumentDuplicatePhraseRE  = regexp.MustCompile(`(?i)^(我已修改|下面是修改建议|已根据你的要求修改)`)
-	chatDocumentRevisionLeadRE     = regexp.MustCompile(`(?i)^(我已修改|下面是修改|以下是修改|已根据你的要求修改|根据你的要求|我已经根据|已按要求)`)
+	chatDocumentContinueIntentRE    = regexp.MustCompile(`(?i)(继续生成|接着写|续写|从上次中断处继续|补全剩余|继续输出|继续补齐|继续补充|接着补齐|接着补充|补齐剩余|补充剩余|继续完善|继续扩写)`)
+	chatDocumentReviseIntentRE      = regexp.MustCompile(`(?i)(修改上一版|基于上一个文档修改|把上一份改成|调整上一版|完善上一版)`)
+	chatDocumentRegenerateIntentRE  = regexp.MustCompile(`(?i)(重新生成|从头生成|重写一版|不要基于上一版)`)
+	chatDocumentScopedTargetRE      = regexp.MustCompile(`(?i)(章节|小节|段落|标题|模块|部分|第[0-9一二三四五六七八九十百零]+(?:章|节|部分)|[0-9]+(?:\.[0-9]+)+|智慧运行|智慧安防|数据湖|算力平台|应急中心|AR眼镜)`)
+	chatDocumentTailContinueRE      = regexp.MustCompile(`(?i)(剩余内容|剩余章节|后续章节|余下章节|从上次中断|文档末尾|继续剩余|当前文档为基准|自动续写)`)
+	chatDocumentQuotedTargetRE      = regexp.MustCompile(`["“'‘]([^"”'’\n]{1,40})["”'’](?:章节|小节|模块|部分)?`)
+	chatDocumentScopedPhraseRE      = regexp.MustCompile(`(?:在|对|把|将|就)?\s*(?:第[0-9一二三四五六七八九十百零]+(?:章|节|部分)|[0-9]+(?:\.[0-9]+)+|[\p{Han}A-Za-z0-9_-]{2,40})(?:章节|小节|模块|部分)`)
+	chatDocumentTargetLeadTrimRE    = regexp.MustCompile(`^(?:(?:请|帮我|麻烦|再)\s*)*(?:(?:继续|接着|续写|补充|扩写|完善|细化|补齐|补全|修改|调整|重写|生成)\s*)+`)
+	chatDocumentHeadingMarkerTrimRE = regexp.MustCompile(`^#{1,6}\s*`)
+	chatDocumentHeadingNumberTrimRE = regexp.MustCompile(`^(?:(?:[0-9]+(?:\.[0-9]+)*)|(?:第[0-9一二三四五六七八九十百零]+(?:章|节|部分)?)|(?:[一二三四五六七八九十百零]+))[、.．\s-]*`)
+	chatDocumentHeadingRE           = regexp.MustCompile(`(?m)^(#{1,6})\s+(.+)$`)
+	chatDocumentCodeFenceRE         = regexp.MustCompile("(?m)^```")
+	chatDocumentListRE              = regexp.MustCompile(`(?m)^\s*(?:[-*+]\s+|\d+\.\s+)`)
+	chatDocumentTableRE             = regexp.MustCompile(`(?m)^\|.+\|\s*$`)
+	chatDocumentPatchEnvelopeRE     = regexp.MustCompile(`(?s)^\s*<document_patch>\s*(.*?)\s*</document_patch>\s*$`)
+	chatDocumentPatchOperationRE    = regexp.MustCompile(`(?s)<(replace|append|insert_after)\s+heading=(?:"([^"]+)"|'([^']+)')\s*>(.*?)</(replace|append|insert_after)>`)
+	chatDocumentQueryHintRE         = regexp.MustCompile(`(?i)(方案|文档|报告|markdown|技术方案|设计方案|plan|report|document)`)
+	chatDocumentDuplicatePhraseRE   = regexp.MustCompile(`(?i)^(我已修改|下面是修改建议|已根据你的要求修改)`)
+	chatDocumentRevisionLeadRE      = regexp.MustCompile(`(?i)^(我已修改|下面是修改|以下是修改|已根据你的要求修改|根据你的要求|我已经根据|已按要求)`)
+	chatDocumentMoveIntentRE        = regexp.MustCompile(`(?i)(合并到|并入|移动到|移到|放到|放入|追加到|补充到|归并到|整合到|纳入)`)
+	chatDocumentDestinationLeadRE   = regexp.MustCompile(`(?i)(?:合并到|并入|移动到|移到|放到|放入|追加到|补充到|归并到|整合到|纳入)\s*([^，。；\n]+)`)
+	chatDocumentSourceTailRE        = regexp.MustCompile(`(?i)(?:把|将)\s*([^，。；\n]+?)\s*(?:后续的内容|之后的内容|后面的内容|后续内容|之后内容|后面内容|章节内容|小节内容)`)
+	chatDocumentSourceMoveRE        = regexp.MustCompile(`(?i)(?:把|将)\s*([^，。；\n]+?)\s*(?:合并到|并入|移动到|移到|放到|放入|追加到|补充到|归并到|整合到|纳入)`)
+	chatDocumentResetLeadRE         = regexp.MustCompile(`(?m)^\s*(?:#{1,6}\s*)?(?:一[、.．]|1[、.．]|一、|1\.\s*)`)
+	chatDocumentLateSectionRE       = regexp.MustCompile(`(?m)^\s*(?:#{1,6}\s*)?(?:[3-9]\.|[1-9][0-9]+\.|[三四五六七八九十][、.．])`)
+	chatDocumentTerminalHeadingRE   = regexp.MustCompile(`(?i)(实施方能力保障|保障措施|结束语|总结|附录|结论|交付保障|实施保障)`)
+	chatDocumentCompletionNoticeRE  = regexp.MustCompile(`(?i)^\s*(?:文档|全文|整篇文档|本篇文档)?(?:已完成|已经完成|已全部输出|已完整输出|无需继续|无须继续|没有新增内容|无新增内容)(?:[。.!！\s]*)$`)
 )
 
-type chatDocumentArtifactService struct {
-	repo interfaces.ChatDocumentArtifactRepository
+type chatDocumentEditPlan struct {
+	Operation          string
+	SourceHeading      string
+	DestinationHeading string
+	MergeMode          string
 }
 
-func NewChatDocumentArtifactService(repo interfaces.ChatDocumentArtifactRepository) interfaces.ChatDocumentArtifactService {
-	return &chatDocumentArtifactService{repo: repo}
+type chatDocumentArtifactService struct {
+	repo            interfaces.ChatDocumentArtifactRepository
+	evidenceRefRepo interfaces.ChatDocumentEvidenceRefRepository
+}
+
+func NewChatDocumentArtifactService(repo interfaces.ChatDocumentArtifactRepository, evidenceRefRepo interfaces.ChatDocumentEvidenceRefRepository) interfaces.ChatDocumentArtifactService {
+	return &chatDocumentArtifactService{repo: repo, evidenceRefRepo: evidenceRefRepo}
 }
 
 func (s *chatDocumentArtifactService) DetectIntent(ctx context.Context, sessionID string, query string, hint string) (*types.DocumentIntentResult, error) {
@@ -48,6 +71,8 @@ func (s *chatDocumentArtifactService) DetectIntent(ctx context.Context, sessionI
 		intent = types.ChatDocumentIntentRegenerate
 	case chatDocumentReviseIntentRE.MatchString(trimmedQuery):
 		intent = types.ChatDocumentIntentRevise
+	case shouldTreatContinueAsScopedRevision(trimmedQuery):
+		intent = types.ChatDocumentIntentRevise
 	case chatDocumentContinueIntentRE.MatchString(trimmedQuery):
 		intent = types.ChatDocumentIntentContinue
 	case trimmedHint == types.ChatDocumentIntentContinue,
@@ -57,9 +82,21 @@ func (s *chatDocumentArtifactService) DetectIntent(ctx context.Context, sessionI
 	}
 
 	return &types.DocumentIntentResult{
-		Intent:    intent,
-		Operation: chatDocumentOperationForIntent(intent),
+		Intent:        intent,
+		Operation:     chatDocumentOperationForIntent(intent),
+		TargetHeading: resolveDocumentTargetHeading(trimmedQuery, ""),
+		MergeMode:     normalizeChatDocumentMergeMode("", intent, resolveDocumentTargetHeading(trimmedQuery, "")),
 	}, nil
+}
+
+func shouldTreatContinueAsScopedRevision(query string) bool {
+	trimmedQuery := strings.TrimSpace(query)
+	if trimmedQuery == "" {
+		return false
+	}
+	return chatDocumentContinueIntentRE.MatchString(trimmedQuery) &&
+		chatDocumentScopedTargetRE.MatchString(trimmedQuery) &&
+		!chatDocumentTailContinueRE.MatchString(trimmedQuery)
 }
 
 func (s *chatDocumentArtifactService) GetLatestArtifact(ctx context.Context, sessionID string) (*types.ChatDocumentArtifact, error) {
@@ -69,6 +106,9 @@ func (s *chatDocumentArtifactService) GetLatestArtifact(ctx context.Context, ses
 	}
 	artifact, err := s.repo.GetLatestArtifactBySession(ctx, tenantID, sessionID)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.attachEvidenceRefs(ctx, artifact); err != nil {
 		return nil, err
 	}
 	return hydrateChatDocumentArtifactDerivedFields(artifact), nil
@@ -83,6 +123,9 @@ func (s *chatDocumentArtifactService) GetArtifact(ctx context.Context, artifactI
 	if err != nil {
 		return nil, err
 	}
+	if err := s.attachEvidenceRefs(ctx, artifact); err != nil {
+		return nil, err
+	}
 	return hydrateChatDocumentArtifactDerivedFields(artifact), nil
 }
 
@@ -95,109 +138,315 @@ func (s *chatDocumentArtifactService) GetArtifactBySourceMessageID(ctx context.C
 	if err != nil {
 		return nil, err
 	}
+	if err := s.attachEvidenceRefs(ctx, artifact); err != nil {
+		return nil, err
+	}
 	return hydrateChatDocumentArtifactDerivedFields(artifact), nil
 }
 
-func (s *chatDocumentArtifactService) BuildQuotedContext(ctx context.Context, artifact *types.ChatDocumentArtifact, query string, intent string, outputMode string) (string, error) {
-	_ = ctx
-	_ = query
-	if artifact == nil || !artifact.CanContinue() {
-		return "", nil
-	}
+func (s *chatDocumentArtifactService) BuildQuotedContext(ctx context.Context, artifact *types.ChatDocumentArtifact, query string, intent string, outputMode string, targetHeading string, mergeMode string) (string, error) {
+	return buildChatDocumentQuotedContext(ctx, artifact, query, intent, outputMode, targetHeading, mergeMode)
+}
 
-	outputMode = normalizeDocumentOutputMode(outputMode, intent)
-
-	contentRunes := []rune(strings.TrimSpace(artifact.ContentSnapshot))
-	if len(contentRunes) == 0 {
-		return "", nil
+func buildChatDocumentGoalBlock(query string) string {
+	goal := strings.TrimSpace(query)
+	if goal == "" {
+		return ""
 	}
-	if len(contentRunes) > types.ChatDocumentArtifactInlineContinuationMaxChars {
-		return "", fmt.Errorf("artifact content is too large for inline continuation")
-	}
+	return fmt.Sprintf(`
+原始/本轮用户目标：
+<original_user_goal>
+%s
+</original_user_goal>`, goal)
+}
 
-	payload := string(contentRunes)
-	truncated := false
-	if len(contentRunes) > 30000 {
-		truncated = true
-		outline := strings.TrimSpace(extractMarkdownHeadingOutline(payload))
-		tail := strings.TrimSpace(string(contentRunes[chatDocumentMaxInt(0, len(contentRunes)-16000):]))
-		if intent == types.ChatDocumentIntentRevise {
-			head := strings.TrimSpace(string(contentRunes[:chatDocumentMinInt(len(contentRunes), 8000)]))
-			payload = buildTruncatedDocumentPayload(outline, head, tail)
-		} else {
-			payload = buildTruncatedDocumentPayload(outline, "", tail)
+func buildChatDocumentTargetBlock(plan chatDocumentEditPlan) string {
+	plan.SourceHeading = strings.TrimSpace(plan.SourceHeading)
+	plan.DestinationHeading = strings.TrimSpace(plan.DestinationHeading)
+	plan.MergeMode = strings.TrimSpace(plan.MergeMode)
+	plan.Operation = strings.TrimSpace(plan.Operation)
+	if plan.SourceHeading == "" && plan.DestinationHeading == "" && plan.MergeMode == "" && plan.Operation == "" {
+		return ""
+	}
+	parts := make([]string, 0, 4)
+	if plan.SourceHeading != "" {
+		parts = append(parts, fmt.Sprintf("- source_heading: %s", plan.SourceHeading))
+	}
+	if plan.DestinationHeading != "" {
+		parts = append(parts, fmt.Sprintf("- target_heading: %s", plan.DestinationHeading))
+	}
+	if plan.MergeMode != "" {
+		parts = append(parts, fmt.Sprintf("- merge_mode: %s", plan.MergeMode))
+	}
+	if plan.Operation != "" {
+		parts = append(parts, fmt.Sprintf("- operation: %s", plan.Operation))
+	}
+	return "\n\n结构化编辑目标：\n<document_edit_target>\n" + strings.Join(parts, "\n") + "\n</document_edit_target>"
+}
+
+func resolveDocumentTargetHeading(query string, targetHeading string) string {
+	if trimmed := strings.TrimSpace(targetHeading); trimmed != "" {
+		return trimmed
+	}
+	if destination := inferDocumentDestinationHeading(query); destination != "" {
+		return destination
+	}
+	return inferSectionTargetFromQuery(query)
+}
+
+func normalizeChatDocumentMergeMode(mergeMode string, intent string, targetHeading string) string {
+	trimmedMergeMode := strings.TrimSpace(mergeMode)
+	if trimmedMergeMode != "" {
+		return trimmedMergeMode
+	}
+	if strings.TrimSpace(targetHeading) == "" {
+		return ""
+	}
+	switch intent {
+	case types.ChatDocumentIntentContinue, types.ChatDocumentIntentRevise:
+		return types.ChatDocumentMergeModeAppendToSection
+	default:
+		return ""
+	}
+}
+
+func buildTargetedDocumentPayload(content string, targetHeading string) (string, string, bool) {
+	start, end, matchedHeading, found, ambiguous := findMarkdownSectionRangeBySelector(content, targetHeading)
+	if !found || ambiguous {
+		return "", "", false
+	}
+	outline := strings.TrimSpace(extractMarkdownHeadingOutline(content))
+	targetSection := strings.TrimSpace(content[start:end])
+	targetParent, previousSibling, nextSibling := extractTargetSectionWindow(content, start)
+	sections := make([]string, 0, 5)
+	if outline != "" {
+		sections = append(sections, "<document_outline>\n"+outline+"\n</document_outline>")
+	}
+	if targetParent != "" {
+		sections = append(sections, "<target_parent>\n"+targetParent+"\n</target_parent>")
+	}
+	sections = append(sections,
+		"<target_section_heading>\n"+matchedHeading+"\n</target_section_heading>",
+		"<target_section>\n"+targetSection+"\n</target_section>",
+	)
+	nearby := make([]string, 0, 2)
+	if previousSibling != "" {
+		nearby = append(nearby, "<previous_sibling>\n"+previousSibling+"\n</previous_sibling>")
+	}
+	if nextSibling != "" {
+		nearby = append(nearby, "<next_sibling>\n"+nextSibling+"\n</next_sibling>")
+	}
+	if len(nearby) > 0 {
+		sections = append(sections, "<nearby_siblings>\n"+strings.Join(nearby, "\n\n")+"\n</nearby_siblings>")
+	}
+	return strings.Join(sections, "\n\n"), matchedHeading, true
+}
+
+func inferChatDocumentEditPlan(query string, targetHeading string, mergeMode string) chatDocumentEditPlan {
+	plan := chatDocumentEditPlan{
+		DestinationHeading: strings.TrimSpace(targetHeading),
+		MergeMode:          strings.TrimSpace(mergeMode),
+	}
+	if plan.DestinationHeading == "" {
+		plan.DestinationHeading = inferDocumentDestinationHeading(query)
+	}
+	if plan.DestinationHeading == "" {
+		plan.DestinationHeading = inferSectionTargetFromQuery(query)
+	}
+	if plan.MergeMode == "" {
+		plan.MergeMode = normalizeChatDocumentMergeMode("", types.ChatDocumentIntentRevise, plan.DestinationHeading)
+	}
+	if !chatDocumentMoveIntentRE.MatchString(query) {
+		return plan
+	}
+	plan.SourceHeading = inferDocumentSourceHeading(query, plan.DestinationHeading)
+	if plan.SourceHeading != "" && plan.DestinationHeading != "" && !sameDocumentHeading(plan.SourceHeading, plan.DestinationHeading) {
+		plan.Operation = "move_after_heading_to_section"
+	}
+	return plan
+}
+
+func inferDocumentDestinationHeading(query string) string {
+	trimmedQuery := strings.TrimSpace(query)
+	if trimmedQuery == "" {
+		return ""
+	}
+	if matches := chatDocumentDestinationLeadRE.FindStringSubmatch(trimmedQuery); len(matches) == 2 {
+		return cleanDocumentHeadingSelector(matches[1])
+	}
+	return ""
+}
+
+func inferDocumentSourceHeading(query string, destinationHeading string) string {
+	trimmedQuery := strings.TrimSpace(query)
+	if trimmedQuery == "" {
+		return ""
+	}
+	for _, re := range []*regexp.Regexp{chatDocumentSourceTailRE, chatDocumentSourceMoveRE} {
+		if matches := re.FindStringSubmatch(trimmedQuery); len(matches) == 2 {
+			candidate := cleanDocumentHeadingSelector(matches[1])
+			if candidate != "" && !sameDocumentHeading(candidate, destinationHeading) {
+				return candidate
+			}
 		}
 	}
+	return ""
+}
 
-	metadata := fmt.Sprintf("- artifact_id: %s\n- revision_no: %d\n- completion_status: %s\n- operation: %s",
-		artifact.ID, artifact.RevisionNo, artifact.CompletionStatus, artifact.Operation)
-	if truncated {
-		metadata += "\n- snapshot_mode: truncated"
+func cleanDocumentHeadingSelector(selector string) string {
+	trimmed := strings.TrimSpace(selector)
+	trimmed = strings.Trim(trimmed, "\"'“”‘’")
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "里面"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "里"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "中"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "内"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "正文"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "这一节"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "该节"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "该章节"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "这个章节"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "部分"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "模块"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "小节"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "章节"))
+	trimmed = strings.TrimSpace(strings.Trim(trimmed, "，。；:："))
+	return trimmed
+}
+
+func sameDocumentHeading(left string, right string) bool {
+	leftNorm := normalizeHeadingForMatch(left)
+	rightNorm := normalizeHeadingForMatch(right)
+	return leftNorm != "" && leftNorm == rightNorm
+}
+
+func buildDualAnchorDocumentPayload(content string, plan chatDocumentEditPlan) (string, string, bool) {
+	if strings.TrimSpace(plan.SourceHeading) == "" || strings.TrimSpace(plan.DestinationHeading) == "" {
+		return "", "", false
 	}
-
-	if intent == types.ChatDocumentIntentRevise && outputMode == types.ChatDocumentOutputModeFull {
-		return fmt.Sprintf(`<document_revision_context>
-你正在修改同一会话中的上一份文档。
-
-修改规则：
-1. 以上一份文档为基线进行修改。
-2. 不要丢失用户没有要求删除的章节和内容。
-3. 按用户本轮要求调整结构、补充细节或修正文案。
-4. 输出修改后的完整 Markdown 文档。
-5. 不要输出 diff 标记，不要输出修改说明，除非用户明确要求。
-
-上一份文档元数据：
-%s
-
-上一份文档内容：
-<document>
-%s
-</document>
-</document_revision_context>`, metadata, payload), nil
+	sourceStart, sourceEnd, resolvedSourceHeading, sourceFound, sourceAmbiguous := findMarkdownSectionRangeBySelector(content, plan.SourceHeading)
+	if !sourceFound || sourceAmbiguous {
+		return "", "", false
 	}
-
-	if intent == types.ChatDocumentIntentRevise {
-		return fmt.Sprintf(`<document_revision_context>
-你正在修改同一会话中的上一份文档。
-
-输出规则：
-1. 优先输出 <document_patch> 包裹的结构化 patch，不要输出完整文档全文。
-2. 结构化 patch 支持 <replace heading="## 标题">...</replace>、<append heading="## 标题">...</append>、<insert_after heading="## 标题">...</insert_after>。
-3. replace 输出替换后的完整章节内容；append 输出要追加到目标章节末尾的 Markdown 片段；insert_after 输出要插入到目标章节后的 Markdown 片段。
-4. 如果用户只要求修改单个章节且你无法稳定生成 patch，可退化为输出带标题的最终章节片段。
-5. 不要输出 diff 标记，不要输出修改说明。
-6. 不要重复未修改章节。
-7. 输出内容必须能被系统合并回上一份文档，形成新的完整版本。
-
-上一份文档元数据：
-%s
-
-上一份文档内容：
-<document>
-%s
-</document>
-</document_revision_context>`, metadata, payload), nil
+	destinationStart, destinationEnd, resolvedDestinationHeading, destinationFound, destinationAmbiguous := findMarkdownSectionRangeBySelector(content, plan.DestinationHeading)
+	if !destinationFound || destinationAmbiguous {
+		return "", "", false
 	}
+	outline := strings.TrimSpace(extractMarkdownHeadingOutline(content))
+	sourceSection := strings.TrimSpace(content[sourceStart:sourceEnd])
+	destinationSection := strings.TrimSpace(content[destinationStart:destinationEnd])
+	sourceParent, sourcePrev, sourceNext := extractTargetSectionWindow(content, sourceStart)
+	destinationParent, destinationPrev, destinationNext := extractTargetSectionWindow(content, destinationStart)
+	sections := make([]string, 0, 8)
+	if outline != "" {
+		sections = append(sections, "<document_outline>\n"+outline+"\n</document_outline>")
+	}
+	sections = append(sections,
+		"<source_anchor_heading>\n"+resolvedSourceHeading+"\n</source_anchor_heading>",
+		"<source_section>\n"+sourceSection+"\n</source_section>",
+		"<destination_section_heading>\n"+resolvedDestinationHeading+"\n</destination_section_heading>",
+		"<destination_section>\n"+destinationSection+"\n</destination_section>",
+	)
+	if sourceParent != "" {
+		sections = append(sections, "<source_parent>\n"+sourceParent+"\n</source_parent>")
+	}
+	if destinationParent != "" && !sameDocumentHeading(sourceParent, destinationParent) {
+		sections = append(sections, "<destination_parent>\n"+destinationParent+"\n</destination_parent>")
+	}
+	neighborParts := make([]string, 0, 4)
+	if sourcePrev != "" {
+		neighborParts = append(neighborParts, "<source_previous_sibling>\n"+sourcePrev+"\n</source_previous_sibling>")
+	}
+	if sourceNext != "" {
+		neighborParts = append(neighborParts, "<source_next_sibling>\n"+sourceNext+"\n</source_next_sibling>")
+	}
+	if destinationPrev != "" {
+		neighborParts = append(neighborParts, "<destination_previous_sibling>\n"+destinationPrev+"\n</destination_previous_sibling>")
+	}
+	if destinationNext != "" {
+		neighborParts = append(neighborParts, "<destination_next_sibling>\n"+destinationNext+"\n</destination_next_sibling>")
+	}
+	if len(neighborParts) > 0 {
+		sections = append(sections, "<nearby_siblings>\n"+strings.Join(neighborParts, "\n\n")+"\n</nearby_siblings>")
+	}
+	return strings.Join(sections, "\n\n"), resolvedDestinationHeading, true
+}
 
-	return fmt.Sprintf(`<document_continuation_context>
-你正在继续生成同一会话中的上一份文档。
+func extractTargetSectionWindow(content string, targetStart int) (string, string, string) {
+	matches := chatDocumentHeadingRE.FindAllStringSubmatchIndex(content, -1)
+	targetIndex := -1
+	for idx, match := range matches {
+		if len(match) < 6 {
+			continue
+		}
+		if match[0] == targetStart {
+			targetIndex = idx
+			break
+		}
+	}
+	if targetIndex < 0 {
+		return "", "", ""
+	}
+	targetLevel := len(content[matches[targetIndex][2]:matches[targetIndex][3]])
+	parent := ""
+	for idx := targetIndex - 1; idx >= 0; idx-- {
+		if len(matches[idx]) < 6 {
+			continue
+		}
+		level := len(content[matches[idx][2]:matches[idx][3]])
+		if level < targetLevel {
+			parent = strings.TrimSpace(content[matches[idx][0]:matches[idx][1]])
+			break
+		}
+	}
+	previousSibling := ""
+	for idx := targetIndex - 1; idx >= 0; idx-- {
+		if len(matches[idx]) < 6 {
+			continue
+		}
+		level := len(content[matches[idx][2]:matches[idx][3]])
+		if level == targetLevel {
+			start, end := markdownSectionRangeFromMatches(content, matches, idx)
+			previousSibling = truncateRunes(strings.TrimSpace(content[start:end]), 1200)
+			break
+		}
+		if level < targetLevel {
+			break
+		}
+	}
+	nextSibling := ""
+	for idx := targetIndex + 1; idx < len(matches); idx++ {
+		if len(matches[idx]) < 6 {
+			continue
+		}
+		level := len(content[matches[idx][2]:matches[idx][3]])
+		if level == targetLevel {
+			start, end := markdownSectionRangeFromMatches(content, matches, idx)
+			nextSibling = truncateRunes(strings.TrimSpace(content[start:end]), 1200)
+			break
+		}
+		if level < targetLevel {
+			break
+		}
+	}
+	return parent, previousSibling, nextSibling
+}
 
-续写规则：
-1. 不要从头重写上一份文档。
-2. 从上一份文档末尾自然继续。
-3. 保持标题层级、术语、编号、表格和 Markdown 风格一致。
-4. 如果上一份文档末尾句子不完整，先补齐该句，再继续后续内容。
-5. 默认只输出新增内容，不要重复上一份文档中已经完整输出的段落。
-6. 不要解释“我将继续”，直接输出文档正文。
-
-上一份文档元数据：
-%s
-
-上一份文档内容：
-<document>
-%s
-</document>
-</document_continuation_context>`, metadata, payload), nil
+func markdownSectionRangeFromMatches(content string, matches [][]int, idx int) (int, int) {
+	start := matches[idx][0]
+	currentLevel := len(content[matches[idx][2]:matches[idx][3]])
+	end := len(content)
+	for nextIdx := idx + 1; nextIdx < len(matches); nextIdx++ {
+		next := matches[nextIdx]
+		if len(next) < 6 {
+			continue
+		}
+		nextLevel := len(content[next[2]:next[3]])
+		if nextLevel <= currentLevel {
+			end = next[0]
+			break
+		}
+	}
+	return start, end
 }
 
 func (s *chatDocumentArtifactService) RegisterFromAssistantMessage(ctx context.Context, message *types.Message, options types.RegisterChatDocumentArtifactOptions) (*types.ChatDocumentArtifact, error) {
@@ -217,10 +466,25 @@ func (s *chatDocumentArtifactService) RegisterFromAssistantMessage(ctx context.C
 	if existing, err := s.repo.GetArtifactBySourceMessageID(ctx, tenantID, message.ID); err != nil {
 		return nil, err
 	} else if existing != nil {
+		if err := s.attachEvidenceRefs(ctx, existing); err != nil {
+			return nil, err
+		}
 		return existing, nil
 	}
 
 	content := strings.TrimSpace(message.Content)
+	documentGenerationStatus := types.NormalizeOptionalChatDocumentGenerationStatus(options.DocumentGenerationStatus)
+	if cleaned, completed := types.StripChatDocumentCompletionMarker(content); completed {
+		content = cleaned
+		message.Content = cleaned
+		documentGenerationStatus = types.ChatDocumentGenerationStatusCompleted
+	}
+	generationDecision := inferChatDocumentGenerationDecision(options.BaseArtifact, content, documentGenerationStatus, options)
+	documentGenerationStatus = generationDecision.Status
+	if documentGenerationStatus == "" {
+		documentGenerationStatus = defaultChatDocumentGenerationStatus(options)
+	}
+	options.DocumentGenerationStatus = documentGenerationStatus
 	if !shouldRegisterChatDocumentArtifact(content, options) {
 		return nil, nil
 	}
@@ -232,12 +496,20 @@ func (s *chatDocumentArtifactService) RegisterFromAssistantMessage(ctx context.C
 		return nil, nil
 	}
 	snapshot = preparation.Snapshot
+	artifactMarkdownQuality := evaluateArtifactMarkdownQuality(snapshot, completionStatus, documentGenerationStatus, options)
+	if artifactMarkdownQuality.DocumentGenerationStatus != "" {
+		documentGenerationStatus = artifactMarkdownQuality.DocumentGenerationStatus
+		options.DocumentGenerationStatus = documentGenerationStatus
+	}
 	quality := evaluateRevisionArtifactQuality(snapshot, options)
 	if !quality.ShouldCreate {
 		return nil, nil
 	}
+	quality.QualityIssues = uniqueStrings(append(quality.QualityIssues, options.QualityIssues...))
+	quality.QualityIssues = uniqueStrings(append(quality.QualityIssues, generationDecision.QualityIssues...))
 	quality.QualityIssues = uniqueStrings(append(quality.QualityIssues, snapshotResult.QualityIssues...))
 	quality.QualityIssues = uniqueStrings(append(quality.QualityIssues, preparation.QualityIssues...))
+	quality.QualityIssues = uniqueStrings(append(quality.QualityIssues, artifactMarkdownQuality.QualityIssues...))
 
 	userID, _ := types.UserIDFromContext(ctx)
 	artifactStatus := artifactStatusFromCompletionStatus(completionStatus)
@@ -249,22 +521,33 @@ func (s *chatDocumentArtifactService) RegisterFromAssistantMessage(ctx context.C
 	if quality.Status != "" {
 		artifactStatus = quality.Status
 	}
+	if artifactMarkdownQuality.Status != "" {
+		artifactStatus = artifactMarkdownQuality.Status
+	}
+	if documentGenerationStatus == types.ChatDocumentGenerationStatusNeedsReview || documentGenerationStatus == types.ChatDocumentGenerationStatusBlocked {
+		artifactStatus = types.ChatDocumentArtifactStatusPartial
+	}
 	artifact := &types.ChatDocumentArtifact{
-		TenantID:         tenantID,
-		SessionID:        message.SessionID,
-		SourceMessageID:  message.ID,
-		SourceRequestID:  message.RequestID,
-		ParentArtifactID: "",
-		RevisionNo:       1,
-		Title:            extractChatDocumentTitle(snapshot),
-		ArtifactKind:     detectChatDocumentArtifactKind(snapshot),
-		ContentType:      contentTypeForChatDocument(snapshot),
-		ContentSnapshot:  snapshot,
-		ContentChecksum:  checksumText(snapshot),
-		Status:           artifactStatus,
-		CompletionStatus: completionStatus,
-		Operation:        normalizeChatDocumentOperation(options.Operation),
-		CreatedBy:        userID,
+		TenantID:                 tenantID,
+		SessionID:                message.SessionID,
+		SourceMessageID:          message.ID,
+		SourceRequestID:          message.RequestID,
+		ParentArtifactID:         "",
+		RevisionNo:               1,
+		Title:                    resolveChatDocumentArtifactTitle(snapshot, options),
+		ArtifactKind:             detectChatDocumentArtifactKind(snapshot),
+		ContentType:              contentTypeForChatDocument(snapshot),
+		ContentSnapshot:          snapshot,
+		ContentChecksum:          checksumText(snapshot),
+		Status:                   artifactStatus,
+		CompletionStatus:         completionStatus,
+		DocumentGenerationStatus: documentGenerationStatus,
+		DocumentTaskKind:         normalizeOptionalDocumentTaskKind(options.DocumentTaskKind),
+		SourceTitle:              strings.TrimSpace(options.SourceTitle),
+		TargetLanguage:           strings.TrimSpace(options.TargetLanguage),
+		OutputFormat:             normalizeOptionalTranslationOutputFormat(options.TranslationOutputFormat),
+		Operation:                normalizeChatDocumentOperation(options.Operation),
+		CreatedBy:                userID,
 	}
 
 	if base := options.BaseArtifact; base != nil && artifact.Operation != types.ChatDocumentOperationCreate && artifact.Operation != types.ChatDocumentOperationRegenerate {
@@ -276,7 +559,192 @@ func (s *chatDocumentArtifactService) RegisterFromAssistantMessage(ctx context.C
 	if err := s.repo.CreateArtifact(ctx, artifact); err != nil {
 		return nil, err
 	}
+	if err := s.persistArtifactEvidenceRefs(ctx, artifact, message, options); err != nil {
+		return nil, err
+	}
 	return artifact, nil
+}
+
+type chatDocumentGenerationDecision struct {
+	Status        string
+	QualityIssues []string
+}
+
+func inferChatDocumentGenerationDecision(base *types.ChatDocumentArtifact, delta string, explicitStatus string, options types.RegisterChatDocumentArtifactOptions) chatDocumentGenerationDecision {
+	status := types.NormalizeOptionalChatDocumentGenerationStatus(explicitStatus)
+	if status == types.ChatDocumentGenerationStatusCompleted {
+		return chatDocumentGenerationDecision{Status: status}
+	}
+	if normalizeChatDocumentOperation(options.Operation) != types.ChatDocumentOperationContinue || base == nil {
+		return chatDocumentGenerationDecision{Status: status}
+	}
+	baseSnapshot := strings.TrimSpace(base.ContentSnapshot)
+	delta = strings.TrimSpace(delta)
+	if baseSnapshot == "" || delta == "" {
+		return chatDocumentGenerationDecision{Status: status}
+	}
+	if chatDocumentIsCompletionNotice(delta) {
+		return chatDocumentGenerationDecision{
+			Status:        types.ChatDocumentGenerationStatusCompleted,
+			QualityIssues: []string{types.ChatDocumentQualityIssueTerminalSectionTail},
+		}
+	}
+	issues := make([]string, 0, 2)
+	if chatDocumentContinuationRepeatsHead(baseSnapshot, delta) {
+		issues = append(issues, types.ChatDocumentQualityIssueDuplicateDocumentHead)
+	}
+	if chatDocumentContinuationSectionResets(baseSnapshot, delta) {
+		issues = append(issues, types.ChatDocumentQualityIssueSectionNumberReset)
+	}
+	if chatDocumentContinuationLowNovelty(baseSnapshot, delta) {
+		issues = append(issues, types.ChatDocumentQualityIssueLowNoveltyDelta)
+	}
+	if len(issues) == 0 && chatDocumentContinuationTerminalTail(baseSnapshot, delta) {
+		return chatDocumentGenerationDecision{
+			Status:        types.ChatDocumentGenerationStatusCompleted,
+			QualityIssues: []string{types.ChatDocumentQualityIssueTerminalSectionTail},
+		}
+	}
+	if len(issues) > 0 {
+		return chatDocumentGenerationDecision{
+			Status:        types.ChatDocumentGenerationStatusNeedsReview,
+			QualityIssues: uniqueStrings(issues),
+		}
+	}
+	return chatDocumentGenerationDecision{Status: status}
+}
+
+func chatDocumentContinuationRepeatsHead(base string, delta string) bool {
+	baseHeadings := chatDocumentHeadingTitles(base, 4)
+	if len(baseHeadings) == 0 {
+		return false
+	}
+	deltaHeadings := chatDocumentHeadingTitles(delta, 2)
+	if len(deltaHeadings) == 0 {
+		return false
+	}
+	firstDeltaHeading := normalizeChatDocumentHeadingTitle(deltaHeadings[0])
+	if firstDeltaHeading == "" {
+		return false
+	}
+	for _, heading := range baseHeadings {
+		if firstDeltaHeading == normalizeChatDocumentHeadingTitle(heading) {
+			return true
+		}
+	}
+	return false
+}
+
+func chatDocumentIsCompletionNotice(content string) bool {
+	return chatDocumentCompletionNoticeRE.MatchString(strings.TrimSpace(content))
+}
+
+func chatDocumentContinuationSectionResets(base string, delta string) bool {
+	if !chatDocumentLateSectionRE.MatchString(base) || !chatDocumentResetLeadRE.MatchString(delta) {
+		return false
+	}
+	return true
+}
+
+func chatDocumentContinuationLowNovelty(base string, delta string) bool {
+	if runeLen(delta) < 120 {
+		return false
+	}
+	baseTail := chatDocumentTailRunes(base, 12000)
+	deltaHead := truncateRunes(delta, 4000)
+	return chatDocumentTokenContainment(baseTail, deltaHead) >= 0.82
+}
+
+func chatDocumentContinuationTerminalTail(base string, delta string) bool {
+	baseTail := chatDocumentTailRunes(base, 6000)
+	if !chatDocumentTerminalHeadingRE.MatchString(baseTail) {
+		return false
+	}
+	if strings.TrimSpace(delta) == "" {
+		return true
+	}
+	if chatDocumentHeadingRE.MatchString(delta) {
+		return false
+	}
+	return runeLen(delta) <= 300
+}
+
+func chatDocumentHeadingTitles(content string, limit int) []string {
+	matches := chatDocumentHeadingRE.FindAllStringSubmatch(content, -1)
+	if limit > 0 && len(matches) > limit {
+		matches = matches[:limit]
+	}
+	titles := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) == 3 {
+			titles = append(titles, strings.TrimSpace(match[2]))
+		}
+	}
+	return titles
+}
+
+func normalizeChatDocumentHeadingTitle(title string) string {
+	title = strings.TrimSpace(title)
+	title = strings.Trim(title, "# 　\t")
+	title = regexp.MustCompile(`\s+`).ReplaceAllString(title, "")
+	return strings.ToLower(title)
+}
+
+func chatDocumentTailRunes(content string, limit int) string {
+	runes := []rune(strings.TrimSpace(content))
+	if limit <= 0 || len(runes) <= limit {
+		return string(runes)
+	}
+	return string(runes[len(runes)-limit:])
+}
+
+func chatDocumentTokenContainment(base string, delta string) float64 {
+	baseTokens := chatDocumentNoveltyTokens(base)
+	deltaTokens := chatDocumentNoveltyTokens(delta)
+	if len(deltaTokens) == 0 || len(baseTokens) == 0 {
+		return 0
+	}
+	baseSet := make(map[string]struct{}, len(baseTokens))
+	for _, token := range baseTokens {
+		baseSet[token] = struct{}{}
+	}
+	contained := 0
+	for _, token := range deltaTokens {
+		if _, ok := baseSet[token]; ok {
+			contained++
+		}
+	}
+	return float64(contained) / float64(len(deltaTokens))
+}
+
+func chatDocumentNoveltyTokens(content string) []string {
+	content = strings.ToLower(strings.TrimSpace(content))
+	if content == "" {
+		return nil
+	}
+	fields := strings.FieldsFunc(content, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') && !(r >= '\u4e00' && r <= '\u9fff')
+	})
+	tokens := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		runes := []rune(field)
+		if len(runes) <= 12 {
+			tokens = append(tokens, field)
+			continue
+		}
+		for start := 0; start < len(runes); start += 8 {
+			end := chatDocumentMinInt(start+12, len(runes))
+			tokens = append(tokens, string(runes[start:end]))
+			if end == len(runes) {
+				break
+			}
+		}
+	}
+	return tokens
 }
 
 func (s *chatDocumentArtifactService) ListBySession(ctx context.Context, sessionID string, limit int) ([]*types.ChatDocumentArtifact, error) {
@@ -288,10 +756,96 @@ func (s *chatDocumentArtifactService) ListBySession(ctx context.Context, session
 	if err != nil {
 		return nil, err
 	}
+	if err := s.attachEvidenceRefs(ctx, artifacts...); err != nil {
+		return nil, err
+	}
 	for _, artifact := range artifacts {
 		hydrateChatDocumentArtifactDerivedFields(artifact)
+		trimChatDocumentArtifactForList(artifact)
 	}
 	return artifacts, nil
+}
+
+func trimChatDocumentArtifactForList(artifact *types.ChatDocumentArtifact) {
+	if artifact == nil {
+		return
+	}
+	artifact.ContentSnapshot = ""
+}
+
+func (s *chatDocumentArtifactService) persistArtifactEvidenceRefs(ctx context.Context, artifact *types.ChatDocumentArtifact, message *types.Message, options types.RegisterChatDocumentArtifactOptions) error {
+	if artifact == nil {
+		return nil
+	}
+	refs := types.NormalizeChatDocumentEvidenceRefs(options.EvidenceRefs)
+	if len(refs) == 0 {
+		artifact.EvidenceRefs = nil
+		artifact.EvidenceSummary = nil
+		return nil
+	}
+	records := make([]*types.ChatDocumentEvidenceRef, 0, len(refs))
+	for _, ref := range refs {
+		record := ref
+		record.TenantID = artifact.TenantID
+		record.RunID = strings.TrimSpace(options.GenerationRunID)
+		record.ArtifactID = artifact.ID
+		if strings.TrimSpace(record.MessageID) == "" && message != nil {
+			record.MessageID = message.ID
+		}
+		records = append(records, &record)
+	}
+	if s.evidenceRefRepo != nil {
+		if err := s.evidenceRefRepo.CreateEvidenceRefs(ctx, records); err != nil {
+			return err
+		}
+	}
+	artifact.EvidenceRefs = make([]types.ChatDocumentEvidenceRef, 0, len(records))
+	for _, record := range records {
+		if record == nil {
+			continue
+		}
+		artifact.EvidenceRefs = append(artifact.EvidenceRefs, *record)
+	}
+	artifact.EvidenceSummary = buildChatDocumentEvidenceSummary(artifact.EvidenceRefs)
+	return nil
+}
+
+func (s *chatDocumentArtifactService) attachEvidenceRefs(ctx context.Context, artifacts ...*types.ChatDocumentArtifact) error {
+	if len(artifacts) == 0 {
+		return nil
+	}
+	artifactIDs := make([]string, 0, len(artifacts))
+	artifactByID := make(map[string]*types.ChatDocumentArtifact, len(artifacts))
+	for _, artifact := range artifacts {
+		if artifact == nil || strings.TrimSpace(artifact.ID) == "" {
+			continue
+		}
+		artifact.EvidenceRefs = nil
+		artifactIDs = append(artifactIDs, artifact.ID)
+		artifactByID[artifact.ID] = artifact
+	}
+	if len(artifactIDs) == 0 || s.evidenceRefRepo == nil {
+		return nil
+	}
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return fmt.Errorf("tenant context is required")
+	}
+	refs, err := s.evidenceRefRepo.ListEvidenceRefsByArtifactIDs(ctx, tenantID, artifactIDs)
+	if err != nil {
+		return err
+	}
+	for _, ref := range refs {
+		if ref == nil {
+			continue
+		}
+		artifact := artifactByID[strings.TrimSpace(ref.ArtifactID)]
+		if artifact == nil {
+			continue
+		}
+		artifact.EvidenceRefs = append(artifact.EvidenceRefs, *ref)
+	}
+	return nil
 }
 
 func (s *chatDocumentArtifactService) ListRevisions(ctx context.Context, artifactID string) ([]*types.ChatDocumentArtifact, error) {
@@ -339,20 +893,85 @@ func belongsToArtifactChain(artifact *types.ChatDocumentArtifact, rootID string,
 	return false
 }
 
+func resolveChatDocumentArtifactTitle(snapshot string, options types.RegisterChatDocumentArtifactOptions) string {
+	if normalizeOptionalDocumentTaskKind(options.DocumentTaskKind) == types.ChatDocumentTaskKindTranslation {
+		return buildTranslationArtifactTitle(options.SourceTitle, options.TargetLanguage)
+	}
+	title := strings.TrimSpace(extractChatDocumentTitle(snapshot))
+	if title != "" {
+		return title
+	}
+	return title
+}
+
+func buildTranslationArtifactTitle(sourceTitle string, targetLanguage string) string {
+	trimmedSourceTitle := strings.TrimSpace(sourceTitle)
+	trimmedTargetLanguage := strings.TrimSpace(targetLanguage)
+	switch {
+	case trimmedSourceTitle != "" && trimmedTargetLanguage != "":
+		return fmt.Sprintf("%s（%s译文）", trimmedSourceTitle, trimmedTargetLanguage)
+	case trimmedSourceTitle != "":
+		return trimmedSourceTitle + "（译文）"
+	case trimmedTargetLanguage != "":
+		return trimmedTargetLanguage + "译文"
+	default:
+		return "全文译文"
+	}
+}
+
+func normalizeOptionalDocumentTaskKind(taskKind string) string {
+	switch strings.TrimSpace(taskKind) {
+	case types.ChatDocumentTaskKindTranslation:
+		return types.ChatDocumentTaskKindTranslation
+	case types.ChatDocumentTaskKindWriting:
+		return types.ChatDocumentTaskKindWriting
+	default:
+		return ""
+	}
+}
+
+func normalizeOptionalTranslationOutputFormat(outputFormat string) string {
+	trimmed := strings.TrimSpace(outputFormat)
+	if trimmed == "" {
+		return ""
+	}
+	return trimmed
+}
+
 func shouldRegisterChatDocumentArtifact(content string, options types.RegisterChatDocumentArtifactOptions) bool {
 	trimmed := strings.TrimSpace(content)
-	if trimmed == "" {
-		return false
-	}
 	operation := normalizeChatDocumentOperation(options.Operation)
+	hasAuthoritativeSignal := hasAuthoritativeChatDocumentArtifactSignal(options)
+	if trimmed == "" {
+		return options.BaseArtifact != nil &&
+			types.NormalizeChatDocumentGenerationStatus(options.DocumentGenerationStatus) == types.ChatDocumentGenerationStatusCompleted &&
+			(operation == types.ChatDocumentOperationContinue || operation == types.ChatDocumentOperationRevise)
+	}
+	if !hasAuthoritativeSignal {
+		if runeLen(trimmed) < 2000 {
+			return false
+		}
+		headingCount := len(chatDocumentHeadingRE.FindAllStringSubmatch(trimmed, -1))
+		if headingCount >= 2 || (headingCount >= 1 && (chatDocumentListRE.MatchString(trimmed) || chatDocumentTableRE.MatchString(trimmed))) {
+			return chatDocumentQueryHintRE.MatchString(options.UserQuery)
+		}
+		return chatDocumentQueryHintRE.MatchString(options.UserQuery) && runeLen(trimmed) >= 3000
+	}
 	if options.BaseArtifact != nil && (operation == types.ChatDocumentOperationContinue || operation == types.ChatDocumentOperationRevise) {
+		return true
+	}
+	if options.NeedArtifact {
+		if runeLen(trimmed) >= 120 {
+			return true
+		}
+		headingCount := len(chatDocumentHeadingRE.FindAllStringSubmatch(trimmed, -1))
+		return headingCount > 0 || chatDocumentListRE.MatchString(trimmed) || chatDocumentTableRE.MatchString(trimmed)
+	}
+	if operation == types.ChatDocumentOperationRevise && options.BaseArtifact != nil {
 		return true
 	}
 	if runeLen(trimmed) < 2000 {
 		return false
-	}
-	if operation == types.ChatDocumentOperationRevise && options.BaseArtifact != nil {
-		return true
 	}
 	headingCount := len(chatDocumentHeadingRE.FindAllStringSubmatch(trimmed, -1))
 	if headingCount >= 2 {
@@ -362,6 +981,28 @@ func shouldRegisterChatDocumentArtifact(content string, options types.RegisterCh
 		return true
 	}
 	return chatDocumentQueryHintRE.MatchString(options.UserQuery) && runeLen(trimmed) >= 3000
+}
+
+func hasAuthoritativeChatDocumentArtifactSignal(options types.RegisterChatDocumentArtifactOptions) bool {
+	if options.NeedArtifact || options.UseLongDocument {
+		return true
+	}
+	if strings.TrimSpace(options.OutputMode) == types.ChatDocumentOutputModeFull {
+		return true
+	}
+	if strings.TrimSpace(options.GenerationRunID) != "" {
+		return true
+	}
+	operation := normalizeChatDocumentOperation(options.Operation)
+	return options.BaseArtifact != nil &&
+		(operation == types.ChatDocumentOperationContinue || operation == types.ChatDocumentOperationRevise || operation == types.ChatDocumentOperationRegenerate)
+}
+
+func defaultChatDocumentGenerationStatus(options types.RegisterChatDocumentArtifactOptions) string {
+	if options.UseLongDocument || strings.TrimSpace(options.OutputMode) == types.ChatDocumentOutputModeFull || strings.TrimSpace(options.GenerationRunID) != "" {
+		return types.ChatDocumentGenerationStatusContinuing
+	}
+	return ""
 }
 
 type chatDocumentSnapshotBuildResult struct {
@@ -381,10 +1022,22 @@ func buildChatDocumentSnapshotResult(content string, options types.RegisterChatD
 	if base == nil || strings.TrimSpace(base.ContentSnapshot) == "" {
 		return chatDocumentSnapshotBuildResult{Snapshot: trimmed}
 	}
+	if (trimmed == "" || chatDocumentIsCompletionNotice(trimmed)) && types.NormalizeChatDocumentGenerationStatus(options.DocumentGenerationStatus) == types.ChatDocumentGenerationStatusCompleted {
+		return chatDocumentSnapshotBuildResult{Snapshot: strings.TrimSpace(base.ContentSnapshot)}
+	}
 	if outputMode == types.ChatDocumentOutputModeFull {
 		return chatDocumentSnapshotBuildResult{Snapshot: trimmed}
 	}
+	targetHeading := resolveDocumentTargetHeading(options.UserQuery, options.TargetHeading)
+	mergeMode := normalizeChatDocumentMergeMode(options.MergeMode, options.Intent, targetHeading)
 	if operation == types.ChatDocumentOperationContinue {
+		if targetHeading != "" && mergeMode == types.ChatDocumentMergeModeAppendToSection {
+			merged := mergeChatDocumentRevisionDelta(base.ContentSnapshot, buildChatDocumentAppendPatch(targetHeading, trimmed))
+			if chatDocumentContainsString(merged.QualityIssues, types.ChatDocumentQualityIssueDeltaMergeUncertain) {
+				merged.QualityIssues = uniqueStrings(append(merged.QualityIssues, types.ChatDocumentQualityIssueTargetSectionUncertain))
+			}
+			return chatDocumentSnapshotBuildResult{Snapshot: merged.Snapshot, QualityIssues: merged.QualityIssues}
+		}
 		return chatDocumentSnapshotBuildResult{Snapshot: mergeChatDocumentContinuation(base.ContentSnapshot, trimmed)}
 	}
 	if operation == types.ChatDocumentOperationRevise {
@@ -392,61 +1045,6 @@ func buildChatDocumentSnapshotResult(content string, options types.RegisterChatD
 		return chatDocumentSnapshotBuildResult{Snapshot: merged.Snapshot, QualityIssues: merged.QualityIssues}
 	}
 	return chatDocumentSnapshotBuildResult{Snapshot: trimmed}
-}
-
-type chatDocumentRevisionMergeResult struct {
-	Snapshot      string
-	QualityIssues []string
-}
-
-type chatDocumentPatchOperation struct {
-	Action  string
-	Heading string
-	Content string
-}
-
-func mergeChatDocumentRevisionDelta(base string, delta string) chatDocumentRevisionMergeResult {
-	baseTrimmed := strings.TrimSpace(base)
-	deltaTrimmed := strings.TrimSpace(delta)
-	if baseTrimmed == "" {
-		return chatDocumentRevisionMergeResult{Snapshot: deltaTrimmed}
-	}
-	if deltaTrimmed == "" {
-		return chatDocumentRevisionMergeResult{Snapshot: baseTrimmed}
-	}
-
-	patchPayload, patchExtractionIssues, patchExtracted := extractEmbeddedChatDocumentPatch(deltaTrimmed)
-	if patchExtracted {
-		deltaTrimmed = patchPayload
-	}
-
-	patchOps, patchDetected, patchValid := parseChatDocumentPatch(deltaTrimmed)
-	if patchDetected {
-		result := applyChatDocumentStructuredPatch(baseTrimmed, deltaTrimmed, patchOps, patchValid)
-		result.QualityIssues = uniqueStrings(append(result.QualityIssues, patchExtractionIssues...))
-		return result
-	}
-
-	deltaHeading, deltaLevel, ok := firstMarkdownHeading(deltaTrimmed)
-	if !ok {
-		return chatDocumentRevisionMergeResult{
-			Snapshot:      appendChatDocumentFragment(baseTrimmed, deltaTrimmed),
-			QualityIssues: []string{types.ChatDocumentQualityIssueDeltaMergeUncertain},
-		}
-	}
-
-	start, end, found := findMarkdownSectionRange(baseTrimmed, deltaHeading, deltaLevel)
-	if !found {
-		if looksLikeFullDocumentRevision(deltaTrimmed, deltaLevel) {
-			return chatDocumentRevisionMergeResult{Snapshot: deltaTrimmed}
-		}
-		return chatDocumentRevisionMergeResult{
-			Snapshot:      appendChatDocumentFragment(baseTrimmed, deltaTrimmed),
-			QualityIssues: []string{types.ChatDocumentQualityIssueDeltaMergeUncertain},
-		}
-	}
-
-	return chatDocumentRevisionMergeResult{Snapshot: replaceChatDocumentRange(baseTrimmed, start, end, deltaTrimmed)}
 }
 
 type revisionArtifactQualityResult struct {
@@ -492,8 +1090,91 @@ type artifactSnapshotPreparationResult struct {
 	QualityIssues []string
 }
 
+type artifactMarkdownQualityResult struct {
+	Status                   string
+	DocumentGenerationStatus string
+	QualityIssues            []string
+}
+
+type markdownHeadingNormalizationResult struct {
+	Content string
+	Changed bool
+}
+
+func normalizeGeneratedMarkdownHeadingLine(line string) (string, bool, bool) {
+	leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+	trimmed := strings.TrimSpace(strings.TrimLeft(line, "\ufeff"))
+	if trimmed == "" {
+		return line, false, false
+	}
+	markerCount := 0
+	for markerCount < len(trimmed) && markerCount < 6 && trimmed[markerCount] == '#' {
+		markerCount++
+	}
+	if markerCount == 0 || markerCount >= len(trimmed) || trimmed[markerCount] == '#' {
+		return line, false, false
+	}
+	rest := strings.TrimSpace(trimmed[markerCount:])
+	if rest == "" {
+		return line, false, false
+	}
+	normalized := leading + strings.Repeat("#", markerCount) + " " + rest
+	return normalized, true, normalized != line
+}
+
+func normalizeGeneratedMarkdownHeadings(content string) markdownHeadingNormalizationResult {
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	if strings.TrimSpace(normalized) == "" {
+		return markdownHeadingNormalizationResult{}
+	}
+	lines := strings.Split(normalized, "\n")
+	result := make([]string, 0, len(lines)+8)
+	inCodeFence := false
+	changed := false
+	for index, rawLine := range lines {
+		line := strings.TrimLeft(rawLine, "\ufeff")
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inCodeFence = !inCodeFence
+			result = append(result, line)
+			continue
+		}
+		if !inCodeFence {
+			if headingLine, ok, lineChanged := normalizeGeneratedMarkdownHeadingLine(line); ok {
+				if lineChanged {
+					changed = true
+				}
+				if len(result) > 0 && strings.TrimSpace(result[len(result)-1]) != "" {
+					result = append(result, "")
+					changed = true
+				}
+				result = append(result, headingLine)
+				nextHeading := false
+				nextTrimmed := ""
+				if index+1 < len(lines) {
+					nextTrimmed = strings.TrimSpace(strings.TrimLeft(lines[index+1], "\ufeff"))
+					_, nextHeading, _ = normalizeGeneratedMarkdownHeadingLine(lines[index+1])
+				}
+				if nextTrimmed != "" && !nextHeading {
+					result = append(result, "")
+					changed = true
+				}
+				continue
+			}
+		}
+		result = append(result, line)
+	}
+	content = strings.TrimSpace(strings.Join(result, "\n"))
+	if content != strings.TrimSpace(normalized) {
+		changed = true
+	}
+	return markdownHeadingNormalizationResult{Content: content, Changed: changed}
+}
+
 func prepareChatDocumentArtifactSnapshot(snapshot string, options types.RegisterChatDocumentArtifactOptions) artifactSnapshotPreparationResult {
 	trimmed := strings.TrimSpace(snapshot)
+	trimmed, _ = types.StripChatDocumentCompletionMarker(trimmed)
 	issues := make([]string, 0, 3)
 	if normalizeChatDocumentOperation(options.Operation) == types.ChatDocumentOperationRevise {
 		var trimmedLead bool
@@ -502,6 +1183,11 @@ func prepareChatDocumentArtifactSnapshot(snapshot string, options types.Register
 			issues = append(issues, types.ChatDocumentQualityIssueRevisionPreambleTrimmed)
 		}
 	}
+	normalizedMarkdown, normalizationIssues := normalizeGeneratedMarkdown(trimmed)
+	if strings.TrimSpace(normalizedMarkdown) != "" {
+		trimmed = normalizedMarkdown
+	}
+	issues = append(issues, normalizationIssues...)
 	var closedFence bool
 	trimmed, closedFence = closeUnclosedChatDocumentCodeFence(trimmed)
 	if closedFence {
@@ -523,6 +1209,41 @@ func prepareChatDocumentArtifactSnapshot(snapshot string, options types.Register
 		ShouldCreate:  strings.TrimSpace(trimmed) != "",
 		QualityIssues: uniqueStrings(issues),
 	}
+}
+
+func evaluateArtifactMarkdownQuality(snapshot string, completionStatus string, documentGenerationStatus string, options types.RegisterChatDocumentArtifactOptions) artifactMarkdownQualityResult {
+	if !shouldApplyArtifactMarkdownQualityGate(options, documentGenerationStatus) {
+		return artifactMarkdownQualityResult{DocumentGenerationStatus: types.NormalizeOptionalChatDocumentGenerationStatus(documentGenerationStatus)}
+	}
+	operation := normalizeChatDocumentOperation(options.Operation)
+	if options.BaseArtifact != nil &&
+		(operation == types.ChatDocumentOperationContinue || operation == types.ChatDocumentOperationRevise) &&
+		strings.TrimSpace(snapshot) == strings.TrimSpace(options.BaseArtifact.ContentSnapshot) {
+		return artifactMarkdownQualityResult{DocumentGenerationStatus: types.NormalizeOptionalChatDocumentGenerationStatus(documentGenerationStatus)}
+	}
+	issues := validateGeneratedDocumentMarkdown(strings.TrimSpace(snapshot))
+	if len(issues) == 0 {
+		return artifactMarkdownQualityResult{DocumentGenerationStatus: types.NormalizeOptionalChatDocumentGenerationStatus(documentGenerationStatus)}
+	}
+	nextDocumentGenerationStatus := types.NormalizeOptionalChatDocumentGenerationStatus(documentGenerationStatus)
+	if completionStatus == types.MessageCompletionStatusCompleted && nextDocumentGenerationStatus != types.ChatDocumentGenerationStatusBlocked {
+		nextDocumentGenerationStatus = types.ChatDocumentGenerationStatusNeedsReview
+	}
+	return artifactMarkdownQualityResult{
+		Status:                   types.ChatDocumentArtifactStatusPartial,
+		DocumentGenerationStatus: nextDocumentGenerationStatus,
+		QualityIssues:            markdownQualityIssueCodes(issues),
+	}
+}
+
+func shouldApplyArtifactMarkdownQualityGate(options types.RegisterChatDocumentArtifactOptions, documentGenerationStatus string) bool {
+	if strings.TrimSpace(options.OutputMode) == types.ChatDocumentOutputModeFull {
+		return true
+	}
+	if options.UseLongDocument {
+		return true
+	}
+	return strings.TrimSpace(documentGenerationStatus) != ""
 }
 
 func mergeChatDocumentContinuation(base string, delta string) string {
@@ -547,6 +1268,7 @@ func hydrateChatDocumentArtifactDerivedFields(artifact *types.ChatDocumentArtifa
 	}
 	snapshot := strings.TrimSpace(artifact.ContentSnapshot)
 	structure := analyzeChatDocumentStructure(snapshot)
+	artifact.EvidenceSummary = buildChatDocumentEvidenceSummary(artifact.EvidenceRefs)
 	issues := append([]string{}, artifact.QualityIssues...)
 	issues = append(issues, extraIssues...)
 	if runeLen(snapshot) > types.ChatDocumentArtifactInlineContinuationMaxChars {
@@ -558,12 +1280,105 @@ func hydrateChatDocumentArtifactDerivedFields(artifact *types.ChatDocumentArtifa
 	if artifact.Operation == types.ChatDocumentOperationRevise && artifact.Status == types.ChatDocumentArtifactStatusPartial && structure.HeadingCount == 0 {
 		issues = append(issues, types.ChatDocumentQualityIssueRevisionMissingHeading)
 	}
+	artifact.DocumentGenerationStatus = types.NormalizeOptionalChatDocumentGenerationStatus(artifact.DocumentGenerationStatus)
 	artifact.StructureInfo = structure
 	artifact.SnapshotCharCount = runeLen(snapshot)
 	artifact.QualityIssues = uniqueStrings(issues)
-	artifact.CanInlineContinue = artifact.CanContinue()
+	artifact.CanContinueDocument = artifact.CanContinue()
+	artifact.CanInlineContinue = artifact.CanInlineContinueWithFullSnapshot()
+	artifact.ContinuationContextMode = artifact.ContinuationMode()
 	artifact.UserHint = chatDocumentUserHintForIssues(artifact.QualityIssues, artifact.Operation)
 	return artifact
+}
+
+func buildChatDocumentEvidenceSummary(refs []types.ChatDocumentEvidenceRef) *types.ChatDocumentEvidenceSummary {
+	if len(refs) == 0 {
+		return nil
+	}
+	type sourceAggregate struct {
+		knowledgeBaseID string
+		knowledgeID     string
+		sourceTitle     string
+		chunkIDs        map[string]struct{}
+		chunkCount      int
+		maxScore        float64
+	}
+
+	summary := &types.ChatDocumentEvidenceSummary{}
+	knowledgeBaseIDs := make(map[string]struct{}, len(refs))
+	knowledgeIDs := make(map[string]struct{}, len(refs))
+	chunkIDs := make(map[string]struct{}, len(refs))
+	sourceAggregates := make(map[string]*sourceAggregate, len(refs))
+
+	for _, ref := range refs {
+		summary.RefCount++
+		if ref.KnowledgeBaseID != "" {
+			knowledgeBaseIDs[ref.KnowledgeBaseID] = struct{}{}
+		}
+		if ref.KnowledgeID != "" {
+			knowledgeIDs[ref.KnowledgeID] = struct{}{}
+		}
+		if ref.ChunkID != "" {
+			chunkIDs[ref.ChunkID] = struct{}{}
+		}
+
+		sourceKey := strings.Join([]string{ref.KnowledgeBaseID, ref.KnowledgeID, ref.SourceTitle}, "|")
+		aggregate := sourceAggregates[sourceKey]
+		if aggregate == nil {
+			aggregate = &sourceAggregate{
+				knowledgeBaseID: ref.KnowledgeBaseID,
+				knowledgeID:     ref.KnowledgeID,
+				sourceTitle:     ref.SourceTitle,
+				chunkIDs:        make(map[string]struct{}),
+			}
+			sourceAggregates[sourceKey] = aggregate
+		}
+		if ref.ChunkID == "" {
+			aggregate.chunkCount++
+		} else if _, exists := aggregate.chunkIDs[ref.ChunkID]; !exists {
+			aggregate.chunkIDs[ref.ChunkID] = struct{}{}
+			aggregate.chunkCount++
+		}
+		if ref.Score > aggregate.maxScore {
+			aggregate.maxScore = ref.Score
+		}
+	}
+
+	summary.KnowledgeBaseCount = len(knowledgeBaseIDs)
+	summary.KnowledgeCount = len(knowledgeIDs)
+	summary.ChunkCount = len(chunkIDs)
+	if summary.ChunkCount == 0 {
+		summary.ChunkCount = summary.RefCount
+	}
+
+	summary.Sources = make([]types.ChatDocumentEvidenceSourceSummary, 0, len(sourceAggregates))
+	for _, aggregate := range sourceAggregates {
+		summary.Sources = append(summary.Sources, types.ChatDocumentEvidenceSourceSummary{
+			KnowledgeBaseID: aggregate.knowledgeBaseID,
+			KnowledgeID:     aggregate.knowledgeID,
+			SourceTitle:     aggregate.sourceTitle,
+			ChunkCount:      aggregate.chunkCount,
+			MaxScore:        aggregate.maxScore,
+		})
+	}
+	sort.Slice(summary.Sources, func(i, j int) bool {
+		left := summary.Sources[i]
+		right := summary.Sources[j]
+		if left.ChunkCount != right.ChunkCount {
+			return left.ChunkCount > right.ChunkCount
+		}
+		if left.MaxScore != right.MaxScore {
+			return left.MaxScore > right.MaxScore
+		}
+		if left.SourceTitle != right.SourceTitle {
+			return left.SourceTitle < right.SourceTitle
+		}
+		return left.KnowledgeID < right.KnowledgeID
+	})
+	if len(summary.Sources) > 8 {
+		summary.Sources = append([]types.ChatDocumentEvidenceSourceSummary(nil), summary.Sources[:8]...)
+	}
+	return summary
 }
 
 func analyzeChatDocumentStructure(content string) *types.ChatDocumentStructureInfo {
@@ -614,11 +1429,29 @@ func closeUnclosedChatDocumentCodeFence(snapshot string) (string, bool) {
 }
 
 func chatDocumentUserHintForIssues(issues []string, operation string) string {
-	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueInlineContextTooLarge) {
-		return "当前文档过长，无法直接基于整篇继续生成。请改为指定章节修改，或先让模型生成精简版后再继续。"
+	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueDuplicateDocumentHead) {
+		return "检测到本轮续写重新输出了文档开头，系统已暂停自动续写。请检查完整文档后再继续。"
+	}
+	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueSectionNumberReset) {
+		return "检测到本轮续写出现章节编号回退，系统已暂停自动续写。请检查完整文档后再继续。"
+	}
+	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueLowNoveltyDelta) {
+		return "检测到本轮续写与已有内容高度重复，系统已暂停自动续写。请检查完整文档后再继续。"
+	}
+	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueTerminalSectionTail) {
+		return "检测到文档已到收尾章节，系统已停止自动续写。"
 	}
 	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueSnapshotTruncated) {
 		return "当前版本过长，系统只保留了截断快照。建议先缩小修改范围，再继续生成。"
+	}
+	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueInlineContextTooLarge) {
+		if operation == types.ChatDocumentOperationRevise {
+			return "当前文档较长，系统会使用目录、开头和末尾窗口辅助修改；建议指定章节或段落范围。"
+		}
+		return "当前文档较长，系统会使用目录和末尾窗口继续自动续写，避免把整篇文档一次性塞入上下文。"
+	}
+	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueTargetSectionUncertain) {
+		return "目标章节未能唯一定位，系统已按保守策略合并到文档末尾。建议明确章节标题或编号后重试。"
 	}
 	if operation == types.ChatDocumentOperationRevise && chatDocumentContainsString(issues, types.ChatDocumentQualityIssueDeltaMergeUncertain) {
 		return "本次修改有部分片段无法精确定位，系统已按保守策略合并到文档末尾。建议检查完整文档后继续微调。"
@@ -631,6 +1464,15 @@ func chatDocumentUserHintForIssues(issues []string, operation string) string {
 	}
 	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueUnclosedCodeFence) {
 		return "检测到末尾代码块未闭合，系统已自动补全代码围栏。"
+	}
+	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueInternalPromptLeakage) {
+		return "检测到内部提示词或上下文标记混入文档，系统已将该版本标记为待复核。请检查正文后再继续。"
+	}
+	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueMarkdownStructureInvalid) {
+		return "检测到 Markdown 结构仍不稳定，系统已将该版本标记为待复核。请检查标题、列表和段落结构后再继续。"
+	}
+	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueMarkdownHeadingNormalized) {
+		return "检测到 Markdown 标题格式不规范，系统已自动补齐标题空格和段落换行。"
 	}
 	return ""
 }
@@ -764,202 +1606,26 @@ func looksLikeFullDocumentRevision(content string, firstHeadingLevel int) bool {
 	return len(chatDocumentHeadingRE.FindAllStringSubmatch(trimmed, -1)) >= 2
 }
 
-func findMarkdownSectionRange(content string, heading string, level int) (int, int, bool) {
-	matches := chatDocumentHeadingRE.FindAllStringSubmatchIndex(content, -1)
-	if len(matches) == 0 {
-		return 0, 0, false
-	}
-
-	for idx, match := range matches {
-		if len(match) < 6 {
-			continue
-		}
-		currentLevel := len(content[match[2]:match[3]])
-		currentHeading := strings.TrimSpace(content[match[4]:match[5]])
-		if currentLevel != level || currentHeading != heading {
-			continue
-		}
-
-		end := len(content)
-		for nextIdx := idx + 1; nextIdx < len(matches); nextIdx++ {
-			next := matches[nextIdx]
-			if len(next) < 6 {
-				continue
-			}
-			nextLevel := len(content[next[2]:next[3]])
-			if nextLevel <= currentLevel {
-				end = next[0]
-				break
-			}
-		}
-		return match[0], end, true
-	}
-
-	return 0, 0, false
-}
-
-func parseChatDocumentPatch(content string) ([]chatDocumentPatchOperation, bool, bool) {
-	matches := chatDocumentPatchEnvelopeRE.FindStringSubmatch(content)
-	if len(matches) != 2 {
-		return nil, false, false
-	}
-	body := strings.TrimSpace(matches[1])
-	if body == "" {
-		return nil, true, false
-	}
-
-	opMatches := chatDocumentPatchOperationRE.FindAllStringSubmatchIndex(body, -1)
-	if len(opMatches) == 0 {
-		return nil, true, false
-	}
-
-	operations := make([]chatDocumentPatchOperation, 0, len(opMatches))
-	valid := true
-	lastEnd := 0
-	for _, match := range opMatches {
-		if len(match) < 12 {
-			valid = false
-			continue
-		}
-		if strings.TrimSpace(body[lastEnd:match[0]]) != "" {
-			valid = false
-		}
-		if strings.TrimSpace(body[match[2]:match[3]]) != strings.TrimSpace(body[match[10]:match[11]]) {
-			valid = false
-		}
-		heading := ""
-		if match[4] >= 0 && match[5] >= 0 {
-			heading = body[match[4]:match[5]]
-		} else if match[6] >= 0 && match[7] >= 0 {
-			heading = body[match[6]:match[7]]
-		}
-		operations = append(operations, chatDocumentPatchOperation{
-			Action:  strings.TrimSpace(body[match[2]:match[3]]),
-			Heading: strings.TrimSpace(heading),
-			Content: strings.TrimSpace(body[match[8]:match[9]]),
-		})
-		lastEnd = match[1]
-	}
-	if strings.TrimSpace(body[lastEnd:]) != "" {
-		valid = false
-	}
-	return operations, true, valid
-}
-
-func extractEmbeddedChatDocumentPatch(content string) (string, []string, bool) {
-	trimmed := strings.TrimSpace(content)
-	start := strings.Index(trimmed, "<document_patch>")
-	if start < 0 {
-		return trimmed, nil, false
-	}
-	end := strings.LastIndex(trimmed, "</document_patch>")
-	if end < 0 || end < start {
-		return trimmed, nil, false
-	}
-	end += len("</document_patch>")
-	prefix := strings.TrimSpace(trimmed[:start])
-	suffix := strings.TrimSpace(trimmed[end:])
-	if suffix != "" {
-		return trimmed, nil, false
-	}
-	if prefix == "" {
-		return strings.TrimSpace(trimmed[start:end]), nil, true
-	}
-	if runeLen(prefix) <= 200 && chatDocumentRevisionLeadRE.MatchString(prefix) {
-		return strings.TrimSpace(trimmed[start:end]), []string{types.ChatDocumentQualityIssueRevisionPreambleTrimmed}, true
-	}
-	return trimmed, nil, false
-}
-
-func applyChatDocumentStructuredPatch(base string, rawDelta string, operations []chatDocumentPatchOperation, valid bool) chatDocumentRevisionMergeResult {
-	issues := make([]string, 0, 1)
-	current := strings.TrimSpace(base)
-	if !valid {
-		issues = append(issues, types.ChatDocumentQualityIssueDeltaMergeUncertain)
-	}
-	if len(operations) == 0 {
-		return chatDocumentRevisionMergeResult{
-			Snapshot:      appendChatDocumentFragment(current, extractChatDocumentPatchFallbackContent(rawDelta)),
-			QualityIssues: uniqueStrings(issues),
-		}
-	}
-
-	for _, operation := range operations {
-		if strings.TrimSpace(operation.Content) == "" {
-			issues = append(issues, types.ChatDocumentQualityIssueDeltaMergeUncertain)
-			continue
-		}
-		start, end, matchedHeading, found := findMarkdownSectionRangeBySelector(current, operation.Heading)
-		switch operation.Action {
-		case "replace":
-			if !found {
-				current = appendChatDocumentFragment(current, operation.Content)
-				issues = append(issues, types.ChatDocumentQualityIssueDeltaMergeUncertain)
-				continue
-			}
-			replacement := ensurePatchReplaceHeading(operation.Content, operation.Heading, matchedHeading)
-			current = replaceChatDocumentRange(current, start, end, replacement)
-		case "append":
-			if !found {
-				current = appendChatDocumentFragment(current, operation.Content)
-				issues = append(issues, types.ChatDocumentQualityIssueDeltaMergeUncertain)
-				continue
-			}
-			current = replaceChatDocumentRange(current, start, end, appendChatDocumentFragment(current[start:end], operation.Content))
-		case "insert_after":
-			if !found {
-				current = appendChatDocumentFragment(current, operation.Content)
-				issues = append(issues, types.ChatDocumentQualityIssueDeltaMergeUncertain)
-				continue
-			}
-			current = joinChatDocumentSegments(current[:end], operation.Content, current[end:])
-		default:
-			current = appendChatDocumentFragment(current, operation.Content)
-			issues = append(issues, types.ChatDocumentQualityIssueDeltaMergeUncertain)
-		}
-	}
-
-	return chatDocumentRevisionMergeResult{
-		Snapshot:      strings.TrimSpace(current),
-		QualityIssues: uniqueStrings(issues),
-	}
-}
-
-func extractChatDocumentPatchFallbackContent(content string) string {
-	matches := chatDocumentPatchEnvelopeRE.FindStringSubmatch(content)
-	if len(matches) != 2 {
-		return strings.TrimSpace(content)
-	}
-	body := strings.TrimSpace(matches[1])
-	if body == "" {
-		return ""
-	}
-	opMatches := chatDocumentPatchOperationRE.FindAllStringSubmatch(body, -1)
-	if len(opMatches) == 0 {
-		return body
-	}
-	fragments := make([]string, 0, len(opMatches))
-	for _, match := range opMatches {
-		if len(match) < 5 {
-			continue
-		}
-		fragments = append(fragments, strings.TrimSpace(match[4]))
-	}
-	return joinChatDocumentSegments(fragments...)
-}
-
-func findMarkdownSectionRangeBySelector(content string, selector string) (int, int, string, bool) {
+func findMarkdownSectionRangeBySelector(content string, selector string) (int, int, string, bool, bool) {
 	trimmedSelector := strings.TrimSpace(selector)
 	if trimmedSelector == "" {
-		return 0, 0, "", false
+		return 0, 0, "", false, false
 	}
+	type sectionCandidate struct {
+		start          int
+		end            int
+		matchedHeading string
+	}
+
+	selectorHeading := trimmedSelector
+	selectorLevel := 0
 	if heading, level, ok := parseMarkdownHeadingSelector(trimmedSelector); ok {
-		start, end, found := findMarkdownSectionRange(content, heading, level)
-		if !found {
-			return 0, 0, "", false
-		}
-		return start, end, strings.Repeat("#", level) + " " + heading, true
+		selectorHeading = heading
+		selectorLevel = level
 	}
+	selectorNorm := normalizeHeadingForMatch(selectorHeading)
+	bestScore := 0
+	candidates := make([]sectionCandidate, 0, 2)
 
 	matches := chatDocumentHeadingRE.FindAllStringSubmatchIndex(content, -1)
 	for idx, match := range matches {
@@ -968,9 +1634,6 @@ func findMarkdownSectionRangeBySelector(content string, selector string) (int, i
 		}
 		currentLevel := len(content[match[2]:match[3]])
 		currentHeading := strings.TrimSpace(content[match[4]:match[5]])
-		if currentHeading != trimmedSelector {
-			continue
-		}
 		end := len(content)
 		for nextIdx := idx + 1; nextIdx < len(matches); nextIdx++ {
 			next := matches[nextIdx]
@@ -983,55 +1646,85 @@ func findMarkdownSectionRangeBySelector(content string, selector string) (int, i
 				break
 			}
 		}
-		return match[0], end, strings.Repeat("#", currentLevel) + " " + currentHeading, true
-	}
-	return 0, 0, "", false
-}
 
-func parseMarkdownHeadingSelector(selector string) (string, int, bool) {
-	matches := chatDocumentHeadingRE.FindStringSubmatch(selector)
-	if len(matches) != 3 {
-		return "", 0, false
-	}
-	return strings.TrimSpace(matches[2]), len(matches[1]), true
-}
-
-func ensurePatchReplaceHeading(content string, selector string, matchedHeading string) string {
-	trimmed := strings.TrimSpace(content)
-	if trimmed == "" {
-		return trimmed
-	}
-	if _, _, ok := firstMarkdownHeading(trimmed); ok {
-		return trimmed
-	}
-	headingLine := strings.TrimSpace(matchedHeading)
-	if headingLine == "" {
-		headingLine = strings.TrimSpace(selector)
-	}
-	if headingLine == "" {
-		return trimmed
-	}
-	return joinChatDocumentSegments(headingLine, trimmed)
-}
-
-func replaceChatDocumentRange(content string, start int, end int, replacement string) string {
-	return joinChatDocumentSegments(content[:start], replacement, content[end:])
-}
-
-func appendChatDocumentFragment(base string, fragment string) string {
-	return joinChatDocumentSegments(base, fragment)
-}
-
-func joinChatDocumentSegments(parts ...string) string {
-	segments := make([]string, 0, len(parts))
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed == "" {
+		score := 0
+		switch {
+		case selectorLevel > 0 && currentLevel == selectorLevel && currentHeading == selectorHeading:
+			score = 4
+		default:
+			currentNorm := normalizeHeadingForMatch(currentHeading)
+			switch {
+			case currentHeading == selectorHeading:
+				score = 2
+			case selectorNorm != "" && currentNorm == selectorNorm:
+				score = 2
+			case selectorNorm != "" && len([]rune(selectorNorm)) >= 4 && (strings.Contains(currentNorm, selectorNorm) || strings.Contains(selectorNorm, currentNorm)):
+				score = 1
+			}
+		}
+		if score == 0 {
 			continue
 		}
-		segments = append(segments, trimmed)
+		if score > bestScore {
+			bestScore = score
+			candidates = candidates[:0]
+		}
+		if score == bestScore {
+			candidates = append(candidates, sectionCandidate{
+				start:          match[0],
+				end:            end,
+				matchedHeading: strings.Repeat("#", currentLevel) + " " + currentHeading,
+			})
+		}
 	}
-	return strings.Join(segments, "\n\n")
+	if len(candidates) == 0 {
+		return 0, 0, "", false, false
+	}
+	if len(candidates) > 1 {
+		return 0, 0, "", false, true
+	}
+	selected := candidates[0]
+	return selected.start, selected.end, selected.matchedHeading, true, false
+}
+
+func normalizeHeadingForMatch(title string) string {
+	trimmed := strings.TrimSpace(title)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = chatDocumentHeadingMarkerTrimRE.ReplaceAllString(trimmed, "")
+	trimmed = chatDocumentHeadingNumberTrimRE.ReplaceAllString(trimmed, "")
+	trimmed = strings.TrimSpace(trimmed)
+	trimmed = regexp.MustCompile(`\s+`).ReplaceAllString(trimmed, "")
+	return strings.ToLower(trimmed)
+}
+
+func inferSectionTargetFromQuery(query string) string {
+	trimmedQuery := strings.TrimSpace(query)
+	if trimmedQuery == "" {
+		return ""
+	}
+	if matches := chatDocumentQuotedTargetRE.FindStringSubmatch(trimmedQuery); len(matches) == 2 {
+		return strings.TrimSpace(matches[1])
+	}
+	if match := chatDocumentScopedPhraseRE.FindString(trimmedQuery); match != "" {
+		cleaned := strings.TrimSpace(match)
+		for _, prefix := range []string{"在", "对", "把", "将", "就"} {
+			cleaned = strings.TrimPrefix(cleaned, prefix)
+		}
+		cleaned = strings.TrimSpace(cleaned)
+		for _, suffix := range []string{"章节", "小节", "模块", "部分"} {
+			cleaned = strings.TrimSuffix(cleaned, suffix)
+		}
+		cleaned = chatDocumentTargetLeadTrimRE.ReplaceAllString(cleaned, "")
+		return strings.TrimSpace(cleaned)
+	}
+	for _, keyword := range []string{"智慧运行", "智慧安防", "数据湖", "算力平台", "智能安全监控应急中心", "应急中心", "AR眼镜"} {
+		if strings.Contains(trimmedQuery, keyword) {
+			return keyword
+		}
+	}
+	return ""
 }
 
 func chatDocumentOperationForIntent(intent string) string {

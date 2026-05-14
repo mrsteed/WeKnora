@@ -22,13 +22,13 @@ type AsynqTaskParams struct {
 	Server               *asynq.Server
 	KnowledgeService     interfaces.KnowledgeService
 	KnowledgeBaseService interfaces.KnowledgeBaseService
-	LongDocumentService  interfaces.LongDocumentTaskService
 	TagService           interfaces.KnowledgeTagService
 	DataSourceService    interfaces.DataSourceService
 	ChunkExtractor       interfaces.TaskHandler `name:"chunkExtractor"`
 	DataTableSummary     interfaces.TaskHandler `name:"dataTableSummary"`
 	ImageMultimodal      interfaces.TaskHandler `name:"imageMultimodal"`
 	KnowledgePostProcess interfaces.TaskHandler `name:"knowledgePostProcess"`
+	LongDocumentTask     interfaces.TaskHandler `name:"longDocumentTask"`
 	WikiIngest           interfaces.TaskHandler `name:"wikiIngest"`
 	DeadLetterRepo       interfaces.TaskDeadLetterRepository
 }
@@ -161,14 +161,14 @@ func RunAsynqServer(params AsynqTaskParams) *asynq.ServeMux {
 	// Register knowledge post process handler
 	mux.HandleFunc(types.TypeKnowledgePostProcess, params.KnowledgePostProcess.Handle)
 
+	// Register long document execution handler
+	mux.HandleFunc(types.TypeLongDocumentExecution, params.LongDocumentTask.Handle)
+
 	// Register data source sync handler
 	mux.HandleFunc(types.TypeDataSourceSync, params.DataSourceService.ProcessSync)
 
 	// Register wiki ingest handler
 	mux.HandleFunc(types.TypeWikiIngest, params.WikiIngest.Handle)
-
-	// Register long document task handler
-	mux.HandleFunc(types.TypeLongDocumentTask, params.LongDocumentService.HandleTask)
 
 	go func() {
 		// Start the server

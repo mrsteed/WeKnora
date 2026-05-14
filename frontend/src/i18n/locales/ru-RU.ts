@@ -2533,6 +2533,7 @@ export default {
     attachmentTypeNotSupported: 'Неподдерживаемый тип файла: {name}',
     longDocumentTranslateRequiresSingleFile: 'Для режима перевода длинного документа нужно выбрать ровно один файл',
     longDocumentTranslateNoAttachments: 'Режим перевода длинного документа не поддерживает изображения и вложения',
+    longDocumentTranslateLegacyFrozen: 'Устаревший вход в фоновый перевод длинных документов заморожен. Сейчас доступны только просмотр и скачивание исторических задач. Пока используйте обычный режим чата; позже перевод будет объединён с режимом полного документа.',
     thinkingAlt: 'Обдумывание...',
     deepThoughtCompleted: 'Глубокий анализ завершён',
     deepThoughtAlt: 'Глубокий анализ'

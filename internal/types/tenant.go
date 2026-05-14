@@ -132,6 +132,9 @@ type RetrieverEngines struct {
 
 // GetEffectiveEngines returns the tenant's engines if configured, otherwise returns system defaults
 func (t *Tenant) GetEffectiveEngines() []RetrieverEngineParams {
+	if t == nil {
+		return GetDefaultRetrieverEngines()
+	}
 	if len(t.RetrieverEngines.Engines) > 0 {
 		return t.RetrieverEngines.Engines
 	}

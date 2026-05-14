@@ -618,6 +618,7 @@ export default {
     attachmentTypeNotSupported: "不支持的文件类型：{name}",
     longDocumentTranslateRequiresSingleFile: "长文档翻译模式下请选择且仅选择一个文件",
     longDocumentTranslateNoAttachments: "长文档翻译模式暂不支持图片或附件",
+    longDocumentTranslateLegacyFrozen: "旧版长文档后台翻译入口已冻结，当前仅保留历史任务查看与下载，请先使用普通对话模式。后续将统一到长文档模式。",
   },
   settings: {
     title: "设置",
@@ -3967,12 +3968,19 @@ export default {
     },
     completion: {
       completed: "已完成",
+      continuing: "正在继续生成剩余章节",
       partial: "输出被截断，结果不完整",
       failed: "生成失败，请重试",
       cancelled: "已停止生成",
     },
     loading: {
       finalizing: "正在整理最终文档…",
+    },
+    thoughtStage: {
+      planning: "规划中",
+      retrieving: "检索中",
+      generating: "生成中",
+      finalizing: "收尾中",
     },
     copy: {
       emptyContent: "当前回答为空，无法复制",

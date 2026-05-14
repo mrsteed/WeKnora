@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
@@ -15,12 +16,154 @@ import (
 
 // streamLLMResult holds accumulated output from a streaming LLM call.
 type streamLLMResult struct {
-	Content          string
-	ReasoningContent string // accumulated reasoning content, kept separate from answer
-	ToolCalls        []types.LLMToolCall
-	Usage            *types.TokenUsage
-	FinishReason     string // actual finish_reason from LLM (captured from last stream chunk)
-	StreamError      string // error message from stream (e.g., timeout), kept separate from Content
+	Content string
+	// ReasoningContent 累积模型返回的 reasoning_content / thinking 片段，
+	// 与面向用户展示的答案正文分离保存，供后续轮次按 provider 要求原样回放。
+	ReasoningContent      string
+	VisibleAnswerContent  string // answer chunks emitted to users, including source-tagged chunks
+	AnswerStreamed        bool
+	FinalAnswerStreamed   bool
+	DuplicateDocumentHead bool
+	SawDone               bool
+	ToolCalls             []types.LLMToolCall
+	Usage                 *types.TokenUsage
+	FinishReason          string // actual finish_reason from LLM (captured from last stream chunk)
+	StreamError           string // error message from stream (e.g., timeout), kept separate from Content
+}
+
+const duplicateDocumentHeadFinishReason = "partial_duplicate_head"
+
+func recentAssistantDocumentSnapshot(messages []chat.Message) (string, int) {
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role != "assistant" {
+			continue
+		}
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		if len([]rune(content)) < 600 {
+			continue
+		}
+		if len(streamDocumentHeadingTitles(content, 2)) < 2 {
+			continue
+		}
+		return content, i
+	}
+	return "", -1
+}
+
+func shouldEnableDuplicateDocumentHeadGuard(messages []chat.Message, snapshotIndex int) bool {
+	if snapshotIndex < 0 {
+		return false
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role != "user" {
+			continue
+		}
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		if content == lengthContinuationPrompt {
+			return true
+		}
+		return snapshotIndex > i
+	}
+	return true
+}
+
+func streamDocumentHeadingTitles(content string, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	headings := make([]string, 0, limit)
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		title := strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
+		if title == "" {
+			continue
+		}
+		headings = append(headings, title)
+		if len(headings) >= limit {
+			break
+		}
+	}
+	return headings
+}
+
+func normalizeStreamDocumentHeading(title string) string {
+	replacer := strings.NewReplacer(
+		" ", "",
+		"\t", "",
+		"\r", "",
+		"\n", "",
+		"-", "",
+		"_", "",
+		"|", "",
+		"`", "",
+		"*", "",
+		"~", "",
+		">", "",
+		"　", "",
+	)
+	return strings.ToLower(replacer.Replace(strings.TrimSpace(title)))
+}
+
+func streamPrefixLooksLikeDocumentHead(prefix string) bool {
+	trimmed := strings.TrimSpace(prefix)
+	if trimmed == "" {
+		return false
+	}
+	return strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "---")
+}
+
+func streamDuplicateHeadBufferReady(prefix string) bool {
+	trimmed := strings.TrimSpace(prefix)
+	if trimmed == "" {
+		return false
+	}
+	if !streamPrefixLooksLikeDocumentHead(trimmed) {
+		return true
+	}
+	if strings.Contains(trimmed, "\n") {
+		return true
+	}
+	return len([]rune(trimmed)) >= 80
+}
+
+func streamPrefixRepeatsDocumentHead(base string, prefix string) bool {
+	baseHeadings := streamDocumentHeadingTitles(base, 4)
+	if len(baseHeadings) == 0 {
+		return false
+	}
+	prefixHeadings := streamDocumentHeadingTitles(prefix, 2)
+	if len(prefixHeadings) == 0 {
+		return false
+	}
+	firstPrefixHeading := normalizeStreamDocumentHeading(prefixHeadings[0])
+	if firstPrefixHeading == "" {
+		return false
+	}
+	for _, heading := range baseHeadings {
+		if firstPrefixHeading == normalizeStreamDocumentHeading(heading) {
+			return true
+		}
+	}
+	return false
+}
+
+func streamChunkSource(chunk types.StreamResponse) string {
+	if chunk.Data == nil {
+		return ""
+	}
+	source, _ := chunk.Data["source"].(string)
+	return source
 }
 
 // streamLLMToEventBus streams LLM response through EventBus (generic method)
@@ -53,6 +196,9 @@ func (e *AgentEngine) streamLLMToEventBus(
 			firstChunkTime = time.Now()
 		}
 		responseTypeCounts[string(chunk.ResponseType)]++
+		if chunk.Done {
+			result.SawDone = true
+		}
 
 		// Capture error messages from the stream (e.g., "context deadline exceeded")
 		// but do NOT append them to result.Content — they would leak to the user
@@ -60,6 +206,14 @@ func (e *AgentEngine) streamLLMToEventBus(
 		if chunk.ResponseType == types.ResponseTypeError {
 			result.StreamError = chunk.Content
 			continue
+		}
+
+		if chunk.ResponseType == types.ResponseTypeAnswer && chunk.Content != "" {
+			result.AnswerStreamed = true
+			result.VisibleAnswerContent += chunk.Content
+			if streamChunkSource(chunk) == "final_answer_tool" {
+				result.FinalAnswerStreamed = true
+			}
 		}
 
 		if chunk.Content != "" {
@@ -110,9 +264,18 @@ func (e *AgentEngine) streamLLMToEventBus(
 		chunkCount, len(result.Content), len(result.ToolCalls),
 		streamDuration.Milliseconds(), responseTypeCounts)
 
-	// If the stream produced an error and no usable content/tool calls,
-	// surface it as a Go error so the caller can retry or degrade gracefully.
-	if result.StreamError != "" && result.Content == "" && len(result.ToolCalls) == 0 {
+	// If the stream failed after answer chunks were already emitted, keep the
+	// partial answer as usable output and let the caller close the stream cleanly.
+	// Source-tagged answer chunks are not part of Content, so VisibleAnswerContent
+	// is the authoritative signal for "the user has already seen an answer".
+	if result.StreamError != "" {
+		hasUsableAnswer := strings.TrimSpace(result.Content) != "" || strings.TrimSpace(result.VisibleAnswerContent) != ""
+		if hasUsableAnswer || len(result.ToolCalls) > 0 {
+			if result.FinishReason == "" && hasUsableAnswer {
+				result.FinishReason = "stream_error_after_answer"
+			}
+			return result, nil
+		}
 		return result, fmt.Errorf("LLM stream error: %s", result.StreamError)
 	}
 
@@ -140,6 +303,11 @@ func (e *AgentEngine) streamThinkingToEventBus(
 
 	pendingToolCalls := make(map[string]bool)
 	thinkingToolIDs := make(map[string]string) // tool_call_id -> event ID for thinking tool streams
+	priorDocumentSnapshot, priorDocumentSnapshotIndex := recentAssistantDocumentSnapshot(messages)
+	var answerPrefixBuffer strings.Builder
+	answerPrefixSource := "answer"
+	duplicateDocumentHeadBlocked := false
+	duplicateDocumentHeadDecided := !shouldEnableDuplicateDocumentHeadGuard(messages, priorDocumentSnapshotIndex)
 
 	// Track which event types we emitted for diagnostics
 	emittedEventTypes := make(map[string]int)
@@ -149,6 +317,55 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	// Generate IDs for this stream
 	thinkingID := generateEventID("thinking")
 	answerID := generateEventID("answer")
+	emitAnswerChunk := func(content string, source string) {
+		if content == "" {
+			return
+		}
+		answerStreamed = true
+		if source == "final_answer_tool" {
+			finalAnswerStreamed = true
+		}
+		emittedEventTypes[source+"_chunk"]++
+		e.eventBus.Emit(ctx, event.Event{
+			ID:        answerID,
+			Type:      event.EventAgentFinalAnswer,
+			SessionID: sessionID,
+			Data: event.AgentFinalAnswerData{
+				Content: content,
+				Done:    false,
+			},
+		})
+	}
+	flushAnswerPrefixBuffer := func(source string) {
+		if answerPrefixBuffer.Len() == 0 {
+			return
+		}
+		if source == "" {
+			source = answerPrefixSource
+		}
+		buffered := answerPrefixBuffer.String()
+		answerPrefixBuffer.Reset()
+		answerPrefixSource = "answer"
+		emitAnswerChunk(buffered, source)
+	}
+	emitDuplicateDocumentHeadDone := func() {
+		emittedEventTypes["answer_done_duplicate_document_head"]++
+		e.eventBus.Emit(ctx, event.Event{
+			ID:        answerID,
+			Type:      event.EventAgentFinalAnswer,
+			SessionID: sessionID,
+			Data: event.AgentFinalAnswerData{
+				Content:          "",
+				Done:             true,
+				CompletionStatus: types.MessageCompletionStatusPartial,
+				FinishReason:     duplicateDocumentHeadFinishReason,
+				IsPartial:        true,
+				AllowIndexing:    false,
+				AllowComplete:    false,
+				FailureReason:    duplicateDocumentHeadFinishReason,
+			},
+		})
+	}
 
 	llmResult, err := e.streamLLMToEventBus(
 		ctx,
@@ -183,22 +400,27 @@ func (e *AgentEngine) streamThinkingToEventBus(
 							source = chunkSource
 						}
 					}
-					answerStreamed = true
-					if source == "final_answer_tool" {
-						finalAnswerStreamed = true
-						emittedEventTypes[source+"_chunk"]++
-					} else {
-						emittedEventTypes[source+"_chunk"]++
+					if duplicateDocumentHeadBlocked {
+						return
 					}
-					e.eventBus.Emit(ctx, event.Event{
-						ID:        answerID,
-						Type:      event.EventAgentFinalAnswer,
-						SessionID: sessionID,
-						Data: event.AgentFinalAnswerData{
-							Content: chunk.Content,
-							Done:    false,
-						},
-					})
+					if !duplicateDocumentHeadDecided {
+						answerPrefixSource = source
+						answerPrefixBuffer.WriteString(chunk.Content)
+						buffered := answerPrefixBuffer.String()
+						if !streamDuplicateHeadBufferReady(buffered) {
+							return
+						}
+						duplicateDocumentHeadDecided = true
+						if streamPrefixLooksLikeDocumentHead(buffered) && streamPrefixRepeatsDocumentHead(priorDocumentSnapshot, buffered) {
+							duplicateDocumentHeadBlocked = true
+							logger.Warnf(ctx, "[Agent][Thinking] Iteration-%d detected duplicate document head in streamed answer; suppressing restart chunk", iteration+1)
+							emitDuplicateDocumentHeadDone()
+							return
+						}
+						flushAnswerPrefixBuffer(source)
+						return
+					}
+					emitAnswerChunk(chunk.Content, source)
 				}
 				return
 			}
@@ -246,12 +468,19 @@ func (e *AgentEngine) streamThinkingToEventBus(
 		logger.Errorf(ctx, "[Agent][Thinking] Iteration-%d failed: %v", iteration+1, err)
 		return nil, err
 	}
+	if !duplicateDocumentHeadBlocked && answerPrefixBuffer.Len() > 0 {
+		flushAnswerPrefixBuffer("")
+	}
 
 	// Emit diagnostics: helps identify when answer content went to "thought" vs "final_answer" events
 	logger.Infof(ctx, "[Agent][Thinking] Iteration-%d completed: content=%d chars, tool_calls=%d, emitted_events=%v",
 		iteration+1, len(llmResult.Content), len(llmResult.ToolCalls), emittedEventTypes)
 
-	fullContent := agenttools.StripThinkBlocks(llmResult.Content)
+	fullContent := llmResult.Content
+	if strings.TrimSpace(fullContent) == "" && strings.TrimSpace(llmResult.VisibleAnswerContent) != "" {
+		fullContent = llmResult.VisibleAnswerContent
+	}
+	fullContent = agenttools.StripThinkBlocks(fullContent)
 
 	// Use actual finish_reason from LLM stream instead of hardcoding "stop".
 	// Fallback to "stop" when the stream did not report a finish_reason
@@ -260,14 +489,43 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	if finishReason == "" {
 		finishReason = "stop"
 	}
+	if duplicateDocumentHeadBlocked {
+		llmResult.DuplicateDocumentHead = true
+		llmResult.Content = ""
+		llmResult.VisibleAnswerContent = ""
+		llmResult.AnswerStreamed = false
+		llmResult.FinalAnswerStreamed = false
+		llmResult.ToolCalls = nil
+		finishReason = duplicateDocumentHeadFinishReason
+		fullContent = ""
+	}
+
+	if llmResult.StreamError != "" && llmResult.AnswerStreamed && !llmResult.SawDone {
+		emittedEventTypes["answer_done_after_stream_error"]++
+		e.eventBus.Emit(ctx, event.Event{
+			ID:        answerID,
+			Type:      event.EventAgentFinalAnswer,
+			SessionID: sessionID,
+			Data: event.AgentFinalAnswerData{
+				Content:          "",
+				Done:             true,
+				CompletionStatus: types.MessageCompletionStatusPartial,
+				FinishReason:     finishReason,
+				IsPartial:        true,
+				AllowIndexing:    false,
+				AllowComplete:    false,
+				FailureReason:    finishReason,
+			},
+		})
+	}
 
 	resp := &types.ChatResponse{
 		Content:             fullContent,
 		ReasoningContent:    llmResult.ReasoningContent,
 		ToolCalls:           llmResult.ToolCalls,
 		FinishReason:        finishReason,
-		AnswerStreamed:      answerStreamed,
-		FinalAnswerStreamed: finalAnswerStreamed,
+		AnswerStreamed:      answerStreamed || llmResult.AnswerStreamed,
+		FinalAnswerStreamed: finalAnswerStreamed || llmResult.FinalAnswerStreamed,
 	}
 	if llmResult.Usage != nil {
 		resp.Usage = *llmResult.Usage
@@ -284,6 +542,25 @@ func (e *AgentEngine) callLLMWithRetry(
 	state *types.AgentState, query string, iteration int, sessionID string,
 ) (*types.ChatResponse, error) {
 	round := iteration + 1
+	originalMessageCount := len(messages)
+	originalToolMessageCount := countToolRoleMessages(messages)
+
+	// Sanitize messages before sending to LLM (fix consecutive roles, orphaned tool results)
+	messages = agenttools.SanitizeMessages(messages)
+	protocolProblems := agenttools.ValidateToolMessageProtocol(messages)
+	if len(protocolProblems) > 0 {
+		logger.Warnf(ctx, "[Agent][Round-%d] Invalid tool protocol after sanitize; dropping tool protocol messages: %v",
+			round, protocolProblems)
+		messages = agenttools.DropInvalidToolProtocolMessages(messages)
+	}
+	finalProtocolProblems := agenttools.ValidateToolMessageProtocol(messages)
+	if len(finalProtocolProblems) > 0 {
+		logger.Errorf(ctx, "[Agent][Round-%d] Invalid tool protocol after final guard: %v",
+			round, finalProtocolProblems)
+	} else if originalMessageCount != len(messages) || originalToolMessageCount != countToolRoleMessages(messages) || len(protocolProblems) > 0 {
+		logger.Infof(ctx, "[Agent][Round-%d] Message sanitize complete: before=%d after=%d tool_before=%d tool_after=%d protocol_problems=%d",
+			round, originalMessageCount, len(messages), originalToolMessageCount, countToolRoleMessages(messages), len(protocolProblems))
+	}
 
 	// Log message summary; only detail the tail messages to avoid repeating what prior rounds already logged
 	const maxDetailMsgs = 4
@@ -317,13 +594,15 @@ func (e *AgentEngine) callLLMWithRetry(
 		}
 	}
 	common.PipelineInfo(ctx, "Agent", "think_start", map[string]interface{}{
-		"iteration": iteration,
-		"round":     round,
-		"tool_cnt":  len(tools),
+		"iteration":                iteration,
+		"round":                    round,
+		"tool_cnt":                 len(tools),
+		"messages_before_sanitize": originalMessageCount,
+		"messages_after_sanitize":  len(messages),
+		"tool_messages_before":     originalToolMessageCount,
+		"tool_messages_after":      countToolRoleMessages(messages),
+		"protocol_problems":        len(protocolProblems) + len(finalProtocolProblems),
 	})
-
-	// Sanitize messages before sending to LLM (fix consecutive roles, orphaned tool results)
-	messages = agenttools.SanitizeMessages(messages)
 
 	response, err := e.streamThinkingToEventBus(ctx, messages, tools, iteration, sessionID)
 	if err != nil && isTransientError(err) {
@@ -363,9 +642,10 @@ func (e *AgentEngine) callLLMWithRetry(
 			state.AllowIndexing = false
 			state.AllowComplete = false
 			if synthErr := e.streamFinalAnswerToEventBus(ctx, query, state, sessionID); synthErr != nil {
+				reason := classifyFinalSynthesisError(synthErr)
 				state.CompletionStatus = "failed"
-				state.FinishReason = "tool_error"
-				state.FailureReason = "tool_error"
+				state.FinishReason = reason
+				state.FailureReason = reason
 				logger.Errorf(ctx, "[Agent] Final answer synthesis also failed: %v", synthErr)
 				return nil, fmt.Errorf("LLM call failed: %w (synthesis also failed: %v)", err, synthErr)
 			}
@@ -410,4 +690,14 @@ func (e *AgentEngine) callLLMWithRetry(
 	}
 
 	return response, nil
+}
+
+func countToolRoleMessages(messages []chat.Message) int {
+	count := 0
+	for _, msg := range messages {
+		if msg.Role == "tool" {
+			count++
+		}
+	}
+	return count
 }

@@ -517,6 +517,7 @@ export default {
     attachmentTypeNotSupported: "지원하지 않는 파일 형식: {name}",
     longDocumentTranslateRequiresSingleFile: "장문 문서 번역 모드에서는 파일을 정확히 하나 선택해야 합니다",
     longDocumentTranslateNoAttachments: "장문 문서 번역 모드에서는 이미지나 첨부 파일을 지원하지 않습니다",
+    longDocumentTranslateLegacyFrozen: "기존 장문 문서 백그라운드 번역 진입점은 동결되었습니다. 현재는 과거 작업 조회와 다운로드만 유지됩니다. 당분간 일반 대화 모드를 사용해 주세요. 이후 장문 문서 모드로 통합될 예정입니다.",
   },
   settings: {
     title: "설정",

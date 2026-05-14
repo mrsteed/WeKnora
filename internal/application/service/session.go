@@ -27,9 +27,12 @@ func generateEventID(suffix string) string {
 // (see service.LoadAgentHistory and chat_pipeline history loading) — there is no
 // separate cross-turn cache layer.
 type sessionService struct {
-	cfg                   *config.Config                         // Application configuration
-	sessionRepo           interfaces.SessionRepository           // Repository for session data
-	messageRepo           interfaces.MessageRepository           // Repository for message data
+	cfg                   *config.Config               // Application configuration
+	sessionRepo           interfaces.SessionRepository // Repository for session data
+	messageRepo           interfaces.MessageRepository // Repository for message data
+	generationRunRepo     interfaces.ChatDocumentGenerationRunRepository
+	taskEnqueuer          interfaces.TaskEnqueuer
+	streamManager         interfaces.StreamManager
 	knowledgeBaseService  interfaces.KnowledgeBaseService        // Service for knowledge base operations
 	modelService          interfaces.ModelService                // Service for model operations
 	tenantService         interfaces.TenantService               // Service for tenant operations
@@ -47,6 +50,9 @@ type sessionService struct {
 func NewSessionService(cfg *config.Config,
 	sessionRepo interfaces.SessionRepository,
 	messageRepo interfaces.MessageRepository,
+	generationRunRepo interfaces.ChatDocumentGenerationRunRepository,
+	taskEnqueuer interfaces.TaskEnqueuer,
+	streamManager interfaces.StreamManager,
 	knowledgeBaseService interfaces.KnowledgeBaseService,
 	knowledgeService interfaces.KnowledgeService,
 	chunkService interfaces.ChunkService,
@@ -63,6 +69,9 @@ func NewSessionService(cfg *config.Config,
 		cfg:                   cfg,
 		sessionRepo:           sessionRepo,
 		messageRepo:           messageRepo,
+		generationRunRepo:     generationRunRepo,
+		taskEnqueuer:          taskEnqueuer,
+		streamManager:         streamManager,
 		knowledgeBaseService:  knowledgeBaseService,
 		knowledgeService:      knowledgeService,
 		chunkService:          chunkService,
@@ -152,6 +161,24 @@ func (s *sessionService) GetSessionsByTenant(ctx context.Context) ([]*types.Sess
 		ctx, "Tenant sessions retrieved successfully, tenant ID: %d, user ID: %s, session count: %d", tenantID, userID, len(sessions),
 	)
 	return sessions, nil
+}
+
+func (s *sessionService) BindKnowledgeGroundedGenerationRunArtifact(ctx context.Context, runID string, artifact *types.ChatDocumentArtifact) error {
+	if s == nil || s.generationRunRepo == nil || artifact == nil || strings.TrimSpace(runID) == "" {
+		return nil
+	}
+	run, err := s.loadKnowledgeGroundedGenerationRun(ctx, runID)
+	if err != nil || run == nil {
+		return err
+	}
+	if run.RootArtifactID != "" {
+		return nil
+	}
+	if strings.TrimSpace(run.SessionID) != "" && strings.TrimSpace(artifact.SessionID) != "" && run.SessionID != artifact.SessionID {
+		return nil
+	}
+	run.RootArtifactID = artifact.ID
+	return s.generationRunRepo.UpdateRun(ctx, run)
 }
 
 // GetPagedSessionsByTenant retrieves sessions for the current tenant with pagination

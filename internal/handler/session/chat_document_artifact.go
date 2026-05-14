@@ -17,13 +17,12 @@ type documentRequestPreparation struct {
 	operation     string
 	baseArtifact  *types.ChatDocumentArtifact
 	quotedContext string
+	targetHeading string
+	mergeMode     string
 }
 
-func (h *Handler) prepareDocumentRequest(ctx context.Context, session *types.Session, query string, intentHint string, baseArtifactID string, outputMode string) documentRequestPreparation {
-	result := documentRequestPreparation{
-		intent:    types.ChatDocumentIntentNormal,
-		operation: types.ChatDocumentOperationCreate,
-	}
+func (h *Handler) prepareDocumentRequest(ctx context.Context, session *types.Session, query string, intentHint string, baseArtifactID string, outputMode string, targetHeading string, mergeMode string) documentRequestPreparation {
+	result := documentRequestPreparation{}
 	if h.chatDocumentArtifactService == nil || session == nil {
 		return result
 	}
@@ -35,8 +34,11 @@ func (h *Handler) prepareDocumentRequest(ctx context.Context, session *types.Ses
 		}
 		return result
 	}
-	result.intent = intentResult.Intent
-	result.operation = intentResult.Operation
+	result.intent = strings.TrimSpace(intentResult.Intent)
+	result.operation = strings.TrimSpace(intentResult.Operation)
+	if result.intent == types.ChatDocumentIntentNormal && result.operation == types.ChatDocumentOperationCreate {
+		return documentRequestPreparation{}
+	}
 
 	if result.intent != types.ChatDocumentIntentContinue && result.intent != types.ChatDocumentIntentRevise {
 		return result
@@ -50,24 +52,45 @@ func (h *Handler) prepareDocumentRequest(ctx context.Context, session *types.Ses
 	}
 	if err != nil {
 		logger.Warnf(ctx, "Failed to load chat document artifact, session_id: %s, base_artifact_id: %s, error: %v", session.ID, baseArtifactID, err)
-		return documentRequestPreparation{intent: types.ChatDocumentIntentNormal, operation: types.ChatDocumentOperationCreate}
+		return documentRequestPreparation{}
 	}
 	if artifact == nil || artifact.SessionID != session.ID || !artifact.CanContinue() {
-		return documentRequestPreparation{intent: types.ChatDocumentIntentNormal, operation: types.ChatDocumentOperationCreate}
+		return documentRequestPreparation{}
 	}
 
-	quotedContext, err := h.chatDocumentArtifactService.BuildQuotedContext(ctx, artifact, query, result.intent, outputMode)
+	effectiveTargetHeading, normalizedMergeMode := resolvePreparedDocumentTargetAndMerge(result.intent, targetHeading, mergeMode, intentResult)
+	quotedContext, err := h.chatDocumentArtifactService.BuildQuotedContext(ctx, artifact, query, result.intent, outputMode, effectiveTargetHeading, normalizedMergeMode)
 	if err != nil {
 		logger.Warnf(ctx, "Failed to build chat document quoted context, session_id: %s, artifact_id: %s, error: %v", session.ID, artifact.ID, err)
-		return documentRequestPreparation{intent: types.ChatDocumentIntentNormal, operation: types.ChatDocumentOperationCreate}
+		return documentRequestPreparation{}
 	}
 	if strings.TrimSpace(quotedContext) == "" {
-		return documentRequestPreparation{intent: types.ChatDocumentIntentNormal, operation: types.ChatDocumentOperationCreate}
+		return documentRequestPreparation{}
 	}
 
 	result.baseArtifact = artifact
 	result.quotedContext = quotedContext
+	result.targetHeading = effectiveTargetHeading
+	result.mergeMode = normalizedMergeMode
 	return result
+}
+
+func resolvePreparedDocumentTargetAndMerge(intent string, targetHeading string, mergeMode string, detected *types.DocumentIntentResult) (string, string) {
+	effectiveTargetHeading := strings.TrimSpace(targetHeading)
+	if effectiveTargetHeading == "" && detected != nil {
+		effectiveTargetHeading = strings.TrimSpace(detected.TargetHeading)
+	}
+	normalizedMergeMode := strings.TrimSpace(mergeMode)
+	if normalizedMergeMode == "" && detected != nil {
+		normalizedMergeMode = strings.TrimSpace(detected.MergeMode)
+	}
+	if normalizedMergeMode == "" && effectiveTargetHeading != "" {
+		switch intent {
+		case types.ChatDocumentIntentRevise, types.ChatDocumentIntentContinue:
+			normalizedMergeMode = types.ChatDocumentMergeModeAppendToSection
+		}
+	}
+	return effectiveTargetHeading, normalizedMergeMode
 }
 
 func appendQuotedContext(existing string, extra string) string {
@@ -97,7 +120,7 @@ func normalizeDocumentOutputModeForRequest(outputMode string, intent string) str
 	case types.ChatDocumentIntentRegenerate:
 		return types.ChatDocumentOutputModeFull
 	default:
-		return types.ChatDocumentOutputModeFull
+		return ""
 	}
 }
 

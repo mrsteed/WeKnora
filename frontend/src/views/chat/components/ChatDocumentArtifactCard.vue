@@ -12,6 +12,7 @@
     </div>
     <div class="artifact-card-meta">
       <span>{{ operationText }}</span>
+      <span v-if="translationSummary">{{ translationSummary }}</span>
       <span v-if="artifact.parent_artifact_id">{{ relationText }}</span>
       <span v-if="structureSummary">{{ structureSummary }}</span>
     </div>
@@ -20,7 +21,14 @@
       <ExportDropdown v-if="canExport" :content="previewContent" :filename-prefix="exportFilenamePrefix" />
       <t-button size="small" variant="text" theme="primary" @click="$emit('view-revisions', artifact)">查看版本链</t-button>
       <t-button
-        v-if="hasPreviewContent"
+        v-if="canToggleDocumentDisplay"
+        size="small"
+        variant="text"
+        theme="primary"
+        @click="$emit('toggle-document-display', artifact)"
+      >{{ documentDisplayToggleText }}</t-button>
+      <t-button
+        v-else-if="hasPreviewContent"
         size="small"
         variant="text"
         theme="primary"
@@ -43,14 +51,23 @@
     </div>
     <div v-if="previewExpanded && hasPreviewContent" class="artifact-card-preview">
       <div class="artifact-card-preview-title">完整文档预览</div>
-      <pre class="artifact-card-preview-content">{{ previewContent }}</pre>
+      <div
+        class="artifact-card-preview-content ai-markdown-template markdown-content"
+        v-html="renderedPreviewHTML"
+      ></div>
     </div>
   </div>
 </template>
 
 <script setup>
+import { marked } from 'marked';
 import { computed, ref } from 'vue';
+import { safeMarkdownToHTML, sanitizeHTML } from '@/utils/security';
 import ExportDropdown from './ExportDropdown.vue';
+
+marked.use({
+  breaks: true,
+});
 
 const props = defineProps({
   artifact: {
@@ -65,21 +82,51 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  canToggleDocumentDisplay: {
+    type: Boolean,
+    default: false,
+  },
+  documentDisplayMode: {
+    type: String,
+    default: 'delta',
+  },
 });
 
-defineEmits(['view-revisions', 'use-as-base', 'clear-base']);
+defineEmits(['view-revisions', 'use-as-base', 'clear-base', 'toggle-document-display']);
 
 const previewExpanded = ref(false);
 
 const artifactTitle = computed(() => props.artifact?.title || '未命名文档');
 
+const isTranslationArtifact = computed(() => props.artifact?.document_task_kind === 'translation');
+
 const isSelected = computed(() => Boolean(props.artifact?.id) && props.artifact?.id === props.selectedArtifactId);
 
 const hasPreviewContent = computed(() => typeof props.previewContent === 'string' && props.previewContent.trim().length > 0);
 
+const documentDisplayToggleText = computed(() => props.documentDisplayMode === 'full' ? '查看修改内容' : '查看全文');
+
+const renderedPreviewHTML = computed(() => {
+  if (!hasPreviewContent.value) {
+    return '';
+  }
+
+  const safeMarkdown = safeMarkdownToHTML(props.previewContent);
+  const html = marked.parse(safeMarkdown, { breaks: true });
+  return sanitizeHTML(typeof html === 'string' ? html : '');
+});
+
 const canExport = computed(() => ['available', 'partial'].includes(props.artifact?.status) && hasPreviewContent.value);
 
 const exportFilenamePrefix = computed(() => {
+  if (isTranslationArtifact.value) {
+    const sourceTitle = typeof props.artifact?.source_title === 'string' ? props.artifact.source_title.trim() : '';
+    const targetLanguage = typeof props.artifact?.target_language === 'string' ? props.artifact.target_language.trim() : '';
+    const revision = props.artifact?.revision_no || 1;
+    if (sourceTitle && targetLanguage) {
+      return `${sourceTitle}_${targetLanguage}_V${revision}`;
+    }
+  }
   const title = typeof props.artifact?.title === 'string' ? props.artifact.title.trim() : '';
   if (title) {
     return title;
@@ -119,6 +166,9 @@ const statusText = computed(() => {
 });
 
 const operationText = computed(() => {
+  if (isTranslationArtifact.value) {
+    return '全文翻译版本';
+  }
   switch (props.artifact?.operation) {
     case 'continue':
       return '基于上一版继续生成';
@@ -152,6 +202,26 @@ const structureSummary = computed(() => {
   }
   if (info.has_table) {
     parts.push('含表格');
+  }
+  return parts.join(' · ');
+});
+
+const translationSummary = computed(() => {
+  if (!isTranslationArtifact.value) {
+    return '';
+  }
+  const parts = [];
+  const sourceTitle = typeof props.artifact?.source_title === 'string' ? props.artifact.source_title.trim() : '';
+  const targetLanguage = typeof props.artifact?.target_language === 'string' ? props.artifact.target_language.trim() : '';
+  const outputFormat = typeof props.artifact?.output_format === 'string' ? props.artifact.output_format.trim() : '';
+  if (sourceTitle) {
+    parts.push(`源文件：${sourceTitle}`);
+  }
+  if (targetLanguage) {
+    parts.push(`目标语言：${targetLanguage}`);
+  }
+  if (outputFormat) {
+    parts.push(`格式：${outputFormat}`);
   }
   return parts.join(' · ');
 });
@@ -242,14 +312,100 @@ const structureSummary = computed(() => {
   color: var(--td-text-color-secondary);
 }
 
+.ai-markdown-template {
+  font-size: 12px;
+  color: var(--td-text-color-primary);
+  line-height: 1.6;
+}
+
 .artifact-card-preview-content {
   margin: 0;
-  white-space: pre-wrap;
   word-break: break-word;
   font-size: 12px;
   line-height: 1.6;
   color: var(--td-text-color-primary);
   max-height: 360px;
   overflow: auto;
+}
+
+.markdown-content {
+  :deep(p) {
+    margin: 6px 0;
+    line-height: 1.6;
+  }
+
+  :deep(code) {
+    background: var(--td-bg-color-secondarycontainer);
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-family: var(--app-font-family-mono);
+    font-size: 11px;
+  }
+
+  :deep(pre) {
+    background: var(--td-bg-color-secondarycontainer);
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 6px 0;
+
+    code {
+      background: none;
+      padding: 0;
+    }
+  }
+
+  :deep(ul), :deep(ol) {
+    margin: 6px 0;
+    padding-left: 20px;
+  }
+
+  :deep(li) {
+    margin: 3px 0;
+  }
+
+  :deep(blockquote) {
+    border-left: 2px solid var(--td-brand-color);
+    padding-left: 10px;
+    margin: 6px 0;
+    color: var(--td-text-color-secondary);
+  }
+
+  :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
+    margin: 10px 0 6px 0;
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+  }
+
+  :deep(a) {
+    color: var(--td-brand-color);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  :deep(table) {
+    border-collapse: collapse;
+    margin: 6px 0;
+    font-size: 11px;
+    width: 100%;
+
+    th, td {
+      border: 1px solid var(--td-component-stroke);
+      padding: 5px 8px;
+      text-align: left;
+    }
+
+    th {
+      background: var(--td-bg-color-secondarycontainer);
+      font-weight: 600;
+    }
+
+    tbody tr:nth-child(even) {
+      background: var(--td-bg-color-secondarycontainer);
+    }
+  }
 }
 </style>

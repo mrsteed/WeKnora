@@ -64,6 +64,22 @@ func (s *sessionService) KnowledgeQA(
 	if err != nil {
 		return err
 	}
+	if shouldUseLongDocumentTranslationContinuationPath(req) {
+		chatModel, err := s.modelService.GetChatModel(ctx, chatModelID)
+		if err != nil {
+			return fmt.Errorf("failed to get chat model: %w", err)
+		}
+		logger.Infof(ctx, "[LongDocument][Router] selected=translation_continuation run_id=%s", strings.TrimSpace(req.GenerationRunID))
+		return s.runLongDocumentTranslationContinuationPath(ctx, req, eventBus, chatModel, nil)
+	}
+	if shouldUseLongDocumentTranslationPath(req) {
+		chatModel, err := s.modelService.GetChatModel(ctx, chatModelID)
+		if err != nil {
+			return fmt.Errorf("failed to get chat model: %w", err)
+		}
+		logger.Infof(ctx, "[LongDocument][Router] selected=translation_full_document kb_scope=%d", len(req.KnowledgeIDs))
+		return s.runLongDocumentTranslationPath(ctx, req, eventBus, chatModel, nil)
+	}
 
 	// Initialize ChatManage defaults from config.yaml
 	summaryConfig := types.SummaryConfig{

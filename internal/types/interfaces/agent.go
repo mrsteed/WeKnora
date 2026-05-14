@@ -20,6 +20,9 @@ type AgentStreamEvent struct {
 
 // AgentEngine defines the interface for agent execution engine
 type AgentEngine interface {
+	// SetDocumentContext injects document-generation metadata for fallback final-answer synthesis.
+	SetDocumentContext(documentContext *types.AgentDocumentContext)
+
 	// Execute executes the agent with conversation history and returns a stream of events
 	// imageURLs is optional - when provided, images are passed to the LLM as multimodal content
 	Execute(

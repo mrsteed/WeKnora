@@ -202,6 +202,69 @@ func (e *AgentEngine) analyzeResponse(
 		}
 	}
 
+	if response.FinishReason == "stream_error_after_answer" && response.FinalAnswerStreamed && response.AnswerStreamed && len(response.ToolCalls) == 0 {
+		response.Content = agenttools.StripThinkBlocks(response.Content)
+		logger.Warnf(ctx, "[Agent][Round-%d] final_answer stream ended with tail error after %d chars; stopping loop as partial",
+			iteration+1, len(response.Content))
+		common.PipelineWarn(ctx, "Agent", "final_answer_stream_error_stop", map[string]interface{}{
+			"iteration":     iteration,
+			"round":         iteration + 1,
+			"answer_len":    len(response.Content),
+			"finish_reason": response.FinishReason,
+		})
+
+		answerID := generateEventID("answer")
+		e.eventBus.Emit(ctx, event.Event{
+			ID:        answerID,
+			Type:      event.EventAgentFinalAnswer,
+			SessionID: sessionID,
+			Data: event.AgentFinalAnswerData{
+				Content:          "",
+				Done:             true,
+				CompletionStatus: "partial",
+				FinishReason:     "stream_error_after_answer",
+				IsPartial:        true,
+				AllowIndexing:    false,
+				AllowComplete:    false,
+				FailureReason:    "stream_error_after_answer",
+			},
+		})
+
+		return responseVerdict{
+			isDone:           true,
+			finalAnswer:      response.Content,
+			completionStatus: "partial",
+			finishReason:     "stream_error_after_answer",
+			isPartial:        true,
+			allowIndexing:    false,
+			allowComplete:    false,
+			failureReason:    "stream_error_after_answer",
+			step:             step,
+		}
+	}
+
+	if response.FinishReason == duplicateDocumentHeadFinishReason && len(response.ToolCalls) == 0 {
+		logger.Warnf(ctx, "[Agent][Round-%d] duplicate document head detected in streamed answer; stopping loop as partial",
+			iteration+1)
+		common.PipelineWarn(ctx, "Agent", "duplicate_document_head_stop", map[string]interface{}{
+			"iteration":     iteration,
+			"round":         iteration + 1,
+			"finish_reason": response.FinishReason,
+		})
+
+		return responseVerdict{
+			isDone:           true,
+			finalAnswer:      response.Content,
+			completionStatus: types.MessageCompletionStatusPartial,
+			finishReason:     duplicateDocumentHeadFinishReason,
+			isPartial:        true,
+			allowIndexing:    false,
+			allowComplete:    false,
+			failureReason:    duplicateDocumentHeadFinishReason,
+			step:             step,
+		}
+	}
+
 	// Case 1: LLM stopped naturally without requesting any tool calls
 	if response.FinishReason == "stop" && len(response.ToolCalls) == 0 {
 		// Strip <think>…</think> blocks that some models embed in content
@@ -480,6 +543,8 @@ func (e *AgentEngine) appendToolResults(
 	messages []chat.Message,
 	step types.AgentStep,
 ) []chat.Message {
+	contextMessages := make([]chat.Message, 0, len(step.ToolCalls)+1)
+
 	// Add assistant message with tool calls (if any)
 	if step.Thought != "" || len(step.ToolCalls) > 0 || step.ReasoningContent != "" {
 		assistantMsg := chat.Message{
@@ -507,14 +572,12 @@ func (e *AgentEngine) appendToolResults(
 		}
 
 		messages = append(messages, assistantMsg)
+		contextMessages = append(contextMessages, assistantMsg)
 	}
 
 	// Add tool result messages (role: "tool", following OpenAI format)
 	for _, toolCall := range step.ToolCalls {
-		resultContent := toolCall.Result.Output
-		if !toolCall.Result.Success {
-			resultContent = fmt.Sprintf("Error: %s", toolCall.Result.Error)
-		}
+		resultContent := toolResultMessageContent(toolCall.Result)
 
 		toolMsg := chat.Message{
 			Role:       "tool",
@@ -524,9 +587,33 @@ func (e *AgentEngine) appendToolResults(
 		}
 
 		messages = append(messages, toolMsg)
+
+		contextToolMsg := toolMsg
+		if !e.config.RetainRetrievalHistory {
+			contextToolMsg.Content = summarizeToolResultForHistory(toolCall)
+		}
+		contextMessages = append(contextMessages, contextToolMsg)
+	}
+
+	if len(contextMessages) > 0 {
+		e.pendingContextGroups = append(e.pendingContextGroups, contextMessages...)
+		logger.Debugf(context.Background(), "[Agent] Buffered %d tool-group message(s) for deferred context persistence (session: %s)", len(contextMessages), e.sessionID)
 	}
 
 	return messages
+}
+
+func toolResultMessageContent(result *types.ToolResult) string {
+	if result == nil {
+		return "Error: tool returned no result"
+	}
+	if !result.Success {
+		if result.Error != "" {
+			return fmt.Sprintf("Error: %s", result.Error)
+		}
+		return "Error: tool execution failed"
+	}
+	return result.Output
 }
 
 // countTotalToolCalls counts total tool calls across all steps

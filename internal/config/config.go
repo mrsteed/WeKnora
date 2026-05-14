@@ -44,13 +44,11 @@ type AgentConfig struct {
 }
 
 type LongDocumentConfig struct {
-	EnableTaskRouter       bool `yaml:"enable_task_router" json:"enable_task_router"`
-	EnableTaskWorker       bool `yaml:"enable_task_worker" json:"enable_task_worker"`
-	EnableArtifactDownload bool `yaml:"enable_artifact_download" json:"enable_artifact_download"`
-	BatchChunkSize         int  `yaml:"batch_chunk_size" json:"batch_chunk_size"`
-	BatchMaxChars          int  `yaml:"batch_max_chars" json:"batch_max_chars"`
-	BatchRetryLimit        int  `yaml:"batch_retry_limit" json:"batch_retry_limit"`
-	TaskPollIntervalSec    int  `yaml:"task_poll_interval_sec" json:"task_poll_interval_sec"`
+	BatchChunkSize                 int `yaml:"batch_chunk_size" json:"batch_chunk_size"`
+	BatchMaxChars                  int `yaml:"batch_max_chars" json:"batch_max_chars"`
+	AutoContinueMaxRounds          int `yaml:"auto_continue_max_rounds" json:"auto_continue_max_rounds"`
+	AutoContinueMinGrowthChars     int `yaml:"auto_continue_min_growth_chars" json:"auto_continue_min_growth_chars"`
+	AutoContinueMaxLowGrowthRounds int `yaml:"auto_continue_max_low_growth_rounds" json:"auto_continue_max_low_growth_rounds"`
 }
 
 // IMConfig configures the IM integration service.
@@ -598,11 +596,7 @@ func applyAgentEnvOverrides(cfg *Config) {
 
 func applyLongDocumentDefaults(cfg *Config) {
 	if cfg.LongDocument == nil {
-		cfg.LongDocument = &LongDocumentConfig{
-			EnableTaskRouter:       true,
-			EnableTaskWorker:       true,
-			EnableArtifactDownload: true,
-		}
+		cfg.LongDocument = &LongDocumentConfig{}
 	}
 	if cfg.LongDocument.BatchChunkSize <= 0 {
 		cfg.LongDocument.BatchChunkSize = 8
@@ -610,20 +604,14 @@ func applyLongDocumentDefaults(cfg *Config) {
 	if cfg.LongDocument.BatchMaxChars <= 0 {
 		cfg.LongDocument.BatchMaxChars = 24000
 	}
-	if cfg.LongDocument.BatchRetryLimit <= 0 {
-		cfg.LongDocument.BatchRetryLimit = 3
+	if cfg.LongDocument.AutoContinueMaxRounds <= 0 {
+		cfg.LongDocument.AutoContinueMaxRounds = types.ChatDocumentGenerationRunDefaultMaxRounds
 	}
-	if cfg.LongDocument.TaskPollIntervalSec <= 0 {
-		cfg.LongDocument.TaskPollIntervalSec = 3
+	if cfg.LongDocument.AutoContinueMinGrowthChars <= 0 {
+		cfg.LongDocument.AutoContinueMinGrowthChars = 200
 	}
-	if value := strings.TrimSpace(os.Getenv("WEKNORA_ENABLE_LONG_DOCUMENT_TASK_ROUTER")); value != "" {
-		cfg.LongDocument.EnableTaskRouter = strings.EqualFold(value, "true")
-	}
-	if value := strings.TrimSpace(os.Getenv("WEKNORA_ENABLE_LONG_DOCUMENT_TASK_WORKER")); value != "" {
-		cfg.LongDocument.EnableTaskWorker = strings.EqualFold(value, "true")
-	}
-	if value := strings.TrimSpace(os.Getenv("WEKNORA_ENABLE_LONG_DOCUMENT_ARTIFACT_DOWNLOAD")); value != "" {
-		cfg.LongDocument.EnableArtifactDownload = strings.EqualFold(value, "true")
+	if cfg.LongDocument.AutoContinueMaxLowGrowthRounds <= 0 {
+		cfg.LongDocument.AutoContinueMaxLowGrowthRounds = 2
 	}
 }
 

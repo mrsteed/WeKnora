@@ -187,6 +187,43 @@ func (h *Handler) ContinueStream(c *gin.Context) {
 	}
 }
 
+func (h *Handler) streamMessageFromManager(c *gin.Context, sessionID, messageID, requestID string) {
+	ctx := c.Request.Context()
+	setSSEHeaders(c)
+	currentOffset := 0
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		newEvents, newOffset, err := h.streamManager.GetEvents(ctx, sessionID, messageID, currentOffset)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to get stream events, session ID: %s, message ID: %s, error: %v", sessionID, messageID, err)
+			return
+		}
+
+		streamCompleted := false
+		for _, evt := range newEvents {
+			if evt.Type == types.ResponseTypeComplete || evt.Type == types.ResponseType(event.EventStop) {
+				streamCompleted = true
+			}
+			response := buildStreamResponse(evt, requestID)
+			c.SSEvent("message", response)
+			c.Writer.Flush()
+		}
+		currentOffset = newOffset
+		if streamCompleted {
+			sendCompletionEvent(c, requestID)
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 func (h *Handler) recoverMissingStreamState(ctx context.Context, c *gin.Context, message *types.Message) {
 	options := assistantCompletionOptions{
 		AllowIndexing: false,
@@ -202,7 +239,7 @@ func (h *Handler) recoverMissingStreamState(ctx context.Context, c *gin.Context,
 		options.FailureReason = "stream_unavailable"
 	}
 
-	h.completeAssistantMessage(ctx, message, "", options)
+	h.completeAssistantMessageInPlace(ctx, message, "", &options)
 	h.emitTerminalStreamState(c, message, nil)
 }
 
@@ -258,6 +295,10 @@ func (h *Handler) findChatDocumentArtifactBySourceMessage(ctx context.Context, m
 	return artifact
 }
 
+type chatDocumentTerminalReplayExtraProvider interface {
+	BuildChatDocumentTerminalReplayExtra(ctx context.Context, message *types.Message, artifact *types.ChatDocumentArtifact) (map[string]interface{}, error)
+}
+
 func (h *Handler) emitTerminalStreamState(c *gin.Context, message *types.Message, events []interfaces.StreamEvent) {
 	completionStatus := message.CompletionStatusOrLegacy()
 	finishReason := message.FinishReason
@@ -289,6 +330,18 @@ func (h *Handler) emitTerminalStreamState(c *gin.Context, message *types.Message
 			data["agent_duration_ms"] = message.AgentDurationMs
 			data["total_duration_ms"] = message.AgentDurationMs
 		}
+		if provider, ok := h.sessionService.(chatDocumentTerminalReplayExtraProvider); ok {
+			if extra, err := provider.BuildChatDocumentTerminalReplayExtra(c.Request.Context(), message, artifact); err != nil {
+				logger.Warnf(c.Request.Context(), "Failed to build chat document terminal replay extra, session ID: %s, message ID: %s, error: %v", message.SessionID, message.ID, err)
+			} else {
+				for key, value := range extra {
+					if _, exists := data[key]; exists {
+						continue
+					}
+					data[key] = value
+				}
+			}
+		}
 		if artifact != nil {
 			data["chat_document_artifact"] = chatDocumentArtifactMetadata(artifact)
 			finalDocumentMode, finalDocument, finalDocumentArtifactID := buildFinalDocumentDelivery(artifact)
@@ -299,6 +352,7 @@ func (h *Handler) emitTerminalStreamState(c *gin.Context, message *types.Message
 			if finalDocumentArtifactID != "" {
 				data["final_document_artifact_id"] = finalDocumentArtifactID
 			}
+			addChatDocumentGenerationPayload(data, artifact)
 		}
 		if completionStatus == types.MessageCompletionStatusCancelled {
 			responseType = types.ResponseType(event.EventStop)

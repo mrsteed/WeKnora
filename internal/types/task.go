@@ -1,24 +1,42 @@
 package types
 
 const (
-	TypeChunkExtract         = "chunk:extract"
-	TypeDocumentProcess      = "document:process"       // 文档处理任务
-	TypeFAQImport            = "faq:import"             // FAQ导入任务（包含dry run模式）
-	TypeQuestionGeneration   = "question:generation"    // 问题生成任务
-	TypeSummaryGeneration    = "summary:generation"     // 摘要生成任务
-	TypeKBClone              = "kb:clone"               // 知识库复制任务
-	TypeIndexDelete          = "index:delete"           // 索引删除任务
-	TypeKBDelete             = "kb:delete"              // 知识库删除任务
-	TypeKnowledgeListDelete  = "knowledge:list_delete"  // 批量删除知识任务
-	TypeKnowledgeMove        = "knowledge:move"         // 知识移动任务
-	TypeDataTableSummary     = "datatable:summary"      // 表格摘要任务
-	TypeImageMultimodal      = "image:multimodal"       // 图片多模态处理任务（OCR + VLM Caption）
-	TypeKnowledgePostProcess = "knowledge:post_process" // 知识后处理任务（统一调度）
-	TypeManualProcess        = "manual:process"         // 手工知识更新任务（cleanup + 重新索引）
-	TypeDataSourceSync       = "datasource:sync"        // 数据源同步任务
-	TypeWikiIngest           = "wiki:ingest"            // Wiki 页面同步任务
-	TypeLongDocumentTask     = "long_document:task"     // 长文档任务执行
+	TypeChunkExtract          = "chunk:extract"
+	TypeDocumentProcess       = "document:process"        // 文档处理任务
+	TypeLongDocumentExecution = "long_document:execution" // 长文档执行任务
+	TypeFAQImport             = "faq:import"              // FAQ导入任务（包含dry run模式）
+	TypeQuestionGeneration    = "question:generation"     // 问题生成任务
+	TypeSummaryGeneration     = "summary:generation"      // 摘要生成任务
+	TypeKBClone               = "kb:clone"                // 知识库复制任务
+	TypeIndexDelete           = "index:delete"            // 索引删除任务
+	TypeKBDelete              = "kb:delete"               // 知识库删除任务
+	TypeKnowledgeListDelete   = "knowledge:list_delete"   // 批量删除知识任务
+	TypeKnowledgeMove         = "knowledge:move"          // 知识移动任务
+	TypeDataTableSummary      = "datatable:summary"       // 表格摘要任务
+	TypeImageMultimodal       = "image:multimodal"        // 图片多模态处理任务（OCR + VLM Caption）
+	TypeKnowledgePostProcess  = "knowledge:post_process"  // 知识后处理任务（统一调度）
+	TypeManualProcess         = "manual:process"          // 手工知识更新任务（cleanup + 重新索引）
+	TypeDataSourceSync        = "datasource:sync"         // 数据源同步任务
+	TypeWikiIngest            = "wiki:ingest"             // Wiki 页面同步任务
 )
+
+const (
+	LongDocumentExecutionModeKnowledgeQA = "knowledge_qa"
+	LongDocumentExecutionModeAgentQA     = "agent_qa"
+)
+
+// LongDocumentExecutionPayload carries the minimum request snapshot needed to
+// continue a long-document generation flow inside the task worker while keeping
+// the original assistant message and session context stable.
+type LongDocumentExecutionPayload struct {
+	TracingContext
+	Mode            string    `json:"mode"`
+	TenantID        uint64    `json:"tenant_id"`
+	SessionTenantID uint64    `json:"session_tenant_id,omitempty"`
+	RequestID       string    `json:"request_id,omitempty"`
+	Language        string    `json:"language,omitempty"`
+	Request         QARequest `json:"request"`
+}
 
 // ExtractChunkPayload represents the extract chunk task payload
 type ExtractChunkPayload struct {

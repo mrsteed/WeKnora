@@ -1,5 +1,7 @@
 package event
 
+import "github.com/Tencent/WeKnora/internal/types"
+
 // EventData contains common event data structures for different stages
 
 // QueryData represents query-related event data
@@ -134,24 +136,33 @@ type AgentQueryData struct {
 
 // AgentCompleteData represents agent completion event data
 type AgentCompleteData struct {
-	SessionID               string                 `json:"session_id"`
-	TotalSteps              int                    `json:"total_steps"`
-	FinalAnswer             string                 `json:"final_answer"`
-	CompletionStatus        string                 `json:"completion_status,omitempty"`
-	FinishReason            string                 `json:"finish_reason,omitempty"`
-	IsPartial               bool                   `json:"is_partial,omitempty"`
-	AllowIndexing           bool                   `json:"allow_indexing,omitempty"`
-	AllowComplete           bool                   `json:"allow_complete,omitempty"`
-	FailureReason           string                 `json:"failure_reason,omitempty"`
-	KnowledgeRefs           []interface{}          `json:"knowledge_refs,omitempty"` // []*types.SearchResult
-	AgentSteps              interface{}            `json:"agent_steps,omitempty"`    // []types.AgentStep - detailed execution steps
-	TotalDurationMs         int64                  `json:"total_duration_ms"`
-	MessageID               string                 `json:"message_id,omitempty"` // Assistant message ID
-	FinalDocumentMode       string                 `json:"final_document_mode,omitempty"`
-	FinalDocument           string                 `json:"final_document,omitempty"`
-	FinalDocumentArtifactID string                 `json:"final_document_artifact_id,omitempty"`
-	RequestID               string                 `json:"request_id,omitempty"`
-	Extra                   map[string]interface{} `json:"extra,omitempty"`
+	SessionID                 string                 `json:"session_id"`
+	TotalSteps                int                    `json:"total_steps"`
+	FinalAnswer               string                 `json:"final_answer"`
+	CompletionStatus          string                 `json:"completion_status,omitempty"`
+	FinishReason              string                 `json:"finish_reason,omitempty"`
+	IsPartial                 bool                   `json:"is_partial,omitempty"`
+	AllowIndexing             bool                   `json:"allow_indexing,omitempty"`
+	AllowComplete             bool                   `json:"allow_complete,omitempty"`
+	FailureReason             string                 `json:"failure_reason,omitempty"`
+	KnowledgeRefs             []interface{}          `json:"knowledge_refs,omitempty"` // []*types.SearchResult
+	AgentSteps                types.AgentSteps       `json:"agent_steps,omitempty"`    // Detailed agent execution steps for persistence/replay
+	TotalDurationMs           int64                  `json:"total_duration_ms"`
+	MessageID                 string                 `json:"message_id,omitempty"` // Assistant message ID
+	FinalDocumentMode         string                 `json:"final_document_mode,omitempty"`
+	FinalDocument             string                 `json:"final_document,omitempty"`
+	FinalDocumentArtifactID   string                 `json:"final_document_artifact_id,omitempty"`
+	DocumentGenerationStatus  string                 `json:"document_generation_status,omitempty"`
+	AutoContinueNext          *bool                  `json:"auto_continue_next,omitempty"`
+	AutoContinueReason        string                 `json:"auto_continue_reason,omitempty"`
+	AutoContinueReasonMessage string                 `json:"auto_continue_reason_message,omitempty"`
+	NextAction                string                 `json:"next_action,omitempty"`
+	NextReason                string                 `json:"next_reason,omitempty"`
+	NextReasonMessage         string                 `json:"next_reason_message,omitempty"`
+	CanAutoContinue           *bool                  `json:"can_auto_continue,omitempty"`
+	RecommendedRequest        map[string]interface{} `json:"recommended_request,omitempty"`
+	RequestID                 string                 `json:"request_id,omitempty"`
+	Extra                     map[string]interface{} `json:"extra,omitempty"`
 }
 
 // === Streaming Event Data Structures ===
@@ -159,9 +170,19 @@ type AgentCompleteData struct {
 
 // AgentThoughtData represents agent thought streaming data
 type AgentThoughtData struct {
-	Content   string `json:"content"`
-	Iteration int    `json:"iteration"`
-	Done      bool   `json:"done"`
+	Content        string                 `json:"content"`
+	Iteration      int                    `json:"iteration"`
+	Done           bool                   `json:"done"`
+	Replace        bool                   `json:"replace,omitempty"`
+	Synthetic      bool                   `json:"synthetic,omitempty"`
+	Stage          string                 `json:"stage,omitempty"`
+	Outline        map[string]interface{} `json:"outline,omitempty"`
+	SectionCurrent int                    `json:"section_current,omitempty"`
+	SectionTotal   int                    `json:"section_total,omitempty"`
+	SectionTitle   string                 `json:"section_title,omitempty"`
+	QueryCurrent   int                    `json:"query_current,omitempty"`
+	QueryTotal     int                    `json:"query_total,omitempty"`
+	ProgressLabel  string                 `json:"progress_label,omitempty"`
 }
 
 // AgentToolCallData represents agent tool call notification data
@@ -193,15 +214,17 @@ type AgentReferencesData struct {
 
 // AgentFinalAnswerData represents final answer streaming data
 type AgentFinalAnswerData struct {
-	Content          string `json:"content"`
-	Done             bool   `json:"done"`
-	IsFallback       bool   `json:"is_fallback,omitempty"` // True when response is a fallback (no knowledge base match)
-	CompletionStatus string `json:"completion_status,omitempty"`
-	FinishReason     string `json:"finish_reason,omitempty"`
-	IsPartial        bool   `json:"is_partial,omitempty"`
-	AllowIndexing    bool   `json:"allow_indexing,omitempty"`
-	AllowComplete    bool   `json:"allow_complete,omitempty"`
-	FailureReason    string `json:"failure_reason,omitempty"`
+	Content                  string                 `json:"content"`
+	Done                     bool                   `json:"done"`
+	IsFallback               bool                   `json:"is_fallback,omitempty"` // True when response is a fallback (no knowledge base match)
+	CompletionStatus         string                 `json:"completion_status,omitempty"`
+	FinishReason             string                 `json:"finish_reason,omitempty"`
+	IsPartial                bool                   `json:"is_partial,omitempty"`
+	AllowIndexing            bool                   `json:"allow_indexing,omitempty"`
+	AllowComplete            bool                   `json:"allow_complete,omitempty"`
+	FailureReason            string                 `json:"failure_reason,omitempty"`
+	DocumentGenerationStatus string                 `json:"document_generation_status,omitempty"`
+	Extra                    map[string]interface{} `json:"extra,omitempty"`
 }
 
 // AgentReflectionData represents agent reflection data

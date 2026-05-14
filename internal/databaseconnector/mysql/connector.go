@@ -140,13 +140,15 @@ func (c *Connector) openDB(cfg *types.DatabaseConnectionConfig) (*sql.DB, error)
 	}
 	c.mu.RUnlock()
 
-	connector, err := mysqlDriver.NewConnector(dsnCfg)
+	// Use the formatted DSN instead of passing Config directly so driver-specific
+	// options like charset are parsed through the DSN code path rather than being
+	// treated as session system variables.
+	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("build mysql connector: %w", err)
+		return nil, fmt.Errorf("open mysql connection: %w", err)
 	}
-	db := sql.OpenDB(connector)
 	if db == nil {
-		return nil, fmt.Errorf("open mysql connection: connector returned nil db")
+		return nil, fmt.Errorf("open mysql connection: driver returned nil db")
 	}
 	db.SetMaxOpenConns(5)
 	db.SetMaxIdleConns(2)

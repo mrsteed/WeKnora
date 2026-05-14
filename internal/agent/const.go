@@ -47,6 +47,7 @@ var transientErrorMarkers = []string{
 	"429", "rate limit",
 	"500", "502", "503", "504",
 	"overloaded", "timeout", "timed out",
+	"deadline exceeded", "context deadline exceeded",
 	"connection", "server error", "temporarily unavailable",
 }
 

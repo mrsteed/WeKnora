@@ -186,15 +186,17 @@ type ToolCall struct {
 
 // AgentStep represents one iteration of the ReAct loop
 type AgentStep struct {
-	Iteration int    `json:"iteration"` // Iteration number (0-indexed)
-	Thought   string `json:"thought"`   // LLM's reasoning/thinking (Think phase)
+	Iteration int    `json:"iteration"`         // Iteration number (0-indexed)
+	Thought   string `json:"thought"`           // LLM's reasoning/thinking (Think phase)
+	Stage     string `json:"stage,omitempty"`   // Synthetic stage label for long-document progress/history replay
 	// ReasoningContent stores the OpenAI-protocol reasoning_content emitted by the
 	// model in this round. Persisted on AgentStep so cross-turn replay can put it
 	// back on the assistant message — required by MiMo / DeepSeek V3.2+ thinking
 	// mode, ignored by providers that don't recognize the field.
 	ReasoningContent string     `json:"reasoning_content,omitempty"`
-	ToolCalls        []ToolCall `json:"tool_calls"` // Tools called in this step (Act phase)
-	Timestamp        time.Time  `json:"timestamp"`  // When this step occurred
+	ToolCalls        []ToolCall `json:"tool_calls"`                 // Tools called in this step (Act phase)
+	Duration         int64      `json:"duration,omitempty"`         // Time spent in this step in milliseconds
+	Timestamp        time.Time  `json:"timestamp"`                  // When this step occurred
 }
 
 // GetObservations returns observations from all tool calls in this step
@@ -212,21 +214,39 @@ func (s *AgentStep) GetObservations() []string {
 	return observations
 }
 
+// AgentDocumentContext carries document-generation metadata into Agent fallback
+// synthesis. It lets the final-answer recovery prompt preserve continuation
+// semantics instead of regenerating an entire document from scratch.
+type AgentDocumentContext struct {
+	Intent            string `json:"intent,omitempty"`
+	Operation         string `json:"operation,omitempty"`
+	OutputMode        string `json:"output_mode,omitempty"`
+	BaseArtifactID    string `json:"base_artifact_id,omitempty"`
+	UserGoal          string `json:"user_goal,omitempty"`
+	TargetHeading     string `json:"target_heading,omitempty"`
+	MergeMode         string `json:"merge_mode,omitempty"`
+	QuotedContext     string `json:"-"`
+	AutoContinue      bool   `json:"auto_continue,omitempty"`
+	AutoContinueRound int    `json:"auto_continue_round,omitempty"`
+	CompletionMarker  string `json:"completion_marker,omitempty"`
+}
+
 // AgentState tracks the execution state of an agent across iterations
 type AgentState struct {
-	CurrentRound       int             `json:"current_round"`                 // Current round number
-	RoundSteps         []AgentStep     `json:"round_steps"`                   // All steps taken so far in the current round
-	IsComplete         bool            `json:"is_complete"`                   // Whether agent has finished
-	FinalAnswer        string          `json:"final_answer"`                  // The final answer to the query
-	FinalAnswerSynthesized bool        `json:"final_answer_synthesized,omitempty"` // Whether a synthesized final answer was successfully generated
-	CompletionStatus   string          `json:"completion_status,omitempty"`   // Business completion state for the generated answer
-	FinishReason       string          `json:"finish_reason,omitempty"`       // Raw finish reason surfaced by the LLM or orchestration
-	FailureReason      string          `json:"failure_reason,omitempty"`      // Normalized failure reason for downstream handlers
-	AllowIndexing      bool            `json:"allow_indexing,omitempty"`      // Whether the answer may be indexed into chat history KB
-	AllowComplete      bool            `json:"allow_complete,omitempty"`      // Whether the answer may be treated as formally completed
-	PartialAnswer      string          `json:"partial_answer,omitempty"`      // Accumulated partial answer content across length continuations
-	ContinuationRounds int             `json:"continuation_rounds,omitempty"` // Number of length-triggered continuation rounds already used
-	KnowledgeRefs      []*SearchResult `json:"knowledge_refs"`                // Collected knowledge references
+	CurrentRound           int                   `json:"current_round"`                      // Current round number
+	RoundSteps             []AgentStep           `json:"round_steps"`                        // All steps taken so far in the current round
+	IsComplete             bool                  `json:"is_complete"`                        // Whether agent has finished
+	FinalAnswer            string                `json:"final_answer"`                       // The final answer to the query
+	FinalAnswerSynthesized bool                  `json:"final_answer_synthesized,omitempty"` // Whether a synthesized final answer was successfully generated
+	CompletionStatus       string                `json:"completion_status,omitempty"`        // Business completion state for the generated answer
+	FinishReason           string                `json:"finish_reason,omitempty"`            // Raw finish reason surfaced by the LLM or orchestration
+	FailureReason          string                `json:"failure_reason,omitempty"`           // Normalized failure reason for downstream handlers
+	AllowIndexing          bool                  `json:"allow_indexing,omitempty"`           // Whether the answer may be indexed into chat history KB
+	AllowComplete          bool                  `json:"allow_complete,omitempty"`           // Whether the answer may be treated as formally completed
+	PartialAnswer          string                `json:"partial_answer,omitempty"`           // Accumulated partial answer content across length continuations
+	ContinuationRounds     int                   `json:"continuation_rounds,omitempty"`      // Number of length-triggered continuation rounds already used
+	DocumentContext        *AgentDocumentContext `json:"document_context,omitempty"`         // Document-generation metadata for fallback synthesis
+	KnowledgeRefs          []*SearchResult       `json:"knowledge_refs"`                     // Collected knowledge references
 }
 
 // FunctionDefinition represents a function definition for LLM function calling

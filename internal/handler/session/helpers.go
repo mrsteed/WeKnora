@@ -151,19 +151,6 @@ func sendCompletionEvent(c *gin.Context, requestID string) {
 	// which is already sent before this function is called
 }
 
-func sendLongDocumentTaskEvent(c *gin.Context, task *types.LongDocumentTask) {
-	setSSEHeaders(c)
-	c.SSEvent("message", &types.StreamResponse{
-		ID:           task.ID,
-		ResponseType: types.ResponseTypeLongDocumentTask,
-		Done:         true,
-		Data: map[string]interface{}{
-			"task": task,
-		},
-	})
-	c.Writer.Flush()
-}
-
 // createAgentQueryEvent creates a standard agent query event
 func createAgentQueryEvent(sessionID, assistantMessageID string) interfaces.StreamEvent {
 	return interfaces.StreamEvent{
@@ -238,13 +225,14 @@ func (h *Handler) setupStopEventHandler(
 		// Use session's tenant for message update (ctx may have effectiveTenantID when using shared agent).
 		// Use WithoutCancel so the GORM UPDATE survives the upcoming ctx.Done triggered by cancel()/client disconnect.
 		updateCtx := messageUpdateContext(ctx, sessionTenantID)
-		h.completeAssistantMessage(updateCtx, assistantMessage, "", assistantCompletionOptions{
+		options := assistantCompletionOptions{
 			CompletionStatus: "cancelled",
 			FinishReason:     "cancelled",
 			FailureReason:    "cancelled",
 			AllowIndexing:    false,
 			AllowComplete:    false,
-		}) // empty query: stopped conversations are not indexed
+		}
+		h.completeAssistantMessageInPlace(updateCtx, assistantMessage, "", &options) // empty query: stopped conversations are not indexed
 		return nil
 	})
 }

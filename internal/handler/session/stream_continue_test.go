@@ -17,8 +17,10 @@ import (
 )
 
 type continueStreamSessionServiceStub struct {
-	session *types.Session
-	err     error
+	session     *types.Session
+	err         error
+	replayExtra map[string]interface{}
+	replayErr   error
 }
 
 func (s *continueStreamSessionServiceStub) CreateSession(context.Context, *types.Session) (*types.Session, error) {
@@ -86,6 +88,14 @@ func (s *continueStreamSessionServiceStub) AgentQA(context.Context, *types.QAReq
 
 func (s *continueStreamSessionServiceStub) ClearContext(context.Context, string) error {
 	return nil
+}
+
+func (s *continueStreamSessionServiceStub) BuildChatDocumentTerminalReplayExtra(
+	context.Context,
+	*types.Message,
+	*types.ChatDocumentArtifact,
+) (map[string]interface{}, error) {
+	return s.replayExtra, s.replayErr
 }
 
 func newContinueStreamTestContext(t *testing.T, sessionID, messageID string) (*gin.Context, *httptest.ResponseRecorder) {
@@ -312,6 +322,123 @@ func TestContinueStream_TerminalNonAgentMessageSynthesizesCompleteWithChatDocume
 	assert.Equal(t, float64(2), artifact["revision_no"])
 	assert.Equal(t, types.ChatDocumentOperationRevise, artifact["operation"])
 	assert.Equal(t, types.ChatDocumentArtifactStatusPartial, artifact["status"])
+}
+
+func TestContinueStream_TerminalReplayRestoresTranslationContinuationMetadata(t *testing.T) {
+	messageStub := &messageServiceStub{getMessageResult: &types.Message{
+		ID:               "msg-translation-1",
+		SessionID:        "sess-1",
+		RequestID:        "req-translation-1",
+		Role:             "assistant",
+		Content:          "当前已完成的译文",
+		CompletionStatus: types.MessageCompletionStatusPartial,
+		FinishReason:     "section_generation_timeout",
+		FailureReason:    "llm_timeout",
+		IsCompleted:      true,
+	}}
+	artifactStub := &chatDocumentArtifactServiceStub{sessionArtifacts: []*types.ChatDocumentArtifact{{
+		ID:                       "artifact-translation-1",
+		SessionID:                "sess-1",
+		SourceMessageID:          "msg-translation-1",
+		RevisionNo:               1,
+		Title:                    "原始文档（English译文）",
+		ArtifactKind:             types.ChatDocumentArtifactKindMarkdown,
+		ContentType:              "text/markdown",
+		ContentSnapshot:          "# 已完成章节\n\n部分译文",
+		Status:                   types.ChatDocumentArtifactStatusPartial,
+		CompletionStatus:         types.MessageCompletionStatusPartial,
+		DocumentGenerationStatus: types.ChatDocumentGenerationStatusContinuing,
+		DocumentTaskKind:         types.ChatDocumentTaskKindTranslation,
+		SourceTitle:              "原始文档",
+		TargetLanguage:           "English",
+		OutputFormat:             "markdown",
+		Operation:                types.ChatDocumentOperationCreate,
+	}}}
+	handler := &Handler{
+		sessionService: &continueStreamSessionServiceStub{
+			session: &types.Session{ID: "sess-1"},
+			replayExtra: map[string]interface{}{
+				"document_task_kind": types.ChatDocumentTaskKindTranslation,
+				"generation_run_id":  "run-translation-1",
+				"translation_progress": map[string]interface{}{
+					"total_segments":     6,
+					"completed_segments": 2,
+					"remaining_segments": 4,
+				},
+			},
+		},
+		messageService:              messageStub,
+		streamManager:               &streamManagerStub{},
+		chatDocumentArtifactService: artifactStub,
+	}
+
+	c, recorder := newContinueStreamTestContext(t, "sess-1", "msg-translation-1")
+	handler.ContinueStream(c)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	response := decodeSSEPayload(t, recorder.Body.String())
+	assert.Equal(t, types.ResponseTypeComplete, response.ResponseType)
+	assert.Equal(t, "run-translation-1", response.Data["generation_run_id"])
+	assert.Equal(t, types.ChatDocumentTaskKindTranslation, response.Data["document_task_kind"])
+	assert.Equal(t, "continue_auto", response.Data["next_action"])
+	assert.Equal(t, true, response.Data["can_auto_continue"])
+	translationProgress, ok := response.Data["translation_progress"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, float64(6), translationProgress["total_segments"])
+	assert.Equal(t, float64(2), translationProgress["completed_segments"])
+	assert.Equal(t, float64(4), translationProgress["remaining_segments"])
+	recommendedRequest, ok := response.Data["recommended_request"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "run-translation-1", recommendedRequest["generation_run_id"])
+	assert.Equal(t, types.ChatDocumentTaskKindTranslation, recommendedRequest["document_task_kind"])
+	assert.Equal(t, true, recommendedRequest["auto_continue"])
+	artifact, ok := response.Data["chat_document_artifact"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, types.ChatDocumentTaskKindTranslation, artifact["document_task_kind"])
+}
+
+func TestContinueStream_TerminalNonAgentMessageStopsAfterRetryExhaustedTimeout(t *testing.T) {
+	messageStub := &messageServiceStub{getMessageResult: &types.Message{
+		ID:               "msg-doc-timeout-1",
+		SessionID:        "sess-1",
+		RequestID:        "req-doc-timeout-1",
+		Role:             "assistant",
+		Content:          "本轮增量内容",
+		CompletionStatus: types.MessageCompletionStatusPartial,
+		FinishReason:     "llm_timeout_retry_exhausted",
+		FailureReason:    "llm_timeout",
+		IsCompleted:      true,
+	}}
+	artifactStub := &chatDocumentArtifactServiceStub{sessionArtifacts: []*types.ChatDocumentArtifact{{
+		ID:                       "artifact-timeout-1",
+		SessionID:                "sess-1",
+		SourceMessageID:          "msg-doc-timeout-1",
+		RevisionNo:               2,
+		Title:                    "技术方案",
+		ArtifactKind:             types.ChatDocumentArtifactKindMarkdown,
+		ContentType:              "text/markdown",
+		ContentSnapshot:          "# 完整文档\n\n## 第一章\n\n正文",
+		Status:                   types.ChatDocumentArtifactStatusPartial,
+		CompletionStatus:         types.MessageCompletionStatusPartial,
+		DocumentGenerationStatus: types.ChatDocumentGenerationStatusContinuing,
+		Operation:                types.ChatDocumentOperationContinue,
+	}}}
+	handler := &Handler{
+		sessionService:              &continueStreamSessionServiceStub{session: &types.Session{ID: "sess-1"}},
+		messageService:              messageStub,
+		streamManager:               &streamManagerStub{},
+		chatDocumentArtifactService: artifactStub,
+	}
+
+	c, recorder := newContinueStreamTestContext(t, "sess-1", "msg-doc-timeout-1")
+	handler.ContinueStream(c)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	response := decodeSSEPayload(t, recorder.Body.String())
+	assert.Equal(t, types.ResponseTypeComplete, response.ResponseType)
+	assert.True(t, response.Done)
+	assert.Equal(t, false, response.Data["auto_continue_next"])
+	assert.Equal(t, "llm_timeout_retry_exhausted", response.Data["auto_continue_reason"])
 }
 
 func TestContinueStream_TerminalAgentReplayFallbackIncludesChatDocumentMetadata(t *testing.T) {

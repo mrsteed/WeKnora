@@ -20,6 +20,8 @@ const (
 	finalAnswerToolOutputBudget   = 1800
 	finalAnswerRowPreviewLimit    = 3
 	finalAnswerColumnPreviewLimit = 6
+	finalAnswerQueryCharBudget    = 2400
+	finalAnswerToolSummaryBudget  = 4000
 )
 
 type completionEventState struct {
@@ -82,6 +84,201 @@ func buildFinalAnswerEventData(state *types.AgentState, content string, done boo
 	}
 }
 
+func buildFinalSynthesisSystemPrompt(language string, documentContext *types.AgentDocumentContext) string {
+	var builder strings.Builder
+	builder.WriteString("You are a final answer synthesizer. Use only the provided user goal, document context, and tool summaries. ")
+	builder.WriteString("Do not call tools. Do not output hidden reasoning. Keep the answer directly usable. ")
+	if strings.TrimSpace(language) != "" {
+		builder.WriteString(fmt.Sprintf("Respond in %s. ", language))
+	}
+	if documentContext != nil && documentContext.Intent == types.ChatDocumentIntentRevise {
+		builder.WriteString("For document revision tasks, prefer outputting a structured <document_patch> instead of repeating the full document. ")
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func isDocumentContinuationFinalSynthesis(documentContext *types.AgentDocumentContext) bool {
+	if documentContext == nil {
+		return false
+	}
+	return documentContext.AutoContinue ||
+		documentContext.Intent == types.ChatDocumentIntentContinue ||
+		documentContext.Operation == types.ChatDocumentOperationContinue
+}
+
+func documentCompletionMarker(documentContext *types.AgentDocumentContext) string {
+	if documentContext != nil && strings.TrimSpace(documentContext.CompletionMarker) != "" {
+		return strings.TrimSpace(documentContext.CompletionMarker)
+	}
+	return types.ChatDocumentCompletionMarker
+}
+
+func buildDocumentContinuationSynthesisProtocol(documentContext *types.AgentDocumentContext) string {
+	if !isDocumentContinuationFinalSynthesis(documentContext) {
+		return ""
+	}
+	marker := documentCompletionMarker(documentContext)
+	return fmt.Sprintf(`
+Document continuation requirements:
+1. The current task is continuing the same document, not regenerating a full new document.
+2. Output only the missing new body text after the existing base document.
+3. Do not repeat the document title, top-level headings, already completed sections, or paragraphs already present near the end of the base document.
+4. Preserve the existing heading hierarchy, numbering style, terminology, table style, and Markdown style.
+5. If the whole document is already complete, append %s on its own line at the end of the answer.
+6. If there is no new content to add, output only %s.
+7. Do not explain that you are continuing; output document body content directly.`, marker, marker)
+}
+
+func buildDocumentRevisionSynthesisProtocol(documentContext *types.AgentDocumentContext) string {
+	if documentContext == nil {
+		return ""
+	}
+	if documentContext.Intent != types.ChatDocumentIntentRevise && documentContext.Operation != types.ChatDocumentOperationRevise {
+		return ""
+	}
+	return `
+Document revision requirements:
+1. Modify the existing document instead of regenerating a full new version.
+2. Prefer outputting a <document_patch> envelope with replace/append/insert_after operations.
+3. Do not repeat unchanged sections.
+4. Keep heading hierarchy, numbering, terminology, and Markdown style consistent.
+5. If the available context is insufficient for a safe patch, clearly state the missing section boundary instead of inventing content.`
+}
+
+func appendDocumentContinuationContext(messages []chat.Message, query string, documentContext *types.AgentDocumentContext) []chat.Message {
+	if !isDocumentContinuationFinalSynthesis(documentContext) {
+		return messages
+	}
+	quotedContext := strings.TrimSpace(documentContext.QuotedContext)
+	if quotedContext == "" || strings.Contains(query, quotedContext) {
+		return messages
+	}
+	return append(messages, chat.Message{
+		Role:    "user",
+		Content: "Document continuation context:\n" + quotedContext,
+	})
+}
+
+func compactQueryForFinalSynthesis(query string, documentContext *types.AgentDocumentContext) string {
+	if documentContext != nil && strings.TrimSpace(documentContext.UserGoal) != "" {
+		return compactToolTextForFinalAnswer(strings.TrimSpace(documentContext.UserGoal), finalAnswerQueryCharBudget)
+	}
+	query = stripTaggedBlock(query, "document_revision_context")
+	query = stripTaggedBlock(query, "document_continuation_context")
+	query = stripTaggedBlock(query, "runtime_context")
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return "Summarize the collected results into a final answer."
+	}
+	return compactToolTextForFinalAnswer(query, finalAnswerQueryCharBudget)
+}
+
+func stripTaggedBlock(content string, tag string) string {
+	if strings.TrimSpace(content) == "" || strings.TrimSpace(tag) == "" {
+		return strings.TrimSpace(content)
+	}
+	openTag := "<" + tag
+	closeTag := "</" + tag + ">"
+	for {
+		start := strings.Index(content, openTag)
+		if start < 0 {
+			break
+		}
+		end := strings.Index(content[start:], closeTag)
+		if end < 0 {
+			content = content[:start]
+			break
+		}
+		end += start + len(closeTag)
+		content = content[:start] + content[end:]
+	}
+	return strings.TrimSpace(content)
+}
+
+func buildFinalSynthesisToolMessages(state *types.AgentState) ([]chat.Message, int) {
+	if state == nil {
+		return nil, 0
+	}
+	remainingBudget := finalAnswerToolSummaryBudget
+	messages := make([]chat.Message, 0)
+	toolResultCount := 0
+	omittedCount := 0
+	for _, step := range state.RoundSteps {
+		for _, toolCall := range step.ToolCalls {
+			toolResultCount++
+			if remainingBudget <= 0 {
+				omittedCount++
+				continue
+			}
+			summary := summarizeToolResultForFinalAnswer(toolCall)
+			budget := minInt(finalAnswerToolOutputBudget, remainingBudget)
+			summary = compactToolTextForFinalAnswer(summary, budget)
+			remainingBudget -= len([]rune(summary))
+			messages = append(messages, chat.Message{
+				Role:    "user",
+				Content: fmt.Sprintf("Tool %s summary:\n%s", toolCall.Name, summary),
+			})
+		}
+	}
+	if omittedCount > 0 {
+		messages = append(messages, chat.Message{
+			Role:    "user",
+			Content: fmt.Sprintf("Additional tool results omitted to stay within synthesis budget: %d", omittedCount),
+		})
+	}
+	return messages, toolResultCount
+}
+
+func buildFinalSynthesisBudgetFallback(language string, documentContext *types.AgentDocumentContext) string {
+	isChinese := strings.Contains(strings.ToLower(language), "chinese") || language == ""
+	if documentContext != nil && documentContext.Intent == types.ChatDocumentIntentRevise {
+		if isChinese {
+			return "已获取中间结果，但当前文档修订上下文仍然过长，无法在安全预算内完成最终合成。请缩小到具体章节、段落或拆成多次修改后重试。"
+		}
+		return "Intermediate results are available, but the document revision context is still too large to synthesize safely. Please narrow the request to specific sections or split it into smaller edits."
+	}
+	if isChinese {
+		return "已获取中间结果，但当前上下文仍然过长，无法在安全预算内完成最终合成。请缩小问题范围后重试。"
+	}
+	return "Intermediate results are available, but the context is still too large to synthesize safely. Please narrow the request and try again."
+}
+
+func (e *AgentEngine) emitStaticFinalAnswer(ctx context.Context, sessionID string, state *types.AgentState, content string) {
+	answerID := generateEventID("answer")
+	e.eventBus.Emit(ctx, event.Event{
+		ID:        answerID,
+		Type:      event.EventAgentFinalAnswer,
+		SessionID: sessionID,
+		Data:      buildFinalAnswerEventData(state, content, false),
+	})
+	e.eventBus.Emit(ctx, event.Event{
+		ID:        answerID,
+		Type:      event.EventAgentFinalAnswer,
+		SessionID: sessionID,
+		Data:      buildFinalAnswerEventData(state, "", true),
+	})
+}
+
+func buildFinalAnswerSynthesisPrompt(query string, state *types.AgentState) string {
+	documentProtocol := ""
+	if state != nil {
+		documentProtocol = buildDocumentContinuationSynthesisProtocol(state.DocumentContext) + buildDocumentRevisionSynthesisProtocol(state.DocumentContext)
+	}
+
+	return fmt.Sprintf(`Based on the above tool call results, generate a complete answer for the user's question.%s
+
+User question: %s
+
+Requirements:
+1. Answer based on the actually retrieved content
+2. Clearly cite information sources (chunk_id, document name)
+3. Organize the answer in a structured format
+4. If information is insufficient, honestly state so
+5. IMPORTANT: Respond in the same language as the user's question
+
+Now generate the final answer:`, documentProtocol, query)
+}
+
 // streamFinalAnswerToEventBus streams the final answer generation through EventBus
 func (e *AgentEngine) streamFinalAnswerToEventBus(
 	ctx context.Context,
@@ -99,60 +296,49 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 		"tool_results": totalToolCalls,
 	})
 
-	// Build messages with all context
+	// Build a lightweight synthesis context instead of reusing the full agent system prompt.
 	language := types.LanguageNameFromContext(ctx)
-	systemPrompt := BuildSystemPromptWithOptions(
-		e.knowledgeBasesInfo,
-		e.config.WebSearchEnabled,
-		e.selectedDocs,
-		&BuildSystemPromptOptions{
-			Language: language,
-			Config:   e.appConfig,
-		},
-		e.systemPromptTemplate,
-	)
+	var documentContext *types.AgentDocumentContext
+	if state != nil {
+		documentContext = state.DocumentContext
+	}
+	compactQuery := compactQueryForFinalSynthesis(query, documentContext)
+	systemPrompt := buildFinalSynthesisSystemPrompt(language, documentContext)
 
 	messages := []chat.Message{
 		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: query},
+		{Role: "user", Content: "User goal:\n" + compactQuery},
 	}
+	messages = appendDocumentContinuationContext(messages, compactQuery, documentContext)
 
-	// Add all tool call results as context
-	toolResultCount := 0
-	for stepIdx, step := range state.RoundSteps {
-		for toolIdx, toolCall := range step.ToolCalls {
-			toolResultCount++
-			toolSummary := summarizeToolResultForFinalAnswer(toolCall)
-			messages = append(messages, chat.Message{
-				Role:    "user",
-				Content: fmt.Sprintf("Tool %s summary:\n%s", toolCall.Name, toolSummary),
-			})
-			logger.Debugf(ctx, "[Agent][FinalAnswer] Added tool result [Step-%d][Tool-%d]: %s (output: %d chars)",
-				stepIdx+1, toolIdx+1, toolCall.Name, len(toolSummary))
-		}
-	}
+	toolMessages, toolResultCount := buildFinalSynthesisToolMessages(state)
+	messages = append(messages, toolMessages...)
 
 	logger.Debugf(ctx, "[Agent][FinalAnswer] Built context: %d messages, %d tool results",
 		len(messages), toolResultCount)
 
 	// Add final answer prompt
-	finalPrompt := fmt.Sprintf(`Based on the above tool call results, generate a complete answer for the user's question.
-
-User question: %s
-
-Requirements:
-1. Answer based on the actually retrieved content
-2. Clearly cite information sources (chunk_id, document name)
-3. Organize the answer in a structured format
-4. If information is insufficient, honestly state so
-5. IMPORTANT: Respond in the same language as the user's question
-
-Now generate the final answer:`, query)
+	finalPrompt := buildFinalAnswerSynthesisPrompt(compactQuery, state)
 
 	messages = append(messages, chat.Message{
 		Role:    "user",
 		Content: finalPrompt,
 	})
+	if len([]rune(compactQuery)) >= finalAnswerQueryCharBudget {
+		logger.Warnf(ctx, "[Agent][FinalAnswer] Compact query hit char budget: %d", len([]rune(compactQuery)))
+	}
+	totalChars := 0
+	for _, msg := range messages {
+		totalChars += len([]rune(msg.Content))
+	}
+	if totalChars > finalAnswerQueryCharBudget+finalAnswerToolSummaryBudget+2000 {
+		fallback := buildFinalSynthesisBudgetFallback(language, documentContext)
+		logger.Warnf(ctx, "[Agent][FinalAnswer] Skipping LLM synthesis because compact context is still too large: chars=%d", totalChars)
+		e.emitStaticFinalAnswer(ctx, sessionID, state, fallback)
+		state.FinalAnswer = fallback
+		state.FinalAnswerSynthesized = true
+		return nil
+	}
 
 	// Generate a single ID for this entire final answer stream
 	answerID := generateEventID("answer")
@@ -612,6 +798,7 @@ func (e *AgentEngine) emitCompletionEvent(
 		knowledgeRefsInterface = append(knowledgeRefsInterface, ref)
 	}
 	normalized := normalizeCompletionEventState(state)
+	e.persistPendingContextGroups(ctx, normalized.completionStatus)
 
 	e.eventBus.Emit(ctx, event.Event{
 		ID:        generateEventID("complete"),
@@ -626,7 +813,7 @@ func (e *AgentEngine) emitCompletionEvent(
 			AllowComplete:    normalized.allowComplete,
 			FailureReason:    normalized.failureReason,
 			KnowledgeRefs:    knowledgeRefsInterface,
-			AgentSteps:       state.RoundSteps, // Include detailed execution steps for message storage
+			AgentSteps:       append(types.AgentSteps(nil), state.RoundSteps...), // Include detailed execution steps for message storage
 			TotalSteps:       len(state.RoundSteps),
 			TotalDurationMs:  time.Since(startTime).Milliseconds(),
 			MessageID:        messageID, // Include message ID for proper message update
@@ -634,4 +821,18 @@ func (e *AgentEngine) emitCompletionEvent(
 	})
 
 	logger.Infof(ctx, "Agent execution completed in %d rounds", state.CurrentRound)
+}
+
+func (e *AgentEngine) persistPendingContextGroups(ctx context.Context, completionStatus string) {
+	defer func() {
+		e.pendingContextGroups = nil
+	}()
+	if e == nil || len(e.pendingContextGroups) == 0 {
+		return
+	}
+	if completionStatus == types.MessageCompletionStatusFailed {
+		logger.Infof(ctx, "[Agent] Skipping deferred context persistence for failed execution (session: %s, pending_messages=%d)", e.sessionID, len(e.pendingContextGroups))
+		return
+	}
+	logger.Debugf(ctx, "[Agent] Clearing %d deferred tool-group message(s) after completion (session: %s)", len(e.pendingContextGroups), e.sessionID)
 }

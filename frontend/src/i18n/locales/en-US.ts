@@ -2433,6 +2433,7 @@ export default {
     attachmentTypeNotSupported: 'Unsupported file type: {name}',
     longDocumentTranslateRequiresSingleFile: 'Long document translation mode requires exactly one selected file',
     longDocumentTranslateNoAttachments: 'Long document translation mode does not support images or attachments',
+    longDocumentTranslateLegacyFrozen: 'The legacy long document background translation entry has been frozen. Only historical task viewing and downloads remain available. Please use normal chat mode for now; translation will be unified into full document mode later.',
   },
   tenant: {
     title: 'Tenant Information',
@@ -3947,12 +3948,19 @@ export default {
     },
     completion: {
       completed: 'Completed',
+      continuing: 'Continuing remaining sections',
       partial: 'Output was truncated and is incomplete',
       failed: 'Generation failed. Please try again.',
       cancelled: 'Generation stopped',
     },
     loading: {
       finalizing: 'Organizing the final document...',
+    },
+    thoughtStage: {
+      planning: 'Planning',
+      retrieving: 'Retrieving',
+      generating: 'Generating',
+      finalizing: 'Finalizing',
     },
     copy: {
       emptyContent: 'Current response is empty, cannot copy',

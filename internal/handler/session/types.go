@@ -38,22 +38,32 @@ type ImageAttachment struct {
 
 // CreateKnowledgeQARequest defines the request structure for knowledge QA
 type CreateKnowledgeQARequest struct {
-	Query              string                 `json:"query"              binding:"required"` // Query text for knowledge base search
-	KnowledgeBaseIDs   []string               `json:"knowledge_base_ids"`                    // Selected knowledge base ID for this request
-	KnowledgeIds       []string               `json:"knowledge_ids"`                         // Selected knowledge ID for this request
-	IntentHint         string                 `json:"intent_hint,omitempty"`                 // Lightweight document intent hint from the client
-	BaseArtifactID     string                 `json:"base_artifact_id,omitempty"`            // Explicit base artifact for document continuation or revision
-	DocumentOutputMode string                 `json:"document_output_mode,omitempty"`        // Document streaming mode: full_document or delta_only
-	AgentEnabled       bool                   `json:"agent_enabled"`                         // Whether agent mode is enabled for this request
-	AgentID            string                 `json:"agent_id"`                              // Selected custom agent ID (backend resolves shared agent and its tenant from share relation)
-	WebSearchEnabled   bool                   `json:"web_search_enabled"`                    // Whether web search is enabled for this request
-	SummaryModelID     string                 `json:"summary_model_id"`                      // Optional summary model ID for this request (overrides session default)
-	MentionedItems     []MentionedItemRequest `json:"mentioned_items"`                       // @mentioned knowledge bases and files
-	DisableTitle       bool                   `json:"disable_title"`                         // Whether to disable auto title generation
-	EnableMemory       bool                   `json:"enable_memory"`                         // Whether memory feature is enabled for this request
-	Images             []ImageAttachment      `json:"images"`                                // Attached images for multimodal chat
-	AttachmentUploads  []AttachmentUpload     `json:"attachment_uploads,omitempty"`          // Attached files (documents, audio, etc.)
-	Channel            string                 `json:"channel"`                               // Source channel: "web", "api", "im", etc.
+	Query                     string                                `json:"query"              binding:"required"`  // Query text for knowledge base search
+	KnowledgeBaseIDs          []string                              `json:"knowledge_base_ids"`                     // Selected knowledge base ID for this request
+	KnowledgeIds              []string                              `json:"knowledge_ids"`                          // Selected knowledge ID for this request
+	IntentHint                string                                `json:"intent_hint,omitempty"`                  // Lightweight document intent hint from the client
+	BaseArtifactID            string                                `json:"base_artifact_id,omitempty"`             // Explicit base artifact for document continuation or revision
+	DocumentOutputMode        string                                `json:"document_output_mode,omitempty"`         // Document streaming mode: full_document or delta_only
+	DocumentTaskKind          string                                `json:"document_task_kind,omitempty"`           // Structured long document task kind, e.g. writing or translation
+	TranslationOptions        *types.ChatDocumentTranslationOptions `json:"translation_options,omitempty"`          // Structured translation options for full document translation requests
+	DocumentTargetHeading     string                                `json:"document_target_heading,omitempty"`      // Structured target heading for section-scoped editing
+	DocumentMergeMode         string                                `json:"document_merge_mode,omitempty"`          // Structured merge mode for section-scoped editing
+	AutoContinue              bool                                  `json:"auto_continue,omitempty"`                // Whether this request is triggered by automatic document continuation
+	GenerationRunID           string                                `json:"generation_run_id,omitempty"`            // Persistent generation run ID returned by the backend
+	AutoContinueRootID        string                                `json:"auto_continue_root_id,omitempty"`        // Stable ID for one automatic continuation flow
+	AutoContinueRound         int                                   `json:"auto_continue_round,omitempty"`          // Current automatic continuation round
+	AutoContinuePrompt        string                                `json:"auto_continue_prompt,omitempty"`         // Prompt used by automatic continuation
+	AutoContinueOriginalQuery string                                `json:"auto_continue_original_query,omitempty"` // Original user goal for automatic continuation
+	AgentEnabled              bool                                  `json:"agent_enabled"`                          // Whether agent mode is enabled for this request
+	AgentID                   string                                `json:"agent_id"`                               // Selected custom agent ID (backend resolves shared agent and its tenant from share relation)
+	WebSearchEnabled          bool                                  `json:"web_search_enabled"`                     // Whether web search is enabled for this request
+	SummaryModelID            string                                `json:"summary_model_id"`                       // Optional summary model ID for this request (overrides session default)
+	MentionedItems            []MentionedItemRequest                `json:"mentioned_items"`                        // @mentioned knowledge bases and files
+	DisableTitle              bool                                  `json:"disable_title"`                          // Whether to disable auto title generation
+	EnableMemory              bool                                  `json:"enable_memory"`                          // Whether memory feature is enabled for this request
+	Images                    []ImageAttachment                     `json:"images"`                                 // Attached images for multimodal chat
+	AttachmentUploads         []AttachmentUpload                    `json:"attachment_uploads,omitempty"`           // Attached files (documents, audio, etc.)
+	Channel                   string                                `json:"channel"`                                // Source channel: "web", "api", "im", etc.
 }
 
 // AttachmentUpload represents a file attachment upload from the client

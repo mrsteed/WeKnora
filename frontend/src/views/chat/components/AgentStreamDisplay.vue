@@ -1,5 +1,30 @@
 <template>
   <div ref="rootElement" class="agent-stream-display">
+    <div v-if="visiblePlanningOutline" class="planning-outline-card">
+      <div class="planning-outline-card-header">
+        <div class="planning-outline-card-title-group">
+          <img class="planning-outline-card-icon" :src="documentIcon" alt="" />
+          <span class="planning-outline-card-label">{{ planningOutlineCardLabel }}</span>
+          <span v-if="planningOutlineStatusLabel" class="planning-outline-card-status">{{ planningOutlineStatusLabel }}</span>
+        </div>
+        <span v-if="visiblePlanningOutline.sections.length" class="planning-outline-card-count">{{ formatPlanningOutlineSectionCount(visiblePlanningOutline.sections.length) }}</span>
+      </div>
+      <div v-if="planningOutlineProgressLabel" class="planning-outline-card-progress-row">
+        <span class="planning-outline-card-progress">{{ planningOutlineProgressLabel }}</span>
+      </div>
+      <div class="planning-outline-preview planning-outline-preview-pinned">
+        <div v-if="visiblePlanningOutline.title" class="planning-outline-title-row">
+          <span class="planning-outline-heading-mark">#</span>
+          <span class="planning-outline-title">{{ visiblePlanningOutline.title }}</span>
+        </div>
+        <ol v-if="visiblePlanningOutline.sections.length" class="planning-outline-list">
+          <li v-for="(section, sectionIndex) in visiblePlanningOutline.sections" :key="`pinned-outline-section-${sectionIndex}`" class="planning-outline-item">
+            <span class="planning-outline-order">{{ sectionIndex + 1 }}</span>
+            <span class="planning-outline-text">{{ section }}</span>
+          </li>
+        </ol>
+      </div>
+    </div>
     
     <!-- Collapsed intermediate steps (tree root) -->
     <div v-if="shouldShowCollapsedSteps" class="tree-container">
@@ -29,11 +54,17 @@
 
               <!-- Thinking Event (streaming / merged) -->
               <div v-if="event.type === 'thinking'" class="tool-event">
-                <div class="action-card" :class="{ 'action-pending': isThinkingActive(event.event_id) }">
+                <div class="action-card" :class="getThinkingCardClasses(event, isThinkingActive(event.event_id))">
                   <div class="action-header" @click="toggleEvent(event.event_id)">
                     <div class="action-title">
                       <img class="action-title-icon" :src="thinkingIcon" alt="" />
                       <span v-if="isEventExpanded(event.event_id)" class="action-name">{{ $t('agent.think') }}</span>
+                      <span
+                        v-if="getThinkingStageLabel(event)"
+                        :class="['action-badge', 'action-stage-badge', `action-stage-badge-${getThinkingStage(event)}`]"
+                      >
+                        {{ getThinkingStageLabel(event) }}
+                      </span>
                       <span v-if="getThinkingSummary(event) && !isEventExpanded(event.event_id)" class="action-summary">{{ getThinkingSummary(event) }}</span>
                     </div>
                     <div v-if="event.content" class="action-show-icon">
@@ -42,7 +73,19 @@
                   </div>
                   <div v-if="event.content && isEventExpanded(event.event_id)" class="action-details">
                     <div class="thinking-detail-content markdown-content">
-                      <div v-html="renderMarkdownContent(event.content)"></div>
+                      <div v-if="hasPlanningOutline(event)" class="planning-outline-preview">
+                        <div v-if="getPlanningOutline(event)?.title" class="planning-outline-title-row">
+                          <span class="planning-outline-heading-mark">#</span>
+                          <span class="planning-outline-title">{{ getPlanningOutline(event)?.title }}</span>
+                        </div>
+                        <ol v-if="getPlanningOutline(event)?.sections.length" class="planning-outline-list">
+                          <li v-for="(section, sectionIndex) in getPlanningOutline(event)?.sections || []" :key="`${event.event_id}-section-${sectionIndex}`" class="planning-outline-item">
+                            <span class="planning-outline-order">{{ sectionIndex + 1 }}</span>
+                            <span class="planning-outline-text">{{ section }}</span>
+                          </li>
+                        </ol>
+                      </div>
+                      <div v-if="getThinkingRenderableContent(event)" v-html="renderMarkdownContent(getThinkingRenderableContent(event))"></div>
                     </div>
                   </div>
                 </div>
@@ -50,11 +93,17 @@
 
               <!-- Thinking Tool Call -->
               <div v-else-if="event.type === 'tool_call' && event.tool_name === 'thinking'" class="tool-event">
-                <div class="action-card" :class="{ 'action-pending': event.pending || isThinkingActive(event.tool_call_id) }">
+                <div class="action-card" :class="getThinkingCardClasses(event, event.pending || isThinkingActive(event.tool_call_id))">
                   <div class="action-header" @click="toggleEvent(event.tool_call_id)">
                     <div class="action-title">
                       <img class="action-title-icon" :src="thinkingIcon" alt="" />
                       <span class="action-name">{{ $t('agent.think') }}</span>
+                      <span
+                        v-if="getThinkingStageLabel(event)"
+                        :class="['action-badge', 'action-stage-badge', `action-stage-badge-${getThinkingStage(event)}`]"
+                      >
+                        {{ getThinkingStageLabel(event) }}
+                      </span>
                       <span v-if="event.tool_data?.thought_number" class="action-badge">{{ event.tool_data.thought_number }}/{{ event.tool_data.total_thoughts }}</span>
                       <span v-if="getThinkingSummary(event) && !isEventExpanded(event.tool_call_id)" class="action-summary">{{ getThinkingSummary(event) }}</span>
                     </div>
@@ -64,7 +113,19 @@
                   </div>
                   <div v-if="event.tool_data?.thought && isEventExpanded(event.tool_call_id)" class="action-details">
                     <div class="thinking-detail-content markdown-content">
-                      <div v-html="renderMarkdownContent(event.tool_data.thought)"></div>
+                      <div v-if="hasPlanningOutline(event)" class="planning-outline-preview">
+                        <div v-if="getPlanningOutline(event)?.title" class="planning-outline-title-row">
+                          <span class="planning-outline-heading-mark">#</span>
+                          <span class="planning-outline-title">{{ getPlanningOutline(event)?.title }}</span>
+                        </div>
+                        <ol v-if="getPlanningOutline(event)?.sections.length" class="planning-outline-list">
+                          <li v-for="(section, sectionIndex) in getPlanningOutline(event)?.sections || []" :key="`${event.tool_call_id}-section-${sectionIndex}`" class="planning-outline-item">
+                            <span class="planning-outline-order">{{ sectionIndex + 1 }}</span>
+                            <span class="planning-outline-text">{{ section }}</span>
+                          </li>
+                        </ol>
+                      </div>
+                      <div v-if="getThinkingRenderableContent(event)" v-html="renderMarkdownContent(getThinkingRenderableContent(event))"></div>
                     </div>
                   </div>
                 </div>
@@ -176,11 +237,17 @@
 
         <!-- Thinking Event (streaming / merged) -->
         <div v-if="event.type === 'thinking'" class="tool-event">
-          <div class="action-card" :class="{ 'action-pending': isThinkingActive(event.event_id) }">
+          <div class="action-card" :class="getThinkingCardClasses(event, isThinkingActive(event.event_id))">
             <div class="action-header" @click="toggleEvent(event.event_id)">
               <div class="action-title">
                 <img class="action-title-icon" :src="thinkingIcon" alt="" />
                 <span class="action-name">{{ $t('agent.think') }}</span>
+                <span
+                  v-if="getThinkingStageLabel(event)"
+                  :class="['action-badge', 'action-stage-badge', `action-stage-badge-${getThinkingStage(event)}`]"
+                >
+                  {{ getThinkingStageLabel(event) }}
+                </span>
                 <span v-if="getThinkingSummary(event) && !isEventExpanded(event.event_id)" class="action-summary">{{ getThinkingSummary(event) }}</span>
               </div>
               <div v-if="event.content" class="action-show-icon">
@@ -189,7 +256,19 @@
             </div>
             <div v-if="event.content && isEventExpanded(event.event_id)" class="action-details">
               <div class="thinking-detail-content markdown-content">
-                <div v-html="renderMarkdownContent(event.content)"></div>
+                <div v-if="hasPlanningOutline(event)" class="planning-outline-preview">
+                  <div v-if="getPlanningOutline(event)?.title" class="planning-outline-title-row">
+                    <span class="planning-outline-heading-mark">#</span>
+                    <span class="planning-outline-title">{{ getPlanningOutline(event)?.title }}</span>
+                  </div>
+                  <ol v-if="getPlanningOutline(event)?.sections.length" class="planning-outline-list">
+                    <li v-for="(section, sectionIndex) in getPlanningOutline(event)?.sections || []" :key="`${event.event_id}-section-${sectionIndex}`" class="planning-outline-item">
+                      <span class="planning-outline-order">{{ sectionIndex + 1 }}</span>
+                      <span class="planning-outline-text">{{ section }}</span>
+                    </li>
+                  </ol>
+                </div>
+                <div v-if="getThinkingRenderableContent(event)" v-html="renderMarkdownContent(getThinkingRenderableContent(event))"></div>
               </div>
             </div>
           </div>
@@ -213,11 +292,17 @@
 
         <!-- Thinking Tool Call -->
         <div v-else-if="event.type === 'tool_call' && event.tool_name === 'thinking'" class="tool-event">
-          <div class="action-card" :class="{ 'action-pending': event.pending || isThinkingActive(event.tool_call_id) }">
+          <div class="action-card" :class="getThinkingCardClasses(event, event.pending || isThinkingActive(event.tool_call_id))">
             <div class="action-header" @click="toggleEvent(event.tool_call_id)">
               <div class="action-title">
                 <img class="action-title-icon" :src="thinkingIcon" alt="" />
                 <span class="action-name">{{ $t('agent.think') }}</span>
+                <span
+                  v-if="getThinkingStageLabel(event)"
+                  :class="['action-badge', 'action-stage-badge', `action-stage-badge-${getThinkingStage(event)}`]"
+                >
+                  {{ getThinkingStageLabel(event) }}
+                </span>
                 <span v-if="event.tool_data?.thought_number" class="action-badge">{{ event.tool_data.thought_number }}/{{ event.tool_data.total_thoughts }}</span>
                 <span v-if="getThinkingSummary(event) && !isEventExpanded(event.tool_call_id)" class="action-summary">{{ getThinkingSummary(event) }}</span>
               </div>
@@ -227,7 +312,19 @@
             </div>
             <div v-if="event.tool_data?.thought && isEventExpanded(event.tool_call_id)" class="action-details">
               <div class="thinking-detail-content markdown-content">
-                <div v-html="renderMarkdownContent(event.tool_data.thought)"></div>
+                <div v-if="hasPlanningOutline(event)" class="planning-outline-preview">
+                  <div v-if="getPlanningOutline(event)?.title" class="planning-outline-title-row">
+                    <span class="planning-outline-heading-mark">#</span>
+                    <span class="planning-outline-title">{{ getPlanningOutline(event)?.title }}</span>
+                  </div>
+                  <ol v-if="getPlanningOutline(event)?.sections.length" class="planning-outline-list">
+                    <li v-for="(section, sectionIndex) in getPlanningOutline(event)?.sections || []" :key="`${event.tool_call_id}-section-${sectionIndex}`" class="planning-outline-item">
+                      <span class="planning-outline-order">{{ sectionIndex + 1 }}</span>
+                      <span class="planning-outline-text">{{ section }}</span>
+                    </li>
+                  </ol>
+                </div>
+                <div v-if="getThinkingRenderableContent(event)" v-html="renderMarkdownContent(getThinkingRenderableContent(event))"></div>
               </div>
             </div>
           </div>
@@ -236,12 +333,12 @@
         <!-- Answer Event -->
         <div v-else-if="event.type === 'answer' && (event.done || (event.content && event.content.trim()))" class="answer-event">
           <div
-            v-if="event.content && event.content.trim()"
+            v-if="getAnswerDisplayContent(event)"
             class="answer-content markdown-content"
           >
-               <div v-html="renderAnswerContent(event.content)"></div>
+               <div v-html="renderAnswerContent(getAnswerDisplayContent(event))"></div>
           </div>
-          <div v-if="event.done && event.content && event.content.trim()" class="answer-toolbar">
+          <div v-if="event.done && getActualContent(event)" class="answer-toolbar">
             <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer(event)" :title="$t('agent.copy')">
               <t-icon name="copy" />
             </t-button>
@@ -342,10 +439,29 @@
         <span></span>
       </div>
       <div v-if="loadingStatusLabel" class="loading-label">{{ loadingStatusLabel }}</div>
+      <div v-if="loadingProgressLabel" class="loading-detail">{{ loadingProgressLabel }}</div>
     </div>
     </div>
-    <div v-if="conversationStatusLabel" class="conversation-status" :class="`status-${completionStatus || 'pending'}`">
-      {{ conversationStatusLabel }}
+    <div v-if="conversationStatusLabel" class="conversation-status" :class="[`status-${completionStatus || 'pending'}`, { 'has-action': showResumeRetryAction }]">
+      <div class="conversation-status-content">
+        <div class="conversation-status-copy">
+          <div class="conversation-status-label">{{ conversationStatusLabel }}</div>
+          <div v-if="conversationStatusDetail" class="conversation-status-detail">
+            {{ conversationStatusDetail }}
+          </div>
+        </div>
+        <t-button
+          v-if="showResumeRetryAction"
+          size="small"
+          variant="outline"
+          theme="warning"
+          shape="round"
+          class="conversation-status-action"
+          @click.stop="emitRetry"
+        >
+          继续生成
+        </t-button>
+      </div>
     </div>
   </div>
   <!-- 全局浮层：统一承载 Web/KB 的 hover 内容 -->
@@ -439,6 +555,16 @@ import {
   ensureMermaidInitialized,
   renderMermaidInContainer,
 } from '@/utils/mermaidShared';
+import {
+  extractPlanningOutlineFromCompleteEvent,
+  extractPlanningOutlineFromText,
+  getPlanningOutlineFromThinkingEvent,
+  normalizePlanningOutlinePreview,
+  normalizePlanningOutlineSections,
+  pickStructuredPlanningOutline,
+  shouldAllowPlanningOutlineArtifactFallback,
+} from '../utils/planningOutline';
+import { getDocumentCompletionStatusDetail, isDocumentCompletionContinuing } from '../utils/documentCompletion';
 
 const router = useRouter();
 const route = useRoute();
@@ -772,16 +898,60 @@ interface SessionData {
   isAgentMode?: boolean;
   is_completed?: boolean;
   is_failed?: boolean;
+  document_display_mode?: string;
   completion_status?: string;
   finish_reason?: string;
   failure_reason?: string;
+  document_generation_status?: string;
+  auto_continue_next?: boolean;
+  generation_run_id?: string;
+  translation_progress?: {
+    total_segments?: number;
+    completed_segments?: number;
+    remaining_segments?: number;
+    next_source_chunk_range?: {
+      chunk_start_seq?: number;
+      chunk_end_seq?: number;
+    };
+  };
   agentEventStream?: any[];
   knowledge_references?: any[];
+  final_document_content?: string;
+  chat_document_artifact?: {
+    title?: string;
+    content_snapshot?: string;
+    can_continue?: boolean;
+    document_generation_status?: string;
+    quality_issues?: string[];
+    structure_info?: {
+      heading_titles?: string[];
+    };
+  };
+}
+
+interface PlanningOutlinePreview {
+  title: string;
+  sections: string[];
+  outlineOnly: boolean;
+}
+
+interface DocumentSectionProgressPreview {
+  sectionCurrent: number;
+  sectionTotal: number;
+  sectionTitle: string;
+  queryCurrent?: number;
+  queryTotal?: number;
+  isSectionCompleted: boolean;
+  progressLabel?: string;
 }
 
 const props = defineProps<{
   session: SessionData;
   userQuery?: string;
+}>();
+
+const emit = defineEmits<{
+  (e: 'retry', session: SessionData): void;
 }>();
 
 // Configure marked for security
@@ -797,8 +967,200 @@ const preprocessMathDelimiters = (rawText: string): string => {
     .replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
 };
 
+const formatPlanningOutlineSectionCount = (count: number): string => {
+  const currentLocale = String(i18n.global.locale?.value || '').toLowerCase();
+  if (currentLocale.startsWith('zh')) {
+    return `${count} 个章节`;
+  }
+  return `${count} sections`;
+};
+
+const readPositiveProgressNumber = (value: unknown): number => {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(String(value || ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+const extractStructuredDocumentSectionProgress = (event: any): DocumentSectionProgressPreview | null => {
+  if (!event || typeof event !== 'object') {
+    return null;
+  }
+
+  const sectionCurrent = readPositiveProgressNumber(event.section_current);
+  const sectionTotal = readPositiveProgressNumber(event.section_total);
+  const sectionTitle = typeof event.section_title === 'string' ? event.section_title.trim() : '';
+  if (sectionCurrent <= 0 || sectionTotal <= 0) {
+    return null;
+  }
+
+  const queryCurrent = readPositiveProgressNumber(event.query_current) || undefined;
+  const queryTotal = readPositiveProgressNumber(event.query_total) || undefined;
+  const progressLabel = typeof event.progress_label === 'string' ? event.progress_label.trim() : '';
+
+  return {
+    sectionCurrent,
+    sectionTotal,
+    sectionTitle,
+    queryCurrent,
+    queryTotal,
+    progressLabel,
+    isSectionCompleted: /已完成|completed/i.test(String(event.content || '')),
+  };
+};
+
+const extractDocumentSectionProgressFromContent = (content: string): DocumentSectionProgressPreview | null => {
+  const normalized = sanitizeForDisplay(content || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return null;
+  }
+
+  let sectionCurrent = 0;
+  let sectionTotal = 0;
+  let sectionTitle = '';
+
+  const quotedMatch = normalized.match(/第\s*(\d+)\s*\/\s*(\d+)\s*章[“\"]([^”\"]+)[”\"]/);
+  if (quotedMatch) {
+    sectionCurrent = Number.parseInt(quotedMatch[1], 10);
+    sectionTotal = Number.parseInt(quotedMatch[2], 10);
+    sectionTitle = quotedMatch[3].trim();
+  } else {
+    const colonMatch = normalized.match(/正在生成第\s*(\d+)\s*\/\s*(\d+)\s*章[:：]\s*(.+)$/);
+    if (colonMatch) {
+      sectionCurrent = Number.parseInt(colonMatch[1], 10);
+      sectionTotal = Number.parseInt(colonMatch[2], 10);
+      sectionTitle = colonMatch[3].replace(/[。.]$/, '').trim();
+    }
+  }
+
+  if (sectionCurrent <= 0 || sectionTotal <= 0) {
+    return null;
+  }
+
+  const queryMatch = normalized.match(/[（(]\s*(\d+)\s*\/\s*(\d+)\s*[)）]\s*[:：]/);
+  const queryCurrent = queryMatch ? Number.parseInt(queryMatch[1], 10) : undefined;
+  const queryTotal = queryMatch ? Number.parseInt(queryMatch[2], 10) : undefined;
+
+  return {
+    sectionCurrent,
+    sectionTotal,
+    sectionTitle,
+    queryCurrent,
+    queryTotal,
+    progressLabel: '',
+    isSectionCompleted: /已完成/.test(normalized),
+  };
+};
+
+const extractDocumentSectionProgress = (event: any): DocumentSectionProgressPreview | null => {
+  const structured = extractStructuredDocumentSectionProgress(event);
+  if (structured) {
+    return structured;
+  }
+  return extractDocumentSectionProgressFromContent(getThinkingContent(event));
+};
+
+const formatDocumentSectionProgress = (progress: DocumentSectionProgressPreview | null, stage: string): string => {
+  if (!progress) {
+    return '';
+  }
+
+  if (progress.progressLabel) {
+    return progress.progressLabel;
+  }
+
+  const currentLocale = String(i18n.global.locale?.value || '').toLowerCase();
+  const isZh = currentLocale.startsWith('zh');
+  const sectionPrefix = progress.isSectionCompleted && stage === 'finalizing'
+    ? (isZh ? `已完成第 ${progress.sectionCurrent}/${progress.sectionTotal} 章` : `Completed section ${progress.sectionCurrent}/${progress.sectionTotal}`)
+    : (isZh ? `第 ${progress.sectionCurrent}/${progress.sectionTotal} 章` : `Section ${progress.sectionCurrent}/${progress.sectionTotal}`);
+  const parts = [sectionPrefix];
+
+  if (progress.sectionTitle) {
+    parts.push(progress.sectionTitle);
+  }
+  if (progress.queryCurrent && progress.queryTotal && stage === 'retrieving') {
+    parts.push(isZh ? `检索 ${progress.queryCurrent}/${progress.queryTotal}` : `Retrieval ${progress.queryCurrent}/${progress.queryTotal}`);
+  }
+
+  return parts.join(' · ');
+};
+
+const formatDocumentLoadingStatus = (progress: DocumentSectionProgressPreview | null, stage: string): string => {
+  if (!progress || progress.sectionCurrent <= 0 || progress.sectionTotal <= 0) {
+    return '';
+  }
+
+  const currentLocale = String(i18n.global.locale?.value || '').toLowerCase();
+  const isZh = currentLocale.startsWith('zh');
+  const title = progress.sectionTitle || (progress.progressLabel || '').replace(/^第\s*\d+\/\d+\s*章[:：]?\s*/, '').trim();
+  if (!title) {
+    return progress.progressLabel || '';
+  }
+
+  if (stage === 'retrieving') {
+    return isZh
+      ? `正在检索第 ${progress.sectionCurrent}/${progress.sectionTotal} 章：${title}`
+      : `Retrieving section ${progress.sectionCurrent}/${progress.sectionTotal}: ${title}`;
+  }
+  if (stage === 'finalizing') {
+    return isZh
+      ? `正在收尾第 ${progress.sectionCurrent}/${progress.sectionTotal} 章：${title}`
+      : `Finalizing section ${progress.sectionCurrent}/${progress.sectionTotal}: ${title}`;
+  }
+  return isZh
+    ? `正在生成第 ${progress.sectionCurrent}/${progress.sectionTotal} 章：${title}`
+    : `Generating section ${progress.sectionCurrent}/${progress.sectionTotal}: ${title}`;
+};
+
+const formatDocumentLoadingDetail = (progress: DocumentSectionProgressPreview | null, stage: string): string => {
+  if (!progress) {
+    return '';
+  }
+  const currentLocale = String(i18n.global.locale?.value || '').toLowerCase();
+  const isZh = currentLocale.startsWith('zh');
+  if (stage === 'retrieving' && progress.queryCurrent && progress.queryTotal) {
+    return isZh ? `检索 ${progress.queryCurrent}/${progress.queryTotal}` : `Retrieval ${progress.queryCurrent}/${progress.queryTotal}`;
+  }
+  return '';
+};
+
+const extractPlanningOutlineFromArtifact = (): PlanningOutlinePreview | null => {
+  const artifact = props.session?.chat_document_artifact;
+  if (!artifact || typeof artifact !== 'object') {
+    return null;
+  }
+
+  const title = typeof artifact.title === 'string' ? artifact.title.trim() : '';
+  if (title) {
+    return normalizePlanningOutlinePreview({
+      title,
+      sections: [],
+      outlineOnly: false,
+    });
+  }
+
+  const headingTitles = normalizePlanningOutlineSections(artifact.structure_info?.heading_titles);
+  if (headingTitles.length > 0) {
+    return normalizePlanningOutlinePreview({
+      title: headingTitles[0],
+      sections: [],
+      outlineOnly: false,
+    });
+  }
+
+  return null;
+};
+
 // Event stream
 const eventStream = computed(() => props.session?.agentEventStream || []);
+
+const artifactDocumentContent = computed(() => {
+  const content = props.session?.final_document_content || props.session?.chat_document_artifact?.content_snapshot || '';
+  return typeof content === 'string' ? content.trim() : '';
+});
+
+const prefersFullDocumentDisplay = computed(() => {
+  return typeof props.session?.document_display_mode === 'string' && props.session.document_display_mode.trim() === 'full';
+});
 
 // Expanded events tracking (for tool calls and thinking events)
 const expandedEvents = ref<Set<string>>(new Set());
@@ -884,6 +1246,119 @@ const isTerminalCompletionStatus = (completionStatus?: string): boolean => {
   return terminalCompletionStatuses.has(completionStatus || '');
 };
 
+const agentCompleteEvent = computed(() => {
+  const stream = eventStream.value;
+  if (!stream || stream.length === 0) {
+    return null;
+  }
+  return stream.find((e: any) => e.type === 'agent_complete') || null;
+});
+
+const planningOutlineFromStreamEvent = computed(() => {
+  const stream = eventStream.value;
+  if (!stream || !Array.isArray(stream)) {
+    return null;
+  }
+
+  for (let i = stream.length - 1; i >= 0; i -= 1) {
+    const event = stream[i];
+    const outline = normalizePlanningOutlinePreview(getPlanningOutline(event));
+    if (outline) {
+      return outline;
+    }
+  }
+
+  return null;
+});
+
+const allowPlanningOutlineArtifactFallback = computed(() => {
+  return shouldAllowPlanningOutlineArtifactFallback({
+    completeEvent: agentCompleteEvent.value,
+    eventStream: eventStream.value,
+  });
+});
+
+const visiblePlanningOutline = computed(() => {
+  const fromStream = planningOutlineFromStreamEvent.value;
+  if (fromStream) {
+    return fromStream;
+  }
+
+  const fromCompleteEvent = normalizePlanningOutlinePreview(extractPlanningOutlineFromCompleteEvent(agentCompleteEvent.value));
+  if (fromCompleteEvent) {
+    return fromCompleteEvent;
+  }
+
+  if (!allowPlanningOutlineArtifactFallback.value) {
+    return null;
+  }
+
+  if (artifactDocumentContent.value) {
+    return normalizePlanningOutlinePreview(extractPlanningOutlineFromText(artifactDocumentContent.value));
+  }
+
+  const fromArtifact = normalizePlanningOutlinePreview(extractPlanningOutlineFromArtifact());
+  if (fromArtifact) {
+    return fromArtifact;
+  }
+
+  return null;
+});
+
+const planningOutlineCardLabel = computed(() => {
+  const currentLocale = String(i18n.global.locale?.value || '').toLowerCase();
+  if (currentLocale.startsWith('zh')) {
+    return '文档规划';
+  }
+  return 'Document plan';
+});
+
+const planningOutlineStatusLabel = computed(() => {
+  if (!visiblePlanningOutline.value) {
+    return '';
+  }
+  if (isConversationDone.value && conversationStatusLabel.value) {
+    return conversationStatusLabel.value;
+  }
+  if (loadingStatusLabel.value) {
+    return loadingStatusLabel.value;
+  }
+  const currentLocale = String(i18n.global.locale?.value || '').toLowerCase();
+  if (currentLocale.startsWith('zh')) {
+    return '规划已生成';
+  }
+  return 'Plan ready';
+});
+
+const latestThinkingEvent = computed(() => {
+  const stream = eventStream.value;
+  if (!stream || !Array.isArray(stream)) {
+    return null;
+  }
+  for (let i = stream.length - 1; i >= 0; i -= 1) {
+    const event = stream[i];
+    if (isThinkingLikeEvent(event)) {
+      return event;
+    }
+  }
+  return null;
+});
+
+const activeDocumentStage = computed(() => {
+  return latestThinkingEvent.value ? getThinkingStage(latestThinkingEvent.value) : '';
+});
+
+const activeDocumentSectionProgress = computed(() => {
+  if (!latestThinkingEvent.value) {
+    return null;
+  }
+  return extractDocumentSectionProgress(latestThinkingEvent.value);
+});
+
+const planningOutlineProgressLabel = computed(() => {
+  return formatDocumentSectionProgress(activeDocumentSectionProgress.value, activeDocumentStage.value);
+});
+
 const completionStatus = computed(() => {
   const stream = eventStream.value;
 
@@ -905,7 +1380,7 @@ const completionStatus = computed(() => {
     return 'cancelled';
   }
 
-  const completeEvent = stream.find((e: any) => e.type === 'agent_complete');
+  const completeEvent = agentCompleteEvent.value;
   if (completeEvent?.completion_status) {
     return completeEvent.completion_status;
   }
@@ -913,11 +1388,27 @@ const completionStatus = computed(() => {
   return '';
 });
 
+const isDocumentContinuingBetweenBatches = computed(() => {
+  const completeEvent = agentCompleteEvent.value as any;
+  return completionStatus.value === 'partial' && isDocumentCompletionContinuing({
+    finish_reason: props.session?.finish_reason || completeEvent?.finish_reason || '',
+    failure_reason: props.session?.failure_reason || completeEvent?.failure_reason || '',
+    document_generation_status: props.session?.document_generation_status ||
+      props.session?.chat_document_artifact?.document_generation_status ||
+      completeEvent?.document_generation_status || '',
+    auto_continue_next: props.session?.auto_continue_next ?? completeEvent?.auto_continue_next,
+    chat_document_artifact: props.session?.chat_document_artifact || null,
+  });
+});
+
 const conversationStatusLabel = computed(() => {
   switch (completionStatus.value) {
     case 'completed':
       return t('agentStream.completion.completed');
     case 'partial':
+      if (isDocumentContinuingBetweenBatches.value) {
+        return t('agentStream.completion.continuing');
+      }
       return t('agentStream.completion.partial');
     case 'failed':
       return t('agentStream.completion.failed');
@@ -928,15 +1419,120 @@ const conversationStatusLabel = computed(() => {
   }
 });
 
+const conversationStatusDetail = computed(() => {
+  const completeEvent = agentCompleteEvent.value as any;
+  const baseDetail = getDocumentCompletionStatusDetail({
+    completion_status: completionStatus.value,
+    finish_reason: props.session?.finish_reason || completeEvent?.finish_reason || '',
+    failure_reason: props.session?.failure_reason || completeEvent?.failure_reason || '',
+    document_generation_status: props.session?.document_generation_status ||
+      props.session?.chat_document_artifact?.document_generation_status ||
+      completeEvent?.document_generation_status || '',
+    auto_continue_next: props.session?.auto_continue_next ?? completeEvent?.auto_continue_next,
+    translation_progress: props.session?.translation_progress || completeEvent?.translation_progress || null,
+    quality_issues: completeEvent?.quality_issues || props.session?.chat_document_artifact?.quality_issues || [],
+    chat_document_artifact: props.session?.chat_document_artifact || null,
+  });
+  const progressDetail = formatTranslationProgressDetail(props.session?.translation_progress || completeEvent?.translation_progress || null);
+  if (baseDetail && progressDetail) {
+    return `${baseDetail} ${progressDetail}`;
+  }
+  return baseDetail || progressDetail;
+});
+
+const documentGenerationStatus = computed(() => {
+  const completeEvent = agentCompleteEvent.value as any;
+  const rawStatus = props.session?.document_generation_status ||
+    props.session?.chat_document_artifact?.document_generation_status ||
+    completeEvent?.document_generation_status || '';
+  return typeof rawStatus === 'string' ? rawStatus.trim() : '';
+});
+
+const documentQualityIssues = computed(() => {
+  const completeEvent = agentCompleteEvent.value as any;
+  const completeIssues = Array.isArray(completeEvent?.quality_issues) ? completeEvent.quality_issues : [];
+  const artifactIssues = Array.isArray(props.session?.chat_document_artifact?.quality_issues)
+    ? props.session.chat_document_artifact.quality_issues
+    : [];
+  return [...completeIssues, ...artifactIssues].filter(Boolean);
+});
+
+const canUseArtifactDocumentAsAnswer = computed(() => {
+  if (!prefersFullDocumentDisplay.value) {
+    return false;
+  }
+  if (!artifactDocumentContent.value) {
+    return false;
+  }
+  return true;
+});
+
+const showResumeRetryAction = computed(() => {
+  const artifact = props.session?.chat_document_artifact;
+  const translationProgress = props.session?.translation_progress || (agentCompleteEvent.value as any)?.translation_progress || null;
+  const generationRunId = props.session?.generation_run_id || (agentCompleteEvent.value as any)?.generation_run_id || '';
+  const autoContinueNext = props.session?.auto_continue_next ?? (agentCompleteEvent.value as any)?.auto_continue_next;
+  const hasTranslationResume = Boolean(generationRunId && translationProgress);
+
+  if (hasTranslationResume && completionStatus.value === 'failed') {
+    return true;
+  }
+
+  if (hasTranslationResume && completionStatus.value === 'partial' && documentGenerationStatus.value === 'continuing' && autoContinueNext === false) {
+    return true;
+  }
+
+  if (!artifact?.can_continue) {
+    return false;
+  }
+
+  if (completionStatus.value === 'failed') {
+    return true;
+  }
+
+  return completionStatus.value === 'partial' &&
+    documentGenerationStatus.value === 'continuing' &&
+    autoContinueNext === false;
+});
+
+const emitRetry = () => {
+  emit('retry', props.session);
+};
+
 const loadingStatusLabel = computed(() => {
   if (isConversationDone.value || !eventStream.value || eventStream.value.length === 0) {
     return '';
+  }
+  const structuredStatus = formatDocumentLoadingStatus(activeDocumentSectionProgress.value, activeDocumentStage.value);
+  if (structuredStatus) {
+    return structuredStatus;
   }
   const hasAnswerDoneEvent = eventStream.value.some((event: any) => event.type === 'answer' && event.done === true);
   if (hasAnswerDoneEvent) {
     return t('agentStream.loading.finalizing');
   }
+  if (hasAnswerStarted.value) {
+    return t('agentStream.thoughtStage.generating');
+  }
+  const stageLabel = latestThinkingEvent.value ? getThinkingStageLabel(latestThinkingEvent.value) : '';
+  if (stageLabel) {
+    return stageLabel;
+  }
   return '';
+});
+
+const loadingProgressLabel = computed(() => {
+  if (isConversationDone.value) {
+    return '';
+  }
+  const loadingDetail = formatDocumentLoadingDetail(activeDocumentSectionProgress.value, activeDocumentStage.value);
+  if (loadingDetail) {
+    return loadingDetail;
+  }
+  if (activeDocumentSectionProgress.value?.progressLabel) {
+    return '';
+  }
+  return formatDocumentSectionProgress(activeDocumentSectionProgress.value, activeDocumentStage.value);
 });
 
 // Track whether answer has started streaming (for early collapse)
@@ -1096,6 +1692,16 @@ const getThinkingContent = (event: any): string => {
 
 // Get a short summary snippet from thinking content for display in the header
 const getThinkingSummary = (event: any): string => {
+  const outline = getPlanningOutline(event);
+  if (outline) {
+    const title = outline.title.trim();
+    if (title && outline.sections.length > 0) {
+      return `${title} · ${formatPlanningOutlineSectionCount(outline.sections.length)}`;
+    }
+    if (title) {
+      return title;
+    }
+  }
   const content = getThinkingContent(event);
   if (!content) return '';
   const cleaned = sanitizeForDisplay(content)
@@ -1107,6 +1713,137 @@ const getThinkingSummary = (event: any): string => {
     .trim();
   if (cleaned.length <= 50) return cleaned;
   return cleaned.slice(0, 50) + '...';
+};
+
+const getThinkingStage = (event: any): string => {
+  if (typeof event?.stage === 'string' && event.stage.trim()) {
+    return event.stage.trim();
+  }
+
+  const outline = getPlanningOutline(event);
+  if (outline?.outlineOnly && (outline.title || outline.sections.length > 0)) {
+    return 'planning';
+  }
+
+  const content = sanitizeForDisplay(getThinkingContent(event) || '');
+  if (!content) return '';
+
+  if (/收尾完整文档|判断是否完成全文|正在整理最终文档|finaliz/i.test(content)) {
+    return 'finalizing';
+  }
+  if (/正在生成第\s*\d+\/\d+\s*章|继续生成剩余文档内容|继续生成后续章节|当前轮剩余内容已生成|将按大纲连续生成全部章节|remaining sections|remaining document|generate section|generating section|document section/i.test(content)) {
+    return 'generating';
+  }
+  if (/解析文档目标|解析续写上下文|解析.*知识库范围|规划完整文档大纲|规划完整大纲|规划文档大纲|正在生成大纲|已识别标题|已识别\s*\d+\s*个章节|document outline|full document outline|outline generation|planning outline/i.test(content)) {
+    return 'planning';
+  }
+  if (/检索本地知识库|检索第\s*\d+\/\d+\s*章|本地知识证据|本地证据|evidence|retriev|searching local knowledge/i.test(content)) {
+    return 'retrieving';
+  }
+  return '';
+};
+
+const getPlanningOutline = (event: any): PlanningOutlinePreview | null => {
+  if (!isThinkingLikeEvent(event)) {
+    return null;
+  }
+  return getPlanningOutlineFromThinkingEvent(event, getThinkingContent(event));
+};
+
+const hasPlanningOutline = (event: any): boolean => {
+  const outline = getPlanningOutline(event);
+  return Boolean(outline && (outline.title || outline.sections.length > 0));
+};
+
+const getThinkingRenderableContent = (event: any): string => {
+  const content = getThinkingContent(event);
+  const outline = getPlanningOutline(event);
+  if (outline?.outlineOnly) {
+    return '';
+  }
+  return content;
+};
+
+const getThinkingStageLabel = (event: any): string => {
+  const stage = getThinkingStage(event);
+  return stage ? t(`agentStream.thoughtStage.${stage}`) : '';
+};
+
+const formatTranslationProgressDetail = (progress: any): string => {
+  if (!progress || typeof progress !== 'object') {
+    return '';
+  }
+  const total = Number(progress.total_segments);
+  const completed = Number(progress.completed_segments);
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(completed)) {
+    return '';
+  }
+
+  const remaining = Number.isFinite(Number(progress.remaining_segments))
+    ? Number(progress.remaining_segments)
+    : Math.max(total - completed, 0);
+  const nextRange = progress.next_source_chunk_range && typeof progress.next_source_chunk_range === 'object'
+    ? progress.next_source_chunk_range
+    : null;
+
+  let detail = `翻译进度：已完成 ${Math.min(completed, total)}/${total} 段`;
+  if (remaining > 0) {
+    detail += `，剩余 ${remaining} 段`;
+  }
+  const nextStart = Number(nextRange?.chunk_start_seq);
+  const nextEnd = Number(nextRange?.chunk_end_seq);
+  if (Number.isFinite(nextStart) && Number.isFinite(nextEnd) && remaining > 0) {
+    detail += `，下一段 chunk ${nextStart}-${nextEnd}`;
+  }
+  return `${detail}。`;
+};
+
+const mergeThinkingStage = (prev: any, event: any): string => {
+  const currentStage = typeof event?.stage === 'string' ? event.stage.trim() : '';
+  if (currentStage) {
+    return currentStage;
+  }
+  const previousStage = typeof prev?.stage === 'string' ? prev.stage.trim() : '';
+  return previousStage;
+};
+
+const getThinkingCardClasses = (event: any, isPending: boolean) => {
+  const stage = getThinkingStage(event);
+  return {
+    'action-pending': isPending,
+    'action-synthetic-progress': !!stage,
+    [`action-stage-${stage}`]: !!stage,
+  };
+};
+
+const getEventIdentityKeys = (event: any): string[] => {
+  if (!event || typeof event !== 'object') {
+    return [];
+  }
+
+  const keys = new Set<string>();
+  if (typeof event.event_id === 'string' && event.event_id.trim()) {
+    keys.add(event.event_id);
+  }
+  if (typeof event.tool_call_id === 'string' && event.tool_call_id.trim()) {
+    keys.add(event.tool_call_id);
+  }
+  if (Array.isArray(event._sourceEventIds)) {
+    for (const rawId of event._sourceEventIds) {
+      if (typeof rawId === 'string' && rawId.trim()) {
+        keys.add(rawId);
+      }
+    }
+  }
+  return Array.from(keys);
+};
+
+const mergeEventIdentityKeys = (prev: any, event: any): string[] => {
+  return Array.from(new Set([...getEventIdentityKeys(prev), ...getEventIdentityKeys(event)]));
+};
+
+const isEventHidden = (event: any, hidden: Set<string>): boolean => {
+  return getEventIdentityKeys(event).some((key) => hidden.has(key));
 };
 
 // Helper: build the full result list with plan_task_change injections and thinking merging
@@ -1146,10 +1883,15 @@ const buildFullEventList = (stream: any[]) => {
           // Current fully contains previous — replace instead of appending
           result[result.length - 1] = {
             type: 'thinking',
-            event_id: prev.event_id,
+            event_id: prev.event_id || prev.tool_call_id || event.event_id || event.tool_call_id,
+            tool_call_id: prev.tool_call_id || event.tool_call_id,
             content: curContent,
             thinking: prev.thinking || event.thinking,
+            synthetic: Boolean(prev.synthetic || event.synthetic),
+            stage: mergeThinkingStage(prev, event),
+            outline: pickStructuredPlanningOutline(event, prev),
             timestamp: prev.timestamp,
+            _sourceEventIds: mergeEventIdentityKeys(prev, event),
             _mergedContent: curContent,
           };
           continue;
@@ -1159,10 +1901,15 @@ const buildFullEventList = (stream: any[]) => {
         const merged = [prevContent, curContent].filter(Boolean).join('\n\n');
         result[result.length - 1] = {
           type: 'thinking',
-          event_id: prev.event_id,
+          event_id: prev.event_id || prev.tool_call_id || event.event_id || event.tool_call_id,
+          tool_call_id: prev.tool_call_id || event.tool_call_id,
           content: merged,
           thinking: prev.thinking || event.thinking,
+          synthetic: Boolean(prev.synthetic || event.synthetic),
+          stage: mergeThinkingStage(prev, event),
+          outline: pickStructuredPlanningOutline(event, prev),
           timestamp: prev.timestamp,
+          _sourceEventIds: mergeEventIdentityKeys(prev, event),
           _mergedContent: merged,
         };
         continue;
@@ -1206,8 +1953,10 @@ const hiddenThinkingEventIds = computed<Set<string>>(() => {
     const hasRealAnswer = stream.some(
       (e: any) => e.type === 'answer' && e.content && e.content.trim()
     );
-    if (!hasRealAnswer && final.event_id) {
-      hidden.add(final.event_id);
+    if (!hasRealAnswer) {
+      for (const eventId of getEventIdentityKeys(final)) {
+        hidden.add(eventId);
+      }
     }
   }
 
@@ -1222,9 +1971,22 @@ const hiddenThinkingEventIds = computed<Set<string>>(() => {
     const merged = buildFullEventList(stream);
     for (const e of merged) {
       if (e.type !== 'thinking' || !e.event_id || !e.content) continue;
-      if (hidden.has(e.event_id)) continue;
+      if (isEventHidden(e, hidden)) continue;
       if (thinkingEqualsAnswer(e.content, answerContent)) {
-        hidden.add(e.event_id);
+        for (const eventId of getEventIdentityKeys(e)) {
+          hidden.add(eventId);
+        }
+      }
+    }
+  }
+
+  if (visiblePlanningOutline.value) {
+    for (const event of stream) {
+      if (!isThinkingLikeEvent(event)) continue;
+      const outline = getPlanningOutline(event);
+      if (!outline?.outlineOnly) continue;
+      for (const eventId of getEventIdentityKeys(event)) {
+        hidden.add(eventId);
       }
     }
   }
@@ -1240,7 +2002,7 @@ const intermediateEvents = computed(() => {
   const hidden = hiddenThinkingEventIds.value;
   return result.filter((e: any) => {
     if (e.type === 'answer' || e.type === 'agent_complete') return false;
-    if (e.type === 'thinking' && e.event_id && hidden.has(e.event_id)) return false;
+    if (isEventHidden(e, hidden)) return false;
     return true;
   });
 });
@@ -1253,19 +2015,67 @@ const displayEvents = computed(() => {
   }
 
   const result = buildFullEventList(stream);
+  const hidden = hiddenThinkingEventIds.value;
 
   // If answer hasn't started and not done, show everything (no tree yet)
   if (!hasAnswerStarted.value && !isConversationDone.value) {
-    return result;
+    return result.filter((e: any) => {
+      if (isEventHidden(e, hidden)) return false;
+      return true;
+    });
   }
 
   // When tree is active (shouldShowCollapsedSteps), displayEvents only shows answer events
   // The intermediate steps are rendered inside the tree-children via intermediateEvents
 
+  if (canUseArtifactDocumentAsAnswer.value && isConversationDone.value) {
+    return [{
+      type: 'answer',
+      event_id: 'chat-document-artifact-snapshot',
+      content: artifactDocumentContent.value,
+      done: true,
+      _from_document_artifact: true,
+    }];
+  }
+
   // When answer has started (streaming or done), show only answer events here
   const answerEvents = result.filter((e: any) => e.type === 'answer');
+  const completeEvent = agentCompleteEvent.value as any;
+  const authoritativeAnswer = typeof completeEvent?.final_answer === 'string' ? completeEvent.final_answer.trim() : '';
   if (answerEvents.length > 0) {
+    if (isConversationDone.value && authoritativeAnswer) {
+      const streamedAnswer = answerEvents
+        .filter((event: any) => typeof event.content === 'string')
+        .map((event: any) => event.content)
+        .join('')
+        .trim();
+      if (streamedAnswer !== authoritativeAnswer) {
+        return [{
+          type: 'answer',
+          event_id: `${completeEvent.event_id || 'agent-complete'}-authoritative-answer`,
+          content: authoritativeAnswer,
+          done: true,
+          completion_status: completeEvent.completion_status,
+          finish_reason: completeEvent.finish_reason,
+          is_partial: completeEvent.is_partial,
+          _from_complete_event: true,
+        }];
+      }
+    }
     return answerEvents;
+  }
+
+  if (authoritativeAnswer && isConversationDone.value) {
+    return [{
+      type: 'answer',
+      event_id: `${completeEvent?.event_id || 'agent-complete'}-authoritative-answer`,
+      content: authoritativeAnswer,
+      done: true,
+      completion_status: completeEvent?.completion_status,
+      finish_reason: completeEvent?.finish_reason,
+      is_partial: completeEvent?.is_partial,
+      _from_complete_event: true,
+    }];
   }
 
   // If the intermediate-steps tree is active, all thinking/tool_call events
@@ -1599,8 +2409,14 @@ const getKbIdForWiki = (slug: string): string => {
   const selectedKbs = settingsStore.getSelectedKnowledgeBases();
   if (selectedKbs && selectedKbs.length > 0) return selectedKbs[0];
 
-  if (authStore.knowledgeBases && authStore.knowledgeBases.length > 0) {
-    return authStore.knowledgeBases[0].id;
+  const authKnowledgeBasesSource = authStore.knowledgeBases as any[] | { value?: any[] } | undefined;
+  const authKnowledgeBases = Array.isArray(authKnowledgeBasesSource)
+    ? authKnowledgeBasesSource
+    : Array.isArray(authKnowledgeBasesSource?.value)
+      ? authKnowledgeBasesSource.value
+      : [];
+  if (authKnowledgeBases.length > 0) {
+    return authKnowledgeBases[0].id;
   }
 
   return '';
@@ -1878,6 +2694,85 @@ const preprocessMarkdown = (contentStr: string): string => {
     );
 };
 
+const normalizeMarkdownHeadings = (content: string): string => {
+  if (!content || typeof content !== 'string') {
+    return '';
+  }
+
+  const normalized = content.replace(/\r\n?/g, '\n');
+  const lines = normalized.split('\n');
+  const result: string[] = [];
+  let inCodeFence = false;
+
+  const normalizeHeadingLine = (line: string): { line: string; isHeading: boolean } => {
+    const headingMatch = line.match(/^(\s{0,3})(#{1,6})([^#\s].*)$/);
+    if (!headingMatch) {
+      return { line, isHeading: false };
+    }
+    return {
+      line: `${headingMatch[1]}${headingMatch[2]} ${headingMatch[3].trim()}`,
+      isHeading: true,
+    };
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      inCodeFence = !inCodeFence;
+      result.push(line);
+      continue;
+    }
+    if (!inCodeFence) {
+      const current = normalizeHeadingLine(line);
+      if (current.isHeading) {
+        if (result.length > 0 && result[result.length - 1].trim() !== '') {
+          result.push('');
+        }
+        result.push(current.line);
+        const nextLine = index + 1 < lines.length ? lines[index + 1] : '';
+        const nextTrimmed = nextLine.trim();
+        const next = normalizeHeadingLine(nextLine);
+        if (nextTrimmed !== '' && !next.isHeading) {
+          result.push('');
+        }
+        continue;
+      }
+    }
+    result.push(line);
+  }
+
+  return result.join('\n').trim();
+};
+
+const normalizeStreamingMarkdownForRender = (content: string): string => {
+  if (!content || typeof content !== 'string') {
+    return '';
+  }
+
+  const lines = content.replace(/\r\n?/g, '\n').split('\n');
+  const result: string[] = [];
+  let inCodeFence = false;
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith('```')) {
+      inCodeFence = !inCodeFence;
+      result.push(line);
+      continue;
+    }
+
+    if (inCodeFence) {
+      result.push(line);
+      continue;
+    }
+
+    result.push(line.replace(/(\*\*[^*\n]+[：:]\*\*)([^\s\n])/g, '$1 $2'));
+  }
+
+  return result.join('\n');
+};
+
 const HTML_PLACEHOLDER_RE = /@@WEKNORA_HTML_PLACEHOLDER_(\d+)@@/g;
 
 const extractRenderableHtmlPlaceholders = (contentStr: string): { content: string; htmlSnippets: string[] } => {
@@ -1946,7 +2841,9 @@ const renderMarkdownContent = (content: any): string => {
   // Restore preserved tags
   sanitized = sanitized.replace(/\x00TAG(\d+)\x00/g, (_, idx) => tagPlaceholders[Number(idx)]);
 
-  const mathSafe = preprocessMathDelimiters(sanitized);
+  const streamingSafeMarkdown = normalizeStreamingMarkdownForRender(sanitized);
+  const normalizedMarkdown = normalizeMarkdownHeadings(streamingSafeMarkdown);
+  const mathSafe = preprocessMathDelimiters(normalizedMarkdown);
   const imageSafe = replaceIncompleteImageWithPlaceholder(mathSafe);
   const { content: markdownWithPlaceholders, htmlSnippets } = extractRenderableHtmlPlaceholders(imageSafe);
   const html = marked.parse(markdownWithPlaceholders, { renderer: agentRenderer }) as string;
@@ -1970,7 +2867,9 @@ const renderMarkdown = (content: any): string => {
   if (!contentStr.trim()) return '';
 
   try {
-    const mathSafe = preprocessMathDelimiters(contentStr);
+    const streamingSafeMarkdown = normalizeStreamingMarkdownForRender(contentStr);
+    const normalizedMarkdown = normalizeMarkdownHeadings(streamingSafeMarkdown);
+    const mathSafe = preprocessMathDelimiters(normalizedMarkdown);
     const imageSafe = replaceIncompleteImageWithPlaceholder(mathSafe);
     const { content: markdownWithPlaceholders, htmlSnippets } = extractRenderableHtmlPlaceholders(imageSafe);
     const html = marked.parse(markdownWithPlaceholders, { renderer: agentRenderer }) as string;
@@ -2375,10 +3274,24 @@ const formatJSON = (obj: any): string => {
 // Strips final-answer wrappers (e.g. <answer>…</answer>, "Final Answer:")
 // so callers like copy and add-to-knowledge get clean text.
 const getActualContent = (answerEvent: any): string => {
+  if (prefersFullDocumentDisplay.value && artifactDocumentContent.value) {
+    return artifactDocumentContent.value;
+  }
+
   // First try to get content from answer event
   const answerContent = (answerEvent?.content || '').trim();
   if (answerContent) {
     return unwrapFinalAnswerWrappers(answerContent).trim();
+  }
+
+  const completeEvent = agentCompleteEvent.value as any;
+  const authoritativeAnswer = typeof completeEvent?.final_answer === 'string' ? completeEvent.final_answer.trim() : '';
+  if (authoritativeAnswer) {
+    return unwrapFinalAnswerWrappers(authoritativeAnswer).trim();
+  }
+
+  if (canUseArtifactDocumentAsAnswer.value) {
+    return artifactDocumentContent.value;
   }
 
   // If answer is empty, try to get from last thinking
@@ -2392,6 +3305,10 @@ const getActualContent = (answerEvent: any): string => {
   }
 
   return '';
+};
+
+const getAnswerDisplayContent = (answerEvent: any): string => {
+  return getActualContent(answerEvent);
 };
 
 const handleCopyAnswer = async (answerEvent: any) => {
@@ -2612,6 +3529,146 @@ const handleAddToKnowledge = (answerEvent: any) => {
   overflow-y: auto;
 }
 
+.planning-outline-preview {
+  margin: 4px 0 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--td-brand-color) 18%, var(--td-component-stroke));
+  border-radius: 10px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--td-brand-color) 8%, transparent), transparent 72%);
+}
+
+.planning-outline-card {
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--td-brand-color) 16%, var(--td-component-stroke));
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--td-brand-color) 10%, transparent), transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, var(--td-brand-color) 4%, transparent), transparent 78%),
+    var(--td-bg-color-container);
+}
+
+.planning-outline-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.planning-outline-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.planning-outline-card-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.planning-outline-card-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.planning-outline-card-status {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--td-brand-color);
+  background: color-mix(in srgb, var(--td-brand-color) 10%, transparent);
+  white-space: nowrap;
+}
+
+.planning-outline-card-count {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  white-space: nowrap;
+}
+
+.planning-outline-card-progress-row {
+  margin-bottom: 12px;
+}
+
+.planning-outline-card-progress {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--td-text-color-primary);
+  background: color-mix(in srgb, var(--td-brand-color) 7%, var(--td-bg-color-container));
+  word-break: break-word;
+}
+
+.planning-outline-preview-pinned {
+  margin-bottom: 0;
+}
+
+.planning-outline-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.planning-outline-heading-mark {
+  color: var(--td-brand-color);
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.planning-outline-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+  line-height: 1.5;
+}
+
+.planning-outline-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.planning-outline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.planning-outline-order {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--td-brand-color);
+  background: color-mix(in srgb, var(--td-brand-color) 12%, transparent);
+}
+
+.planning-outline-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--td-text-color-primary);
+  line-height: 1.6;
+}
+
 // Answer Event - 无边框，直接显示内容
 .answer-event {
   animation: fadeInUp 0.25s ease-out;
@@ -2780,6 +3837,30 @@ const handleAddToKnowledge = (answerEvent: any) => {
       box-shadow: 0 1px 4px rgba(7, 192, 95, 0.08);
     }
 
+    &.action-synthetic-progress {
+      border-left: 2px solid var(--td-brand-color);
+    }
+
+    &.action-stage-planning {
+      border-left-color: #3b82f6;
+      background: linear-gradient(120deg, rgba(59, 130, 246, 0.03), var(--td-bg-color-container));
+    }
+
+    &.action-stage-retrieving {
+      border-left-color: #10b981;
+      background: linear-gradient(120deg, rgba(16, 185, 129, 0.03), var(--td-bg-color-container));
+    }
+
+    &.action-stage-generating {
+      border-left-color: #f59e0b;
+      background: linear-gradient(120deg, rgba(245, 158, 11, 0.04), var(--td-bg-color-container));
+    }
+
+    &.action-stage-finalizing {
+      border-left-color: #64748b;
+      background: linear-gradient(120deg, rgba(100, 116, 139, 0.04), var(--td-bg-color-container));
+    }
+
     &.action-error {
       border-left: 2px solid var(--td-error-color);
     }
@@ -2919,6 +4000,34 @@ const handleAddToKnowledge = (answerEvent: any) => {
     font-weight: 500;
     white-space: nowrap;
     flex-shrink: 0;
+  }
+
+  .action-stage-badge {
+    border: 1px solid transparent;
+  }
+
+  .action-stage-badge-planning {
+    background: rgba(59, 130, 246, 0.12);
+    color: #2563eb;
+    border-color: rgba(59, 130, 246, 0.18);
+  }
+
+  .action-stage-badge-retrieving {
+    background: rgba(16, 185, 129, 0.12);
+    color: #059669;
+    border-color: rgba(16, 185, 129, 0.18);
+  }
+
+  .action-stage-badge-generating {
+    background: rgba(245, 158, 11, 0.14);
+    color: #d97706;
+    border-color: rgba(245, 158, 11, 0.18);
+  }
+
+  .action-stage-badge-finalizing {
+    background: rgba(100, 116, 139, 0.14);
+    color: #475569;
+    border-color: rgba(100, 116, 139, 0.18);
   }
 
   .action-summary {
@@ -3489,6 +4598,15 @@ const handleAddToKnowledge = (answerEvent: any) => {
     color: var(--td-text-color-secondary);
     line-height: 1.5;
   }
+
+  .loading-detail {
+    max-width: min(100%, 420px);
+    font-size: 12px;
+    color: var(--td-text-color-secondary);
+    line-height: 1.5;
+    text-align: center;
+    word-break: break-word;
+  }
   
   // 打字机效果
   .loading-typing {
@@ -3566,6 +4684,33 @@ const handleAddToKnowledge = (answerEvent: any) => {
   font-size: 12px;
   font-weight: 500;
   line-height: 1.5;
+
+  .conversation-status-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .conversation-status-copy {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .conversation-status-label {
+    font-weight: 500;
+  }
+
+  .conversation-status-detail {
+    margin-top: 4px;
+    font-weight: 400;
+    opacity: 0.92;
+  }
+
+  .conversation-status-action {
+    flex-shrink: 0;
+    align-self: center;
+  }
 
   &.status-completed {
     background: rgba(7, 192, 95, 0.08);

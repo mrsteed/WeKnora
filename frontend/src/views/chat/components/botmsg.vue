@@ -18,31 +18,36 @@
                     <span class="tag_name">{{ item.name }}</span>
                 </span>
             </div>
-            <LongDocumentTaskCard v-if="session.long_document_task" :task="session.long_document_task" />
             <docInfo :session="session"></docInfo>
-            <AgentStreamDisplay :session="session" :user-query="userQuery" v-if="session.isAgentMode"></AgentStreamDisplay>
+            <AgentStreamDisplay :session="session" :user-query="userQuery" v-if="session.isAgentMode" @retry="emitRetry"></AgentStreamDisplay>
             <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
             <ChatDocumentArtifactCard
                 v-if="session.chat_document_artifact"
                 :artifact="session.chat_document_artifact"
                 :preview-content="artifactDocumentContent"
+                :can-toggle-document-display="canToggleArtifactDisplay"
+                :document-display-mode="documentDisplayMode"
                 :selected-artifact-id="selectedArtifactId"
                 @view-revisions="emit('view-artifact-revisions', $event)"
                 @use-as-base="emit('use-artifact-as-base', $event)"
                 @clear-base="emit('clear-artifact-base', $event)"
+                @toggle-document-display="handleToggleDocumentDisplay"
             />
-            <div v-if="showRecoveredState" class="message-recovered-state">
+            <div v-if="!session.isAgentMode && showRecoveredState" class="message-recovered-state" :class="{ 'has-action': showResumeRetryAction }">
                 <div class="message-recovered-text">{{ recoveredStateText }}</div>
+                <t-button v-if="showResumeRetryAction" size="small" variant="outline" theme="warning" shape="round" @click.stop="emitRetry">
+                    继续生成
+                </t-button>
             </div>
-            <div v-if="session.is_failed && !session.long_document_task" class="message-failed-state">
-                <div class="message-failed-text">{{ failureText }}</div>
+            <div v-if="session.is_failed && !session.isAgentMode" class="message-failed-state">
+                <div class="message-failed-text">{{ displayFailureText }}</div>
                 <t-button size="small" variant="outline" theme="danger" shape="round" @click.stop="emitRetry">
-                    {{ $t('chat.regenerate') }}
+                    {{ retryButtonText }}
                 </t-button>
             </div>
         </div>
         <!-- 非 Agent 模式下才显示传统的 markdown 渲染 -->
-        <div ref="parentMd" v-if="!session.hideContent && !session.isAgentMode && !session.long_document_task">
+        <div ref="parentMd" v-if="!session.hideContent && !session.isAgentMode">
             <!-- 直接渲染完整内容，避免切分导致的问题，样式与 thinking 一致 -->
             <!-- 只有当有实际内容时才显示包围框 -->
             <div class="content-wrapper" v-if="hasActualContent">
@@ -91,7 +96,6 @@ import deepThink from './deepThink.vue';
 import AgentStreamDisplay from './AgentStreamDisplay.vue';
 import ChatDocumentArtifactCard from './ChatDocumentArtifactCard.vue';
 import ExportDropdown from './ExportDropdown.vue';
-import LongDocumentTaskCard from './LongDocumentTaskCard.vue';
 import picturePreview from '@/components/picture-preview.vue';
 import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL, hydrateProtectedFileImages } from '@/utils/security';
 import { useI18n } from 'vue-i18n';
@@ -103,6 +107,7 @@ import {
     formatManualTitle,
     replaceIncompleteImageWithPlaceholder
 } from '@/utils/chatMessageShared';
+import { appendChatDocumentEvidenceAppendix as appendExportEvidenceAppendix } from '@/utils/exportUtils';
 import {
     createMermaidCodeRenderer,
     ensureMermaidInitialized,
@@ -126,7 +131,7 @@ const preprocessMathDelimiters = (rawText) => {
 
 ensureMermaidInitialized();
 
-const emit = defineEmits(['scroll-bottom', 'retry', 'view-artifact-revisions', 'use-artifact-as-base', 'clear-artifact-base'])
+const emit = defineEmits(['scroll-bottom', 'retry', 'view-artifact-revisions', 'use-artifact-as-base', 'clear-artifact-base', 'artifact-display-update'])
 const { t } = useI18n()
 const uiStore = useUIStore();
 const renderer = new marked.Renderer();
@@ -193,9 +198,42 @@ const mentionedItems = computed(() => {
     return props.session?.mentioned_items || [];
 });
 
+const documentDisplayMode = computed(() => {
+    const rawMode = typeof props.session?.document_display_mode === 'string'
+        ? props.session.document_display_mode.trim()
+        : '';
+    return rawMode === 'full' ? 'full' : 'delta';
+});
+
+const canToggleArtifactDisplay = computed(() => {
+    const artifact = props.session?.chat_document_artifact;
+    const operation = typeof artifact?.operation === 'string' ? artifact.operation.trim() : '';
+    return Boolean(artifact?.id) && (operation === 'revise' || operation === 'continue');
+});
+
+const displayContent = computed(() => {
+    const explicitDisplayMode = typeof props.session?.document_display_mode === 'string'
+        ? props.session.document_display_mode.trim()
+        : '';
+    const artifactContent = props.session?.final_document_content || props.session?.chat_document_artifact?.content_snapshot || '';
+    const normalizedArtifactContent = typeof artifactContent === 'string' ? artifactContent.trim() : '';
+    if (explicitDisplayMode === 'full' && normalizedArtifactContent) {
+        return normalizedArtifactContent;
+    }
+    const messageContent = props.content || props.session?.content || '';
+    const normalizedMessageContent = typeof messageContent === 'string' ? messageContent.trim() : '';
+    if (normalizedMessageContent) {
+        return normalizedMessageContent;
+    }
+    if (normalizedArtifactContent) {
+        return normalizedArtifactContent;
+    }
+    return '';
+});
+
 // 单次渲染整个 Markdown 内容（替代 token-by-token，修复 KaTeX 公式在 streaming 时闪烁消失的问题）
 const renderedHTML = computed(() => {
-    const text = props.content || props.session?.content || '';
+    const text = displayContent.value;
     if (!text || typeof text !== 'string') return '';
     const processed = replaceIncompleteImageWithPlaceholder(text);
     const safeText = preprocessMathDelimiters(processed);
@@ -206,8 +244,7 @@ const renderedHTML = computed(() => {
 
 // 计算属性：判断是否有实际内容（非空且不只是空白）
 const hasActualContent = computed(() => {
-    const text = props.content || props.session?.content || '';
-    return text && text.trim().length > 0;
+    return displayContent.value.length > 0;
 });
 
 /** @type {Record<string, () => string>} */
@@ -221,16 +258,75 @@ const failureText = computed(() => {
     return internalFailureReasonMessages[normalizedMessage]?.() || normalizedMessage || t('chat.processError');
 });
 
+const canResumeInterruptedDocument = computed(() => {
+    const artifact = props.session?.chat_document_artifact;
+    const completionStatus = props.session?.completion_status || '';
+    const documentGenerationStatus = props.session?.document_generation_status || artifact?.document_generation_status || '';
+
+    if (!artifact?.can_continue) {
+        return false;
+    }
+
+    if (completionStatus === 'failed') {
+        return true;
+    }
+
+    return completionStatus === 'partial' &&
+        documentGenerationStatus === 'continuing' &&
+        props.session?.auto_continue_next === false;
+});
+
+const interruptedDocumentHintText = computed(() => {
+    const reason = props.session?.auto_continue_reason || props.session?.finish_reason || props.session?.failure_reason || '';
+    switch (reason) {
+        case 'llm_timeout_retry_exhausted':
+        case 'section_generation_timeout':
+            return '当前文档因模型响应超时已暂停，可点击继续生成从中断处恢复。';
+        case 'section_generation_error':
+            return '当前文档生成中断，但已保留可续写上下文，可点击继续生成恢复。';
+        case 'section_generation_truncated':
+            return '当前文档输出被截断，但已保留中断上下文，可点击继续生成补完后续内容。';
+        default:
+            return '当前文档已保留到最近中断位置，可点击继续生成后续内容。';
+    }
+});
+
+const showResumeRetryAction = computed(() => {
+    return canResumeInterruptedDocument.value && !props.session?.is_failed;
+});
+
+const displayFailureText = computed(() => {
+    return canResumeInterruptedDocument.value ? interruptedDocumentHintText.value : failureText.value;
+});
+
+const retryButtonText = computed(() => {
+    return canResumeInterruptedDocument.value ? '继续生成' : t('chat.regenerate');
+});
+
 const showRecoveredState = computed(() => {
     const finishReason = props.session?.finish_reason || '';
     const completionStatus = props.session?.completion_status || '';
+    if (showResumeRetryAction.value) {
+        return true;
+    }
     return hasActualContent.value && !props.session?.is_failed && ((props.session?.is_recovered) || (completionStatus === 'partial' && finishReason === 'fallback_stop'));
 });
 
-const recoveredStateText = computed(() => t('chat.recoveredPartialHint'));
+const recoveredStateText = computed(() => {
+    return showResumeRetryAction.value ? interruptedDocumentHintText.value : t('chat.recoveredPartialHint');
+});
 
 const emitRetry = () => {
     emit('retry', props.session);
+};
+
+const handleToggleDocumentDisplay = (artifact) => {
+    emit('artifact-display-update', {
+        mode: documentDisplayMode.value === 'full' ? 'delta' : 'full',
+        messageId: props.session?.id,
+        requestId: props.session?.request_id,
+        artifact,
+    });
 };
 
 const artifactDocumentContent = computed(() => {
@@ -240,14 +336,26 @@ const artifactDocumentContent = computed(() => {
 
 // 获取实际内容
 const getActualContent = () => {
-    return (props.content || props.session?.content || '').trim();
+    return displayContent.value;
 };
 
 const exportableContent = computed(() => {
-    return artifactDocumentContent.value || getActualContent();
+    const content = artifactDocumentContent.value || getActualContent();
+    return appendExportEvidenceAppendix(content, props.session?.chat_document_artifact || null);
 });
 
 const exportFilenamePrefix = computed(() => {
+    if (props.session?.chat_document_artifact?.document_task_kind === 'translation') {
+        const sourceTitle = typeof props.session?.chat_document_artifact?.source_title === 'string'
+            ? props.session.chat_document_artifact.source_title.trim()
+            : '';
+        const targetLanguage = typeof props.session?.chat_document_artifact?.target_language === 'string'
+            ? props.session.chat_document_artifact.target_language.trim()
+            : '';
+        if (sourceTitle && targetLanguage) {
+            return `${sourceTitle}_${targetLanguage}`;
+        }
+    }
     const artifactTitle = typeof props.session?.chat_document_artifact?.title === 'string'
         ? props.session.chat_document_artifact.title.trim()
         : '';
@@ -399,6 +507,10 @@ onBeforeUnmount(() => {
     border-radius: 8px;
     border: 1px solid color-mix(in srgb, var(--td-warning-color) 28%, transparent);
     background: color-mix(in srgb, var(--td-warning-color) 8%, var(--td-bg-color-container));
+
+    &.has-action {
+        justify-content: space-between;
+    }
 }
 
 .message-recovered-text {
@@ -574,9 +686,6 @@ onBeforeUnmount(() => {
         object-fit: contain;
         cursor: pointer;
         transition: transform 0.2s ease;
-
-        &:hover {
-        }
     }
 
     // Mermaid 图表样式

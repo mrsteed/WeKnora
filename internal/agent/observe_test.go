@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
 // newFinalAnswerResponse builds a ChatResponse that carries a single
 // final_answer tool call with the given raw JSON arguments.
 func newFinalAnswerResponse(rawArgs string) *types.ChatResponse {
@@ -199,6 +199,45 @@ func TestAnalyzeResponse_StopWithStreamedAnswer_OnlyEmitsDoneMarker(t *testing.T
 	assert.Empty(t, emitted[0].Content)
 }
 
+func TestAnalyzeResponse_FinalAnswerStreamErrorTerminatesAsPartial(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	resp := &types.ChatResponse{
+		Content:             "# 北海电厂二期智慧电厂项目\n\n## 一、项目背景与总体思路",
+		FinishReason:        "stream_error_after_answer",
+		AnswerStreamed:      true,
+		FinalAnswerStreamed: true,
+	}
+
+	var emitted []event.AgentFinalAnswerData
+	engine.eventBus.On(event.EventAgentFinalAnswer, func(ctx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		require.True(t, ok)
+		emitted = append(emitted, data)
+		return nil
+	})
+
+	verdict := engine.analyzeResponse(
+		context.Background(), resp, types.AgentStep{}, 0, "sess-1", time.Now(),
+	)
+
+	require.True(t, verdict.isDone)
+	assert.Equal(t, resp.Content, verdict.finalAnswer)
+	assert.Equal(t, types.MessageCompletionStatusPartial, verdict.completionStatus)
+	assert.Equal(t, "stream_error_after_answer", verdict.finishReason)
+	assert.Equal(t, "stream_error_after_answer", verdict.failureReason)
+	assert.True(t, verdict.isPartial)
+	assert.False(t, verdict.allowIndexing)
+	assert.False(t, verdict.allowComplete)
+	require.Len(t, emitted, 1)
+	assert.Empty(t, emitted[0].Content)
+	assert.True(t, emitted[0].Done)
+	assert.Equal(t, types.MessageCompletionStatusPartial, emitted[0].CompletionStatus)
+	assert.Equal(t, "stream_error_after_answer", emitted[0].FinishReason)
+	assert.True(t, emitted[0].IsPartial)
+	assert.False(t, emitted[0].AllowIndexing)
+	assert.False(t, emitted[0].AllowComplete)
+}
+
 func TestStreamThinkingToEventBus_OrdinaryAnswerChunksStayOnAnswerChannel(t *testing.T) {
 	mock := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{
 		{ResponseType: types.ResponseTypeAnswer, Content: "hello "},
@@ -231,6 +270,171 @@ func TestStreamThinkingToEventBus_OrdinaryAnswerChunksStayOnAnswerChannel(t *tes
 	assert.Equal(t, "hello ", answers[0].Content)
 	assert.Equal(t, "world", answers[1].Content)
 	assert.False(t, answers[0].Done)
+	assert.False(t, answers[1].Done)
+}
+
+func TestStreamThinkingToEventBus_SourceAnswerTailTimeoutClosesAsPartial(t *testing.T) {
+	mock := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{
+		{
+			ResponseType: types.ResponseTypeAnswer,
+			Content:      "visible ",
+			Data: map[string]interface{}{
+				"source": "final_answer_tool",
+			},
+		},
+		{
+			ResponseType: types.ResponseTypeAnswer,
+			Content:      "answer",
+			Data: map[string]interface{}{
+				"source": "final_answer_tool",
+			},
+		},
+		{ResponseType: types.ResponseTypeError, Content: "context deadline exceeded"},
+	}}}}
+	engine := newTestEngine(t, mock)
+
+	var answers []event.AgentFinalAnswerData
+	engine.eventBus.On(event.EventAgentFinalAnswer, func(ctx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		require.True(t, ok)
+		answers = append(answers, data)
+		return nil
+	})
+
+	response, err := engine.streamThinkingToEventBus(context.Background(), emptyMessages(), emptyTools(), 0, "sess-1")
+	require.NoError(t, err)
+	require.NotNil(t, response)
+
+	assert.Equal(t, "visible answer", response.Content)
+	assert.Equal(t, "stream_error_after_answer", response.FinishReason)
+	assert.True(t, response.AnswerStreamed)
+	assert.True(t, response.FinalAnswerStreamed)
+	require.Len(t, answers, 3)
+	assert.Equal(t, "visible ", answers[0].Content)
+	assert.False(t, answers[0].Done)
+	assert.Equal(t, "answer", answers[1].Content)
+	assert.False(t, answers[1].Done)
+	assert.Empty(t, answers[2].Content)
+	assert.True(t, answers[2].Done)
+	assert.Equal(t, types.MessageCompletionStatusPartial, answers[2].CompletionStatus)
+	assert.Equal(t, "stream_error_after_answer", answers[2].FinishReason)
+	assert.True(t, answers[2].IsPartial)
+	assert.False(t, answers[2].AllowIndexing)
+	assert.False(t, answers[2].AllowComplete)
+}
+
+func TestStreamThinkingToEventBus_DuplicateDocumentHeadStopsBeforeEmittingRestart(t *testing.T) {
+	baseDocument := strings.Join([]string{
+		"# 北海电厂二期智慧电厂项目",
+		"",
+		"## 一、项目背景与总体思路",
+		strings.Repeat("已有建设背景与总体思路内容。\n", 80),
+		"## 三、核心价值",
+		strings.Repeat("已有核心价值分析内容。\n", 40),
+	}, "\n")
+	mock := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{
+		{
+			ResponseType: types.ResponseTypeAnswer,
+			Content:      "# 北海电厂二期智慧电厂项目\n\n",
+			Data: map[string]interface{}{
+				"source": "final_answer_tool",
+			},
+		},
+		{
+			ResponseType: types.ResponseTypeAnswer,
+			Content:      "## 一、项目背景与总体思路\n\n",
+			Data: map[string]interface{}{
+				"source": "final_answer_tool",
+			},
+		},
+		{
+			ResponseType: types.ResponseTypeAnswer,
+			Content:      "重复开头不应继续污染当前消息。",
+			Data: map[string]interface{}{
+				"source": "final_answer_tool",
+			},
+		},
+		{ResponseType: types.ResponseTypeAnswer, Done: true, FinishReason: "stop"},
+	}}}}
+	engine := newTestEngine(t, mock)
+
+	var answers []event.AgentFinalAnswerData
+	engine.eventBus.On(event.EventAgentFinalAnswer, func(ctx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		require.True(t, ok)
+		answers = append(answers, data)
+		return nil
+	})
+
+	response, err := engine.streamThinkingToEventBus(context.Background(), []chat.Message{{Role: "assistant", Content: baseDocument}}, emptyTools(), 1, "sess-1")
+	require.NoError(t, err)
+	require.NotNil(t, response)
+
+	assert.Equal(t, duplicateDocumentHeadFinishReason, response.FinishReason)
+	assert.Empty(t, response.Content)
+	assert.False(t, response.AnswerStreamed)
+	assert.False(t, response.FinalAnswerStreamed)
+	require.Len(t, answers, 1)
+	assert.Empty(t, answers[0].Content)
+	assert.True(t, answers[0].Done)
+	assert.Equal(t, types.MessageCompletionStatusPartial, answers[0].CompletionStatus)
+	assert.Equal(t, duplicateDocumentHeadFinishReason, answers[0].FinishReason)
+	assert.True(t, answers[0].IsPartial)
+	assert.False(t, answers[0].AllowIndexing)
+	assert.False(t, answers[0].AllowComplete)
+}
+
+func TestStreamThinkingToEventBus_DuplicateDocumentHeadDoesNotBlockNewUserTurn(t *testing.T) {
+	baseDocument := strings.Join([]string{
+		"# 北海电厂二期智慧电厂项目",
+		"",
+		"## 一、项目背景与总体思路",
+		strings.Repeat("已有建设背景与总体思路内容。\n", 80),
+		"## 三、核心价值",
+		strings.Repeat("已有核心价值分析内容。\n", 40),
+	}, "\n")
+	mock := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{
+		{
+			ResponseType: types.ResponseTypeAnswer,
+			Content:      "# 北海电厂二期智慧电厂项目\n\n",
+			Data: map[string]interface{}{
+				"source": "final_answer_tool",
+			},
+		},
+		{
+			ResponseType: types.ResponseTypeAnswer,
+			Content:      "## 一、项目背景与总体思路\n\n新的独立回合允许重新生成同名文档。",
+			Data: map[string]interface{}{
+				"source": "final_answer_tool",
+			},
+		},
+		{ResponseType: types.ResponseTypeAnswer, Done: true, FinishReason: "stop"},
+	}}}}
+	engine := newTestEngine(t, mock)
+
+	var answers []event.AgentFinalAnswerData
+	engine.eventBus.On(event.EventAgentFinalAnswer, func(ctx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentFinalAnswerData)
+		require.True(t, ok)
+		answers = append(answers, data)
+		return nil
+	})
+
+	response, err := engine.streamThinkingToEventBus(context.Background(), []chat.Message{
+		{Role: "assistant", Content: baseDocument},
+		{Role: "user", Content: "请重新生成一份同标题的新技术方案"},
+	}, emptyTools(), 1, "sess-1")
+	require.NoError(t, err)
+	require.NotNil(t, response)
+
+	assert.Equal(t, "stop", response.FinishReason)
+	assert.True(t, response.AnswerStreamed)
+	assert.True(t, response.FinalAnswerStreamed)
+	assert.Equal(t, "# 北海电厂二期智慧电厂项目\n\n## 一、项目背景与总体思路\n\n新的独立回合允许重新生成同名文档。", response.Content)
+	require.Len(t, answers, 2)
+	assert.Equal(t, "# 北海电厂二期智慧电厂项目\n\n", answers[0].Content)
+	assert.False(t, answers[0].Done)
+	assert.Equal(t, "## 一、项目背景与总体思路\n\n新的独立回合允许重新生成同名文档。", answers[1].Content)
 	assert.False(t, answers[1].Done)
 }
 
@@ -390,6 +594,95 @@ func TestRunReActIteration_ContinuationAnswerIsMergedOnFinalCompletion(t *testin
 	assert.Equal(t, types.MessageCompletionStatusCompleted, state.CompletionStatus)
 }
 
+func TestRunReActIteration_FinalAnswerStreamErrorBreaksWithoutNextRound(t *testing.T) {
+	mock := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{
+		{
+			ResponseType: types.ResponseTypeAnswer,
+			Content:      "# 北海电厂二期智慧电厂项目\n\n",
+			Data: map[string]interface{}{"source": "final_answer_tool"},
+		},
+		{
+			ResponseType: types.ResponseTypeAnswer,
+			Content:      "## 一、项目背景与总体思路",
+			Data: map[string]interface{}{"source": "final_answer_tool"},
+		},
+		{ResponseType: types.ResponseTypeError, Content: "context deadline exceeded"},
+	}}}}
+	engine := newTestEngine(t, mock)
+	state := &types.AgentState{}
+	messages := emptyMessages()
+	emptyRetries := 0
+	consecutiveSameContent := 0
+	lastResponseContent := ""
+
+	outcome, err := engine.runReActIteration(
+		context.Background(), state, &messages, emptyTools(), "sess-1", "", "test query",
+		&emptyRetries, &consecutiveSameContent, &lastResponseContent,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, iterOutcomeBreak, outcome)
+	assert.Equal(t, 1, mock.callCount)
+	assert.True(t, state.IsComplete)
+	assert.Equal(t, types.MessageCompletionStatusPartial, state.CompletionStatus)
+	assert.Equal(t, "stream_error_after_answer", state.FinishReason)
+	assert.Equal(t, "stream_error_after_answer", state.FailureReason)
+	assert.False(t, state.AllowIndexing)
+	assert.False(t, state.AllowComplete)
+	assert.Equal(t, "# 北海电厂二期智慧电厂项目\n\n## 一、项目背景与总体思路", state.FinalAnswer)
+	require.Len(t, state.RoundSteps, 1)
+	assert.Equal(t, state.FinalAnswer, state.RoundSteps[0].Thought)
+	assert.Len(t, messages, 2)
+}
+
+func TestRunReActIteration_DuplicateDocumentHeadBreaksWithoutNextRound(t *testing.T) {
+	baseDocument := strings.Join([]string{
+		"# 北海电厂二期智慧电厂项目",
+		"",
+		"## 一、项目背景与总体思路",
+		strings.Repeat("已有建设背景与总体思路内容。\n", 80),
+		"## 三、核心价值",
+		strings.Repeat("已有核心价值分析内容。\n", 40),
+	}, "\n")
+	mock := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{
+		{
+			ResponseType: types.ResponseTypeAnswer,
+			Content:      "# 北海电厂二期智慧电厂项目\n\n",
+			Data: map[string]interface{}{"source": "final_answer_tool"},
+		},
+		{
+			ResponseType: types.ResponseTypeAnswer,
+			Content:      "## 一、项目背景与总体思路\n\n",
+			Data: map[string]interface{}{"source": "final_answer_tool"},
+		},
+		{ResponseType: types.ResponseTypeAnswer, Done: true, FinishReason: "stop"},
+	}}}}
+	engine := newTestEngine(t, mock)
+	state := &types.AgentState{}
+	messages := []chat.Message{{Role: "assistant", Content: baseDocument}}
+	emptyRetries := 0
+	consecutiveSameContent := 0
+	lastResponseContent := ""
+
+	outcome, err := engine.runReActIteration(
+		context.Background(), state, &messages, emptyTools(), "sess-1", "", "请继续输出完整技术方案",
+		&emptyRetries, &consecutiveSameContent, &lastResponseContent,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, iterOutcomeBreak, outcome)
+	assert.Equal(t, 1, mock.callCount)
+	assert.True(t, state.IsComplete)
+	assert.Equal(t, types.MessageCompletionStatusPartial, state.CompletionStatus)
+	assert.Equal(t, duplicateDocumentHeadFinishReason, state.FinishReason)
+	assert.Equal(t, duplicateDocumentHeadFinishReason, state.FailureReason)
+	assert.False(t, state.AllowIndexing)
+	assert.False(t, state.AllowComplete)
+	assert.Empty(t, state.FinalAnswer)
+	require.Len(t, state.RoundSteps, 1)
+	assert.Empty(t, state.RoundSteps[0].Thought)
+}
+
 // TestAppendToolResults_PreservesReasoningContent verifies that the assistant
 // message produced by appendToolResults carries the reasoning_content emitted
 // by the model in the same round. Without this, MiMo and DeepSeek V3.2+
@@ -407,10 +700,7 @@ func TestAppendToolResults_PreservesReasoningContent(t *testing.T) {
 				ID:   "call_1",
 				Name: "knowledge_search",
 				Args: map[string]interface{}{"query": "hi"},
-				Result: &types.ToolResult{
-					Success: true,
-					Output:  "result text",
-				},
+				Result: &types.ToolResult{Success: true, Output: "result text"},
 			}},
 			Timestamp: time.Now(),
 		}
@@ -421,27 +711,18 @@ func TestAppendToolResults_PreservesReasoningContent(t *testing.T) {
 		assert.Equal(t, "assistant", out[0].Role)
 		assert.Equal(t, "I will call search.", out[0].Content)
 		assert.Equal(t, "Detailed chain of thought from MiMo/DeepSeek.", out[0].ReasoningContent,
-			"reasoning_content must be propagated to the assistant message so providers like MiMo "+
-				"and DeepSeek thinking-mode see it on the next round (issue #1302)")
+			"reasoning_content must be propagated to the assistant message so providers like MiMo and DeepSeek thinking-mode see it on the next round (issue #1302)")
 		require.Len(t, out[0].ToolCalls, 1)
 		assert.Equal(t, "call_1", out[0].ToolCalls[0].ID)
-
 		assert.Equal(t, "tool", out[1].Role)
 		assert.Equal(t, "result text", out[1].Content)
+		require.Len(t, engine.pendingContextGroups, 2)
+		assert.Equal(t, "Detailed chain of thought from MiMo/DeepSeek.", engine.pendingContextGroups[0].ReasoningContent)
 	})
 
 	t.Run("reasoning_content alone produces an assistant message", func(t *testing.T) {
-		// A pure thinking emission with no visible content / tool calls is
-		// unusual but legal — preserve it so the next round's request still
-		// carries reasoning_content for strict providers.
-		step := types.AgentStep{
-			Iteration:        0,
-			ReasoningContent: "reasoning only",
-			Timestamp:        time.Now(),
-		}
-
+		step := types.AgentStep{Iteration: 0, ReasoningContent: "reasoning only", Timestamp: time.Now()}
 		out := engine.appendToolResults(nil, step)
-
 		require.Len(t, out, 1)
 		assert.Equal(t, "assistant", out[0].Role)
 		assert.Equal(t, "reasoning only", out[0].ReasoningContent)
@@ -456,16 +737,8 @@ func TestAppendToolResults_PreservesReasoningContent(t *testing.T) {
 	})
 
 	t.Run("appends to existing message slice", func(t *testing.T) {
-		prior := []chat.Message{
-			{Role: "system", Content: "sys"},
-			{Role: "user", Content: "hi"},
-		}
-		step := types.AgentStep{
-			Iteration:        1,
-			Thought:          "answer",
-			ReasoningContent: "thinking",
-			Timestamp:        time.Now(),
-		}
+		prior := []chat.Message{{Role: "system", Content: "sys"}, {Role: "user", Content: "hi"}}
+		step := types.AgentStep{Iteration: 1, Thought: "answer", ReasoningContent: "thinking", Timestamp: time.Now()}
 		out := engine.appendToolResults(prior, step)
 		require.Len(t, out, 3)
 		assert.Equal(t, "system", out[0].Role)
@@ -473,6 +746,110 @@ func TestAppendToolResults_PreservesReasoningContent(t *testing.T) {
 		assert.Equal(t, "assistant", out[2].Role)
 		assert.Equal(t, "thinking", out[2].ReasoningContent)
 	})
+}
+
+func TestAppendToolResults_SummarizesExternalDatabaseResultsInContext(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	fullOutput := strings.Repeat("full query output ", 80)
+	longCell := strings.Repeat("detail-", 40)
+	step := types.AgentStep{
+		ToolCalls: []types.ToolCall{{
+			ID:   "tool-1",
+			Name: agenttools.ToolExternalDatabaseQuery,
+			Args: map[string]interface{}{"sql": "SELECT id, note FROM orders LIMIT 30"},
+			Result: &types.ToolResult{
+				Success: true,
+				Output:  fullOutput,
+				Data: map[string]interface{}{
+					"columns":              []string{"id", "note"},
+					"rows":                 []map[string]interface{}{{"id": 1, "note": longCell}},
+					"row_count":            5,
+					"duration_ms":          int64(18),
+					"executed_sql":         "SELECT id, note FROM orders LIMIT 30",
+					"output_truncated":     true,
+					"cell_truncated_count": 1,
+				},
+			},
+		}},
+		Timestamp: time.Now(),
+	}
+
+	messages := engine.appendToolResults(nil, step)
+	require.Len(t, messages, 2)
+	require.Len(t, engine.pendingContextGroups, 2)
+	assert.Equal(t, fullOutput, messages[1].Content)
+	assert.Contains(t, engine.pendingContextGroups[1].Content, "Historical database query summary")
+	assert.Contains(t, engine.pendingContextGroups[1].Content, "Database query summary")
+	assert.Contains(t, engine.pendingContextGroups[1].Content, "Executed SQL: SELECT id, note FROM orders LIMIT 30")
+	assert.Contains(t, engine.pendingContextGroups[1].Content, "Database state may have changed")
+	assert.NotContains(t, engine.pendingContextGroups[1].Content, fullOutput)
+	assert.NotContains(t, engine.pendingContextGroups[1].Content, longCell)
+}
+
+func TestAppendToolResults_RetainsFullExternalDatabaseHistoryWhenConfigured(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	engine.config.RetainRetrievalHistory = true
+	fullOutput := strings.Repeat("full query output ", 40)
+	step := types.AgentStep{
+		ToolCalls: []types.ToolCall{{
+			ID:   "tool-1",
+			Name: agenttools.ToolExternalDatabaseQuery,
+			Args: map[string]interface{}{"sql": "SELECT id FROM orders LIMIT 10"},
+			Result: &types.ToolResult{
+				Success: true,
+				Output:  fullOutput,
+				Data: map[string]interface{}{
+					"columns":   []string{"id"},
+					"rows":      []map[string]interface{}{{"id": 1}},
+					"row_count": 1,
+				},
+			},
+		}},
+	}
+
+	messages := engine.appendToolResults(nil, step)
+	require.Len(t, messages, 2)
+	require.Len(t, engine.pendingContextGroups, 2)
+	assert.Equal(t, fullOutput, messages[1].Content)
+	assert.Equal(t, fullOutput, engine.pendingContextGroups[1].Content)
+}
+
+func TestAppendToolResults_BatchesAssistantAndAllToolResults(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	step := types.AgentStep{
+		Thought: "需要并行查看多个结果",
+		ToolCalls: []types.ToolCall{
+			{ID: "tool-1", Name: agenttools.ToolKnowledgeSearch, Args: map[string]interface{}{"query": "foo"}, Result: &types.ToolResult{Success: true, Output: "result-1"}},
+			{ID: "tool-2", Name: agenttools.ToolWikiReadPage, Args: map[string]interface{}{"slug": "bar"}, Result: &types.ToolResult{Success: true, Output: "result-2"}},
+		},
+	}
+
+	messages := engine.appendToolResults(nil, step)
+	require.Len(t, messages, 3)
+	require.Len(t, engine.pendingContextGroups, 3)
+	assert.Equal(t, "assistant", engine.pendingContextGroups[0].Role)
+	assert.Equal(t, "tool", engine.pendingContextGroups[1].Role)
+	assert.Equal(t, "tool", engine.pendingContextGroups[2].Role)
+}
+
+func TestAppendToolResults_NilToolResultStillWritesProtocolResult(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	step := types.AgentStep{
+		Thought: "需要调用工具",
+		ToolCalls: []types.ToolCall{{
+			ID:     "tool-1",
+			Name:   agenttools.ToolKnowledgeSearch,
+			Args:   map[string]interface{}{"query": "foo"},
+			Result: nil,
+		}},
+	}
+
+	messages := engine.appendToolResults(nil, step)
+	require.Len(t, messages, 2)
+	require.Len(t, engine.pendingContextGroups, 2)
+	assert.Equal(t, "tool", messages[1].Role)
+	assert.Equal(t, "Error: tool returned no result", messages[1].Content)
+	assert.Contains(t, engine.pendingContextGroups[1].Content, "no tool result")
 }
 
 func TestRedactHistoryKBResultsRedactsExternalDatabaseTools(t *testing.T) {

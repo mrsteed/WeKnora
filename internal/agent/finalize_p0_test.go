@@ -152,6 +152,87 @@ func TestStreamFinalAnswerToEventBus_DisablesThinkingForFinalSynthesis(t *testin
 	assert.Equal(t, "part-1 part-2", state.FinalAnswer)
 }
 
+func TestStreamFinalAnswerToEventBus_AddsDocumentContinuationProtocol(t *testing.T) {
+	mock := &mockChat{
+		responses: []mockResponse{{chunks: []types.StreamResponse{{Content: "continued section", Done: true}}}},
+	}
+	engine := newTestEngine(t, mock)
+	state := &types.AgentState{
+		DocumentContext: &types.AgentDocumentContext{
+			Intent:           types.ChatDocumentIntentContinue,
+			Operation:        types.ChatDocumentOperationContinue,
+			OutputMode:       types.ChatDocumentOutputModeDelta,
+			BaseArtifactID:   "artifact-1",
+			QuotedContext:    "<document_continuation_context>tail window</document_continuation_context>",
+			CompletionMarker: types.ChatDocumentCompletionMarker,
+		},
+		RoundSteps: []types.AgentStep{{Iteration: 0}},
+	}
+
+	err := engine.streamFinalAnswerToEventBus(context.Background(), "continue the document", state, "sess-1")
+	require.NoError(t, err)
+	require.NotEmpty(t, mock.lastMessages)
+
+	finalPrompt := mock.lastMessages[len(mock.lastMessages)-1].Content
+	assert.Contains(t, finalPrompt, "Document continuation requirements:")
+	assert.Contains(t, finalPrompt, "not regenerating a full new document")
+	assert.Contains(t, finalPrompt, "Output only the missing new body text")
+	assert.Contains(t, finalPrompt, types.ChatDocumentCompletionMarker)
+
+	foundContext := false
+	for _, msg := range mock.lastMessages {
+		if strings.Contains(msg.Content, "Document continuation context:") && strings.Contains(msg.Content, "tail window") {
+			foundContext = true
+			break
+		}
+	}
+	assert.True(t, foundContext)
+}
+
+func TestStreamFinalAnswerToEventBus_DoesNotAddDocumentProtocolForNormalAnswer(t *testing.T) {
+	mock := &mockChat{
+		responses: []mockResponse{{chunks: []types.StreamResponse{{Content: "normal answer", Done: true}}}},
+	}
+	engine := newTestEngine(t, mock)
+	state := &types.AgentState{RoundSteps: []types.AgentStep{{Iteration: 0}}}
+
+	err := engine.streamFinalAnswerToEventBus(context.Background(), "normal question", state, "sess-1")
+	require.NoError(t, err)
+	require.NotEmpty(t, mock.lastMessages)
+
+	finalPrompt := mock.lastMessages[len(mock.lastMessages)-1].Content
+	assert.NotContains(t, finalPrompt, "Document continuation requirements:")
+	assert.NotContains(t, finalPrompt, types.ChatDocumentCompletionMarker)
+}
+
+func TestStreamFinalAnswerToEventBus_UsesCompactUserGoalForDocumentRevision(t *testing.T) {
+	mock := &mockChat{
+		responses: []mockResponse{{chunks: []types.StreamResponse{{Content: "<document_patch>patched</document_patch>", Done: true}}}},
+	}
+	engine := newTestEngine(t, mock)
+	state := &types.AgentState{
+		DocumentContext: &types.AgentDocumentContext{
+			Intent:         types.ChatDocumentIntentRevise,
+			Operation:      types.ChatDocumentOperationRevise,
+			OutputMode:     types.ChatDocumentOutputModeDelta,
+			BaseArtifactID: "artifact-1",
+			UserGoal:       "把 2.5.5 后续内容合并到第二章",
+			QuotedContext:  "<document_revision_context><document>very large baseline</document></document_revision_context>",
+		},
+		RoundSteps: []types.AgentStep{{Iteration: 0}},
+	}
+
+	err := engine.streamFinalAnswerToEventBus(context.Background(), state.DocumentContext.QuotedContext+"\n\n把 2.5.5 后续内容合并到第二章", state, "sess-1")
+	require.NoError(t, err)
+	require.NotEmpty(t, mock.lastMessages)
+
+	assert.Equal(t, "You are a final answer synthesizer. Use only the provided user goal, document context, and tool summaries. Do not call tools. Do not output hidden reasoning. Keep the answer directly usable. Respond in Chinese (Simplified). For document revision tasks, prefer outputting a structured <document_patch> instead of repeating the full document.", mock.lastMessages[0].Content)
+	assert.Contains(t, mock.lastMessages[1].Content, "把 2.5.5 后续内容合并到第二章")
+	assert.NotContains(t, mock.lastMessages[1].Content, "<document_revision_context>")
+	assert.NotContains(t, mock.lastMessages[len(mock.lastMessages)-1].Content, "<document_revision_context>")
+	assert.Contains(t, mock.lastMessages[len(mock.lastMessages)-1].Content, "Document revision requirements:")
+}
+
 func TestFinalizeSummarizesBudgetedDatabaseQueryData(t *testing.T) {
 	longCell := strings.Repeat("detail-", 40)
 	summary := summarizeStructuredToolResult(agenttools.ToolExternalDatabaseQuery, &types.ToolResult{

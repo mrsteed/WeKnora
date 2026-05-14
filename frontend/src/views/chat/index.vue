@@ -47,12 +47,13 @@
                 </div>
                 <div v-for="(session, id) in messagesList" :key='id'>
                     <div v-if="session.role == 'user'">
-                        <usermsg :content="session.content" :mentioned_items="session.mentioned_items" :images="session.images" :attachments="session.attachments" :embeddedMode="embeddedMode"></usermsg>
+                        <usermsg :content="session.content" :mentioned_items="session.mentioned_items" :images="session.images" :attachments="session.attachments" :embeddedMode="embeddedMode" :isAutoContinue="Boolean(session.is_auto_continue)"></usermsg>
                     </div>
                     <div v-if="session.role == 'assistant'">
                         <botmsg :content="session.content" :session="session" :user-query="getUserQuery(id)" @scroll-bottom="scrollToBottom" @retry="handleRetry"
                             :isFirstEnter="isFirstEnter" :embeddedMode="embeddedMode" :selectedArtifactId="selectedBaseArtifact?.id || ''"
-                            @view-artifact-revisions="openArtifactRevisionDrawer" @use-artifact-as-base="useArtifactAsBase" @clear-artifact-base="clearSelectedBaseArtifact"></botmsg>
+                            @view-artifact-revisions="openArtifactRevisionDrawer" @use-artifact-as-base="useArtifactAsBase" @clear-artifact-base="clearSelectedBaseArtifact"
+                            @artifact-display-update="handleArtifactDisplayUpdate"></botmsg>
                     </div>
                 </div>
                 <div v-if="loading"
@@ -74,14 +75,21 @@
             <div v-if="selectedBaseArtifact" class="document-baseline-banner">
                 <div class="document-baseline-text">
                     <span class="document-baseline-label">当前基线</span>
-                    <span class="document-baseline-title">{{ selectedBaseArtifact.title || '未命名文档' }}</span>
-                    <span class="document-baseline-version">V{{ selectedBaseArtifact.revision_no || 1 }}</span>
+                    <span class="document-baseline-title">{{ displayedBaseArtifact?.title || selectedBaseArtifact.title || '未命名文档' }}</span>
+                    <span class="document-baseline-version">V{{ displayedBaseArtifact?.revision_no || selectedBaseArtifact.revision_no || 1 }}</span>
                 </div>
                 <t-button size="small" variant="text" theme="default" @click="clearSelectedBaseArtifact()">取消</t-button>
             </div>
+            <div v-if="autoContinueState.enabled || autoContinueState.stoppedReason" class="auto-continue-banner" :class="{ 'is-stopped': !autoContinueState.enabled }">
+                <span v-if="autoContinueState.enabled">
+                    {{ autoContinueState.round > 0 ? `正在自动续写：第 ${autoContinueState.round} 轮，当前基线 V${displayedBaseArtifact?.revision_no || selectedBaseArtifact?.revision_no || 1}` : '已开启自动续写，等待当前轮完成' }}
+                </span>
+                <span v-else>自动续写已暂停：{{ autoContinueState.stoppedReason }}</span>
+                <t-button v-if="autoContinueState.enabled" size="small" variant="text" theme="default" @click="stopAutoContinue('用户已停止自动续写')">不再续写</t-button>
+            </div>
             <InputField
                 ref="inputFieldRef"
-                @send-msg="(query, modelId, mentionedItems, imageFiles, attachmentFiles, longDocumentTranslateEnabled) => sendMsg(query, modelId, mentionedItems, imageFiles, attachmentFiles, longDocumentTranslateEnabled)"
+                @send-msg="(query, modelId, mentionedItems, imageFiles, attachmentFiles) => sendMsg(query, modelId, mentionedItems, imageFiles, attachmentFiles)"
                 @stop-generation="handleStopGeneration"
                 :isReplying="isReplying"
                 :sessionId="session_id"
@@ -135,12 +143,12 @@
 </template>
 <script setup>
 import { storeToRefs } from 'pinia';
-import { ref, onMounted, onUnmounted, nextTick, watch, reactive, onBeforeUnmount, defineProps } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, watch, reactive, onBeforeUnmount, defineProps } from 'vue';
 import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import InputField from '../../components/Input-field.vue';
 import botmsg from './components/botmsg.vue';
 import usermsg from './components/usermsg.vue';
-import { createLongDocumentTask, getChatDocumentArtifact, getChatDocumentArtifactRevisions, getChatDocumentArtifacts, getLatestChatDocumentArtifact, getLongDocumentTasksBySession, getMessageList, generateSessionsTitle, getSession } from "@/api/chat/index";
+import { getChatDocumentArtifact, getChatDocumentArtifactRevisions, getChatDocumentArtifacts, getLatestChatDocumentArtifact, getMessageList, generateSessionsTitle, getSession } from "@/api/chat/index";
 import { getSuggestedQuestions } from "@/api/agent/index";
 import { useStream } from '../../api/chat/streame'
 import { useMenuStore } from '@/stores/menu';
@@ -150,6 +158,8 @@ import { useI18n } from 'vue-i18n';
 import { useUIStore } from '@/stores/ui';
 import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
+import { upsertThinkingEvent } from './utils/thinkingEvent';
+import { extractStructuredPlanningOutlineFromText } from './utils/planningOutline';
 
 const props = defineProps({
   session_id: { type: String, default: '' },
@@ -163,7 +173,7 @@ const useSettingsStoreInstance = useSettingsStore();
 const uiStore = useUIStore();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 const { t } = useI18n();
-const { menuArr, isFirstSession, firstQuery, firstMentionedItems, firstModelId, firstImageFiles, firstAttachmentFiles, firstLongDocumentTranslateEnabled } = storeToRefs(usemenuStore);
+const { menuArr, isFirstSession, firstQuery, firstMentionedItems, firstModelId, firstImageFiles, firstAttachmentFiles } = storeToRefs(usemenuStore);
 const { output, onChunk, onClose, isStreaming, isLoading, error, startStream, stopStream } = useStream();
 const route = useRoute();
 const router = useRouter();
@@ -185,13 +195,29 @@ let userquery = ref('')
 const lastRequestMeta = ref(null);
 const chatDocumentArtifacts = ref([]);
 const selectedBaseArtifact = ref(null);
+const selectedBaseArtifactDisplayLocked = ref(false);
+const artifactDisplayHint = ref(null);
 const artifactRevisionDrawerVisible = ref(false);
 const artifactRevisionLoading = ref(false);
 const artifactRevisionList = ref([]);
 const artifactRevisionAnchor = ref(null);
 const scrollContainer = ref(null)
 const userHasScrolledUp = ref(false)
+const suppressNextStreamCloseFinalize = ref(false)
 const SCROLL_BOTTOM_THRESHOLD = 80
+const AUTO_CONTINUE_PROMPT = '以当前文档为基准，继续剩余内容输出';
+const DOCUMENT_COMPLETE_MARKER = '<!-- document_complete -->';
+const autoContinueState = ref({
+    enabled: false,
+    rootId: '',
+    round: 0,
+    prompt: AUTO_CONTINUE_PROMPT,
+    generationRunId: '',
+    effectiveKBIDs: [],
+    outline: null,
+    originalRequest: null,
+    stoppedReason: ''
+});
 
 const isNearBottom = () => {
     if (!scrollContainer.value) return true;
@@ -298,6 +324,14 @@ const normalizeFailureMessage = (reason) => {
     return internalFailureReasonMessages[normalizedReason]?.() || normalizedReason;
 };
 
+const resumableDocumentStopReasons = new Set([
+    'llm_timeout',
+    'llm_timeout_retry_exhausted',
+    'section_generation_timeout',
+    'section_generation_error',
+    'section_generation_truncated',
+]);
+
 const normalizeCompletionStatus = (message = {}) => {
     if (message?.data?.completion_status) {
         return message.data.completion_status;
@@ -331,20 +365,43 @@ const syncMessageCompletionState = (message, payload = {}) => {
         return 'pending';
     }
 
-    const nextStatus = normalizeCompletionStatus({ ...message, ...payload });
+    const completePayload = payload?.data || payload;
+    const nextStatus = normalizeCompletionStatus({ ...message, ...payload, ...completePayload });
     message.completion_status = nextStatus;
 
-    const finishReason = payload?.data?.finish_reason ?? payload.finish_reason;
+    const finishReason = completePayload?.finish_reason;
     if (finishReason !== undefined) {
         message.finish_reason = finishReason;
     }
 
-    const failureReason = payload?.data?.failure_reason ?? payload.failure_reason;
+    const failureReason = completePayload?.failure_reason;
     if (failureReason !== undefined) {
         message.failure_reason = failureReason;
     }
 
-    message.is_partial = nextStatus === 'partial' || Boolean(payload?.data?.is_partial ?? payload.is_partial);
+    if (completePayload?.document_generation_status !== undefined) {
+        message.document_generation_status = completePayload.document_generation_status;
+    }
+    if (completePayload?.auto_continue_next !== undefined) {
+        message.auto_continue_next = completePayload.auto_continue_next;
+    }
+    if (completePayload?.auto_continue_reason !== undefined) {
+        message.auto_continue_reason = completePayload.auto_continue_reason;
+    }
+    if (completePayload?.generation_run_id !== undefined) {
+        message.generation_run_id = completePayload.generation_run_id;
+    }
+    if (completePayload?.translation_progress !== undefined) {
+        message.translation_progress = completePayload.translation_progress;
+    }
+    if (completePayload?.document_task_kind !== undefined) {
+        message.document_task_kind = completePayload.document_task_kind;
+    }
+    if (Array.isArray(completePayload?.effective_kb_ids)) {
+        message.effective_kb_ids = [...completePayload.effective_kb_ids];
+    }
+
+    message.is_partial = nextStatus === 'partial' || Boolean(completePayload?.is_partial);
     message.is_completed = nextStatus === 'completed';
     message.is_failed = nextStatus === 'failed';
     message.is_recovered = isRecoveredAgentCompletion(nextStatus, message.finish_reason);
@@ -358,7 +415,51 @@ const syncMessageCompletionState = (message, payload = {}) => {
         }
     }
 
+    rehydrateHistoricalDocumentContinuationState(message);
+
     return nextStatus;
+};
+
+const rehydrateHistoricalDocumentContinuationState = (message = {}) => {
+    if (!message || message.role !== 'assistant') {
+        return;
+    }
+
+    const artifact = message.chat_document_artifact;
+    if (artifact?.document_generation_status && !message.document_generation_status) {
+        message.document_generation_status = artifact.document_generation_status;
+    }
+    if (!canContinueChatDocumentArtifact(artifact)) {
+        return;
+    }
+
+    const completionStatus = message.completion_status || normalizeCompletionStatus(message);
+    const documentGenerationStatus = typeof (message.document_generation_status || artifact?.document_generation_status) === 'string'
+        ? (message.document_generation_status || artifact?.document_generation_status).trim()
+        : '';
+    const finishReason = typeof message.finish_reason === 'string' ? message.finish_reason.trim() : '';
+    const failureReason = typeof message.failure_reason === 'string' ? message.failure_reason.trim() : '';
+    const stopReason = finishReason === 'llm_timeout_retry_exhausted'
+        ? finishReason
+        : (failureReason || finishReason);
+
+    const isResumableInterruptedDocument = completionStatus === 'failed'
+        || (
+            completionStatus === 'partial'
+            && documentGenerationStatus === 'continuing'
+            && resumableDocumentStopReasons.has(stopReason)
+        );
+
+    if (!isResumableInterruptedDocument) {
+        return;
+    }
+
+    if (message.auto_continue_next === undefined) {
+        message.auto_continue_next = false;
+    }
+    if (!message.auto_continue_reason && stopReason) {
+        message.auto_continue_reason = stopReason;
+    }
 };
 
 const upsertAgentCompleteEvent = (message, payload = {}) => {
@@ -369,8 +470,8 @@ const upsertAgentCompleteEvent = (message, payload = {}) => {
         message.agentEventStream = [];
     }
 
-    const completionStatus = normalizeCompletionStatus({ ...message, ...payload });
     const completePayload = payload?.data || payload;
+    const completionStatus = normalizeCompletionStatus({ ...message, ...payload, ...completePayload });
     const nextEvent = {
         type: 'agent_complete',
         total_duration_ms: completePayload?.total_duration_ms,
@@ -378,8 +479,24 @@ const upsertAgentCompleteEvent = (message, payload = {}) => {
         completion_status: completionStatus,
         finish_reason: completePayload?.finish_reason,
         failure_reason: completePayload?.failure_reason,
+        document_generation_status: completePayload?.document_generation_status,
+        auto_continue_next: completePayload?.auto_continue_next,
+        auto_continue_reason: completePayload?.auto_continue_reason,
+        generation_run_id: completePayload?.generation_run_id,
+        translation_progress: completePayload?.translation_progress && typeof completePayload.translation_progress === 'object'
+            ? completePayload.translation_progress
+            : null,
         is_partial: completionStatus === 'partial' || Boolean(completePayload?.is_partial),
         final_answer: completePayload?.final_answer,
+        outline: completePayload?.outline,
+        outline_role: typeof completePayload?.outline_role === 'string' ? completePayload.outline_role : '',
+        outline_source: typeof completePayload?.outline_source === 'string' ? completePayload.outline_source : '',
+        base_outline: completePayload?.base_outline && typeof completePayload.base_outline === 'object' ? completePayload.base_outline : null,
+        planning_outline: completePayload?.planning_outline && typeof completePayload.planning_outline === 'object' ? completePayload.planning_outline : null,
+        quality_issues: Array.isArray(completePayload?.quality_issues) ? [...completePayload.quality_issues] : [],
+        chat_document_artifact: completePayload?.chat_document_artifact && typeof completePayload.chat_document_artifact === 'object'
+            ? completePayload.chat_document_artifact
+            : null,
     };
 
     const existingCompleteEvent = message.agentEventStream.find((event) => event.type === 'agent_complete');
@@ -478,76 +595,6 @@ const buildLocalAssistantMessage = (isAgentMode = false) => {
     };
 };
 
-const normalizeLongDocumentCompletionStatus = (status) => {
-    switch (status) {
-        case 'completed':
-            return 'completed';
-        case 'partial':
-            return 'partial';
-        case 'failed':
-            return 'failed';
-        case 'cancelled':
-            return 'cancelled';
-        default:
-            return 'pending';
-    }
-};
-
-const normalizeMessageTimestamp = (message) => {
-    const raw = message?.created_at || message?.updated_at;
-    const parsed = raw ? new Date(raw).getTime() : 0;
-    return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const buildLongDocumentTaskMessage = (task) => {
-    const completionStatus = normalizeLongDocumentCompletionStatus(task?.status);
-    return {
-        id: `long-document-task-${task.id}`,
-        request_id: `long-document-task-${task.id}`,
-        role: 'assistant',
-        content: '',
-        long_document_task: task,
-        created_at: task.created_at || new Date().toISOString(),
-        updated_at: task.updated_at || task.created_at || new Date().toISOString(),
-        completion_status: completionStatus,
-        is_completed: completionStatus === 'completed',
-        is_failed: completionStatus === 'failed',
-        error_message: task?.error_message || '',
-        knowledge_references: []
-    };
-};
-
-const upsertLongDocumentTaskMessage = (task, sortByCreatedAt = false) => {
-    if (!task?.id) {
-        return;
-    }
-    const normalized = buildLongDocumentTaskMessage(task);
-    const existingIndex = messagesList.findIndex((item) => item.long_document_task?.id === task.id);
-    if (existingIndex >= 0) {
-        Object.assign(messagesList[existingIndex], normalized, {
-            long_document_task: task,
-        });
-    } else {
-        messagesList.push(normalized);
-    }
-    if (sortByCreatedAt) {
-        messagesList.sort((left, right) => normalizeMessageTimestamp(left) - normalizeMessageTimestamp(right));
-    }
-};
-
-const loadLongDocumentTasks = async (targetSessionId = session_id.value) => {
-    if (!targetSessionId) {
-        return;
-    }
-    try {
-        const res = await getLongDocumentTasksBySession(targetSessionId);
-        const tasks = res?.data?.data || [];
-        tasks.forEach((task) => upsertLongDocumentTaskMessage(task, true));
-    } catch (error) {
-        console.warn('[LongDocumentTask] Failed to load task list:', error);
-    }
-};
-
 const normalizeChatDocumentArtifact = (artifact) => {
     if (!artifact || typeof artifact !== 'object' || !artifact.id) {
         return null;
@@ -557,6 +604,69 @@ const normalizeChatDocumentArtifact = (artifact) => {
         revision_no: Number(artifact.revision_no || 1),
     };
 };
+
+const compareArtifactRevision = (left, right) => {
+    const revisionDiff = Number(right?.revision_no || 0) - Number(left?.revision_no || 0);
+    if (revisionDiff !== 0) {
+        return revisionDiff;
+    }
+    const rightTime = new Date(right?.updated_at || right?.created_at || 0).getTime();
+    const leftTime = new Date(left?.updated_at || left?.created_at || 0).getTime();
+    return rightTime - leftTime;
+};
+
+const resolveDisplayedBaseArtifact = (baseArtifact, artifacts = [], hintArtifact = null) => {
+    const normalizedBase = normalizeChatDocumentArtifact(baseArtifact);
+    if (!normalizedBase?.id) {
+        return null;
+    }
+
+    const artifactMap = new Map();
+    [normalizedBase, ...(artifacts || []), hintArtifact].forEach((item) => {
+        const normalized = normalizeChatDocumentArtifact(item);
+        if (!normalized?.id) {
+            return;
+        }
+        artifactMap.set(normalized.id, {
+            ...(artifactMap.get(normalized.id) || {}),
+            ...normalized,
+        });
+    });
+
+    const childrenByParentId = new Map();
+    artifactMap.forEach((artifact) => {
+        if (!artifact?.parent_artifact_id) {
+            return;
+        }
+        const siblings = childrenByParentId.get(artifact.parent_artifact_id) || [];
+        siblings.push(artifact);
+        siblings.sort(compareArtifactRevision);
+        childrenByParentId.set(artifact.parent_artifact_id, siblings);
+    });
+
+    let currentArtifact = artifactMap.get(normalizedBase.id) || normalizedBase;
+    const visitedIds = new Set();
+    while (currentArtifact?.id && !visitedIds.has(currentArtifact.id)) {
+        visitedIds.add(currentArtifact.id);
+        const nextArtifact = (childrenByParentId.get(currentArtifact.id) || [])[0];
+        if (!nextArtifact?.id) {
+            break;
+        }
+        currentArtifact = nextArtifact;
+    }
+    return currentArtifact;
+};
+
+const displayedBaseArtifact = computed(() => {
+    if (selectedBaseArtifactDisplayLocked.value) {
+        return selectedBaseArtifact.value;
+    }
+    return resolveDisplayedBaseArtifact(
+        selectedBaseArtifact.value,
+        chatDocumentArtifacts.value,
+        artifactDisplayHint.value,
+    );
+});
 
 const applyChatDocumentArtifactsToMessages = (artifacts = chatDocumentArtifacts.value) => {
     const artifactByMessageId = new Map();
@@ -572,6 +682,7 @@ const applyChatDocumentArtifactsToMessages = (artifacts = chatDocumentArtifacts.
         const artifact = artifactByMessageId.get(message.id);
         if (artifact) {
             message.chat_document_artifact = artifact;
+            rehydrateHistoricalDocumentContinuationState(message);
         }
     });
 };
@@ -602,6 +713,7 @@ const assignChatDocumentArtifactToMessage = (message, artifact) => {
     const normalized = upsertChatDocumentArtifact(artifact);
     if (message && normalized) {
         message.chat_document_artifact = normalized;
+        rehydrateHistoricalDocumentContinuationState(message);
     }
     return normalized;
 };
@@ -610,8 +722,28 @@ const isContinuableArtifactStatus = (artifact = {}) => {
     return artifact?.status === 'available' || artifact?.status === 'partial';
 };
 
+const canContinueChatDocumentArtifact = (artifact = {}) => {
+    if (!isContinuableArtifactStatus(artifact)) {
+        return false;
+    }
+    const generationStatus = typeof artifact?.document_generation_status === 'string'
+        ? artifact.document_generation_status.trim()
+        : '';
+    if (generationStatus === 'needs_review' || generationStatus === 'blocked') {
+        return false;
+    }
+    if (artifact?.can_continue !== undefined) {
+        return artifact.can_continue !== false;
+    }
+    return artifact?.can_inline_continue !== false;
+};
+
+const findLatestContinuableArtifact = (artifacts = chatDocumentArtifacts.value, targetSessionId = session_id.value) => {
+    return (artifacts || []).find((item) => item?.session_id === targetSessionId && canContinueChatDocumentArtifact(item)) || null;
+};
+
 const shouldAutoSelectCompletedArtifact = (message, artifact) => {
-    if (!message || !artifact?.id || !isContinuableArtifactStatus(artifact)) {
+    if (!message || !artifact?.id || !canContinueChatDocumentArtifact(artifact)) {
         return false;
     }
     if (artifact.source_message_id && message.id) {
@@ -624,48 +756,384 @@ const promoteCompletedArtifactAsBase = (message, artifact) => {
     const normalized = assignChatDocumentArtifactToMessage(message, artifact);
     if (shouldAutoSelectCompletedArtifact(message, normalized)) {
         selectedBaseArtifact.value = normalized;
+        selectedBaseArtifactDisplayLocked.value = false;
+    }
+    return normalized;
+};
+
+const resolveMessageForArtifactDisplay = (payload = {}) => {
+    const messageId = typeof payload?.messageId === 'string' ? payload.messageId : '';
+    const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
+    if (!messageId && !requestId) {
+        return null;
+    }
+    return messagesList.findLast((item) => {
+        if (!item || item.role !== 'assistant') {
+            return false;
+        }
+        if (messageId && item.id === messageId) {
+            return true;
+        }
+        return Boolean(requestId) && item.request_id === requestId;
+    }) || null;
+};
+
+const ensureMessageFinalDocumentContent = async (message, artifactHint = null) => {
+    if (!message) {
+        return null;
+    }
+    const cachedContent = typeof message.final_document_content === 'string' ? message.final_document_content.trim() : '';
+    if (cachedContent) {
+        return message.chat_document_artifact || normalizeChatDocumentArtifact(artifactHint);
+    }
+
+    const artifactId = artifactHint?.id || message.chat_document_artifact?.id;
+    if (!artifactId) {
+        return null;
+    }
+
+    const res = await getChatDocumentArtifact(artifactId);
+    const artifact = normalizeChatDocumentArtifact(res?.data);
+    if (!artifact?.id) {
+        return null;
+    }
+
+    const normalized = assignChatDocumentArtifactToMessage(message, artifact);
+    const snapshot = typeof normalized?.content_snapshot === 'string' ? normalized.content_snapshot.trim() : '';
+    if (snapshot) {
+        message.final_document_content = snapshot;
     }
     return normalized;
 };
 
 const hydrateFinalDocumentFromComplete = async (message, payload = {}) => {
     if (!message) {
-        return;
+        return null;
     }
 
     if (payload.final_document_mode === 'inline_snapshot' && payload.final_document) {
         message.final_document_content = payload.final_document;
         if (payload.chat_document_artifact?.id) {
-            promoteCompletedArtifactAsBase(message, {
+            return promoteCompletedArtifactAsBase(message, {
                 ...payload.chat_document_artifact,
                 content_snapshot: payload.final_document,
             });
         }
-        return;
+        return message.chat_document_artifact || null;
     }
 
     if (payload.final_document_mode !== 'fetch_artifact_snapshot') {
-        return;
+        return message.chat_document_artifact || null;
     }
 
     const artifactId = payload.final_document_artifact_id || payload.chat_document_artifact?.id;
     if (!artifactId) {
-        return;
+        return message.chat_document_artifact || null;
     }
 
     try {
         const res = await getChatDocumentArtifact(artifactId);
         const artifact = res?.data;
         if (!artifact?.id) {
-            return;
+            return message.chat_document_artifact || null;
         }
         const normalized = promoteCompletedArtifactAsBase(message, artifact);
         if (normalized?.content_snapshot) {
             message.final_document_content = normalized.content_snapshot;
         }
+        return normalized || null;
     } catch (error) {
         console.warn('[ChatDocumentArtifact] Failed to hydrate final document snapshot:', error);
+        return message.chat_document_artifact || null;
     }
+};
+
+const buildAutoContinueRootId = () => {
+    return `auto-doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+};
+
+const cloneAutoContinueOriginalRequest = (requestParams) => ({
+    ...requestParams,
+    images: undefined,
+    attachment_uploads: undefined,
+    document_target_heading: undefined,
+    document_merge_mode: undefined,
+    auto_continue: undefined,
+    generation_run_id: undefined,
+    auto_continue_root_id: undefined,
+    auto_continue_round: undefined,
+    auto_continue_prompt: undefined,
+    auto_continue_original_query: undefined,
+});
+
+const getMessageTranslationProgress = (message = {}) => {
+    if (message?.translation_progress && typeof message.translation_progress === 'object') {
+        return message.translation_progress;
+    }
+    if (!Array.isArray(message?.agentEventStream)) {
+        return null;
+    }
+    const completeEvent = message.agentEventStream.find((event) => event?.type === 'agent_complete' && event?.translation_progress && typeof event.translation_progress === 'object');
+    return completeEvent?.translation_progress || null;
+};
+
+const getMessageGenerationRunId = (message = {}) => {
+    if (typeof message?.generation_run_id === 'string' && message.generation_run_id) {
+        return message.generation_run_id;
+    }
+    if (!Array.isArray(message?.agentEventStream)) {
+        return '';
+    }
+    const completeEvent = message.agentEventStream.find((event) => event?.type === 'agent_complete' && typeof event?.generation_run_id === 'string' && event.generation_run_id);
+    return completeEvent?.generation_run_id || '';
+};
+
+const getMessageAutoContinueReason = (message = {}) => {
+    if (typeof message?.auto_continue_reason === 'string' && message.auto_continue_reason) {
+        return message.auto_continue_reason;
+    }
+    if (!Array.isArray(message?.agentEventStream)) {
+        return '';
+    }
+    const completeEvent = message.agentEventStream.find((event) => event?.type === 'agent_complete' && typeof event?.auto_continue_reason === 'string' && event.auto_continue_reason);
+    return completeEvent?.auto_continue_reason || '';
+};
+
+const isTranslationContinuationRequest = (requestParams = {}) => {
+    return requestParams?.document_task_kind === 'translation';
+};
+
+const startAutoContinueFlow = (requestParams) => {
+    autoContinueState.value = {
+        enabled: true,
+        rootId: buildAutoContinueRootId(),
+        round: 0,
+        prompt: AUTO_CONTINUE_PROMPT,
+        generationRunId: '',
+        effectiveKBIDs: [],
+        outline: null,
+        originalRequest: cloneAutoContinueOriginalRequest(requestParams),
+        stoppedReason: ''
+    };
+};
+
+const stopAutoContinue = (reason = '自动续写已停止') => {
+    autoContinueState.value = {
+        ...autoContinueState.value,
+        enabled: false,
+        stoppedReason: reason
+    };
+};
+
+const resetAutoContinue = () => {
+    autoContinueState.value = {
+        enabled: false,
+        rootId: '',
+        round: 0,
+        prompt: AUTO_CONTINUE_PROMPT,
+        generationRunId: '',
+        effectiveKBIDs: [],
+        outline: null,
+        originalRequest: null,
+        stoppedReason: ''
+    };
+};
+
+const stripDocumentCompleteMarker = (content = '') => {
+    return typeof content === 'string'
+        ? content.split(DOCUMENT_COMPLETE_MARKER).join('').trim()
+        : content;
+};
+
+const isContinuingDocumentGenerationPayload = (payload = {}) => {
+    if (typeof payload?.next_action === 'string' && payload.next_action) {
+        return payload.next_action === 'continue_auto';
+    }
+    const generationStatus = payload?.document_generation_status;
+    return payload?.auto_continue_next === true ||
+        (generationStatus === 'continuing' && payload?.finish_reason === 'section_batch_limit');
+};
+
+const getDocumentNextReason = (payload = {}) => payload?.next_reason || payload?.auto_continue_reason || '';
+
+const getDocumentNextReasonMessage = (payload = {}, fallback = '文档已完成') => {
+    const backendMessage = typeof payload?.next_reason_message === 'string' && payload.next_reason_message.trim()
+        ? payload.next_reason_message.trim()
+        : typeof payload?.auto_continue_reason_message === 'string' && payload.auto_continue_reason_message.trim()
+            ? payload.auto_continue_reason_message.trim()
+            : '';
+    return backendMessage || getDocumentNextReason(payload) || fallback;
+};
+
+const normalizeRecommendedAutoContinueRequest = (request = {}) => {
+    if (!request || typeof request !== 'object') {
+        return {};
+    }
+    const normalized = {};
+    for (const key of [
+        'query',
+        'intent_hint',
+        'base_artifact_id',
+        'document_output_mode',
+        'document_task_kind',
+        'generation_run_id',
+        'auto_continue_prompt',
+    ]) {
+        if (typeof request[key] === 'string' && request[key].trim()) {
+            normalized[key] = request[key].trim();
+        }
+    }
+    if (typeof request.auto_continue === 'boolean') {
+        normalized.auto_continue = request.auto_continue;
+    }
+    if (Number.isFinite(Number(request.auto_continue_round))) {
+        normalized.auto_continue_round = Number(request.auto_continue_round);
+    }
+    return normalized;
+};
+
+const shouldImplicitlyStartFullDocumentAutoContinue = (payload = {}) => {
+    if (autoContinueState.value.enabled || autoContinueState.value.stoppedReason) {
+        return false;
+    }
+    if (!isContinuingDocumentGenerationPayload(payload)) {
+        return false;
+    }
+    const baseRequest = lastRequestMeta.value;
+    return Boolean(baseRequest && baseRequest.document_output_mode === 'full_document' && !baseRequest.auto_continue);
+};
+
+const sendAutoContinueMessage = async (artifact, recommendedRequest = {}) => {
+    const state = autoContinueState.value;
+    const baseRequest = state.originalRequest || lastRequestMeta.value;
+    const isTranslationTask = isTranslationContinuationRequest(baseRequest) && Boolean(state.generationRunId);
+    if (!baseRequest || (!artifact?.id && !isTranslationTask)) {
+        stopAutoContinue('缺少可续写的请求上下文');
+        return;
+    }
+
+    const nextRequest = {
+        ...baseRequest,
+        query: state.prompt,
+        intent_hint: 'continue_document',
+        document_target_heading: undefined,
+        document_merge_mode: undefined,
+        images: undefined,
+        attachment_uploads: undefined,
+        auto_continue: true,
+        generation_run_id: state.generationRunId || undefined,
+        auto_continue_root_id: state.rootId,
+        auto_continue_round: state.round,
+        auto_continue_prompt: state.prompt,
+        auto_continue_original_query: baseRequest.query
+    };
+
+    if (isTranslationTask) {
+        nextRequest.base_artifact_id = artifact?.id || undefined;
+        nextRequest.document_output_mode = artifact?.id ? 'delta_only' : 'full_document';
+        nextRequest.document_task_kind = 'translation';
+    } else {
+        nextRequest.base_artifact_id = artifact.id;
+        nextRequest.document_output_mode = 'delta_only';
+    }
+
+    Object.assign(nextRequest, normalizeRecommendedAutoContinueRequest(recommendedRequest));
+
+    messagesList.push({
+        content: state.prompt,
+        role: 'user',
+        mentioned_items: [],
+        images: [],
+        attachments: [],
+        channel: 'web',
+        is_auto_continue: true,
+        created_at: new Date().toISOString()
+    });
+    userHasScrolledUp.value = false;
+    scrollToBottom(true);
+
+    lastRequestMeta.value = nextRequest;
+    suppressNextStreamCloseFinalize.value = true;
+    stopStream();
+    window.setTimeout(() => {
+        suppressNextStreamCloseFinalize.value = false;
+    }, 300);
+    loading.value = true;
+    isReplying.value = true;
+    userquery.value = state.prompt;
+
+    await startStream({ ...nextRequest });
+};
+
+const maybeContinueDocumentAutomatically = async (message, payload = {}, hydratedArtifact = null) => {
+    const nextAction = typeof payload?.next_action === 'string' ? payload.next_action : '';
+    if (!autoContinueState.value.enabled) {
+        if (!shouldImplicitlyStartFullDocumentAutoContinue(payload)) {
+            return;
+        }
+        startAutoContinueFlow(lastRequestMeta.value);
+    }
+
+    if (payload.generation_run_id) {
+        autoContinueState.value.generationRunId = payload.generation_run_id;
+    }
+    if (Array.isArray(payload.effective_kb_ids)) {
+        autoContinueState.value.effectiveKBIDs = [...payload.effective_kb_ids];
+    }
+    if (payload.outline && typeof payload.outline === 'object') {
+        autoContinueState.value.outline = payload.outline;
+    }
+
+    const generationStatus = payload.document_generation_status;
+    if (nextAction && nextAction !== 'continue_auto') {
+        const fallbackReason = nextAction === 'wait_user_review'
+            ? '当前文档需要人工检查，自动续写已暂停'
+            : nextAction === 'blocked'
+                ? '当前文档生成被阻断，自动续写已停止'
+                : nextAction === 'manual_retry'
+                    ? '当前轮生成未能稳定完成，自动续写已暂停'
+                    : '文档已完成';
+        stopAutoContinue(getDocumentNextReasonMessage(payload, fallbackReason));
+        return;
+    }
+    if (!nextAction && (payload.auto_continue_next === false || (generationStatus && generationStatus !== 'continuing'))) {
+        const fallbackReason = generationStatus === 'needs_review'
+            ? '当前文档需要人工检查，自动续写已暂停'
+            : generationStatus === 'blocked'
+                ? '当前文档生成被阻断，自动续写已停止'
+                : generationStatus === 'continuing'
+                    ? '当前轮生成未能稳定完成，自动续写已暂停'
+                : '文档已完成';
+                stopAutoContinue(getDocumentNextReasonMessage(payload, fallbackReason));
+        return;
+    }
+
+    const completionStatus = payload.completion_status || message?.completion_status;
+    if (completionStatus === 'failed' || completionStatus === 'cancelled') {
+        stopAutoContinue('当前轮生成失败或已取消');
+        return;
+    }
+
+    const artifact = hydratedArtifact || selectedBaseArtifact.value || message?.chat_document_artifact;
+    const originalRequest = autoContinueState.value.originalRequest || lastRequestMeta.value || {};
+    const isTranslationTask = isTranslationContinuationRequest(originalRequest) && Boolean(autoContinueState.value.generationRunId || payload.generation_run_id);
+    if (!artifact?.id && !isTranslationTask) {
+        stopAutoContinue('当前轮未生成可续写文档版本');
+        return;
+    }
+    if (artifact?.id && !canContinueChatDocumentArtifact(artifact)) {
+        stopAutoContinue(artifact.user_hint || '当前文档无法继续自动续写');
+        return;
+    }
+    autoContinueState.value.round += 1;
+
+    window.setTimeout(() => {
+        sendAutoContinueMessage(artifact || null, payload.recommended_request).catch((error) => {
+            console.warn('[AutoContinueDocument] Failed to continue automatically:', error);
+            stopAutoContinue(error?.message || '自动续写请求失败');
+            resetReplyState();
+        });
+    }, 200);
 };
 
 const loadSessionArtifacts = async (targetSessionId = session_id.value) => {
@@ -678,64 +1146,36 @@ const loadSessionArtifacts = async (targetSessionId = session_id.value) => {
             ? res.data.map((item) => normalizeChatDocumentArtifact(item)).filter(Boolean)
             : [];
         applyChatDocumentArtifactsToMessages();
+        const latestContinuableArtifact = findLatestContinuableArtifact(chatDocumentArtifacts.value, targetSessionId);
         if (selectedBaseArtifact.value) {
             const nextSelected = chatDocumentArtifacts.value.find((item) => item.id === selectedBaseArtifact.value.id) || null;
-            selectedBaseArtifact.value = nextSelected;
+            selectedBaseArtifact.value = canContinueChatDocumentArtifact(nextSelected) ? nextSelected : latestContinuableArtifact;
+            if (!selectedBaseArtifact.value || selectedBaseArtifact.value.id !== nextSelected?.id) {
+                selectedBaseArtifactDisplayLocked.value = false;
+            }
         } else {
-            const latestContinuableArtifact = chatDocumentArtifacts.value.find((item) => item?.session_id === targetSessionId && isContinuableArtifactStatus(item)) || null;
             selectedBaseArtifact.value = latestContinuableArtifact;
+            selectedBaseArtifactDisplayLocked.value = false;
         }
     } catch (error) {
         console.warn('[ChatDocumentArtifact] Failed to load session artifacts:', error);
     }
 };
 
-const inferLongDocumentTargetLanguage = (query) => {
-    if (!query) {
-        return '';
-    }
-    if (/(英文|english)/i.test(query)) {
-        return 'English';
-    }
-    if (/(中文|简体中文|chinese)/i.test(query)) {
-        return 'Chinese (Simplified)';
-    }
-    if (/(日文|日语|japanese)/i.test(query)) {
-        return 'Japanese';
-    }
-    if (/(韩文|韩语|korean)/i.test(query)) {
-        return 'Korean';
-    }
-    if (/(法文|法语|french)/i.test(query)) {
-        return 'French';
-    }
-    if (/(德文|德语|german)/i.test(query)) {
-        return 'German';
-    }
-    return '';
-};
-
 const inferDocumentContinuationIntent = (query = '') => {
     const text = query.trim().toLowerCase();
     if (!text) return 'normal';
-    if (/(重新生成|从头生成|重写一版|不要基于上一版)/.test(text)) return 'regenerate_document';
     if (/(修改上一版|基于上一个文档修改|把上一份改成|调整上一版|完善上一版)/.test(text)) return 'revise_document';
+    if (hasSectionContinuationTarget(query)) return 'revise_document';
     if (/(继续生成|接着写|续写|从上次中断处继续|补全剩余|继续输出|请继续补齐|继续补齐|继续补充|继续完善|接着补齐|补齐剩余|补充剩余|继续扩写)/.test(text)) return 'continue_document';
     return 'normal';
 };
 
-const inferDocumentOutputMode = (query = '', intentHint = 'normal') => {
-    const text = query.trim().toLowerCase();
-    if (/(输出完整新版全文|给我完整文档|输出完整文档|完整新版全文|重新生成完整方案)/.test(text)) {
-        return 'full_document';
-    }
+const inferDocumentOutputMode = (intentHint = 'normal') => {
     if (intentHint === 'continue_document' || intentHint === 'revise_document') {
         return 'delta_only';
     }
-    if (intentHint === 'regenerate_document') {
-        return 'full_document';
-    }
-    return 'full_document';
+    return '';
 };
 
 const hasScopedRevisionTarget = (query = '') => {
@@ -746,33 +1186,78 @@ const hasScopedRevisionTarget = (query = '') => {
     return /(第[0-9一二三四五六七八九十百零]+章|第[0-9一二三四五六七八九十百零]+节|第[0-9一二三四五六七八九十百零]+部分|章节|小节|段落|开头|结尾|引言|前言|背景|目标|方案|设计|实施|风险|附录|总结|标题|表格|代码块)/.test(text);
 };
 
+const hasSectionContinuationTarget = (query = '') => {
+    const text = query.trim();
+    if (!text) {
+        return false;
+    }
+    const hasContinueVerb = /(继续|接着|续写|补充|扩写|完善|细化|补齐)/.test(text);
+    if (!hasContinueVerb) {
+        return false;
+    }
+    const hasScopedTarget = /(章节|小节|段落|标题|模块|部分|第[0-9一二三四五六七八九十百零]+(?:章|节|部分)|[0-9]+(?:\.[0-9]+)+|智慧运行|智慧安防|数据湖|算力平台|应急中心|AR眼镜)/i.test(text);
+    if (!hasScopedTarget) {
+        return false;
+    }
+    return !/(剩余内容|剩余章节|后续章节|余下章节|从上次中断|文档末尾|继续剩余|当前文档为基准|自动续写)/.test(text);
+};
+
+const inferDocumentTargetHeading = (query = '') => {
+    const text = query.trim();
+    if (!text) {
+        return '';
+    }
+
+    const quotedTarget = text.match(/["“'‘]([^"”'’\n]{1,40})["”'’](?:章节|小节|模块|部分)?/);
+    if (quotedTarget?.[1]) {
+        return quotedTarget[1].trim();
+    }
+
+    const scopedTarget = text.match(/(?:在|对|把|将|就)?\s*(第[0-9一二三四五六七八九十百零]+(?:章|节|部分)|[0-9]+(?:\.[0-9]+)+|[\u4e00-\u9fa5A-Za-z0-9_-]{2,40})(章节|小节|模块|部分)/);
+    if (scopedTarget?.[1]) {
+        return scopedTarget[1].trim();
+    }
+
+    for (const keyword of ['智慧运行', '智慧安防', '数据湖', '算力平台', '智能安全监控应急中心', '应急中心', 'AR眼镜']) {
+        if (text.includes(keyword)) {
+            return keyword;
+        }
+    }
+    return '';
+};
+
+const inferDocumentMergeMode = (intentHint = 'normal', targetHeading = '') => {
+    if (!targetHeading) {
+        return undefined;
+    }
+    if (intentHint === 'revise_document' || intentHint === 'continue_document') {
+        return 'append_to_section';
+    }
+    return undefined;
+};
+
 const resolveLatestArtifactIfNeeded = async (intentHint) => {
     if (intentHint !== 'continue_document' && intentHint !== 'revise_document') {
         return null;
     }
-    if (selectedBaseArtifact.value?.id && selectedBaseArtifact.value?.session_id === session_id.value) {
+    if (selectedBaseArtifact.value?.id && selectedBaseArtifact.value?.session_id === session_id.value && canContinueChatDocumentArtifact(selectedBaseArtifact.value)) {
         return selectedBaseArtifact.value;
+    }
+    const latestContinuableArtifact = findLatestContinuableArtifact();
+    if (latestContinuableArtifact) {
+        return latestContinuableArtifact;
     }
     if (!session_id.value) {
         return null;
     }
     try {
         const res = await getLatestChatDocumentArtifact(session_id.value);
-        return res?.data || null;
+        const latestArtifact = normalizeChatDocumentArtifact(res?.data || null);
+        return canContinueChatDocumentArtifact(latestArtifact) ? latestArtifact : null;
     } catch (error) {
         console.warn('[ChatDocumentArtifact] Failed to resolve latest artifact:', error);
         return null;
     }
-};
-
-const validateLongDocumentTranslationMode = (knowledgeIds = [], imageAttachments = [], attachmentUploads = []) => {
-    if (knowledgeIds.length !== 1) {
-        return t('chat.longDocumentTranslateRequiresSingleFile');
-    }
-    if ((imageAttachments?.length || 0) > 0 || (attachmentUploads?.length || 0) > 0) {
-        return t('chat.longDocumentTranslateNoAttachments');
-    }
-    return '';
 };
 
 const findActiveAssistantMessage = () => {
@@ -809,19 +1294,60 @@ const useArtifactAsBase = (artifact) => {
     if (!normalized) {
         return;
     }
-    if (normalized.can_inline_continue === false) {
-        MessagePlugin.warning(normalized.user_hint || '当前版本过长，无法直接作为继续生成的基线，请改为指定章节修改。');
+    if (!canContinueChatDocumentArtifact(normalized)) {
+        MessagePlugin.warning(normalized.user_hint || '当前版本无法作为继续生成的基线。');
         return;
     }
+    artifactDisplayHint.value = null;
     selectedBaseArtifact.value = normalized;
+    selectedBaseArtifactDisplayLocked.value = true;
     if ((normalized.snapshot_char_count || 0) > 30000) {
-        MessagePlugin.info('当前文档较长；如果要修改，请尽量指定章节或段落范围。');
+        MessagePlugin.info('当前文档较长；续写会使用目录和末尾窗口作为上下文，如果要修改请尽量指定章节或段落范围。');
     }
     MessagePlugin.info(`已选择 V${normalized.revision_no || 1} 作为后续基线`);
 };
 
 const clearSelectedBaseArtifact = () => {
     selectedBaseArtifact.value = null;
+    selectedBaseArtifactDisplayLocked.value = false;
+    artifactDisplayHint.value = null;
+};
+
+const handleArtifactDisplayUpdate = async (payload) => {
+    const normalized = normalizeChatDocumentArtifact(payload?.artifact || payload);
+    if (!normalized?.id) {
+        return;
+    }
+    artifactDisplayHint.value = normalized;
+
+    const requestedMode = typeof payload?.mode === 'string' ? payload.mode.trim() : '';
+    if (requestedMode !== 'full' && requestedMode !== 'delta') {
+        return;
+    }
+
+    const message = resolveMessageForArtifactDisplay(payload);
+    if (!message) {
+        return;
+    }
+
+    if (requestedMode === 'full') {
+        try {
+            const hydratedArtifact = await ensureMessageFinalDocumentContent(message, normalized);
+            const finalDocument = typeof message.final_document_content === 'string' ? message.final_document_content.trim() : '';
+            if (!hydratedArtifact?.id || !finalDocument) {
+                MessagePlugin.warning('当前完整文档暂不可用');
+                return;
+            }
+            artifactDisplayHint.value = hydratedArtifact;
+            message.document_display_mode = 'full';
+        } catch (error) {
+            console.warn('[ChatDocumentArtifact] Failed to hydrate artifact for display toggle:', error);
+            MessagePlugin.error('加载完整文档失败');
+        }
+        return;
+    }
+
+    message.document_display_mode = 'delta';
 };
 
 const openArtifactRevisionDrawer = async (artifact) => {
@@ -989,6 +1515,162 @@ const buildRetryPayloadFromUserMessage = (userMessage) => {
     };
 };
 
+const findRetrySourceUserMessage = (assistantIndex) => {
+    const previousMessages = messagesList.slice(0, assistantIndex).reverse();
+    return previousMessages.find((item) => item.role === 'user' && item.retry_payload)
+        || previousMessages.find((item) => item.role === 'user' && !item.is_auto_continue)
+        || previousMessages.find((item) => item.role === 'user')
+        || null;
+};
+
+const isRetryableInterruptedDocumentMessage = (assistantSession = {}) => {
+    const translationProgress = getMessageTranslationProgress(assistantSession);
+    const translationGenerationRunId = getMessageGenerationRunId(assistantSession);
+
+    if (translationGenerationRunId && translationProgress) {
+        const completionStatus = assistantSession?.completion_status || '';
+        const finishReason = assistantSession?.finish_reason || '';
+        const failureReason = assistantSession?.failure_reason || '';
+        const generationStatus = assistantSession?.document_generation_status || '';
+
+        if (completionStatus === 'failed') {
+            return true;
+        }
+        if (generationStatus === 'continuing' && (finishReason || failureReason)) {
+            return true;
+        }
+    }
+
+    const artifact = assistantSession?.chat_document_artifact;
+    if (!canContinueChatDocumentArtifact(artifact)) {
+        return false;
+    }
+
+    const completionStatus = assistantSession?.completion_status || '';
+    const finishReason = assistantSession?.finish_reason || '';
+    const failureReason = assistantSession?.failure_reason || '';
+    const generationStatus = assistantSession?.document_generation_status || artifact?.document_generation_status || '';
+
+    if (completionStatus === 'failed') {
+        return true;
+    }
+    if (generationStatus === 'continuing' && (finishReason || failureReason)) {
+        return true;
+    }
+    return false;
+};
+
+const shouldReuseGenerationRunOnRetry = (assistantSession = {}) => {
+    const stopReason = getMessageAutoContinueReason(assistantSession)
+        || assistantSession?.finish_reason
+        || assistantSession?.failure_reason
+        || '';
+    if (stopReason === 'auto_continue_round_limit') {
+        return false;
+    }
+    return Boolean(getMessageGenerationRunId(assistantSession));
+};
+
+const buildRetryPayloadFromAssistantMessage = (assistantSession, userMessage) => {
+    const baseRetryPayload = buildRetryPayloadFromUserMessage(userMessage);
+    if (!isRetryableInterruptedDocumentMessage(assistantSession)) {
+        return baseRetryPayload;
+    }
+
+    const baseArtifact = normalizeChatDocumentArtifact(assistantSession?.chat_document_artifact);
+    const originalRequest = cloneAutoContinueOriginalRequest({
+        ...baseRetryPayload.request,
+        query: userMessage?.content || baseRetryPayload.request?.query || '',
+    });
+    const generationRunId = shouldReuseGenerationRunOnRetry(assistantSession)
+        ? getMessageGenerationRunId(assistantSession)
+        : '';
+    const translationProgress = getMessageTranslationProgress(assistantSession);
+    const isTranslationRetry = Boolean(generationRunId && translationProgress);
+
+    if (isTranslationRetry) {
+        return {
+            request: {
+                ...baseRetryPayload.request,
+                query: AUTO_CONTINUE_PROMPT,
+                intent_hint: 'continue_document',
+                base_artifact_id: baseArtifact?.id || undefined,
+                document_output_mode: baseArtifact?.id ? 'delta_only' : 'full_document',
+                document_task_kind: 'translation',
+                document_target_heading: undefined,
+                document_merge_mode: undefined,
+                images: undefined,
+                attachment_uploads: undefined,
+                auto_continue: true,
+                generation_run_id: generationRunId || undefined,
+                auto_continue_root_id: undefined,
+                auto_continue_round: 0,
+                auto_continue_prompt: AUTO_CONTINUE_PROMPT,
+                auto_continue_original_query: originalRequest.query,
+            },
+            display: baseRetryPayload.display || {},
+            document_resume_context: {
+                baseArtifact: baseArtifact?.id ? baseArtifact : null,
+                originalRequest,
+                generationRunId,
+                effectiveKBIDs: Array.isArray(assistantSession?.effective_kb_ids) ? [...assistantSession.effective_kb_ids] : [],
+            }
+        };
+    }
+
+    if (!baseArtifact?.id) {
+        return baseRetryPayload;
+    }
+
+    return {
+        request: {
+            ...baseRetryPayload.request,
+            query: AUTO_CONTINUE_PROMPT,
+            intent_hint: 'continue_document',
+            base_artifact_id: baseArtifact.id,
+            document_output_mode: 'delta_only',
+            document_target_heading: undefined,
+            document_merge_mode: undefined,
+            images: undefined,
+            attachment_uploads: undefined,
+            auto_continue: true,
+            generation_run_id: generationRunId || undefined,
+            auto_continue_root_id: undefined,
+            auto_continue_round: 0,
+            auto_continue_prompt: AUTO_CONTINUE_PROMPT,
+            auto_continue_original_query: originalRequest.query,
+        },
+        display: baseRetryPayload.display || {},
+        document_resume_context: {
+            baseArtifact,
+            originalRequest,
+            generationRunId,
+            effectiveKBIDs: Array.isArray(assistantSession?.effective_kb_ids) ? [...assistantSession.effective_kb_ids] : [],
+        }
+    };
+};
+
+const primeDocumentRetryContext = (retryPayload = {}) => {
+    const resumeContext = retryPayload?.document_resume_context;
+    if (!resumeContext?.originalRequest || (!resumeContext?.baseArtifact?.id && !resumeContext?.generationRunId)) {
+        return;
+    }
+
+    const artifact = resumeContext.baseArtifact?.id ? upsertChatDocumentArtifact(resumeContext.baseArtifact) : null;
+    if (artifact?.id) {
+        selectedBaseArtifact.value = artifact;
+        selectedBaseArtifactDisplayLocked.value = false;
+    }
+
+    startAutoContinueFlow(resumeContext.originalRequest);
+    autoContinueState.value = {
+        ...autoContinueState.value,
+        generationRunId: resumeContext.generationRunId || '',
+        effectiveKBIDs: Array.isArray(resumeContext.effectiveKBIDs) ? [...resumeContext.effectiveKBIDs] : [],
+        stoppedReason: ''
+    };
+};
+
 const resendFromRetryPayload = async (retryPayload) => {
     if (!retryPayload?.request?.query) {
         MessagePlugin.error(t('chat.processError'));
@@ -999,6 +1681,7 @@ const resendFromRetryPayload = async (retryPayload) => {
         ...retryPayload.request,
         session_id: session_id.value
     };
+    primeDocumentRetryContext(retryPayload);
     lastRequestMeta.value = request;
     userquery.value = request.query;
     isReplying.value = true;
@@ -1011,9 +1694,11 @@ const resendFromRetryPayload = async (retryPayload) => {
         images: retryPayload.display?.user_images || [],
         attachments: retryPayload.display?.attachments || [],
         channel: 'web',
+        is_auto_continue: Boolean(retryPayload.document_resume_context) || Boolean(request.auto_continue),
         retry_payload: {
             request,
-            display: retryPayload.display || {}
+            display: retryPayload.display || {},
+            document_resume_context: retryPayload.document_resume_context || undefined,
         }
     });
     userHasScrolledUp.value = false;
@@ -1029,14 +1714,30 @@ const handleRetry = async (assistantSession) => {
     }
 
     const assistantIndex = messagesList.findIndex((item) => item === assistantSession || item.id === assistantSession?.id || item.request_id === assistantSession?.request_id);
-    if (assistantIndex <= 0) {
+    if (assistantIndex < 0) {
         MessagePlugin.error(t('chat.processError'));
         return;
     }
 
-    const userMessage = messagesList.slice(0, assistantIndex).reverse().find((item) => item.role === 'user');
-    const retryPayload = buildRetryPayloadFromUserMessage(userMessage);
-    await resendFromRetryPayload(retryPayload);
+    try {
+        const userMessage = findRetrySourceUserMessage(assistantIndex) || {
+            content: getUserQuery(assistantIndex) || '',
+            mentioned_items: [],
+            images: [],
+            attachments: []
+        };
+        const retryPayload = buildRetryPayloadFromAssistantMessage(assistantSession, userMessage);
+        await resendFromRetryPayload(retryPayload);
+    } catch (error) {
+        console.error('[Retry] Failed to resend interrupted document request:', {
+            error,
+            assistantSessionId: assistantSession?.id,
+            assistantRequestId: assistantSession?.request_id,
+            assistantIndex,
+        });
+        MessagePlugin.error(error?.message || t('chat.processError'));
+        resetReplyState();
+    }
 };
 watch([() => route.params], (newvalue) => {
     isFirstEnter.value = true;
@@ -1047,6 +1748,9 @@ watch([() => route.params], (newvalue) => {
         messagesList.splice(0);
         chatDocumentArtifacts.value = [];
         selectedBaseArtifact.value = null;
+        selectedBaseArtifactDisplayLocked.value = false;
+        artifactDisplayHint.value = null;
+        resetAutoContinue();
         artifactRevisionDrawerVisible.value = false;
         artifactRevisionList.value = [];
         artifactRevisionAnchor.value = null;
@@ -1115,7 +1819,6 @@ const getmsgList = (data, isScrollType = false, scrollHeight) => {
     }).finally(() => {
         historyLoading.value = false;
         if (!isScrollType && !data.created_at) {
-            loadLongDocumentTasks(data.session_id);
             loadSessionArtifacts(data.session_id);
         }
     })
@@ -1131,7 +1834,8 @@ const reconstructEventStreamFromSteps = (
     agentDurationMs = 0,
     completionStatus = '',
     finishReason = '',
-    failureReason = ''
+    failureReason = '',
+    outline = null
 ) => {
     const events = [];
     const normalizedCompletionStatus = normalizeCompletionStatus({
@@ -1164,6 +1868,8 @@ const reconstructEventStreamFromSteps = (
                 content: thoughtText,
                 done: true,
                 thinking: false,
+                synthetic: typeof step.stage === 'string' && step.stage.trim().length > 0,
+                stage: typeof step.stage === 'string' ? step.stage : '',
                 timestamp: stepTimestamp || undefined,
                 // Extract duration from step if available
                 duration_ms: step.duration || undefined,
@@ -1206,6 +1912,7 @@ const reconstructEventStreamFromSteps = (
             finish_reason: finishReason,
             failure_reason: failureReason,
             is_partial: normalizedCompletionStatus === 'partial',
+            outline,
         });
     }
 
@@ -1253,8 +1960,10 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
         // or finish_reason=tool_calls, which is enough to rebuild a protocol-compatible
         // agent event stream during refresh/reload.
         if (isHistoricalAgentMessage(item)) {
-            console.log('[Message Load] Reconstructing agent history for message:', item.id, 'steps:', item.agent_steps?.length || 0);
             item.isAgentMode = true;
+            const reconstructedOutline = extractStructuredPlanningOutlineFromText(
+                item.final_document_content || item.chat_document_artifact?.content_snapshot || item.content || ''
+            );
             item.agentEventStream = reconstructEventStreamFromSteps(
                 item.agent_steps,
                 item.content,
@@ -1263,11 +1972,11 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
                 item.agent_duration_ms || 0,
                 item.completion_status,
                 item.finish_reason,
-                item.failure_reason
+                item.failure_reason,
+                reconstructedOutline
             );
             // 隐藏最终答案内容，因为它已经包含在 agentEventStream 的 answer 事件中
             item.hideContent = true;
-            console.log('[Message Load] Reconstructed', item.agentEventStream.length, 'events from agent history');
         }
         
         if (item.content) {
@@ -1322,17 +2031,18 @@ const checkmenuTitle = (session_id) => {
 // 发送消息
 // 处理停止生成事件 - 立即清除 loading 状态
 const handleStopGeneration = () => {
-    console.log('[Stop Generation] Immediately clearing loading state');
+    stopAutoContinue('用户已停止自动续写');
     loading.value = false;
     isReplying.value = false;
     // 注意：不在这里清空 currentAssistantMessageId，因为需要它来调用 API
     // API 调用成功后，后端的 stop 事件会清空它
 };
 
-const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = [], attachmentFiles = [], longDocumentTranslateEnabled = false) => {
+const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = [], attachmentFiles = []) => {
     userquery.value = value;
     isReplying.value = true;
     loading.value = true;
+    resetAutoContinue();
 
     // Convert images to base64 data URIs for backend processing and local display
     let imageAttachments = [];
@@ -1424,11 +2134,15 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     if (explicitBaseArtifact && intentHint === 'normal') {
         intentHint = 'revise_document';
     }
-    const documentOutputMode = inferDocumentOutputMode(value, intentHint);
+    const documentOutputMode = inferDocumentOutputMode(intentHint);
+    const documentTargetHeading = inferDocumentTargetHeading(value);
+    const documentMergeMode = inferDocumentMergeMode(intentHint, documentTargetHeading);
+    const isDocumentEditIntent = intentHint === 'continue_document' || intentHint === 'revise_document';
+    const requestIntentHint = intentHint === 'normal' ? undefined : intentHint;
     const latestArtifact = await resolveLatestArtifactIfNeeded(intentHint);
-    if ((intentHint === 'continue_document' || intentHint === 'revise_document') && latestArtifact?.can_inline_continue === false) {
+    if ((intentHint === 'continue_document' || intentHint === 'revise_document') && latestArtifact && !canContinueChatDocumentArtifact(latestArtifact)) {
         resetReplyState();
-        MessagePlugin.warning(latestArtifact.user_hint || '当前文档过长，无法直接继续生成，请改为指定章节修改或先生成精简版。');
+        MessagePlugin.warning(latestArtifact.user_hint || '当前文档无法继续生成，请检查完整文档后再尝试。');
         return;
     }
     if (intentHint === 'revise_document' && (latestArtifact?.snapshot_char_count || 0) > 30000 && !hasScopedRevisionTarget(value)) {
@@ -1447,9 +2161,11 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         session_id: session_id.value,
         knowledge_base_ids: kbIds,
         knowledge_ids: knowledgeIds,
-        intent_hint: intentHint,
-        base_artifact_id: intentHint === 'regenerate_document' ? undefined : baseArtifactId,
+        intent_hint: requestIntentHint,
+        base_artifact_id: baseArtifactId,
         document_output_mode: documentOutputMode,
+        document_target_heading: isDocumentEditIntent ? documentTargetHeading || undefined : undefined,
+        document_merge_mode: isDocumentEditIntent ? documentMergeMode : undefined,
         agent_enabled: agentEnabled,
         agent_id: selectedAgentId,
         web_search_enabled: webSearchEnabled,
@@ -1464,15 +2180,6 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         url: endpoint
     };
 
-    if (longDocumentTranslateEnabled) {
-        const validationError = validateLongDocumentTranslationMode(knowledgeIds, imageAttachments, attachmentUploads);
-        if (validationError) {
-            resetReplyState();
-            MessagePlugin.warning(validationError);
-            return;
-        }
-    }
-
     // 将@提及的知识库和文件信息存入用户消息，并保留本次请求参数以便失败后重试
     messagesList.push({
         content: value,
@@ -1485,35 +2192,6 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     });
     userHasScrolledUp.value = false;
     scrollToBottom(true);
-
-    if (longDocumentTranslateEnabled) {
-        try {
-            const res = await createLongDocumentTask({
-                session_id: session_id.value,
-                knowledge_id: knowledgeIds[0],
-                user_query: value,
-                summary_model_id: modelId,
-                task_kind: 'translation',
-                output_format: 'markdown',
-                options: {
-                    target_language: inferLongDocumentTargetLanguage(value)
-                }
-            });
-            const task = res?.data?.task || res?.data;
-            if (!task?.id) {
-                throw new Error(t('chat.processError'));
-            }
-            upsertLongDocumentTaskMessage(task);
-            resetReplyState();
-            scrollToBottom(true);
-            return;
-        } catch (error) {
-            const errorMessage = error?.message || '创建长文档任务失败';
-            MessagePlugin.error(errorMessage);
-            markAssistantFailed(errorMessage);
-            return;
-        }
-    }
 
     const retryPayload = {
         request: requestParams,
@@ -1541,49 +2219,32 @@ watch(error, (newError) => {
 });
 
 onClose(() => {
+    if (suppressNextStreamCloseFinalize.value) {
+        suppressNextStreamCloseFinalize.value = false;
+        return;
+    }
     finalizeActiveAssistantOnStreamClose();
 });
 
 // 处理流式数据
 onChunk((data) => {
-    // 日志：打印接收到的事件
-    console.log('[Agent Event Received]', {
-        response_type: data.response_type,
-        id: data.id,
-        done: data.done,
-        content_length: data.content?.length || 0,
-        content_preview: data.content ? data.content.substring(0, 50) : '',
-        data: data.data,
-        session_id: data.session_id,
-        assistant_message_id: data.assistant_message_id
-    });
-    
     // 处理 agent query 事件 - 保存 assistant message ID 并保持 loading 状态
     if (data.response_type === 'agent_query') {
         if (data.assistant_message_id) {
             currentAssistantMessageId.value = data.assistant_message_id;
-            console.log('[Agent Query] Saved assistant message ID:', data.assistant_message_id);
         }
-        console.log('[Agent Query Event]', {
-            session_id: data.session_id || data.data?.session_id,
-            assistant_message_id: data.assistant_message_id,
-            query: data.data?.query,
-            request_id: data.data?.request_id
-        });
-        
+
         // 检查是否是继续流式传输（消息已存在）
         const existingMessage = messagesList.findLast((item) => item.id === data.id || item.request_id === data.id);
         if (!existingMessage) {
             // 新消息，设置 loading 状态
         loading.value = true;
-            console.log('[Agent Query] New message, setting loading=true');
         } else {
             existingMessage.isAgentMode = true;
             existingMessage.agentEventStream = existingMessage.agentEventStream || [];
             existingMessage._eventMap = existingMessage._eventMap || new Map();
             existingMessage._pendingToolCalls = existingMessage._pendingToolCalls || new Map();
             // 继续流式传输（刷新页面场景），不设置 loading，因为消息已经在列表中
-            console.log('[Agent Query] Continuing stream for existing message, keeping current loading state');
         }
         return;
     }
@@ -1592,10 +2253,6 @@ onChunk((data) => {
     if (data.response_type === 'session_title') {
         const title = data.content || data.data?.title;
         if (title && data.data?.session_id) {
-            console.log('[Session Title Update]', {
-                session_id: data.data.session_id,
-                title: title
-            });
             usemenuStore.updatasessionTitle(data.data.session_id, title);
             usemenuStore.changeIsFirstSession(false);
             isNeedTitle.value = false;
@@ -1604,16 +2261,6 @@ onChunk((data) => {
         return;
     }
 
-    if (data.response_type === 'long_document_task') {
-        const task = data.data?.task;
-        if (task?.id) {
-            upsertLongDocumentTaskMessage(task, true);
-            scrollToBottom(true);
-        }
-        resetReplyState();
-        return;
-    }
-    
     // 判断是否是 Agent 模式的响应
     // 注意：'answer', 'complete', 'references' 类型可能在两种模式下都存在
     // 其中 'complete' 目前也是 Agent 专有终态事件，用于恢复路径与实时流收口。
@@ -1658,7 +2305,6 @@ onChunk((data) => {
         }
         
         existingMessage.knowledge_references = data.knowledge_references || data.data?.references || [];
-        console.log('[References] Saved to message, count:', existingMessage.knowledge_references.length);
         return;
     }
     
@@ -1669,7 +2315,6 @@ onChunk((data) => {
         
         // 对于 stop 事件，额外处理全局状态
         if (data.response_type === 'stop') {
-            console.log('[Stop Event] Generation stopped');
             loading.value = false;
             isReplying.value = false;
             // 清空当前 assistant message ID
@@ -1684,7 +2329,6 @@ onChunk((data) => {
     // 非 Agent 模式下的 stop 事件：只更新状态，不把后端附带的 "Generation stopped by user"
     // 文案拼进 content，保留用户点停止时已经流式输出的内容不变。
     if (data.response_type === 'stop') {
-        console.log('[Stop Event] Non-agent generation stopped');
         const stoppedMessage = messagesList.findLast((item) => {
             if (item.request_id === data.id) return true;
             return item.id === data.id;
@@ -1712,13 +2356,20 @@ onChunk((data) => {
         });
         if (completedMessage) {
             syncMessageCompletionState(completedMessage, data.data || {});
-            if (data.data?.final_answer && !completedMessage.content) {
+            if (data.data?.document_generation_status === 'completed') {
+                completedMessage.content = stripDocumentCompleteMarker(data.data?.final_answer || completedMessage.content || '');
+            } else if (data.data?.final_answer && !completedMessage.content) {
                 completedMessage.content = data.data.final_answer;
             }
             if (data.data?.chat_document_artifact) {
                 promoteCompletedArtifactAsBase(completedMessage, data.data.chat_document_artifact);
             }
-            hydrateFinalDocumentFromComplete(completedMessage, data.data || {});
+            hydrateFinalDocumentFromComplete(completedMessage, data.data || {})
+                .then((artifact) => maybeContinueDocumentAutomatically(completedMessage, data.data || {}, artifact))
+                .catch((error) => {
+                    console.warn('[AutoContinueDocument] Failed to schedule next continuation:', error);
+                    stopAutoContinue(error?.message || '自动续写调度失败');
+                });
         }
         resetReplyState();
         return;
@@ -1734,7 +2385,6 @@ onChunk((data) => {
     
     // 如果消息已完成且当前事件是完成事件（done=true 且无内容），直接忽略
     if (isMessageTerminal(existingMessage) && data.done && !data.content) {
-        console.log('[Non-Agent] Ignoring duplicate completion event for completed message');
         return;
     }
     
@@ -1820,7 +2470,6 @@ const handleAgentChunk = (data) => {
     // 确保在继续流式传输时（刷新页面场景），一旦接收到实际内容就关闭 loading
     // 这是一个保护措施，防止任何边缘情况导致 loading 残留
     if (loading.value && (data.response_type === 'thinking' || data.response_type === 'answer' || data.response_type === 'tool_call' || data.response_type === 'tool_approval_required')) {
-        console.log('[Agent Chunk] Closing loading for continued stream');
         loading.value = false;
     }
     
@@ -1828,59 +2477,13 @@ const handleAgentChunk = (data) => {
         case 'thinking':
             {
                 const eventId = data.data?.event_id;
-                console.log('[Thinking Event]', {
-                    event_id: eventId,
-                    done: data.done,
-                    content_length: data.content?.length || 0
-                });
-                
+
                 // Initialize structures
                 if (!message.agentEventStream) message.agentEventStream = [];
                 if (!message._eventMap) message._eventMap = new Map();
-                
-                if (!data.done) {
-                    // Check if this thinking event already exists
-                    let thinkingEvent = message._eventMap.get(eventId);
-                    
-                    if (!thinkingEvent) {
-                        // Create new thinking event
-                        console.log('[Thinking] Creating new thinking event, event_id:', eventId);
-                        thinkingEvent = {
-                            type: 'thinking',
-                            event_id: eventId,
-                            content: '',
-                            done: false,
-                            startTime: Date.now(),
-                            thinking: true
-                        };
-                        
-                        // Add to event stream
-                        message.agentEventStream.push(thinkingEvent);
-                        message._eventMap.set(eventId, thinkingEvent);
-                    }
-                    
-                    // Accumulate content
-                    if (data.content) {
-                        thinkingEvent.content += data.content;
-                        console.log('[Thinking] Event', eventId, 'accumulated:', thinkingEvent.content.length, 'chars');
-                    }
-                    
-                } else {
-                    // Thinking completed
-                    const thinkingEvent = message._eventMap.get(eventId);
-                    if (thinkingEvent) {
-                        console.log('[Thinking] Completing event, event_id:', eventId, 'content length:', thinkingEvent.content.length);
-                        
-                        // Mark as done
-                        thinkingEvent.done = true;
-                        thinkingEvent.thinking = false;
-                        thinkingEvent.duration_ms = data.data?.duration_ms || (Date.now() - thinkingEvent.startTime);
-                        thinkingEvent.completed_at = data.data?.completed_at || Date.now();
-                        
-                        console.log('[Thinking] Event completed, duration:', thinkingEvent.duration_ms, 'ms');
-                    } else {
-                        console.warn('[Thinking] Received done for unknown event_id:', eventId);
-                    }
+                const thinkingEvent = upsertThinkingEvent(message, data);
+                if (!thinkingEvent && data.done) {
+                    console.warn('[Thinking] Received done for unknown event_id:', eventId);
                 }
             }
             break;
@@ -1936,12 +2539,6 @@ const handleAgentChunk = (data) => {
                     break;
                 }
                 
-                console.log('[Tool Call]', {
-                    tool_call_id: toolCallId,
-                    tool_name: incomingToolName,
-                    has_arguments: Boolean(incomingArguments)
-                });
-                
                 let toolCallEvent = message._pendingToolCalls.get(toolCallId);
                 if (!toolCallEvent) {
                     toolCallEvent = message.agentEventStream.find(
@@ -1979,13 +2576,7 @@ const handleAgentChunk = (data) => {
                 const toolCallId = data.data.tool_call_id;
                 const toolName = data.data.tool_name;
                 const success = data.response_type !== 'error' && data.data.success !== false;
-                
-                console.log('[Tool Result]', {
-                    tool_call_id: toolCallId,
-                    tool_name: toolName,
-                    success: success
-                });
-                
+
                 // Find and update the pending tool call event
                 let toolCallEvent = null;
                 if (message._pendingToolCalls) {
@@ -2016,8 +2607,6 @@ const handleAgentChunk = (data) => {
                     toolCallEvent.duration_ms = duration;
                     toolCallEvent.display_type = data.data.display_type;
                     toolCallEvent.tool_data = data.data;
-                    
-                    console.log('[Tool Result] Updated event in stream');
                 } else {
                     console.warn('[Tool Result] No pending tool call found for', toolCallId || toolName);
                 }
@@ -2054,19 +2643,11 @@ const handleAgentChunk = (data) => {
         case 'answer':
             // 最终答案
             message.thinking = false;
-            
-            console.log('[Answer Event] Received:', {
-                has_content: !!data.content,
-                content_length: data.content?.length || 0,
-                done: data.done,
-                current_message_content_length: message.content?.length || 0
-            });
-            
+
             // 只有当有实际内容时才追加，避免空内容覆盖
             if (data.content) {
                 message.content = (message.content || '') + data.content;
                 fullContent.value += data.content;
-                console.log('[Answer] Content appended, new length:', message.content.length);
             }
             
             // Add or update answer event in agentEventStream
@@ -2081,13 +2662,11 @@ const handleAgentChunk = (data) => {
                     completion_status: 'pending'
                 };
                 message.agentEventStream.push(answerEvent);
-                console.log('[Answer] Created new answer event in stream');
             }
             
             // 只有当有实际内容时才更新 answerEvent.content
             if (data.content) {
                 answerEvent.content = message.content;
-                console.log('[Answer] answerEvent.content updated, length:', answerEvent.content.length);
             }
 
             // 检查是否为 fallback 回答
@@ -2105,15 +2684,11 @@ const handleAgentChunk = (data) => {
             // 只在第一次收到 done:true 时标记 answer 流结束，真正完成态由 complete 事件决定。
             if (data.done && !answerEvent.done) {
                 answerEvent.done = true;
-                console.log('[Agent] Answer done, content length:', message.content?.length || 0, 'answerEvent.content length:', answerEvent.content?.length || 0);
-            } else if (data.done && answerEvent.done) {
-                console.log('[Answer] Ignoring duplicate done event, current content preserved:', answerEvent.content?.length || 0);
             }
             break;
             
         case 'complete':
             // 整个流式响应完成事件 - 确保状态正确关闭
-            console.log('[Agent] Complete event received');
             {
                 const completePayload = { ...(data.data || {}) };
                 if (completePayload.completion_status && completePayload.completion_status !== 'failed' && completePayload.failure_reason === undefined) {
@@ -2142,18 +2717,31 @@ const handleAgentChunk = (data) => {
                     answerEvent.finish_reason = completePayload.finish_reason;
                     answerEvent.failure_reason = completePayload.failure_reason;
                 }
+                if (completePayload.document_generation_status === 'completed') {
+                    message.content = stripDocumentCompleteMarker(message.content || completePayload.final_answer || '');
+                    if (message.agentEventStream) {
+                        const answerEvent = message.agentEventStream.find((event) => event.type === 'answer');
+                        if (answerEvent?.content) {
+                            answerEvent.content = stripDocumentCompleteMarker(answerEvent.content);
+                        }
+                    }
+                }
                 resetReplyState();
                 // 将 total_duration_ms 存入事件流供 AgentStreamDisplay 使用
                 if (completePayload) {
                     upsertAgentCompleteEvent(message, completePayload);
                 }
-                hydrateFinalDocumentFromComplete(message, completePayload);
+                hydrateFinalDocumentFromComplete(message, completePayload)
+                    .then((artifact) => maybeContinueDocumentAutomatically(message, completePayload, artifact))
+                    .catch((error) => {
+                        console.warn('[AutoContinueDocument] Failed to schedule next continuation:', error);
+                        stopAutoContinue(error?.message || '自动续写调度失败');
+                    });
             }
             break;
             
         case 'stop':
             // 停止事件 - 添加到事件流并标记对话完成
-            console.log('[Agent] Stop event received');
             if (!message.agentEventStream) message.agentEventStream = [];
             syncMessageCompletionState(message, {
                 completion_status: 'cancelled',
@@ -2256,7 +2844,7 @@ onMounted(async () => {
     if (firstQuery.value) {
         scrollLock.value = true;
         historyLoading.value = false;
-         sendMsg(firstQuery.value, firstModelId.value || '', firstMentionedItems.value || [], firstImageFiles.value || [], firstAttachmentFiles.value || [], Boolean(firstLongDocumentTranslateEnabled.value));
+         sendMsg(firstQuery.value, firstModelId.value || '', firstMentionedItems.value || [], firstImageFiles.value || [], firstAttachmentFiles.value || []);
         usemenuStore.changeFirstQuery('', [], '', [], []);
     } else {
         scrollLock.value = false;
@@ -2273,6 +2861,7 @@ onMounted(async () => {
 })
 const clearData = () => {
     stopStream();
+    resetAutoContinue();
     isReplying.value = false;
     fullContent.value = '';
     userquery.value = '';
@@ -2493,6 +3082,26 @@ onBeforeRouteUpdate((to, from, next) => {
 
 .document-baseline-version {
     color: var(--td-brand-color);
+}
+
+.auto-continue-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--td-success-color) 20%, transparent);
+    background: color-mix(in srgb, var(--td-success-color) 8%, var(--td-bg-color-container));
+    color: var(--td-text-color-primary);
+    font-size: 13px;
+}
+
+.auto-continue-banner.is-stopped {
+    border-color: var(--td-component-border);
+    background: var(--td-bg-color-secondarycontainer);
+    color: var(--td-text-color-secondary);
 }
 
 .artifact-drawer-body {

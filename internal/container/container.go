@@ -168,7 +168,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewTaskPendingOpsRepository))
 	must(container.Provide(repository.NewTaskDeadLetterRepository))
 	must(container.Provide(repository.NewChatDocumentArtifactRepository))
-	must(container.Provide(repository.NewLongDocumentTaskRepository))
+	must(container.Provide(repository.NewChatDocumentEvidenceRefRepository))
+	must(container.Provide(repository.NewChatDocumentGenerationRunRepository))
 
 	// MCP manager for managing MCP client connections
 	logger.Debugf(ctx, "[Container] Registering MCP manager...")
@@ -210,7 +211,6 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewWikiLintService))
 	must(container.Provide(service.NewAgentVisibilityService))
 	must(container.Provide(service.NewChatDocumentArtifactService))
-	must(container.Provide(service.NewLongDocumentTaskService))
 
 	// Web search service (needed by AgentService)
 	logger.Debugf(ctx, "[Container] Registering web search registry and providers...")
@@ -243,11 +243,6 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(func(g *approval.Gate) approval.MCPApproval { return g }))
 	must(container.Provide(service.NewAgentService))
 
-	// Session service (depends on agent service)
-	// SessionService is created after AgentService and passes itself to AgentService.CreateAgentEngine when needed
-	logger.Debugf(ctx, "[Container] Registering session service...")
-	must(container.Provide(service.NewSessionService))
-
 	logger.Debugf(ctx, "[Container] Registering task enqueuer...")
 	redisAvailable := os.Getenv("REDIS_ADDR") != ""
 	if redisAvailable {
@@ -258,6 +253,12 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		must(container.Provide(func() interfaces.TaskEnqueuer { return syncExec }))
 		must(container.Provide(func() *router.SyncTaskExecutor { return syncExec }))
 	}
+
+	// Session service (depends on agent service)
+	// SessionService is created after AgentService and passes itself to AgentService.CreateAgentEngine when needed
+	logger.Debugf(ctx, "[Container] Registering session service...")
+	must(container.Provide(service.NewSessionService))
+	must(container.Provide(service.NewLongDocumentTaskHandler, dig.Name("longDocumentTask")))
 
 	// Chat pipeline components for processing chat requests
 	logger.Debugf(ctx, "[Container] Registering chat pipeline plugins...")
@@ -299,6 +300,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewChunkHandler))
 	must(container.Provide(handler.NewFAQHandler))
 	must(container.Provide(handler.NewTagHandler))
+	must(container.Provide(service.NewChatRouteService))
 	must(container.Provide(session.NewHandler))
 	must(container.Provide(handler.NewMessageHandler))
 	must(container.Provide(handler.NewModelHandler))
@@ -326,7 +328,6 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewWeKnoraCloudHandler))
 	must(container.Provide(handler.NewOrgTreeHandler))
 	must(container.Provide(handler.NewExportHandler))
-	must(container.Provide(handler.NewLongDocumentTaskHandler))
 	logger.Debugf(ctx, "[Container] HTTP handlers registered")
 
 	// Router configuration

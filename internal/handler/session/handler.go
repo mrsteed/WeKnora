@@ -20,11 +20,12 @@ type Handler struct {
 	streamManager               interfaces.StreamManager               // Manager for handling streaming responses
 	config                      *config.Config                         // Application configuration
 	knowledgebaseService        interfaces.KnowledgeBaseService        // Service for managing knowledge bases
+	knowledgeService            interfaces.KnowledgeService            // Service for loading knowledge items during route shadowing
 	customAgentService          interfaces.CustomAgentService          // Service for managing custom agents
 	tenantService               interfaces.TenantService               // Service for loading tenant (shared agent context)
 	agentShareService           interfaces.AgentShareService           // Service for resolving shared agents (KB scope in retrieval)
 	chatDocumentArtifactService interfaces.ChatDocumentArtifactService // Service for session document artifact persistence and lookup
-	longDocumentService         interfaces.LongDocumentTaskService     // Service for long document task routing
+	chatRouteService            interfaces.ChatRouteService            // Service for shadow route decision logging
 	fileService                 interfaces.FileService                 // Service for file storage (image uploads)
 	modelService                interfaces.ModelService                // Service for model management (VLM access)
 	attachmentProcessor         *AttachmentProcessor                   // Processor for file attachments
@@ -37,11 +38,12 @@ func NewHandler(
 	streamManager interfaces.StreamManager,
 	config *config.Config,
 	knowledgebaseService interfaces.KnowledgeBaseService,
+	knowledgeService interfaces.KnowledgeService,
 	customAgentService interfaces.CustomAgentService,
 	tenantService interfaces.TenantService,
 	agentShareService interfaces.AgentShareService,
 	chatDocumentArtifactService interfaces.ChatDocumentArtifactService,
-	longDocumentService interfaces.LongDocumentTaskService,
+	chatRouteService interfaces.ChatRouteService,
 	fileService interfaces.FileService,
 	modelService interfaces.ModelService,
 	documentReader interfaces.DocumentReader,
@@ -53,11 +55,12 @@ func NewHandler(
 		streamManager:               streamManager,
 		config:                      config,
 		knowledgebaseService:        knowledgebaseService,
+		knowledgeService:            knowledgeService,
 		customAgentService:          customAgentService,
 		tenantService:               tenantService,
 		agentShareService:           agentShareService,
 		chatDocumentArtifactService: chatDocumentArtifactService,
-		longDocumentService:         longDocumentService,
+		chatRouteService:            chatRouteService,
 		fileService:                 fileService,
 		modelService:                modelService,
 		attachmentProcessor: NewAttachmentProcessor(

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,6 +40,10 @@ type AgentStreamHandler struct {
 func shouldUseAuthoritativeCompleteAnswer(data event.AgentCompleteData, streamedAnswer string) bool {
 	if data.FinalAnswer == "" {
 		return false
+	}
+
+	if strings.TrimSpace(data.DocumentGenerationStatus) != "" {
+		return streamedAnswer == "" || data.FinalAnswer != streamedAnswer
 	}
 
 	if data.CompletionStatus == types.MessageCompletionStatusCompleted {
@@ -131,6 +136,36 @@ func (h *AgentStreamHandler) handleThought(ctx context.Context, evt event.Event)
 		metadata = map[string]interface{}{
 			"event_id": evt.ID,
 		}
+	}
+	if data.Replace {
+		metadata["replace"] = true
+	}
+	if data.Synthetic {
+		metadata["synthetic"] = true
+	}
+	if strings.TrimSpace(data.Stage) != "" {
+		metadata["stage"] = strings.TrimSpace(data.Stage)
+	}
+	if len(data.Outline) > 0 {
+		metadata["outline"] = data.Outline
+	}
+	if data.SectionCurrent > 0 {
+		metadata["section_current"] = data.SectionCurrent
+	}
+	if data.SectionTotal > 0 {
+		metadata["section_total"] = data.SectionTotal
+	}
+	if strings.TrimSpace(data.SectionTitle) != "" {
+		metadata["section_title"] = strings.TrimSpace(data.SectionTitle)
+	}
+	if data.QueryCurrent > 0 {
+		metadata["query_current"] = data.QueryCurrent
+	}
+	if data.QueryTotal > 0 {
+		metadata["query_total"] = data.QueryTotal
+	}
+	if strings.TrimSpace(data.ProgressLabel) != "" {
+		metadata["progress_label"] = strings.TrimSpace(data.ProgressLabel)
 	}
 
 	h.mu.Unlock()
@@ -477,6 +512,20 @@ func (h *AgentStreamHandler) handleError(ctx context.Context, evt event.Event) e
 		return nil
 	}
 
+	h.mu.Lock()
+	if messageCompletionStatusPriority(h.assistantMessage.CompletionStatusOrLegacy()) > 0 {
+		logger.GetLogger(h.ctx).Infof(
+			"Ignored late stream error after terminal completion, session_id=%s, message_id=%s, stage=%s, completion_status=%s",
+			h.sessionID,
+			h.assistantMessageID,
+			data.Stage,
+			h.assistantMessage.CompletionStatusOrLegacy(),
+		)
+		h.mu.Unlock()
+		return nil
+	}
+	h.mu.Unlock()
+
 	// Build error metadata
 	metadata := map[string]interface{}{
 		"stage": data.Stage,
@@ -535,19 +584,41 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 
 	h.mu.Lock()
 	fallbackAnswer := ""
+	completionStatus := data.CompletionStatus
+	finishReason := data.FinishReason
+	failureReason := data.FailureReason
+	allowIndexing := data.AllowIndexing
+	allowComplete := data.AllowComplete
+	isPartial := data.IsPartial
 
 	// Update assistant message with final data
 	if data.MessageID == h.assistantMessageID {
-		streamedAnswer := h.finalAnswer
-		authoritativeAnswer := streamedAnswer
-		if shouldUseAuthoritativeCompleteAnswer(data, streamedAnswer) {
-			authoritativeAnswer = data.FinalAnswer
-		}
+		preserveExistingStatus := hasHigherPriorityAssistantCompletion(h.assistantMessage, data.CompletionStatus)
+		if preserveExistingStatus {
+			completionStatus = h.assistantMessage.CompletionStatusOrLegacy()
+			finishReason = h.assistantMessage.FinishReason
+			failureReason = h.assistantMessage.FailureReason
+			allowIndexing = false
+			allowComplete = false
+			isPartial = completionStatus == types.MessageCompletionStatusPartial
+		} else {
+			streamedAnswer := h.finalAnswer
+			authoritativeAnswer := streamedAnswer
+			if shouldUseAuthoritativeCompleteAnswer(data, streamedAnswer) {
+				authoritativeAnswer = data.FinalAnswer
+			}
+			authoritativeAnswer, _ = types.StripChatDocumentCompletionMarker(authoritativeAnswer)
 
-		h.assistantMessage.CompletionStatus = data.CompletionStatus
-		h.assistantMessage.FinishReason = data.FinishReason
-		h.assistantMessage.FailureReason = data.FailureReason
-		h.assistantMessage.IsCompleted = data.CompletionStatus == types.MessageCompletionStatusCompleted
+			h.assistantMessage.CompletionStatus = completionStatus
+			h.assistantMessage.FinishReason = finishReason
+			h.assistantMessage.FailureReason = failureReason
+			h.assistantMessage.IsCompleted = completionStatus == types.MessageCompletionStatusCompleted
+			h.finalAnswer = authoritativeAnswer
+			h.assistantMessage.Content = authoritativeAnswer
+			if shouldFallbackAnswerFromComplete(data, streamedAnswer, authoritativeAnswer) {
+				fallbackAnswer = authoritativeAnswer
+			}
+		}
 		h.assistantMessage.AgentDurationMs = data.TotalDurationMs
 
 		// Update knowledge references if provided
@@ -561,21 +632,13 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 			h.assistantMessage.KnowledgeReferences = knowledgeRefs
 		}
 
-		h.finalAnswer = authoritativeAnswer
-		h.assistantMessage.Content = authoritativeAnswer
-		if shouldFallbackAnswerFromComplete(data, streamedAnswer, authoritativeAnswer) {
-			fallbackAnswer = data.FinalAnswer
-		}
-
 		// Update agent steps if provided
-		if data.AgentSteps != nil {
-			if steps, ok := data.AgentSteps.([]types.AgentStep); ok {
-				h.assistantMessage.AgentSteps = steps
-				logger.Infof(h.ctx,
-					"Agent completion steps captured, session_id: %s, message_id: %s, request_id: %s, agent_steps_count: %d, completion_status: %s, finish_reason: %s",
-					h.sessionID, h.assistantMessageID, h.requestID, len(steps), data.CompletionStatus, data.FinishReason,
-				)
-			}
+		if len(data.AgentSteps) > 0 {
+			h.assistantMessage.AgentSteps = append(types.AgentSteps(nil), data.AgentSteps...)
+			logger.Infof(h.ctx,
+				"Agent completion steps captured, session_id: %s, message_id: %s, request_id: %s, agent_steps_count: %d, completion_status: %s, finish_reason: %s",
+				h.sessionID, h.assistantMessageID, h.requestID, len(data.AgentSteps), data.CompletionStatus, data.FinishReason,
+			)
 		}
 	}
 	h.mu.Unlock()
@@ -629,12 +692,48 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 		"agent_duration_ms": data.TotalDurationMs,
 		"total_steps":       data.TotalSteps,
 		"total_duration_ms": data.TotalDurationMs,
-		"completion_status": data.CompletionStatus,
-		"finish_reason":     data.FinishReason,
-		"is_partial":        data.IsPartial,
-		"allow_indexing":    data.AllowIndexing,
-		"allow_complete":    data.AllowComplete,
-		"failure_reason":    data.FailureReason,
+		"completion_status": completionStatus,
+		"finish_reason":     finishReason,
+		"is_partial":        isPartial,
+		"allow_indexing":    allowIndexing,
+		"allow_complete":    allowComplete,
+		"failure_reason":    failureReason,
+	}
+	if data.DocumentGenerationStatus != "" {
+		status := types.NormalizeChatDocumentGenerationStatus(data.DocumentGenerationStatus)
+		completeData["document_generation_status"] = status
+		if data.AutoContinueNext != nil {
+			completeData["auto_continue_next"] = *data.AutoContinueNext
+		} else {
+			completeData["auto_continue_next"] = shouldAutoContinueChatDocument(status, finishReason, failureReason, 0)
+		}
+		if data.AutoContinueReason != "" {
+			completeData["auto_continue_reason"] = data.AutoContinueReason
+		}
+		if data.AutoContinueReasonMessage != "" {
+			completeData["auto_continue_reason_message"] = data.AutoContinueReasonMessage
+		}
+		if data.NextAction != "" {
+			completeData["next_action"] = data.NextAction
+		}
+		if data.NextReason != "" {
+			completeData["next_reason"] = data.NextReason
+		}
+		if data.NextReasonMessage != "" {
+			completeData["next_reason_message"] = data.NextReasonMessage
+		}
+		if data.CanAutoContinue != nil {
+			completeData["can_auto_continue"] = *data.CanAutoContinue
+		}
+		if len(data.RecommendedRequest) > 0 {
+			completeData["recommended_request"] = data.RecommendedRequest
+		}
+	}
+	for key, value := range data.Extra {
+		if _, exists := completeData[key]; exists {
+			continue
+		}
+		completeData[key] = value
 	}
 	if h.artifactProvider != nil {
 		if artifact := h.artifactProvider(); artifact != nil {
@@ -645,6 +744,7 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 				completeData["final_document"] = finalDocument
 			}
 			completeData["final_document_artifact_id"] = finalDocumentArtifactID
+			addChatDocumentGenerationPayload(completeData, artifact)
 		}
 	}
 	if err := h.streamManager.AppendEvent(h.ctx, h.sessionID, h.assistantMessageID, interfaces.StreamEvent{
