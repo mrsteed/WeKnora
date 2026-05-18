@@ -113,6 +113,7 @@ import {
     ensureMermaidInitialized,
     renderMermaidInContainer
 } from '@/utils/mermaidShared';
+import { isArtifactManualContinuationAllowed } from '../utils/documentCompletion';
 
 marked.use({
     breaks: true,  // 全局启用单个换行支持
@@ -263,7 +264,7 @@ const canResumeInterruptedDocument = computed(() => {
     const completionStatus = props.session?.completion_status || '';
     const documentGenerationStatus = props.session?.document_generation_status || artifact?.document_generation_status || '';
 
-    if (!artifact?.can_continue) {
+    if (!isArtifactManualContinuationAllowed(artifact || {})) {
         return false;
     }
 

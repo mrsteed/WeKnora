@@ -283,9 +283,6 @@ func canApplyDocumentEditRouteDecisionWithReason(reqCtx *qaRequestContext, requi
 	if reqCtx.autoContinue {
 		return false, "auto_continue"
 	}
-	if len(reqCtx.knowledgeBaseIDs) > 0 || len(reqCtx.knowledgeIDs) > 0 {
-		return false, "has_knowledge_scope"
-	}
 	return true, ""
 }
 
@@ -362,7 +359,7 @@ func (h *Handler) prepareDocumentRequestFromRouteDecision(ctx context.Context, s
 		logger.Warnf(ctx, "Failed to load chat document artifact for route decision, session_id: %s, base_artifact_id: %s, error: %v", session.ID, baseArtifactID, err)
 		return documentRequestPreparation{}
 	}
-	if artifact == nil || artifact.SessionID != session.ID || !artifact.CanContinue() {
+	if artifact == nil || artifact.SessionID != session.ID || !artifact.CanUseAsBaseForIntent(result.intent) {
 		return documentRequestPreparation{}
 	}
 

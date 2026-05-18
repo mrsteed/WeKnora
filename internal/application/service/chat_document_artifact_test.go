@@ -253,6 +253,33 @@ func TestChatDocumentArtifactBuildQuotedContextSkipsNeedsReviewArtifact(t *testi
 	assert.Empty(t, quoted)
 }
 
+func TestChatDocumentArtifactBuildQuotedContextAllowsNeedsReviewRevision(t *testing.T) {
+	svc := &chatDocumentArtifactService{}
+	artifact := &types.ChatDocumentArtifact{
+		ID:                       "artifact-needs-review-revise",
+		RevisionNo:               3,
+		CompletionStatus:         types.MessageCompletionStatusCompleted,
+		DocumentGenerationStatus: types.ChatDocumentGenerationStatusNeedsReview,
+		Operation:                types.ChatDocumentOperationRevise,
+		ArtifactKind:             types.ChatDocumentArtifactKindMarkdown,
+		Status:                   types.ChatDocumentArtifactStatusPartial,
+		ContentSnapshot:          "# 技术方案\n\n## 第一章\n\n存在结构告警，待人工复核。",
+		QualityIssues:            []string{types.ChatDocumentQualityIssueMarkdownTooShort},
+	}
+
+	hydrateChatDocumentArtifactDerivedFields(artifact)
+	assert.False(t, artifact.CanContinue())
+	assert.True(t, artifact.CanManualRevise())
+	assert.True(t, artifact.CanUseAsBase())
+	assert.False(t, artifact.CanIndex())
+	require.NotEmpty(t, artifact.QualityIssueDetails)
+
+	quoted, err := svc.BuildQuotedContext(context.Background(), artifact, "请补充第一章细节", types.ChatDocumentIntentRevise, types.ChatDocumentOutputModeDelta, "第一章", types.ChatDocumentMergeModeAppendToSection)
+	require.NoError(t, err)
+	assert.NotEmpty(t, quoted)
+	assert.Contains(t, quoted, "target_heading: 第一章")
+}
+
 func TestChatDocumentArtifactBuildQuotedContextUsesTargetSectionWindowForOversizedRevision(t *testing.T) {
 	svc := &chatDocumentArtifactService{}
 	longTarget := strings.Repeat("智慧运行章节内容", 2400)

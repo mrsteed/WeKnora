@@ -10,7 +10,7 @@ import (
 
 func buildChatDocumentQuotedContext(ctx context.Context, artifact *types.ChatDocumentArtifact, query string, intent string, outputMode string, targetHeading string, mergeMode string) (string, error) {
 	_ = ctx
-	if artifact == nil || !artifact.CanContinue() {
+	if artifact == nil || !artifact.CanUseAsBaseForIntent(intent) {
 		return "", nil
 	}
 

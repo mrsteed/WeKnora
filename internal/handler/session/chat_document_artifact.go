@@ -54,7 +54,7 @@ func (h *Handler) prepareDocumentRequest(ctx context.Context, session *types.Ses
 		logger.Warnf(ctx, "Failed to load chat document artifact, session_id: %s, base_artifact_id: %s, error: %v", session.ID, baseArtifactID, err)
 		return documentRequestPreparation{}
 	}
-	if artifact == nil || artifact.SessionID != session.ID || !artifact.CanContinue() {
+	if artifact == nil || artifact.SessionID != session.ID || !artifact.CanUseAsBaseForIntent(result.intent) {
 		return documentRequestPreparation{}
 	}
 

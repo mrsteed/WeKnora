@@ -51,7 +51,7 @@
                     </div>
                     <div v-if="session.role == 'assistant'">
                         <botmsg :content="session.content" :session="session" :user-query="getUserQuery(id)" @scroll-bottom="scrollToBottom" @retry="handleRetry"
-                            :isFirstEnter="isFirstEnter" :embeddedMode="embeddedMode" :selectedArtifactId="selectedBaseArtifact?.id || ''"
+                            :isFirstEnter="isFirstEnter" :embeddedMode="embeddedMode" :selectedArtifactId="manuallySelectedBaseArtifactId"
                             @view-artifact-revisions="openArtifactRevisionDrawer" @use-artifact-as-base="useArtifactAsBase" @clear-artifact-base="clearSelectedBaseArtifact"
                             @artifact-display-update="handleArtifactDisplayUpdate"></botmsg>
                     </div>
@@ -72,13 +72,16 @@
             </div>
         </transition>
         <div class="input-container" :class="{ 'is-embedded': embeddedMode }">
-            <div v-if="selectedBaseArtifact" class="document-baseline-banner">
+            <div v-if="displayedBaseArtifact" class="document-baseline-banner">
                 <div class="document-baseline-text">
-                    <span class="document-baseline-label">当前基线</span>
-                    <span class="document-baseline-title">{{ displayedBaseArtifact?.title || selectedBaseArtifact.title || '未命名文档' }}</span>
-                    <span class="document-baseline-version">V{{ displayedBaseArtifact?.revision_no || selectedBaseArtifact.revision_no || 1 }}</span>
+                    <span class="document-baseline-label">{{ baselineBannerLabel }}</span>
+                    <span class="document-baseline-title">{{ displayedBaseArtifact?.title || '未命名文档' }}</span>
+                    <span class="document-baseline-version">V{{ displayedBaseArtifact?.revision_no || 1 }}</span>
+                    <span v-if="newerArtifactAvailableForLockedBase" class="document-baseline-latest-hint">
+                        已锁定手动基线，最新版本为 V{{ newerArtifactAvailableForLockedBase.revision_no || 1 }}
+                    </span>
                 </div>
-                <t-button size="small" variant="text" theme="default" @click="clearSelectedBaseArtifact()">取消</t-button>
+                <t-button v-if="selectedBaseArtifactDisplayLocked" size="small" variant="text" theme="default" @click="clearSelectedBaseArtifact()">取消</t-button>
             </div>
             <div v-if="autoContinueState.enabled || autoContinueState.stoppedReason" class="auto-continue-banner" :class="{ 'is-stopped': !autoContinueState.enabled }">
                 <span v-if="autoContinueState.enabled">
@@ -112,14 +115,14 @@
                     v-for="artifact in artifactRevisionList"
                     :key="artifact.id"
                     class="artifact-drawer-item"
-                    :class="{ 'is-selected': selectedBaseArtifact?.id === artifact.id, 'is-current': artifactRevisionAnchor?.id === artifact.id }"
+                    :class="{ 'is-selected': manuallySelectedBaseArtifactId === artifact.id, 'is-current': artifactRevisionAnchor?.id === artifact.id }"
                 >
                     <div class="artifact-drawer-item-top">
                         <div class="artifact-drawer-item-title">{{ artifact.title || '未命名文档' }}</div>
                         <div class="artifact-drawer-item-tags">
                             <t-tag size="small" theme="primary" variant="light">V{{ artifact.revision_no || 1 }}</t-tag>
-                            <t-tag size="small" :theme="artifact.status === 'available' ? 'success' : artifact.status === 'partial' ? 'warning' : 'danger'" variant="light">
-                                {{ artifact.status === 'available' ? '可继续' : artifact.status === 'partial' ? '部分完成' : '失败' }}
+                            <t-tag size="small" :theme="getArtifactStatusTheme(artifact)" variant="light">
+                                {{ getArtifactStatusText(artifact) }}
                             </t-tag>
                         </div>
                     </div>
@@ -197,6 +200,7 @@ const chatDocumentArtifacts = ref([]);
 const selectedBaseArtifact = ref(null);
 const selectedBaseArtifactDisplayLocked = ref(false);
 const artifactDisplayHint = ref(null);
+const latestArtifactForDisplay = ref(null);
 const artifactRevisionDrawerVisible = ref(false);
 const artifactRevisionLoading = ref(false);
 const artifactRevisionList = ref([]);
@@ -471,6 +475,9 @@ const upsertAgentCompleteEvent = (message, payload = {}) => {
     }
 
     const completePayload = payload?.data || payload;
+    const completeExtra = completePayload?.extra && typeof completePayload.extra === 'object'
+        ? completePayload.extra
+        : {};
     const completionStatus = normalizeCompletionStatus({ ...message, ...payload, ...completePayload });
     const nextEvent = {
         type: 'agent_complete',
@@ -493,9 +500,19 @@ const upsertAgentCompleteEvent = (message, payload = {}) => {
         outline_source: typeof completePayload?.outline_source === 'string' ? completePayload.outline_source : '',
         base_outline: completePayload?.base_outline && typeof completePayload.base_outline === 'object' ? completePayload.base_outline : null,
         planning_outline: completePayload?.planning_outline && typeof completePayload.planning_outline === 'object' ? completePayload.planning_outline : null,
-        quality_issues: Array.isArray(completePayload?.quality_issues) ? [...completePayload.quality_issues] : [],
+        quality_issues: Array.isArray(completePayload?.quality_issues)
+            ? [...completePayload.quality_issues]
+            : (Array.isArray(completeExtra?.quality_issues) ? [...completeExtra.quality_issues] : []),
+        quality_issue_details: Array.isArray(completePayload?.quality_issue_details)
+            ? [...completePayload.quality_issue_details]
+            : (Array.isArray(completeExtra?.quality_issue_details) ? [...completeExtra.quality_issue_details] : []),
+        document_patch_metadata: completePayload?.document_patch_metadata && typeof completePayload.document_patch_metadata === 'object'
+            ? completePayload.document_patch_metadata
+            : (completeExtra?.document_patch_metadata && typeof completeExtra.document_patch_metadata === 'object'
+                ? completeExtra.document_patch_metadata
+                : null),
         chat_document_artifact: completePayload?.chat_document_artifact && typeof completePayload.chat_document_artifact === 'object'
-            ? completePayload.chat_document_artifact
+            ? (normalizeChatDocumentArtifact(completePayload.chat_document_artifact) || completePayload.chat_document_artifact)
             : null,
     };
 
@@ -615,57 +632,44 @@ const compareArtifactRevision = (left, right) => {
     return rightTime - leftTime;
 };
 
-const resolveDisplayedBaseArtifact = (baseArtifact, artifacts = [], hintArtifact = null) => {
-    const normalizedBase = normalizeChatDocumentArtifact(baseArtifact);
-    if (!normalizedBase?.id) {
-        return null;
-    }
+const findLatestSessionArtifact = (artifacts = chatDocumentArtifacts.value, targetSessionId = session_id.value) => {
+    return (artifacts || [])
+        .filter((item) => item?.session_id === targetSessionId)
+        .sort(compareArtifactRevision)[0] || null;
+};
 
-    const artifactMap = new Map();
-    [normalizedBase, ...(artifacts || []), hintArtifact].forEach((item) => {
-        const normalized = normalizeChatDocumentArtifact(item);
-        if (!normalized?.id) {
-            return;
-        }
-        artifactMap.set(normalized.id, {
-            ...(artifactMap.get(normalized.id) || {}),
-            ...normalized,
-        });
-    });
-
-    const childrenByParentId = new Map();
-    artifactMap.forEach((artifact) => {
-        if (!artifact?.parent_artifact_id) {
-            return;
-        }
-        const siblings = childrenByParentId.get(artifact.parent_artifact_id) || [];
-        siblings.push(artifact);
-        siblings.sort(compareArtifactRevision);
-        childrenByParentId.set(artifact.parent_artifact_id, siblings);
-    });
-
-    let currentArtifact = artifactMap.get(normalizedBase.id) || normalizedBase;
-    const visitedIds = new Set();
-    while (currentArtifact?.id && !visitedIds.has(currentArtifact.id)) {
-        visitedIds.add(currentArtifact.id);
-        const nextArtifact = (childrenByParentId.get(currentArtifact.id) || [])[0];
-        if (!nextArtifact?.id) {
-            break;
-        }
-        currentArtifact = nextArtifact;
-    }
-    return currentArtifact;
+const refreshLatestArtifactForDisplay = (artifacts = chatDocumentArtifacts.value, targetSessionId = session_id.value) => {
+    latestArtifactForDisplay.value = findLatestSessionArtifact(artifacts, targetSessionId);
+    return latestArtifactForDisplay.value;
 };
 
 const displayedBaseArtifact = computed(() => {
-    if (selectedBaseArtifactDisplayLocked.value) {
-        return selectedBaseArtifact.value;
+    return selectedBaseArtifact.value || latestArtifactForDisplay.value;
+});
+
+const manuallySelectedBaseArtifactId = computed(() => {
+    if (!selectedBaseArtifactDisplayLocked.value) {
+        return '';
     }
-    return resolveDisplayedBaseArtifact(
-        selectedBaseArtifact.value,
-        chatDocumentArtifacts.value,
-        artifactDisplayHint.value,
-    );
+    return selectedBaseArtifact.value?.id || '';
+});
+
+const baselineBannerLabel = computed(() => {
+    return selectedBaseArtifactDisplayLocked.value ? '当前基线' : '自动基线';
+});
+
+const newerArtifactAvailableForLockedBase = computed(() => {
+    if (!selectedBaseArtifactDisplayLocked.value || !selectedBaseArtifact.value?.id) {
+        return null;
+    }
+    const latestArtifact = latestArtifactForDisplay.value;
+    if (!latestArtifact?.id || latestArtifact.id === selectedBaseArtifact.value.id) {
+        return null;
+    }
+    if (Number(latestArtifact.revision_no || 0) <= Number(selectedBaseArtifact.value.revision_no || 0)) {
+        return null;
+    }
+    return latestArtifact;
 });
 
 const applyChatDocumentArtifactsToMessages = (artifacts = chatDocumentArtifacts.value) => {
@@ -705,6 +709,7 @@ const upsertChatDocumentArtifact = (artifact) => {
     if (selectedBaseArtifact.value?.id === merged.id) {
         selectedBaseArtifact.value = merged;
     }
+    refreshLatestArtifactForDisplay();
     applyChatDocumentArtifactsToMessages([merged]);
     return merged;
 };
@@ -738,12 +743,119 @@ const canContinueChatDocumentArtifact = (artifact = {}) => {
     return artifact?.can_inline_continue !== false;
 };
 
+const canManualContinueChatDocumentArtifact = (artifact = {}) => {
+    if (!isContinuableArtifactStatus(artifact)) {
+        return false;
+    }
+    if (artifact?.can_manual_continue !== undefined) {
+        return artifact.can_manual_continue !== false;
+    }
+    return canContinueChatDocumentArtifact(artifact);
+};
+
+const canManualReviseChatDocumentArtifact = (artifact = {}) => {
+    if (!artifact || typeof artifact !== 'object') {
+        return false;
+    }
+    if (artifact?.can_manual_revise !== undefined) {
+        return artifact.can_manual_revise !== false;
+    }
+    return canUseChatDocumentArtifactAsBase(artifact);
+};
+
+const canUseChatDocumentArtifactAsBase = (artifact = {}) => {
+    if (!artifact || typeof artifact !== 'object') {
+        return false;
+    }
+    if (artifact?.can_use_as_base !== undefined) {
+        return artifact.can_use_as_base !== false;
+    }
+    return canContinueChatDocumentArtifact(artifact);
+};
+
+const canUseChatDocumentArtifactForIntent = (artifact = {}, intentHint = 'normal') => {
+    if (intentHint === 'continue_document') {
+        if (artifact?.can_manual_continue !== undefined) {
+            return artifact.can_manual_continue !== false;
+        }
+        return canContinueChatDocumentArtifact(artifact);
+    }
+    if (intentHint === 'revise_document') {
+        if (artifact?.can_manual_revise !== undefined) {
+            return artifact.can_manual_revise !== false;
+        }
+        return canUseChatDocumentArtifactAsBase(artifact);
+    }
+    return canUseChatDocumentArtifactAsBase(artifact);
+};
+
+const getArtifactStatusTheme = (artifact = {}) => {
+    const generationStatus = typeof artifact?.document_generation_status === 'string'
+        ? artifact.document_generation_status.trim()
+        : '';
+    if (generationStatus === 'needs_review') {
+        return 'warning';
+    }
+    if (generationStatus === 'blocked') {
+        return 'danger';
+    }
+    if (artifact?.status === 'available') {
+        return 'success';
+    }
+    if (artifact?.status === 'partial') {
+        return 'warning';
+    }
+    if (artifact?.status === 'failed') {
+        return 'danger';
+    }
+    return 'default';
+};
+
+const getArtifactStatusText = (artifact = {}) => {
+    const generationStatus = typeof artifact?.document_generation_status === 'string'
+        ? artifact.document_generation_status.trim()
+        : '';
+    if (generationStatus === 'needs_review') {
+        return '待复核';
+    }
+    if (generationStatus === 'blocked') {
+        return '已阻断';
+    }
+    if (canManualContinueChatDocumentArtifact(artifact)) {
+        return '可继续';
+    }
+    if (canManualReviseChatDocumentArtifact(artifact)) {
+        return '可修订';
+    }
+    if (artifact?.can_view !== undefined && artifact.can_view !== false) {
+        return '可查看';
+    }
+    if (artifact?.status === 'available') {
+        return '已完成';
+    }
+    if (artifact?.status === 'partial') {
+        return '部分完成';
+    }
+    if (artifact?.status === 'failed') {
+        return '失败';
+    }
+    return '未知';
+};
+
 const findLatestContinuableArtifact = (artifacts = chatDocumentArtifacts.value, targetSessionId = session_id.value) => {
-    return (artifacts || []).find((item) => item?.session_id === targetSessionId && canContinueChatDocumentArtifact(item)) || null;
+    return (artifacts || [])
+        .filter((item) => item?.session_id === targetSessionId && canContinueChatDocumentArtifact(item))
+        .sort(compareArtifactRevision)[0] || null;
+};
+
+const findLatestBaseUsableArtifact = (artifacts = chatDocumentArtifacts.value, targetSessionId = session_id.value) => {
+    return (artifacts || [])
+        .filter((item) => item?.session_id === targetSessionId && canUseChatDocumentArtifactAsBase(item))
+        .sort(compareArtifactRevision)[0] || null;
 };
 
 const shouldAutoSelectCompletedArtifact = (message, artifact) => {
-    if (!message || !artifact?.id || !canContinueChatDocumentArtifact(artifact)) {
+    if (!message || !artifact?.id || !canUseChatDocumentArtifactAsBase(artifact)) {
         return false;
     }
     if (artifact.source_message_id && message.id) {
@@ -755,6 +867,10 @@ const shouldAutoSelectCompletedArtifact = (message, artifact) => {
 const promoteCompletedArtifactAsBase = (message, artifact) => {
     const normalized = assignChatDocumentArtifactToMessage(message, artifact);
     if (shouldAutoSelectCompletedArtifact(message, normalized)) {
+        if (selectedBaseArtifactDisplayLocked.value && selectedBaseArtifact.value?.id && selectedBaseArtifact.value.id !== normalized?.id) {
+            artifactDisplayHint.value = normalized;
+            return normalized;
+        }
         selectedBaseArtifact.value = normalized;
         selectedBaseArtifactDisplayLocked.value = false;
     }
@@ -1145,16 +1261,25 @@ const loadSessionArtifacts = async (targetSessionId = session_id.value) => {
         chatDocumentArtifacts.value = Array.isArray(res?.data)
             ? res.data.map((item) => normalizeChatDocumentArtifact(item)).filter(Boolean)
             : [];
+        refreshLatestArtifactForDisplay(chatDocumentArtifacts.value, targetSessionId);
         applyChatDocumentArtifactsToMessages();
         const latestContinuableArtifact = findLatestContinuableArtifact(chatDocumentArtifacts.value, targetSessionId);
+        const latestBaseUsableArtifact = findLatestBaseUsableArtifact(chatDocumentArtifacts.value, targetSessionId);
         if (selectedBaseArtifact.value) {
             const nextSelected = chatDocumentArtifacts.value.find((item) => item.id === selectedBaseArtifact.value.id) || null;
-            selectedBaseArtifact.value = canContinueChatDocumentArtifact(nextSelected) ? nextSelected : latestContinuableArtifact;
-            if (!selectedBaseArtifact.value || selectedBaseArtifact.value.id !== nextSelected?.id) {
+            if (selectedBaseArtifactDisplayLocked.value) {
+                if (nextSelected?.id) {
+                    selectedBaseArtifact.value = nextSelected;
+                } else {
+                    selectedBaseArtifact.value = latestBaseUsableArtifact;
+                    selectedBaseArtifactDisplayLocked.value = false;
+                }
+            } else {
+                selectedBaseArtifact.value = latestBaseUsableArtifact;
                 selectedBaseArtifactDisplayLocked.value = false;
             }
         } else {
-            selectedBaseArtifact.value = latestContinuableArtifact;
+            selectedBaseArtifact.value = latestBaseUsableArtifact || latestContinuableArtifact;
             selectedBaseArtifactDisplayLocked.value = false;
         }
     } catch (error) {
@@ -1240,12 +1365,17 @@ const resolveLatestArtifactIfNeeded = async (intentHint) => {
     if (intentHint !== 'continue_document' && intentHint !== 'revise_document') {
         return null;
     }
-    if (selectedBaseArtifact.value?.id && selectedBaseArtifact.value?.session_id === session_id.value && canContinueChatDocumentArtifact(selectedBaseArtifact.value)) {
+    if (selectedBaseArtifactDisplayLocked.value && selectedBaseArtifact.value?.id && selectedBaseArtifact.value?.session_id === session_id.value && canUseChatDocumentArtifactForIntent(selectedBaseArtifact.value, intentHint)) {
         return selectedBaseArtifact.value;
     }
-    const latestContinuableArtifact = findLatestContinuableArtifact();
-    if (latestContinuableArtifact) {
-        return latestContinuableArtifact;
+    const latestArtifact = intentHint === 'revise_document'
+        ? findLatestBaseUsableArtifact()
+        : findLatestContinuableArtifact();
+    if (latestArtifact) {
+        return latestArtifact;
+    }
+    if (selectedBaseArtifact.value?.id && selectedBaseArtifact.value?.session_id === session_id.value && canUseChatDocumentArtifactForIntent(selectedBaseArtifact.value, intentHint)) {
+        return selectedBaseArtifact.value;
     }
     if (!session_id.value) {
         return null;
@@ -1253,7 +1383,7 @@ const resolveLatestArtifactIfNeeded = async (intentHint) => {
     try {
         const res = await getLatestChatDocumentArtifact(session_id.value);
         const latestArtifact = normalizeChatDocumentArtifact(res?.data || null);
-        return canContinueChatDocumentArtifact(latestArtifact) ? latestArtifact : null;
+        return canUseChatDocumentArtifactForIntent(latestArtifact, intentHint) ? latestArtifact : null;
     } catch (error) {
         console.warn('[ChatDocumentArtifact] Failed to resolve latest artifact:', error);
         return null;
@@ -1294,8 +1424,8 @@ const useArtifactAsBase = (artifact) => {
     if (!normalized) {
         return;
     }
-    if (!canContinueChatDocumentArtifact(normalized)) {
-        MessagePlugin.warning(normalized.user_hint || '当前版本无法作为继续生成的基线。');
+    if (!canUseChatDocumentArtifactAsBase(normalized)) {
+        MessagePlugin.warning(normalized.user_hint || '当前版本无法作为修订或续写基线。');
         return;
     }
     artifactDisplayHint.value = null;
@@ -1308,7 +1438,7 @@ const useArtifactAsBase = (artifact) => {
 };
 
 const clearSelectedBaseArtifact = () => {
-    selectedBaseArtifact.value = null;
+    selectedBaseArtifact.value = findLatestBaseUsableArtifact() || findLatestContinuableArtifact();
     selectedBaseArtifactDisplayLocked.value = false;
     artifactDisplayHint.value = null;
 };
@@ -2140,9 +2270,9 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     const isDocumentEditIntent = intentHint === 'continue_document' || intentHint === 'revise_document';
     const requestIntentHint = intentHint === 'normal' ? undefined : intentHint;
     const latestArtifact = await resolveLatestArtifactIfNeeded(intentHint);
-    if ((intentHint === 'continue_document' || intentHint === 'revise_document') && latestArtifact && !canContinueChatDocumentArtifact(latestArtifact)) {
+    if ((intentHint === 'continue_document' || intentHint === 'revise_document') && latestArtifact && !canUseChatDocumentArtifactForIntent(latestArtifact, intentHint)) {
         resetReplyState();
-        MessagePlugin.warning(latestArtifact.user_hint || '当前文档无法继续生成，请检查完整文档后再尝试。');
+        MessagePlugin.warning(latestArtifact.user_hint || '当前文档无法作为本轮修订或续写基线，请检查完整文档后再尝试。');
         return;
     }
     if (intentHint === 'revise_document' && (latestArtifact?.snapshot_char_count || 0) > 30000 && !hasScopedRevisionTarget(value)) {

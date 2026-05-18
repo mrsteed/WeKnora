@@ -854,6 +854,10 @@ func longDocumentArtifactMetadata(artifact *types.ChatDocumentArtifact) map[stri
 	if continuationContextMode == "" {
 		continuationContextMode = artifact.ContinuationMode()
 	}
+	qualityIssueDetails := artifact.QualityIssueDetails
+	if len(qualityIssueDetails) == 0 {
+		qualityIssueDetails = types.ChatDocumentQualityIssueDetails(artifact.QualityIssues)
+	}
 	return map[string]interface{}{
 		"id":                         artifact.ID,
 		"tenant_id":                  artifact.TenantID,
@@ -876,8 +880,15 @@ func longDocumentArtifactMetadata(artifact *types.ChatDocumentArtifact) map[stri
 		"snapshot_char_count":        snapshotCharCount,
 		"can_continue":               artifact.CanContinue(),
 		"can_inline_continue":        artifact.CanInlineContinueWithFullSnapshot(),
+		"can_auto_continue":          artifact.CanAutoContinue(),
+		"can_manual_continue":        artifact.CanManualContinue(),
+		"can_manual_revise":          artifact.CanManualRevise(),
+		"can_use_as_base":            artifact.CanUseAsBase(),
+		"can_view":                   artifact.CanView(),
+		"can_index":                  artifact.CanIndex(),
 		"continuation_context_mode":  continuationContextMode,
 		"quality_issues":             artifact.QualityIssues,
+		"quality_issue_details":      qualityIssueDetails,
 		"user_hint":                  artifact.UserHint,
 		"structure_info":             artifact.StructureInfo,
 		"created_by":                 artifact.CreatedBy,

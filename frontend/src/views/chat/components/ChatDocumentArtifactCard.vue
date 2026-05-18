@@ -16,7 +16,8 @@
       <span v-if="artifact.parent_artifact_id">{{ relationText }}</span>
       <span v-if="structureSummary">{{ structureSummary }}</span>
     </div>
-    <div v-if="artifact.user_hint" class="artifact-card-hint">{{ artifact.user_hint }}</div>
+    <div v-if="artifactHintText" class="artifact-card-hint">{{ artifactHintText }}</div>
+    <div v-if="qualityIssueSummary" class="artifact-card-hint">{{ qualityIssueSummary }}</div>
     <div class="artifact-card-actions">
       <ExportDropdown v-if="canExport" :content="previewContent" :filename-prefix="exportFilenamePrefix" />
       <t-button size="small" variant="text" theme="primary" @click="$emit('view-revisions', artifact)">查看版本链</t-button>
@@ -28,14 +29,14 @@
         @click="$emit('toggle-document-display', artifact)"
       >{{ documentDisplayToggleText }}</t-button>
       <t-button
-        v-else-if="hasPreviewContent"
+        v-else-if="canViewDocument"
         size="small"
         variant="text"
         theme="primary"
-        @click="togglePreview"
-      >{{ previewExpanded ? '收起完整文档' : '查看完整文档' }}</t-button>
+        @click="handleViewDocument"
+      >{{ previewToggleText }}</t-button>
       <t-button
-        v-if="!isSelected"
+        v-if="!isSelected && canUseAsBase"
         size="small"
         variant="text"
         theme="primary"
@@ -63,6 +64,7 @@
 import { marked } from 'marked';
 import { computed, ref } from 'vue';
 import { safeMarkdownToHTML, sanitizeHTML } from '@/utils/security';
+import { getDocumentQualityIssueMessages } from '../utils/documentCompletion';
 import ExportDropdown from './ExportDropdown.vue';
 
 marked.use({
@@ -92,7 +94,7 @@ const props = defineProps({
   },
 });
 
-defineEmits(['view-revisions', 'use-as-base', 'clear-base', 'toggle-document-display']);
+const emit = defineEmits(['view-revisions', 'use-as-base', 'clear-base', 'toggle-document-display']);
 
 const previewExpanded = ref(false);
 
@@ -104,7 +106,28 @@ const isSelected = computed(() => Boolean(props.artifact?.id) && props.artifact?
 
 const hasPreviewContent = computed(() => typeof props.previewContent === 'string' && props.previewContent.trim().length > 0);
 
+const canViewDocument = computed(() => {
+  if (!props.artifact || typeof props.artifact !== 'object') {
+    return false;
+  }
+  if (props.artifact?.can_view !== undefined) {
+    return props.artifact.can_view !== false;
+  }
+  const status = typeof props.artifact?.status === 'string' ? props.artifact.status.trim() : '';
+  if (status && !['available', 'partial'].includes(status)) {
+    return false;
+  }
+  return Boolean(props.artifact?.id) || hasPreviewContent.value;
+});
+
 const documentDisplayToggleText = computed(() => props.documentDisplayMode === 'full' ? '查看修改内容' : '查看全文');
+
+const previewToggleText = computed(() => {
+  if (!hasPreviewContent.value) {
+    return '查看全文';
+  }
+  return previewExpanded.value ? '收起完整文档' : '查看完整文档';
+});
 
 const renderedPreviewHTML = computed(() => {
   if (!hasPreviewContent.value) {
@@ -117,6 +140,35 @@ const renderedPreviewHTML = computed(() => {
 });
 
 const canExport = computed(() => ['available', 'partial'].includes(props.artifact?.status) && hasPreviewContent.value);
+
+const canUseAsBase = computed(() => {
+  if (!props.artifact || typeof props.artifact !== 'object') {
+    return false;
+  }
+  if (props.artifact?.can_use_as_base !== undefined) {
+    return props.artifact.can_use_as_base !== false;
+  }
+  return props.artifact?.can_continue !== false;
+});
+
+const artifactHintText = computed(() => {
+  const hint = typeof props.artifact?.user_hint === 'string' ? props.artifact.user_hint.trim() : '';
+  if (!hint || qualityIssueSummary.value) {
+    return '';
+  }
+  return hint;
+});
+
+const qualityIssueSummary = computed(() => {
+  const messages = getDocumentQualityIssueMessages(
+    props.artifact?.quality_issues || [],
+    props.artifact?.quality_issue_details || [],
+  );
+  if (messages.length === 0) {
+    return '';
+  }
+  return messages.join('；');
+});
 
 const exportFilenamePrefix = computed(() => {
   if (isTranslationArtifact.value) {
@@ -139,7 +191,24 @@ const togglePreview = () => {
   previewExpanded.value = !previewExpanded.value;
 };
 
+const handleViewDocument = () => {
+  if (hasPreviewContent.value) {
+    togglePreview()
+    return
+  }
+  emit('toggle-document-display', props.artifact)
+};
+
 const statusTheme = computed(() => {
+  const generationStatus = typeof props.artifact?.document_generation_status === 'string'
+    ? props.artifact.document_generation_status.trim()
+    : '';
+  if (generationStatus === 'needs_review') {
+    return 'warning';
+  }
+  if (generationStatus === 'blocked') {
+    return 'danger';
+  }
   switch (props.artifact?.status) {
     case 'available':
       return 'success';
@@ -153,9 +222,27 @@ const statusTheme = computed(() => {
 });
 
 const statusText = computed(() => {
+  const generationStatus = typeof props.artifact?.document_generation_status === 'string'
+    ? props.artifact.document_generation_status.trim()
+    : '';
+  if (generationStatus === 'needs_review') {
+    return '待复核';
+  }
+  if (generationStatus === 'blocked') {
+    return '已阻断';
+  }
+  if (props.artifact?.can_manual_continue !== undefined && props.artifact.can_manual_continue !== false) {
+    return '可继续';
+  }
+  if (props.artifact?.can_manual_revise !== undefined && props.artifact.can_manual_revise !== false) {
+    return '可修订';
+  }
+  if (props.artifact?.can_view !== undefined && props.artifact.can_view !== false) {
+    return '可查看';
+  }
   switch (props.artifact?.status) {
     case 'available':
-      return '可继续';
+      return '已完成';
     case 'partial':
       return '部分完成';
     case 'failed':

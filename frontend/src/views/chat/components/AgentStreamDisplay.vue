@@ -564,7 +564,11 @@ import {
   pickStructuredPlanningOutline,
   shouldAllowPlanningOutlineArtifactFallback,
 } from '../utils/planningOutline';
-import { getDocumentCompletionStatusDetail, isDocumentCompletionContinuing } from '../utils/documentCompletion';
+import {
+  getDocumentCompletionStatusDetail,
+  isArtifactManualContinuationAllowed,
+  isDocumentCompletionContinuing,
+} from '../utils/documentCompletion';
 
 const router = useRouter();
 const route = useRoute();
@@ -921,11 +925,30 @@ interface SessionData {
     title?: string;
     content_snapshot?: string;
     can_continue?: boolean;
+    can_manual_continue?: boolean;
+    can_manual_revise?: boolean;
+    can_use_as_base?: boolean;
+    can_view?: boolean;
+    status?: string;
     document_generation_status?: string;
     quality_issues?: string[];
+    quality_issue_details?: Array<{
+      code?: string;
+      category?: string;
+      severity?: string;
+      message?: string;
+    }>;
     structure_info?: {
       heading_titles?: string[];
     };
+  };
+
+  document_patch_metadata?: {
+    structured?: boolean;
+    deterministic?: boolean;
+    merge_confidence?: string;
+    resolved_heading?: string;
+    patch_operation_count?: number;
   };
 }
 
@@ -1431,6 +1454,8 @@ const conversationStatusDetail = computed(() => {
     auto_continue_next: props.session?.auto_continue_next ?? completeEvent?.auto_continue_next,
     translation_progress: props.session?.translation_progress || completeEvent?.translation_progress || null,
     quality_issues: completeEvent?.quality_issues || props.session?.chat_document_artifact?.quality_issues || [],
+    quality_issue_details: completeEvent?.quality_issue_details || props.session?.chat_document_artifact?.quality_issue_details || [],
+    document_patch_metadata: completeEvent?.document_patch_metadata || props.session?.document_patch_metadata || null,
     chat_document_artifact: props.session?.chat_document_artifact || null,
   });
   const progressDetail = formatTranslationProgressDetail(props.session?.translation_progress || completeEvent?.translation_progress || null);
@@ -1482,7 +1507,7 @@ const showResumeRetryAction = computed(() => {
     return true;
   }
 
-  if (!artifact?.can_continue) {
+  if (!isArtifactManualContinuationAllowed(artifact || {})) {
     return false;
   }
 

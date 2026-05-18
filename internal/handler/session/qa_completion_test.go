@@ -855,6 +855,7 @@ func TestEmitAssistantCompleteEvent_IncludesArtifactFinalDocumentMetadata(t *tes
 		ArtifactKind:             types.ChatDocumentArtifactKindMarkdown,
 		ContentSnapshot:          "# 完整文档",
 		DocumentGenerationStatus: types.ChatDocumentGenerationStatusCompleted,
+		QualityIssues:            []string{types.ChatDocumentQualityIssueUnclosedCodeFence},
 		CanContinueDocument:      true,
 		CanInlineContinue:        true,
 	}
@@ -894,6 +895,15 @@ func TestEmitAssistantCompleteEvent_IncludesArtifactFinalDocumentMetadata(t *tes
 	assert.Equal(t, "msg-1", metadata["source_message_id"])
 	assert.Equal(t, types.ChatDocumentGenerationStatusCompleted, metadata["document_generation_status"])
 	assert.Equal(t, true, metadata["can_continue"])
+	assert.Equal(t, true, metadata["can_auto_continue"])
+	assert.Equal(t, true, metadata["can_manual_continue"])
+	assert.Equal(t, true, metadata["can_manual_revise"])
+	assert.Equal(t, true, metadata["can_use_as_base"])
+	assert.Equal(t, true, metadata["can_view"])
+	qualityIssueDetails, ok := metadata["quality_issue_details"].([]types.ChatDocumentQualityIssueDetail)
+	require.True(t, ok)
+	require.NotEmpty(t, qualityIssueDetails)
+	assert.Equal(t, types.ChatDocumentQualityIssueUnclosedCodeFence, qualityIssueDetails[0].Code)
 }
 
 func TestEmitAssistantCompleteEvent_AutoContinueNextOnlyForStableContinuingState(t *testing.T) {

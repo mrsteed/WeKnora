@@ -450,8 +450,10 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_PersistsGenerationRun(t 
 		AssistantMessageID: "msg-grounded-run",
 		DocumentOutputMode: types.ChatDocumentOutputModeFull,
 	}
+	thinking := true
 	agentConfig := &types.AgentConfig{
 		Temperature:    0.3,
+		Thinking:       &thinking,
 		KnowledgeBases: []string{"kb-1"},
 		SearchTargets:  types.SearchTargets{{KnowledgeBaseID: "kb-1", Type: types.SearchTargetTypeKnowledgeBase}},
 	}
@@ -546,7 +548,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_PersistsGenerationRun(t 
 			assert.Equal(t, 1536, options.MaxCompletionTokens)
 			continue
 		}
-		assert.Zero(t, options.MaxCompletionTokens)
+		assert.Equal(t, 4096, options.MaxCompletionTokens)
 	}
 	require.Len(t, chatModel.streamMessages, 4)
 	assert.Contains(t, chatModel.streamMessages[0][1].Content, "Planning requirements")
@@ -652,7 +654,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_RuntimeFeedbackAdjustsBu
 	assert.Contains(t, feedback.AdjustmentReasons, "section_tokens_up_length")
 	require.Len(t, chatModel.streamOptions, 2)
 	assert.Equal(t, 1536, chatModel.streamOptions[0].MaxCompletionTokens)
-	assert.Zero(t, chatModel.streamOptions[1].MaxCompletionTokens)
+	assert.Equal(t, 4096, chatModel.streamOptions[1].MaxCompletionTokens)
 	require.NotNil(t, completes[0].Extra)
 	budgetPayload, ok := completes[0].Extra["budget"].(map[string]interface{})
 	require.True(t, ok)
@@ -917,7 +919,7 @@ func TestShouldUseDedicatedDocumentEditPath(t *testing.T) {
 			KnowledgeBaseIDs:   []string{"kb-1"},
 		}
 
-		assert.False(t, shouldUseDedicatedDocumentEditPath(req))
+		assert.True(t, shouldUseDedicatedDocumentEditPath(req))
 	})
 
 	t.Run("web search toggle alone does not block pure document edit path", func(t *testing.T) {
@@ -933,7 +935,7 @@ func TestShouldUseDedicatedDocumentEditPath(t *testing.T) {
 		assert.True(t, shouldUseDedicatedDocumentEditPath(req))
 	})
 
-	t.Run("explicit external retrieval intent stays on generic agent path", func(t *testing.T) {
+	t.Run("knowledge grounded revise intent still uses dedicated path", func(t *testing.T) {
 		req := &types.QARequest{
 			Query:              "结合知识库资料，把 2.5.5 后续内容合并到第二章",
 			DocumentIntent:     types.ChatDocumentIntentRevise,
@@ -943,7 +945,7 @@ func TestShouldUseDedicatedDocumentEditPath(t *testing.T) {
 			WebSearchEnabled:   true,
 		}
 
-		assert.False(t, shouldUseDedicatedDocumentEditPath(req))
+		assert.True(t, shouldUseDedicatedDocumentEditPath(req))
 	})
 }
 
@@ -1488,12 +1490,41 @@ func TestBuildDedicatedDocumentEditMessages(t *testing.T) {
 		QuotedContext:      "<document_revision_context><source_anchor_heading>2.5.5</source_anchor_heading></document_revision_context>",
 	}
 
-	messages := buildDedicatedDocumentEditMessages(req, "Chinese (Simplified)")
+	messages := buildDedicatedDocumentEditMessages(req, "Chinese (Simplified)", knowledgeGroundedEvidencePack{})
 	require.Len(t, messages, 2)
 	assert.Contains(t, messages[0].Content, "dedicated document editor")
 	assert.Contains(t, messages[0].Content, "<document_patch>")
 	assert.Contains(t, messages[1].Content, req.Query)
 	assert.Contains(t, messages[1].Content, "<document_revision_context>")
+}
+
+func TestBuildDedicatedDocumentEditMessages_ConstrainsChildHeadingNumberingFromTargetSection(t *testing.T) {
+	req := &types.QARequest{
+		Query:              "请对 7.5 功能清单汇总章节进行扩写",
+		DocumentIntent:     types.ChatDocumentIntentRevise,
+		DocumentOutputMode: types.ChatDocumentOutputModeDelta,
+		BaseArtifactID:     "artifact-1",
+		QuotedContext: `<document_revision_context>
+上一份文档元数据：
+- target_heading: ### 7.5 功能清单汇总
+
+<target_section_heading>
+### 7.5 功能清单汇总
+</target_section_heading>
+<target_section>
+### 7.5 功能清单汇总
+
+为便于系统建设与验收，将第7章各模块的功能项汇总如下：
+</target_section>
+</document_revision_context>`,
+	}
+
+	messages := buildDedicatedDocumentEditMessages(req, "Chinese (Simplified)", knowledgeGroundedEvidencePack{})
+	require.Len(t, messages, 2)
+	assert.Contains(t, messages[1].Content, "Document structure constraints:")
+	assert.Contains(t, messages[1].Content, "目标标题已经存在于基线文档中，不要重复输出该标题：### 7.5 功能清单汇总")
+	assert.Contains(t, messages[1].Content, "后续子标题必须严格延续该分支，例如：#### 7.5.1 子标题、#### 7.5.2 子标题")
+	assert.Contains(t, messages[1].Content, "不要输出 ### 7.1、### 7.2")
 }
 
 func TestBuildDeterministicDocumentEditPatch_MoveAfterHeadingToSection(t *testing.T) {
@@ -1619,6 +1650,205 @@ func TestRunDedicatedDocumentEditPath_UsesDeterministicPatchForMoveAppend(t *tes
 	assert.Equal(t, types.MessageCompletionStatusCompleted, completes[0].CompletionStatus)
 	assert.Equal(t, "deterministic_patch", completes[0].FinishReason)
 	assert.Equal(t, answerChunks[0].Content, completes[0].FinalAnswer)
+	patchMetadata, ok := completes[0].Extra["document_patch_metadata"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, true, patchMetadata["deterministic"])
+	assert.Equal(t, "high", patchMetadata["merge_confidence"])
+	assert.Equal(t, "## 第二章", patchMetadata["resolved_heading"])
+}
+
+func TestRunDedicatedDocumentEditPath_UsesNegotiatedBudgetWhenModelReturnsValidJSON(t *testing.T) {
+	streaming := true
+	thinkingControl := true
+	svc := &sessionService{
+		cfg: &config.Config{Conversation: &config.ConversationConfig{Summary: &config.SummaryConfig{MaxCompletionTokens: 256}}},
+		modelService: &fullDocumentModelServiceStub{model: &types.Model{
+			ID:     "staged-full-document-chat",
+			Source: types.ModelSourceOpenAI,
+			Parameters: types.ModelParameters{
+				ContextWindowTokens:     131072,
+				MaxOutputTokens:         8192,
+				SupportsStreaming:       &streaming,
+				SupportsThinkingControl: &thinkingControl,
+			},
+		}},
+	}
+	chatModel := &stagedFullDocumentChat{
+		negotiationResponse: &types.ChatResponse{Content: `{"outline_max_completion_tokens":1536,"section_max_completion_tokens":5120,"continuation_max_completion_tokens":5632,"outline_evidence_top_k":7,"section_evidence_top_k":9,"continuation_evidence_top_k":8,"section_call_timeout_seconds":180,"reason":"document revision needs more budget"}`},
+		sectionStreams: [][]types.StreamResponse{{
+			{ResponseType: types.ResponseTypeAnswer, Content: "<document_patch>patched</document_patch>", Done: true, FinishReason: "stop"},
+		}},
+	}
+	bus := event.NewEventBus()
+	req := &types.QARequest{
+		Query:              "请补充第二章的实施保障内容",
+		Session:            &types.Session{ID: "sess-edit-negotiated"},
+		AssistantMessageID: "msg-edit-negotiated",
+		DocumentIntent:     types.ChatDocumentIntentRevise,
+		DocumentOutputMode: types.ChatDocumentOutputModeDelta,
+		QuotedContext: `<document_revision_context>
+<destination_section_heading>
+## 第二章
+</destination_section_heading>
+</document_revision_context>`,
+	}
+
+	var completes []event.AgentCompleteData
+	bus.On(event.EventAgentComplete, func(_ context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentCompleteData)
+		require.True(t, ok)
+		completes = append(completes, data)
+		return nil
+	})
+
+	err := svc.runDedicatedDocumentEditPath(context.Background(), req, bus, chatModel, &types.AgentConfig{Temperature: 0.2})
+	require.NoError(t, err)
+	require.Len(t, chatModel.chatOptions, 1)
+	assert.Equal(t, 256, chatModel.chatOptions[0].MaxCompletionTokens)
+	require.Len(t, chatModel.streamOptions, 1)
+	assert.Equal(t, 5632, chatModel.streamOptions[0].MaxCompletionTokens)
+	require.NotNil(t, chatModel.streamOptions[0].Thinking)
+	assert.False(t, *chatModel.streamOptions[0].Thinking)
+	require.Len(t, completes, 1)
+	assert.Equal(t, types.MessageCompletionStatusCompleted, completes[0].CompletionStatus)
+}
+
+func TestRunDedicatedDocumentEditPath_UsesLocalKnowledgeWhenScopePresent(t *testing.T) {
+	svc := &sessionService{
+		cfg: &config.Config{Conversation: &config.ConversationConfig{Summary: &config.SummaryConfig{MaxCompletionTokens: 256}}},
+		knowledgeBaseService: &fullDocumentKnowledgeSearchStub{
+			kbs: map[string]*types.KnowledgeBase{
+				"kb-1": {ID: "kb-1", Type: types.KnowledgeBaseTypeDocument},
+			},
+			results: map[string][]*types.SearchResult{
+				"kb-1|请对第7章 人工智能平台与智能应用扩展章节进行功能生成功能清单。 ## 第7章 人工智能平台与智能应用扩展": {
+					{ID: "chunk-1", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "招投标信息", Content: "支持智能体编排、模型服务接入、能力发布与业务应用扩展。", Score: 0.92},
+				},
+				"kb-1|北海电厂二期智慧电厂项目技术方案 ## 第7章 人工智能平台与智能应用扩展": {
+					{ID: "chunk-2", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "招投标信息", Content: "平台需覆盖应用构建、知识增强、流程编排和运维监控。", Score: 0.88},
+				},
+			},
+		},
+	}
+	chatModel := &stagedFullDocumentChat{
+		sectionStreams: [][]types.StreamResponse{{
+			{ResponseType: types.ResponseTypeAnswer, Content: `<document_patch><append heading="## 第7章 人工智能平台与智能应用扩展">- 支持智能体应用构建与发布。
+- 支持知识增强检索与问答编排。
+</append></document_patch>`, Done: true, FinishReason: "stop"},
+		}},
+	}
+	bus := event.NewEventBus()
+	req := &types.QARequest{
+		Query:              "请对第7章 人工智能平台与智能应用扩展章节进行功能生成功能清单。",
+		Session:            &types.Session{ID: "sess-kg-edit"},
+		AssistantMessageID: "msg-kg-edit",
+		DocumentIntent:     types.ChatDocumentIntentRevise,
+		DocumentOperation:  types.ChatDocumentOperationRevise,
+		DocumentOutputMode: types.ChatDocumentOutputModeDelta,
+		BaseArtifactID:     "artifact-1",
+		BaseArtifact: &types.ChatDocumentArtifact{
+			ID:              "artifact-1",
+			Title:           "北海电厂二期智慧电厂项目技术方案",
+			ContentSnapshot: "# 北海电厂二期智慧电厂项目技术方案\n\n## 第7章 人工智能平台与智能应用扩展\n\n已有内容",
+		},
+		DocumentTargetHeading: "## 第7章 人工智能平台与智能应用扩展",
+		DocumentMergeMode:     types.ChatDocumentMergeModeAppendToSection,
+		QuotedContext: `<document_revision_context>
+上一份文档元数据：
+- target_heading: ## 第7章 人工智能平台与智能应用扩展
+- document_merge_mode: append_to_section
+
+<target_section_heading>
+## 第7章 人工智能平台与智能应用扩展
+</target_section_heading>
+<target_section>
+## 第7章 人工智能平台与智能应用扩展
+
+已有内容
+</target_section>
+</document_revision_context>`,
+	}
+	agentConfig := &types.AgentConfig{
+		Temperature:    0.3,
+		KnowledgeBases: []string{"kb-1"},
+		SearchTargets:  types.SearchTargets{{KnowledgeBaseID: "kb-1", Type: types.SearchTargetTypeKnowledgeBase}},
+	}
+
+	var completes []event.AgentCompleteData
+	bus.On(event.EventAgentComplete, func(_ context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentCompleteData)
+		require.True(t, ok)
+		completes = append(completes, data)
+		return nil
+	})
+
+	err := svc.runDedicatedDocumentEditPath(context.Background(), req, bus, chatModel, agentConfig)
+	require.NoError(t, err)
+	require.Len(t, completes, 1)
+	assert.Equal(t, types.MessageCompletionStatusCompleted, completes[0].CompletionStatus)
+	assert.Contains(t, completes[0].FinalAnswer, `<append heading="## 第7章 人工智能平台与智能应用扩展">`)
+	assert.Equal(t, true, completes[0].Extra["local_knowledge_used"])
+	require.Len(t, chatModel.streamMessages, 1)
+	assert.Contains(t, chatModel.streamMessages[0][1].Content, "<local_knowledge_context>")
+	assert.Contains(t, chatModel.streamMessages[0][1].Content, "智能体编排")
+	refs, ok := completes[0].Extra["evidence_refs"].([]interface{})
+	require.True(t, ok)
+	assert.NotEmpty(t, refs)
+	patchMetadata, ok := completes[0].Extra["document_patch_metadata"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, true, patchMetadata["structured"])
+	assert.Equal(t, "high", patchMetadata["merge_confidence"])
+}
+
+func TestRunDedicatedDocumentEditPath_BlocksWhenLocalKnowledgeHasNoEvidence(t *testing.T) {
+	svc := &sessionService{
+		cfg: &config.Config{Conversation: &config.ConversationConfig{Summary: &config.SummaryConfig{MaxCompletionTokens: 256}}},
+		knowledgeBaseService: &fullDocumentKnowledgeSearchStub{
+			kbs: map[string]*types.KnowledgeBase{
+				"kb-1": {ID: "kb-1", Type: types.KnowledgeBaseTypeDocument},
+			},
+			results: map[string][]*types.SearchResult{},
+		},
+	}
+	chatModel := &failIfCalledDocumentEditChat{}
+	bus := event.NewEventBus()
+	req := &types.QARequest{
+		Query:                 "请对第7章 人工智能平台与智能应用扩展章节进行功能生成功能清单。",
+		Session:               &types.Session{ID: "sess-kg-edit-empty"},
+		AssistantMessageID:    "msg-kg-edit-empty",
+		DocumentIntent:        types.ChatDocumentIntentRevise,
+		DocumentOperation:     types.ChatDocumentOperationRevise,
+		DocumentOutputMode:    types.ChatDocumentOutputModeDelta,
+		BaseArtifactID:        "artifact-1",
+		BaseArtifact:          &types.ChatDocumentArtifact{ID: "artifact-1", Title: "北海电厂二期智慧电厂项目技术方案"},
+		DocumentTargetHeading: "## 第7章 人工智能平台与智能应用扩展",
+		DocumentMergeMode:     types.ChatDocumentMergeModeAppendToSection,
+		QuotedContext: `<document_revision_context>
+- target_heading: ## 第7章 人工智能平台与智能应用扩展
+- document_merge_mode: append_to_section
+</document_revision_context>`,
+	}
+	agentConfig := &types.AgentConfig{
+		KnowledgeBases: []string{"kb-1"},
+		SearchTargets:  types.SearchTargets{{KnowledgeBaseID: "kb-1", Type: types.SearchTargetTypeKnowledgeBase}},
+	}
+
+	var completes []event.AgentCompleteData
+	bus.On(event.EventAgentComplete, func(_ context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentCompleteData)
+		require.True(t, ok)
+		completes = append(completes, data)
+		return nil
+	})
+
+	err := svc.runDedicatedDocumentEditPath(context.Background(), req, bus, chatModel, agentConfig)
+	require.NoError(t, err)
+	assert.False(t, chatModel.called)
+	require.Len(t, completes, 1)
+	assert.Equal(t, types.MessageCompletionStatusPartial, completes[0].CompletionStatus)
+	assert.Equal(t, "local_knowledge_not_found", completes[0].FinishReason)
+	assert.Contains(t, completes[0].FinalAnswer, "本地知识库未检索到足够证据")
+	assert.Equal(t, true, completes[0].Extra["local_knowledge_used"])
 }
 
 func TestConsumeDedicatedDocumentEditStream_ClassifiesTimeoutFailure(t *testing.T) {
@@ -1648,7 +1878,7 @@ func TestConsumeDedicatedDocumentEditStream_ClassifiesTimeoutFailure(t *testing.
 		return nil
 	})
 
-	svc.consumeDedicatedDocumentEditStream(context.Background(), req, bus, responses, time.Second)
+	svc.consumeDedicatedDocumentEditStream(context.Background(), req, bus, responses, time.Second, nil)
 
 	require.Len(t, completes, 1)
 	assert.Equal(t, types.MessageCompletionStatusPartial, completes[0].CompletionStatus)
@@ -1690,7 +1920,7 @@ func TestConsumeDedicatedDocumentEditStream_ClassifiesCancelledAfterVisibleConte
 		cancel()
 	}()
 
-	svc.consumeDedicatedDocumentEditStream(ctx, req, bus, responses, time.Second)
+	svc.consumeDedicatedDocumentEditStream(ctx, req, bus, responses, time.Second, nil)
 
 	require.Len(t, completes, 1)
 	assert.Equal(t, types.MessageCompletionStatusCancelled, completes[0].CompletionStatus)
@@ -1775,7 +2005,7 @@ func TestConsumeDedicatedDocumentEditStream_EmitsProgressBeforeFirstContentTimeo
 		close(responses)
 	}()
 
-	svc.consumeDedicatedDocumentEditStream(context.Background(), req, bus, responses, dedicatedDocumentEditFirstContentTimeout)
+	svc.consumeDedicatedDocumentEditStream(context.Background(), req, bus, responses, dedicatedDocumentEditFirstContentTimeout, nil)
 
 	require.Len(t, completes, 1)
 	assert.Equal(t, types.MessageCompletionStatusCompleted, completes[0].CompletionStatus)
@@ -1837,7 +2067,7 @@ func TestConsumeDedicatedDocumentEditStream_ClassifiesFirstContentTimeout(t *tes
 		return nil
 	})
 
-	svc.consumeDedicatedDocumentEditStream(context.Background(), req, bus, responses, dedicatedDocumentEditFirstContentTimeout)
+	svc.consumeDedicatedDocumentEditStream(context.Background(), req, bus, responses, dedicatedDocumentEditFirstContentTimeout, nil)
 
 	require.Len(t, completes, 1)
 	assert.Equal(t, types.MessageCompletionStatusFailed, completes[0].CompletionStatus)
@@ -1897,11 +2127,15 @@ func TestConsumeDedicatedDocumentEditStream_StreamsModelThinkingBeforeAnswer(t *
 		close(responses)
 	}()
 
-	svc.consumeDedicatedDocumentEditStream(context.Background(), req, bus, responses, dedicatedDocumentEditFirstContentTimeout)
+	svc.consumeDedicatedDocumentEditStream(context.Background(), req, bus, responses, dedicatedDocumentEditFirstContentTimeout, nil)
 
 	require.Len(t, completes, 1)
 	assert.Equal(t, types.MessageCompletionStatusCompleted, completes[0].CompletionStatus)
 	assert.Equal(t, "<document_patch>patched</document_patch>", completes[0].FinalAnswer)
+	patchMetadata, ok := completes[0].Extra["document_patch_metadata"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, true, patchMetadata["structured"])
+	assert.Equal(t, "medium", patchMetadata["merge_confidence"])
 
 	var modelThinkingID string
 	var modelThinkingContent strings.Builder
@@ -1952,7 +2186,7 @@ func TestConsumeDedicatedDocumentEditStream_AllowsEmptyDoneAfterContent(t *testi
 		return nil
 	})
 
-	svc.consumeDedicatedDocumentEditStream(context.Background(), req, bus, responses, time.Second)
+	svc.consumeDedicatedDocumentEditStream(context.Background(), req, bus, responses, time.Second, nil)
 
 	require.Len(t, completes, 1)
 	assert.Equal(t, types.MessageCompletionStatusCompleted, completes[0].CompletionStatus)
@@ -2040,7 +2274,11 @@ func TestRunDedicatedFullDocumentGenerationPath_CompletesAllPlannedSectionsInIni
 		dedicatedFullDocumentSectionLimitPerRun = oldLimit
 	}()
 
-	svc := &sessionService{cfg: &config.Config{Conversation: &config.ConversationConfig{Summary: &config.SummaryConfig{MaxCompletionTokens: 256}}}}
+	runRepo := &fullDocumentGenerationRunRepoStub{}
+	svc := &sessionService{
+		cfg:               &config.Config{Conversation: &config.ConversationConfig{Summary: &config.SummaryConfig{MaxCompletionTokens: 256}}},
+		generationRunRepo: runRepo,
+	}
 	chatModel := &stagedFullDocumentChat{
 		outlineResponse: types.ChatResponse{Content: "# 北海电厂二期智慧电厂项目投标技术方案\n\n## 一、项目背景与总体思路\n## 二、总体技术架构\n## 三、核心价值\n"},
 		outlineStream: []types.StreamResponse{
@@ -2084,7 +2322,8 @@ func TestRunDedicatedFullDocumentGenerationPath_CompletesAllPlannedSectionsInIni
 		return nil
 	})
 
-	err := svc.runDedicatedFullDocumentGenerationPath(context.Background(), req, bus, chatModel, &types.AgentConfig{Temperature: 0.3})
+	thinking := true
+	err := svc.runDedicatedFullDocumentGenerationPath(context.Background(), req, bus, chatModel, &types.AgentConfig{Temperature: 0.3, Thinking: &thinking})
 	require.NoError(t, err)
 	require.Len(t, completes, 1)
 	assert.Equal(t, types.MessageCompletionStatusCompleted, completes[0].CompletionStatus)
@@ -2095,6 +2334,17 @@ func TestRunDedicatedFullDocumentGenerationPath_CompletesAllPlannedSectionsInIni
 	assert.True(t, completes[0].AllowComplete)
 	assert.True(t, completes[0].AllowIndexing)
 	require.NotNil(t, completes[0].Extra)
+	require.NotNil(t, runRepo.created)
+	require.NotNil(t, runRepo.updated)
+	assert.Equal(t, runRepo.created.ID, completes[0].Extra["generation_run_id"])
+	assert.Equal(t, types.ChatDocumentGenerationRunStatusCompleted, runRepo.updated.Status)
+	assert.Equal(t, []string{"一、项目背景与总体思路", "二、总体技术架构", "三、核心价值"}, unmarshalGenerationRunStringSlice(runRepo.updated.CompletedSectionsJSON))
+	runStatePayload, ok := completes[0].Extra["generation_run_state"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, 1, runStatePayload["auto_continue_round"])
+	assert.Equal(t, 3, runStatePayload["completed_count"])
+	_, hasRemainingCount := runStatePayload["remaining_count"]
+	assert.False(t, hasRemainingCount)
 	outlinePayload, ok := completes[0].Extra["outline"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "北海电厂二期智慧电厂项目投标技术方案", outlinePayload["title"])
@@ -2174,8 +2424,169 @@ func TestRunDedicatedFullDocumentGenerationPath_CompletesAllPlannedSectionsInIni
 			assert.Equal(t, 1536, options.MaxCompletionTokens)
 			continue
 		}
-		assert.Zero(t, options.MaxCompletionTokens)
+		assert.Equal(t, 4096, options.MaxCompletionTokens)
 	}
+}
+
+func TestRunKnowledgeGroundedDocumentContinuationPath_UsesDedicatedGenerationRunProgressWithoutKnowledgeScope(t *testing.T) {
+	oldLimit := dedicatedFullDocumentSectionLimitPerRun
+	dedicatedFullDocumentSectionLimitPerRun = 2
+	defer func() {
+		dedicatedFullDocumentSectionLimitPerRun = oldLimit
+	}()
+
+	run := &types.ChatDocumentGenerationRun{
+		ID:                    "run-dedicated-1",
+		TenantID:              0,
+		SessionID:             "sess-dedicated-run-continuation",
+		OriginalQuery:         "请输出完整的智慧运行建设方案",
+		DocumentTitle:         "智慧运行建设方案",
+		OutlineJSON:           marshalGenerationRunJSON(newDedicatedFullDocumentOutlineFromStrings("智慧运行建设方案", []string{"建设目标", "平台架构", "实施保障"})),
+		BudgetJSON:            marshalGenerationRunJSON(DocumentGenerationBudget{Source: "fallback", OutlineMaxCompletionTokens: 1536, SectionMaxCompletionTokens: 4096, ContinuationMaxCompletionTokens: 4096, SectionCallTimeoutSeconds: 120}),
+		CompletedSectionsJSON: marshalGenerationRunJSON([]string{"建设目标"}),
+		Status:                types.ChatDocumentGenerationRunStatusContinuing,
+		AutoContinueRound:     1,
+	}
+	runRepo := &fullDocumentGenerationRunRepoStub{runs: map[string]*types.ChatDocumentGenerationRun{"run-dedicated-1": cloneChatDocumentGenerationRun(run)}}
+	svc := &sessionService{
+		cfg:               &config.Config{Conversation: &config.ConversationConfig{Summary: &config.SummaryConfig{MaxCompletionTokens: 256}}},
+		generationRunRepo: runRepo,
+	}
+	chatModel := &stagedFullDocumentChat{
+		sectionStreams: [][]types.StreamResponse{
+			{{ResponseType: types.ResponseTypeAnswer, Content: "说明平台架构与能力分层。", Done: true, FinishReason: "stop"}},
+			{{ResponseType: types.ResponseTypeAnswer, Content: "说明实施保障与交付机制。", Done: true, FinishReason: "stop"}},
+		},
+	}
+	bus := event.NewEventBus()
+	req := &types.QARequest{
+		Query:                     "以当前文档为基准，继续剩余内容输出",
+		Session:                   &types.Session{ID: "sess-dedicated-run-continuation"},
+		AssistantMessageID:        "msg-dedicated-run-continuation",
+		DocumentIntent:            types.ChatDocumentIntentContinue,
+		DocumentOperation:         types.ChatDocumentOperationContinue,
+		DocumentOutputMode:        types.ChatDocumentOutputModeDelta,
+		BaseArtifactID:            "artifact-dedicated-1",
+		BaseArtifact:              &types.ChatDocumentArtifact{ID: "artifact-dedicated-1", ContentSnapshot: "# 智慧运行建设方案\n\n## 建设目标\n\n说明建设目标与业务价值。\n\n## 第2章 平台架构\n\n当前已生成的平台架构片段，需要继续补全。"},
+		AutoContinue:              true,
+		GenerationRunID:           "run-dedicated-1",
+		AutoContinueRound:         1,
+		AutoContinuePrompt:        "以当前文档为基准，继续剩余内容输出",
+		AutoContinueOriginalQuery: "请输出完整的智慧运行建设方案",
+	}
+	agentConfig := &types.AgentConfig{Temperature: 0.3}
+
+	var completes []event.AgentCompleteData
+	var thoughts []event.AgentThoughtData
+	bus.On(event.EventAgentThought, func(_ context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentThoughtData)
+		require.True(t, ok)
+		thoughts = append(thoughts, data)
+		return nil
+	})
+	bus.On(event.EventAgentComplete, func(_ context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentCompleteData)
+		require.True(t, ok)
+		completes = append(completes, data)
+		return nil
+	})
+
+	err := svc.runKnowledgeGroundedDocumentContinuationPath(context.Background(), req, bus, chatModel, agentConfig)
+	require.NoError(t, err)
+	require.Len(t, completes, 1)
+	require.NotNil(t, runRepo.updated)
+	assert.Equal(t, types.ChatDocumentGenerationRunStatusCompleted, runRepo.updated.Status)
+	assert.Equal(t, 2, runRepo.updated.AutoContinueRound)
+	assert.Equal(t, []string{"建设目标", "平台架构", "实施保障"}, unmarshalGenerationRunStringSlice(runRepo.updated.CompletedSectionsJSON))
+	require.NotNil(t, completes[0].Extra)
+	assert.Equal(t, "run-dedicated-1", completes[0].Extra["generation_run_id"])
+	assert.Equal(t, false, completes[0].Extra["local_knowledge_used"])
+	runStatePayload, ok := completes[0].Extra["generation_run_state"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, 2, runStatePayload["auto_continue_round"])
+	assert.Equal(t, 3, runStatePayload["completed_count"])
+	_, hasRemainingCount := runStatePayload["remaining_count"]
+	assert.False(t, hasRemainingCount)
+	assert.Contains(t, completes[0].FinalAnswer, "## 第2章 平台架构")
+	assert.Contains(t, completes[0].FinalAnswer, "## 第3章 实施保障")
+	require.Len(t, chatModel.streamMessages, 2)
+	assert.Contains(t, chatModel.streamMessages[0][1].Content, "Completed document summary")
+	assert.Contains(t, chatModel.streamMessages[0][1].Content, "## 第1章 建设目标")
+	require.Len(t, chatModel.streamOptions, 2)
+	for _, options := range chatModel.streamOptions {
+		require.NotNil(t, options.Thinking)
+		assert.False(t, *options.Thinking)
+		assert.Equal(t, 4096, options.MaxCompletionTokens)
+	}
+	var sawDedicatedContinuationProgress bool
+	for _, thought := range thoughts {
+		if strings.Contains(thought.Content, "正在基于已保存的大纲继续生成后续章节") {
+			sawDedicatedContinuationProgress = true
+		}
+	}
+	assert.True(t, sawDedicatedContinuationProgress)
+}
+
+func TestRunKnowledgeGroundedDocumentContinuationPath_CompletesDedicatedRunWithoutRemainingSections(t *testing.T) {
+	run := &types.ChatDocumentGenerationRun{
+		ID:                    "run-dedicated-done-1",
+		TenantID:              0,
+		SessionID:             "sess-dedicated-run-done",
+		OriginalQuery:         "请输出完整的智慧运行建设方案",
+		DocumentTitle:         "智慧运行建设方案",
+		OutlineJSON:           marshalGenerationRunJSON(newDedicatedFullDocumentOutlineFromStrings("智慧运行建设方案", []string{"建设目标", "平台架构"})),
+		BudgetJSON:            marshalGenerationRunJSON(DocumentGenerationBudget{Source: "fallback", OutlineMaxCompletionTokens: 1536, SectionMaxCompletionTokens: 4096, ContinuationMaxCompletionTokens: 4096, SectionCallTimeoutSeconds: 120}),
+		CompletedSectionsJSON: marshalGenerationRunJSON([]string{"建设目标", "平台架构"}),
+		Status:                types.ChatDocumentGenerationRunStatusContinuing,
+		AutoContinueRound:     1,
+	}
+	runRepo := &fullDocumentGenerationRunRepoStub{runs: map[string]*types.ChatDocumentGenerationRun{"run-dedicated-done-1": cloneChatDocumentGenerationRun(run)}}
+	svc := &sessionService{
+		cfg:               &config.Config{Conversation: &config.ConversationConfig{Summary: &config.SummaryConfig{MaxCompletionTokens: 256}}},
+		generationRunRepo: runRepo,
+	}
+	chatModel := &stagedFullDocumentChat{}
+	bus := event.NewEventBus()
+	req := &types.QARequest{
+		Query:                     "以当前文档为基准，继续剩余内容输出",
+		Session:                   &types.Session{ID: "sess-dedicated-run-done"},
+		AssistantMessageID:        "msg-dedicated-run-done",
+		DocumentIntent:            types.ChatDocumentIntentContinue,
+		DocumentOperation:         types.ChatDocumentOperationContinue,
+		DocumentOutputMode:        types.ChatDocumentOutputModeDelta,
+		BaseArtifactID:            "artifact-dedicated-done-1",
+		BaseArtifact:              &types.ChatDocumentArtifact{ID: "artifact-dedicated-done-1", ContentSnapshot: "# 智慧运行建设方案\n\n## 建设目标\n\n说明建设目标。\n\n## 第2章 平台架构\n\n说明平台架构。"},
+		AutoContinue:              true,
+		GenerationRunID:           "run-dedicated-done-1",
+		AutoContinueRound:         1,
+		AutoContinuePrompt:        "以当前文档为基准，继续剩余内容输出",
+		AutoContinueOriginalQuery: "请输出完整的智慧运行建设方案",
+	}
+
+	var completes []event.AgentCompleteData
+	bus.On(event.EventAgentComplete, func(_ context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentCompleteData)
+		require.True(t, ok)
+		completes = append(completes, data)
+		return nil
+	})
+
+	err := svc.runKnowledgeGroundedDocumentContinuationPath(context.Background(), req, bus, chatModel, &types.AgentConfig{Temperature: 0.3})
+	require.NoError(t, err)
+	require.Len(t, completes, 1)
+	require.NotNil(t, runRepo.updated)
+	assert.Equal(t, types.ChatDocumentGenerationRunStatusCompleted, runRepo.updated.Status)
+	assert.Equal(t, 1, runRepo.updated.AutoContinueRound)
+	assert.Equal(t, 0, chatModel.streamCalls)
+	assert.Equal(t, types.MessageCompletionStatusCompleted, completes[0].CompletionStatus)
+	assert.Equal(t, types.ChatDocumentGenerationStatusCompleted, completes[0].DocumentGenerationStatus)
+	assert.Equal(t, "run-dedicated-done-1", completes[0].Extra["generation_run_id"])
+	runStatePayload, ok := completes[0].Extra["generation_run_state"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, 1, runStatePayload["auto_continue_round"])
+	assert.Equal(t, 2, runStatePayload["completed_count"])
+	_, hasRemainingCount := runStatePayload["remaining_count"]
+	assert.False(t, hasRemainingCount)
 }
 
 func TestRunDedicatedFullDocumentGenerationPath_CompletesWhenAllSectionsFitInOneRun(t *testing.T) {
@@ -2611,8 +3022,10 @@ func TestRunKnowledgeGroundedDocumentContinuationPath_DefaultsToPartialContinuin
 		AutoContinuePrompt:        "以当前文档为基准，继续剩余内容输出",
 		AutoContinueOriginalQuery: "请输出完整的智慧运行投标技术方案",
 	}
+	thinking := true
 	agentConfig := &types.AgentConfig{
 		Temperature:    0.3,
+		Thinking:       &thinking,
 		KnowledgeBases: []string{"kb-1"},
 		SearchTargets:  types.SearchTargets{{KnowledgeBaseID: "kb-1", Type: types.SearchTargetTypeKnowledgeBase}},
 	}
@@ -2815,6 +3228,10 @@ func TestRunKnowledgeGroundedDocumentContinuationPath_AdjustsBudgetWithRuntimeFe
 		require.True(t, ok)
 		assert.NotEmpty(t, adjustReasons)
 	}
+	require.Len(t, chatModel.streamOptions, 1)
+	require.NotNil(t, chatModel.streamOptions[0].Thinking)
+	assert.False(t, *chatModel.streamOptions[0].Thinking)
+	assert.Equal(t, 4096, chatModel.streamOptions[0].MaxCompletionTokens)
 }
 
 func TestEffectiveFullDocumentSectionMaxCompletionTokens_AppliesMinimumBudget(t *testing.T) {
@@ -3159,8 +3576,10 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_UsesNegotiatedBudgetWhen
 		AssistantMessageID: "msg-grounded-negotiated",
 		DocumentOutputMode: types.ChatDocumentOutputModeFull,
 	}
+	thinking := true
 	agentConfig := &types.AgentConfig{
 		Temperature:    0.3,
+		Thinking:       &thinking,
 		KnowledgeBases: []string{"kb-1"},
 		SearchTargets:  types.SearchTargets{{KnowledgeBaseID: "kb-1", Type: types.SearchTargetTypeKnowledgeBase}},
 	}
@@ -3178,7 +3597,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_UsesNegotiatedBudgetWhen
 	require.Len(t, completes, 1)
 	require.Len(t, chatModel.streamOptions, 2)
 	assert.Equal(t, 1536, chatModel.streamOptions[0].MaxCompletionTokens)
-	assert.Zero(t, chatModel.streamOptions[1].MaxCompletionTokens)
+	assert.Equal(t, 5120, chatModel.streamOptions[1].MaxCompletionTokens)
 	require.Len(t, chatModel.streamHasDeadline, 2)
 	assert.False(t, chatModel.streamHasDeadline[0])
 	assert.True(t, chatModel.streamHasDeadline[1])
@@ -3255,8 +3674,10 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_UsesStaticModelCapabilit
 		AssistantMessageID: "msg-grounded-capability",
 		DocumentOutputMode: types.ChatDocumentOutputModeFull,
 	}
+	thinking := true
 	agentConfig := &types.AgentConfig{
 		Temperature:    0.3,
+		Thinking:       &thinking,
 		KnowledgeBases: []string{"kb-1"},
 		SearchTargets:  types.SearchTargets{{KnowledgeBaseID: "kb-1", Type: types.SearchTargetTypeKnowledgeBase}},
 	}
@@ -3274,7 +3695,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_UsesStaticModelCapabilit
 	require.Len(t, completes, 1)
 	require.Len(t, chatModel.streamOptions, 2)
 	assert.Equal(t, 1536, chatModel.streamOptions[0].MaxCompletionTokens)
-	assert.Zero(t, chatModel.streamOptions[1].MaxCompletionTokens)
+	assert.Equal(t, 4096, chatModel.streamOptions[1].MaxCompletionTokens)
 	require.NotEmpty(t, searchStub.params)
 	for _, params := range searchStub.params {
 		assert.Equal(t, 8, params.MatchCount)
@@ -3481,7 +3902,7 @@ func TestRunKnowledgeGroundedDocumentContinuationPath_UsesGenerationRunProgress(
 	for _, options := range chatModel.streamOptions {
 		require.NotNil(t, options.Thinking)
 		assert.False(t, *options.Thinking)
-		assert.Zero(t, options.MaxCompletionTokens)
+		assert.Equal(t, 4096, options.MaxCompletionTokens)
 	}
 	require.Len(t, chatModel.streamMessages, 2)
 	assert.Contains(t, chatModel.streamMessages[0][1].Content, "Current unfinished section snapshot")
@@ -3583,7 +4004,9 @@ func TestRunKnowledgeGroundedDocumentContinuationPath_UsesPersistedRuntimeFeedba
 	assert.Equal(t, 2, runRepo.updated.AutoContinueRound)
 	assert.Equal(t, []string{"建设目标", "平台架构"}, unmarshalGenerationRunStringSlice(runRepo.updated.CompletedSectionsJSON))
 	require.Len(t, chatModel.streamOptions, 1)
-	assert.Zero(t, chatModel.streamOptions[0].MaxCompletionTokens)
+	require.NotNil(t, chatModel.streamOptions[0].Thinking)
+	assert.False(t, *chatModel.streamOptions[0].Thinking)
+	assert.Equal(t, 4608, chatModel.streamOptions[0].MaxCompletionTokens)
 	require.NotEmpty(t, chatModel.streamHasDeadline)
 	assert.True(t, chatModel.streamHasDeadline[0])
 	for _, params := range svc.knowledgeBaseService.(*fullDocumentKnowledgeSearchStub).params {

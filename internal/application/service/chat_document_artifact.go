@@ -1284,8 +1284,15 @@ func hydrateChatDocumentArtifactDerivedFields(artifact *types.ChatDocumentArtifa
 	artifact.StructureInfo = structure
 	artifact.SnapshotCharCount = runeLen(snapshot)
 	artifact.QualityIssues = uniqueStrings(issues)
+	artifact.QualityIssueDetails = types.ChatDocumentQualityIssueDetails(artifact.QualityIssues)
 	artifact.CanContinueDocument = artifact.CanContinue()
 	artifact.CanInlineContinue = artifact.CanInlineContinueWithFullSnapshot()
+	artifact.CanAutoContinueDocument = artifact.CanAutoContinue()
+	artifact.CanManualContinueDocument = artifact.CanManualContinue()
+	artifact.CanManualReviseDocument = artifact.CanManualRevise()
+	artifact.CanUseAsBaseDocument = artifact.CanUseAsBase()
+	artifact.CanViewDocument = artifact.CanView()
+	artifact.CanIndexDocument = artifact.CanIndex()
 	artifact.ContinuationContextMode = artifact.ContinuationMode()
 	artifact.UserHint = chatDocumentUserHintForIssues(artifact.QualityIssues, artifact.Operation)
 	return artifact
@@ -1461,18 +1468,6 @@ func chatDocumentUserHintForIssues(issues []string, operation string) string {
 	}
 	if operation == types.ChatDocumentOperationRevise && chatDocumentContainsString(issues, types.ChatDocumentQualityIssueRevisionMissingHeading) {
 		return "本次修改结果缺少原有标题结构，建议继续补齐章节层级后再作为新基线。"
-	}
-	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueUnclosedCodeFence) {
-		return "检测到末尾代码块未闭合，系统已自动补全代码围栏。"
-	}
-	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueInternalPromptLeakage) {
-		return "检测到内部提示词或上下文标记混入文档，系统已将该版本标记为待复核。请检查正文后再继续。"
-	}
-	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueMarkdownStructureInvalid) {
-		return "检测到 Markdown 结构仍不稳定，系统已将该版本标记为待复核。请检查标题、列表和段落结构后再继续。"
-	}
-	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueMarkdownHeadingNormalized) {
-		return "检测到 Markdown 标题格式不规范，系统已自动补齐标题空格和段落换行。"
 	}
 	return ""
 }

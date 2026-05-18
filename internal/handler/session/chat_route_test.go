@@ -54,7 +54,8 @@ func TestApplyDocumentRouteDecision_DocumentEditHydratesArtifactContext(t *testi
 			Status:          types.ChatDocumentArtifactStatusAvailable,
 			ContentSnapshot: "# 技术方案\n\n## 智慧运行\n\n原始内容",
 		},
-		quotedContext: "quoted-context",
+		detectIntentResult: &types.DocumentIntentResult{Intent: types.ChatDocumentIntentRevise, Operation: types.ChatDocumentOperationRevise, TargetHeading: "智慧运行", MergeMode: types.ChatDocumentMergeModeAppendToSection},
+		quotedContext:      "quoted-context",
 	}
 	handler := &Handler{chatDocumentArtifactService: artifactService}
 	reqCtx := &qaRequestContext{
@@ -77,6 +78,39 @@ func TestApplyDocumentRouteDecision_DocumentEditHydratesArtifactContext(t *testi
 	assert.Equal(t, types.ChatDocumentOutputModeDelta, artifactService.buildQuotedOutput)
 	assert.Equal(t, "智慧运行", artifactService.buildQuotedTarget)
 	assert.Equal(t, types.ChatDocumentMergeModeAppendToSection, artifactService.buildQuotedMergeMode)
+}
+
+func TestApplyDocumentRouteDecision_DocumentEditWithKnowledgeScopeStillApplies(t *testing.T) {
+	artifactService := &handlerChatDocumentArtifactServiceStub{
+		artifact: &types.ChatDocumentArtifact{
+			ID:              "artifact-1",
+			SessionID:       "session-1",
+			ArtifactKind:    types.ChatDocumentArtifactKindMarkdown,
+			Status:          types.ChatDocumentArtifactStatusAvailable,
+			ContentSnapshot: "# 技术方案\n\n## 智慧运行\n\n原始内容",
+		},
+		detectIntentResult: &types.DocumentIntentResult{Intent: types.ChatDocumentIntentRevise, Operation: types.ChatDocumentOperationRevise, TargetHeading: "智慧运行", MergeMode: types.ChatDocumentMergeModeAppendToSection},
+		quotedContext:      "quoted-context",
+	}
+	handler := &Handler{chatDocumentArtifactService: artifactService}
+	reqCtx := &qaRequestContext{
+		session:          &types.Session{ID: "session-1"},
+		query:            "结合知识库补充智慧运行章节",
+		knowledgeBaseIDs: []string{"kb-1"},
+	}
+
+	applied, reason := handler.applyDocumentRouteDecisionWithReason(context.Background(), reqCtx, &CreateKnowledgeQARequest{}, &types.ChatRouteDecision{Kind: types.ChatRouteDocumentEdit}, false)
+
+	require.True(t, applied)
+	assert.Empty(t, reason)
+	assert.Equal(t, types.ChatDocumentIntentRevise, reqCtx.documentIntent)
+	assert.Equal(t, types.ChatDocumentOperationRevise, reqCtx.documentOperation)
+	assert.Equal(t, types.ChatDocumentOutputModeDelta, reqCtx.documentOutputMode)
+	assert.Equal(t, "artifact-1", reqCtx.baseArtifactID)
+	require.NotNil(t, reqCtx.baseArtifact)
+	assert.Equal(t, "quoted-context", reqCtx.documentQuotedContext)
+	assert.Equal(t, "智慧运行", reqCtx.documentTargetHeading)
+	assert.Equal(t, types.ChatDocumentMergeModeAppendToSection, reqCtx.documentMergeMode)
 }
 
 func TestApplyDocumentRouteDecision_FullDocumentOverridesLegacyIntentFallback(t *testing.T) {

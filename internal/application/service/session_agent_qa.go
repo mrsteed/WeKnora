@@ -27,6 +27,7 @@ import (
 var documentBudgetNegotiationTimeout = 4 * time.Second
 
 var explicitFullDocumentIntentRE = regexp.MustCompile(`(?i)((输出|生成|撰写|编写|写(?:一份|一篇)?|整理|形成|给我|提供).{0,40}(完整(?:版)?|全文|文档|方案|报告|技术方案|设计方案|标书|投标方案|实施方案|markdown))|((完整(?:版)?|全文).{0,20}(文档|方案|报告|技术方案|设计方案|标书|markdown))`)
+var documentEditNumberedHeadingRE = regexp.MustCompile(`^(#{1,6})\s*([0-9]+(?:\.[0-9]+)*)\s+(.+)$`)
 
 const (
 	documentRuntimeSlowFirstTokenThresholdMs   = int64(12000)
@@ -327,9 +328,6 @@ func shouldUseDedicatedDocumentEditPath(req *types.QARequest) bool {
 			return false
 		}
 	}
-	if len(req.KnowledgeBaseIDs) > 0 || len(req.KnowledgeIDs) > 0 || documentEditRequiresExternalRetrieval(req.Query) {
-		return false
-	}
 	if len(req.Attachments) > 0 || len(req.ImageURLs) > 0 || strings.TrimSpace(req.ImageDescription) != "" {
 		return false
 	}
@@ -346,7 +344,7 @@ func shouldUseKnowledgeGroundedDocumentContinuationPath(req *types.QARequest, ag
 	if req.DocumentOutputMode != types.ChatDocumentOutputModeDelta {
 		return false
 	}
-	if !hasEffectiveLocalKnowledgeScope(req, agentConfig) {
+	if !hasEffectiveLocalKnowledgeScope(req, agentConfig) && strings.TrimSpace(req.GenerationRunID) == "" {
 		return false
 	}
 	switch req.DocumentIntent {
@@ -478,10 +476,13 @@ func documentEditRequiresExternalRetrieval(query string) bool {
 	return false
 }
 
-func buildDedicatedDocumentEditSystemPrompt(language string, req *types.QARequest) string {
+func buildDedicatedDocumentEditSystemPrompt(language string, req *types.QARequest, useLocalKnowledge bool) string {
 	var builder strings.Builder
 	builder.WriteString("You are a dedicated document editor. Complete the task in a single pass using only the provided user goal and document editing context. ")
 	builder.WriteString("Do not call tools. Do not output hidden reasoning. Do not regenerate the whole document unless the context explicitly asks for a full document. ")
+	if useLocalKnowledge {
+		builder.WriteString("Use only facts from <local_knowledge_context> and the provided document editing context. If local knowledge is insufficient, say 本地知识不足 or 待确认 instead of inventing content. ")
+	}
 	if strings.TrimSpace(language) != "" {
 		builder.WriteString(fmt.Sprintf("Respond in %s. ", language))
 	}
@@ -494,15 +495,53 @@ func buildDedicatedDocumentEditSystemPrompt(language string, req *types.QAReques
 	return strings.TrimSpace(builder.String())
 }
 
-func buildDedicatedDocumentEditMessages(req *types.QARequest, language string) []chat.Message {
+func buildDedicatedDocumentEditMessages(req *types.QARequest, language string, evidence knowledgeGroundedEvidencePack) []chat.Message {
 	userContent := "User goal:\n" + strings.TrimSpace(req.Query)
 	if strings.TrimSpace(req.QuotedContext) != "" {
 		userContent += "\n\nDocument editing context:\n" + strings.TrimSpace(req.QuotedContext)
 	}
+	if structurePrompt := buildDocumentEditStructurePrompt(req); structurePrompt != "" {
+		userContent += "\n\nDocument structure constraints:\n" + structurePrompt
+	}
+	if len(evidence.Items) > 0 {
+		userContent += "\n\n" + buildKnowledgeGroundedLocalKnowledgeContext(evidence)
+	}
 	return []chat.Message{
-		{Role: "system", Content: buildDedicatedDocumentEditSystemPrompt(language, req)},
+		{Role: "system", Content: buildDedicatedDocumentEditSystemPrompt(language, req, len(evidence.Items) > 0)},
 		{Role: "user", Content: userContent},
 	}
+}
+
+func buildDocumentEditStructurePrompt(req *types.QARequest) string {
+	if req == nil {
+		return ""
+	}
+	targetHeading := strings.TrimSpace(extractTaggedDocumentEditValue(req.QuotedContext, "target_section_heading"))
+	if targetHeading == "" {
+		targetHeading = strings.TrimSpace(resolveDocumentEditPatchHeading(req))
+	}
+	if targetHeading == "" {
+		return ""
+	}
+	if matches := documentEditNumberedHeadingRE.FindStringSubmatch(targetHeading); len(matches) == 4 {
+		headingMarks := matches[1]
+		numberPrefix := matches[2]
+		childLevel := len(headingMarks) + 1
+		if childLevel > 6 {
+			childLevel = 6
+		}
+		childMarks := strings.Repeat("#", childLevel)
+		return strings.TrimSpace(fmt.Sprintf("- 目标标题已经存在于基线文档中，不要重复输出该标题：%s\n- 如果需要在该标题下继续展开子标题，子标题必须比目标标题低一级，使用 %s。\n- 目标标题编号分支为 %s，后续子标题必须严格延续该分支，例如：%s %s.1 子标题、%s %s.2 子标题。\n- 禁止在该标题下重新从其他编号开始，例如不要输出 ### 7.1、### 7.2，或与目标标题同级的其他编号标题。", targetHeading, childMarks, numberPrefix, childMarks, numberPrefix, childMarks, numberPrefix))
+	}
+	if strings.HasPrefix(targetHeading, "#") {
+		childLevel := strings.Count(strings.SplitN(targetHeading, " ", 2)[0], "#") + 1
+		if childLevel > 6 {
+			childLevel = 6
+		}
+		childMarks := strings.Repeat("#", childLevel)
+		return strings.TrimSpace(fmt.Sprintf("- 目标标题已经存在于基线文档中，不要重复输出该标题：%s\n- 如果需要继续展开子标题，子标题必须比目标标题低一级，使用 %s，禁止输出与目标标题同级的兄弟标题。", targetHeading, childMarks))
+	}
+	return ""
 }
 
 func buildDeterministicDocumentEditPatch(req *types.QARequest) (string, bool) {
@@ -609,6 +648,143 @@ func emitDedicatedDocumentEditPatch(ctx context.Context, req *types.QARequest, e
 			FinishReason:     finishReason,
 			AllowIndexing:    true,
 			AllowComplete:    true,
+			Extra:            buildDocumentEditPatchExtra(req, patch, true),
+			TotalDurationMs:  time.Since(startTime).Milliseconds(),
+		},
+	})
+}
+
+func resolveDocumentEditPatchHeading(req *types.QARequest) string {
+	if req == nil {
+		return ""
+	}
+	quotedContext := strings.TrimSpace(req.QuotedContext)
+	for _, candidate := range []string{
+		strings.TrimSpace(req.DocumentTargetHeading),
+		extractDocumentEditMetadataValue(quotedContext, "resolved_target_heading"),
+		extractDocumentEditMetadataValue(quotedContext, "target_heading"),
+		extractTaggedDocumentEditValue(quotedContext, "destination_section_heading"),
+	} {
+		if strings.TrimSpace(candidate) != "" {
+			return strings.TrimSpace(candidate)
+		}
+	}
+	return ""
+}
+
+func buildDocumentEditPatchExtra(req *types.QARequest, patch string, deterministic bool) map[string]interface{} {
+	trimmedPatch := strings.TrimSpace(patch)
+	if trimmedPatch == "" {
+		return nil
+	}
+	operations, detected, valid := parseChatDocumentPatch(trimmedPatch)
+	fallbackHeading := resolveDocumentEditPatchHeading(req)
+	headings := make([]string, 0, len(operations))
+	for _, operation := range operations {
+		if strings.TrimSpace(operation.Heading) != "" {
+			headings = append(headings, strings.TrimSpace(operation.Heading))
+		}
+	}
+	headings = uniqueNonEmptyStrings(headings)
+	resolvedHeading := ""
+	if fallbackHeading != "" {
+		resolvedHeading = fallbackHeading
+	} else if len(headings) == 1 {
+		resolvedHeading = headings[0]
+	}
+	mergeConfidence := "low"
+	if deterministic {
+		mergeConfidence = "high"
+	} else if detected {
+		if valid && resolvedHeading != "" {
+			mergeConfidence = "high"
+		} else {
+			mergeConfidence = "medium"
+		}
+	}
+	metadata := map[string]interface{}{
+		"structured":            detected,
+		"deterministic":         deterministic,
+		"merge_confidence":      mergeConfidence,
+		"patch_operation_count": len(operations),
+	}
+	if resolvedHeading != "" {
+		metadata["resolved_heading"] = resolvedHeading
+	}
+	return map[string]interface{}{"document_patch_metadata": metadata}
+}
+
+func mergeDocumentEditCompletionExtra(base map[string]interface{}, extra map[string]interface{}) map[string]interface{} {
+	if len(base) == 0 && len(extra) == 0 {
+		return nil
+	}
+	merged := make(map[string]interface{}, len(base)+len(extra))
+	for key, value := range base {
+		merged[key] = value
+	}
+	for key, value := range extra {
+		merged[key] = value
+	}
+	return merged
+}
+
+func buildDocumentEditKnowledgeQueries(req *types.QARequest) []string {
+	if req == nil {
+		return nil
+	}
+	heading := strings.TrimSpace(resolveDocumentEditPatchHeading(req))
+	queries := []string{}
+	if query := strings.TrimSpace(req.Query); query != "" {
+		queries = append(queries, strings.TrimSpace(strings.Join([]string{query, heading}, " ")))
+	}
+	if req.BaseArtifact != nil {
+		if title := strings.TrimSpace(req.BaseArtifact.Title); title != "" {
+			queries = append(queries, strings.TrimSpace(strings.Join([]string{title, heading}, " ")))
+		}
+	}
+	if heading != "" {
+		queries = append(queries, heading)
+	}
+	return uniqueNonEmptyStrings(queries)
+}
+
+func emitDedicatedDocumentEditLocalKnowledgeBlocked(ctx context.Context, req *types.QARequest, eventBus *event.EventBus, message string, extra map[string]interface{}, startTime time.Time) error {
+	if req == nil || req.Session == nil || eventBus == nil {
+		return errors.New("document edit local knowledge blocked event is incomplete")
+	}
+	if strings.TrimSpace(message) == "" {
+		message = "本地知识库未检索到足够证据，当前无法安全扩写目标章节，请补充资料后重试。"
+	}
+	if err := eventBus.Emit(ctx, event.Event{
+		ID:        generateEventID("document-edit-blocked"),
+		Type:      event.EventAgentFinalAnswer,
+		SessionID: req.Session.ID,
+		Data: dedicatedDocumentEditEventData(
+			message,
+			true,
+			types.MessageCompletionStatusPartial,
+			"local_knowledge_not_found",
+			"local_knowledge_not_found",
+			false,
+			true,
+		),
+	}); err != nil {
+		return err
+	}
+	return eventBus.Emit(ctx, event.Event{
+		ID:        generateEventID("complete"),
+		Type:      event.EventAgentComplete,
+		SessionID: req.Session.ID,
+		Data: event.AgentCompleteData{
+			SessionID:        req.Session.ID,
+			MessageID:        req.AssistantMessageID,
+			FinalAnswer:      message,
+			CompletionStatus: types.MessageCompletionStatusPartial,
+			FinishReason:     "local_knowledge_not_found",
+			FailureReason:    "local_knowledge_not_found",
+			AllowIndexing:    false,
+			AllowComplete:    true,
+			Extra:            extra,
 			TotalDurationMs:  time.Since(startTime).Milliseconds(),
 		},
 	})
@@ -1654,6 +1830,9 @@ func shouldNegotiateDocumentGenerationBudget(req *types.QARequest, capability *M
 	if req.AutoContinue || req.DocumentIntent == types.ChatDocumentIntentContinue {
 		return true
 	}
+	if req.DocumentIntent == types.ChatDocumentIntentRevise {
+		return true
+	}
 	return profile.AutoContinue
 }
 
@@ -2037,6 +2216,33 @@ func fullDocumentCompletionExtra(outline dedicatedFullDocumentOutline, completed
 		"outline":            dedicatedFullDocumentOutlineData(outline),
 		"completed_sections": uniqueNonEmptyStrings(completedSections),
 	}, budget)
+}
+
+func fullDocumentOutlineChatOptions(budget DocumentGenerationBudget, temperature float64) *chat.ChatOptions {
+	thinking := false
+	return &chat.ChatOptions{
+		Temperature:         temperature,
+		MaxCompletionTokens: budget.OutlineMaxCompletionTokens,
+		Thinking:            &thinking,
+	}
+}
+
+func fullDocumentSectionChatOptions(budget DocumentGenerationBudget, temperature float64) *chat.ChatOptions {
+	thinking := false
+	return &chat.ChatOptions{
+		Temperature:         temperature,
+		MaxCompletionTokens: budget.SectionMaxCompletionTokens,
+		Thinking:            &thinking,
+	}
+}
+
+func fullDocumentContinuationChatOptions(budget DocumentGenerationBudget, temperature float64) *chat.ChatOptions {
+	thinking := false
+	return &chat.ChatOptions{
+		Temperature:         temperature,
+		MaxCompletionTokens: budget.ContinuationMaxCompletionTokens,
+		Thinking:            &thinking,
+	}
 }
 
 func emitFullDocumentModelThinking(
@@ -4519,6 +4725,9 @@ func (s *sessionService) runKnowledgeGroundedDocumentContinuationPath(
 	} else if generationRun != nil {
 		outline := unmarshalGenerationRunOutline(generationRun.OutlineJSON)
 		searchTargets := resolveGenerationRunSearchTargets(agentConfig, generationRun)
+		if len(outline.Sections) > 0 && len(searchTargets) == 0 {
+			return s.runDedicatedDocumentContinuationRunPath(ctx, req, eventBus, chatModel, agentConfig, generationRun, outline)
+		}
 		if len(outline.Sections) > 0 && len(searchTargets) > 0 {
 			return s.runKnowledgeGroundedDocumentContinuationRunPath(ctx, req, eventBus, chatModel, agentConfig, generationRun, outline, searchTargets)
 		}
@@ -4563,15 +4772,12 @@ func (s *sessionService) runKnowledgeGroundedDocumentContinuationPath(
 	progress.UpdateStage("generating", fmt.Sprintf("已命中 %d 条本地知识证据，正在继续生成剩余文档内容。", len(evidence.Items)))
 
 	messages := buildKnowledgeGroundedDocumentContinuationMessages(req, language, req.BaseArtifact, evidence)
-	thinking := false
-	if agentConfig != nil && agentConfig.Thinking != nil {
-		thinking = *agentConfig.Thinking
+	temperature := 0.2
+	if agentConfig != nil {
+		temperature = agentConfig.Temperature
 	}
 	streamCtx, cancelStream := withDocumentGenerationCallTimeout(ctx, agentConfig, currentBudget)
-	stream, err := chatModel.ChatStream(streamCtx, messages, &chat.ChatOptions{
-		Temperature: agentConfig.Temperature,
-		Thinking:    &thinking,
-	})
+	stream, err := chatModel.ChatStream(streamCtx, messages, fullDocumentContinuationChatOptions(currentBudget, temperature))
 	if err != nil {
 		cancelStream()
 		logger.Errorf(ctx, "Knowledge grounded continuation stream start failed: %v", err)
@@ -4658,6 +4864,258 @@ func (s *sessionService) runKnowledgeGroundedDocumentContinuationPath(
 	return nil
 }
 
+func (s *sessionService) runDedicatedDocumentContinuationRunPath(
+	ctx context.Context,
+	req *types.QARequest,
+	eventBus *event.EventBus,
+	chatModel chat.Chat,
+	agentConfig *types.AgentConfig,
+	generationRun *types.ChatDocumentGenerationRun,
+	outline dedicatedFullDocumentOutline,
+) error {
+	language := types.LanguageNameFromContext(ctx)
+	startTime := time.Now()
+	progressEventID := generateEventID("document-continuation-progress")
+	progress := newFullDocumentProgressReporter(ctx, req, eventBus, progressEventID)
+	defer progress.Close()
+	budget := s.resolveDocumentGenerationBudget(ctx, req, chatModel, buildDocumentProfile(req, agentConfig, false, len(outline.Sections)), progress)
+	budget = mergePersistedDocumentGenerationBudget(budget, unmarshalGenerationRunBudget(generationRun.BudgetJSON))
+	runtimeFeedback := unmarshalGenerationRunRuntimeFeedback(generationRun.RuntimeFeedbackJSON)
+
+	completedSections := filterOutlineSections(outline, unmarshalGenerationRunStringSlice(generationRun.CompletedSectionsJSON))
+	remainingSections := remainingOutlineSections(outline, completedSections)
+	if len(remainingSections) == 0 {
+		if err := s.updateKnowledgeGroundedGenerationRun(ctx, generationRun, outline, completedSections, budget, runtimeFeedback, types.ChatDocumentGenerationStatusCompleted, types.MessageCompletionStatusCompleted, generationRun.AutoContinueRound); err != nil {
+			logger.Errorf(ctx, "Failed to finalize dedicated generation run without remaining sections: %v", err)
+		}
+		persistedRuntimeFeedback := unmarshalGenerationRunRuntimeFeedback(generationRun.RuntimeFeedbackJSON)
+		extra := buildKnowledgeGroundedGenerationRunExtra(generationRun, outline, nil, budget, persistedRuntimeFeedback)
+		extra["local_knowledge_used"] = false
+		return emitFullDocumentCompletion(ctx, req, eventBus, types.ChatDocumentCompletionMarker, types.MessageCompletionStatusCompleted, "stop", "", types.ChatDocumentGenerationStatusCompleted, progress.AgentSteps(), nil, extra, startTime)
+	}
+	if generationRun.MaxRounds > 0 && generationRun.AutoContinueRound >= generationRun.MaxRounds {
+		notice := "已达到自动续写轮次上限，剩余章节请人工继续生成或重新发起任务。"
+		if err := emitDedicatedFullDocumentAnswerChunk(ctx, req, eventBus, generateEventID("document-continuation"), notice, true, types.MessageCompletionStatusPartial, "auto_continue_round_limit"); err != nil {
+			logger.Errorf(ctx, "Failed to emit dedicated run continuation round limit notice: %v", err)
+		}
+		if err := s.updateKnowledgeGroundedGenerationRun(ctx, generationRun, outline, completedSections, budget, runtimeFeedback, types.ChatDocumentGenerationStatusBlocked, types.MessageCompletionStatusPartial, generationRun.AutoContinueRound); err != nil {
+			logger.Errorf(ctx, "Failed to update dedicated generation run after round limit: %v", err)
+		}
+		persistedRuntimeFeedback := unmarshalGenerationRunRuntimeFeedback(generationRun.RuntimeFeedbackJSON)
+		extra := buildKnowledgeGroundedGenerationRunExtra(generationRun, outline, nil, budget, persistedRuntimeFeedback)
+		extra["local_knowledge_used"] = false
+		return emitFullDocumentCompletion(ctx, req, eventBus, notice, types.MessageCompletionStatusPartial, "auto_continue_round_limit", "auto_continue_round_limit", types.ChatDocumentGenerationStatusBlocked, progress.AgentSteps(), nil, extra, startTime)
+	}
+
+	currentBudget := budget
+	sectionLimit := effectiveDocumentGenerationSectionLimit(runtimeFeedback)
+	if sectionLimit <= 0 || sectionLimit > len(remainingSections) {
+		sectionLimit = len(remainingSections)
+	}
+	nextSections := remainingSections[:sectionLimit]
+	progress.UpdateStage("generating", fmt.Sprintf("正在基于已保存的大纲继续生成后续章节，当前续写 %d 个章节。", len(nextSections)))
+
+	answerEventID := generateEventID("document-continuation")
+	var deltaContent strings.Builder
+	var completedSnapshot strings.Builder
+	baseSnapshot := strings.TrimSpace(req.BaseArtifact.ContentSnapshot)
+	if baseSnapshot != "" {
+		completedSnapshot.WriteString(baseSnapshot)
+		if !strings.HasSuffix(baseSnapshot, "\n\n") {
+			completedSnapshot.WriteString("\n\n")
+		}
+	}
+
+	temperature := 0.2
+	if agentConfig != nil {
+		temperature = agentConfig.Temperature
+	}
+	completionStatus := types.MessageCompletionStatusCompleted
+	finishReason := "stop"
+	failureReason := ""
+	documentGenerationStatus := types.ChatDocumentGenerationStatusCompleted
+	goalQuery := strings.TrimSpace(generationRun.OriginalQuery)
+	if goalQuery == "" {
+		goalQuery = strings.TrimSpace(req.AutoContinueOriginalQuery)
+	}
+	if goalQuery == "" {
+		goalQuery = strings.TrimSpace(req.Query)
+	}
+	sectionReq := *req
+	sectionReq.Query = goalQuery
+	newlyCompletedSections := append([]string(nil), completedSections...)
+	qualityIssues := make([]string, 0, len(nextSections))
+	executedRound := req.AutoContinueRound + 1
+	if executedRound <= 0 {
+		executedRound = generationRun.AutoContinueRound + 1
+	}
+	generationRunID := ""
+	if generationRun != nil {
+		generationRunID = generationRun.ID
+	}
+
+	for index, section := range nextSections {
+		select {
+		case <-ctx.Done():
+			completionStatus = types.MessageCompletionStatusCancelled
+			finishReason = "cancelled"
+			failureReason = "cancelled"
+			documentGenerationStatus = types.ChatDocumentGenerationStatusBlocked
+			goto finalize
+		default:
+		}
+
+		sectionOrdinal := len(newlyCompletedSections) + 1
+		totalSections := len(outline.Sections)
+		currentSection, found := findDedicatedFullDocumentSection(outline, section)
+		if !found {
+			currentSection, _ = normalizeDedicatedFullDocumentSection(dedicatedFullDocumentSection{Number: sectionOrdinal, Title: strings.TrimSpace(section)}, sectionOrdinal)
+		}
+		progress.SetSectionProgress(sectionOrdinal, totalSections, strings.TrimSpace(currentSection.Title))
+		progress.UpdateStage("generating", fmt.Sprintf("正在生成第 %d/%d 章“%s”。", sectionOrdinal, totalSections, strings.TrimSpace(currentSection.Title)))
+		logFullDocumentSectionConfig(ctx, req, agentConfig, globalDocumentGenerationLLMCallTimeoutSeconds(s.cfg), generationRunID, sectionOrdinal, totalSections, currentSection.Title, currentBudget, 0, currentBudget.SectionMaxCompletionTokens, false)
+
+		completedSummary := buildFullDocumentRollingSummary(outline, newlyCompletedSections, completedSnapshot.String())
+		headingChunk := formatDedicatedFullDocumentSectionHeadingMarkdown(currentSection) + "\n\n"
+		deltaContent.WriteString(headingChunk)
+		completedSnapshot.WriteString(headingChunk)
+		if err := emitDedicatedFullDocumentAnswerChunk(ctx, req, eventBus, answerEventID, headingChunk, false, types.MessageCompletionStatusCompleted, "streaming"); err != nil {
+			logger.Errorf(ctx, "Failed to emit dedicated run continuation heading chunk: %v", err)
+		}
+
+		sectionMessages := buildDedicatedFullDocumentSectionMessages(&sectionReq, language, outline.Title, outline, currentSection, completedSummary)
+		sectionCtx, cancelSection := withDocumentGenerationCallTimeout(ctx, agentConfig, currentBudget)
+		sectionStream, streamErr := chatModel.ChatStream(sectionCtx, sectionMessages, fullDocumentSectionChatOptions(currentBudget, temperature))
+		if streamErr != nil {
+			cancelSection()
+			if deltaContent.Len() > 0 {
+				completionStatus = types.MessageCompletionStatusPartial
+				finishReason = "section_generation_error"
+				failureReason = classifyDocumentEditError(streamErr)
+				documentGenerationStatus = types.ChatDocumentGenerationStatusContinuing
+				break
+			}
+			return s.emitDedicatedDocumentEditFailure(ctx, req, eventBus, classifyDocumentEditError(streamErr), streamErr)
+		}
+
+		var rawSectionContent strings.Builder
+		modelThinkingEventID := generateEventID("document-section-model-thinking")
+		streamResult := consumeFullDocumentSectionStream(sectionCtx, sectionStream, progress, fmt.Sprintf("第 %d/%d 章“%s”", sectionOrdinal, totalSections, strings.TrimSpace(currentSection.Title)), func(content string, done bool) {
+			emitFullDocumentModelThinking(ctx, req, eventBus, modelThinkingEventID, "generating", content, done, sectionOrdinal, totalSections, strings.TrimSpace(currentSection.Title))
+		}, func(content string) {
+			rawSectionContent.WriteString(content)
+			if err := emitDedicatedFullDocumentAnswerChunk(ctx, req, eventBus, answerEventID, content, false, types.MessageCompletionStatusCompleted, "streaming"); err != nil {
+				logger.Errorf(ctx, "Failed to emit dedicated run continuation section chunk: %v", err)
+			}
+		})
+		cancelSection()
+		sectionFeedback := buildDocumentRuntimeSectionFeedback(currentSection.Title, -1, streamResult)
+		adjustedBudget, adjustmentReasons, recommendedSectionLimit := adjustDocumentGenerationBudgetWithRuntimeFeedback(currentBudget, sectionFeedback)
+		runtimeFeedback = appendDocumentGenerationRuntimeFeedback(runtimeFeedback, sectionFeedback, adjustmentReasons, recommendedSectionLimit)
+		if len(adjustmentReasons) > 0 {
+			logger.Infof(ctx, "[DocumentBudget][RuntimeFeedback] section=%s reasons=%v next_section_tokens=%d next_section_top_k=%d next_timeout=%d recommended_section_limit=%d", strings.TrimSpace(currentSection.Title), adjustmentReasons, adjustedBudget.SectionMaxCompletionTokens, adjustedBudget.SectionEvidenceTopK, adjustedBudget.SectionCallTimeoutSeconds, runtimeFeedback.RecommendedSectionLimitPerRun)
+		}
+		currentBudget = adjustedBudget
+		if streamResult.completionStatus != types.MessageCompletionStatusCompleted {
+			partialSectionContent, sectionSignals := normalizeGeneratedMarkdown(rawSectionContent.String())
+			if strings.TrimSpace(partialSectionContent) != "" {
+				deltaContent.WriteString(partialSectionContent)
+				completedSnapshot.WriteString(partialSectionContent)
+			}
+			qualityIssues = append(qualityIssues, sectionSignals...)
+			completionStatus = streamResult.completionStatus
+			finishReason = streamResult.finishReason
+			failureReason = streamResult.failureReason
+			documentGenerationStatus = streamResult.documentGenerationState
+		} else if streamResult.sectionDone {
+			normalizedSectionContent, sectionSignals, qualityOK := applyGeneratedSectionMarkdownQualityGate(ctx, chatModel, agentConfig, currentBudget, currentSection, rawSectionContent.String())
+			qualityIssues = append(qualityIssues, sectionSignals...)
+			if strings.TrimSpace(normalizedSectionContent) != "" {
+				deltaContent.WriteString(normalizedSectionContent)
+				completedSnapshot.WriteString(normalizedSectionContent)
+			}
+			if !qualityOK {
+				logger.Warnf(ctx, "dedicated_run_continuation_section_markdown_quality_warning: session_id=%s, message_id=%s, section=%s, issues=%v", req.Session.ID, req.AssistantMessageID, strings.TrimSpace(currentSection.Title), uniqueNonEmptyStrings(sectionSignals))
+				if completionStatus == types.MessageCompletionStatusCompleted {
+					documentGenerationStatus = types.ChatDocumentGenerationStatusNeedsReview
+				}
+			}
+			if !strings.HasSuffix(completedSnapshot.String(), "\n\n") {
+				completedSnapshot.WriteString("\n\n")
+				if !strings.HasSuffix(deltaContent.String(), "\n\n") {
+					deltaContent.WriteString("\n\n")
+					if err := emitDedicatedFullDocumentAnswerChunk(ctx, req, eventBus, answerEventID, "\n\n", false, types.MessageCompletionStatusCompleted, "streaming"); err != nil {
+						logger.Errorf(ctx, "Failed to emit dedicated run continuation spacing chunk: %v", err)
+					}
+				}
+			}
+		}
+
+		if completionStatus != types.MessageCompletionStatusCompleted {
+			break
+		}
+		newlyCompletedSections = append(newlyCompletedSections, strings.TrimSpace(currentSection.Title))
+		if sectionOrdinal < totalSections {
+			progress.UpdateStage("generating", fmt.Sprintf("第 %d/%d 章“%s”已完成，继续生成下一章。", sectionOrdinal, totalSections, strings.TrimSpace(currentSection.Title)))
+		} else {
+			progress.UpdateStage("finalizing", fmt.Sprintf("第 %d/%d 章“%s”已完成，正在收尾完整文档。", sectionOrdinal, totalSections, strings.TrimSpace(currentSection.Title)))
+		}
+		if index == sectionLimit-1 && len(remainingSections) > sectionLimit {
+			completionStatus = types.MessageCompletionStatusPartial
+			finishReason = "section_batch_limit"
+			documentGenerationStatus = types.ChatDocumentGenerationStatusContinuing
+		}
+	}
+
+finalize:
+	if completionStatus == types.MessageCompletionStatusCompleted && len(remainingSections) > sectionLimit {
+		completionStatus = types.MessageCompletionStatusPartial
+		finishReason = "section_batch_limit"
+		documentGenerationStatus = types.ChatDocumentGenerationStatusContinuing
+	}
+	integrityContent := ""
+	integrityContent, completionStatus, finishReason, failureReason, documentGenerationStatus, qualityIssues = applyFullDocumentArtifactQualityGate(
+		ctx,
+		chatModel,
+		agentConfig,
+		currentBudget,
+		completedSnapshot.String(),
+		completionStatus,
+		finishReason,
+		failureReason,
+		documentGenerationStatus,
+		qualityIssues,
+	)
+	completionStatus, finishReason, failureReason, documentGenerationStatus, qualityIssues = applyArtifactFirstFullDocumentIntegrityOutcome(outline, newlyCompletedSections, integrityContent, completionStatus, finishReason, failureReason, documentGenerationStatus, qualityIssues)
+	if completionStatus == types.MessageCompletionStatusCompleted && strings.TrimSpace(documentGenerationStatus) == "" {
+		documentGenerationStatus = types.ChatDocumentGenerationStatusCompleted
+	}
+	if completionStatus == types.MessageCompletionStatusPartial && strings.TrimSpace(documentGenerationStatus) == "" {
+		documentGenerationStatus = types.ChatDocumentGenerationStatusContinuing
+	}
+	finalAnswer := strings.TrimSpace(deltaContent.String())
+	if finalAnswer == "" && completionStatus != types.MessageCompletionStatusCompleted {
+		return s.emitDedicatedDocumentEditFailure(ctx, req, eventBus, "empty_document_edit_completion", errors.New("dedicated continuation run completed without visible content"))
+	}
+	if err := s.updateKnowledgeGroundedGenerationRun(ctx, generationRun, outline, newlyCompletedSections, currentBudget, runtimeFeedback, documentGenerationStatus, completionStatus, executedRound); err != nil {
+		logger.Errorf(ctx, "Failed to update dedicated generation run: %v", err)
+	}
+	persistedRuntimeFeedback := unmarshalGenerationRunRuntimeFeedback(generationRun.RuntimeFeedbackJSON)
+	extra := buildKnowledgeGroundedGenerationRunExtra(generationRun, outline, nil, currentBudget, persistedRuntimeFeedback)
+	extra["local_knowledge_used"] = false
+	extra["completed_sections"] = uniqueNonEmptyStrings(newlyCompletedSections)
+	if normalizedQualityIssues := uniqueNonEmptyStrings(qualityIssues); len(normalizedQualityIssues) > 0 {
+		extra["quality_issues"] = normalizedQualityIssues
+	}
+	if err := emitDedicatedFullDocumentAnswerChunk(ctx, req, eventBus, answerEventID, "", true, completionStatus, finishReason); err != nil {
+		logger.Errorf(ctx, "Failed to emit dedicated run continuation done chunk: %v", err)
+	}
+	if completionStatus == types.MessageCompletionStatusCompleted && finalAnswer == "" {
+		finalAnswer = types.ChatDocumentCompletionMarker
+	}
+	return emitFullDocumentCompletion(ctx, req, eventBus, finalAnswer, completionStatus, finishReason, failureReason, documentGenerationStatus, progress.AgentSteps(), nil, extra, startTime)
+}
+
 func (s *sessionService) runKnowledgeGroundedDocumentContinuationRunPath(
 	ctx context.Context,
 	req *types.QARequest,
@@ -4679,9 +5137,13 @@ func (s *sessionService) runKnowledgeGroundedDocumentContinuationRunPath(
 
 	completedSections := filterOutlineSections(outline, unmarshalGenerationRunStringSlice(generationRun.CompletedSectionsJSON))
 	remainingSections := remainingOutlineSections(outline, completedSections)
-	extra := buildKnowledgeGroundedGenerationRunExtra(generationRun, outline, unmarshalGenerationRunStringSlice(generationRun.EffectiveKBIDsJSON), budget, runtimeFeedback)
-	extra["local_knowledge_used"] = true
 	if len(remainingSections) == 0 {
+		if err := s.updateKnowledgeGroundedGenerationRun(ctx, generationRun, outline, completedSections, budget, runtimeFeedback, types.ChatDocumentGenerationStatusCompleted, types.MessageCompletionStatusCompleted, generationRun.AutoContinueRound); err != nil {
+			logger.Errorf(ctx, "Failed to finalize knowledge grounded generation run without remaining sections: %v", err)
+		}
+		persistedRuntimeFeedback := unmarshalGenerationRunRuntimeFeedback(generationRun.RuntimeFeedbackJSON)
+		extra := buildKnowledgeGroundedGenerationRunExtra(generationRun, outline, unmarshalGenerationRunStringSlice(generationRun.EffectiveKBIDsJSON), budget, persistedRuntimeFeedback)
+		extra["local_knowledge_used"] = true
 		return emitFullDocumentCompletion(ctx, req, eventBus, types.ChatDocumentCompletionMarker, types.MessageCompletionStatusCompleted, "stop", "", types.ChatDocumentGenerationStatusCompleted, progress.AgentSteps(), nil, extra, startTime)
 	}
 	if generationRun.MaxRounds > 0 && generationRun.AutoContinueRound >= generationRun.MaxRounds {
@@ -4692,6 +5154,9 @@ func (s *sessionService) runKnowledgeGroundedDocumentContinuationRunPath(
 		if err := s.updateKnowledgeGroundedGenerationRun(ctx, generationRun, outline, completedSections, budget, runtimeFeedback, types.ChatDocumentGenerationStatusBlocked, types.MessageCompletionStatusPartial, generationRun.AutoContinueRound); err != nil {
 			logger.Errorf(ctx, "Failed to update knowledge grounded generation run after round limit: %v", err)
 		}
+		persistedRuntimeFeedback := unmarshalGenerationRunRuntimeFeedback(generationRun.RuntimeFeedbackJSON)
+		extra := buildKnowledgeGroundedGenerationRunExtra(generationRun, outline, unmarshalGenerationRunStringSlice(generationRun.EffectiveKBIDsJSON), budget, persistedRuntimeFeedback)
+		extra["local_knowledge_used"] = true
 		return emitFullDocumentCompletion(ctx, req, eventBus, notice, types.MessageCompletionStatusPartial, "auto_continue_round_limit", "auto_continue_round_limit", types.ChatDocumentGenerationStatusBlocked, progress.AgentSteps(), nil, extra, startTime)
 	}
 
@@ -4763,7 +5228,7 @@ func (s *sessionService) runKnowledgeGroundedDocumentContinuationRunPath(
 		progress.SetSectionProgress(sectionOrdinal, totalSections, strings.TrimSpace(currentSection.Title))
 		progress.ClearQueryProgress()
 		progress.UpdateStage("retrieving", fmt.Sprintf("正在检索第 %d/%d 章“%s”的本地证据。", sectionOrdinal, totalSections, strings.TrimSpace(currentSection.Title)))
-		logFullDocumentSectionConfig(ctx, req, agentConfig, globalDocumentGenerationLLMCallTimeoutSeconds(s.cfg), generationRunID, sectionOrdinal, totalSections, currentSection.Title, currentBudget, currentBudget.SectionEvidenceTopK, 0, true)
+		logFullDocumentSectionConfig(ctx, req, agentConfig, globalDocumentGenerationLLMCallTimeoutSeconds(s.cfg), generationRunID, sectionOrdinal, totalSections, currentSection.Title, currentBudget, currentBudget.SectionEvidenceTopK, currentBudget.SectionMaxCompletionTokens, true)
 		sectionEvidence, evidenceErr := retrieveKnowledgeGroundedFullDocumentEvidence(ctx, s.knowledgeBaseService, s.cfg, searchTargets, buildKnowledgeGroundedSectionQueriesForGoal(goalQuery, outline.Title, currentSection.Title), currentBudget.SectionEvidenceTopK, func(current int, total int, query string) {
 			progress.SetQueryProgress(current, total)
 			progress.UpdateStage("retrieving", fmt.Sprintf("正在检索第 %d/%d 章“%s”的本地证据（%d/%d）：%s", sectionOrdinal, totalSections, strings.TrimSpace(currentSection.Title), current, total, query))
@@ -4808,12 +5273,8 @@ func (s *sessionService) runKnowledgeGroundedDocumentContinuationRunPath(
 		}
 
 		sectionMessages := buildKnowledgeGroundedFullDocumentSectionMessages(&sectionReq, language, outline.Title, outline, currentSection, completedSummary, sectionEvidence)
-		sectionThinking := false
 		sectionCtx, cancelSection := withDocumentGenerationCallTimeout(ctx, agentConfig, currentBudget)
-		sectionStream, streamErr := chatModel.ChatStream(sectionCtx, sectionMessages, &chat.ChatOptions{
-			Temperature: temperature,
-			Thinking:    &sectionThinking,
-		})
+		sectionStream, streamErr := chatModel.ChatStream(sectionCtx, sectionMessages, fullDocumentSectionChatOptions(currentBudget, temperature))
 		if streamErr != nil {
 			cancelSection()
 			if deltaContent.Len() > 0 {
@@ -4925,12 +5386,13 @@ finalize:
 	if finalAnswer == "" && completionStatus != types.MessageCompletionStatusCompleted {
 		return s.emitDedicatedDocumentEditFailure(ctx, req, eventBus, "empty_document_edit_completion", errors.New("knowledge grounded continuation run completed without visible content"))
 	}
-	extra = buildKnowledgeGroundedGenerationRunExtra(generationRun, outline, unmarshalGenerationRunStringSlice(generationRun.EffectiveKBIDsJSON), currentBudget, runtimeFeedback)
-	extra["local_knowledge_used"] = true
 	if err := s.updateKnowledgeGroundedGenerationRun(ctx, generationRun, outline, newlyCompletedSections, currentBudget, runtimeFeedback, documentGenerationStatus, completionStatus, executedRound); err != nil {
 		logger.Errorf(ctx, "Failed to update knowledge grounded generation run: %v", err)
 	}
 	refs := buildKnowledgeGroundedEvidenceRefs(evidencePacks...)
+	persistedRuntimeFeedback := unmarshalGenerationRunRuntimeFeedback(generationRun.RuntimeFeedbackJSON)
+	extra := buildKnowledgeGroundedGenerationRunExtra(generationRun, outline, unmarshalGenerationRunStringSlice(generationRun.EffectiveKBIDsJSON), currentBudget, persistedRuntimeFeedback)
+	extra["local_knowledge_used"] = true
 	extra["evidence_refs"] = refs
 	extra["evidence_queries"] = flattenKnowledgeGroundedEvidenceQueries(evidencePacks...)
 	if normalizedQualityIssues := uniqueNonEmptyStrings(qualityIssues); len(normalizedQualityIssues) > 0 {
@@ -4989,16 +5451,7 @@ func (s *sessionService) runKnowledgeGroundedFullDocumentGenerationPath(
 	progress.UpdateStage("planning", fmt.Sprintf("已命中 %d 条本地知识证据，正在规划完整大纲。", len(outlineEvidence.Items)))
 
 	outlineMessages := buildKnowledgeGroundedFullDocumentOutlineMessages(req, language, outlineEvidence)
-	thinking := false
-	if agentConfig != nil && agentConfig.Thinking != nil {
-		thinking = *agentConfig.Thinking
-	}
-
-	outline, err := generateValidatedFullDocumentOutline(ctx, req, eventBus, chatModel, outlineMessages, &chat.ChatOptions{
-		Temperature:         0.2,
-		MaxCompletionTokens: currentBudget.OutlineMaxCompletionTokens,
-		Thinking:            &thinking,
-	}, progress, "正在规划完整文档大纲", req.Query)
+	outline, err := generateValidatedFullDocumentOutline(ctx, req, eventBus, chatModel, outlineMessages, fullDocumentOutlineChatOptions(currentBudget, 0.2), progress, "正在规划完整文档大纲", req.Query)
 	if err != nil {
 		if strings.TrimSpace(err.Error()) == "outline_parse_failed" {
 			return emitFullDocumentOutlineParseFailure(ctx, req, eventBus, "生成的大纲结构异常，无法继续生成完整文档，请稍后重试。", withDocumentGenerationBudgetExtra(map[string]interface{}{
@@ -5098,7 +5551,7 @@ func (s *sessionService) runKnowledgeGroundedFullDocumentGenerationPath(
 		evidencePacks = append(evidencePacks, sectionEvidence)
 		progress.SetSectionProgress(sectionNumber, len(sectionsToGenerate), strings.TrimSpace(currentSection.Title))
 		progress.UpdateStage("generating", fmt.Sprintf("已检索到 %d 条证据，正在生成第 %d/%d 章“%s”。", len(sectionEvidence.Items), sectionNumber, len(sectionsToGenerate), strings.TrimSpace(currentSection.Title)))
-		logFullDocumentSectionConfig(ctx, req, agentConfig, globalDocumentGenerationLLMCallTimeoutSeconds(s.cfg), generationRunID, sectionNumber, len(sectionsToGenerate), currentSection.Title, currentBudget, currentBudget.SectionEvidenceTopK, 0, true)
+		logFullDocumentSectionConfig(ctx, req, agentConfig, globalDocumentGenerationLLMCallTimeoutSeconds(s.cfg), generationRunID, sectionNumber, len(sectionsToGenerate), currentSection.Title, currentBudget, currentBudget.SectionEvidenceTopK, currentBudget.SectionMaxCompletionTokens, true)
 
 		completedSummary := buildFullDocumentRollingSummary(outline, completedSections, finalContent.String())
 		headingChunk := formatDedicatedFullDocumentSectionHeadingMarkdown(currentSection) + "\n\n"
@@ -5108,12 +5561,8 @@ func (s *sessionService) runKnowledgeGroundedFullDocumentGenerationPath(
 		}
 
 		sectionMessages := buildKnowledgeGroundedFullDocumentSectionMessages(req, language, outline.Title, outline, currentSection, completedSummary, sectionEvidence)
-		sectionThinking := false
 		sectionCtx, cancelSection := withDocumentGenerationCallTimeout(ctx, agentConfig, currentBudget)
-		sectionStream, streamErr := chatModel.ChatStream(sectionCtx, sectionMessages, &chat.ChatOptions{
-			Temperature: temperature,
-			Thinking:    &sectionThinking,
-		})
+		sectionStream, streamErr := chatModel.ChatStream(sectionCtx, sectionMessages, fullDocumentSectionChatOptions(currentBudget, temperature))
 		if streamErr != nil {
 			cancelSection()
 			if finalContent.Len() > len([]rune(titleChunk)) {
@@ -5213,16 +5662,20 @@ finalize:
 		logger.Errorf(ctx, "Failed to emit knowledge grounded full document done chunk: %v", err)
 	}
 	refs := buildKnowledgeGroundedEvidenceRefs(evidencePacks...)
-	extra := buildKnowledgeGroundedGenerationRunExtra(generationRun, outline, outlineEvidence.ScopeKBIDs, currentBudget, runtimeFeedback)
+	if err := s.updateKnowledgeGroundedGenerationRun(ctx, generationRun, outline, completedSections, currentBudget, runtimeFeedback, documentGenerationStatus, completionStatus, 1); err != nil {
+		logger.Errorf(ctx, "Failed to update knowledge grounded generation run: %v", err)
+	}
+	persistedRuntimeFeedback := runtimeFeedback
+	if generationRun != nil {
+		persistedRuntimeFeedback = unmarshalGenerationRunRuntimeFeedback(generationRun.RuntimeFeedbackJSON)
+	}
+	extra := buildKnowledgeGroundedGenerationRunExtra(generationRun, outline, outlineEvidence.ScopeKBIDs, currentBudget, persistedRuntimeFeedback)
 	extra["local_knowledge_used"] = true
 	extra["evidence_refs"] = refs
 	extra["evidence_queries"] = outlineEvidence.Queries
 	extra["completed_sections"] = uniqueNonEmptyStrings(completedSections)
 	if normalizedQualityIssues := uniqueNonEmptyStrings(qualityIssues); len(normalizedQualityIssues) > 0 {
 		extra["quality_issues"] = normalizedQualityIssues
-	}
-	if err := s.updateKnowledgeGroundedGenerationRun(ctx, generationRun, outline, completedSections, currentBudget, runtimeFeedback, documentGenerationStatus, completionStatus, 1); err != nil {
-		logger.Errorf(ctx, "Failed to update knowledge grounded generation run: %v", err)
 	}
 	if err := emitFullDocumentCompletion(ctx, req, eventBus, finalAnswer, completionStatus, finishReason, failureReason, documentGenerationStatus, progress.AgentSteps(), refs, extra, startTime); err != nil {
 		logger.Errorf(ctx, "Failed to emit knowledge grounded full document completion event: %v", err)
@@ -5250,17 +5703,9 @@ func (s *sessionService) runDedicatedFullDocumentGenerationPath(
 	currentBudget := budget
 	runtimeFeedback := documentGenerationRuntimeFeedback{}
 	outlineMessages := buildDedicatedFullDocumentOutlineMessages(req, language)
-	thinking := false
-	if agentConfig != nil && agentConfig.Thinking != nil {
-		thinking = *agentConfig.Thinking
-	}
 	progress.UpdateStage("planning", "正在规划完整文档大纲。")
 
-	outline, err := generateValidatedFullDocumentOutline(ctx, req, eventBus, chatModel, outlineMessages, &chat.ChatOptions{
-		Temperature:         0.2,
-		MaxCompletionTokens: currentBudget.OutlineMaxCompletionTokens,
-		Thinking:            &thinking,
-	}, progress, "正在规划完整文档大纲", req.Query)
+	outline, err := generateValidatedFullDocumentOutline(ctx, req, eventBus, chatModel, outlineMessages, fullDocumentOutlineChatOptions(currentBudget, 0.2), progress, "正在规划完整文档大纲", req.Query)
 	if err != nil {
 		if strings.TrimSpace(err.Error()) == "outline_parse_failed" {
 			return emitFullDocumentOutlineParseFailure(ctx, req, eventBus, "生成的大纲结构异常，无法继续生成完整文档，请稍后重试。", withDocumentGenerationBudgetExtra(nil, budget), startTime)
@@ -5269,6 +5714,11 @@ func (s *sessionService) runDedicatedFullDocumentGenerationPath(
 		return s.emitDedicatedDocumentEditFailure(ctx, req, eventBus, classifyDocumentEditError(err), err)
 	}
 	progress.PublishOutline(outline)
+	generationRun, err := s.createKnowledgeGroundedGenerationRun(ctx, req, chatModel, outline, currentBudget, nil)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to create dedicated generation run: %v", err)
+		return s.emitDedicatedDocumentEditFailure(ctx, req, eventBus, classifyDocumentEditError(err), err)
+	}
 
 	sectionsToGenerate := fullDocumentSectionsForInitialRun(outline)
 	temperature := 0.2
@@ -5311,7 +5761,11 @@ func (s *sessionService) runDedicatedFullDocumentGenerationPath(
 		progress.SetSectionProgress(sectionNumber, len(sectionsToGenerate), strings.TrimSpace(currentSection.Title))
 		progress.ClearQueryProgress()
 		progress.UpdateStage("generating", fmt.Sprintf("正在生成第 %d/%d 章：%s", sectionNumber, len(sectionsToGenerate), strings.TrimSpace(currentSection.Title)))
-		logFullDocumentSectionConfig(ctx, req, agentConfig, globalDocumentGenerationLLMCallTimeoutSeconds(s.cfg), "", sectionNumber, len(sectionsToGenerate), currentSection.Title, currentBudget, 0, 0, false)
+		generationRunID := ""
+		if generationRun != nil {
+			generationRunID = generationRun.ID
+		}
+		logFullDocumentSectionConfig(ctx, req, agentConfig, globalDocumentGenerationLLMCallTimeoutSeconds(s.cfg), generationRunID, sectionNumber, len(sectionsToGenerate), currentSection.Title, currentBudget, 0, currentBudget.SectionMaxCompletionTokens, false)
 		completedSummary := buildFullDocumentRollingSummary(outline, completedSections, finalContent.String())
 		headingChunk := formatDedicatedFullDocumentSectionHeadingMarkdown(currentSection) + "\n\n"
 		finalContent.WriteString(headingChunk)
@@ -5320,12 +5774,8 @@ func (s *sessionService) runDedicatedFullDocumentGenerationPath(
 		}
 
 		sectionMessages := buildDedicatedFullDocumentSectionMessages(req, language, outline.Title, outline, currentSection, completedSummary)
-		sectionThinking := false
 		sectionCtx, cancelSection := withDocumentGenerationCallTimeout(ctx, agentConfig, currentBudget)
-		sectionStream, streamErr := chatModel.ChatStream(sectionCtx, sectionMessages, &chat.ChatOptions{
-			Temperature: temperature,
-			Thinking:    &sectionThinking,
-		})
+		sectionStream, streamErr := chatModel.ChatStream(sectionCtx, sectionMessages, fullDocumentSectionChatOptions(currentBudget, temperature))
 		if streamErr != nil {
 			cancelSection()
 			if finalContent.Len() > len([]rune(titleChunk)) {
@@ -5424,8 +5874,17 @@ finalize:
 	if err := emitDedicatedFullDocumentAnswerChunk(ctx, req, eventBus, answerEventID, "", true, completionStatus, finishReason); err != nil {
 		logger.Errorf(ctx, "Failed to emit full document done chunk: %v", err)
 	}
-	extra := fullDocumentCompletionExtra(outline, completedSections, currentBudget)
-	extra = withDocumentGenerationRuntimeFeedbackExtra(extra, runtimeFeedback)
+	if err := s.updateKnowledgeGroundedGenerationRun(ctx, generationRun, outline, completedSections, currentBudget, runtimeFeedback, documentGenerationStatus, completionStatus, 1); err != nil {
+		logger.Errorf(ctx, "Failed to update dedicated generation run: %v", err)
+	}
+	persistedRuntimeFeedback := runtimeFeedback
+	if generationRun != nil {
+		persistedRuntimeFeedback = unmarshalGenerationRunRuntimeFeedback(generationRun.RuntimeFeedbackJSON)
+	}
+	extra := buildKnowledgeGroundedGenerationRunExtra(generationRun, outline, nil, currentBudget, persistedRuntimeFeedback)
+	extra["local_knowledge_used"] = false
+	extra["completed_sections"] = uniqueNonEmptyStrings(completedSections)
+	extra = withDocumentGenerationRuntimeFeedbackExtra(extra, persistedRuntimeFeedback)
 	if normalizedQualityIssues := uniqueNonEmptyStrings(qualityIssues); len(normalizedQualityIssues) > 0 {
 		extra["quality_issues"] = normalizedQualityIssues
 	}
@@ -5596,7 +6055,7 @@ func (s *sessionService) runDedicatedDocumentEditPath(
 		return errors.New("document edit request is incomplete")
 	}
 	language := types.LanguageNameFromContext(ctx)
-	messages := buildDedicatedDocumentEditMessages(req, language)
+	useLocalKnowledge := hasEffectiveLocalKnowledgeScope(req, agentConfig)
 	logger.Infof(ctx, "document_edit_path_selected: session_id=%s, message_id=%s, base_artifact_id=%s, output_mode=%s, quoted_context_len=%d",
 		req.Session.ID, req.AssistantMessageID, req.BaseArtifactID, req.DocumentOutputMode, len([]rune(strings.TrimSpace(req.QuotedContext))))
 	if patch, ok := buildDeterministicDocumentEditPatch(req); ok {
@@ -5608,7 +6067,37 @@ func (s *sessionService) runDedicatedDocumentEditPath(
 		return nil
 	}
 	thinking := false
-	maxCompletionTokens := s.cfg.Conversation.Summary.MaxCompletionTokens
+	editBudget := fallbackDocumentGenerationBudget(s.cfg)
+	if s != nil {
+		editBudget = s.resolveDocumentGenerationBudget(ctx, req, chatModel, buildDocumentProfile(req, agentConfig, useLocalKnowledge, 1), nil)
+	}
+	evidence := knowledgeGroundedEvidencePack{}
+	completionExtra := map[string]interface{}{}
+	if useLocalKnowledge {
+		var err error
+		evidence, err = retrieveKnowledgeGroundedFullDocumentEvidence(ctx, s.knowledgeBaseService, s.cfg, agentConfig.SearchTargets, buildDocumentEditKnowledgeQueries(req), editBudget.SectionEvidenceTopK)
+		if err != nil {
+			logger.Errorf(ctx, "Dedicated document edit evidence retrieval failed: %v", err)
+			return s.emitDedicatedDocumentEditFailure(ctx, req, eventBus, classifyDocumentEditError(err), err)
+		}
+		if len(evidence.Items) == 0 {
+			completionExtra = map[string]interface{}{
+				"local_knowledge_used": true,
+				"evidence_refs":        []interface{}{},
+				"effective_kb_ids":     evidence.ScopeKBIDs,
+				"evidence_queries":     evidence.Queries,
+			}
+			return emitDedicatedDocumentEditLocalKnowledgeBlocked(ctx, req, eventBus, "本地知识库未检索到足够证据，当前无法安全扩写目标章节，请补充资料后重试。", completionExtra, time.Now())
+		}
+		completionExtra = map[string]interface{}{
+			"local_knowledge_used": true,
+			"evidence_refs":        buildKnowledgeGroundedEvidenceRefs(evidence),
+			"effective_kb_ids":     evidence.ScopeKBIDs,
+			"evidence_queries":     evidence.Queries,
+		}
+	}
+	messages := buildDedicatedDocumentEditMessages(req, language, evidence)
+	maxCompletionTokens := editBudget.ContinuationMaxCompletionTokens
 	if maxCompletionTokens <= 0 {
 		maxCompletionTokens = 4096
 	}
@@ -5629,9 +6118,9 @@ func (s *sessionService) runDedicatedDocumentEditPath(
 		err = errors.New("document edit stream returned nil channel")
 		return s.emitDedicatedDocumentEditFailure(ctx, req, eventBus, "document_edit_error", err)
 	}
-	logger.Infof(ctx, "document_edit_stream_started: session_id=%s, message_id=%s, model=%s, max_completion_tokens=%d, first_visible_stream_timeout_ms=%d",
-		req.Session.ID, req.AssistantMessageID, chatModel.GetModelID(), maxCompletionTokens, firstContentTimeout.Milliseconds())
-	s.consumeDedicatedDocumentEditStream(context.WithoutCancel(streamCtx), req, eventBus, responseChan, firstContentTimeout)
+	logger.Infof(ctx, "document_edit_stream_started: session_id=%s, message_id=%s, model=%s, budget_source=%s, max_completion_tokens=%d, first_visible_stream_timeout_ms=%d",
+		req.Session.ID, req.AssistantMessageID, chatModel.GetModelID(), editBudget.Source, maxCompletionTokens, firstContentTimeout.Milliseconds())
+	s.consumeDedicatedDocumentEditStream(context.WithoutCancel(streamCtx), req, eventBus, responseChan, firstContentTimeout, completionExtra)
 	return nil
 }
 
@@ -5641,6 +6130,7 @@ func (s *sessionService) consumeDedicatedDocumentEditStream(
 	eventBus *event.EventBus,
 	responseChan <-chan types.StreamResponse,
 	firstContentTimeout time.Duration,
+	completionExtra map[string]interface{},
 ) {
 	eventID := generateEventID("document-edit")
 	progressEventID := generateEventID("document-edit-progress")
@@ -5764,6 +6254,7 @@ func (s *sessionService) consumeDedicatedDocumentEditStream(
 								FinishReason:     finishReason,
 								AllowIndexing:    true,
 								AllowComplete:    true,
+								Extra:            mergeDocumentEditCompletionExtra(buildDocumentEditPatchExtra(req, finalContent.String(), false), completionExtra),
 								TotalDurationMs:  time.Since(startTime).Milliseconds(),
 							},
 						}); err != nil {
@@ -5820,6 +6311,7 @@ func (s *sessionService) consumeDedicatedDocumentEditStream(
 						FinishReason:     finishReason,
 						AllowIndexing:    true,
 						AllowComplete:    true,
+						Extra:            mergeDocumentEditCompletionExtra(buildDocumentEditPatchExtra(req, finalContent.String(), false), completionExtra),
 						TotalDurationMs:  time.Since(startTime).Milliseconds(),
 					},
 				}); err != nil {
@@ -5850,6 +6342,7 @@ finalize:
 			FailureReason:    dedicatedDocumentEditFailureReasonForStatus(terminalStatus, failureReason),
 			AllowIndexing:    false,
 			AllowComplete:    false,
+			Extra:            mergeDocumentEditCompletionExtra(buildDocumentEditPatchExtra(req, finalContent.String(), false), completionExtra),
 			TotalDurationMs:  time.Since(startTime).Milliseconds(),
 		},
 	}); emitErr != nil {
