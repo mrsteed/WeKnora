@@ -19,13 +19,14 @@
                 </span>
             </div>
             <docInfo :session="session" :is-share-page-mode="isSharePageMode"></docInfo>
-            <AgentStreamDisplay :session="session" :user-query="userQuery" :is-share-page-mode="isSharePageMode" v-if="session.isAgentMode" @retry="emitRetry"></AgentStreamDisplay>
+            <AgentStreamDisplay :session="session" :user-query="userQuery" :is-share-page-mode="isSharePageMode" :public-export-api-base="publicExportApiBase" v-if="session.isAgentMode" @retry="emitRetry"></AgentStreamDisplay>
             <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
             <ChatDocumentArtifactCard
                 v-if="session.chat_document_artifact"
                 :artifact="session.chat_document_artifact"
                 :preview-content="artifactDocumentContent"
-                :allow-export="!isSharePageMode"
+                :allow-export="true"
+                :export-api-base="publicExportApiBase"
                 :can-toggle-document-display="canToggleArtifactDisplay"
                 :document-display-mode="documentDisplayMode"
                 :selected-artifact-id="selectedArtifactId"
@@ -64,11 +65,11 @@
                 </div>
             </div>
             <!-- 复制和添加到知识库按钮 - 非 Agent 模式下显示 -->
-            <div v-if="session.is_completed && exportableContent && !isSharePageMode" class="answer-toolbar">
+            <div v-if="session.is_completed && exportableContent" class="answer-toolbar">
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer" :title="$t('agent.copy')">
                     <t-icon name="copy" />
                 </t-button>
-                <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge" :title="$t('agent.addToKnowledgeBase')">
+                <t-button v-if="!isSharePageMode" size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge" :title="$t('agent.addToKnowledgeBase')">
                     <t-icon name="add" />
                 </t-button>
                 <!-- Fallback 提示图标 -->
@@ -80,6 +81,7 @@
                 <ExportDropdown
                     :content="exportableContent"
                     :filename-prefix="exportFilenamePrefix"
+                    :export-api-base="publicExportApiBase"
                 />
             </div>
             <div v-if="isImgLoading" class="img_loading"><t-loading size="small"></t-loading><span>{{ $t('common.loading') }}</span></div>
@@ -167,6 +169,10 @@ const props = defineProps({
     isSharePageMode: {
         type: Boolean,
         default: false
+    },
+    publicExportApiBase: {
+        type: String,
+        default: ''
     },
     selectedArtifactId: {
         type: String,

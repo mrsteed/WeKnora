@@ -76,7 +76,7 @@ export const triggerDownload = (blob: Blob, filename: string): void => {
 // ============================================================
 // 后端导出能力缓存
 // ============================================================
-let _capabilities: ExportCapabilities | null = null;
+const capabilityCache = new Map<string, ExportCapabilities>();
 
 const EXPORT_EXTENSION_MAP: Record<ExportFormat, string> = {
   markdown: 'md',
@@ -87,30 +87,39 @@ const EXPORT_EXTENSION_MAP: Record<ExportFormat, string> = {
 
 const EVIDENCE_APPENDIX_HEADING = '## 本地知识库引用附录';
 
+const buildExportApiBase = (apiBase?: string): string => {
+  return typeof apiBase === 'string' && apiBase.trim() ? apiBase.trim() : '/api/v1/export';
+};
+
 /**
  * 查询后端导出能力。
  * 当能力探测失败时保留默认可用状态，避免探测异常直接屏蔽导出入口。
  */
-export const getExportCapabilities = async (): Promise<ExportCapabilities> => {
-  if (_capabilities) return _capabilities;
+export const getExportCapabilities = async (apiBase?: string): Promise<ExportCapabilities> => {
+  const exportApiBase = buildExportApiBase(apiBase);
+  const cached = capabilityCache.get(exportApiBase);
+  if (cached) return cached;
   try {
-    const res = await get('/api/v1/export/capabilities');
+    const res = await get(`${exportApiBase}/capabilities`);
     const data = (res as any).data?.data || (res as any).data;
-    _capabilities = {
+    const capabilities = {
       markdown: normalizeCapability(data?.markdown, true, 'builtin', 2 * 1024 * 1024, 5),
       pdf: normalizeCapability(data?.pdf, false, 'chromium', 1024 * 1024, 45),
       docx: normalizeCapability(data?.docx, false, 'pandoc', 1024 * 1024, 30),
       xlsx: normalizeCapability(data?.xlsx, true, 'excelize', 1024 * 1024, 10),
     };
+    capabilityCache.set(exportApiBase, capabilities);
+    return capabilities;
   } catch {
-    _capabilities = {
+    const fallbackCapabilities = {
       markdown: normalizeCapability(undefined, true, 'builtin', 2 * 1024 * 1024, 5),
       pdf: normalizeCapability(undefined, true, 'chromium', 1024 * 1024, 45),
       docx: normalizeCapability(undefined, true, 'pandoc', 1024 * 1024, 30),
       xlsx: normalizeCapability(undefined, true, 'excelize', 1024 * 1024, 10),
     };
+    capabilityCache.set(exportApiBase, fallbackCapabilities);
+    return fallbackCapabilities;
   }
-  return _capabilities;
 };
 
 const normalizeCapability = (
@@ -134,10 +143,11 @@ const exportViaBackend = async (
   content: string,
   format: ExportFormat,
   filename: string,
+  exportApiBase?: string,
 ): Promise<void> => {
   let res: any;
   try {
-    res = await postBlob('/api/v1/export/document', {
+    res = await postBlob(`${buildExportApiBase(exportApiBase)}/document`, {
       content,
       format,
       filename_prefix: filename,
@@ -173,29 +183,29 @@ const exportViaBackend = async (
 /**
  * 导出为 Markdown 文件。
  */
-export const exportAsMarkdown = async (content: string, filename: string): Promise<void> => {
-  await exportViaBackend(content, 'markdown', filename);
+export const exportAsMarkdown = async (content: string, filename: string, exportApiBase?: string): Promise<void> => {
+  await exportViaBackend(content, 'markdown', filename, exportApiBase);
 };
 
 /**
  * 导出为 PDF 文件。
  */
-export const exportAsPDF = async (content: string, filename: string): Promise<void> => {
-  await exportViaBackend(content, 'pdf', filename);
+export const exportAsPDF = async (content: string, filename: string, exportApiBase?: string): Promise<void> => {
+  await exportViaBackend(content, 'pdf', filename, exportApiBase);
 };
 
 /**
  * 导出为 Word DOCX 文件。
  */
-export const exportAsWord = async (content: string, filename: string): Promise<void> => {
-  await exportViaBackend(content, 'docx', filename);
+export const exportAsWord = async (content: string, filename: string, exportApiBase?: string): Promise<void> => {
+  await exportViaBackend(content, 'docx', filename, exportApiBase);
 };
 
 /**
  * 导出为 XLSX 文件。
  */
-export const exportAsXLSX = async (content: string, filename: string): Promise<void> => {
-  await exportViaBackend(content, 'xlsx', filename);
+export const exportAsXLSX = async (content: string, filename: string, exportApiBase?: string): Promise<void> => {
+  await exportViaBackend(content, 'xlsx', filename, exportApiBase);
 };
 
 export const appendChatDocumentEvidenceAppendix = (

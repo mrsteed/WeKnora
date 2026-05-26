@@ -120,6 +120,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 	RegisterIMRoutes(r, params.IMHandler)
 	RegisterPublicAgentPageShareRoutes(r, params.CustomAgentHandler)
 	RegisterPublicAgentPageShareChatRoutes(r, params.SessionHandler)
+	RegisterPublicAgentPageShareExportRoutes(r, params.ExportHandler)
 
 	// 认证中间件
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
@@ -668,6 +669,15 @@ func RegisterPublicAgentPageShareChatRoutes(r *gin.Engine, sessionHandler *sessi
 		public.POST("/agent-page-shares/:share_code/chat/continue", sessionHandler.ContinuePublicAgentPageShareStream)
 		public.GET("/agent-page-shares/:share_code/sessions/continue-stream/:session_id", sessionHandler.ContinuePublicAgentPageShareStream)
 		public.POST("/agent-page-shares/:share_code/sessions/:session_id/stop", sessionHandler.StopPublicAgentPageShareSession)
+	}
+}
+
+// RegisterPublicAgentPageShareExportRoutes registers anonymous export routes for agent share pages.
+func RegisterPublicAgentPageShareExportRoutes(r *gin.Engine, exportHandler *handler.ExportHandler) {
+	public := r.Group("/api/v1/public")
+	{
+		public.GET("/agent-page-shares/:share_code/export/capabilities", exportHandler.PublicAgentPageShareExportCapabilities)
+		public.POST("/agent-page-shares/:share_code/export/document", exportHandler.PublicAgentPageShareExportDocument)
 	}
 }
 

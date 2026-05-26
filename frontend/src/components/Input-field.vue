@@ -2172,7 +2172,7 @@ defineExpose({
 
 </script>
 <template>
-  <div class="answers-input" @drop="onDrop" @dragover="onDragOver">
+  <div class="answers-input" :class="{ 'is-embedded': effectiveEmbeddedMode || isSharePageMode }" @drop="onDrop" @dragover="onDragOver">
     <!-- Hidden file input for image upload -->
     <input
       ref="imageInputRef"
@@ -2527,6 +2527,15 @@ const getImgSrc = (url: string) => {
   width: 100%;
   display: flex;
   justify-content: center;
+
+  &.is-embedded {
+    position: relative;
+    bottom: auto;
+    left: auto;
+    transform: none;
+    max-width: 800px;
+    margin: 0 auto;
+  }
 }
 
 /* 富文本输入框容器 */

@@ -55,12 +55,14 @@ interface Props {
   contentResolver?: () => Promise<string> | string;
   filenamePrefix?: string;
   disabled?: boolean;
+  exportApiBase?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   content: '',
   filenamePrefix: '',
   disabled: false,
+  exportApiBase: '',
 });
 
 const { t } = useI18n();
@@ -82,7 +84,7 @@ const exportFormats = computed(() => [
 ]);
 
 const loadCapabilities = async () => {
-  exportCapabilities.value = await getExportCapabilities();
+  exportCapabilities.value = await getExportCapabilities(props.exportApiBase || undefined);
 };
 
 const toggleMenu = () => {
@@ -133,16 +135,16 @@ const handleExport = async (format: ExportFormat) => {
     const filename = generateFilename(props.filenamePrefix || undefined);
     switch (format) {
       case 'pdf':
-        await exportAsPDF(content, filename);
+        await exportAsPDF(content, filename, props.exportApiBase || undefined);
         break;
       case 'markdown':
-        await exportAsMarkdown(content, filename);
+        await exportAsMarkdown(content, filename, props.exportApiBase || undefined);
         break;
       case 'docx':
-        await exportAsWord(content, filename);
+        await exportAsWord(content, filename, props.exportApiBase || undefined);
         break;
       case 'xlsx':
-        await exportAsXLSX(content, filename);
+        await exportAsXLSX(content, filename, props.exportApiBase || undefined);
         break;
     }
     MessagePlugin.success(t('chatExport.success'));

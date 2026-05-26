@@ -53,6 +53,7 @@
                         <botmsg :content="session.content" :session="session" :user-query="getUserQuery(id)" @scroll-bottom="scrollToBottom" @retry="handleRetry"
                             :isFirstEnter="isFirstEnter" :embeddedMode="effectiveEmbeddedMode" :selectedArtifactId="manuallySelectedBaseArtifactId"
                             :isSharePageMode="isSharePageMode"
+                            :publicExportApiBase="publicExportApiBase"
                             @view-artifact-revisions="openArtifactRevisionDrawer" @use-artifact-as-base="useArtifactAsBase" @clear-artifact-base="clearSelectedBaseArtifact"
                             @artifact-display-update="handleArtifactDisplayUpdate"></botmsg>
                     </div>
@@ -313,6 +314,7 @@ const { output, onChunk, onClose, isStreaming, isLoading, error, startStream, st
 const route = useRoute();
 const router = useRouter();
 const session_id = ref(props.session_id || route.params.chatid);
+const publicExportApiBase = computed(() => isSharePageMode.value && publicChatApiBase.value ? `${publicChatApiBase.value}/export` : '');
 const sessionData = ref(null);
 const inputFieldRef = ref();
 const created_at = ref('');

@@ -13,11 +13,14 @@ import (
 	"time"
 	"unicode"
 
+	appservice "github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/gin-gonic/gin"
 
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/Tencent/WeKnora/internal/utils/export"
 )
 
@@ -30,11 +33,13 @@ const (
 )
 
 // ExportHandler handles HTTP requests for document export
-type ExportHandler struct{}
+type ExportHandler struct {
+	pageShareService interfaces.AgentPageShareService
+}
 
 // NewExportHandler creates a new export handler instance
-func NewExportHandler() *ExportHandler {
-	return &ExportHandler{}
+func NewExportHandler(pageShareService interfaces.AgentPageShareService) *ExportHandler {
+	return &ExportHandler{pageShareService: pageShareService}
 }
 
 // ExportDocumentRequest represents the request body for document export
@@ -171,6 +176,14 @@ func (h *ExportHandler) ExportDocument(c *gin.Context) {
 	c.Data(http.StatusOK, contentType, data)
 }
 
+// PublicAgentPageShareExportDocument handles anonymous document export for one active share page.
+func (h *ExportHandler) PublicAgentPageShareExportDocument(c *gin.Context) {
+	if !h.ensurePublicShareAccessible(c) {
+		return
+	}
+	h.ExportDocument(c)
+}
+
 // ExportCapabilities godoc
 // @Summary      查询导出能力
 // @Description  返回后端支持的导出格式（检查 Chromium/pandoc 是否安装）
@@ -195,6 +208,14 @@ func (h *ExportHandler) ExportCapabilities(c *gin.Context) {
 		"success": true,
 		"data":    data,
 	})
+}
+
+// PublicAgentPageShareExportCapabilities returns export capabilities for one active share page.
+func (h *ExportHandler) PublicAgentPageShareExportCapabilities(c *gin.Context) {
+	if !h.ensurePublicShareAccessible(c) {
+		return
+	}
+	h.ExportCapabilities(c)
 }
 
 // ExportMarkdownToHTML godoc
@@ -227,6 +248,33 @@ func (h *ExportHandler) ExportHTML(c *gin.Context) {
 	}
 
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+}
+
+func (h *ExportHandler) ensurePublicShareAccessible(c *gin.Context) bool {
+	if h.pageShareService == nil {
+		c.Error(errors.NewInternalServerError("Agent page share service is unavailable"))
+		return false
+	}
+
+	shareCode := strings.TrimSpace(c.Param("share_code"))
+	if shareCode == "" {
+		c.Error(errors.NewBadRequestError("share_code cannot be empty"))
+		return false
+	}
+
+	ctx := c.Request.Context()
+	if _, err := h.pageShareService.GetPublicInfo(ctx, shareCode); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"share_code": secutils.SanitizeForLog(shareCode)})
+		switch err {
+		case appservice.ErrAgentPageShareNotFound, appservice.ErrAgentPageShareUnavailable, appservice.ErrSharedAgentNotFound:
+			c.Error(errors.NewNotFoundError("Agent page share not found"))
+		default:
+			c.Error(errors.NewInternalServerError(err.Error()))
+		}
+		return false
+	}
+
+	return true
 }
 
 func (h *ExportHandler) failExport(c *gin.Context, requestID string, format string, category string, startedAt time.Time, appErr *errors.AppError) {

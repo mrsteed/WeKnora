@@ -2,7 +2,7 @@
     <div class="dialogue-wrap" :class="{ 'is-embedded': embeddedMode }">
         <div class="dialogue-answers" :class="{ 'is-embedded': embeddedMode }">
             <div class="dialogue-title" :class="{ 'is-embedded': embeddedMode }" style="--wails-draggable: drag">
-                <span style="--wails-draggable: drag">{{ $t('createChat.title') }}</span>
+                <span style="--wails-draggable: drag">{{ displayTitle }}</span>
             </div>
             <!-- 推荐问题 -->
             <div ref="sqContainerRef" class="suggested-questions-container">
@@ -97,6 +97,24 @@ const { t } = useI18n();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 const runtimeContext = computed(() => props.runtimeContext || null);
 const isSharePageMode = computed(() => isAgentSharePageRuntimeContext(runtimeContext.value));
+const displayTitle = computed(() => {
+    const defaultTitle = t('createChat.title');
+    if (!isSharePageMode.value) {
+        return defaultTitle;
+    }
+
+    const agentName = String(runtimeContext.value?.fixedAgentName || '').trim();
+    if (!agentName) {
+        return defaultTitle;
+    }
+
+    const titleParts = defaultTitle.split(' - ');
+    if (titleParts.length >= 2) {
+        return `${titleParts[0]} - ${agentName}`;
+    }
+
+    return agentName;
+});
 
 // ===== 推荐问题 =====
 const suggestedQuestions = ref<SuggestedQuestion[]>([]);

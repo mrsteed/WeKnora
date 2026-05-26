@@ -338,11 +338,11 @@
           >
                <div v-html="renderAnswerContent(getAnswerDisplayContent(event))"></div>
           </div>
-          <div v-if="event.done && getActualContent(event) && !props.isSharePageMode" class="answer-toolbar">
+          <div v-if="event.done && getActualContent(event)" class="answer-toolbar">
             <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer(event)" :title="$t('agent.copy')">
               <t-icon name="copy" />
             </t-button>
-            <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge(event)" :title="$t('agent.addToKnowledgeBase')">
+            <t-button v-if="!props.isSharePageMode" size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge(event)" :title="$t('agent.addToKnowledgeBase')">
               <t-icon name="add" />
             </t-button>
             <t-tooltip v-if="event.is_fallback" :content="$t('chat.fallbackHint')" placement="top">
@@ -353,6 +353,7 @@
             <ExportDropdown
               :content="getActualContent(event)"
               :filename-prefix="formatManualTitle(props.userQuery || '')"
+              :export-api-base="props.publicExportApiBase"
             />
           </div>
         </div>
@@ -980,6 +981,7 @@ const props = defineProps<{
   session: SessionData;
   userQuery?: string;
   isSharePageMode?: boolean;
+  publicExportApiBase?: string;
 }>();
 
 const emit = defineEmits<{

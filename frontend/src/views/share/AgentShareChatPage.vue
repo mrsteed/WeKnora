@@ -40,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import CreateChatView from '@/views/creatChat/creatChat.vue';
@@ -61,6 +61,7 @@ import { useMenuStore } from '@/stores/menu';
 
 const route = useRoute();
 const menuStore = useMenuStore();
+const originalDocumentTitle = typeof document !== 'undefined' ? document.title : 'IntraMind';
 
 const loading = ref(true);
 const errorMessage = ref('');
@@ -76,6 +77,10 @@ const runtimeSuggestedQuestions = computed(() => (publicInfo.value?.suggested_qu
   source: 'agent_config' as const,
 })));
 const showCreateChatLanding = computed(() => Boolean(activeSessionId.value && runtimeContext.value) && !hasMessages.value);
+const sharePageDocumentTitle = computed(() => {
+  const agentName = String(publicInfo.value?.agent?.name || '').trim();
+  return agentName || originalDocumentTitle;
+});
 
 const runtimeContext = computed<ChatRuntimeContext | null>(() => {
   if (!publicInfo.value || !shareSession.value) {
@@ -224,6 +229,20 @@ const initializePage = async () => {
 watch(shareCode, () => {
   initializePage();
 }, { immediate: true });
+
+watch(sharePageDocumentTitle, (nextTitle) => {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  document.title = nextTitle;
+}, { immediate: true });
+
+onBeforeUnmount(() => {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  document.title = originalDocumentTitle;
+});
 </script>
 
 <style scoped lang="less">

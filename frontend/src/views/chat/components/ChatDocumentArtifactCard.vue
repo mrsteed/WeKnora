@@ -19,7 +19,7 @@
     <div v-if="artifactHintText" class="artifact-card-hint">{{ artifactHintText }}</div>
     <div v-if="qualityIssueSummary" class="artifact-card-hint">{{ qualityIssueSummary }}</div>
     <div class="artifact-card-actions">
-      <ExportDropdown v-if="canExport" :content="previewContent" :filename-prefix="exportFilenamePrefix" />
+      <ExportDropdown v-if="canExport" :content="previewContent" :filename-prefix="exportFilenamePrefix" :export-api-base="exportApiBase" />
       <t-button size="small" variant="text" theme="primary" @click="$emit('view-revisions', artifact)">查看版本链</t-button>
       <t-button
         v-if="canToggleDocumentDisplay"
@@ -79,6 +79,10 @@ const props = defineProps({
   allowExport: {
     type: Boolean,
     default: true,
+  },
+  exportApiBase: {
+    type: String,
+    default: '',
   },
   selectedArtifactId: {
     type: String,
