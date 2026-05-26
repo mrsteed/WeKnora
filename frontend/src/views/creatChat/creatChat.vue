@@ -1,7 +1,7 @@
 <template>
-    <div class="dialogue-wrap">
-        <div class="dialogue-answers">
-            <div class="dialogue-title" style="--wails-draggable: drag">
+    <div class="dialogue-wrap" :class="{ 'is-embedded': embeddedMode }">
+        <div class="dialogue-answers" :class="{ 'is-embedded': embeddedMode }">
+            <div class="dialogue-title" :class="{ 'is-embedded': embeddedMode }" style="--wails-draggable: drag">
                 <span style="--wails-draggable: drag">{{ $t('createChat.title') }}</span>
             </div>
             <!-- 推荐问题 -->
@@ -39,7 +39,7 @@
                     </div>
                 </transition>
             </div>
-            <InputField ref="inputFieldRef" :runtimeContext="runtimeContext" @send-msg="sendMsg" @model-change="handleModelChange"></InputField>
+            <InputField ref="inputFieldRef" :embeddedMode="embeddedMode" :runtimeContext="runtimeContext" @send-msg="sendMsg" @model-change="handleModelChange"></InputField>
         </div>
     </div>
     
@@ -70,6 +70,10 @@ import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCrea
 import { isAgentSharePageRuntimeContext, type ChatRuntimeContext, type ChatRuntimeSuggestedQuestion } from '@/types/chat-runtime';
 
 const props = defineProps({
+    embeddedMode: {
+        type: Boolean,
+        default: false,
+    },
     runtimeContext: {
         type: Object as PropType<ChatRuntimeContext | null>,
         default: null,
@@ -297,7 +301,12 @@ const handleKBEditorSuccess = (payload: string | { id: string }) => {
     display: flex;
     justify-content: center;
     align-items: center;
-    // position: relative;
+    width: 100%;
+
+    &.is-embedded {
+        align-items: stretch;
+        padding: 0;
+    }
 }
 
 .dialogue-answers {
@@ -306,6 +315,13 @@ const handleKBEditorSuccess = (payload: string | { id: string }) => {
     align-items: center;
     width: 100%;
     max-width: 800px;
+
+    &.is-embedded {
+        max-width: 100%;
+        min-height: 100%;
+        justify-content: center;
+        padding: 12px 0 0;
+    }
 
     :deep(.answers-input) {
         position: static;
@@ -321,6 +337,13 @@ const handleKBEditorSuccess = (payload: string | { id: string }) => {
     font-weight: 600;
     align-items: center;
     margin-bottom: 30px;
+
+    &.is-embedded {
+        width: 100%;
+        justify-content: center;
+        margin-bottom: 20px;
+        text-align: center;
+    }
 
     .icon {
         display: flex;
@@ -474,6 +497,24 @@ const handleKBEditorSuccess = (payload: string | { id: string }) => {
     }
 }
 @media (max-width: 750px) {
+    .dialogue-wrap {
+        align-items: stretch;
+    }
+
+    .dialogue-answers {
+        max-width: 100%;
+    }
+
+    .dialogue-title {
+        font-size: 24px;
+        margin-bottom: 22px;
+        text-align: center;
+    }
+
+    .suggested-questions-container {
+        margin-bottom: 16px;
+    }
+
     .answers-input {
         transform: translateX(-250px);
     }
@@ -483,12 +524,59 @@ const handleKBEditorSuccess = (payload: string | { id: string }) => {
     }
 }
 @media (max-width: 600px) {
+    .dialogue-wrap {
+        padding: 0 4px;
+    }
+
+    .dialogue-answers {
+        padding-top: 8px;
+    }
+
+    .dialogue-title {
+        font-size: 20px;
+        line-height: 1.3;
+        margin-bottom: 16px;
+    }
+
+    .suggested-questions-grid {
+        gap: 8px;
+        justify-content: flex-start;
+    }
+
+    .suggested-question-card {
+        width: 100%;
+        justify-content: space-between;
+        padding: 10px 14px;
+        border-radius: 16px;
+    }
+
+    .suggested-question-text {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
+    }
+
+    :deep(.answers-input) {
+        width: 100%;
+    }
+
     .answers-input {
-        transform: translateX(-250px);
+        transform: none;
     }
 
     :deep(.t-textarea__inner) {
-        width: 300px !important;
+        width: 100% !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .dialogue-wrap.is-embedded {
+        padding: 0;
+    }
+
+    .dialogue-title.is-embedded {
+        font-size: 18px;
+        margin-bottom: 12px;
     }
 }
 

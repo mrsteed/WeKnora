@@ -66,10 +66,16 @@ let isRefreshing = false;
 let failedQueue: Array<{ resolve: Function; reject: Function }> = [];
 
 const PUBLIC_AUTH_PATHS = ['/auth/auto-setup', '/auth/login', '/auth/register', '/auth/oidc/'];
+const PUBLIC_ANONYMOUS_API_PATHS = ['/api/v1/public/'];
 
 function isPublicAuthRequest(url?: string): boolean {
   if (!url) return false;
   return PUBLIC_AUTH_PATHS.some(p => url.includes(p));
+}
+
+function isAnonymousPublicRequest(url?: string): boolean {
+  if (!url) return false;
+  return PUBLIC_ANONYMOUS_API_PATHS.some(p => url.includes(p));
 }
 
 // 处理队列中的请求
@@ -112,8 +118,8 @@ instance.interceptors.response.use(
       return Promise.reject({ message: t('error.networkError') });
     }
     
-    // 公开接口（auto-setup / login / register / oidc）的 401 不走 refresh 逻辑，直接返回错误
-    if (error.response.status === 401 && isPublicAuthRequest(originalRequest?.url)) {
+    // 公开认证接口和匿名 public 接口的 401 不走 refresh / 登录跳转逻辑，直接交由页面处理。
+    if (error.response.status === 401 && (isPublicAuthRequest(originalRequest?.url) || isAnonymousPublicRequest(originalRequest?.url))) {
       const { status, data } = error.response;
       return Promise.reject({ status, message: (typeof data === 'object' ? (data?.error?.message || data?.message) : data) || t('error.invalidCredentials') });
     }

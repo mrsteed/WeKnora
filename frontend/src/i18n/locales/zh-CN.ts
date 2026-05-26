@@ -1473,6 +1473,7 @@ export default {
       notReady: "当前智能体缺少页面分享所需的必要配置，请先补齐模型等配置后再开启分享。",
       operationFailed: "页面分享操作失败",
       disabledHint: "当前分享链接已关闭，重新开启后将继续复用这条链接。",
+      referenceRestricted: "分享页暂不支持打开知识库详情，请登录后在平台内查看。",
     },
     delete: {
       confirmTitle: "删除智能体",

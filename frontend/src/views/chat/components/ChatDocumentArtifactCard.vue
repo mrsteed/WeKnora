@@ -76,6 +76,10 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  allowExport: {
+    type: Boolean,
+    default: true,
+  },
   selectedArtifactId: {
     type: String,
     default: '',
@@ -139,7 +143,7 @@ const renderedPreviewHTML = computed(() => {
   return sanitizeHTML(typeof html === 'string' ? html : '');
 });
 
-const canExport = computed(() => ['available', 'partial'].includes(props.artifact?.status) && hasPreviewContent.value);
+const canExport = computed(() => props.allowExport && ['available', 'partial'].includes(props.artifact?.status) && hasPreviewContent.value);
 
 const canUseAsBase = computed(() => {
   if (!props.artifact || typeof props.artifact !== 'object') {

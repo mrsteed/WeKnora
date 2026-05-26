@@ -18,13 +18,14 @@
                     <span class="tag_name">{{ item.name }}</span>
                 </span>
             </div>
-            <docInfo :session="session"></docInfo>
-            <AgentStreamDisplay :session="session" :user-query="userQuery" v-if="session.isAgentMode" @retry="emitRetry"></AgentStreamDisplay>
+            <docInfo :session="session" :is-share-page-mode="isSharePageMode"></docInfo>
+            <AgentStreamDisplay :session="session" :user-query="userQuery" :is-share-page-mode="isSharePageMode" v-if="session.isAgentMode" @retry="emitRetry"></AgentStreamDisplay>
             <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
             <ChatDocumentArtifactCard
                 v-if="session.chat_document_artifact"
                 :artifact="session.chat_document_artifact"
                 :preview-content="artifactDocumentContent"
+                :allow-export="!isSharePageMode"
                 :can-toggle-document-display="canToggleArtifactDisplay"
                 :document-display-mode="documentDisplayMode"
                 :selected-artifact-id="selectedArtifactId"
@@ -63,7 +64,7 @@
                 </div>
             </div>
             <!-- 复制和添加到知识库按钮 - 非 Agent 模式下显示 -->
-            <div v-if="session.is_completed && exportableContent" class="answer-toolbar">
+            <div v-if="session.is_completed && exportableContent && !isSharePageMode" class="answer-toolbar">
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer" :title="$t('agent.copy')">
                     <t-icon name="copy" />
                 </t-button>
@@ -160,6 +161,10 @@ const props = defineProps({
         required: false
     },
     embeddedMode: {
+        type: Boolean,
+        default: false
+    },
+    isSharePageMode: {
         type: Boolean,
         default: false
     },

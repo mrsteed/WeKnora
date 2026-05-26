@@ -52,6 +52,7 @@
                     <div v-if="session.role == 'assistant'">
                         <botmsg :content="session.content" :session="session" :user-query="getUserQuery(id)" @scroll-bottom="scrollToBottom" @retry="handleRetry"
                             :isFirstEnter="isFirstEnter" :embeddedMode="effectiveEmbeddedMode" :selectedArtifactId="manuallySelectedBaseArtifactId"
+                            :isSharePageMode="isSharePageMode"
                             @view-artifact-revisions="openArtifactRevisionDrawer" @use-artifact-as-base="useArtifactAsBase" @clear-artifact-base="clearSelectedBaseArtifact"
                             @artifact-display-update="handleArtifactDisplayUpdate"></botmsg>
                     </div>

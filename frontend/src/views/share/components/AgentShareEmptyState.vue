@@ -68,4 +68,33 @@ defineEmits<{
   color: #475569;
   line-height: 1.7;
 }
+
+@media (max-width: 640px) {
+  .agent-share-empty-state {
+    min-height: min(420px, 100dvh - 32px);
+    padding: 16px;
+  }
+
+  .agent-share-empty-card {
+    padding: 28px 20px;
+    border-radius: 18px;
+  }
+
+  .agent-share-empty-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    font-size: 22px;
+  }
+
+  .agent-share-empty-title {
+    font-size: 20px;
+  }
+
+  .agent-share-empty-description {
+    margin-bottom: 20px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+}
 </style>

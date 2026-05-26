@@ -19,6 +19,7 @@
 
       <CreateChatView
         v-else-if="showCreateChatLanding"
+        :embeddedMode="true"
         :runtimeContext="runtimeContext"
         :suggestedQuestionsOverride="runtimeSuggestedQuestions"
         @send-msg="handleCreateChatSend"
@@ -29,6 +30,7 @@
         <ChatView
           :key="activeSessionId"
           :session_id="activeSessionId"
+          :embeddedMode="true"
           :runtimeContext="runtimeContext"
           @model-change="handleShareModelChange"
         />
@@ -227,6 +229,7 @@ watch(shareCode, () => {
 <style scoped lang="less">
 .agent-share-page {
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 24px;
   background:
     radial-gradient(circle at top left, rgba(7, 192, 95, 0.12), transparent 28%),
@@ -236,6 +239,7 @@ watch(shareCode, () => {
 
 .agent-share-shell {
   min-height: calc(100vh - 48px);
+  min-height: calc(100dvh - 48px);
   border-radius: 28px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.82);
@@ -246,23 +250,48 @@ watch(shareCode, () => {
 
 .agent-share-chat-container {
   min-height: calc(100vh - 180px);
+  min-height: calc(100dvh - 180px);
 }
 
 @media (max-width: 900px) {
   .agent-share-page {
-    padding: 0;
+    min-height: 100dvh;
+    padding:
+      max(12px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
     background: #f8fafc;
   }
 
   .agent-share-shell {
-    min-height: 100vh;
-    border-radius: 0;
+    min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    border-radius: 24px;
     border: 0;
-    box-shadow: none;
+    box-shadow: 0 12px 36px rgba(15, 23, 42, 0.08);
+    backdrop-filter: none;
   }
 
   .agent-share-chat-container {
-    min-height: calc(100vh - 160px);
+    min-height: calc(100dvh - 164px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 640px) {
+  .agent-share-page {
+    padding:
+      max(8px, env(safe-area-inset-top))
+      max(8px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+  }
+
+  .agent-share-shell {
+    border-radius: 18px;
+  }
+
+  .agent-share-chat-container {
+    min-height: calc(100dvh - 140px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
 }
 </style>

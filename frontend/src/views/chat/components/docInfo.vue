@@ -32,7 +32,7 @@
                         <span class="doc-group-title" :title="group.title">{{ group.title }}</span>
                         <span class="doc-group-count">{{ $t('chat.referenceChunkCount', { count: group.chunks.length }) }}</span>
                     </div>
-                    <div class="doc-group-actions" v-if="group.knowledgeBaseId" @click.stop>
+                    <div class="doc-group-actions" v-if="group.knowledgeBaseId && !isSharePageMode" @click.stop>
                         <t-tooltip :content="$t('chat.navigateToDocument')">
                             <span class="doc-group-navigate" @click="navigateToDocument(group)">
                                 <t-icon name="jump" size="14px" />
@@ -61,6 +61,7 @@
 import { defineProps, computed, ref, reactive } from "vue";
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
+import { MessagePlugin } from 'tdesign-vue-next';
 import { sanitizeHTML } from '@/utils/security';
 import ContentPopup from './tool-results/ContentPopup.vue';
 
@@ -75,6 +76,10 @@ const props = defineProps({
     session: {
         type: Object,
         required: false
+    },
+    isSharePageMode: {
+        type: Boolean,
+        default: false,
     }
 });
 
@@ -148,6 +153,10 @@ const truncateContent = (content, maxLen) => {
 
 const navigateToDocument = (group) => {
     if (!group.knowledgeBaseId) return;
+    if (props.isSharePageMode) {
+        MessagePlugin.info(t('agent.pageShare.referenceRestricted'));
+        return;
+    }
     const query = {};
     if (group.knowledgeId) {
         query.knowledge_id = group.knowledgeId;

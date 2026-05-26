@@ -536,6 +536,7 @@ export default {
       notReady: 'This agent is missing required configuration for page sharing. Please complete the model and related settings first.',
       operationFailed: 'Page share operation failed',
       disabledHint: 'This share link is currently closed. Re-enabling will continue using the same link.',
+      referenceRestricted: 'Knowledge base detail links are not available on the public share page. Please sign in to view them in the platform.',
     },
     delete: {
       confirmTitle: 'Delete Agent',

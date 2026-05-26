@@ -338,7 +338,7 @@
           >
                <div v-html="renderAnswerContent(getAnswerDisplayContent(event))"></div>
           </div>
-          <div v-if="event.done && getActualContent(event)" class="answer-toolbar">
+          <div v-if="event.done && getActualContent(event) && !props.isSharePageMode" class="answer-toolbar">
             <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer(event)" :title="$t('agent.copy')">
               <t-icon name="copy" />
             </t-button>
@@ -778,6 +778,10 @@ watch(wikiDrawerContent, async () => {
 
 const openWikiDrawer = async (kbId: string, slug: string) => {
   if (!kbId || !slug) return;
+  if (props.isSharePageMode) {
+    MessagePlugin.info(t('agent.pageShare.referenceRestricted'));
+    return;
+  }
   try {
     currentWikiKbId.value = kbId;
     const res = await getWikiPage(kbId, slug);
@@ -790,6 +794,10 @@ const openWikiDrawer = async (kbId: string, slug: string) => {
 };
 
 const navigateToWikiGraph = () => {
+  if (props.isSharePageMode) {
+    MessagePlugin.info(t('agent.pageShare.referenceRestricted'));
+    return;
+  }
   if (currentWikiKbId.value && wikiDrawerPage.value?.slug) {
     wikiDrawerVisible.value = false;
     try {
@@ -971,6 +979,7 @@ interface DocumentSectionProgressPreview {
 const props = defineProps<{
   session: SessionData;
   userQuery?: string;
+  isSharePageMode?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -2276,6 +2285,11 @@ const setKbCacheState = (chunkId: string, state: KbTooltipState) => {
 };
 
 const loadChunkDetails = async (chunkId: string) => {
+  if (props.isSharePageMode) {
+    setKbCacheState(chunkId, { loading: false, error: t('agent.pageShare.referenceRestricted') });
+    return;
+  }
+
   const cacheEntry = kbChunkDetails.value[chunkId];
   if (cacheEntry) {
     if (cacheEntry.loading) {
@@ -2478,6 +2492,10 @@ const onRootClick = (e: Event) => {
   if (kbEl && kbEl.getAttribute('data-kb-id')) {
     e.preventDefault();
     e.stopPropagation();
+    if (props.isSharePageMode) {
+      MessagePlugin.info(t('agent.pageShare.referenceRestricted'));
+      return;
+    }
     const kbId = kbEl.getAttribute('data-kb-id');
     if (kbId) {
       try {
@@ -2544,6 +2562,10 @@ const onRootKeydown = (e: KeyboardEvent) => {
   if (kbEl) {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
+      if (props.isSharePageMode) {
+        MessagePlugin.info(t('agent.pageShare.referenceRestricted'));
+        return;
+      }
       const kbId = kbEl.getAttribute('data-kb-id');
       if (kbId) {
         try {
