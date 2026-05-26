@@ -39,7 +39,7 @@
                     </div>
                 </transition>
             </div>
-            <InputField ref="inputFieldRef" @send-msg="sendMsg"></InputField>
+            <InputField ref="inputFieldRef" :runtimeContext="runtimeContext" @send-msg="sendMsg" @model-change="handleModelChange"></InputField>
         </div>
     </div>
     
@@ -54,7 +54,7 @@
     />
 </template>
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from 'vue';
+import { computed, ref, watch, onMounted, nextTick, type PropType } from 'vue';
 import InputField from '@/components/Input-field.vue';
 import { createSessions } from "@/api/chat/index";
 import { getSuggestedQuestions } from "@/api/agent/index";
@@ -62,19 +62,37 @@ import type { SuggestedQuestion } from "@/api/agent/index";
 import { useMenuStore } from '@/stores/menu';
 import { useSettingsStore } from '@/stores/settings';
 import { useUIStore } from '@/stores/ui';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useI18n } from 'vue-i18n';
 import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
+import { isAgentSharePageRuntimeContext, type ChatRuntimeContext, type ChatRuntimeSuggestedQuestion } from '@/types/chat-runtime';
+
+const props = defineProps({
+    runtimeContext: {
+        type: Object as PropType<ChatRuntimeContext | null>,
+        default: null,
+    },
+    suggestedQuestionsOverride: {
+        type: Array as PropType<ChatRuntimeSuggestedQuestion[]>,
+        default: () => [],
+    },
+});
+
+const emit = defineEmits<{
+    (e: 'send-msg', query: string, modelId: string, mentionedItems: any[], imageFiles: File[], attachmentFiles: any[]): void;
+    (e: 'model-change', modelId: string): void;
+}>();
 
 const router = useRouter();
-const route = useRoute();
 const usemenuStore = useMenuStore();
 const settingsStore = useSettingsStore();
 const uiStore = useUIStore();
 const { t } = useI18n();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
+const runtimeContext = computed(() => props.runtimeContext || null);
+const isSharePageMode = computed(() => isAgentSharePageRuntimeContext(runtimeContext.value));
 
 // ===== 推荐问题 =====
 const suggestedQuestions = ref<SuggestedQuestion[]>([]);
@@ -127,7 +145,25 @@ const onQuestionsEntered = () => {
     nextTick(() => { sqCardsRevealed.value = true; });
 };
 
+const syncRuntimeSuggestedQuestions = () => {
+    sqCardsRevealed.value = false;
+    sqRenderKey.value++;
+    suggestedQuestions.value = (props.suggestedQuestionsOverride || []).map((item) => {
+        return {
+            question: item.question,
+            source: item.source === 'document' || item.source === 'faq' || item.source === 'wiki' || item.source === 'agent_config'
+                ? item.source
+                : 'agent_config',
+        };
+    });
+    sqLoading.value = false;
+};
+
 const fetchSuggestedQuestions = async () => {
+    if (isSharePageMode.value) {
+        syncRuntimeSuggestedQuestions();
+        return;
+    }
     const fetchId = ++suggestedQuestionsFetchId;
     if (suggestedQuestions.value.length === 0) sqLoading.value = true;
     try {
@@ -159,6 +195,10 @@ const fetchSuggestedQuestions = async () => {
 
 // 防抖包装，切换知识库/文件时300ms内不重复请求
 const debouncedFetch = () => {
+    if (isSharePageMode.value) {
+        syncRuntimeSuggestedQuestions();
+        return;
+    }
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => { fetchSuggestedQuestions(); }, 300);
 };
@@ -167,6 +207,16 @@ const debouncedFetch = () => {
 watch(() => settingsStore.selectedAgentId, debouncedFetch);
 watch(() => settingsStore.settings.selectedKnowledgeBases, debouncedFetch, { deep: true });
 watch(() => settingsStore.settings.selectedFiles, debouncedFetch, { deep: true });
+watch(() => props.suggestedQuestionsOverride, () => {
+    if (isSharePageMode.value) {
+        syncRuntimeSuggestedQuestions();
+    }
+}, { deep: true });
+watch(runtimeContext, () => {
+    if (isSharePageMode.value) {
+        syncRuntimeSuggestedQuestions();
+    }
+}, { deep: true });
 
 onMounted(() => { fetchSuggestedQuestions(); });
 
@@ -176,7 +226,15 @@ const handleSuggestedQuestionClick = (question: string) => {
     inputFieldRef.value?.triggerSend(question);
 };
 
+const handleModelChange = (modelId: string) => {
+    emit('model-change', modelId);
+};
+
 const sendMsg = (value: string, modelId: string, mentionedItems: any[], imageFiles: any[] = [], attachmentFiles: any[] = []) => {
+    if (isSharePageMode.value) {
+        emit('send-msg', value, modelId, mentionedItems, imageFiles, attachmentFiles);
+        return;
+    }
     createNewSession(value, modelId, mentionedItems, imageFiles, attachmentFiles);
 }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch, nextTick, h } from "vue";
+import { ref, onMounted, onUnmounted, computed, watch, nextTick, h, type PropType } from "vue";
 import { useRoute, useRouter } from 'vue-router';
 import { onBeforeRouteUpdate } from 'vue-router';
 import { MessagePlugin } from "tdesign-vue-next";
@@ -8,6 +8,7 @@ import { useUIStore } from '@/stores/ui';
 import { useMenuStore } from '@/stores/menu';
 import { listKnowledgeBases, searchKnowledge, batchQueryKnowledge } from '@/api/knowledge-base';
 import { stopSession } from '@/api/chat';
+import { stopPublicAgentShareSession } from '@/api/agent-share';
 import { useOrganizationStore } from '@/stores/organization';
 import KnowledgeBaseSelector from './KnowledgeBaseSelector.vue';
 import MentionSelector from './MentionSelector.vue';
@@ -25,6 +26,7 @@ import {
   toolsConsumeFiles,
   type ScopeCapabilities,
 } from '@/utils/tool-capabilities';
+import { isAgentSharePageRuntimeContext, type ChatRuntimeContext } from '@/types/chat-runtime';
 
 const route = useRoute();
 const router = useRouter();
@@ -70,7 +72,11 @@ const handleDroppedFiles = (files: File[]) => {
   }
 
   if (attachmentFiles.length > 0) {
-    attachmentUploadRef.value?.addFiles(attachmentFiles);
+    if (isAttachmentUploadEnabledByAgent.value) {
+      attachmentUploadRef.value?.addFiles(attachmentFiles);
+    } else {
+      MessagePlugin.warning(t('chat.attachmentUploadTooltip'));
+    }
   }
 };
 
@@ -127,11 +133,71 @@ const agentModeDropdownStyle = ref<Record<string, string>>({});
 const agents = ref<CustomAgent[]>([]);
 /** 当前租户在对话下拉中停用的「我的」智能体 ID（仅影响本租户） */
 const disabledOwnAgentIds = ref<string[]>([]);
+const props = defineProps({
+  isReplying: {
+    type: Boolean,
+    required: false
+  },
+  sessionId: {
+    type: String,
+    required: false
+  },
+  assistantMessageId: {
+    type: String,
+    required: false
+  },
+  embeddedMode: {
+    type: Boolean,
+    default: false
+  },
+  runtimeContext: {
+    type: Object as PropType<ChatRuntimeContext | null>,
+    default: null,
+  }
+});
+
+const runtimeContext = computed(() => props.runtimeContext || null);
+const isSharePageMode = computed(() => isAgentSharePageRuntimeContext(runtimeContext.value));
+
+const buildShareFixedAgent = (): CustomAgent => {
+  const fixedAgent = runtimeContext.value?.fixedAgent || {};
+  const fixedConfig = fixedAgent.config || {};
+  return {
+    id: runtimeContext.value?.fixedAgentId || fixedAgent.id || 'agent-share-page',
+    name: runtimeContext.value?.fixedAgentName || fixedAgent.name || t('input.normalMode'),
+    description: fixedAgent.description,
+    avatar: fixedAgent.avatar,
+    is_builtin: false,
+    config: {
+      ...fixedConfig,
+      agent_mode: runtimeContext.value?.fixedAgentMode || fixedConfig.agent_mode || 'quick-answer',
+      image_upload_enabled: runtimeContext.value?.imageUploadEnabled ?? fixedConfig.image_upload_enabled ?? false,
+      audio_upload_enabled: runtimeContext.value?.audioUploadEnabled ?? fixedConfig.audio_upload_enabled ?? false,
+      supported_file_types: runtimeContext.value?.supportedFileTypes || fixedConfig.supported_file_types || [],
+      web_search_enabled: runtimeContext.value?.webSearchEnabled ?? fixedConfig.web_search_enabled ?? false,
+      multi_turn_enabled: runtimeContext.value?.multiTurnEnabled ?? fixedConfig.multi_turn_enabled ?? true,
+    }
+  } as CustomAgent;
+};
+
 const selectedAgentId = computed({
-  get: () => settingsStore.selectedAgentId || BUILTIN_QUICK_ANSWER_ID,
-  set: (val: string) => settingsStore.selectAgent(val)
+  get: () => {
+    if (isSharePageMode.value) {
+      return runtimeContext.value?.fixedAgentId || 'agent-share-page';
+    }
+    return settingsStore.selectedAgentId || BUILTIN_QUICK_ANSWER_ID;
+  },
+  set: (val: string) => {
+    if (isSharePageMode.value) {
+      return;
+    }
+    settingsStore.selectAgent(val)
+  }
 });
 const selectedAgent = computed(() => {
+  if (isSharePageMode.value) {
+    return buildShareFixedAgent();
+  }
   const mine = agents.value.find(a => a.id === selectedAgentId.value);
   if (mine) return mine;
   const sourceTenantId = settingsStore.selectedAgentSourceTenantId;
@@ -194,6 +260,9 @@ const sharedAgentKbList = ref<Array<{ id: string; name: string; type?: string; k
 // 当智能体改变时，模型、网络搜索、可@知识库列表均跟随新智能体配置
 // 知识库：用新智能体配置的列表替换当前选中，使已选与可@列表一致（含共享智能体）
 watch([selectedAgentId, agentKnowledgeBases, agentKBSelectionMode], ([newAgentId, newAgentKbs, newKbMode], [oldAgentId]) => {
+  if (isSharePageMode.value) {
+    return;
+  }
   if (newAgentId !== oldAgentId && oldAgentId !== undefined) {
     if (newKbMode === 'none') {
       settingsStore.selectKnowledgeBases([]);
@@ -214,6 +283,10 @@ watch([selectedAgentId, agentKnowledgeBases, agentKBSelectionMode], ([newAgentId
 
 // 共享智能体时预取该智能体知识库列表，使已选标签在未打开 @ 时也能显示共享空间角标
 watch([selectedAgentId, () => settingsStore.selectedAgentSourceTenantId], async ([agentId, sourceTenantId]) => {
+  if (isSharePageMode.value) {
+    sharedAgentKbList.value = [];
+    return;
+  }
   if (sourceTenantId && agentId) {
     try {
       const res: any = await listKnowledgeBases({ agent_id: agentId });
@@ -339,8 +412,32 @@ const isImageUploadEnabledByAgent = computed(() => {
   return currentAgentConfig.value?.image_upload_enabled === true;
 });
 
+const isAttachmentUploadEnabledByAgent = computed(() => {
+  if (isSharePageMode.value) {
+    return runtimeContext.value?.attachmentUploadEnabled === true;
+  }
+  return true;
+});
+
+const attachmentSupportedTypes = computed(() => {
+  if (!isSharePageMode.value) {
+    return undefined;
+  }
+  const types = runtimeContext.value?.supportedFileTypes;
+  if (!Array.isArray(types)) {
+    return undefined;
+  }
+  const normalized = types
+    .map((item) => String(item || '').trim())
+    .filter((item) => Boolean(item));
+  return normalized.length > 0 ? normalized : undefined;
+});
+
 // 模型选择是否被智能体锁定 - 已移除锁定逻辑，允许用户自由切换模型
 const isModelLockedByAgent = computed(() => {
+  if (isSharePageMode.value) {
+    return !Boolean(runtimeContext.value?.allowModelSelect);
+  }
   return false;
 });
 
@@ -374,30 +471,23 @@ const sharedAgentOrgName = computed(() => {
   );
   return shared?.org_name || shared?.shared_by_username || '';
 });
-
-const props = defineProps({
-  isReplying: {
-    type: Boolean,
-    required: false
-  },
-  sessionId: {
-    type: String,
-    required: false
-  },
-  assistantMessageId: {
-    type: String,
-    required: false
-  },
-  embeddedMode: {
-    type: Boolean,
-    default: false
+const effectiveEmbeddedMode = computed(() => props.embeddedMode);
+const canShowAgentSwitchControl = computed(() => isSharePageMode.value ? Boolean(runtimeContext.value?.allowAgentSwitch) : !effectiveEmbeddedMode.value);
+const canShowWebSearchControl = computed(() => isSharePageMode.value ? Boolean(runtimeContext.value?.allowWebSearchToggle) : !effectiveEmbeddedMode.value);
+const canShowKnowledgeControl = computed(() => isSharePageMode.value ? Boolean(runtimeContext.value?.allowKnowledgeBaseSelect) : !effectiveEmbeddedMode.value);
+const canShowModelControl = computed(() => isSharePageMode.value ? Boolean(runtimeContext.value?.allowModelSelect) : !effectiveEmbeddedMode.value);
+const canShowImageUploadControl = computed(() => isSharePageMode.value ? Boolean(runtimeContext.value?.imageUploadEnabled) : !effectiveEmbeddedMode.value);
+const canShowAttachmentUploadControl = computed(() => {
+  if (isSharePageMode.value) {
+    return isAttachmentUploadEnabledByAgent.value;
   }
+  return !effectiveEmbeddedMode.value;
 });
 
-const isAgentEnabled = computed(() => settingsStore.isAgentEnabled);
-const isWebSearchEnabled = computed(() => settingsStore.isWebSearchEnabled);
-const selectedKbIds = computed(() => settingsStore.settings.selectedKnowledgeBases || []);
-const selectedFileIds = computed(() => settingsStore.settings.selectedFiles || []);
+const isAgentEnabled = computed(() => isSharePageMode.value ? runtimeContext.value?.fixedAgentMode === 'smart-reasoning' : settingsStore.isAgentEnabled);
+const isWebSearchEnabled = computed(() => isSharePageMode.value ? Boolean(runtimeContext.value?.webSearchEnabled) : settingsStore.isWebSearchEnabled);
+const selectedKbIds = computed(() => isSharePageMode.value ? (runtimeContext.value?.fixedKnowledgeBaseIds || []) : (settingsStore.settings.selectedKnowledgeBases || []));
+const selectedFileIds = computed(() => isSharePageMode.value ? [] : (settingsStore.settings.selectedFiles || []));
 
 // 获取已选择的知识库信息
 const knowledgeBases = ref<Array<{ id: string; name: string; type?: 'document' | 'faq' | 'database'; knowledge_count?: number; chunk_count?: number }>>([]);
@@ -497,10 +587,23 @@ const removeSelectedItem = (item: { id: string; type: 'kb' | 'file'; isAgentConf
 
 // 模型相关状态
 const availableModels = ref<ModelConfig[]>([]);
+const shareSelectedModelId = ref('');
 // 使用 computed 从 store 读取，并通过 setter 同步回 store
 const selectedModelId = computed({
-  get: () => settingsStore.conversationModels.selectedChatModelId || '',
-  set: (val: string) => settingsStore.updateConversationModels({ selectedChatModelId: val })
+  get: () => {
+    if (isSharePageMode.value) {
+      return shareSelectedModelId.value || runtimeContext.value?.defaultModelId || '';
+    }
+    return settingsStore.conversationModels.selectedChatModelId || '';
+  },
+  set: (val: string) => {
+    if (isSharePageMode.value) {
+      shareSelectedModelId.value = val;
+      emit('model-change', val);
+      return;
+    }
+    settingsStore.updateConversationModels({ selectedChatModelId: val });
+  }
 });
 const conversationConfig = ref<ConversationConfig | null>(null);
 const modelsLoading = ref(false);
@@ -642,6 +745,9 @@ watch(selectedFileIds, () => {
 const webSearchProviders = ref<WebSearchProviderEntity[]>([]);
 
 const isWebSearchConfigured = computed(() => {
+  if (isSharePageMode.value) {
+    return Boolean(runtimeContext.value?.webSearchEnabled);
+  }
   const agentProviderId = agentWebSearchProviderId.value;
   if (agentProviderId) {
     return webSearchProviders.value.some(p => p.id === agentProviderId);
@@ -711,6 +817,13 @@ const loadConversationConfig = async () => {
 };
 
 const loadChatModels = async () => {
+  if (isSharePageMode.value) {
+    availableModels.value = Array.isArray(runtimeContext.value?.availableModels)
+      ? runtimeContext.value.availableModels.filter((model) => model?.type === 'KnowledgeQA')
+      : [];
+    ensureModelSelection();
+    return;
+  }
   if (modelsLoading.value) return;
   modelsLoading.value = true;
   try {
@@ -727,6 +840,10 @@ const loadChatModels = async () => {
 
 const ensureModelSelection = () => {
   if (selectedModelId.value) {
+    return;
+  }
+  if (isSharePageMode.value && runtimeContext.value?.defaultModelId) {
+    selectedModelId.value = runtimeContext.value.defaultModelId;
     return;
   }
   if (conversationConfig.value?.summary_model_id) {
@@ -760,6 +877,12 @@ const handleModelChange = async (value: string | number | Array<string | number>
   if (val === '__add_model__') {
     selectedModelId.value = conversationConfig.value?.summary_model_id || '';
     handleGoToConversationModels();
+    return;
+  }
+
+  if (isSharePageMode.value) {
+    selectedModelId.value = val;
+    showModelSelector.value = false;
     return;
   }
   
@@ -801,6 +924,9 @@ const selectedModel = computed(() => {
 // 模型展示名：本租户列表中有则用名称；若为共享智能体且其 model_id 不在本租户列表中则显示“共享智能体配置的模型”
 const selectedModelDisplayName = computed(() => {
   if (selectedModel.value) return selectedModel.value.name;
+  if (isSharePageMode.value && selectedModelId.value && runtimeContext.value?.defaultModelId === selectedModelId.value && runtimeContext.value?.defaultModelName) {
+    return runtimeContext.value.defaultModelName;
+  }
   if (!selectedModelId.value) return t('input.notConfigured');
   const isSharedAgent = !!settingsStore.selectedAgentSourceTenantId;
   const modelFromAgent = agentModelId.value && agentModelId.value === selectedModelId.value;
@@ -1137,6 +1263,9 @@ const getTextareaEl = () => {
 const onInput = (val: string | InputEvent) => {
   // 如果正在输入法组合中，不处理搜索逻辑，等待 compositionend
   if (isComposing.value) return;
+  if (isSharePageMode.value) {
+    showMention.value = false;
+  }
 
   // TDesign t-textarea passes the value directly, not an event
   const inputVal = typeof val === 'string' ? val : query.value;
@@ -1184,6 +1313,9 @@ const onInput = (val: string | InputEvent) => {
     }
   } else {
     if (textBeforeCursor.endsWith('@')) {
+      if (isSharePageMode.value || !canShowKnowledgeControl.value) {
+        return;
+      }
       // 如果智能体禁用了知识库，不触发 @ 菜单
       if (isKnowledgeBaseDisabledByAgent.value) {
         return;
@@ -1256,6 +1388,9 @@ const onCompositionEnd = (e: CompositionEvent) => {
 };
 
 const triggerMention = () => {
+  if (isSharePageMode.value || !canShowKnowledgeControl.value) {
+    return;
+  }
   // 如果智能体锁定或禁用了知识库，不允许打开选择器
   if (isKnowledgeBaseLockedByAgent.value) {
     const msgKey = isKnowledgeBaseDisabledByAgent.value ? 'input.kbDisabledByAgent' : 'input.kbLockedByAgent';
@@ -1412,11 +1547,15 @@ let resizeHandler: (() => void) | null = null;
 let scrollHandler: (() => void) | null = null;
 
 onMounted(() => {
-  loadKnowledgeBases();
-  loadWebSearchConfig();
-  loadConversationConfig();
-  loadChatModels();
-  loadAgents();
+  if (isSharePageMode.value) {
+    loadChatModels();
+  } else {
+    loadKnowledgeBases();
+    loadWebSearchConfig();
+    loadConversationConfig();
+    loadChatModels();
+    loadAgents();
+  }
   window.addEventListener(CHAT_FILE_DROP_EVENT, handleChatFileDrop as EventListener);
 
   // 从持久化恢复 fileId -> kbId，刷新后共享知识库文件可带 kb_id 拉取（仅保留当前仍选中的文件）
@@ -1432,7 +1571,7 @@ onMounted(() => {
   
   // 如果从知识库内部进入，自动选中该知识库
   const kbId = (route.params as any)?.kbId as string;
-  if (kbId && !selectedKbIds.value.includes(kbId)) {
+  if (!isSharePageMode.value && kbId && !selectedKbIds.value.includes(kbId)) {
     settingsStore.addKnowledgeBase(kbId);
   }
 
@@ -1487,12 +1626,18 @@ onUnmounted(() => {
 
 // 监听路由变化
 watch(() => route.params.kbId, (newKbId) => {
+  if (isSharePageMode.value) {
+    return;
+  }
   if (newKbId && typeof newKbId === 'string' && !selectedKbIds.value.includes(newKbId)) {
     settingsStore.addKnowledgeBase(newKbId);
   }
 });
 
 watch(() => uiStore.showSettingsModal, (visible, prevVisible) => {
+  if (isSharePageMode.value) {
+    return;
+  }
   if (prevVisible && !visible) {
     loadWebSearchConfig();
   }
@@ -1507,6 +1652,7 @@ watch([selectedKbIds, selectedFileIds], ([kbIds, fileIds]) => {
 const emit = defineEmits<{
   (e: 'send-msg', query: string, modelId: string, mentionedItems: any[], imageFiles: File[], attachmentFiles: AttachmentFile[]): void;
   (e: 'stop-generation'): void;
+  (e: 'model-change', modelId: string): void;
 }>();
 
 const createSession = async (val: string) => {
@@ -1518,23 +1664,25 @@ const createSession = async (val: string) => {
     return MessagePlugin.error(t('input.messages.replying'));
   }
   // 发送前校验当前选中的智能体（含默认快速问答）是否已配置完成
-  const agentToCheck = selectedAgent.value;
-  let actualAgent = agentToCheck;
-  if (agentToCheck.is_builtin) {
-    let builtin = agents.value.find(a => a.id === selectedAgentId.value);
-    if (!builtin) {
-      await loadAgents();
-      builtin = agents.value.find(a => a.id === selectedAgentId.value);
+  if (!isSharePageMode.value) {
+    const agentToCheck = selectedAgent.value;
+    let actualAgent = agentToCheck;
+    if (agentToCheck.is_builtin) {
+      let builtin = agents.value.find(a => a.id === selectedAgentId.value);
+      if (!builtin) {
+        await loadAgents();
+        builtin = agents.value.find(a => a.id === selectedAgentId.value);
+      }
+      actualAgent = builtin || agentToCheck;
     }
-    actualAgent = builtin || agentToCheck;
-  }
-  const isAgentMode = actualAgent.config?.agent_mode === 'smart-reasoning';
-  const notReadyReasons = actualAgent.is_builtin
-    ? getBuiltinAgentNotReadyReasons(actualAgent, isAgentMode)
-    : getCustomAgentNotReadyReasons(actualAgent);
-  if (notReadyReasons.length > 0) {
-    showAgentNotReadyMessage(actualAgent, notReadyReasons);
-    return;
+    const isAgentMode = actualAgent.config?.agent_mode === 'smart-reasoning';
+    const notReadyReasons = actualAgent.is_builtin
+      ? getBuiltinAgentNotReadyReasons(actualAgent, isAgentMode)
+      : getCustomAgentNotReadyReasons(actualAgent);
+    if (notReadyReasons.length > 0) {
+      showAgentNotReadyMessage(actualAgent, notReadyReasons);
+      return;
+    }
   }
   // 获取@提及的知识库和文件信息
   const mentionedItems = allSelectedItems.value.map(item => ({
@@ -1824,6 +1972,9 @@ const onDragOver = (e: DragEvent) => {
 };
 
 const handleGoToWebSearchSettings = () => {
+  if (isSharePageMode.value) {
+    return;
+  }
   uiStore.openSettings('websearch');
   if (route.path !== '/platform/settings') {
     router.push('/platform/settings');
@@ -1831,6 +1982,9 @@ const handleGoToWebSearchSettings = () => {
 };
 
 const handleGoToAgentSettings = (section?: string) => {
+  if (isSharePageMode.value) {
+    return;
+  }
   // 跳转到智能体列表页并打开编辑弹窗
   if (selectedAgent.value && !selectedAgent.value.is_builtin) {
     const query: Record<string, string> = { edit: selectedAgent.value.id };
@@ -1915,6 +2069,9 @@ const showAgentNotReadyMessage = (agent: CustomAgent, reasons: string[]) => {
 }
 
 const toggleWebSearch = () => {
+  if (isSharePageMode.value) {
+    return;
+  }
   // 互斥：虽然不是弹出层，但操作时关闭其他弹出层体验更好
   showMention.value = false;
   showModelSelector.value = false;
@@ -1983,7 +2140,16 @@ const handleStop = async () => {
   emit('stop-generation');
   
   try {
-    await stopSession(props.sessionId, props.assistantMessageId);
+    if (isSharePageMode.value && runtimeContext.value?.shareCode && runtimeContext.value?.shareSessionToken) {
+      await stopPublicAgentShareSession(
+        runtimeContext.value.shareCode,
+        props.sessionId,
+        runtimeContext.value.shareSessionToken,
+        props.assistantMessageId,
+      );
+    } else {
+      await stopSession(props.sessionId, props.assistantMessageId);
+    }
     MessagePlugin.success(t('input.messages.stopSuccess'));
   } catch (error) {
     console.error('Failed to stop session:', error);
@@ -2031,6 +2197,8 @@ defineExpose({
         ref="attachmentUploadRef"
         :max-files="5"
         :max-size="20"
+        :disabled="!isAttachmentUploadEnabledByAgent"
+        :supported-types="attachmentSupportedTypes"
         @update:files="uploadedAttachments = $event"
       />
       
@@ -2077,7 +2245,7 @@ defineExpose({
     <!-- Mention Selector -->
     <Teleport to="body">
       <MentionSelector
-        :visible="showMention"
+        :visible="canShowKnowledgeControl && showMention"
         :style="mentionStyle"
         :items="mentionItems"
         :hasMore="mentionHasMore"
@@ -2092,9 +2260,9 @@ defineExpose({
     <!-- 控制栏 -->
     <div class="control-bar">
       <!-- 左侧控制按钮 -->
-      <div class="control-left" v-if="!embeddedMode">
+      <div class="control-left" v-if="canShowAgentSwitchControl || canShowWebSearchControl || canShowImageUploadControl || canShowAttachmentUploadControl || canShowKnowledgeControl || canShowModelControl">
         <!-- Agent 模式切换按钮 -->
-        <div 
+        <div v-if="canShowAgentSwitchControl"
           ref="agentModeButtonRef"
           class="control-btn agent-mode-btn"
           :class="{ 
@@ -2121,6 +2289,7 @@ defineExpose({
 
         <!-- Agent 选择器下拉菜单 -->
         <AgentSelector
+          v-if="canShowAgentSwitchControl"
           :visible="showAgentModeSelector"
           :anchorEl="agentModeButtonRef"
           :currentAgentId="selectedAgentId"
@@ -2130,7 +2299,7 @@ defineExpose({
         />
 
         <!-- WebSearch 开关按钮 -->
-        <t-tooltip placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
+        <t-tooltip v-if="canShowWebSearchControl" placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
           <template #content>
             <div v-if="isWebSearchDisabledByAgent" class="tooltip-with-link">
               <span>{{ $t('input.webSearchDisabledByAgent') }}</span>
@@ -2169,7 +2338,7 @@ defineExpose({
         </t-tooltip>
 
         <!-- 图片上传按钮 -->
-        <t-tooltip placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
+        <t-tooltip v-if="canShowImageUploadControl" placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
           <template #content>
             <div v-if="!isImageUploadEnabledByAgent" class="tooltip-with-link">
               <span>{{ $t('input.imageUploadDisabledByAgent') }}</span>
@@ -2195,7 +2364,7 @@ defineExpose({
         </t-tooltip>
 
         <!-- 附件上传按钮 -->
-        <t-tooltip placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
+        <t-tooltip v-if="canShowAttachmentUploadControl" placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
           <template #content>
             <span>{{ uploadedAttachments.length > 0 ? $t('chat.attachmentWithCount', { count: uploadedAttachments.length }) : $t('chat.attachmentUploadTooltip') }}</span>
           </template>
@@ -2213,7 +2382,7 @@ defineExpose({
         </t-tooltip>
 
         <!-- @ 知识库/文件选择按钮 -->
-        <t-tooltip placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
+        <t-tooltip v-if="canShowKnowledgeControl" placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
           <template #content>
             <div v-if="isKnowledgeBaseDisabledByAgent" class="tooltip-with-link">
               <span>{{ $t('input.kbDisabledByAgent') }}</span>
@@ -2240,7 +2409,7 @@ defineExpose({
         </t-tooltip>
 
         <!-- 模型显示 -->
-        <t-tooltip :content="isModelLockedByAgent ? $t('input.modelLockedByAgent') : ''" :disabled="!isModelLockedByAgent">
+        <t-tooltip v-if="canShowModelControl" :content="isModelLockedByAgent ? $t('input.modelLockedByAgent') : ''" :disabled="!isModelLockedByAgent">
           <div class="model-display" :class="{ 'agent-controlled': isModelLockedByAgent }">
             <div
               ref="modelButtonRef"
@@ -2266,11 +2435,11 @@ defineExpose({
       </div>
 
       <Teleport to="body">
-        <div v-if="showModelSelector" class="model-selector-overlay" @click="closeModelSelector">
+        <div v-if="canShowModelControl && showModelSelector" class="model-selector-overlay" @click="closeModelSelector">
             <div class="model-selector-dropdown" :style="modelDropdownStyle" @click.stop>
             <div class="model-selector-header">
               <span>{{ $t('conversationSettings.models.chatGroupLabel') }}</span>
-              <button class="model-selector-add" type="button" @click="handleModelChange('__add_model__')">
+              <button v-if="!isSharePageMode" class="model-selector-add" type="button" @click="handleModelChange('__add_model__')">
                 <span class="add-icon">+</span>
                   <span class="add-text">{{ $t('input.addModel') }}</span>
               </button>
@@ -2335,6 +2504,7 @@ defineExpose({
     <!-- 知识库选择下拉（使用 Teleport 传送到 body，避免父容器定位影响） -->
     <Teleport to="body">
     <KnowledgeBaseSelector
+      v-if="canShowKnowledgeControl"
       v-model:visible="showKbSelector"
         :anchorEl="atButtonRef"
       @close="showKbSelector = false"

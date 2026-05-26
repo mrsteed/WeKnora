@@ -1,7 +1,7 @@
 <template>
-    <div class="chat" :class="{ 'is-embedded': embeddedMode, 'is-sidebar-collapsed': uiStore.sidebarCollapsed }">
+    <div class="chat" :class="{ 'is-embedded': effectiveEmbeddedMode, 'is-sidebar-collapsed': uiStore.sidebarCollapsed }">
         <div ref="scrollContainer" class="chat_scroll_box" @scroll="handleScroll">
-            <div class="msg_list" :class="{ 'is-embedded': embeddedMode }">
+            <div class="msg_list" :class="{ 'is-embedded': effectiveEmbeddedMode }">
                 <!-- 消息列表骨架屏 -->
                 <div v-if="historyLoading && messagesList.length === 0" class="msg-skeleton-list">
                     <div class="msg-skeleton msg-skeleton-user">
@@ -47,11 +47,11 @@
                 </div>
                 <div v-for="(session, id) in messagesList" :key='id'>
                     <div v-if="session.role == 'user'">
-                        <usermsg :content="session.content" :mentioned_items="session.mentioned_items" :images="session.images" :attachments="session.attachments" :embeddedMode="embeddedMode" :isAutoContinue="Boolean(session.is_auto_continue)"></usermsg>
+                        <usermsg :content="session.content" :mentioned_items="session.mentioned_items" :images="session.images" :attachments="session.attachments" :embeddedMode="effectiveEmbeddedMode" :isAutoContinue="Boolean(session.is_auto_continue)"></usermsg>
                     </div>
                     <div v-if="session.role == 'assistant'">
                         <botmsg :content="session.content" :session="session" :user-query="getUserQuery(id)" @scroll-bottom="scrollToBottom" @retry="handleRetry"
-                            :isFirstEnter="isFirstEnter" :embeddedMode="embeddedMode" :selectedArtifactId="manuallySelectedBaseArtifactId"
+                            :isFirstEnter="isFirstEnter" :embeddedMode="effectiveEmbeddedMode" :selectedArtifactId="manuallySelectedBaseArtifactId"
                             @view-artifact-revisions="openArtifactRevisionDrawer" @use-artifact-as-base="useArtifactAsBase" @clear-artifact-base="clearSelectedBaseArtifact"
                             @artifact-display-update="handleArtifactDisplayUpdate"></botmsg>
                     </div>
@@ -71,7 +71,7 @@
                 <t-icon name="chevron-down" size="20px" />
             </div>
         </transition>
-        <div class="input-container" :class="{ 'is-embedded': embeddedMode }">
+        <div class="input-container" :class="{ 'is-embedded': effectiveEmbeddedMode }">
             <div v-if="displayedBaseArtifact" class="document-baseline-banner">
                 <div class="document-baseline-text">
                     <span class="document-baseline-label">{{ baselineBannerLabel }}</span>
@@ -94,10 +94,12 @@
                 ref="inputFieldRef"
                 @send-msg="(query, modelId, mentionedItems, imageFiles, attachmentFiles) => sendMsg(query, modelId, mentionedItems, imageFiles, attachmentFiles)"
                 @stop-generation="handleStopGeneration"
+                @model-change="(modelId) => emit('model-change', modelId)"
                 :isReplying="isReplying"
                 :sessionId="session_id"
                 :assistantMessageId="currentAssistantMessageId"
-                :embeddedMode="embeddedMode"
+                :embeddedMode="effectiveEmbeddedMode"
+                :runtimeContext="runtimeContext"
             ></InputField>
         </div>
     </div>
@@ -152,6 +154,7 @@ import InputField from '../../components/Input-field.vue';
 import botmsg from './components/botmsg.vue';
 import usermsg from './components/usermsg.vue';
 import { getChatDocumentArtifact, getChatDocumentArtifactRevisions, getChatDocumentArtifacts, getLatestChatDocumentArtifact, getMessageList, generateSessionsTitle, getSession } from "@/api/chat/index";
+import { getPublicAgentShareMessages } from '@/api/agent-share';
 import { getSuggestedQuestions } from "@/api/agent/index";
 import { useStream } from '../../api/chat/streame'
 import { useMenuStore } from '@/stores/menu';
@@ -163,13 +166,141 @@ import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
 import { upsertThinkingEvent } from './utils/thinkingEvent';
 import { extractStructuredPlanningOutlineFromText } from './utils/planningOutline';
+import { createPlatformChatRuntimeContext, isAgentSharePageRuntimeContext } from '@/types/chat-runtime';
 
 const props = defineProps({
   session_id: { type: String, default: '' },
   agentId: { type: String, default: '' },
   kbIds: { type: Array, default: () => [] },
-  embeddedMode: { type: Boolean, default: false }
+  embeddedMode: { type: Boolean, default: false },
+  runtimeContext: { type: Object, default: null }
 });
+
+const emit = defineEmits(['model-change']);
+
+const defaultRuntimeContext = createPlatformChatRuntimeContext();
+const runtimeContext = computed(() => props.runtimeContext || defaultRuntimeContext);
+const isSharePageMode = computed(() => isAgentSharePageRuntimeContext(runtimeContext.value));
+const effectiveEmbeddedMode = computed(() => props.embeddedMode);
+const effectiveAgentId = computed(() => isSharePageMode.value ? (runtimeContext.value.fixedAgentId || '') : props.agentId);
+const effectiveKBIds = computed(() => isSharePageMode.value ? (runtimeContext.value.fixedKnowledgeBaseIds || []) : props.kbIds);
+const shareCode = computed(() => runtimeContext.value.shareCode || '');
+const shareSessionToken = computed(() => runtimeContext.value.shareSessionToken || '');
+const publicChatApiBase = computed(() => runtimeContext.value.publicChatApiBase || '');
+
+const getEffectiveAgentEnabled = () => {
+    if (isSharePageMode.value) {
+        return runtimeContext.value.fixedAgentMode === 'smart-reasoning';
+    }
+    if (effectiveEmbeddedMode.value) {
+        return Boolean(effectiveAgentId.value && effectiveAgentId.value !== 'builtin-quick-answer');
+    }
+    return useSettingsStoreInstance.isAgentEnabled;
+};
+
+const getEffectiveWebSearchEnabled = () => {
+    if (isSharePageMode.value) {
+        return Boolean(runtimeContext.value.webSearchEnabled);
+    }
+    if (effectiveEmbeddedMode.value) {
+        return false;
+    }
+    return useSettingsStoreInstance.isWebSearchEnabled;
+};
+
+const getEffectiveMemoryEnabled = () => {
+    if (isSharePageMode.value || effectiveEmbeddedMode.value) {
+        return false;
+    }
+    return useSettingsStoreInstance.isMemoryEnabled;
+};
+
+const getEffectiveKnowledgeBaseIds = () => {
+    if (isSharePageMode.value) {
+        return [...effectiveKBIds.value];
+    }
+    if (effectiveEmbeddedMode.value) {
+        return [...effectiveKBIds.value];
+    }
+    return [...(useSettingsStoreInstance.settings.selectedKnowledgeBases || [])];
+};
+
+const getEffectiveKnowledgeIds = () => {
+    if (isSharePageMode.value || effectiveEmbeddedMode.value) {
+        return [];
+    }
+    return [...(useSettingsStoreInstance.settings.selectedFiles || [])];
+};
+
+const getEffectiveMCPServiceIDs = () => {
+    if (isSharePageMode.value || effectiveEmbeddedMode.value) {
+        return [];
+    }
+    return [...(useSettingsStoreInstance.settings.selectedMCPServices || [])];
+};
+
+const getShareRequestHeaders = () => {
+    if (!shareSessionToken.value) {
+        return {};
+    }
+    return {
+        'X-Share-Session-Token': shareSessionToken.value,
+    };
+};
+
+const normalizeRuntimeSuggestedQuestions = () => {
+    const source = runtimeContext.value?.suggestedQuestions || [];
+    return source.map((item) => typeof item === 'string' ? { question: item } : item);
+};
+
+const syncRuntimeSuggestedQuestions = () => {
+    suggestedQuestions.value = normalizeRuntimeSuggestedQuestions();
+    suggestedQuestionsLoading.value = false;
+};
+
+const buildContinueStreamRequest = (targetSessionId, messageId) => {
+    if (isSharePageMode.value) {
+        return {
+            session_id: targetSessionId,
+            query: messageId,
+            method: 'GET',
+            url: `${publicChatApiBase.value}/chat/continue`,
+            appendSessionIdToUrl: false,
+            requireAuth: false,
+            headers: getShareRequestHeaders(),
+        };
+    }
+    return {
+        session_id: targetSessionId,
+        query: messageId,
+        method: 'GET',
+        url: '/api/v1/sessions/continue-stream',
+    };
+};
+
+const applyRuntimeChatRequest = (request) => {
+    if (!isSharePageMode.value) {
+        return request;
+    }
+    return {
+        ...request,
+        url: `${publicChatApiBase.value}/chat`,
+        appendSessionIdToUrl: false,
+        includeSessionIdInBody: true,
+        requireAuth: false,
+        headers: getShareRequestHeaders(),
+    };
+};
+
+const loadMessagesForRuntime = (data) => {
+    if (isSharePageMode.value) {
+        return getPublicAgentShareMessages(shareCode.value, data.session_id, shareSessionToken.value, {
+            beforeTime: data.created_at || undefined,
+            limit: data.limit,
+        });
+    }
+    return getMessageList(data);
+};
 
 const usemenuStore = useMenuStore();
 const useSettingsStoreInstance = useSettingsStore();
@@ -240,14 +371,18 @@ let suggestedQuestionsFetchId = 0; // 用于取消过时的请求
 let suggestedDebounceTimer = null;
 
 const fetchSuggestedQuestions = async () => {
+    if (isSharePageMode.value) {
+        syncRuntimeSuggestedQuestions();
+        return;
+    }
     const fetchId = ++suggestedQuestionsFetchId;
     suggestedQuestionsLoading.value = true;
     // 加载期间保留旧数据，不清空，避免布局抖动
     try {
-        const agentId = props.embeddedMode ? props.agentId : useSettingsStoreInstance.selectedAgentId;
+        const agentId = effectiveEmbeddedMode.value ? effectiveAgentId.value : useSettingsStoreInstance.selectedAgentId;
         if (!agentId) return;
-        const selectedKBs = props.embeddedMode ? props.kbIds : useSettingsStoreInstance.getSelectedKnowledgeBases();
-        const selectedFiles = props.embeddedMode ? [] : useSettingsStoreInstance.getSelectedFiles();
+        const selectedKBs = effectiveEmbeddedMode.value ? effectiveKBIds.value : useSettingsStoreInstance.getSelectedKnowledgeBases();
+        const selectedFiles = effectiveEmbeddedMode.value ? [] : useSettingsStoreInstance.getSelectedFiles();
         const res = await getSuggestedQuestions(agentId, {
             knowledge_base_ids: selectedKBs.length > 0 ? selectedKBs : undefined,
             knowledge_ids: selectedFiles.length > 0 ? selectedFiles : undefined,
@@ -278,6 +413,10 @@ const handleSuggestedQuestionClick = (question) => {
 
 // 防抖包装，切换知识库/文件时300ms内不重复请求
 const debouncedFetchSuggestions = () => {
+    if (isSharePageMode.value) {
+        syncRuntimeSuggestedQuestions();
+        return;
+    }
     if (suggestedDebounceTimer) clearTimeout(suggestedDebounceTimer);
     suggestedDebounceTimer = setTimeout(() => { fetchSuggestedQuestions(); }, 300);
 };
@@ -295,6 +434,15 @@ watch(
 watch(
     () => useSettingsStoreInstance.settings.selectedFiles,
     debouncedFetchSuggestions,
+    { deep: true },
+);
+watch(
+    () => runtimeContext.value?.suggestedQuestions,
+    () => {
+        if (isSharePageMode.value) {
+            syncRuntimeSuggestedQuestions();
+        }
+    },
     { deep: true },
 );
 
@@ -577,12 +725,7 @@ const recoverHistoricalAssistantMessages = async (items = []) => {
             if (!message?.id || isMessageTerminal(message)) {
                 continue;
             }
-            await startStream({
-                session_id: session_id.value,
-                query: message.id,
-                method: 'GET',
-                url: '/api/v1/sessions/continue-stream'
-            });
+            await startStream(buildContinueStreamRequest(session_id.value, message.id));
         }
     } finally {
         currentAssistantMessageId.value = previousAssistantMessageId;
@@ -1256,6 +1399,9 @@ const loadSessionArtifacts = async (targetSessionId = session_id.value) => {
     if (!targetSessionId) {
         return;
     }
+    if (isSharePageMode.value) {
+        return;
+    }
     try {
         const res = await getChatDocumentArtifacts(targetSessionId, 100);
         chatDocumentArtifacts.value = Array.isArray(res?.data)
@@ -1611,16 +1757,18 @@ const buildRetryPayloadFromUserMessage = (userMessage) => {
         return userMessage.retry_payload;
     }
 
-    const agentEnabled = props.embeddedMode ? (props.agentId && props.agentId !== 'builtin-quick-answer') : useSettingsStoreInstance.isAgentEnabled;
-    const selectedAgentId = props.embeddedMode ? props.agentId : (useSettingsStoreInstance.selectedAgentId || '');
-    const webSearchEnabled = props.embeddedMode ? false : useSettingsStoreInstance.isWebSearchEnabled;
-    const enableMemory = props.embeddedMode ? false : useSettingsStoreInstance.isMemoryEnabled;
-    const kbIds = props.embeddedMode ? props.kbIds : (useSettingsStoreInstance.settings.selectedKnowledgeBases || []);
-    const knowledgeIds = props.embeddedMode ? [] : (useSettingsStoreInstance.settings.selectedFiles || []);
-    const mcpServiceIds = props.embeddedMode ? [] : (useSettingsStoreInstance.settings.selectedMCPServices || []);
+    const agentEnabled = getEffectiveAgentEnabled();
+    const selectedAgentId = (isSharePageMode.value || effectiveEmbeddedMode.value)
+        ? effectiveAgentId.value
+        : (useSettingsStoreInstance.selectedAgentId || '');
+    const webSearchEnabled = getEffectiveWebSearchEnabled();
+    const enableMemory = getEffectiveMemoryEnabled();
+    const kbIds = getEffectiveKnowledgeBaseIds();
+    const knowledgeIds = getEffectiveKnowledgeIds();
+    const mcpServiceIds = getEffectiveMCPServiceIDs();
 
     return {
-        request: {
+        request: applyRuntimeChatRequest({
             session_id: session_id.value,
             knowledge_base_ids: kbIds,
             knowledge_ids: knowledgeIds,
@@ -1636,7 +1784,7 @@ const buildRetryPayloadFromUserMessage = (userMessage) => {
             query: userMessage?.content || '',
             method: 'POST',
             url: agentEnabled ? '/api/v1/agent-chat' : '/api/v1/knowledge-chat'
-        },
+        }),
         display: {
             mentioned_items: userMessage?.mentioned_items || [],
             user_images: userMessage?.images || [],
@@ -1941,7 +2089,7 @@ const handleScroll = () => {
 };
 
 const getmsgList = (data, isScrollType = false, scrollHeight) => {
-    getMessageList(data).then(res => {
+    loadMessagesForRuntime(data).then(res => {
         if (res && res.data?.length) {
             created_at.value = res.data[0].created_at;
             handleMsgList(res.data, isScrollType, scrollHeight);
@@ -2226,18 +2374,18 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     const attachmentDisplay = attachmentFiles.map(a => ({ file_name: a.name, file_size: a.size, file_type: '.' + a.name.split('.').pop()?.toLowerCase() }));
     
     // Get agent mode status from settings store
-    const agentEnabled = props.embeddedMode ? (props.agentId && props.agentId !== 'builtin-quick-answer') : useSettingsStoreInstance.isAgentEnabled;
+    const agentEnabled = getEffectiveAgentEnabled();
     
     // Get web search status from settings store
-    const webSearchEnabled = props.embeddedMode ? false : useSettingsStoreInstance.isWebSearchEnabled;
+    const webSearchEnabled = getEffectiveWebSearchEnabled();
     
     // Get memory status from settings store
-    const enableMemory = props.embeddedMode ? false : useSettingsStoreInstance.isMemoryEnabled;
+    const enableMemory = getEffectiveMemoryEnabled();
     
     // Get knowledge_base_ids from settings store (selected by user via KnowledgeBaseSelector)
     // Merge @mentioned KB/file IDs so retrieval uses the same targets user @mentioned (including shared KBs)
-    const sidebarKbIds = props.embeddedMode ? props.kbIds : (useSettingsStoreInstance.settings.selectedKnowledgeBases || []);
-    const sidebarFileIds = props.embeddedMode ? [] : (useSettingsStoreInstance.settings.selectedFiles || []);
+    const sidebarKbIds = getEffectiveKnowledgeBaseIds();
+    const sidebarFileIds = getEffectiveKnowledgeIds();
     const kbIdSet = new Set(sidebarKbIds);
     const fileIdSet = new Set(sidebarFileIds);
     for (const item of mentionedItems || []) {
@@ -2252,7 +2400,9 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     const knowledgeIds = [...fileIdSet];
 
     // Get selected agent ID (backend resolves shared agent and its tenant from share relation)
-    const selectedAgentId = props.embeddedMode ? props.agentId : (useSettingsStoreInstance.selectedAgentId || '');
+    const selectedAgentId = (isSharePageMode.value || effectiveEmbeddedMode.value)
+        ? effectiveAgentId.value
+        : (useSettingsStoreInstance.selectedAgentId || '');
 
     // Use agent-chat endpoint when agent is enabled, otherwise use knowledge-chat
     const endpoint = agentEnabled ? '/api/v1/agent-chat' : '/api/v1/knowledge-chat';
@@ -2285,9 +2435,9 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         : undefined;
     
     // Get selected MCP services from settings store (if available)
-    const mcpServiceIds = props.embeddedMode ? [] : (useSettingsStoreInstance.settings.selectedMCPServices || []);
+    const mcpServiceIds = getEffectiveMCPServiceIDs();
 
-    const requestParams = {
+    const requestParams = applyRuntimeChatRequest({
         session_id: session_id.value,
         knowledge_base_ids: kbIds,
         knowledge_ids: knowledgeIds,
@@ -2308,7 +2458,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         query: value,
         method: 'POST',
         url: endpoint
-    };
+    });
 
     // 将@提及的知识库和文件信息存入用户消息，并保留本次请求参数以便失败后重试
     messagesList.push({
@@ -2944,16 +3094,16 @@ onMounted(async () => {
     messagesList.splice(0);
     
     // 若从智能体列表点击共享智能体进入，URL 带 agent_id 与 source_tenant_id，同步到 store
-    const agentIdFromQuery = props.embeddedAgentId || (route.query.agent_id && String(route.query.agent_id));
+    const agentIdFromQuery = effectiveAgentId.value || (route.query.agent_id && String(route.query.agent_id));
     const sourceTenantIdFromQuery = route.query.source_tenant_id && String(route.query.source_tenant_id);
-    if (agentIdFromQuery && sourceTenantIdFromQuery) {
+    if (!isSharePageMode.value && agentIdFromQuery && sourceTenantIdFromQuery) {
         useSettingsStoreInstance.selectAgent(agentIdFromQuery, sourceTenantIdFromQuery);
-    } else if (agentIdFromQuery) {
+    } else if (!isSharePageMode.value && agentIdFromQuery) {
         useSettingsStoreInstance.selectAgent(agentIdFromQuery, null);
     }
     
-    if (props.embeddedKbIds && props.embeddedKbIds.length > 0) {
-        useSettingsStoreInstance.selectKnowledgeBases(props.embeddedKbIds);
+    if (!isSharePageMode.value && effectiveKBIds.value.length > 0) {
+        useSettingsStoreInstance.selectKnowledgeBases(effectiveKBIds.value);
     }
     
     // 初始化状态：加载历史消息时不应显示loading
@@ -2961,16 +3111,20 @@ onMounted(async () => {
     isReplying.value = false;
     
     // Load session data to get agent_config
-    try {
-        const sessionRes = await getSession(session_id.value);
-        if (sessionRes?.data) {
-            sessionData.value = sessionRes.data;
+    if (!isSharePageMode.value) {
+        try {
+            const sessionRes = await getSession(session_id.value);
+            if (sessionRes?.data) {
+                sessionData.value = sessionRes.data;
+            }
+        } catch (error) {
+            console.error('Failed to load session data:', error);
         }
-    } catch (error) {
-        console.error('Failed to load session data:', error);
     }
     
-    checkmenuTitle(session_id.value)
+    if (!isSharePageMode.value) {
+        checkmenuTitle(session_id.value)
+    }
     if (firstQuery.value) {
         scrollLock.value = true;
         historyLoading.value = false;

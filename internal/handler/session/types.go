@@ -73,6 +73,21 @@ type AttachmentUpload struct {
 	FileSize int64  `json:"file_size"` // File size in bytes
 }
 
+// PublicAgentPageShareChatRequest is the minimal anonymous request accepted by share-page chat endpoints.
+type PublicAgentPageShareChatRequest struct {
+	SessionID         string             `json:"session_id" binding:"required"`
+	Query             string             `json:"query" binding:"required"`
+	Images            []ImageAttachment  `json:"images"`
+	AttachmentUploads []AttachmentUpload `json:"attachment_uploads,omitempty"`
+}
+
+// PublicAgentPageShareContinueRequest represents a public share stream continuation request.
+// It supports the design-level /chat/continue entry while still mapping to the existing stream replay flow.
+type PublicAgentPageShareContinueRequest struct {
+	SessionID string `json:"session_id" form:"session_id" binding:"required"`
+	MessageID string `json:"message_id" form:"message_id" binding:"required"`
+}
+
 // SearchKnowledgeRequest defines the request structure for searching knowledge without LLM summarization
 type SearchKnowledgeRequest struct {
 	Query            string   `json:"query"              binding:"required"` // Query text to search for

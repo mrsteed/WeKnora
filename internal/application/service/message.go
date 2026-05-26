@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -39,29 +40,32 @@ const (
 // It reads the chat history knowledge base configuration from the tenant's ChatHistoryConfig,
 // which is managed via the settings UI.
 type messageService struct {
-	messageRepo   interfaces.MessageRepository    // Repository for message storage operations
-	sessionRepo   interfaces.SessionRepository    // Repository for session validation
-	tenantService interfaces.TenantService        // Service for tenant operations (read ChatHistoryConfig)
-	kbService     interfaces.KnowledgeBaseService // Service for knowledge base operations (search chat history KB)
-	knowService   interfaces.KnowledgeService     // Service for knowledge operations (index/delete passages)
-	modelService  interfaces.ModelService         // Service for model operations (rerank model)
+	messageRepo      interfaces.MessageRepository               // Repository for message storage operations
+	sessionRepo      interfaces.SessionRepository               // Repository for session validation
+	shareSessionRepo interfaces.AgentPageShareSessionRepository // Repository for anonymous share-page session validation
+	tenantService    interfaces.TenantService                   // Service for tenant operations (read ChatHistoryConfig)
+	kbService        interfaces.KnowledgeBaseService            // Service for knowledge base operations (search chat history KB)
+	knowService      interfaces.KnowledgeService                // Service for knowledge operations (index/delete passages)
+	modelService     interfaces.ModelService                    // Service for model operations (rerank model)
 }
 
 // NewMessageService creates a new message service instance with the required repositories
 func NewMessageService(messageRepo interfaces.MessageRepository,
 	sessionRepo interfaces.SessionRepository,
+	shareSessionRepo interfaces.AgentPageShareSessionRepository,
 	tenantService interfaces.TenantService,
 	kbService interfaces.KnowledgeBaseService,
 	knowService interfaces.KnowledgeService,
 	modelService interfaces.ModelService,
 ) interfaces.MessageService {
 	return &messageService{
-		messageRepo:   messageRepo,
-		sessionRepo:   sessionRepo,
-		tenantService: tenantService,
-		kbService:     kbService,
-		knowService:   knowService,
-		modelService:  modelService,
+		messageRepo:      messageRepo,
+		sessionRepo:      sessionRepo,
+		shareSessionRepo: shareSessionRepo,
+		tenantService:    tenantService,
+		kbService:        kbService,
+		knowService:      knowService,
+		modelService:     modelService,
 	}
 }
 
@@ -88,6 +92,27 @@ func sessionUserIDForLookup(ctx context.Context) string {
 	return userID
 }
 
+// ensureSessionAccessible validates that the current caller can access the target session.
+// Anonymous agent-share-page requests do not go through the platform session repository,
+// because that repository intentionally filters out share-page sessions.
+func (s *messageService) ensureSessionAccessible(ctx context.Context, tenantID uint64, userID, sessionID string) error {
+	if userID == "" && s.shareSessionRepo != nil {
+		if sessionTenantID, ok := types.SessionTenantIDFromContext(ctx); ok && sessionTenantID == tenantID {
+			shareSession, err := s.shareSessionRepo.GetByID(ctx, sessionID)
+			if err == nil {
+				if shareSession != nil && shareSession.TenantID == tenantID {
+					return nil
+				}
+			} else if !errors.Is(err, repository.ErrAgentPageShareSessionNotFound) {
+				return err
+			}
+		}
+	}
+
+	_, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID)
+	return err
+}
+
 // CreateMessage creates a new message within an existing session
 func (s *messageService) CreateMessage(ctx context.Context, message *types.Message) (*types.Message, error) {
 	logger.Info(ctx, "Start creating message")
@@ -100,7 +125,7 @@ func (s *messageService) CreateMessage(ctx context.Context, message *types.Messa
 	}
 	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d, session ID: %s", tenantID, message.SessionID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, userID, message.SessionID)
+	err := s.ensureSessionAccessible(ctx, tenantID, userID, message.SessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -131,7 +156,7 @@ func (s *messageService) GetMessage(ctx context.Context, sessionID string, messa
 	}
 	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID)
+	err := s.ensureSessionAccessible(ctx, tenantID, userID, sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -165,7 +190,7 @@ func (s *messageService) GetMessagesBySession(ctx context.Context,
 	}
 	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID)
+	err := s.ensureSessionAccessible(ctx, tenantID, userID, sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -200,7 +225,7 @@ func (s *messageService) GetRecentMessagesBySession(ctx context.Context,
 	}
 	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID)
+	err := s.ensureSessionAccessible(ctx, tenantID, userID, sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -234,7 +259,7 @@ func (s *messageService) GetMessagesBySessionBeforeTime(ctx context.Context,
 	}
 	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID)
+	err := s.ensureSessionAccessible(ctx, tenantID, userID, sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -267,7 +292,7 @@ func (s *messageService) UpdateMessage(ctx context.Context, message *types.Messa
 	}
 	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, userID, message.SessionID)
+	err := s.ensureSessionAccessible(ctx, tenantID, userID, message.SessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return err
@@ -309,7 +334,7 @@ func (s *messageService) DeleteMessage(ctx context.Context, sessionID string, me
 	}
 	userID := sessionUserIDForLookup(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID)
+	err := s.ensureSessionAccessible(ctx, tenantID, userID, sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return err
@@ -350,7 +375,7 @@ func (s *messageService) ClearSessionMessages(ctx context.Context, sessionID str
 
 	tenantID := types.MustTenantIDFromContext(ctx)
 	userID := sessionUserIDForLookup(ctx)
-	if _, err := s.sessionRepo.Get(ctx, tenantID, userID, sessionID); err != nil {
+	if err := s.ensureSessionAccessible(ctx, tenantID, userID, sessionID); err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return err
 	}

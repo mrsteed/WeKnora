@@ -15,6 +15,10 @@ type sessionRepository struct {
 	db *gorm.DB
 }
 
+func filterPlatformSessions(db *gorm.DB) *gorm.DB {
+	return db.Where("(access_mode IS NULL OR access_mode = '' OR access_mode <> ?)", types.SessionAccessModeAgentSharePage)
+}
+
 // NewSessionRepository creates a new session repository instance
 func NewSessionRepository(db *gorm.DB) interfaces.SessionRepository {
 	return &sessionRepository{db: db}
@@ -34,7 +38,7 @@ func (r *sessionRepository) Create(ctx context.Context, session *types.Session) 
 // Get retrieves a session by ID (filtered by tenantID and userID for ownership check)
 func (r *sessionRepository) Get(ctx context.Context, tenantID uint64, userID string, id string) (*types.Session, error) {
 	var session types.Session
-	query := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID)
+	query := filterPlatformSessions(r.db.WithContext(ctx)).Where("tenant_id = ?", tenantID)
 	if userID != "" {
 		query = query.Where("user_id = ?", userID)
 	}
@@ -48,7 +52,7 @@ func (r *sessionRepository) Get(ctx context.Context, tenantID uint64, userID str
 // GetByTenantAndUser retrieves all sessions for a specific user within a tenant
 func (r *sessionRepository) GetByTenantAndUser(ctx context.Context, tenantID uint64, userID string) ([]*types.Session, error) {
 	var sessions []*types.Session
-	query := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID)
+	query := filterPlatformSessions(r.db.WithContext(ctx)).Where("tenant_id = ?", tenantID)
 	if userID != "" {
 		query = query.Where("user_id = ?", userID)
 	}
@@ -66,7 +70,7 @@ func (r *sessionRepository) GetPagedByTenantAndUser(
 	var sessions []*types.Session
 	var total int64
 
-	baseQuery := r.db.WithContext(ctx).Model(&types.Session{}).Where("tenant_id = ?", tenantID)
+	baseQuery := filterPlatformSessions(r.db.WithContext(ctx).Model(&types.Session{})).Where("tenant_id = ?", tenantID)
 	if userID != "" {
 		baseQuery = baseQuery.Where("user_id = ?", userID)
 	}
@@ -78,7 +82,7 @@ func (r *sessionRepository) GetPagedByTenantAndUser(
 	}
 
 	// Then query the paginated data
-	dataQuery := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID)
+	dataQuery := filterPlatformSessions(r.db.WithContext(ctx)).Where("tenant_id = ?", tenantID)
 	if userID != "" {
 		dataQuery = dataQuery.Where("user_id = ?", userID)
 	}
@@ -117,6 +121,7 @@ func (r *sessionRepository) QueryPaged(
 	// Base filter shared by count and list queries.
 	applyBase := func(db *gorm.DB) *gorm.DB {
 		db = db.Where("s.tenant_id = ? AND s.deleted_at IS NULL", q.TenantID)
+		db = db.Where("(s.access_mode IS NULL OR s.access_mode = '' OR s.access_mode <> ?)", types.SessionAccessModeAgentSharePage)
 		if q.UserID != "" {
 			db = db.Where("(s.user_id = ? OR s.user_id IS NULL OR s.user_id = '')", q.UserID)
 		}
@@ -208,7 +213,8 @@ func (r *sessionRepository) SetPinned(
 
 	q := r.db.WithContext(ctx).
 		Model(&types.Session{}).
-		Where("tenant_id = ? AND id = ?", tenantID, id)
+		Where("tenant_id = ? AND id = ?", tenantID, id).
+		Where("(access_mode IS NULL OR access_mode = '' OR access_mode <> ?)", types.SessionAccessModeAgentSharePage)
 	if userID != "" {
 		q = q.Where("(user_id = ? OR user_id IS NULL OR user_id = '')", userID)
 	}
@@ -219,7 +225,7 @@ func (r *sessionRepository) SetPinned(
 // Update updates a session (filtered by tenantID and userID for ownership check)
 func (r *sessionRepository) Update(ctx context.Context, session *types.Session) error {
 	session.UpdatedAt = time.Now()
-	query := r.db.WithContext(ctx).Where("tenant_id = ?", session.TenantID)
+	query := filterPlatformSessions(r.db.WithContext(ctx)).Where("tenant_id = ?", session.TenantID)
 	if session.UserID != "" {
 		query = query.Where("user_id = ?", session.UserID)
 	}
@@ -234,7 +240,7 @@ func (r *sessionRepository) Update(ctx context.Context, session *types.Session) 
 
 // Delete deletes a session (filtered by tenantID and userID for ownership check)
 func (r *sessionRepository) Delete(ctx context.Context, tenantID uint64, userID string, id string) error {
-	query := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID)
+	query := filterPlatformSessions(r.db.WithContext(ctx)).Where("tenant_id = ?", tenantID)
 	if userID != "" {
 		query = query.Where("user_id = ?", userID)
 	}
@@ -246,7 +252,7 @@ func (r *sessionRepository) BatchDelete(ctx context.Context, tenantID uint64, id
 	if len(ids) == 0 {
 		return nil
 	}
-	return r.db.WithContext(ctx).Where("tenant_id = ? AND id IN ?", tenantID, ids).Delete(&types.Session{}).Error
+	return filterPlatformSessions(r.db.WithContext(ctx)).Where("tenant_id = ? AND id IN ?", tenantID, ids).Delete(&types.Session{}).Error
 }
 
 // DeleteAllByTenantID deletes all sessions for a tenant

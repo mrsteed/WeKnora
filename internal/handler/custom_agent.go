@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,14 +18,16 @@ import (
 // CustomAgentHandler defines the HTTP handler for custom agent operations
 type CustomAgentHandler struct {
 	service           interfaces.CustomAgentService
+	pageShareService  interfaces.AgentPageShareService
 	visibilityService interfaces.AgentVisibilityService
 	disabledRepo      interfaces.TenantDisabledSharedAgentRepository
 }
 
 // NewCustomAgentHandler creates a new custom agent handler instance
-func NewCustomAgentHandler(service interfaces.CustomAgentService, visibilityService interfaces.AgentVisibilityService, disabledRepo interfaces.TenantDisabledSharedAgentRepository) *CustomAgentHandler {
+func NewCustomAgentHandler(service interfaces.CustomAgentService, pageShareService interfaces.AgentPageShareService, visibilityService interfaces.AgentVisibilityService, disabledRepo interfaces.TenantDisabledSharedAgentRepository) *CustomAgentHandler {
 	return &CustomAgentHandler{
 		service:           service,
+		pageShareService:  pageShareService,
 		visibilityService: visibilityService,
 		disabledRepo:      disabledRepo,
 	}
@@ -620,4 +623,189 @@ func (h *CustomAgentHandler) GetSuggestedQuestions(c *gin.Context) {
 			"questions": questions,
 		},
 	})
+}
+
+// GetAgentPageShare returns the current page-share state of an owned custom agent.
+func (h *CustomAgentHandler) GetAgentPageShare(c *gin.Context) {
+	ctx, agent, _, tenantID, ok := h.getManageableCustomAgent(c)
+	if !ok {
+		return
+	}
+
+	share, err := h.pageShareService.GetByAgent(ctx, agent.ID, tenantID)
+	if err != nil {
+		if err == service.ErrAgentPageShareNotFound {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"data":    nil,
+			})
+			return
+		}
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"agent_id": agent.ID, "tenant_id": tenantID})
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    buildAgentPageShareManagementView(share),
+	})
+}
+
+// CreateOrEnableAgentPageShare opens or re-enables the public share link of an owned custom agent.
+func (h *CustomAgentHandler) CreateOrEnableAgentPageShare(c *gin.Context) {
+	ctx, agent, user, tenantID, ok := h.getManageableCustomAgent(c)
+	if !ok {
+		return
+	}
+
+	share, err := h.pageShareService.CreateOrEnable(ctx, agent.ID, user.ID, tenantID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"agent_id": agent.ID, "tenant_id": tenantID})
+		switch err {
+		case service.ErrSharedAgentNotFound:
+			c.Error(errors.NewNotFoundError("Agent not found"))
+		case service.ErrAgentNotConfiguredForPageSharing:
+			c.Error(errors.NewBadRequestError(err.Error()))
+		default:
+			c.Error(errors.NewInternalServerError(err.Error()))
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    buildAgentPageShareManagementView(share),
+	})
+}
+
+// DeleteAgentPageShare disables the public share link of an owned custom agent.
+func (h *CustomAgentHandler) DeleteAgentPageShare(c *gin.Context) {
+	ctx, agent, _, tenantID, ok := h.getManageableCustomAgent(c)
+	if !ok {
+		return
+	}
+
+	err := h.pageShareService.Disable(ctx, agent.ID, tenantID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"agent_id": agent.ID, "tenant_id": tenantID})
+		if err == service.ErrAgentPageShareNotFound {
+			c.Error(errors.NewNotFoundError("Agent page share not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Agent page share disabled successfully",
+	})
+}
+
+// GetPublicAgentPageShare returns the anonymous readonly metadata used by the shared chat shell.
+func (h *CustomAgentHandler) GetPublicAgentPageShare(c *gin.Context) {
+	ctx := c.Request.Context()
+	shareCode := strings.TrimSpace(c.Param("share_code"))
+	if shareCode == "" {
+		c.Error(errors.NewBadRequestError("share_code cannot be empty"))
+		return
+	}
+
+	info, err := h.pageShareService.GetPublicInfo(ctx, shareCode)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"share_code": secutils.SanitizeForLog(shareCode)})
+		switch err {
+		case service.ErrAgentPageShareNotFound, service.ErrAgentPageShareUnavailable, service.ErrSharedAgentNotFound:
+			c.Error(errors.NewNotFoundError("Agent page share not found"))
+		default:
+			c.Error(errors.NewInternalServerError(err.Error()))
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    info,
+	})
+}
+
+func (h *CustomAgentHandler) getManageableCustomAgent(c *gin.Context) (context.Context, *types.CustomAgent, *types.User, uint64, bool) {
+	ctx := c.Request.Context()
+	id := secutils.SanitizeForLog(c.Param("id"))
+	if id == "" {
+		c.Error(errors.NewBadRequestError("Agent ID cannot be empty"))
+		return nil, nil, nil, 0, false
+	}
+	if types.IsBuiltinAgentID(id) {
+		c.Error(errors.NewBadRequestError("Built-in agents do not support page sharing"))
+		return nil, nil, nil, 0, false
+	}
+
+	tenantID, ok := getTenantIDFromGin(c)
+	if !ok {
+		c.Error(errors.NewUnauthorizedError("Missing tenant context"))
+		return nil, nil, nil, 0, false
+	}
+
+	userVal, ok := c.Get(types.UserContextKey.String())
+	if !ok {
+		c.Error(errors.NewUnauthorizedError("User context not found"))
+		return nil, nil, nil, 0, false
+	}
+	user, ok := userVal.(*types.User)
+	if !ok || user == nil {
+		c.Error(errors.NewUnauthorizedError("Invalid user context"))
+		return nil, nil, nil, 0, false
+	}
+
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, tenantID)
+	agent, err := h.service.GetAgentByID(ctx, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"agent_id": id})
+		if err == service.ErrAgentNotFound {
+			c.Error(errors.NewNotFoundError("Agent not found"))
+		} else {
+			c.Error(errors.NewInternalServerError(err.Error()))
+		}
+		return nil, nil, nil, 0, false
+	}
+	if agent.CreatedBy != "" && agent.CreatedBy != user.ID && !user.IsSuperAdmin {
+		c.Error(errors.NewForbiddenError("Only the creator or super admin can manage this agent page share"))
+		return nil, nil, nil, 0, false
+	}
+	return ctx, agent, user, tenantID, true
+}
+
+func getTenantIDFromGin(c *gin.Context) (uint64, bool) {
+	tenantIDVal, exists := c.Get(types.TenantIDContextKey.String())
+	if !exists {
+		return 0, false
+	}
+	tenantID, ok := tenantIDVal.(uint64)
+	if !ok {
+		return 0, false
+	}
+	return tenantID, true
+}
+
+func buildAgentPageShareManagementView(share *types.AgentPageShare) *types.AgentPageShareManagementView {
+	if share == nil {
+		return nil
+	}
+	return &types.AgentPageShareManagementView{
+		ID:                    share.ID,
+		AgentID:               share.AgentID,
+		SourceTenantID:        share.SourceTenantID,
+		ShareCode:             share.ShareCode,
+		Status:                share.Status,
+		AccessScope:           share.AccessScope,
+		ShareURL:              "/share/agents/" + share.ShareCode,
+		AnonymousSessionLimit: share.AnonymousSessionLimit,
+		RateLimitPerMinute:    share.RateLimitPerMinute,
+		LastAccessedAt:        share.LastAccessedAt,
+		ExpiresAt:             share.ExpiresAt,
+		CreatedAt:             share.CreatedAt,
+		UpdatedAt:             share.UpdatedAt,
+	}
 }

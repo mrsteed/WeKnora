@@ -30,7 +30,7 @@ export function useStream() {
   let renderTimer: number | null = null
 
   // 启动流式请求
-  const startStream = async (params: { session_id: any; query: any; knowledge_base_ids?: string[]; knowledge_ids?: string[]; intent_hint?: string; base_artifact_id?: string; document_output_mode?: string; document_task_kind?: string; translation_options?: { source_language?: string; target_language?: string; preserve_structure?: boolean; output_format?: string }; document_target_heading?: string; document_merge_mode?: string; auto_continue?: boolean; generation_run_id?: string; auto_continue_root_id?: string; auto_continue_round?: number; auto_continue_prompt?: string; auto_continue_original_query?: string; agent_enabled?: boolean; agent_id?: string; web_search_enabled?: boolean; enable_memory?: boolean; summary_model_id?: string; mcp_service_ids?: string[]; mentioned_items?: Array<{id: string; name: string; type: string; kb_type?: string}>; images?: Array<{data: string}>; attachment_uploads?: Array<{data: string; file_name: string; file_size: number}>; method: string; url: string }) => {
+  const startStream = async (params: { session_id: any; query: any; knowledge_base_ids?: string[]; knowledge_ids?: string[]; intent_hint?: string; base_artifact_id?: string; document_output_mode?: string; document_task_kind?: string; translation_options?: { source_language?: string; target_language?: string; preserve_structure?: boolean; output_format?: string }; document_target_heading?: string; document_merge_mode?: string; auto_continue?: boolean; generation_run_id?: string; auto_continue_root_id?: string; auto_continue_round?: number; auto_continue_prompt?: string; auto_continue_original_query?: string; agent_enabled?: boolean; agent_id?: string; web_search_enabled?: boolean; enable_memory?: boolean; summary_model_id?: string; mcp_service_ids?: string[]; mentioned_items?: Array<{id: string; name: string; type: string; kb_type?: string}>; images?: Array<{data: string}>; attachment_uploads?: Array<{data: string; file_name: string; file_size: number}>; method: string; url: string; headers?: Record<string, string>; requireAuth?: boolean; appendSessionIdToUrl?: boolean; includeSessionIdInBody?: boolean }) => {
     // 重置状态
     output.value = '';
     error.value = null;
@@ -41,8 +41,9 @@ export function useStream() {
     const apiUrl = getApiBaseUrl();
     
     // 获取JWT Token
+    const requireAuth = params.requireAuth !== false;
     const token = localStorage.getItem('weknora_token');
-    if (!token) {
+    if (requireAuth && !token) {
       error.value = i18n.global.t('error.tokenNotFound');
       stopStream();
       return;
@@ -81,10 +82,28 @@ export function useStream() {
     let firstAnswerLogged = false;
 
     try {
-      let url =
-        params.method == "POST"
-          ? `${apiUrl}${params.url}/${params.session_id}`
-          : `${apiUrl}${params.url}/${params.session_id}?message_id=${params.query}`;
+      const appendSessionIdToUrl = params.appendSessionIdToUrl !== false;
+      let url = `${apiUrl}${params.url}`;
+      if (params.method == 'POST') {
+        if (appendSessionIdToUrl && params.session_id) {
+          url = `${url}/${params.session_id}`;
+        }
+      } else {
+        if (appendSessionIdToUrl && params.session_id) {
+          url = `${url}/${params.session_id}`;
+        }
+        const searchParams = new URLSearchParams();
+        if (!appendSessionIdToUrl && params.session_id) {
+          searchParams.set('session_id', String(params.session_id));
+        }
+        if (params.query) {
+          searchParams.set('message_id', String(params.query));
+        }
+        const queryString = searchParams.toString();
+        if (queryString) {
+          url = `${url}?${queryString}`;
+        }
+      }
       console.log(`[TTFB] request:start request_id=${requestID} url=${url} sent_at=${Date.now()}`);
       
       // Prepare POST body with required fields for agent-chat
@@ -136,6 +155,9 @@ export function useStream() {
       if (params.knowledge_base_ids !== undefined && params.knowledge_base_ids.length > 0) {
         postBody.knowledge_base_ids = params.knowledge_base_ids;
       }
+      if (params.includeSessionIdInBody && params.session_id) {
+        postBody.session_id = params.session_id;
+      }
       // Include knowledge_ids if provided
       if (params.knowledge_ids !== undefined && params.knowledge_ids.length > 0) {
         postBody.knowledge_ids = params.knowledge_ids;
@@ -178,10 +200,11 @@ export function useStream() {
         method: params.method,
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
           "Accept-Language": i18n.global.locale?.value || localStorage.getItem('locale') || 'zh-CN',
           "X-Request-ID": requestID,
           ...(tenantIdHeader ? { "X-Tenant-ID": tenantIdHeader } : {}),
+          ...(requireAuth && token ? { "Authorization": `Bearer ${token}` } : {}),
+          ...(params.headers || {}),
         },
         body:
           params.method == "POST"

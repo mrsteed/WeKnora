@@ -235,8 +235,8 @@ instance.interceptors.response.use(
   }
 );
 
-export function get<T = any>(url: string): Promise<T> {
-  return instance.get(url) as Promise<T>;
+export function get<T = any>(url: string, config?: any): Promise<T> {
+  return instance.get(url, config) as Promise<T>;
 }
 
 export async function getDown(url: string) {
@@ -269,12 +269,12 @@ export function post<T = any>(url: string, data = {}, config?: any): Promise<T> 
   return instance.post(url, data, config) as Promise<T>;
 }
 
-export function put<T = any>(url: string, data = {}): Promise<T> {
-  return instance.put(url, data) as Promise<T>;
+export function put<T = any>(url: string, data = {}, config?: any): Promise<T> {
+  return instance.put(url, data, config) as Promise<T>;
 }
 
-export function del<T = any>(url: string, data?: any): Promise<T> {
-  return instance.delete(url, { data }) as Promise<T>;
+export function del<T = any>(url: string, data?: any, config?: any): Promise<T> {
+  return instance.delete(url, { ...(config || {}), data }) as Promise<T>;
 }
 
 export async function postBlob(url: string, data = {}, options?: { rawResponse?: boolean }) {

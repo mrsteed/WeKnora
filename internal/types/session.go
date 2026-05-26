@@ -71,6 +71,13 @@ type ContextConfig struct {
 	SummarizeThreshold int `json:"summarize_threshold"`
 }
 
+const (
+	// SessionAccessModePlatform marks a normal authenticated platform session.
+	SessionAccessModePlatform = "platform"
+	// SessionAccessModeAgentSharePage marks an anonymous session created from an agent share page.
+	SessionAccessModeAgentSharePage = "agent_share_page"
+)
+
 // Session represents the session
 type Session struct {
 	// ID
@@ -84,6 +91,20 @@ type Session struct {
 	// UserID is the owner of the session. Empty for legacy rows (visible at
 	// tenant level) and for IM-created sessions that do not map to a WeKnora user.
 	UserID string `json:"user_id,omitempty" gorm:"type:varchar(36);index"`
+	// AccessMode indicates how the session was created and which runtime boundary owns it.
+	AccessMode string `json:"access_mode,omitempty" gorm:"type:varchar(32);default:'platform';index"`
+	// AgentPageShareID links anonymous share-page sessions back to the owning share record.
+	AgentPageShareID string `json:"agent_page_share_id,omitempty" gorm:"type:varchar(36);index"`
+	// AnonymousVisitorID is the stable anonymous visitor identifier returned to the browser.
+	AnonymousVisitorID string `json:"anonymous_visitor_id,omitempty" gorm:"type:varchar(36);index"`
+	// VisitorTokenHash stores the one-time share session token as a hash only.
+	VisitorTokenHash string `json:"-" gorm:"type:varchar(64)"`
+	// VisitorIPHash stores the hashed client IP for audit and abuse analysis.
+	VisitorIPHash string `json:"-" gorm:"type:varchar(64)"`
+	// UserAgentHash stores the hashed user agent for audit and abuse analysis.
+	UserAgentHash string `json:"-" gorm:"type:varchar(64)"`
+	// ExpiresAt is the anonymous share session expiry time.
+	ExpiresAt *time.Time `json:"expires_at,omitempty" gorm:"index"`
 	// IsPinned indicates whether the session is pinned in the list.
 	IsPinned bool `json:"is_pinned" gorm:"default:false"`
 	// PinnedAt records when the session was pinned; nil when not pinned.
@@ -115,7 +136,12 @@ type Session struct {
 }
 
 func (s *Session) BeforeCreate(tx *gorm.DB) (err error) {
-	s.ID = uuid.New().String()
+	if s.ID == "" {
+		s.ID = uuid.New().String()
+	}
+	if s.AccessMode == "" {
+		s.AccessMode = SessionAccessModePlatform
+	}
 	return nil
 }
 

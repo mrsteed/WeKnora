@@ -18,6 +18,7 @@ const props = defineProps<{
   maxFiles?: number;
   maxSize?: number; // in MB
   disabled?: boolean;
+  supportedTypes?: string[];
 }>();
 
 const emit = defineEmits<{
@@ -40,6 +41,28 @@ const SUPPORTED_TYPES = [
 
 const maxFiles = computed(() => props.maxFiles || 5);
 const maxSize = computed(() => (props.maxSize || 20) * 1024 * 1024); // Convert MB to bytes
+const allowedTypes = computed(() => {
+  if (!Array.isArray(props.supportedTypes)) {
+    return SUPPORTED_TYPES;
+  }
+  return props.supportedTypes
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter((item) => Boolean(item));
+});
+
+const isSupportedFileType = (file: File) => {
+  const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+  const mimeType = String(file.type || '').trim().toLowerCase();
+  return allowedTypes.value.some((type) => {
+    if (type.startsWith('.')) {
+      return type === ext;
+    }
+    if (type.includes('/')) {
+      return type === mimeType;
+    }
+    return false;
+  });
+};
 
 const triggerFileSelect = () => {
   if (props.disabled) return;
@@ -71,11 +94,12 @@ const addFiles = async (files: File[]) => {
     }
     
     // Check file type
-    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-    if (!SUPPORTED_TYPES.includes(ext)) {
+    if (!isSupportedFileType(file)) {
       MessagePlugin.warning(t('chat.attachmentTypeNotSupported', { name: file.name }));
       continue;
     }
+
+    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
     
     const attachment: AttachmentFile = {
       file,
@@ -138,7 +162,7 @@ defineExpose({
     <input
       ref="fileInputRef"
       type="file"
-      :accept="SUPPORTED_TYPES.join(',')"
+      :accept="allowedTypes.join(',')"
       multiple
       style="display: none"
       @change="handleFileSelect"

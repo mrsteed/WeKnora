@@ -82,7 +82,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-API-Key", "X-Request-ID"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-API-Key", "X-Request-ID", "X-Share-Session-Token"},
 		ExposeHeaders:    []string{"Content-Length", "Access-Control-Allow-Origin"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
@@ -118,6 +118,8 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 	// IM 回调路由（在认证中间件之前注册，使用各平台自身的签名验证）
 	RegisterIMRoutes(r, params.IMHandler)
+	RegisterPublicAgentPageShareRoutes(r, params.CustomAgentHandler)
+	RegisterPublicAgentPageShareChatRoutes(r, params.SessionHandler)
 
 	// 认证中间件
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
@@ -628,6 +630,12 @@ func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomA
 		agents.POST("", agentHandler.CreateAgent)
 		// List all agents (including built-in)
 		agents.GET("", agentHandler.ListAgents)
+		// Get the current page-share state of one custom agent
+		agents.GET("/:id/page-share", agentHandler.GetAgentPageShare)
+		// Open or re-enable page share for one custom agent
+		agents.POST("/:id/page-share", agentHandler.CreateOrEnableAgentPageShare)
+		// Close page share for one custom agent
+		agents.DELETE("/:id/page-share", agentHandler.DeleteAgentPageShare)
 		// Get agent by ID
 		agents.GET("/:id", agentHandler.GetAgent)
 		// Update agent
@@ -639,6 +647,28 @@ func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomA
 	}
 	// Registered outside the group to avoid Gin route conflict with /agents/:id/shares in organization routes
 	r.GET("/agents/:id/suggested-questions", agentHandler.GetSuggestedQuestions)
+}
+
+// RegisterPublicAgentPageShareRoutes registers anonymous readonly routes for agent page shares.
+func RegisterPublicAgentPageShareRoutes(r *gin.Engine, agentHandler *handler.CustomAgentHandler) {
+	public := r.Group("/api/v1/public")
+	{
+		public.GET("/agent-page-shares/:share_code", agentHandler.GetPublicAgentPageShare)
+	}
+}
+
+// RegisterPublicAgentPageShareChatRoutes registers anonymous session and chat routes for agent share pages.
+func RegisterPublicAgentPageShareChatRoutes(r *gin.Engine, sessionHandler *session.Handler) {
+	public := r.Group("/api/v1/public")
+	{
+		public.POST("/agent-page-shares/:share_code/sessions", sessionHandler.CreatePublicAgentPageShareSession)
+		public.GET("/agent-page-shares/:share_code/sessions/:session_id/messages", sessionHandler.LoadPublicAgentPageShareMessages)
+		public.POST("/agent-page-shares/:share_code/chat", sessionHandler.PublicAgentPageShareChat)
+		public.GET("/agent-page-shares/:share_code/chat/continue", sessionHandler.ContinuePublicAgentPageShareStream)
+		public.POST("/agent-page-shares/:share_code/chat/continue", sessionHandler.ContinuePublicAgentPageShareStream)
+		public.GET("/agent-page-shares/:share_code/sessions/continue-stream/:session_id", sessionHandler.ContinuePublicAgentPageShareStream)
+		public.POST("/agent-page-shares/:share_code/sessions/:session_id/stop", sessionHandler.StopPublicAgentPageShareSession)
+	}
 }
 
 // RegisterSkillRoutes registers skill routes
