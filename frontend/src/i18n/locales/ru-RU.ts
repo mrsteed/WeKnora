@@ -620,6 +620,17 @@ export default {
     systemSettings: 'Настройки системы',
     tenantInfo: 'Информация о арендаторе',
     apiInfo: 'Информация API',
+    navGroups: {
+      account: 'Аккаунт',
+      workspace: 'Пространство',
+      modelsRuntime: 'Модели',
+      dataExtensions: 'Данные и расширения',
+      platform: 'Платформа',
+    },
+    roleDenied: {
+      title: 'Недостаточно прав',
+      desc: 'Ваша роль не позволяет открыть этот раздел настроек. Обратитесь к администратору арендатора, чтобы запросить нужную роль.',
+    },
     weknoraCloud: {
       title: 'WeKnora Cloud',
       description: 'Настройте учётные данные APPID и APPSECRET для WeKnora Cloud. Данные используются для модельных сервисов и движка парсинга документов.',

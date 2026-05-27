@@ -1,4 +1,4 @@
-package contextcmd
+package profilecmd
 
 import (
 	"errors"
@@ -13,7 +13,7 @@ import (
 )
 
 // seedStore returns a MemStore pre-loaded with sentinel values for every
-// secret slot a context might reference. Tests assert deletion by checking
+// secret slot a profile might reference. Tests assert deletion by checking
 // `secrets.ErrNotFound` post-runRemove.
 func seedStore(t *testing.T, name string, slots ...string) *secrets.MemStore {
 	t.Helper()
@@ -38,8 +38,8 @@ func TestRemove_NonCurrent_NoPromptNeeded(t *testing.T) {
 	out, _ := iostreams.SetForTest(t)
 
 	cfg := &config.Config{
-		CurrentContext: "production",
-		Contexts: map[string]config.Context{
+		CurrentProfile: "production",
+		Profiles: map[string]config.Profile{
 			"production": {Host: "https://prod.example.com", TokenRef: "mem://production/access"},
 			"staging":    {Host: "https://staging.example.com", APIKeyRef: "mem://staging/api_key"},
 		},
@@ -58,15 +58,15 @@ func TestRemove_NonCurrent_NoPromptNeeded(t *testing.T) {
 	}
 
 	got, _ := config.Load()
-	if _, exists := got.Contexts["staging"]; exists {
-		t.Errorf("staging should have been removed; Contexts=%v", got.Contexts)
+	if _, exists := got.Profiles["staging"]; exists {
+		t.Errorf("staging should have been removed; Profiles=%v", got.Profiles)
 	}
-	if got.CurrentContext != "production" {
-		t.Errorf("CurrentContext must be unchanged, got %q", got.CurrentContext)
+	if got.CurrentProfile != "production" {
+		t.Errorf("CurrentProfile must be unchanged, got %q", got.CurrentProfile)
 	}
 	assertDeleted(t, store, "staging", "api_key")
 	if !strings.Contains(out.String(), "staging") {
-		t.Errorf("output should mention removed context, got %q", out.String())
+		t.Errorf("output should mention removed profile, got %q", out.String())
 	}
 }
 
@@ -74,7 +74,7 @@ func TestRemove_NotFound_WithDidYouMean(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	_, _ = iostreams.SetForTest(t)
 
-	cfg := &config.Config{Contexts: map[string]config.Context{
+	cfg := &config.Config{Profiles: map[string]config.Profile{
 		"production": {Host: "https://prod"},
 		"staging":    {Host: "https://staging"},
 	}}
@@ -90,8 +90,8 @@ func TestRemove_NotFound_WithDidYouMean(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *cmdutil.Error, got %T", err)
 	}
-	if cm.Code != cmdutil.CodeLocalContextNotFound {
-		t.Errorf("code=%q, want %q", cm.Code, cmdutil.CodeLocalContextNotFound)
+	if cm.Code != cmdutil.CodeLocalProfileNotFound {
+		t.Errorf("code=%q, want %q", cm.Code, cmdutil.CodeLocalProfileNotFound)
 	}
 	if !strings.Contains(cm.Hint, "production") {
 		t.Errorf("hint should suggest 'production', got %q", cm.Hint)
@@ -103,8 +103,8 @@ func TestRemove_Current_NonTTY_NoYes_RequiresConfirmation(t *testing.T) {
 	_, _ = iostreams.SetForTest(t)
 
 	cfg := &config.Config{
-		CurrentContext: "production",
-		Contexts: map[string]config.Context{
+		CurrentProfile: "production",
+		Profiles: map[string]config.Profile{
 			"production": {Host: "https://prod", TokenRef: "mem://production/access"},
 			"staging":    {Host: "https://staging"},
 		},
@@ -129,8 +129,8 @@ func TestRemove_Current_NonTTY_NoYes_RequiresConfirmation(t *testing.T) {
 		t.Errorf("expected exit-10, got %d", cmdutil.ExitCode(err))
 	}
 	// Must not have mutated config or keyring.
-	if got, _ := config.Load(); got.CurrentContext != "production" {
-		t.Errorf("config mutated despite confirmation gate: CurrentContext=%q", got.CurrentContext)
+	if got, _ := config.Load(); got.CurrentProfile != "production" {
+		t.Errorf("config mutated despite confirmation gate: CurrentProfile=%q", got.CurrentProfile)
 	}
 	if v, err := store.Get("production", "access"); err != nil || v == "" {
 		t.Errorf("keyring touched before confirmation, get=%q err=%v", v, err)
@@ -142,8 +142,8 @@ func TestRemove_Current_WithYes_ClearsCurrent(t *testing.T) {
 	out, _ := iostreams.SetForTest(t)
 
 	cfg := &config.Config{
-		CurrentContext: "production",
-		Contexts: map[string]config.Context{
+		CurrentProfile: "production",
+		Profiles: map[string]config.Profile{
 			"production": {Host: "https://prod", TokenRef: "mem://production/access"},
 			"staging":    {Host: "https://staging"},
 		},
@@ -157,14 +157,14 @@ func TestRemove_Current_WithYes_ClearsCurrent(t *testing.T) {
 		t.Fatalf("runRemove: %v", err)
 	}
 	got, _ := config.Load()
-	if _, exists := got.Contexts["production"]; exists {
+	if _, exists := got.Profiles["production"]; exists {
 		t.Errorf("production should be removed")
 	}
-	if got.CurrentContext != "" {
-		t.Errorf("removing current must clear CurrentContext, got %q", got.CurrentContext)
+	if got.CurrentProfile != "" {
+		t.Errorf("removing current must clear CurrentProfile, got %q", got.CurrentProfile)
 	}
 	assertDeleted(t, store, "production", "access")
-	if !strings.Contains(out.String(), "current context cleared") {
+	if !strings.Contains(out.String(), "current profile cleared") {
 		t.Errorf("output should warn about cleared current, got %q", out.String())
 	}
 }
@@ -174,8 +174,8 @@ func TestRemove_Current_TTY_PromptNo(t *testing.T) {
 	_, errBuf := iostreams.SetForTestWithTTY(t)
 
 	cfg := &config.Config{
-		CurrentContext: "production",
-		Contexts:       map[string]config.Context{"production": {Host: "https://prod"}},
+		CurrentProfile: "production",
+		Profiles:       map[string]config.Profile{"production": {Host: "https://prod"}},
 	}
 	if err := config.Save(cfg); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -199,7 +199,7 @@ func TestRemove_Current_TTY_PromptNo(t *testing.T) {
 	if !strings.Contains(errBuf.String(), "Aborted") {
 		t.Errorf("stderr should contain Aborted, got %q", errBuf.String())
 	}
-	if got, _ := config.Load(); got.CurrentContext != "production" {
+	if got, _ := config.Load(); got.CurrentProfile != "production" {
 		t.Errorf("aborted remove must not mutate config")
 	}
 }

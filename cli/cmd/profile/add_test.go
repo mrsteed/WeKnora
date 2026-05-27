@@ -1,4 +1,4 @@
-package contextcmd
+package profilecmd
 
 import (
 	"encoding/json"
@@ -22,9 +22,9 @@ func TestAdd_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	c, ok := cfg.Contexts["staging"]
+	c, ok := cfg.Profiles["staging"]
 	if !ok {
-		t.Fatalf("staging not in Contexts; got keys=%v", contextKeys(cfg.Contexts))
+		t.Fatalf("staging not in Profiles; got keys=%v", profileKeys(cfg.Profiles))
 	}
 	if c.Host != "https://my.example.com" {
 		t.Errorf("Host=%q, want https://my.example.com", c.Host)
@@ -32,9 +32,9 @@ func TestAdd_HappyPath(t *testing.T) {
 	if c.User != "alice@example.com" {
 		t.Errorf("User=%q, want alice@example.com", c.User)
 	}
-	// First context auto-becomes current.
-	if cfg.CurrentContext != "staging" {
-		t.Errorf("first context should auto-become current, got CurrentContext=%q", cfg.CurrentContext)
+	// First profile auto-becomes current.
+	if cfg.CurrentProfile != "staging" {
+		t.Errorf("first profile should auto-become current, got CurrentProfile=%q", cfg.CurrentProfile)
 	}
 	if !strings.Contains(out.String(), "staging") {
 		t.Errorf("output should mention added name, got %q", out.String())
@@ -46,8 +46,8 @@ func TestAdd_DuplicateName(t *testing.T) {
 	_, _ = iostreams.SetForTest(t)
 
 	cfg := &config.Config{
-		CurrentContext: "staging",
-		Contexts:       map[string]config.Context{"staging": {Host: "https://old.example.com"}},
+		CurrentProfile: "staging",
+		Profiles:       map[string]config.Profile{"staging": {Host: "https://old.example.com"}},
 	}
 	if err := config.Save(cfg); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -66,8 +66,8 @@ func TestAdd_DuplicateName(t *testing.T) {
 	}
 	// Existing entry must NOT be overwritten.
 	got, _ := config.Load()
-	if got.Contexts["staging"].Host != "https://old.example.com" {
-		t.Errorf("existing context overwritten; Host=%q", got.Contexts["staging"].Host)
+	if got.Profiles["staging"].Host != "https://old.example.com" {
+		t.Errorf("existing profile overwritten; Host=%q", got.Profiles["staging"].Host)
 	}
 }
 
@@ -98,13 +98,13 @@ func TestAdd_BadHost(t *testing.T) {
 	}
 }
 
-func TestAdd_SecondContextDoesNotChangeCurrent(t *testing.T) {
+func TestAdd_SecondProfileDoesNotChangeCurrent(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	_, _ = iostreams.SetForTest(t)
 
 	cfg := &config.Config{
-		CurrentContext: "production",
-		Contexts:       map[string]config.Context{"production": {Host: "https://prod.example.com"}},
+		CurrentProfile: "production",
+		Profiles:       map[string]config.Profile{"production": {Host: "https://prod.example.com"}},
 	}
 	if err := config.Save(cfg); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -114,8 +114,8 @@ func TestAdd_SecondContextDoesNotChangeCurrent(t *testing.T) {
 		t.Fatalf("runAdd: %v", err)
 	}
 	got, _ := config.Load()
-	if got.CurrentContext != "production" {
-		t.Errorf("adding a second context must not switch current; got %q", got.CurrentContext)
+	if got.CurrentProfile != "production" {
+		t.Errorf("adding a second profile must not switch current; got %q", got.CurrentProfile)
 	}
 }
 
@@ -126,10 +126,14 @@ func TestAdd_JSON(t *testing.T) {
 	if err := runAdd(&AddOptions{Host: "https://my.example.com"}, &cmdutil.FormatOptions{Mode: cmdutil.FormatJSON}, "staging"); err != nil {
 		t.Fatalf("runAdd: %v", err)
 	}
-	var got map[string]any
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+	var env struct {
+		OK   bool           `json:"ok"`
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &env); err != nil {
 		t.Fatalf("invalid JSON: %v\noutput=%q", err, out.String())
 	}
+	got := env.Data
 	if got["name"] != "staging" {
 		t.Errorf("name should be staging, got %v", got)
 	}
@@ -137,6 +141,6 @@ func TestAdd_JSON(t *testing.T) {
 		t.Errorf("host wrong: %v", got)
 	}
 	if got["current"] != true {
-		t.Errorf("first added context must be current=true, got %v", got)
+		t.Errorf("first added profile must be current=true, got %v", got)
 	}
 }

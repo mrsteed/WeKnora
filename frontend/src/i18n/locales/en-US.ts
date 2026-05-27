@@ -739,6 +739,17 @@ export default {
     systemSettings: 'System Settings',
     tenantInfo: 'Tenant Info',
     apiInfo: 'API Info',
+    navGroups: {
+      account: 'Account',
+      workspace: 'Workspace',
+      modelsRuntime: 'Models',
+      dataExtensions: 'Data & Extensions',
+      platform: 'Platform',
+    },
+    roleDenied: {
+      title: 'Insufficient permissions',
+      desc: "Your role can't access this settings page. Ask an admin of this tenant to grant the required role.",
+    },
     weknoraCloud: {
       title: 'WeKnora Cloud',
       description: 'Configure WeKnora Cloud APPID and APPSECRET credentials. Credentials are used for model services and document parsing engine.',

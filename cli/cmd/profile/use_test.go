@@ -1,4 +1,4 @@
-package contextcmd
+package profilecmd
 
 import (
 	"strings"
@@ -14,8 +14,8 @@ func TestUse_OK(t *testing.T) {
 	out, _ := iostreams.SetForTest(t)
 
 	cfg := &config.Config{
-		CurrentContext: "staging",
-		Contexts: map[string]config.Context{
+		CurrentProfile: "staging",
+		Profiles: map[string]config.Profile{
 			"staging":    {Host: "https://staging.example.com"},
 			"production": {Host: "https://prod.example.com"},
 		},
@@ -32,11 +32,11 @@ func TestUse_OK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got.CurrentContext != "production" {
-		t.Errorf("CurrentContext = %q, want production", got.CurrentContext)
+	if got.CurrentProfile != "production" {
+		t.Errorf("CurrentProfile = %q, want production", got.CurrentProfile)
 	}
 	if !strings.Contains(out.String(), "production") {
-		t.Errorf("output should mention switched-to context, got %q", out.String())
+		t.Errorf("output should mention switched-to profile, got %q", out.String())
 	}
 }
 
@@ -44,7 +44,7 @@ func TestUse_NotFound_WithDidYouMean(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	_, _ = iostreams.SetForTest(t)
 
-	cfg := &config.Config{Contexts: map[string]config.Context{
+	cfg := &config.Config{Profiles: map[string]config.Profile{
 		"production": {Host: "https://prod"},
 		"staging":    {Host: "https://staging"},
 	}}
@@ -60,8 +60,8 @@ func TestUse_NotFound_WithDidYouMean(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *cmdutil.Error, got %T", err)
 	}
-	if cm.Code != cmdutil.CodeLocalContextNotFound {
-		t.Errorf("code = %q, want %q", cm.Code, cmdutil.CodeLocalContextNotFound)
+	if cm.Code != cmdutil.CodeLocalProfileNotFound {
+		t.Errorf("code = %q, want %q", cm.Code, cmdutil.CodeLocalProfileNotFound)
 	}
 	if cm.Hint != `did you mean: "production"?` {
 		t.Errorf("hint should be exact `did you mean: \"production\"?`, got %q", cm.Hint)
@@ -74,7 +74,7 @@ func TestUse_NotFound_WithDidYouMean(t *testing.T) {
 func TestUse_NotFound_DeterministicTieBreak(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	_, _ = iostreams.SetForTest(t)
-	cfg := &config.Config{Contexts: map[string]config.Context{
+	cfg := &config.Config{Profiles: map[string]config.Profile{
 		"prod": {Host: "https://a"},
 		"prom": {Host: "https://b"},
 		"prog": {Host: "https://c"},
@@ -95,7 +95,7 @@ func TestUse_NotFound_DeterministicTieBreak(t *testing.T) {
 	}
 }
 
-func TestUse_NotFound_EmptyContexts(t *testing.T) {
+func TestUse_NotFound_EmptyProfiles(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	_, _ = iostreams.SetForTest(t)
 
@@ -105,7 +105,7 @@ func TestUse_NotFound_EmptyContexts(t *testing.T) {
 	}
 	cm := err.(*cmdutil.Error)
 	if !strings.Contains(cm.Hint, "auth login") {
-		t.Errorf("hint should mention `auth login` for empty Contexts, got %q", cm.Hint)
+		t.Errorf("hint should mention `auth login` for empty profiles, got %q", cm.Hint)
 	}
 }
 
@@ -113,7 +113,7 @@ func TestUse_CaseSensitive(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	_, _ = iostreams.SetForTest(t)
 
-	cfg := &config.Config{Contexts: map[string]config.Context{
+	cfg := &config.Config{Profiles: map[string]config.Profile{
 		"Production": {Host: "https://prod"},
 	}}
 	_ = config.Save(cfg)

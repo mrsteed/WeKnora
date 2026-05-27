@@ -539,6 +539,17 @@ export default {
     systemSettings: "시스템 설정",
     tenantInfo: "테넌트 정보",
     apiInfo: "API 정보",
+    navGroups: {
+      account: "계정",
+      workspace: "공간",
+      modelsRuntime: "모델",
+      dataExtensions: "데이터 및 확장",
+      platform: "플랫폼",
+    },
+    roleDenied: {
+      title: "권한 없음",
+      desc: "현재 역할로는 이 설정 페이지에 접근할 수 없습니다. 이 테넌트의 관리자에게 필요한 역할을 요청하세요.",
+    },
     weknoraCloud: {
       title: 'WeKnora Cloud',
       description: 'WeKnora Cloud APPID 및 APPSECRET 자격 증명을 설정합니다. 자격 증명은 모델 서비스와 문서 파싱 엔진에 사용됩니다.',

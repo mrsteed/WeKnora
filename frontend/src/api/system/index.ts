@@ -51,12 +51,67 @@ export interface PromptTemplatesConfig {
   intent_prompts?: PromptTemplate[]
 }
 
+export interface ToolDefinition {
+  name: string
+  label?: string
+  description?: string
+}
+
+export interface AgentConfig {
+  [key: string]: any
+  max_iterations: number
+  temperature: number
+  allowed_tools: string[]
+  system_prompt?: string
+  available_tools?: ToolDefinition[]
+  available_placeholders?: PlaceholderDefinition[]
+}
+
+export interface ConversationConfig {
+  [key: string]: any
+  prompt: string
+  context_template: string
+  temperature: number
+  max_completion_tokens: number
+  max_rounds: number
+  embedding_top_k: number
+  keyword_threshold: number
+  vector_threshold: number
+  rerank_top_k: number
+  rerank_threshold: number
+  enable_rewrite: boolean
+  enable_query_expansion?: boolean
+  fallback_strategy?: string
+  fallback_response?: string
+  fallback_prompt?: string
+  summary_model_id?: string
+  rerank_model_id?: string
+  rewrite_prompt_system?: string
+  rewrite_prompt_user?: string
+}
+
 export function getSystemInfo(): Promise<{ data: SystemInfo }> {
   return get('/api/v1/system/info')
 }
 
 export function getPromptTemplates(): Promise<{ data: PromptTemplatesConfig }> {
   return get('/api/v1/tenants/kv/prompt-templates')
+}
+
+export function getAgentConfig(): Promise<{ data: AgentConfig }> {
+  return get('/api/v1/tenants/kv/agent-config')
+}
+
+export function updateAgentConfig(config: Partial<AgentConfig>): Promise<{ data: AgentConfig }> {
+  return put('/api/v1/tenants/kv/agent-config', config)
+}
+
+export function getConversationConfig(): Promise<{ data: ConversationConfig }> {
+  return get('/api/v1/tenants/kv/conversation-config')
+}
+
+export function updateConversationConfig(config: Partial<ConversationConfig>): Promise<{ data: ConversationConfig }> {
+  return put('/api/v1/tenants/kv/conversation-config', config)
 }
 
 export interface ParserEngineInfo {

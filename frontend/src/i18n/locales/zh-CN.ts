@@ -640,6 +640,17 @@ export default {
     systemSettings: "系统设置",
     tenantInfo: "租户信息",
     apiInfo: "API信息",
+    navGroups: {
+      account: "账户",
+      workspace: "空间",
+      modelsRuntime: "模型",
+      dataExtensions: "数据与扩展",
+      platform: "平台",
+    },
+    roleDenied: {
+      title: "权限不足",
+      desc: "你当前的角色无权访问此设置项。请联系本空间的管理员获取所需角色。",
+    },
     weknoraCloud: {
       title: "WeKnora Cloud",
       description: "配置 WeKnora Cloud 的 APPID 和 APPSECRET 凭证。凭证用于模型服务和文档解析引擎。",
