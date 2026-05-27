@@ -1436,6 +1436,12 @@ func closeUnclosedChatDocumentCodeFence(snapshot string) (string, bool) {
 }
 
 func chatDocumentUserHintForIssues(issues []string, operation string) string {
+	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueInternalPromptLeakage) {
+		return "检测到内部提示词或上下文标记混入文档，系统已将该版本标记为待复核。请检查正文后再继续。"
+	}
+	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueUnclosedCodeFence) {
+		return "检测到末尾代码块未闭合，系统已自动补全代码围栏。"
+	}
 	if chatDocumentContainsString(issues, types.ChatDocumentQualityIssueDuplicateDocumentHead) {
 		return "检测到本轮续写重新输出了文档开头，系统已暂停自动续写。请检查完整文档后再继续。"
 	}

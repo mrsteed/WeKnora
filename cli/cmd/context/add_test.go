@@ -7,7 +7,6 @@ import (
 
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
 	"github.com/Tencent/WeKnora/cli/internal/config"
-	"github.com/Tencent/WeKnora/cli/internal/format"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 )
 
@@ -15,7 +14,7 @@ func TestAdd_HappyPath(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	out, _ := iostreams.SetForTest(t)
 
-	if err := runAdd(&AddOptions{Host: "https://my.example.com", User: "alice@example.com"}, "staging"); err != nil {
+	if err := runAdd(&AddOptions{Host: "https://my.example.com", User: "alice@example.com"}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}, "staging"); err != nil {
 		t.Fatalf("runAdd: %v", err)
 	}
 
@@ -54,7 +53,7 @@ func TestAdd_DuplicateName(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	err := runAdd(&AddOptions{Host: "https://new.example.com"}, "staging")
+	err := runAdd(&AddOptions{Host: "https://new.example.com"}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}, "staging")
 	if err == nil {
 		t.Fatal("expected error on duplicate name")
 	}
@@ -83,7 +82,7 @@ func TestAdd_BadHost(t *testing.T) {
 		"http://",              // missing host
 	}
 	for _, h := range bad {
-		err := runAdd(&AddOptions{Host: h}, "staging")
+		err := runAdd(&AddOptions{Host: h}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}, "staging")
 		if err == nil {
 			t.Errorf("host=%q: expected error", h)
 			continue
@@ -111,7 +110,7 @@ func TestAdd_SecondContextDoesNotChangeCurrent(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	if err := runAdd(&AddOptions{Host: "https://stg.example.com"}, "staging"); err != nil {
+	if err := runAdd(&AddOptions{Host: "https://stg.example.com"}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}, "staging"); err != nil {
 		t.Fatalf("runAdd: %v", err)
 	}
 	got, _ := config.Load()
@@ -124,18 +123,20 @@ func TestAdd_JSON(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	out, _ := iostreams.SetForTest(t)
 
-	if err := runAdd(&AddOptions{Host: "https://my.example.com", JSONOut: true}, "staging"); err != nil {
+	if err := runAdd(&AddOptions{Host: "https://my.example.com"}, &cmdutil.FormatOptions{Mode: cmdutil.FormatJSON}, "staging"); err != nil {
 		t.Fatalf("runAdd: %v", err)
 	}
-	var env format.Envelope
-	if err := json.Unmarshal(out.Bytes(), &env); err != nil {
-		t.Fatalf("invalid JSON envelope: %v\noutput=%q", err, out.String())
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\noutput=%q", err, out.String())
 	}
-	if !env.OK {
-		t.Fatalf("envelope.ok=false, error=%+v", env.Error)
+	if got["name"] != "staging" {
+		t.Errorf("name should be staging, got %v", got)
 	}
-	if env.Risk == nil || env.Risk.Level != format.RiskWrite {
-		t.Errorf("envelope.risk should be write-level, got %+v", env.Risk)
+	if got["host"] != "https://my.example.com" {
+		t.Errorf("host wrong: %v", got)
+	}
+	if got["current"] != true {
+		t.Errorf("first added context must be current=true, got %v", got)
 	}
 }
-

@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
-	"github.com/Tencent/WeKnora/cli/internal/format"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 )
 
@@ -20,18 +19,31 @@ type uploadOutcome struct {
 }
 
 // runUploadRecursive walks dir, filters by Glob, and uploads each match
-// sequentially. Per-file errors do NOT abort the walk — they accumulate
+// sequentially. Per-file errors do NOT abort the walk - they accumulate
 // and the final return aggregates them so the user sees the full picture
 // in one run. Exit semantics: nil error on full success, a typed *cmdutil.Error
 // when ≥1 file failed (the typed code mirrors the first failure's
 // classification so callers can still branch).
-func runUploadRecursive(ctx context.Context, opts *UploadOptions, svc UploadService, kbID, dir string) error {
+func runUploadRecursive(ctx context.Context, opts *UploadOptions, fopts *cmdutil.FormatOptions, svc UploadService, kbID, dir string) error {
 	if opts.Name != "" {
 		return &cmdutil.Error{
 			Code:    cmdutil.CodeInputInvalidArgument,
 			Message: "--name cannot be combined with --recursive (one name can't apply to N files)",
 			Hint:    "drop --name or upload files one at a time",
 		}
+	}
+	// URL-mode-only flags are not meaningful for a directory walk;
+	// rejectURLOnlyFlags is the single source of truth shared with
+	// file-mode upload.
+	if err := rejectURLOnlyFlags(opts); err != nil {
+		return err
+	}
+	// Parse --metadata up front so a malformed value aborts before the
+	// first SDK call - otherwise a typo in `key=value` would only surface
+	// per-file as repeated identical errors.
+	meta, err := parseMetadataKV(opts.Metadata)
+	if err != nil {
+		return err
 	}
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -49,7 +61,7 @@ func runUploadRecursive(ctx context.Context, opts *UploadOptions, svc UploadServ
 
 	// Sanity-check the pattern up front so a typo doesn't show up as "no
 	// files matched" per-file. Cobra populates --glob; tests pass it
-	// explicitly — no in-function default needed.
+	// explicitly - no in-function default needed.
 	if _, err := filepath.Match(opts.Glob, ""); err != nil {
 		return &cmdutil.Error{
 			Code:    cmdutil.CodeInputInvalidArgument,
@@ -62,29 +74,18 @@ func runUploadRecursive(ctx context.Context, opts *UploadOptions, svc UploadServ
 		return cmdutil.Wrapf(cmdutil.CodeLocalFileIO, err, "walk %s", dir)
 	}
 	if len(matches) == 0 {
-		if opts.JSONOut {
-			return format.WriteEnvelope(iostreams.IO.Out, format.Success(
-				recursiveResult{KBID: kbID}, &format.Meta{KBID: kbID}))
+		if fopts.WantsJSON() {
+			return fopts.Emit(iostreams.IO.Out, recursiveResult{KBID: kbID})
 		}
 		fmt.Fprintf(iostreams.IO.Out, "(no files matched %q under %s)\n", opts.Glob, dir)
 		return nil
 	}
 
-	if opts.DryRun {
-		previews := make([]uploadOutcome, 0, len(matches))
-		for _, m := range matches {
-			previews = append(previews, uploadOutcome{Path: m})
-		}
-		return cmdutil.EmitDryRun(opts.JSONOut,
-			recursiveResult{KBID: kbID, Uploaded: previews},
-			&format.Meta{KBID: kbID},
-			&format.Risk{Level: format.RiskWrite, Action: fmt.Sprintf("upload %d file(s) to kb %s", len(matches), kbID)})
-	}
-
 	var uploaded, failed []uploadOutcome
 	var firstFailCode cmdutil.ErrorCode
+	channel := effectiveChannel(opts)
 	for _, p := range matches {
-		k, err := svc.CreateKnowledgeFromFile(ctx, kbID, p, nil, nil, "", uploadChannel)
+		k, err := svc.CreateKnowledgeFromFile(ctx, kbID, p, meta, opts.EnableMultimodel, "", channel)
 		if err != nil {
 			code := cmdutil.ClassifyHTTPError(err)
 			if firstFailCode == "" {
@@ -92,8 +93,8 @@ func runUploadRecursive(ctx context.Context, opts *UploadOptions, svc UploadServ
 			}
 			failed = append(failed, uploadOutcome{Path: p, Error: err.Error()})
 			// Per-file progress lines are human progress signal; suppress
-			// under --json so they don't precede the envelope on stdout.
-			if !opts.JSONOut {
+			// under --format json so they don't precede the JSON object on stdout.
+			if !fopts.WantsJSON() {
 				fmt.Fprintf(iostreams.IO.Out, "FAIL %s: %v\n", filepath.Base(p), err)
 			}
 			continue
@@ -103,16 +104,14 @@ func runUploadRecursive(ctx context.Context, opts *UploadOptions, svc UploadServ
 			id = k.ID
 		}
 		uploaded = append(uploaded, uploadOutcome{Path: p, ID: id})
-		if !opts.JSONOut {
+		if !fopts.WantsJSON() {
 			fmt.Fprintf(iostreams.IO.Out, "OK   %s (id: %s)\n", filepath.Base(p), id)
 		}
 	}
 
-	if opts.JSONOut {
+	if fopts.WantsJSON() {
 		result := recursiveResult{KBID: kbID, Uploaded: uploaded, Failed: failed}
-		risk := &format.Risk{Level: format.RiskWrite, Action: fmt.Sprintf("upload %d file(s) to kb %s", len(matches), kbID)}
-		if err := format.WriteEnvelope(iostreams.IO.Out,
-			format.SuccessWithRisk(result, &format.Meta{KBID: kbID}, risk)); err != nil {
+		if err := fopts.Emit(iostreams.IO.Out, result); err != nil {
 			return err
 		}
 	} else {
@@ -120,22 +119,21 @@ func runUploadRecursive(ctx context.Context, opts *UploadOptions, svc UploadServ
 	}
 
 	if len(failed) > 0 {
-		// Silent on the --json path: the success envelope above already
-		// carries per-file uploaded[]/failed[] detail. Without Silent the
-		// root error handler would write a second Failure envelope on
-		// stdout, corrupting the stream. ExitCode still walks Code so the
-		// typed exit-code-by-class contract is preserved.
+		// Silent on the --format json path: the success object above already
+		// carries per-file uploaded[]/failed[] detail; without Silent the
+		// root error handler would print to stderr in addition. ExitCode
+		// still walks Code so the typed exit-code-by-class contract holds.
 		return &cmdutil.Error{
 			Code:    firstFailCode,
 			Message: fmt.Sprintf("%d of %d uploads failed", len(failed), len(matches)),
-			Silent:  opts.JSONOut,
+			Silent:  fopts.WantsJSON(),
 		}
 	}
 	return nil
 }
 
 // recursiveResult is the JSON shape emitted under data when --recursive is
-// combined with --json. Mirrors the human-mode per-file output: a list of
+// combined with --format json. Mirrors the human-mode per-file output: a list of
 // successes (Uploaded) and a list of failures (Failed), each with the
 // originating path so agents can re-try only the failed entries.
 type recursiveResult struct {
@@ -179,4 +177,3 @@ func walkMatches(root, pattern string) ([]string, error) {
 	}
 	return out, nil
 }
-

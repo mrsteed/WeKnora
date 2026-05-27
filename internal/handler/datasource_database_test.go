@@ -328,6 +328,7 @@ func TestKnowledgeBaseHandlerCreateDatabaseKnowledgeBaseCreatesDataSourceAndSche
 		nil,
 		schemaSvc,
 		nil,
+		nil,
 	)
 
 	body := `{
@@ -386,6 +387,7 @@ func TestKnowledgeBaseHandlerCreateDatabaseKnowledgeBaseRequiresConfig(t *testin
 		nil,
 		&stubHandlerSchemaRegistryService{},
 		nil,
+		nil,
 	)
 
 	recorder := httptest.NewRecorder()
@@ -413,6 +415,7 @@ func TestKnowledgeBaseHandlerCreateDatabaseKnowledgeBaseRollsBackOnDatasourceFai
 		nil,
 		nil,
 		&stubHandlerSchemaRegistryService{},
+		nil,
 		nil,
 	)
 

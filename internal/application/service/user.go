@@ -413,6 +413,10 @@ func (s *userService) GetUserByID(ctx context.Context, id string) (*types.User, 
 	return s.userRepo.GetUserByID(ctx, id)
 }
 
+func (s *userService) GetUsersByIDs(ctx context.Context, ids []string) (map[string]*types.User, error) {
+	return s.userRepo.GetUsersByIDs(ctx, ids)
+}
+
 // GetUserByEmail gets a user by email
 func (s *userService) GetUserByEmail(ctx context.Context, email string) (*types.User, error) {
 	return s.userRepo.GetUserByEmail(ctx, email)
@@ -437,6 +441,14 @@ func (s *userService) GetUserByPhone(ctx context.Context, phone string) (*types.
 func (s *userService) UpdateUser(ctx context.Context, user *types.User) error {
 	user.UpdatedAt = time.Now()
 	return s.userRepo.UpdateUser(ctx, user)
+}
+
+func (s *userService) ListSystemAdmins(ctx context.Context, offset, limit int) ([]*types.User, int64, error) {
+	return s.userRepo.ListSystemAdmins(ctx, offset, limit)
+}
+
+func (s *userService) RevokeSystemAdmin(ctx context.Context, userID, actorID string) (*types.User, error) {
+	return s.userRepo.RevokeSystemAdmin(ctx, userID, actorID)
 }
 
 // DeleteUser deletes a user
@@ -583,7 +595,7 @@ func (s *userService) GenerateTokens(
 }
 
 // ValidateToken validates an access token
-func (s *userService) ValidateToken(ctx context.Context, tokenString string) (*types.User, error) {
+func (s *userService) ValidateToken(ctx context.Context, tokenString string) (*types.User, uint64, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -592,26 +604,52 @@ func (s *userService) ValidateToken(ctx context.Context, tokenString string) (*t
 	})
 
 	if err != nil || !token.Valid {
-		return nil, errors.New("invalid token")
+		return nil, 0, errors.New("invalid token")
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, errors.New("invalid token claims")
+		return nil, 0, errors.New("invalid token claims")
 	}
 
 	userID, ok := claims["user_id"].(string)
 	if !ok {
-		return nil, errors.New("invalid user ID in token")
+		return nil, 0, errors.New("invalid user ID in token")
 	}
 
 	// Check if token is revoked
 	tokenRecord, err := s.tokenRepo.GetTokenByValue(ctx, tokenString)
 	if err != nil || tokenRecord == nil || tokenRecord.IsRevoked {
-		return nil, errors.New("token is revoked")
+		return nil, 0, errors.New("token is revoked")
 	}
 
-	return s.userRepo.GetUserByID(ctx, userID)
+	user, err := s.userRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return user, tenantIDFromClaims(claims, user.TenantID), nil
+}
+
+func tenantIDFromClaims(claims jwt.MapClaims, fallback uint64) uint64 {
+	raw, ok := claims["tenant_id"]
+	if !ok {
+		return fallback
+	}
+	switch value := raw.(type) {
+	case float64:
+		if value > 0 {
+			return uint64(value)
+		}
+	case int64:
+		if value > 0 {
+			return uint64(value)
+		}
+	case uint64:
+		if value > 0 {
+			return value
+		}
+	}
+	return fallback
 }
 
 // RefreshToken refreshes access token using refresh token

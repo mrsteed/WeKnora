@@ -10,8 +10,12 @@ import (
 type OrgMemberRole string
 
 const (
+	// OrgRoleOwner has full ownership over organization-level resources.
+	OrgRoleOwner OrgMemberRole = "owner"
 	// OrgRoleAdmin has full control over the organization and shared knowledge bases
 	OrgRoleAdmin OrgMemberRole = "admin"
+	// OrgRoleContributor is the upstream RBAC name for the local editor capability level.
+	OrgRoleContributor OrgMemberRole = "contributor"
 	// OrgRoleEditor can edit shared knowledge base content but cannot manage settings
 	OrgRoleEditor OrgMemberRole = "editor"
 	// OrgRoleViewer can only view and search shared knowledge bases
@@ -21,7 +25,7 @@ const (
 // IsValid checks if the role is valid
 func (r OrgMemberRole) IsValid() bool {
 	switch r {
-	case OrgRoleAdmin, OrgRoleEditor, OrgRoleViewer:
+	case OrgRoleOwner, OrgRoleAdmin, OrgRoleContributor, OrgRoleEditor, OrgRoleViewer:
 		return true
 	default:
 		return false
@@ -31,11 +35,45 @@ func (r OrgMemberRole) IsValid() bool {
 // HasPermission checks if this role has at least the required permission level
 func (r OrgMemberRole) HasPermission(required OrgMemberRole) bool {
 	roleLevel := map[OrgMemberRole]int{
-		OrgRoleAdmin:  3,
-		OrgRoleEditor: 2,
-		OrgRoleViewer: 1,
+		OrgRoleOwner:       4,
+		OrgRoleAdmin:       3,
+		OrgRoleContributor: 2,
+		OrgRoleEditor:      2,
+		OrgRoleViewer:      1,
 	}
 	return roleLevel[r] >= roleLevel[required]
+}
+
+// MinOrgRole returns the lower effective role from two organization roles.
+// Editor and contributor intentionally share the same level; contributor is preferred as the canonical value.
+func MinOrgRole(a, b OrgMemberRole) OrgMemberRole {
+	if !a.HasPermission(b) {
+		return normalizeOrgRole(a)
+	}
+	return normalizeOrgRole(b)
+}
+
+func normalizeOrgRole(role OrgMemberRole) OrgMemberRole {
+	if role == OrgRoleEditor {
+		return OrgRoleContributor
+	}
+	return role
+}
+
+// OrganizationTenantMember mirrors upstream's tenant-scoped organization membership row.
+// Local personnel management remains user-based; this type exists for RBAC compatibility paths.
+type OrganizationTenantMember struct {
+	ID             string         `json:"id" gorm:"type:varchar(36);primaryKey"`
+	OrganizationID string         `json:"organization_id" gorm:"type:varchar(36);not null;index"`
+	TenantID       uint64         `json:"tenant_id" gorm:"not null;index"`
+	Role           OrgMemberRole  `json:"role" gorm:"type:varchar(32);not null;default:'viewer'"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	DeletedAt      gorm.DeletedAt `json:"deleted_at" gorm:"index"`
+}
+
+func (OrganizationTenantMember) TableName() string {
+	return "organization_tenant_members"
 }
 
 // Organization represents a collaboration organization for cross-tenant sharing

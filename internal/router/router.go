@@ -48,6 +48,7 @@ type RouterParams struct {
 	KnowledgeHandler         *handler.KnowledgeHandler
 	TenantHandler            *handler.TenantHandler
 	TenantService            interfaces.TenantService
+	TenantMemberService      interfaces.TenantMemberService
 	ChunkHandler             *handler.ChunkHandler
 	SessionHandler           *session.Handler
 	MessageHandler           *handler.MessageHandler
@@ -123,7 +124,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 	RegisterPublicAgentPageShareExportRoutes(r, params.ExportHandler)
 
 	// 认证中间件
-	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
+	r.Use(middleware.Auth(params.TenantService, params.UserService, params.TenantMemberService, params.Config))
 
 	// 文件服务：统一代理本地/MinIO/COS/TOS存储后端（需要认证）
 	serveFiles(r, params.FileService)

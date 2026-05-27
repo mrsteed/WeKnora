@@ -6,17 +6,20 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Tencent/WeKnora/cli/internal/agent"
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
 	"github.com/Tencent/WeKnora/cli/internal/config"
-	"github.com/Tencent/WeKnora/cli/internal/format"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 )
 
 type AddOptions struct {
-	Host    string
-	User    string
-	JSONOut bool
+	Host string
+	User string
+}
+
+// contextAddFields enumerates the fields surfaced for `--format json` discovery on
+// `context add`. The result describes the newly-registered context.
+var contextAddFields = []string{
+	"name", "host", "user", "current",
 }
 
 // addResult is the typed payload emitted under data on success.
@@ -28,7 +31,7 @@ type addResult struct {
 }
 
 // NewCmdAdd builds `weknora context add`. Registers a *credentialless*
-// connection target — host + optional user only. Credentials for the new
+// connection target - host + optional user only. Credentials for the new
 // context are attached separately with `weknora auth login --name <n>`,
 // separating "where" the CLI talks to (the host) and "how" it authenticates
 // (the credential). If you want one command for both, run
@@ -49,18 +52,22 @@ adds leave the current context untouched.`,
   weknora context add prod    --host https://prod.example.com --user alice@example.com`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			return runAdd(opts, args[0])
+			fopts, err := cmdutil.CheckFormatFlag(c)
+			if err != nil {
+				return err
+			}
+			fopts.ResolveDefault(iostreams.IO.IsStdoutTTY())
+			return runAdd(opts, fopts, args[0])
 		},
 	}
 	cmd.Flags().StringVar(&opts.Host, "host", "", "Server base URL, e.g. https://kb.example.com (required)")
 	cmd.Flags().StringVar(&opts.User, "user", "", "Account email shown in 'context list' (optional, cosmetic only)")
-	cmd.Flags().BoolVar(&opts.JSONOut, "json", false, "Output JSON envelope")
+	cmdutil.AddFormatFlag(cmd, contextAddFields...)
 	_ = cmd.MarkFlagRequired("host")
-	agent.SetAgentHelp(cmd, "Adds a context. First context added auto-becomes current. Errors with resource.already_exists if name collides; input.invalid_argument if --host is not an absolute http(s) URL.")
 	return cmd
 }
 
-func runAdd(opts *AddOptions, name string) error {
+func runAdd(opts *AddOptions, fopts *cmdutil.FormatOptions, name string) error {
 	if err := validateName(name); err != nil {
 		return err
 	}
@@ -92,13 +99,8 @@ func runAdd(opts *AddOptions, name string) error {
 		return cmdutil.Wrapf(cmdutil.CodeLocalFileIO, err, "save config")
 	}
 
-	risk := &format.Risk{Level: format.RiskWrite, Action: fmt.Sprintf("add context %s", name)}
-	if opts.JSONOut {
-		return format.WriteEnvelope(iostreams.IO.Out, format.SuccessWithRisk(
-			addResult{Name: name, Host: host, User: opts.User, Current: wasFirst},
-			&format.Meta{Context: cfg.CurrentContext},
-			risk,
-		))
+	if fopts.WantsJSON() {
+		return fopts.Emit(iostreams.IO.Out, addResult{Name: name, Host: host, User: opts.User, Current: wasFirst})
 	}
 	if wasFirst {
 		fmt.Fprintf(iostreams.IO.Out, "✓ Added context %s (now current). Run `weknora auth login --name %s` to attach credentials.\n", name, name)
@@ -144,4 +146,3 @@ func validateName(name string) error {
 	}
 	return nil
 }
-

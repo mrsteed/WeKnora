@@ -18,6 +18,8 @@ type UserService interface {
 	LoginWithOIDC(ctx context.Context, code, redirectURI string) (*types.OIDCCallbackResponse, error)
 	// GetUserByID gets a user by ID
 	GetUserByID(ctx context.Context, id string) (*types.User, error)
+	// GetUsersByIDs batch-fetches users by id, returning a map keyed by user id.
+	GetUsersByIDs(ctx context.Context, ids []string) (map[string]*types.User, error)
 	// GetUserByEmail gets a user by email
 	GetUserByEmail(ctx context.Context, email string) (*types.User, error)
 	// GetUserByUsername gets a user by username
@@ -38,8 +40,8 @@ type UserService interface {
 	ValidatePassword(ctx context.Context, userID string, password string) error
 	// GenerateTokens generates access and refresh tokens for user
 	GenerateTokens(ctx context.Context, user *types.User) (accessToken, refreshToken string, err error)
-	// ValidateToken validates an access token
-	ValidateToken(ctx context.Context, token string) (*types.User, error)
+	// ValidateToken validates an access token and returns the active tenant encoded in the token.
+	ValidateToken(ctx context.Context, token string) (*types.User, uint64, error)
 	// RefreshToken refreshes access token using refresh token
 	RefreshToken(ctx context.Context, refreshToken string) (accessToken, newRefreshToken string, err error)
 	// RevokeToken revokes a token
@@ -48,6 +50,10 @@ type UserService interface {
 	GetCurrentUser(ctx context.Context) (*types.User, error)
 	// SearchUsers searches users by username or email
 	SearchUsers(ctx context.Context, query string, limit int) ([]*types.User, error)
+	// ListSystemAdmins lists users with IsSystemAdmin=true.
+	ListSystemAdmins(ctx context.Context, offset, limit int) ([]*types.User, int64, error)
+	// RevokeSystemAdmin removes system-admin privileges.
+	RevokeSystemAdmin(ctx context.Context, userID, actorID string) (*types.User, error)
 	// CreateUserByAdmin creates a new user by admin (no default tenant, uses given tenantID)
 	CreateUserByAdmin(ctx context.Context, req *types.CreateUserInOrgRequest, tenantID uint64) (*types.User, error)
 }
@@ -58,6 +64,8 @@ type UserRepository interface {
 	CreateUser(ctx context.Context, user *types.User) error
 	// GetUserByID gets a user by ID
 	GetUserByID(ctx context.Context, id string) (*types.User, error)
+	// GetUsersByIDs batch-fetches users by id, returning a map keyed by user id.
+	GetUsersByIDs(ctx context.Context, ids []string) (map[string]*types.User, error)
 	// GetUserByEmail gets a user by email
 	GetUserByEmail(ctx context.Context, email string) (*types.User, error)
 	// GetUserByUsername gets a user by username
@@ -70,6 +78,10 @@ type UserRepository interface {
 	DeleteUser(ctx context.Context, id string) error
 	// ListUsers lists users with pagination
 	ListUsers(ctx context.Context, offset, limit int) ([]*types.User, error)
+	// ListSystemAdmins lists users where is_system_admin = true.
+	ListSystemAdmins(ctx context.Context, offset, limit int) ([]*types.User, int64, error)
+	// RevokeSystemAdmin removes system-admin privileges with repository guards.
+	RevokeSystemAdmin(ctx context.Context, userID, actorID string) (*types.User, error)
 	// SearchUsers searches users by username or email
 	SearchUsers(ctx context.Context, query string, limit int) ([]*types.User, error)
 	// GetUserByPhone gets a user by phone number

@@ -35,6 +35,12 @@ func (s *chatRouteModelServiceStub) ListModels(context.Context) ([]*types.Model,
 }
 func (s *chatRouteModelServiceStub) UpdateModel(context.Context, *types.Model) error { return nil }
 func (s *chatRouteModelServiceStub) DeleteModel(context.Context, string) error       { return nil }
+func (s *chatRouteModelServiceStub) UpdateModelCredentials(context.Context, string, *string, *string) (*types.Model, error) {
+	return nil, nil
+}
+func (s *chatRouteModelServiceStub) ClearModelCredential(context.Context, string, string) error {
+	return nil
+}
 func (s *chatRouteModelServiceStub) GetEmbeddingModel(context.Context, string) (embedding.Embedder, error) {
 	return nil, nil
 }

@@ -26,14 +26,15 @@ import (
 
 // KnowledgeBaseHandler defines the HTTP handler for knowledge base operations
 type KnowledgeBaseHandler struct {
-	service           interfaces.KnowledgeBaseService
-	dataSourceService interfaces.DataSourceService
-	knowledgeService  interfaces.KnowledgeService
-	kbShareService    interfaces.KBShareService
-	agentShareService interfaces.AgentShareService
-	kbVisibility      interfaces.KBVisibilityService
-	schemaSvc         interfaces.SchemaRegistryService
-	asynqClient       interfaces.TaskEnqueuer
+	service            interfaces.KnowledgeBaseService
+	dataSourceService  interfaces.DataSourceService
+	knowledgeService   interfaces.KnowledgeService
+	kbShareService     interfaces.KBShareService
+	agentShareService  interfaces.AgentShareService
+	kbVisibility       interfaces.KBVisibilityService
+	schemaSvc          interfaces.SchemaRegistryService
+	vectorStoreService interfaces.VectorStoreService
+	asynqClient        interfaces.TaskEnqueuer
 }
 
 type createKnowledgeBaseRequest struct {
@@ -67,20 +68,124 @@ func NewKnowledgeBaseHandler(
 	agentShareService interfaces.AgentShareService,
 	kbVisibility interfaces.KBVisibilityService,
 	schemaSvc interfaces.SchemaRegistryService,
+	vectorStoreService interfaces.VectorStoreService,
 	asynqClient interfaces.TaskEnqueuer,
 ) *KnowledgeBaseHandler {
 	return &KnowledgeBaseHandler{
-		service:           service,
-		dataSourceService: dataSourceService,
-		knowledgeService:  knowledgeService,
-		kbShareService:    kbShareService,
-		agentShareService: agentShareService,
-		kbVisibility:      kbVisibility,
-		schemaSvc:         schemaSvc,
-		asynqClient:       asynqClient,
+		service:            service,
+		dataSourceService:  dataSourceService,
+		knowledgeService:   knowledgeService,
+		kbShareService:     kbShareService,
+		agentShareService:  agentShareService,
+		kbVisibility:       kbVisibility,
+		schemaSvc:          schemaSvc,
+		vectorStoreService: vectorStoreService,
+		asynqClient:        asynqClient,
 	}
 }
 
+func buildKBResponse(kb *types.KnowledgeBase, storeView types.StoreDisplay, shareCounts map[string]int64) interface{} {
+	if kb == nil {
+		return nil
+	}
+	data, _ := json.Marshal(kb)
+	row := make(map[string]interface{})
+	_ = json.Unmarshal(data, &row)
+	if shareCounts != nil {
+		if count, ok := shareCounts[kb.ID]; ok {
+			row["share_count"] = count
+		}
+	}
+	if storeView.Source == types.StoreSourceShared {
+		delete(row, "vector_store_id")
+	} else if kb.VectorStoreID != nil && strings.TrimSpace(*kb.VectorStoreID) != "" {
+		row["vector_store_id"] = strings.TrimSpace(*kb.VectorStoreID)
+	}
+	if storeView.Name != "" {
+		row["vector_store_name"] = storeView.Name
+	} else {
+		delete(row, "vector_store_name")
+	}
+	if storeView.Source != "" {
+		row["vector_store_source"] = storeView.Source
+	}
+	if storeView.EngineType != "" && storeView.Source != types.StoreSourceShared {
+		row["vector_store_engine_type"] = storeView.EngineType
+	} else {
+		delete(row, "vector_store_engine_type")
+	}
+	if storeView.Status != "" {
+		row["vector_store_status"] = storeView.Status
+	}
+	return row
+}
+
+func sameOptionalString(left, right *string) bool {
+	if left == nil || strings.TrimSpace(*left) == "" {
+		return right == nil || strings.TrimSpace(*right) == ""
+	}
+	if right == nil || strings.TrimSpace(*right) == "" {
+		return false
+	}
+	return strings.TrimSpace(*left) == strings.TrimSpace(*right)
+}
+
+func (h *KnowledgeBaseHandler) buildKBListResponse(ctx context.Context, kbs []*types.KnowledgeBase, currentTenantID uint64, shareCounts map[string]int64) []interface{} {
+	storeViews := make(map[string]types.StoreDisplay)
+	if h.vectorStoreService != nil {
+		storeIDs := make([]string, 0)
+		seen := make(map[string]struct{})
+		for _, kb := range kbs {
+			if kb == nil || kb.TenantID != currentTenantID || kb.VectorStoreID == nil || strings.TrimSpace(*kb.VectorStoreID) == "" {
+				continue
+			}
+			storeID := strings.TrimSpace(*kb.VectorStoreID)
+			if _, ok := seen[storeID]; ok {
+				continue
+			}
+			seen[storeID] = struct{}{}
+			storeIDs = append(storeIDs, storeID)
+		}
+		if len(storeIDs) > 0 {
+			resolved, err := h.vectorStoreService.BatchResolveStoreView(ctx, currentTenantID, storeIDs)
+			if err != nil {
+				logger.Warnf(ctx, "Failed to resolve vector store display info: %v", err)
+				for _, storeID := range storeIDs {
+					storeViews[storeID] = types.UnavailableStoreDisplay()
+				}
+			} else {
+				storeViews = resolved
+			}
+		}
+	}
+
+	rows := make([]interface{}, 0, len(kbs))
+	for _, kb := range kbs {
+		if kb == nil {
+			continue
+		}
+		var view types.StoreDisplay
+		switch {
+		case currentTenantID != 0 && kb.TenantID != 0 && kb.TenantID != currentTenantID:
+			view = types.SharedStoreDisplay()
+		case kb.VectorStoreID == nil || strings.TrimSpace(*kb.VectorStoreID) == "":
+			if h.vectorStoreService != nil {
+				view = h.vectorStoreService.EnvDefaultStoreView(ctx)
+			} else {
+				view = types.DefaultStoreDisplay()
+			}
+		default:
+			storeID := strings.TrimSpace(*kb.VectorStoreID)
+			if resolved, ok := storeViews[storeID]; ok {
+				view = resolved
+			} else {
+				view = types.UnavailableStoreDisplay()
+			}
+		}
+		rows = append(rows, buildKBResponse(kb, view, shareCounts))
+	}
+	return rows
+}
 func (req *createKnowledgeBaseRequest) toKnowledgeBase() *types.KnowledgeBase {
 	if req == nil {
 		return nil
@@ -290,6 +395,10 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 	kb, err := h.service.CreateKnowledgeBase(ctx, kbReq)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
 		c.Error(apperrors.NewInternalServerError(err.Error()))
 		return
 	}
@@ -342,6 +451,9 @@ func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(c *gin.Context) (*typ
 	kb, err := h.service.GetKnowledgeBaseByID(ctx, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
+		if stderrors.Is(err, repository.ErrKnowledgeBaseNotFound) {
+			return nil, id, 0, "", apperrors.NewNotFoundError("knowledge base not found")
+		}
 		return nil, id, 0, "", apperrors.NewInternalServerError(err.Error())
 	}
 
@@ -555,7 +667,7 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"data":    kbs,
+			"data":    h.buildKBListResponse(ctx, kbs, currentTenantID, nil),
 		})
 		return
 	}
@@ -601,6 +713,7 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 	kbs = filterByOrganization(kbs)
 
 	// Get share counts for all knowledge bases
+	var shareCounts map[string]int64
 	if len(kbs) > 0 && h.kbShareService != nil {
 		kbIDs := make([]string, len(kbs))
 		for i, kb := range kbs {
@@ -621,7 +734,7 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    kbs,
+		"data":    h.buildKBListResponse(ctx, kbs, currentTenantID, shareCounts),
 	})
 }
 
@@ -928,6 +1041,14 @@ func (h *KnowledgeBaseHandler) CopyKnowledgeBase(c *gin.Context) {
 			logger.Warnf(ctx, "Copy rejected: target knowledge base belongs to another tenant, target_id: %s",
 				secutils.SanitizeForLog(req.TargetID))
 			c.Error(errors.NewForbiddenError("No permission to copy to this knowledge base"))
+			return
+		}
+		if sourceKB.EmbeddingModelID != targetKB.EmbeddingModelID {
+			c.Error(errors.NewBadRequestError("cannot copy knowledge between different embedding models"))
+			return
+		}
+		if !sameOptionalString(sourceKB.VectorStoreID, targetKB.VectorStoreID) {
+			c.Error(errors.NewBadRequestError("cannot copy knowledge between different vector stores"))
 			return
 		}
 	}

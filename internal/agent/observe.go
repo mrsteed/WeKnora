@@ -589,7 +589,7 @@ func (e *AgentEngine) appendToolResults(
 		messages = append(messages, toolMsg)
 
 		contextToolMsg := toolMsg
-		if !e.config.RetainRetrievalHistory {
+		if e.config == nil || !e.config.RetainRetrievalHistory {
 			contextToolMsg.Content = summarizeToolResultForHistory(toolCall)
 		}
 		contextMessages = append(contextMessages, contextToolMsg)
@@ -735,7 +735,7 @@ func (e *AgentEngine) buildMessagesWithLLMContext(
 
 	if len(llmContext) > 0 {
 		var sanitized []chat.Message
-		if e.config.RetainRetrievalHistory {
+		if e.config != nil && e.config.RetainRetrievalHistory {
 			sanitized = llmContext
 			logger.Infof(context.Background(), "Retaining full retrieval history in context (RetainRetrievalHistory=true)")
 		} else {

@@ -440,6 +440,39 @@ func (s *kbShareService) HasKBPermission(ctx context.Context, kbID string, userI
 	return permission.HasPermission(requiredRole), nil
 }
 
+func (s *kbShareService) CheckTenantKBPermission(ctx context.Context, kbID string, callerTenantID uint64, callerTenantRole types.TenantRole) (types.OrgMemberRole, bool, error) {
+	shares, err := s.shareRepo.ListSharedKBsForTenant(ctx, callerTenantID)
+	if err != nil {
+		return "", false, err
+	}
+	var highestPermission types.OrgMemberRole
+	isShared := false
+	for _, share := range shares {
+		if share == nil || share.KnowledgeBaseID != kbID {
+			continue
+		}
+		isShared = true
+		effective := share.Permission
+		if callerTenantRole == types.TenantRoleViewer && effective.HasPermission(types.OrgRoleContributor) {
+			effective = types.OrgRoleViewer
+		}
+		if highestPermission == "" || effective.HasPermission(highestPermission) {
+			highestPermission = effective
+		}
+	}
+	return highestPermission, isShared, nil
+}
+
+// HasTenantKBPermission is the upstream RBAC compatibility path for tenant-scoped checks.
+// Local organization sharing is still user-based; this method only grants access through tenant-member rows when present.
+func (s *kbShareService) HasTenantKBPermission(ctx context.Context, kbID string, callerTenantID uint64, callerTenantRole types.TenantRole, requiredRole types.OrgMemberRole) (bool, error) {
+	permission, isShared, err := s.CheckTenantKBPermission(ctx, kbID, callerTenantID, callerTenantRole)
+	if err != nil {
+		return false, err
+	}
+	return isShared && permission.HasPermission(requiredRole), nil
+}
+
 // GetKBSourceTenant gets the source tenant ID for a shared knowledge base
 func (s *kbShareService) GetKBSourceTenant(ctx context.Context, kbID string) (uint64, error) {
 	// First check if there are any shares for this KB

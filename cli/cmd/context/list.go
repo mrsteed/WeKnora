@@ -7,15 +7,18 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Tencent/WeKnora/cli/internal/agent"
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
 	"github.com/Tencent/WeKnora/cli/internal/config"
 	"github.com/Tencent/WeKnora/cli/internal/format"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 )
 
-type ListOptions struct {
-	JSONOut bool
+type ListOptions struct{}
+
+// contextListFields enumerates the fields surfaced for `--format json` discovery on
+// `context list`. Each entry is a per-context summary row.
+var contextListFields = []string{
+	"name", "host", "user", "current",
 }
 
 type listEntry struct {
@@ -26,9 +29,8 @@ type listEntry struct {
 }
 
 // NewCmdList builds `weknora context list`. Per-host enumeration with an
-// active marker. Reads only config.yaml — no network, no keyring touch.
+// active marker. Reads only config.yaml - no network, no keyring touch.
 func NewCmdList(f *cmdutil.Factory) *cobra.Command {
-	opts := &ListOptions{}
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List configured contexts",
@@ -36,20 +38,24 @@ func NewCmdList(f *cmdutil.Factory) *cobra.Command {
 active context (used by subsequent commands when --context is unset) is
 marked with a leading "*". No network requests are issued.
 
-The credential mode (api-key vs password) is intentionally not shown here —
+The credential mode (api-key vs password) is intentionally not shown here -
 run "weknora auth list" for that. "context list" is the catalog of *where*
 the CLI can talk to; "auth list" is the catalog of *how*.`,
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
-			return runList(opts)
+			fopts, err := cmdutil.CheckFormatFlag(c)
+			if err != nil {
+				return err
+			}
+			fopts.ResolveDefault(iostreams.IO.IsStdoutTTY())
+			return runList(fopts)
 		},
 	}
-	cmd.Flags().BoolVar(&opts.JSONOut, "json", false, "Output JSON envelope")
-	agent.SetAgentHelp(cmd, "Lists CLI contexts (name/host/user/current). Read-only, no network. Use this before context use to verify the target name exists.")
+	cmdutil.AddFormatFlag(cmd, contextListFields...)
 	return cmd
 }
 
-func runList(opts *ListOptions) error {
+func runList(fopts *cmdutil.FormatOptions) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -65,9 +71,8 @@ func runList(opts *ListOptions) error {
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
 
-	if opts.JSONOut {
-		return format.WriteEnvelope(iostreams.IO.Out,
-			format.Success(entries, &format.Meta{Context: cfg.CurrentContext}))
+	if fopts.WantsJSON() {
+		return fopts.Emit(iostreams.IO.Out, entries)
 	}
 	if len(entries) == 0 {
 		fmt.Fprintln(iostreams.IO.Out, "No contexts configured. Run `weknora auth login` (or `weknora context add`) to create one.")

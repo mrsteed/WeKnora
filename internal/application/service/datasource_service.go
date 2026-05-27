@@ -239,6 +239,38 @@ func (s *DataSourceService) DeleteDataSource(ctx context.Context, id string) err
 	return nil
 }
 
+// UpdateDataSourceCredentials replaces the credential map inside the data-source config.
+// Other connector settings and selected resources are preserved so this subresource stays atomic.
+func (s *DataSourceService) UpdateDataSourceCredentials(ctx context.Context, id string, credentials map[string]interface{}) (*types.DataSource, error) {
+	ds, err := s.dsRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	var config types.DataSourceConfig
+	if len(ds.Config) > 0 {
+		if err := json.Unmarshal(ds.Config, &config); err != nil {
+			return nil, fmt.Errorf("failed to parse datasource config: %w", err)
+		}
+	}
+	config.Credentials = credentials
+	data, err := json.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	ds.Config = types.JSON(data)
+	if err := s.dsRepo.Update(ctx, ds); err != nil {
+		return nil, err
+	}
+	s.invalidateDatabaseConnector(ctx, ds)
+	return ds, nil
+}
+
+// ClearDataSourceCredentials removes all persisted connector credentials while keeping other config intact.
+func (s *DataSourceService) ClearDataSourceCredentials(ctx context.Context, id string) error {
+	_, err := s.UpdateDataSourceCredentials(ctx, id, map[string]interface{}{})
+	return err
+}
+
 // ValidateConnection tests the connection to an external data source
 func (s *DataSourceService) ValidateConnection(ctx context.Context, dsID string) error {
 	ds, err := s.GetDataSource(ctx, dsID)

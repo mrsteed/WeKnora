@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
 	"github.com/Tencent/WeKnora/cli/internal/config"
-	"github.com/Tencent/WeKnora/cli/internal/format"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 )
 
@@ -14,7 +14,7 @@ func TestList_Empty(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	out, _ := iostreams.SetForTest(t)
 
-	if err := runList(&ListOptions{}); err != nil {
+	if err := runList(&cmdutil.FormatOptions{Mode: cmdutil.FormatText}); err != nil {
 		t.Fatalf("runList: %v", err)
 	}
 	if !strings.Contains(out.String(), "No contexts") {
@@ -38,7 +38,7 @@ func TestList_MultipleSorted(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	if err := runList(&ListOptions{}); err != nil {
+	if err := runList(&cmdutil.FormatOptions{Mode: cmdutil.FormatText}); err != nil {
 		t.Fatalf("runList: %v", err)
 	}
 	got := out.String()
@@ -75,35 +75,23 @@ func TestList_JSON(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	if err := runList(&ListOptions{JSONOut: true}); err != nil {
+	if err := runList(&cmdutil.FormatOptions{Mode: cmdutil.FormatJSON}); err != nil {
 		t.Fatalf("runList: %v", err)
 	}
 
-	var env format.Envelope
-	if err := json.Unmarshal(out.Bytes(), &env); err != nil {
-		t.Fatalf("invalid JSON envelope: %v\noutput=%q", err, out.String())
-	}
-	if !env.OK {
-		t.Fatalf("envelope.ok=false, error=%+v", env.Error)
-	}
-	if env.Meta == nil || env.Meta.Context != "staging" {
-		t.Errorf("envelope._meta.context should be %q, got %+v", "staging", env.Meta)
-	}
-	rows, ok := env.Data.([]any)
-	if !ok {
-		t.Fatalf("envelope.data should be []listEntry, got %T", env.Data)
+	var rows []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &rows); err != nil {
+		t.Fatalf("invalid JSON: %v\noutput=%q", err, out.String())
 	}
 	if len(rows) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(rows))
 	}
 	// alphabetical: production before staging
-	first := rows[0].(map[string]any)
-	if first["name"] != "production" {
-		t.Errorf("first row should be production, got %v", first)
+	if rows[0]["name"] != "production" {
+		t.Errorf("first row should be production, got %v", rows[0])
 	}
-	second := rows[1].(map[string]any)
-	if second["name"] != "staging" || second["current"] != true {
-		t.Errorf("second row should be staging with current=true, got %v", second)
+	if rows[1]["name"] != "staging" || rows[1]["current"] != true {
+		t.Errorf("second row should be staging with current=true, got %v", rows[1])
 	}
 }
 

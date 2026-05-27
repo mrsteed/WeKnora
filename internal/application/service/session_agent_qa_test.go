@@ -241,6 +241,14 @@ func (s *fullDocumentModelServiceStub) UpdateModel(context.Context, *types.Model
 
 func (s *fullDocumentModelServiceStub) DeleteModel(context.Context, string) error { return nil }
 
+func (s *fullDocumentModelServiceStub) UpdateModelCredentials(context.Context, string, *string, *string) (*types.Model, error) {
+	return s.model, nil
+}
+
+func (s *fullDocumentModelServiceStub) ClearModelCredential(context.Context, string, string) error {
+	return nil
+}
+
 func (s *fullDocumentModelServiceStub) GetEmbeddingModel(context.Context, string) (embedding.Embedder, error) {
 	return nil, nil
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -35,7 +34,7 @@ type AuthHandler struct {
 //
 // Returns a pointer to the newly created AuthHandler
 func NewAuthHandler(configInfo *config.Config,
-	userService interfaces.UserService, tenantService interfaces.TenantService) *AuthHandler {
+	userService interfaces.UserService, tenantService interfaces.TenantService, _ ...interface{}) *AuthHandler {
 	return &AuthHandler{
 		configInfo:    configInfo,
 		userService:   userService,
@@ -59,10 +58,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	logger.Info(ctx, "Start user registration")
 
-	// 默认禁止公开注册，用户由管理员在组织人员管理中创建
-	// 若需开启公开注册，设置环境变量 ENABLE_REGISTRATION=true
-	if os.Getenv("ENABLE_REGISTRATION") != "true" {
-		logger.Warn(ctx, "Registration is disabled by DISABLE_REGISTRATION env")
+	if h.configInfo != nil && h.configInfo.Auth != nil && h.configInfo.Auth.IsInviteOnly() {
+		logger.Warn(ctx, "Registration is disabled by invite-only auth mode")
 		appErr := errors.NewForbiddenError("Registration is disabled")
 		c.Error(appErr)
 		return
@@ -621,7 +618,7 @@ func (h *AuthHandler) ValidateToken(c *gin.Context) {
 	token := tokenParts[1]
 
 	// Validate token
-	user, err := h.userService.ValidateToken(ctx, token)
+	user, _, err := h.userService.ValidateToken(ctx, token)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to validate token: %v", err)
 		appErr := errors.NewUnauthorizedError("Token validation failed").WithDetails(err.Error())

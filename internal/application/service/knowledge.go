@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	"github.com/Tencent/WeKnora/internal/config"
 	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
@@ -38,6 +40,7 @@ var (
 type knowledgeService struct {
 	config          *config.Config
 	retrieveEngine  interfaces.RetrieveEngineRegistry
+	ownership       retriever.TenantStoreOwnership
 	repo            interfaces.KnowledgeRepository
 	kbService       interfaces.KnowledgeBaseService
 	tenantRepo      interfaces.TenantRepository
@@ -109,6 +112,7 @@ func NewKnowledgeService(
 		task:            task,
 		graphEngine:     graphEngine,
 		retrieveEngine:  retrieveEngine,
+		ownership:       permissiveTenantStoreOwnership{},
 		redisClient:     redisClient,
 		kbShareService:  kbShareService,
 		imageResolver:   imageResolver,
@@ -116,6 +120,12 @@ func NewKnowledgeService(
 		wikiService:     wikiService,
 		taskPendingRepo: taskPendingRepo,
 	}, nil
+}
+
+type permissiveTenantStoreOwnership struct{}
+
+func (permissiveTenantStoreOwnership) StoreOwnedBy(context.Context, string, uint64) (bool, error) {
+	return true, nil
 }
 
 // getParserEngineOverridesFromContext returns parser engine overrides from tenant in context (e.g. MinerU endpoint, API key).
@@ -197,6 +207,43 @@ func (s *knowledgeService) GetKnowledgeByID(ctx context.Context, id string) (*ty
 // GetKnowledgeByIDOnly retrieves knowledge by ID without tenant filter (for permission resolution).
 func (s *knowledgeService) GetKnowledgeByIDOnly(ctx context.Context, id string) (*types.Knowledge, error) {
 	return s.repo.GetKnowledgeByIDOnly(ctx, id)
+}
+
+// GetOwningKBCreatorID resolves a knowledge item to the upstream creator_id of its owning KB.
+// During the local/upstream convergence window it falls back to local CreatedBy when CreatorID is empty.
+func (s *knowledgeService) GetOwningKBCreatorID(ctx context.Context, knowledgeID string) (string, error) {
+	knowledge, err := s.GetKnowledgeByID(ctx, knowledgeID)
+	if err != nil {
+		return "", err
+	}
+	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, knowledge.KnowledgeBaseID)
+	if err != nil {
+		return "", err
+	}
+	if kb == nil {
+		return "", repository.ErrKnowledgeBaseNotFound
+	}
+	if kb.CreatorID != "" {
+		return kb.CreatorID, nil
+	}
+	return kb.CreatedBy, nil
+}
+
+// checkStorageEngineConfigured preserves the upstream storage-engine guard while allowing
+// existing local deployments to fall back to the globally configured FileService.
+func (s *knowledgeService) checkStorageEngineConfigured(ctx context.Context, kb *types.KnowledgeBase) error {
+	if kb != nil && kb.GetStorageProvider() != "" {
+		return nil
+	}
+	if tenant, _ := ctx.Value(types.TenantInfoContextKey).(*types.Tenant); tenant != nil && tenant.StorageEngineConfig != nil {
+		if strings.TrimSpace(tenant.StorageEngineConfig.DefaultProvider) != "" {
+			return nil
+		}
+	}
+	if s != nil && s.fileSvc != nil {
+		return nil
+	}
+	return werrors.NewBadRequestError("请先为知识库选择存储引擎，再上传内容。请前往知识库设置页面进行配置。")
 }
 
 // ListKnowledgeByKnowledgeBaseID returns all knowledge entries in a knowledge base

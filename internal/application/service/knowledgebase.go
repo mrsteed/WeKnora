@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -29,6 +30,7 @@ type knowledgeBaseService struct {
 	kbShareService interfaces.KBShareService
 	modelService   interfaces.ModelService
 	retrieveEngine interfaces.RetrieveEngineRegistry
+	ownership      retriever.TenantStoreOwnership
 	tenantRepo     interfaces.TenantRepository
 	fileSvc        interfaces.FileService
 	graphEngine    interfaces.RetrieveGraphRepository
@@ -60,6 +62,7 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 		kbShareService: kbShareService,
 		modelService:   modelService,
 		retrieveEngine: retrieveEngine,
+		ownership:      permissiveTenantStoreOwnership{},
 		tenantRepo:     tenantRepo,
 		fileSvc:        fileSvc,
 		graphEngine:    graphEngine,
@@ -158,6 +161,9 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 	kb.CreatedAt = time.Now()
 	kb.TenantID = types.MustTenantIDFromContext(ctx)
 	kb.UpdatedAt = time.Now()
+	if err := s.validateVectorStoreBinding(ctx, kb); err != nil {
+		return nil, err
+	}
 	kb.EnsureDefaults()
 
 	logger.Infof(ctx, "Creating knowledge base, ID: %s, tenant ID: %d, name: %s", kb.ID, kb.TenantID, kb.Name)
@@ -172,6 +178,35 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 
 	logger.Infof(ctx, "Knowledge base created successfully, ID: %s, name: %s", kb.ID, kb.Name)
 	return kb, nil
+}
+
+func (s *knowledgeBaseService) validateVectorStoreBinding(ctx context.Context, kb *types.KnowledgeBase) error {
+	if kb == nil || kb.VectorStoreID == nil {
+		return nil
+	}
+	storeID := strings.TrimSpace(*kb.VectorStoreID)
+	if storeID == "" {
+		kb.VectorStoreID = nil
+		return nil
+	}
+	if _, err := uuid.Parse(storeID); err != nil {
+		return apperrors.NewVectorStoreBindingInvalidError("")
+	}
+	kb.VectorStoreID = &storeID
+	if s.retrieveEngine == nil || s.ownership == nil {
+		return apperrors.NewVectorStoreUnavailableError("")
+	}
+	err := retriever.VerifyBinding(ctx, s.retrieveEngine, s.ownership, types.MustTenantIDFromContext(ctx), storeID)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, retriever.ErrVectorStoreForbidden) {
+		return apperrors.NewVectorStoreBindingInvalidError("")
+	}
+	if errors.Is(err, retriever.ErrVectorStoreNotFound) {
+		return apperrors.NewVectorStoreUnavailableError("")
+	}
+	return apperrors.NewInternalServerError("")
 }
 
 // GetKnowledgeBaseByID retrieves a knowledge base by its ID
@@ -671,6 +706,13 @@ func (s *knowledgeBaseService) CopyKnowledgeBase(ctx context.Context,
 		if err != nil {
 			return nil, nil, err
 		}
+		targetKB.EnsureDefaults()
+		if sourceKB.EmbeddingModelID != targetKB.EmbeddingModelID {
+			return nil, nil, apperrors.NewBadRequestError("cannot copy knowledge between different embedding models")
+		}
+		if !sameOptionalString(sourceKB.VectorStoreID, targetKB.VectorStoreID) {
+			return nil, nil, apperrors.NewBadRequestError("cannot copy knowledge between different vector stores")
+		}
 	} else {
 		var faqConfig *types.FAQConfig
 		if sourceKB.FAQConfig != nil {
@@ -690,6 +732,7 @@ func (s *knowledgeBaseService) CopyKnowledgeBase(ctx context.Context,
 			VLMConfig:             sourceKB.VLMConfig,
 			StorageProviderConfig: sourceKB.StorageProviderConfig,
 			StorageConfig:         sourceKB.StorageConfig,
+			VectorStoreID:         cloneOptionalString(sourceKB.VectorStoreID),
 			FAQConfig:             faqConfig,
 		}
 		targetKB.EnsureDefaults()
@@ -698,4 +741,22 @@ func (s *knowledgeBaseService) CopyKnowledgeBase(ctx context.Context,
 		}
 	}
 	return sourceKB, targetKB, nil
+}
+
+func cloneOptionalString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func sameOptionalString(left, right *string) bool {
+	if left == nil || strings.TrimSpace(*left) == "" {
+		return right == nil || strings.TrimSpace(*right) == ""
+	}
+	if right == nil || strings.TrimSpace(*right) == "" {
+		return false
+	}
+	return strings.TrimSpace(*left) == strings.TrimSpace(*right)
 }

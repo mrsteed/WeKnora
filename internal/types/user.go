@@ -1,10 +1,48 @@
 package types
 
 import (
+	"database/sql/driver"
+	"encoding/json"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
 )
+
+// UserPreferences stores per-user UI and feature choices in one JSON column.
+// Pointer fields let update paths distinguish an omitted key from an explicit false/zero value.
+type UserPreferences struct {
+	EnableMemory       *bool   `json:"enable_memory,omitempty"`
+	LastActiveTenantID *uint64 `json:"last_active_tenant_id,omitempty"`
+}
+
+// Value serializes preferences for GORM across Postgres jsonb and SQLite text columns.
+func (p UserPreferences) Value() (driver.Value, error) {
+	return json.Marshal(p)
+}
+
+// Scan hydrates preferences from supported database driver representations.
+// Nil and empty values become an empty preference object so callers can use zero values safely.
+func (p *UserPreferences) Scan(value interface{}) error {
+	if value == nil {
+		*p = UserPreferences{}
+		return nil
+	}
+	var data []byte
+	switch v := value.(type) {
+	case []byte:
+		data = v
+	case string:
+		data = []byte(v)
+	default:
+		return errors.New("UserPreferences.Scan: unsupported type")
+	}
+	if len(data) == 0 {
+		*p = UserPreferences{}
+		return nil
+	}
+	return json.Unmarshal(data, p)
+}
 
 // User represents a user in the system
 type User struct {
@@ -28,6 +66,11 @@ type User struct {
 	CanAccessAllTenants bool `json:"can_access_all_tenants" gorm:"default:false"`
 	// Whether the user is a super admin (platform-level privileges)
 	IsSuperAdmin bool `json:"is_super_admin" gorm:"default:false"`
+	// Whether the user is a system administrator in upstream RBAC terms.
+	// Local IsSuperAdmin is kept for compatibility; new upstream code reads this field.
+	IsSystemAdmin bool `json:"is_system_admin" gorm:"default:false;index"`
+	// Preferences stores server-side user choices shared by upstream settings APIs.
+	Preferences UserPreferences `json:"preferences" gorm:"type:jsonb;not null;default:'{}'"`
 	// Creation time of the user
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time of the user
@@ -126,17 +169,19 @@ type RegisterResponse struct {
 
 // UserInfo represents user information for API responses
 type UserInfo struct {
-	ID                  string    `json:"id"`
-	Username            string    `json:"username"`
-	Email               string    `json:"email"`
-	Phone               string    `json:"phone"`
-	Avatar              string    `json:"avatar"`
-	TenantID            uint64    `json:"tenant_id"`
-	IsActive            bool      `json:"is_active"`
-	CanAccessAllTenants bool      `json:"can_access_all_tenants"`
-	IsSuperAdmin        bool      `json:"is_super_admin"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                  string          `json:"id"`
+	Username            string          `json:"username"`
+	Email               string          `json:"email"`
+	Phone               string          `json:"phone"`
+	Avatar              string          `json:"avatar"`
+	TenantID            uint64          `json:"tenant_id"`
+	IsActive            bool            `json:"is_active"`
+	CanAccessAllTenants bool            `json:"can_access_all_tenants"`
+	IsSuperAdmin        bool            `json:"is_super_admin"`
+	IsSystemAdmin       bool            `json:"is_system_admin"`
+	Preferences         UserPreferences `json:"preferences"`
+	CreatedAt           time.Time       `json:"created_at"`
+	UpdatedAt           time.Time       `json:"updated_at"`
 }
 
 // ToUserInfo converts User to UserInfo (without sensitive data)
@@ -151,6 +196,8 @@ func (u *User) ToUserInfo() *UserInfo {
 		IsActive:            u.IsActive,
 		CanAccessAllTenants: u.CanAccessAllTenants,
 		IsSuperAdmin:        u.IsSuperAdmin,
+		IsSystemAdmin:       u.IsSystemAdmin || u.IsSuperAdmin,
+		Preferences:         u.Preferences,
 		CreatedAt:           u.CreatedAt,
 		UpdatedAt:           u.UpdatedAt,
 	}

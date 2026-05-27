@@ -6,16 +6,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Tencent/WeKnora/cli/internal/agent"
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
-	"github.com/Tencent/WeKnora/cli/internal/format"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 	"github.com/Tencent/WeKnora/cli/internal/projectlink"
 )
 
-type UnlinkOptions struct {
-	JSONOut bool
-}
+// unlinkFields enumerates the fields surfaced for `--format json` discovery on
+// `unlink`. Tracks the small unlinkResult struct.
+var unlinkFields = []string{"project_link_path"}
+
+type UnlinkOptions struct{}
 
 // unlinkResult is the typed payload emitted under data.
 type unlinkResult struct {
@@ -37,18 +37,22 @@ discovery that ` + "`--kb`" + ` resolution uses; you do not need to cd to the
 project root to unlink. Errors with input.invalid_argument when no link
 is present anywhere in the parent chain.`,
 		Example: `  weknora unlink           # remove the binding for this project
-  weknora unlink --json    # envelope output (CI / agents)`,
+  weknora unlink --format json    # bare JSON (CI / agents)`,
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
-			return runUnlink(opts)
+			fopts, err := cmdutil.CheckFormatFlag(c)
+			if err != nil {
+				return err
+			}
+			fopts.ResolveDefault(iostreams.IO.IsStdoutTTY())
+			return runUnlink(opts, fopts)
 		},
 	}
-	cmd.Flags().BoolVar(&opts.JSONOut, "json", false, "Output JSON envelope")
-	agent.SetAgentHelp(cmd, "Removes .weknora/project.yaml (the cwd → KB binding). Walks up from cwd. Errors with input.invalid_argument when no link is present in the parent chain.")
+	cmdutil.AddFormatFlag(cmd, unlinkFields...)
 	return cmd
 }
 
-func runUnlink(opts *UnlinkOptions) error {
+func runUnlink(opts *UnlinkOptions, fopts *cmdutil.FormatOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return cmdutil.Wrapf(cmdutil.CodeLocalFileIO, err, "get cwd")
@@ -67,9 +71,8 @@ func runUnlink(opts *UnlinkOptions) error {
 	if err := projectlink.Remove(linkPath); err != nil {
 		return cmdutil.Wrapf(cmdutil.CodeLocalFileIO, err, "remove %s", linkPath)
 	}
-	if opts.JSONOut {
-		return format.WriteEnvelope(iostreams.IO.Out, format.Success(
-			unlinkResult{ProjectLinkPath: linkPath}, nil))
+	if fopts.WantsJSON() {
+		return fopts.Emit(iostreams.IO.Out, unlinkResult{ProjectLinkPath: linkPath})
 	}
 	fmt.Fprintf(iostreams.IO.Out, "✓ Unlinked %s\n", linkPath)
 	return nil

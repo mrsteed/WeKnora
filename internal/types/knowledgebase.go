@@ -64,6 +64,8 @@ type KnowledgeBase struct {
 	TenantID uint64 `yaml:"tenant_id"               json:"tenant_id"`
 	// User ID of the creator
 	CreatedBy string `yaml:"created_by"              json:"created_by"              gorm:"type:varchar(36);default:''"`
+	// CreatorID is the upstream RBAC creator column. It coexists with local CreatedBy during migration.
+	CreatorID string `yaml:"creator_id"              json:"creator_id"              gorm:"type:varchar(36);column:creator_id"`
 	// Visibility: global / org / private
 	Visibility string `yaml:"visibility"              json:"visibility"              gorm:"type:varchar(20);default:'private'"`
 	// Organization ID this KB belongs to (required when visibility = org)
@@ -667,4 +669,42 @@ func (kb *KnowledgeBase) IsMultimodalEnabled() bool {
 		return true
 	}
 	return false
+}
+
+// HasVectorStore reports whether the knowledge base is bound to a DB-managed vector store.
+// Nil receivers, nil IDs, and empty IDs all mean the tenant-level fallback store is used.
+func (kb *KnowledgeBase) HasVectorStore() bool {
+	return kb != nil && kb.VectorStoreID != nil && *kb.VectorStoreID != ""
+}
+
+// Normalize folds empty vector-store IDs into nil before persistence or validation.
+// This keeps old callers, raw imports, and upstream vector-store logic on the same representation.
+func (kb *KnowledgeBase) Normalize() {
+	if kb == nil {
+		return
+	}
+	if kb.VectorStoreID != nil && *kb.VectorStoreID == "" {
+		kb.VectorStoreID = nil
+	}
+}
+
+// SharesStoreWith compares vector-store bindings while treating nil and empty strings alike.
+// Both nil receivers share the same absent store; one nil receiver and one non-nil receiver do not.
+func (kb *KnowledgeBase) SharesStoreWith(other *KnowledgeBase) bool {
+	if kb == nil || other == nil {
+		return kb == other
+	}
+	left := normalizeVectorStoreID(kb.VectorStoreID)
+	right := normalizeVectorStoreID(other.VectorStoreID)
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
+}
+
+func normalizeVectorStoreID(id *string) *string {
+	if id != nil && *id == "" {
+		return nil
+	}
+	return id
 }

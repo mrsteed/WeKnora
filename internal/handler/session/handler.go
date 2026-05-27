@@ -24,6 +24,7 @@ type Handler struct {
 	knowledgeService            interfaces.KnowledgeService             // Service for loading knowledge items during route shadowing
 	customAgentService          interfaces.CustomAgentService           // Service for managing custom agents
 	tenantService               interfaces.TenantService                // Service for loading tenant (shared agent context)
+	kbShareService              interfaces.KBShareService               // Service for resolving shared KB tenant scope
 	agentShareService           interfaces.AgentShareService            // Service for resolving shared agents (KB scope in retrieval)
 	chatDocumentArtifactService interfaces.ChatDocumentArtifactService  // Service for session document artifact persistence and lookup
 	chatRouteService            interfaces.ChatRouteService             // Service for shadow route decision logging
@@ -43,6 +44,7 @@ func NewHandler(
 	knowledgeService interfaces.KnowledgeService,
 	customAgentService interfaces.CustomAgentService,
 	tenantService interfaces.TenantService,
+	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
 	chatDocumentArtifactService interfaces.ChatDocumentArtifactService,
 	chatRouteService interfaces.ChatRouteService,
@@ -61,6 +63,7 @@ func NewHandler(
 		knowledgeService:            knowledgeService,
 		customAgentService:          customAgentService,
 		tenantService:               tenantService,
+		kbShareService:              kbShareService,
 		agentShareService:           agentShareService,
 		chatDocumentArtifactService: chatDocumentArtifactService,
 		chatRouteService:            chatRouteService,

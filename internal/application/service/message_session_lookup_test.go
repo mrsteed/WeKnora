@@ -34,7 +34,15 @@ func (s *messageLookupSessionRepoStub) GetByTenantAndUser(context.Context, uint6
 	return nil, nil
 }
 
+func (s *messageLookupSessionRepoStub) GetByTenantID(context.Context, uint64, string) ([]*types.Session, error) {
+	return nil, nil
+}
+
 func (s *messageLookupSessionRepoStub) GetPagedByTenantAndUser(context.Context, uint64, string, *types.Pagination) ([]*types.Session, int64, error) {
+	return nil, 0, nil
+}
+
+func (s *messageLookupSessionRepoStub) GetPagedByTenantID(context.Context, uint64, string, *types.Pagination) ([]*types.Session, int64, error) {
 	return nil, 0, nil
 }
 
@@ -42,21 +50,25 @@ func (s *messageLookupSessionRepoStub) QueryPaged(context.Context, *types.Sessio
 	return nil, 0, nil
 }
 
-func (s *messageLookupSessionRepoStub) Update(context.Context, *types.Session) error { return nil }
+func (s *messageLookupSessionRepoStub) Update(context.Context, *types.Session, string) (int64, error) {
+	return 0, nil
+}
 
 func (s *messageLookupSessionRepoStub) SetPinned(context.Context, uint64, string, string, bool) (int64, error) {
 	return 0, nil
 }
 
-func (s *messageLookupSessionRepoStub) Delete(context.Context, uint64, string, string) error {
-	return nil
+func (s *messageLookupSessionRepoStub) Delete(context.Context, uint64, string, string) (int64, error) {
+	return 0, nil
 }
 
-func (s *messageLookupSessionRepoStub) BatchDelete(context.Context, uint64, []string) error {
-	return nil
+func (s *messageLookupSessionRepoStub) BatchDelete(context.Context, uint64, string, []string) (int64, error) {
+	return 0, nil
 }
 
-func (s *messageLookupSessionRepoStub) DeleteAllByTenantID(context.Context, uint64) error { return nil }
+func (s *messageLookupSessionRepoStub) DeleteAllByTenantID(context.Context, uint64, string) (int64, error) {
+	return 0, nil
+}
 
 type messageLookupShareSessionRepoStub struct {
 	getCalled bool

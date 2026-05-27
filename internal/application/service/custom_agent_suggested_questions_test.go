@@ -28,6 +28,22 @@ func (s *stubSuggestedQuestionsKBService) ListKnowledgeBases(context.Context) ([
 	return s.kbs, nil
 }
 
+func (s *stubSuggestedQuestionsKBService) GetKnowledgeBasesByIDsOnly(_ context.Context, ids []string) ([]*types.KnowledgeBase, error) {
+	byID := make(map[string]*types.KnowledgeBase, len(s.kbs))
+	for _, kb := range s.kbs {
+		if kb != nil {
+			byID[kb.ID] = kb
+		}
+	}
+	result := make([]*types.KnowledgeBase, 0, len(ids))
+	for _, id := range ids {
+		if kb := byID[id]; kb != nil {
+			result = append(result, kb)
+		}
+	}
+	return result, nil
+}
+
 type stubSuggestedQuestionsChunkRepo struct {
 	interfaces.ChunkRepository
 	faqKBIDs []string

@@ -13,6 +13,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 type stubDatabaseConnector struct {
@@ -69,6 +70,9 @@ func (s *stubKnowledgeBaseRepo) UpdateKnowledgeBase(context.Context, *types.Know
 	return nil
 }
 func (s *stubKnowledgeBaseRepo) DeleteKnowledgeBase(context.Context, string) error { return nil }
+func (s *stubKnowledgeBaseRepo) CountByVectorStoreID(context.Context, *gorm.DB, uint64, string) (int64, error) {
+	return 0, nil
+}
 func (s *stubKnowledgeBaseRepo) TogglePinKnowledgeBase(context.Context, string, uint64) (*types.KnowledgeBase, error) {
 	return nil, nil
 }

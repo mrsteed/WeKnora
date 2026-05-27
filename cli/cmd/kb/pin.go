@@ -6,20 +6,20 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Tencent/WeKnora/cli/internal/agent"
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
-	"github.com/Tencent/WeKnora/cli/internal/format"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 	sdk "github.com/Tencent/WeKnora/client"
 )
 
-type PinOptions struct {
-	JSONOut bool
-	DryRun  bool
-}
+// kbPinFields enumerates the fields surfaced for `--format json` discovery on
+// `kb pin` / `kb unpin`. The toggle result is the KnowledgeBase; the user-
+// relevant fields here are the id and the new pin state.
+var kbPinFields = []string{"id", "is_pinned"}
+
+type PinOptions struct{}
 
 // PinService is the narrow SDK surface this command depends on. The CLI
-// reads current state before toggling so `pin`/`unpin` are idempotent —
+// reads current state before toggling so `pin`/`unpin` are idempotent -
 // the server endpoint is only a non-idempotent toggle.
 type PinService interface {
 	GetKnowledgeBase(ctx context.Context, id string) (*sdk.KnowledgeBase, error)
@@ -39,43 +39,32 @@ func NewCmdUnpin(f *cmdutil.Factory) *cobra.Command {
 func newPinCmd(f *cmdutil.Factory, use string, want bool, short string) *cobra.Command {
 	opts := &PinOptions{}
 	cmd := &cobra.Command{
-		Use:   use + " <id>",
+		Use:   use + " <kb-id>",
 		Short: short,
+		Long:  short + ". Idempotent: reads the current pin state and toggles only if different, so re-running on a KB already in the target state is a no-op.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			opts.DryRun = cmdutil.IsDryRun(c)
-			if opts.DryRun {
-				return runPin(c.Context(), opts, nil, args[0], want)
+			fopts, err := cmdutil.CheckFormatFlag(c)
+			if err != nil {
+				return err
 			}
+			fopts.ResolveDefault(iostreams.IO.IsStdoutTTY())
 			cli, err := f.Client()
 			if err != nil {
 				return err
 			}
-			return runPin(c.Context(), opts, cli, args[0], want)
+			return runPin(c.Context(), opts, fopts, cli, args[0], want)
 		},
 	}
-	cmd.Flags().BoolVar(&opts.JSONOut, "json", false, "Output JSON envelope")
-	agent.SetAgentHelp(cmd, fmt.Sprintf("Idempotent %s: reads current pin state, toggles only if different. No-op when already in the requested state.", use))
+	cmdutil.AddFormatFlag(cmd, kbPinFields...)
 	return cmd
 }
 
-func runPin(ctx context.Context, opts *PinOptions, svc PinService, id string, want bool) error {
+func runPin(ctx context.Context, opts *PinOptions, fopts *cmdutil.FormatOptions, svc PinService, id string, want bool) error {
 	verb := "pin"
 	if !want {
 		verb = "unpin"
 	}
-	risk := &format.Risk{Level: format.RiskWrite, Action: fmt.Sprintf("%s knowledge base %s", verb, id)}
-
-	if opts.DryRun {
-		// Dry-run can't introspect state without a network call by design (see
-		// kb/delete.go for the same convention). Report what *would* run if
-		// state diverged; agents can disambiguate via a subsequent `kb view`.
-		return cmdutil.EmitDryRun(opts.JSONOut, struct {
-			ID   string `json:"id"`
-			Want bool   `json:"want_pinned"`
-		}{id, want}, &format.Meta{KBID: id}, risk)
-	}
-
 	current, err := svc.GetKnowledgeBase(ctx, id)
 	if err != nil {
 		return cmdutil.WrapHTTP(err, "get knowledge base %s", id)
@@ -85,12 +74,12 @@ func runPin(ctx context.Context, opts *PinOptions, svc PinService, id string, wa
 		if !want {
 			state = "unpinned"
 		}
-		// No-op path: tell agents what happened. The risk-write classification
-		// was the *requested* operation, not what occurred — surface it via a
-		// _meta.warning so audit logs don't count a write that wasn't made.
-		if opts.JSONOut {
-			meta := &format.Meta{KBID: id, Warnings: []string{fmt.Sprintf("already %s — no server call made", state)}}
-			return format.WriteEnvelope(iostreams.IO.Out, format.Success(current, meta))
+		// No-op path: the resource is already in the requested state. We
+		// emit the current resource so callers see the canonical shape on
+		// both fresh-toggle and no-op paths. Human path prints a confirming
+		// line; agents observe via the unchanged is_pinned field.
+		if fopts.WantsJSON() {
+			return fopts.Emit(iostreams.IO.Out, current)
 		}
 		fmt.Fprintf(iostreams.IO.Out, "✓ %s is already %s\n", id, state)
 		return nil
@@ -100,8 +89,8 @@ func runPin(ctx context.Context, opts *PinOptions, svc PinService, id string, wa
 	if err != nil {
 		return cmdutil.WrapHTTP(err, "%s knowledge base %s", verb, id)
 	}
-	if opts.JSONOut {
-		return format.WriteEnvelope(iostreams.IO.Out, format.SuccessWithRisk(updated, &format.Meta{KBID: id}, risk))
+	if fopts.WantsJSON() {
+		return fopts.Emit(iostreams.IO.Out, updated)
 	}
 	state := "pinned"
 	if !updated.IsPinned {

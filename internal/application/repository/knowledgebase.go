@@ -22,8 +22,21 @@ func NewKnowledgeBaseRepository(db *gorm.DB) interfaces.KnowledgeBaseRepository 
 	return &knowledgeBaseRepository{db: db}
 }
 
+func syncKnowledgeBaseCreatorFields(kb *types.KnowledgeBase) {
+	if kb == nil {
+		return
+	}
+	if kb.CreatorID == "" && kb.CreatedBy != "" {
+		kb.CreatorID = kb.CreatedBy
+	}
+	if kb.CreatedBy == "" && kb.CreatorID != "" {
+		kb.CreatedBy = kb.CreatorID
+	}
+}
+
 // CreateKnowledgeBase creates a new knowledge base
 func (r *knowledgeBaseRepository) CreateKnowledgeBase(ctx context.Context, kb *types.KnowledgeBase) error {
+	syncKnowledgeBaseCreatorFields(kb)
 	return r.db.WithContext(ctx).Create(kb).Error
 }
 
@@ -36,6 +49,7 @@ func (r *knowledgeBaseRepository) GetKnowledgeBaseByID(ctx context.Context, id s
 		}
 		return nil, err
 	}
+	syncKnowledgeBaseCreatorFields(&kb)
 	return &kb, nil
 }
 
@@ -48,6 +62,7 @@ func (r *knowledgeBaseRepository) GetKnowledgeBaseByIDAndTenant(ctx context.Cont
 		}
 		return nil, err
 	}
+	syncKnowledgeBaseCreatorFields(&kb)
 	return &kb, nil
 }
 
@@ -59,6 +74,9 @@ func (r *knowledgeBaseRepository) GetKnowledgeBaseByIDs(ctx context.Context, ids
 	var kbs []*types.KnowledgeBase
 	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&kbs).Error; err != nil {
 		return nil, err
+	}
+	for _, kb := range kbs {
+		syncKnowledgeBaseCreatorFields(kb)
 	}
 	return kbs, nil
 }
@@ -120,6 +138,21 @@ func (r *knowledgeBaseRepository) UpdateKnowledgeBase(ctx context.Context, kb *t
 // DeleteKnowledgeBase deletes a knowledge base
 func (r *knowledgeBaseRepository) DeleteKnowledgeBase(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.KnowledgeBase{}).Error
+}
+
+// CountByVectorStoreID counts active KB rows bound to the given vector store under a tenant.
+// The optional db handle supports transactional callers such as vector-store deletion guards.
+func (r *knowledgeBaseRepository) CountByVectorStoreID(
+	ctx context.Context, db *gorm.DB, tenantID uint64, storeID string,
+) (int64, error) {
+	if db == nil {
+		db = r.db
+	}
+	var count int64
+	err := db.WithContext(ctx).Model(&types.KnowledgeBase{}).
+		Where("tenant_id = ? AND vector_store_id = ?", tenantID, storeID).
+		Count(&count).Error
+	return count, err
 }
 
 // ListAccessibleKBs returns knowledge bases accessible to a user considering visibility rules:

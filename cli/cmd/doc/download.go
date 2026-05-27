@@ -10,7 +10,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Tencent/WeKnora/cli/internal/agent"
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 )
@@ -33,7 +32,7 @@ type DownloadService interface {
 func NewCmdDownload(f *cmdutil.Factory) *cobra.Command {
 	opts := &DownloadOptions{}
 	cmd := &cobra.Command{
-		Use:   "download <id>",
+		Use:   "download <doc-id>",
 		Short: "Download a document by ID",
 		Long: `Streams the document bytes to disk (or stdout with --output -).
 
@@ -57,7 +56,6 @@ Existing files are NOT overwritten unless --clobber is passed.`,
 	}
 	cmd.Flags().StringVarP(&opts.Output, "output", "O", "", `Output path; "-" for stdout. Defaults to the server-suggested filename.`)
 	cmd.Flags().BoolVar(&opts.Clobber, "clobber", false, "Overwrite the output file if it already exists")
-	agent.SetAgentHelp(cmd, "Downloads a document. Agents that pipe the bytes should pass --output - (stdout). The exit code is 0 on success, 1 on resource.not_found, 5 on missing --output when the server didn't supply a filename.")
 	return cmd
 }
 
@@ -85,7 +83,7 @@ func runDownload(ctx context.Context, opts *DownloadOptions, svc DownloadService
 // resolveDownloadDest returns the final destination ("-" for stdout, an
 // absolute or relative path otherwise) after applying the --output flag
 // and sanitizing the server-suggested name. A server that returns a path-
-// like filename (..\, /etc/foo) is rejected — only the basename is
+// like filename (..\, /etc/foo) is rejected - only the basename is
 // accepted.
 func resolveDownloadDest(opts *DownloadOptions, suggested string) (string, error) {
 	if opts.Output == "-" {

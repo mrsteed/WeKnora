@@ -6,23 +6,31 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Tencent/WeKnora/cli/internal/agent"
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
-	"github.com/Tencent/WeKnora/cli/internal/format"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 	sdk "github.com/Tencent/WeKnora/client"
 )
 
+// kbEditFields enumerates the fields surfaced for `--format json` discovery on
+// `kb edit`. The result is the updated KnowledgeBase; mirrors the kb
+// top-level json tags.
+var kbEditFields = []string{
+	"id", "name", "type", "description",
+	"is_temporary", "is_pinned",
+	"embedding_model_id", "summary_model_id",
+	"knowledge_count", "chunk_count",
+	"is_processing", "processing_count",
+	"created_at", "updated_at",
+}
+
 type EditOptions struct {
 	// Name/Description are *string so we can distinguish "unset" from "set to
-	// empty". An unset field is omitted from the SDK request — only fields the
+	// empty". An unset field is omitted from the SDK request - only fields the
 	// user passed are sent. Server PUT semantics are "replace everything in the
 	// request"; if we always sent both, an `--name` invocation would silently
 	// clear the description.
 	Name        *string
 	Description *string
-	JSONOut     bool
-	DryRun      bool
 }
 
 // EditService is the narrow SDK surface this command depends on. GetKnowledgeBase
@@ -41,55 +49,44 @@ func NewCmdEdit(f *cmdutil.Factory) *cobra.Command {
 	opts := &EditOptions{}
 	var name, desc string
 	cmd := &cobra.Command{
-		Use:   "edit <id>",
+		Use:   "edit <kb-id>",
 		Short: "Edit a knowledge base's name or description",
-		Args:  cobra.ExactArgs(1),
+		Long: `Update a knowledge base's name and/or description. At least one of
+--name / --description must be supplied; fields you omit are preserved
+server-side.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
+			fopts, err := cmdutil.CheckFormatFlag(c)
+			if err != nil {
+				return err
+			}
+			fopts.ResolveDefault(iostreams.IO.IsStdoutTTY())
 			if c.Flag("name").Changed {
 				opts.Name = &name
 			}
 			if c.Flag("description").Changed {
 				opts.Description = &desc
 			}
-			opts.DryRun = cmdutil.IsDryRun(c)
-			if opts.DryRun {
-				return runEdit(c.Context(), opts, nil, args[0])
-			}
 			cli, err := f.Client()
 			if err != nil {
 				return err
 			}
-			return runEdit(c.Context(), opts, cli, args[0])
+			return runEdit(c.Context(), opts, fopts, cli, args[0])
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "New name (omit to leave unchanged)")
 	cmd.Flags().StringVar(&desc, "description", "", "New description (omit to leave unchanged)")
-	cmd.Flags().BoolVar(&opts.JSONOut, "json", false, "Output JSON envelope")
-	agent.SetAgentHelp(cmd, "Edits a knowledge base. At least one of --name/--description is required. Fields not passed are preserved server-side. Returns the updated KnowledgeBase.")
+	cmdutil.AddFormatFlag(cmd, kbEditFields...)
 	return cmd
 }
 
-func runEdit(ctx context.Context, opts *EditOptions, svc EditService, id string) error {
+func runEdit(ctx context.Context, opts *EditOptions, fopts *cmdutil.FormatOptions, svc EditService, id string) error {
 	if opts.Name == nil && opts.Description == nil {
 		return &cmdutil.Error{
 			Code:    cmdutil.CodeInputMissingFlag,
 			Message: "kb edit requires at least one of --name or --description",
 			Hint:    "pass --name <name> and/or --description <desc>",
 		}
-	}
-
-	risk := &format.Risk{Level: format.RiskWrite, Action: fmt.Sprintf("edit knowledge base %s", id)}
-	if opts.DryRun {
-		// Dry-run renders only the user-set fields so the preview reflects
-		// intent; the real-run fetch path fills in the rest from the server.
-		preview := &sdk.UpdateKnowledgeBaseRequest{}
-		if opts.Name != nil {
-			preview.Name = *opts.Name
-		}
-		if opts.Description != nil {
-			preview.Description = *opts.Description
-		}
-		return cmdutil.EmitDryRun(opts.JSONOut, preview, &format.Meta{KBID: id}, risk)
 	}
 
 	// Fetch current state so we can fill in fields the user didn't touch.
@@ -114,8 +111,8 @@ func runEdit(ctx context.Context, opts *EditOptions, svc EditService, id string)
 	if err != nil {
 		return cmdutil.WrapHTTP(err, "edit knowledge base %s", id)
 	}
-	if opts.JSONOut {
-		return format.WriteEnvelope(iostreams.IO.Out, format.SuccessWithRisk(updated, &format.Meta{KBID: id}, risk))
+	if fopts.WantsJSON() {
+		return fopts.Emit(iostreams.IO.Out, updated)
 	}
 	fmt.Fprintf(iostreams.IO.Out, "✓ Updated knowledge base %s\n", id)
 	return nil

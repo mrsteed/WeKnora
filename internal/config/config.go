@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ type Config struct {
 	Server          *ServerConfig          `yaml:"server"           json:"server"`
 	KnowledgeBase   *KnowledgeBaseConfig   `yaml:"knowledge_base"   json:"knowledge_base"`
 	Tenant          *TenantConfig          `yaml:"tenant"           json:"tenant"`
+	Auth            *AuthConfig            `yaml:"auth"             json:"auth"`
+	Audit           *AuditConfig           `yaml:"audit"            json:"audit"`
 	OIDCAuth        *OIDCAuthConfig        `yaml:"oidc_auth"        json:"oidc_auth"`
 	Models          []ModelConfig          `yaml:"models"           json:"models"`
 	VectorDatabase  *VectorDatabaseConfig  `yaml:"vector_database"  json:"vector_database"`
@@ -182,6 +185,47 @@ type TenantConfig struct {
 	DefaultSessionDescription string `yaml:"default_session_description" json:"default_session_description"`
 	// EnableCrossTenantAccess enables cross-tenant access for users with permission
 	EnableCrossTenantAccess bool `yaml:"enable_cross_tenant_access" json:"enable_cross_tenant_access"`
+	// EnableRBAC controls tenant-level RBAC enforcement. Nil keeps the upstream default of enabled,
+	// while an explicit false lets operators run a logging/compatibility window during rollout.
+	EnableRBAC *bool `yaml:"enable_rbac" json:"enable_rbac"`
+	// MaxOwnedPerUser limits self-service tenant ownership for ordinary users. Values <= 0 keep
+	// upstream handler defaults or disable the cap according to the tenant handler contract.
+	MaxOwnedPerUser int `yaml:"max_owned_per_user" json:"max_owned_per_user" mapstructure:"max_owned_per_user"`
+}
+
+// IsRBACEnforced reports whether tenant-level RBAC checks should reject requests.
+// A nil config or nil pointer means the operator has not opted out, so enforcement remains on.
+func (t *TenantConfig) IsRBACEnforced() bool {
+	if t == nil || t.EnableRBAC == nil {
+		return true
+	}
+	return *t.EnableRBAC
+}
+
+// AuthConfig governs authentication entry points such as public registration.
+// It is intentionally small so legacy deployments without an auth section keep existing behavior.
+type AuthConfig struct {
+	RegistrationMode string `yaml:"registration_mode" json:"registration_mode"`
+}
+
+// AuditConfig controls audit log retention introduced by upstream RBAC auditing.
+// A zero value keeps retention disabled unless a deployment opts into cleanup.
+type AuditConfig struct {
+	RetentionDays int `yaml:"retention_days" json:"retention_days"`
+}
+
+const (
+	AuthRegistrationModeSelfServe  = "self_serve"
+	AuthRegistrationModeInviteOnly = "invite_only"
+)
+
+// IsInviteOnly returns true when public self-registration should be disabled.
+// Missing or unknown config values stay fail-open for compatibility with existing installs.
+func (c *AuthConfig) IsInviteOnly() bool {
+	if c == nil {
+		return false
+	}
+	return c.RegistrationMode == AuthRegistrationModeInviteOnly
 }
 
 type OIDCUserInfoMapping struct {
@@ -442,6 +486,7 @@ func LoadConfig() (*Config, error) {
 
 	// Validate configuration values
 	applyOIDCEnvOverrides(&cfg)
+	applyAuthAndTenantDefaults(&cfg)
 	applyAgentEnvOverrides(&cfg)
 	applyLongDocumentDefaults(&cfg)
 
@@ -503,10 +548,60 @@ func ValidateConfig(cfg *Config) error {
 		}
 	}
 
+	if cfg.Auth != nil {
+		mode := strings.TrimSpace(cfg.Auth.RegistrationMode)
+		if mode != "" && mode != AuthRegistrationModeSelfServe && mode != AuthRegistrationModeInviteOnly {
+			errs = append(errs, fmt.Sprintf("auth.registration_mode must be %q or %q, got %q",
+				AuthRegistrationModeSelfServe, AuthRegistrationModeInviteOnly, mode))
+		}
+	}
+
 	if len(errs) > 0 {
 		return fmt.Errorf("config validation errors: %s", strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// applyAuthAndTenantDefaults folds legacy registration environment settings and tenant RBAC
+// defaults into Config. This keeps /auth/register, /auth/config, and tenant RBAC middleware on
+// one shared interpretation even when older deployments only set DISABLE_REGISTRATION.
+func applyAuthAndTenantDefaults(cfg *Config) {
+	if cfg.Auth == nil {
+		cfg.Auth = &AuthConfig{}
+	}
+	if cfg.Tenant == nil {
+		cfg.Tenant = &TenantConfig{}
+	}
+
+	if legacy := strings.TrimSpace(os.Getenv("DISABLE_REGISTRATION")); strings.EqualFold(legacy, "true") {
+		prev := strings.TrimSpace(cfg.Auth.RegistrationMode)
+		cfg.Auth.RegistrationMode = AuthRegistrationModeInviteOnly
+		if prev != "" && prev != AuthRegistrationModeInviteOnly {
+			fmt.Printf("[config] DISABLE_REGISTRATION=true overrides auth.registration_mode=%q -> %q\n",
+				prev, AuthRegistrationModeInviteOnly)
+		}
+	}
+
+	if strings.TrimSpace(cfg.Auth.RegistrationMode) == "" {
+		cfg.Auth.RegistrationMode = AuthRegistrationModeSelfServe
+	}
+
+	if value := strings.TrimSpace(os.Getenv("WEKNORA_TENANT_ENABLE_RBAC")); value != "" {
+		enabled := strings.EqualFold(value, "true")
+		cfg.Tenant.EnableRBAC = &enabled
+	}
+	if cfg.Tenant.EnableRBAC == nil {
+		enabled := true
+		cfg.Tenant.EnableRBAC = &enabled
+	}
+
+	if value := strings.TrimSpace(os.Getenv("WEKNORA_TENANT_MAX_OWNED_PER_USER")); value != "" {
+		if limit, err := strconv.Atoi(value); err == nil {
+			cfg.Tenant.MaxOwnedPerUser = limit
+		} else {
+			fmt.Printf("[config] WEKNORA_TENANT_MAX_OWNED_PER_USER=%q is not an integer, ignoring\n", value)
+		}
+	}
 }
 
 func applyOIDCEnvOverrides(cfg *Config) {

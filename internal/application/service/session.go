@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/config"
+	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
@@ -255,14 +256,19 @@ func (s *sessionService) UpdateSession(ctx context.Context, session *types.Sessi
 		return errors.New("session id is required")
 	}
 
+	userID, _ := types.UserIDFromContext(ctx)
+
 	// Update session in repository
-	err := s.sessionRepo.Update(ctx, session)
+	rowsAffected, err := s.sessionRepo.Update(ctx, session, userID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"session_id": session.ID,
 			"tenant_id":  session.TenantID,
 		})
 		return err
+	}
+	if rowsAffected == 0 {
+		return werrors.ErrSessionNotFound
 	}
 
 	logger.Infof(ctx, "Session updated successfully, ID: %s", session.ID)
@@ -304,7 +310,7 @@ func (s *sessionService) DeleteSession(ctx context.Context, id string) error {
 	}
 
 	// Delete session from repository (filtered by user ownership)
-	err := s.sessionRepo.Delete(ctx, tenantID, userID, id)
+	_, err := s.sessionRepo.Delete(ctx, tenantID, userID, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"session_id": id,
@@ -326,6 +332,7 @@ func (s *sessionService) BatchDeleteSessions(ctx context.Context, ids []string) 
 
 	// Get tenant ID from context
 	tenantID := types.MustTenantIDFromContext(ctx)
+	userID, _ := types.UserIDFromContext(ctx)
 
 	// Cleanup associated resources for each session
 	bgCtx := context.WithoutCancel(ctx)
@@ -350,10 +357,11 @@ func (s *sessionService) BatchDeleteSessions(ctx context.Context, ids []string) 
 	}
 
 	// Batch delete sessions from repository
-	if err := s.sessionRepo.BatchDelete(ctx, tenantID, ids); err != nil {
+	if _, err := s.sessionRepo.BatchDelete(ctx, tenantID, userID, ids); err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"session_ids": ids,
 			"tenant_id":   tenantID,
+			"user_id":     userID,
 		})
 		return err
 	}
@@ -398,7 +406,7 @@ func (s *sessionService) DeleteAllSessions(ctx context.Context) error {
 		ids = append(ids, session.ID)
 	}
 
-	if err := s.sessionRepo.BatchDelete(ctx, tenantID, ids); err != nil {
+	if _, err := s.sessionRepo.BatchDelete(ctx, tenantID, userID, ids); err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenantID,
 			"user_id":   userID,
@@ -510,7 +518,8 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 	session.Title = strings.TrimPrefix(response.Content, "<think>\n\n</think>")
 
 	// Update session with new title
-	err = s.sessionRepo.Update(ctx, session)
+	userID, _ := types.UserIDFromContext(ctx)
+	_, err = s.sessionRepo.Update(ctx, session, userID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		return "", err

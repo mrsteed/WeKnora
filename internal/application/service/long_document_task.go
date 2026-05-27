@@ -147,10 +147,10 @@ func (h *longDocumentTaskHandler) Handle(ctx context.Context, task *asynq.Task) 
 }
 
 func (h *longDocumentTaskHandler) process(ctx context.Context, payload *types.LongDocumentExecutionPayload) error {
-	req := &payload.Request
-	if req == nil || req.Session == nil {
+	if payload == nil || payload.Request.Session == nil {
 		return fmt.Errorf("long document task request is incomplete")
 	}
+	req := &payload.Request
 	message, err := h.messageService.GetMessage(ctx, req.Session.ID, req.AssistantMessageID)
 	if err != nil {
 		return err

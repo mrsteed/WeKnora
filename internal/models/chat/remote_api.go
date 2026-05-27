@@ -229,7 +229,7 @@ func (c *RemoteAPIChat) ConvertMessages(messages []Message) []openai.ChatComplet
 			openaiMsg.Content = msg.Content
 		}
 
-		if msg.ReasoningContent != "" {
+		if msg.Role == "assistant" && msg.ReasoningContent != "" {
 			openaiMsg.ReasoningContent = msg.ReasoningContent
 		}
 
@@ -289,7 +289,15 @@ func (c *RemoteAPIChat) BuildChatCompletionRequest(messages []Message, opts *Cha
 		isOpenAIReasoning := (c.provider == provider.ProviderOpenAI || c.provider == provider.ProviderAzureOpenAI) &&
 			provider.IsOpenAIReasoningOrGPT5Model(c.modelName)
 
-		if !isOpenAIReasoning {
+		// Moonshot v1 系列模型只接受 temperature=1，传入其他值会返回 400 错误。
+		isMoonshotFixedTemp := c.provider == provider.ProviderMoonshot &&
+			provider.IsMoonshotFixedTempModel(c.modelName)
+
+		if isOpenAIReasoning {
+			// 不设置 temperature / top_p 等参数
+		} else if isMoonshotFixedTemp {
+			req.Temperature = 1
+		} else {
 			req.Temperature = float32(opts.Temperature)
 			if opts.TopP > 0 {
 				req.TopP = float32(opts.TopP)
@@ -420,8 +428,8 @@ func (c *RemoteAPIChat) Chat(ctx context.Context, messages []Message, opts *Chat
 	if err != nil {
 		return nil, err
 	}
-	logger.Infof(timeoutCtx, "[LLM Usage] model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d",
-		c.modelName, result.Usage.PromptTokens, result.Usage.CompletionTokens, result.Usage.TotalTokens)
+	logger.Infof(timeoutCtx, "[LLM Usage] model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d, cached_tokens=%d",
+		c.modelName, result.Usage.PromptTokens, result.Usage.CompletionTokens, result.Usage.TotalTokens, result.Usage.CachedTokens)
 	return result, nil
 }
 
@@ -484,8 +492,8 @@ func (c *RemoteAPIChat) chatWithRawHTTP(ctx context.Context, endpoint string, cu
 	if err != nil {
 		return nil, err
 	}
-	logger.Infof(ctx, "[LLM Usage] model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d",
-		c.modelName, result.Usage.PromptTokens, result.Usage.CompletionTokens, result.Usage.TotalTokens)
+	logger.Infof(ctx, "[LLM Usage] model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d, cached_tokens=%d",
+		c.modelName, result.Usage.PromptTokens, result.Usage.CompletionTokens, result.Usage.TotalTokens, result.Usage.CachedTokens)
 	return result, nil
 }
 
@@ -508,6 +516,7 @@ func (c *RemoteAPIChat) parseCompletionResponse(resp *openai.ChatCompletionRespo
 			PromptTokens:     resp.Usage.PromptTokens,
 			CompletionTokens: resp.Usage.CompletionTokens,
 			TotalTokens:      resp.Usage.TotalTokens,
+			CachedTokens:     cachedTokens(resp.Usage.PromptTokensDetails),
 		},
 	}
 
@@ -692,8 +701,8 @@ func (c *RemoteAPIChat) processStream(ctx context.Context, stream *openai.ChatCo
 		if err != nil {
 			if err == io.EOF {
 				if state.usage != nil {
-					logger.Infof(ctx, "[LLM Usage] model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d",
-						c.modelName, state.usage.PromptTokens, state.usage.CompletionTokens, state.usage.TotalTokens)
+					logger.Infof(ctx, "[LLM Usage] model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d, cached_tokens=%d",
+						c.modelName, state.usage.PromptTokens, state.usage.CompletionTokens, state.usage.TotalTokens, state.usage.CachedTokens)
 				}
 				toolCalls := state.buildOrderedToolCalls()
 				streamChan <- types.StreamResponse{
@@ -719,6 +728,7 @@ func (c *RemoteAPIChat) processStream(ctx context.Context, stream *openai.ChatCo
 				PromptTokens:     response.Usage.PromptTokens,
 				CompletionTokens: response.Usage.CompletionTokens,
 				TotalTokens:      response.Usage.TotalTokens,
+				CachedTokens:     cachedTokens(response.Usage.PromptTokensDetails),
 			}
 		}
 
@@ -741,8 +751,8 @@ func (c *RemoteAPIChat) processRawHTTPStream(ctx context.Context, resp *http.Res
 		if err != nil {
 			if err == io.EOF {
 				if state.usage != nil {
-					logger.Infof(ctx, "[LLM Usage] model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d",
-						c.modelName, state.usage.PromptTokens, state.usage.CompletionTokens, state.usage.TotalTokens)
+					logger.Infof(ctx, "[LLM Usage] model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d, cached_tokens=%d",
+						c.modelName, state.usage.PromptTokens, state.usage.CompletionTokens, state.usage.TotalTokens, state.usage.CachedTokens)
 				}
 				toolCalls := state.buildOrderedToolCalls()
 				streamChan <- types.StreamResponse{
@@ -769,8 +779,8 @@ func (c *RemoteAPIChat) processRawHTTPStream(ctx context.Context, resp *http.Res
 
 		if event.Done {
 			if state.usage != nil {
-				logger.Infof(ctx, "[LLM Usage] model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d",
-					c.modelName, state.usage.PromptTokens, state.usage.CompletionTokens, state.usage.TotalTokens)
+				logger.Infof(ctx, "[LLM Usage] model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d, cached_tokens=%d",
+					c.modelName, state.usage.PromptTokens, state.usage.CompletionTokens, state.usage.TotalTokens, state.usage.CachedTokens)
 			}
 			toolCalls := state.buildOrderedToolCalls()
 			streamChan <- types.StreamResponse{
@@ -810,6 +820,7 @@ func (c *RemoteAPIChat) processRawHTTPStream(ctx context.Context, resp *http.Res
 				PromptTokens:     streamResp.Usage.PromptTokens,
 				CompletionTokens: streamResp.Usage.CompletionTokens,
 				TotalTokens:      streamResp.Usage.TotalTokens,
+				CachedTokens:     cachedTokens(streamResp.Usage.PromptTokensDetails),
 			}
 		}
 
@@ -1164,4 +1175,24 @@ func (c *RemoteAPIChat) GetBaseURL() string {
 // GetAPIKey 获取 apiKey
 func (c *RemoteAPIChat) GetAPIKey() string {
 	return c.apiKey
+}
+
+// cachedTokens returns the cached prompt-token count from an OpenAI-compatible
+// usage detail block, or zero when the provider did not report one. Some
+// providers omit PromptTokensDetails entirely, so the nil guard is required.
+//
+// Note on provider semantics:
+//   - Implicit-cache providers (OpenAI, Azure OpenAI, DeepSeek, …) populate
+//     `cached_tokens` automatically whenever the prompt prefix matches a
+//     previous request — no caller opt-in is required.
+//   - Explicit-cache providers (Qwen on Aliyun, Anthropic Claude, …) only
+//     populate `cached_tokens` after the caller attaches `cache_control:
+//     {"type": "ephemeral"}` to the relevant message / content block. This
+//     helper still returns zero for those providers until that opt-in is
+//     applied upstream of the request.
+func cachedTokens(d *openai.PromptTokensDetails) int {
+	if d == nil {
+		return 0
+	}
+	return d.CachedTokens
 }

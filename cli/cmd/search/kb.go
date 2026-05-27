@@ -9,18 +9,26 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Tencent/WeKnora/cli/internal/agent"
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
-	"github.com/Tencent/WeKnora/cli/internal/format"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 	"github.com/Tencent/WeKnora/cli/internal/text"
 	sdk "github.com/Tencent/WeKnora/client"
 )
 
+// kbSearchFields enumerates the fields surfaced for `--format json` discovery on
+// `search kb`. Subset of KnowledgeBase suitable for list/filter results.
+var kbSearchFields = []string{
+	"id", "name", "type", "description",
+	"is_temporary", "is_pinned",
+	"embedding_model_id", "summary_model_id",
+	"knowledge_count", "chunk_count",
+	"is_processing", "processing_count",
+	"created_at", "updated_at",
+}
+
 type KBSearchOptions struct {
-	Query   string
-	Limit   int
-	JSONOut bool
+	Query string
+	Limit int
 }
 
 // KBSearchService is the narrow SDK surface this command depends on.
@@ -30,7 +38,7 @@ type KBSearchService interface {
 	ListKnowledgeBases(ctx context.Context) ([]sdk.KnowledgeBase, error)
 }
 
-// NewCmdKB builds `weknora search kb "<query>"` — substring + case-insensitive
+// NewCmdKB builds `weknora search kb "<query>"` - substring + case-insensitive
 // match across KB names and descriptions visible to the active context.
 // Results are sorted by name length (shortest first; usually the closest
 // hit) for deterministic output.
@@ -39,8 +47,14 @@ func NewCmdKB(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   `kb "<query>"`,
 		Short: "Find knowledge bases by name or description (client-side substring match)",
+		Long: `Substring + case-insensitive match across KB names and descriptions visible
+to the active context. Results are sorted by name length (shortest first;
+usually the closest hit) for deterministic output.
+
+This is name-discovery only - for searching *inside* a knowledge base's
+content, use ` + "`weknora search chunks`" + `.`,
 		Example: `  weknora search kb "marketing"
-  weknora search kb "team" --limit 5 --json`,
+  weknora search kb "team" --limit 5 --format json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts.Query = strings.TrimSpace(args[0])
@@ -50,20 +64,24 @@ func NewCmdKB(f *cmdutil.Factory) *cobra.Command {
 			if opts.Limit < 1 || opts.Limit > 1000 {
 				return cmdutil.NewError(cmdutil.CodeInputInvalidArgument, "--limit must be between 1 and 1000")
 			}
+			fopts, err := cmdutil.CheckFormatFlag(c)
+			if err != nil {
+				return err
+			}
+			fopts.ResolveDefault(iostreams.IO.IsStdoutTTY())
 			cli, err := f.Client()
 			if err != nil {
 				return err
 			}
-			return runKBSearch(c.Context(), opts, cli)
+			return runKBSearch(c.Context(), opts, fopts, cli)
 		},
 	}
-	cmd.Flags().IntVarP(&opts.Limit, "limit", "L", 20, "Maximum results to return")
-	cmd.Flags().BoolVar(&opts.JSONOut, "json", false, "Output JSON envelope")
-	agent.SetAgentHelp(cmd, "Lists KBs whose name or description contains the query (case-insensitive). Useful to discover --kb identifiers before running search chunks / doc list.")
+	cmd.Flags().IntVarP(&opts.Limit, "limit", "L", 30, "Maximum results to return")
+	cmdutil.AddFormatFlag(cmd, kbSearchFields...)
 	return cmd
 }
 
-func runKBSearch(ctx context.Context, opts *KBSearchOptions, svc KBSearchService) error {
+func runKBSearch(ctx context.Context, opts *KBSearchOptions, fopts *cmdutil.FormatOptions, svc KBSearchService) error {
 	items, err := svc.ListKnowledgeBases(ctx)
 	if err != nil {
 		return cmdutil.WrapHTTP(err, "list knowledge bases")
@@ -73,8 +91,11 @@ func runKBSearch(ctx context.Context, opts *KBSearchOptions, svc KBSearchService
 		matches = matches[:opts.Limit]
 	}
 
-	if opts.JSONOut {
-		return format.WriteEnvelope(iostreams.IO.Out, format.Success(matches, nil))
+	if fopts.WantsJSON() {
+		if matches == nil {
+			matches = []sdk.KnowledgeBase{}
+		}
+		return fopts.Emit(iostreams.IO.Out, matches)
 	}
 	if len(matches) == 0 {
 		fmt.Fprintln(iostreams.IO.Out, "(no matches)")

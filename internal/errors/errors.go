@@ -37,6 +37,10 @@ const (
 	ErrAgentInvalidMaxIterations ErrorCode = 2102
 	ErrAgentInvalidTemperature   ErrorCode = 2103
 
+	// VectorStore binding related error codes (2200-2299).
+	ErrVectorStoreBindingInvalid ErrorCode = 2200
+	ErrVectorStoreUnavailable    ErrorCode = 2201
+
 	// Add more error codes here
 )
 
@@ -101,6 +105,17 @@ func NewConflictError(message string) *AppError {
 		Code:     ErrConflict,
 		Message:  message,
 		HTTPCode: http.StatusConflict,
+	}
+}
+
+func NewTooManyRequestsError(message string) *AppError {
+	if message == "" {
+		message = "too many requests"
+	}
+	return &AppError{
+		Code:     ErrTooManyRequests,
+		Message:  message,
+		HTTPCode: http.StatusTooManyRequests,
 	}
 }
 
@@ -217,6 +232,28 @@ func NewAgentInvalidTemperatureError() *AppError {
 	return &AppError{
 		Code:     ErrAgentInvalidTemperature,
 		Message:  "温度参数必须在0-2之间",
+		HTTPCode: http.StatusBadRequest,
+	}
+}
+
+func NewVectorStoreBindingInvalidError(message string) *AppError {
+	if message == "" {
+		message = "vector store not found"
+	}
+	return &AppError{
+		Code:     ErrVectorStoreBindingInvalid,
+		Message:  message,
+		HTTPCode: http.StatusBadRequest,
+	}
+}
+
+func NewVectorStoreUnavailableError(message string) *AppError {
+	if message == "" {
+		message = "vector store is currently unavailable"
+	}
+	return &AppError{
+		Code:     ErrVectorStoreUnavailable,
+		Message:  message,
 		HTTPCode: http.StatusBadRequest,
 	}
 }

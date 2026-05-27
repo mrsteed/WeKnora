@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -322,10 +323,12 @@ func (h *MessageHandler) LoadMessages(c *gin.Context) {
 		sessionID, limit, beforeTimeStr)
 
 	// Verify session ownership: GetSession will filter by tenantID + userID
-	if _, err := h.SessionService.GetSession(ctx, sessionID); err != nil {
-		logger.Warnf(ctx, "Session ownership check failed for session %s: %v", sessionID, err)
-		c.Error(errors.NewNotFoundError("Session not found or access denied"))
-		return
+	if h.SessionService != nil {
+		if _, err := h.SessionService.GetSession(ctx, sessionID); err != nil {
+			logger.Warnf(ctx, "Session ownership check failed for session %s: %v", sessionID, err)
+			c.Error(errors.NewNotFoundError("Session not found or access denied"))
+			return
+		}
 	}
 
 	logger.Infof(ctx, "Loading messages params, session ID: %s, limit: %s, before time: %s",
@@ -344,6 +347,10 @@ func (h *MessageHandler) LoadMessages(c *gin.Context) {
 		messages, err := h.MessageService.GetRecentMessagesBySession(ctx, sessionID, limitInt)
 		if err != nil {
 			logger.ErrorWithFields(ctx, err, nil)
+			if stderrors.Is(err, errors.ErrSessionNotFound) {
+				c.Error(errors.NewNotFoundError("Session not found or access denied"))
+				return
+			}
 			c.Error(errors.NewInternalServerError(err.Error()))
 			return
 		}
@@ -379,6 +386,10 @@ func (h *MessageHandler) LoadMessages(c *gin.Context) {
 	messages, err := h.MessageService.GetMessagesBySessionBeforeTime(ctx, sessionID, beforeTime, limitInt)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
+		if stderrors.Is(err, errors.ErrSessionNotFound) {
+			c.Error(errors.NewNotFoundError("Session not found or access denied"))
+			return
+		}
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
@@ -418,10 +429,12 @@ func (h *MessageHandler) DeleteMessage(c *gin.Context) {
 	messageID := secutils.SanitizeForLog(c.Param("id"))
 
 	// Verify session ownership: GetSession will filter by tenantID + userID
-	if _, err := h.SessionService.GetSession(ctx, sessionID); err != nil {
-		logger.Warnf(ctx, "Session ownership check failed for session %s: %v", sessionID, err)
-		c.Error(errors.NewNotFoundError("Session not found or access denied"))
-		return
+	if h.SessionService != nil {
+		if _, err := h.SessionService.GetSession(ctx, sessionID); err != nil {
+			logger.Warnf(ctx, "Session ownership check failed for session %s: %v", sessionID, err)
+			c.Error(errors.NewNotFoundError("Session not found or access denied"))
+			return
+		}
 	}
 
 	logger.Infof(ctx, "Deleting message, session ID: %s, message ID: %s", sessionID, messageID)
@@ -429,6 +442,10 @@ func (h *MessageHandler) DeleteMessage(c *gin.Context) {
 	// Delete the message using the message service
 	if err := h.MessageService.DeleteMessage(ctx, sessionID, messageID); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
+		if stderrors.Is(err, errors.ErrSessionNotFound) {
+			c.Error(errors.NewNotFoundError("Session not found or access denied"))
+			return
+		}
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}

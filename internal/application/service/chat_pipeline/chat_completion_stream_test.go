@@ -49,6 +49,12 @@ func (s *streamTestModelService) GetModelByID(context.Context, string) (*types.M
 func (s *streamTestModelService) ListModels(context.Context) ([]*types.Model, error) { return nil, nil }
 func (s *streamTestModelService) UpdateModel(context.Context, *types.Model) error    { return nil }
 func (s *streamTestModelService) DeleteModel(context.Context, string) error          { return nil }
+func (s *streamTestModelService) UpdateModelCredentials(context.Context, string, *string, *string) (*types.Model, error) {
+	return nil, nil
+}
+func (s *streamTestModelService) ClearModelCredential(context.Context, string, string) error {
+	return nil
+}
 func (s *streamTestModelService) GetEmbeddingModel(context.Context, string) (embedding.Embedder, error) {
 	return nil, nil
 }

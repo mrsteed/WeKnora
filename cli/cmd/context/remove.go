@@ -5,19 +5,21 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Tencent/WeKnora/cli/internal/agent"
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
 	"github.com/Tencent/WeKnora/cli/internal/config"
-	"github.com/Tencent/WeKnora/cli/internal/format"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 	"github.com/Tencent/WeKnora/cli/internal/prompt"
 	"github.com/Tencent/WeKnora/cli/internal/secrets"
 )
 
 type RemoveOptions struct {
-	Yes     bool // sourced from the global -y/--yes persistent flag (matches `kb delete`)
-	JSONOut bool
-	DryRun  bool
+	Yes bool // sourced from the global -y/--yes persistent flag (matches `kb delete`)
+}
+
+// contextRemoveFields enumerates the fields surfaced for `--format json` discovery on
+// `context remove`. The result reports the disposition of the removed entry.
+var contextRemoveFields = []string{
+	"name", "removed", "was_current",
 }
 
 // removeResult is the typed payload emitted under data on success.
@@ -40,30 +42,33 @@ func NewCmdRemove(f *cmdutil.Factory) *cobra.Command {
 		Long: `Deletes the named context from config.yaml and best-effort clears any
 keyring references it owned (matches ` + "`weknora auth logout`" + `).
 
-Removing the current context also clears CurrentContext — subsequent commands
+Removing the current context also clears CurrentContext - subsequent commands
 will error until you select another with ` + "`weknora context use <name>`" + ` or pick
 one up via the global ` + "`--context`" + ` flag. Because that change is observable in
 every later command, removing the current context requires explicit -y/--yes
-in scripted / --json invocations (exit code 10; see cli/AGENTS.md).`,
+in scripted / --format json invocations (exit code 10; see cli/README.md).`,
 		Example: `  weknora context remove staging              # remove non-current → no prompt
   weknora context remove production -y        # remove current → confirm`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
+			fopts, err := cmdutil.CheckFormatFlag(c)
+			if err != nil {
+				return err
+			}
+			fopts.ResolveDefault(iostreams.IO.IsStdoutTTY())
 			opts.Yes, _ = c.Flags().GetBool("yes")
-			opts.DryRun = cmdutil.IsDryRun(c)
 			store, err := f.Secrets()
 			if err != nil {
 				return err
 			}
-			return runRemove(opts, args[0], store, f.Prompter())
+			return runRemove(opts, fopts, args[0], store, f.Prompter())
 		},
 	}
-	cmd.Flags().BoolVar(&opts.JSONOut, "json", false, "Output JSON envelope")
-	agent.SetAgentHelp(cmd, "Removes a context entry. Removing the current context requires -y in non-TTY/--json (exit-10). Always best-effort clears keyring refs.")
+	cmdutil.AddFormatFlag(cmd, contextRemoveFields...)
 	return cmd
 }
 
-func runRemove(opts *RemoveOptions, name string, store secrets.Store, p prompt.Prompter) error {
+func runRemove(opts *RemoveOptions, fopts *cmdutil.FormatOptions, name string, store secrets.Store, p prompt.Prompter) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -73,18 +78,12 @@ func runRemove(opts *RemoveOptions, name string, store secrets.Store, p prompt.P
 		return notFoundError(name, cfg)
 	}
 	wasCurrent := name == cfg.CurrentContext
-	risk := riskForRemove(name, wasCurrent)
 
-	if opts.DryRun {
-		return cmdutil.EmitDryRun(opts.JSONOut,
-			removeResult{Name: name, Removed: false, WasCurrent: wasCurrent},
-			&format.Meta{Context: cfg.CurrentContext},
-			risk)
-	}
-	// Confirmation only fires for removing the current context — non-current
+	jsonOut := fopts.WantsJSON()
+	// Confirmation only fires for removing the current context - non-current
 	// remove uses the same low-friction policy as `auth logout`.
 	if wasCurrent {
-		if err := cmdutil.ConfirmDestructive(p, opts.Yes, opts.JSONOut, "current context", name); err != nil {
+		if err := cmdutil.ConfirmDestructive(p, opts.Yes, jsonOut, "current context", name); err != nil {
 			return err
 		}
 	}
@@ -101,35 +100,20 @@ func runRemove(opts *RemoveOptions, name string, store secrets.Store, p prompt.P
 	clearContextSecrets(store, ctx, name)
 
 	result := removeResult{Name: name, Removed: true, WasCurrent: wasCurrent}
-	if opts.JSONOut {
-		return format.WriteEnvelope(iostreams.IO.Out, format.SuccessWithRisk(
-			result, &format.Meta{Context: cfg.CurrentContext}, risk,
-		))
+	if jsonOut {
+		return fopts.Emit(iostreams.IO.Out, result)
 	}
 	if wasCurrent {
-		fmt.Fprintf(iostreams.IO.Out, "✓ Removed context %s (current context cleared — run `weknora context use <name>` to pick another)\n", name)
+		fmt.Fprintf(iostreams.IO.Out, "✓ Removed context %s (current context cleared - run `weknora context use <name>` to pick another)\n", name)
 	} else {
 		fmt.Fprintf(iostreams.IO.Out, "✓ Removed context %s\n", name)
 	}
 	return nil
 }
 
-// riskForRemove returns the operation risk: high-risk-write only when the
-// target is the currently-active context (subsequent commands will have no
-// default --context until the user picks one).
-func riskForRemove(name string, wasCurrent bool) *format.Risk {
-	if wasCurrent {
-		return &format.Risk{
-			Level:  format.RiskHighRiskWrite,
-			Action: fmt.Sprintf("remove context %s (the current context — subsequent commands will need a new --context)", name),
-		}
-	}
-	return &format.Risk{Level: format.RiskWrite, Action: fmt.Sprintf("remove context %s", name)}
-}
-
 // clearContextSecrets mirrors auth/logout.go: best-effort delete every secret
 // slot the context references. Errors are swallowed so a missing keyring
-// entry doesn't block remove (logout has had the same policy since v0.2).
+// entry doesn't block remove (same policy as `auth logout`).
 func clearContextSecrets(store secrets.Store, c config.Context, name string) {
 	if c.TokenRef != "" {
 		_ = store.Delete(name, "access")
@@ -141,4 +125,3 @@ func clearContextSecrets(store secrets.Store, c config.Context, name string) {
 		_ = store.Delete(name, "api_key")
 	}
 }
-

@@ -463,6 +463,60 @@ func (s *agentShareService) UserCanAccessKBViaSomeSharedAgent(ctx context.Contex
 	return false, nil
 }
 
+func (s *agentShareService) GetSharedAgentForTenant(ctx context.Context, tenantID uint64, callerTenantRole types.TenantRole, agentID string) (*types.CustomAgent, error) {
+	if agentID == "" {
+		return nil, ErrAgentShareNotFound
+	}
+	shares, err := s.shareRepo.ListSharedAgentsForTenant(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	for _, share := range shares {
+		if share == nil || share.AgentID != agentID {
+			continue
+		}
+		agent, err := s.agentRepo.GetAgentByID(ctx, agentID, share.SourceTenantID)
+		if err != nil {
+			if errors.Is(err, repository.ErrCustomAgentNotFound) {
+				return nil, ErrAgentNotFoundForShare
+			}
+			return nil, err
+		}
+		return agent, nil
+	}
+	return nil, ErrAgentSharePermission
+}
+
+func (s *agentShareService) TenantCanAccessKBViaSomeSharedAgent(ctx context.Context, tenantID uint64, callerTenantRole types.TenantRole, kb *types.KnowledgeBase) (bool, error) {
+	if kb == nil || kb.ID == "" {
+		return false, nil
+	}
+	shares, err := s.shareRepo.ListSharedAgentsForTenant(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	for _, share := range shares {
+		if share == nil {
+			continue
+		}
+		agent, err := s.agentRepo.GetAgentByID(ctx, share.AgentID, share.SourceTenantID)
+		if err != nil || agent == nil || agent.TenantID != kb.TenantID {
+			continue
+		}
+		switch agent.Config.KBSelectionMode {
+		case "all":
+			return true, nil
+		case "selected":
+			for _, id := range agent.Config.KnowledgeBases {
+				if id == kb.ID {
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
+}
+
 // GetShare gets an agent share by ID
 func (s *agentShareService) GetShare(ctx context.Context, shareID string) (*types.AgentShare, error) {
 	share, err := s.shareRepo.GetByID(ctx, shareID)

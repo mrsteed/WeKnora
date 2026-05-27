@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/hibiken/asynq"
+	"gorm.io/gorm"
 )
 
 // KnowledgeBaseService defines the knowledge base service interface
@@ -206,6 +207,10 @@ type KnowledgeBaseRepository interface {
 	// Returns:
 	//   - Possible errors such as record not existing, database errors, etc.
 	DeleteKnowledgeBase(ctx context.Context, id string) error
+
+	// CountByVectorStoreID counts active knowledge bases bound to a vector store in one tenant.
+	// Passing a transaction handle lets callers share row-lock context; nil uses the repository DB.
+	CountByVectorStoreID(ctx context.Context, db *gorm.DB, tenantID uint64, storeID string) (int64, error)
 
 	// TogglePinKnowledgeBase toggles the pin status of a knowledge base
 	TogglePinKnowledgeBase(ctx context.Context, id string, tenantID uint64) (*types.KnowledgeBase, error)

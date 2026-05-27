@@ -70,36 +70,46 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccessWithKBID(c *gin.Context, k
 		return nil, "", 0, "", errors.NewUnauthorizedError("Unauthorized")
 	}
 	userID, userExists := c.Get(types.UserIDContextKey.String())
+	callerTenantRole := types.TenantRoleFromContext(ctx)
 	kbID = secutils.SanitizeForLog(kbID)
 	if kbID == "" {
 		return nil, "", 0, "", errors.NewBadRequestError("Knowledge base ID cannot be empty")
 	}
 	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbID)
 	if err != nil {
+		// Same not-found-vs-real-error split as knowledgebase.go's
+		// validateAndGetKnowledgeBase: ErrKnowledgeBaseNotFound is the
+		// expected outcome for a probed/stale kb id and must surface as
+		// 404, not the generic 500 the original code produced.
+		if goerrors.Is(err, repository.ErrKnowledgeBaseNotFound) {
+			return nil, kbID, 0, "", errors.NewNotFoundError("knowledge base not found")
+		}
 		logger.ErrorWithFields(ctx, err, nil)
 		return nil, kbID, 0, "", errors.NewInternalServerError(err.Error())
 	}
 	if kb.TenantID == tenantID {
 		return kb, kbID, tenantID, types.OrgRoleAdmin, nil
 	}
-	if userExists && h.kbShareService != nil {
-		permission, isShared, permErr := h.kbShareService.CheckUserKBPermission(ctx, kbID, userID.(string))
+	if h.kbShareService != nil {
+		permission, isShared, permErr := h.kbShareService.CheckTenantKBPermission(ctx, kbID, tenantID, callerTenantRole)
 		if permErr == nil && isShared {
 			sourceTenantID, srcErr := h.kbShareService.GetKBSourceTenant(ctx, kbID)
 			if srcErr == nil {
-				logger.Infof(ctx, "User %s accessing shared KB %s with permission %s, source tenant: %d",
-					userID.(string), kbID, permission, sourceTenantID)
+				logger.Infof(ctx, "Tenant %d accessing shared KB %s with permission %s, source tenant: %d",
+					tenantID, kbID, permission, sourceTenantID)
 				return kb, kbID, sourceTenantID, permission, nil
 			}
 		}
 	}
-	if userExists && h.agentShareService != nil {
-		can, err := h.agentShareService.UserCanAccessKBViaSomeSharedAgent(ctx, userID.(string), tenantID, kb)
+	if h.agentShareService != nil {
+		can, err := h.agentShareService.TenantCanAccessKBViaSomeSharedAgent(ctx, tenantID, callerTenantRole, kb)
 		if err == nil && can {
-			logger.Infof(ctx, "User %s accessing KB %s via some shared agent", userID.(string), kbID)
+			logger.Infof(ctx, "Tenant %d accessing KB %s via some shared agent", tenantID, kbID)
 			return kb, kbID, kb.TenantID, types.OrgRoleViewer, nil
 		}
 	}
+	_ = userID
+	_ = userExists
 	logger.Warnf(ctx, "Permission denied to access KB %s, tenant ID: %d, KB tenant: %d", kbID, tenantID, kb.TenantID)
 	return nil, kbID, 0, "", errors.NewForbiddenError("Permission denied to access this knowledge base")
 }
@@ -113,6 +123,7 @@ func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(c *gin.Context, k
 		return nil, ctx, errors.NewUnauthorizedError("Unauthorized")
 	}
 	userID, userExists := c.Get(types.UserIDContextKey.String())
+	callerTenantRole := types.TenantRoleFromContext(ctx)
 
 	knowledge, err := h.kgService.GetKnowledgeByIDOnly(ctx, knowledgeID)
 	if err != nil {
@@ -125,18 +136,18 @@ func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(c *gin.Context, k
 	}
 
 	// Shared KB: check organization permission
-	if userExists && h.kbShareService != nil {
-		permission, isShared, permErr := h.kbShareService.CheckUserKBPermission(ctx, knowledge.KnowledgeBaseID, userID.(string))
+	if h.kbShareService != nil {
+		permission, isShared, permErr := h.kbShareService.CheckTenantKBPermission(ctx, knowledge.KnowledgeBaseID, tenantID, callerTenantRole)
 		if permErr == nil && isShared && permission.HasPermission(requiredPermission) {
 			effectiveTenantID := knowledge.TenantID
 			return knowledge, context.WithValue(ctx, types.TenantIDContextKey, effectiveTenantID), nil
 		}
 	}
 	// Shared agent: request passes agent_id, or user has any shared agent that can access this KB
-	if userExists && h.agentShareService != nil && requiredPermission == types.OrgRoleViewer {
+	if h.agentShareService != nil && requiredPermission == types.OrgRoleViewer {
 		agentID := c.Query("agent_id")
 		if agentID != "" {
-			agent, err := h.agentShareService.GetSharedAgentForUser(ctx, userID.(string), tenantID, agentID)
+			agent, err := h.agentShareService.GetSharedAgentForTenant(ctx, tenantID, callerTenantRole, agentID)
 			if err == nil && agent != nil {
 				if knowledge.TenantID != agent.TenantID {
 					return nil, ctx, errors.NewForbiddenError("Permission denied to access this knowledge")
@@ -159,12 +170,14 @@ func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(c *gin.Context, k
 			}
 		} else {
 			kbRef := &types.KnowledgeBase{ID: knowledge.KnowledgeBaseID, TenantID: knowledge.TenantID}
-			can, err := h.agentShareService.UserCanAccessKBViaSomeSharedAgent(ctx, userID.(string), tenantID, kbRef)
+			can, err := h.agentShareService.TenantCanAccessKBViaSomeSharedAgent(ctx, tenantID, callerTenantRole, kbRef)
 			if err == nil && can {
 				return knowledge, context.WithValue(ctx, types.TenantIDContextKey, knowledge.TenantID), nil
 			}
 		}
 	}
+	_ = userID
+	_ = userExists
 	return nil, ctx, errors.NewForbiddenError("Permission denied to access this knowledge")
 }
 
@@ -253,11 +266,15 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 		return
 	}
 
-	// Validate file size (configurable via MAX_FILE_SIZE_MB)
-	maxSize := secutils.GetMaxFileSize()
+	// Validate file size — read MAX_FILE_SIZE_MB env (50MB default).
+	// Deliberately not a runtime system_setting; see filesize.go for the
+	// rationale (nginx / docreader / browser bundle all cache this at
+	// container startup, so a UI knob would silently mismatch).
+	maxSizeMB := utils.GetMaxFileSizeMB()
+	maxSize := maxSizeMB * 1024 * 1024
 	if file.Size > maxSize {
 		logger.Error(ctx, "File size too large")
-		c.Error(errors.NewBadRequestError(fmt.Sprintf("文件大小不能超过%dMB", secutils.GetMaxFileSizeMB())))
+		c.Error(errors.NewBadRequestError(fmt.Sprintf("文件大小不能超过%dMB", maxSizeMB)))
 		return
 	}
 
@@ -392,7 +409,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 	// SSRF validation for user-supplied URL
 	if err := secutils.ValidateURLForSSRF(req.URL); err != nil {
 		logger.Warnf(ctx, "SSRF validation failed for knowledge URL: %v", err)
-		c.Error(errors.NewBadRequestError(fmt.Sprintf("URL 未通过安全校验: %v", err)))
+		c.Error(errors.NewBadRequestError(secutils.FormatSSRFError("URL", req.URL, err)))
 		return
 	}
 
@@ -638,12 +655,13 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 
 // DeleteKnowledge godoc
 // @Summary      删除知识
-// @Description  根据ID删除知识条目
+// @Description  根据ID异步删除知识条目。请求会被入队到与批量删除相同的异步管道（asynq）；
+// @Description  接口返回 200 仅表示任务已提交（响应 data.task_id 为任务 ID），实际删除由后台 worker 完成。
 // @Tags         知识管理
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "知识ID"
-// @Success      200  {object}  map[string]interface{}  "删除成功"
+// @Success      200  {object}  map[string]interface{}  "任务已提交，返回 task_id"
 // @Failure      400  {object}  errors.AppError         "请求参数错误"
 // @Security     Bearer
 // @Security     ApiKeyAuth
@@ -665,18 +683,32 @@ func (h *KnowledgeHandler) DeleteKnowledge(c *gin.Context) {
 		c.Error(err)
 		return
 	}
-	logger.Infof(ctx, "Deleting knowledge, ID: %s", secutils.SanitizeForLog(id))
-	err = h.kgService.DeleteKnowledge(effCtx, id)
-	if err != nil {
-		logger.ErrorWithFields(ctx, err, nil)
-		c.Error(errors.NewInternalServerError(err.Error()))
+
+	// Reuse the batch async pipeline so single-item delete shares the same
+	// hardening (asynq retries, business-aware queue routing, marking-as-deleting
+	// inside the worker) as BatchDeleteKnowledge / ClearKnowledgeBaseContents.
+	effectiveTenantID, _ := effCtx.Value(types.TenantIDContextKey).(uint64)
+	if effectiveTenantID == 0 {
+		logger.Error(ctx, "Effective tenant ID missing after access validation")
+		c.Error(errors.NewInternalServerError("tenant context unavailable"))
 		return
 	}
 
-	logger.Infof(ctx, "Knowledge deleted successfully, ID: %s", secutils.SanitizeForLog(id))
+	logger.Infof(ctx, "Enqueuing knowledge delete, ID: %s", secutils.SanitizeForLog(id))
+	taskID, err := h.enqueueKnowledgeListDelete(effCtx, effectiveTenantID, []string{id})
+	if err != nil {
+		logger.Errorf(ctx, "Failed to enqueue knowledge delete task: %v", err)
+		c.Error(errors.NewInternalServerError("Failed to enqueue delete task"))
+		return
+	}
+
+	logger.Infof(ctx, "Knowledge delete task enqueued: %s, knowledge_id: %s", taskID, secutils.SanitizeForLog(id))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": "Deleted successfully",
+		"message": "Delete task submitted",
+		"data": gin.H{
+			"task_id": taskID,
+		},
 	})
 }
 
@@ -1076,12 +1108,14 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 			c.Error(errors.NewUnauthorizedError("Unauthorized"))
 			return
 		}
-		agent, err := h.agentShareService.GetSharedAgentForUser(ctx, userID, currentTenantID, agentID)
+		callerTenantRole := types.TenantRoleFromContext(ctx)
+		agent, err := h.agentShareService.GetSharedAgentForTenant(ctx, currentTenantID, callerTenantRole, agentID)
 		if err != nil || agent == nil {
 			logger.Warnf(ctx, "GetKnowledgeBatch: invalid or inaccessible shared agent %s: %v", agentID, err)
 			c.Error(errors.NewForbiddenError("Invalid or inaccessible shared agent").WithDetails(err.Error()))
 			return
 		}
+		_ = userID
 		effectiveTenantID = agent.TenantID
 		agentAllowedKBIDs = resolveAgentAllowedKBIDs(agent)
 
@@ -1502,13 +1536,14 @@ func (h *KnowledgeHandler) SearchKnowledge(c *gin.Context) {
 			c.Error(errors.NewUnauthorizedError("user ID not found"))
 			return
 		}
-		userID, _ := userIDVal.(string)
+		_ = userIDVal
 		currentTenantID := c.GetUint64(types.TenantIDContextKey.String())
 		if currentTenantID == 0 {
 			c.Error(errors.NewUnauthorizedError("tenant ID not found"))
 			return
 		}
-		agent, err := h.agentShareService.GetSharedAgentForUser(ctx, userID, currentTenantID, agentID)
+		callerTenantRole := types.TenantRoleFromContext(ctx)
+		agent, err := h.agentShareService.GetSharedAgentForTenant(ctx, currentTenantID, callerTenantRole, agentID)
 		if err != nil {
 			if goerrors.Is(err, service.ErrAgentShareNotFound) || goerrors.Is(err, service.ErrAgentSharePermission) || goerrors.Is(err, service.ErrAgentNotFoundForShare) {
 				c.Error(errors.NewForbiddenError("no permission for this shared agent"))

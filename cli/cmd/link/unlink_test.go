@@ -32,7 +32,7 @@ func TestUnlink_RemovesLinkInCwd(t *testing.T) {
 	linkPath := mkLinkFile(t, tmp)
 	t.Chdir(tmp)
 
-	if err := runUnlink(&UnlinkOptions{}); err != nil {
+	if err := runUnlink(&UnlinkOptions{}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}); err != nil {
 		t.Fatalf("runUnlink: %v", err)
 	}
 	if _, err := os.Stat(linkPath); !os.IsNotExist(err) {
@@ -50,7 +50,7 @@ func TestUnlink_WalksUpFromSubdir(t *testing.T) {
 	}
 	t.Chdir(sub)
 
-	if err := runUnlink(&UnlinkOptions{}); err != nil {
+	if err := runUnlink(&UnlinkOptions{}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}); err != nil {
 		t.Fatalf("runUnlink: %v", err)
 	}
 	if _, err := os.Stat(linkPath); !os.IsNotExist(err) {
@@ -63,7 +63,7 @@ func TestUnlink_NoLink_Errors(t *testing.T) {
 	tmp := t.TempDir()
 	t.Chdir(tmp)
 
-	err := runUnlink(&UnlinkOptions{})
+	err := runUnlink(&UnlinkOptions{}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText})
 	if err == nil {
 		t.Fatal("expected error when no link present")
 	}
@@ -79,19 +79,22 @@ func TestUnlink_NoLink_Errors(t *testing.T) {
 	}
 }
 
-func TestUnlink_JSON_Envelope(t *testing.T) {
+func TestUnlink_JSON_BareObject(t *testing.T) {
 	out, _ := iostreams.SetForTest(t)
 	tmp := t.TempDir()
 	mkLinkFile(t, tmp)
 	t.Chdir(tmp)
 
-	if err := runUnlink(&UnlinkOptions{JSONOut: true}); err != nil {
+	if err := runUnlink(&UnlinkOptions{}, &cmdutil.FormatOptions{Mode: cmdutil.FormatJSON}); err != nil {
 		t.Fatalf("runUnlink: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{`"ok":true`, `"project_link_path"`, projectlink.DirName} {
+	for _, want := range []string{`"project_link_path"`, projectlink.DirName} {
 		if !strings.Contains(got, want) {
-			t.Errorf("missing %q in envelope:\n%s", want, got)
+			t.Errorf("missing %q in output:\n%s", want, got)
 		}
+	}
+	if strings.Contains(got, `"ok":`) {
+		t.Errorf("bare output must not carry envelope keys, got %q", got)
 	}
 }

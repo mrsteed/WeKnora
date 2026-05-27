@@ -536,6 +536,7 @@ import ToolApprovalCard from './ToolApprovalCard.vue';
 import ExportDropdown from './ExportDropdown.vue';
 import picturePreview from '@/components/picture-preview.vue';
 import { getChunkByIdOnly } from '@/api/knowledge-base';
+import { getRootZoom, rectToCssPx } from '@/utils/zoom';
 import { getWikiPage, type WikiPage } from '@/api/wiki';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useUIStore } from '@/stores/ui';
@@ -887,9 +888,14 @@ const cancelFloatClose = () => {
 };
 
 const openFloatForEl = (el: HTMLElement, widthAdjust = 120) => {
-  const rect = el.getBoundingClientRect();
-  const pageTop = window.scrollY || document.documentElement.scrollTop || 0;
-  const pageLeft = window.scrollX || document.documentElement.scrollLeft || 0;
+  // `.kb-float-popup` is `position: absolute` and teleported to <body>, so
+  // its containing block is the initial containing block — which lives under
+  // the root `zoom` in `<html>`. Convert visual-pixel measurements to CSS px
+  // so the popup actually lines up with the anchor.
+  const zoom = getRootZoom();
+  const rect = rectToCssPx(el.getBoundingClientRect(), zoom);
+  const pageTop = (window.scrollY || document.documentElement.scrollTop || 0) / zoom;
+  const pageLeft = (window.scrollX || document.documentElement.scrollLeft || 0) / zoom;
   // Reduce gap to minimize mouseout triggers when moving to popup
   floatPopup.value.top = rect.bottom + pageTop + 1;
   floatPopup.value.left = rect.left + pageLeft;
@@ -3233,14 +3239,22 @@ const getToolTitle = (event: any): string => {
     // Try to get patterns from arguments or tool_data
     let patterns: string[] = [];
     if (event.arguments && typeof event.arguments === 'object') {
-      if (Array.isArray(event.arguments.patterns)) {
+      if (Array.isArray(event.arguments.queries)) {
+        patterns = event.arguments.queries;
+      } else if (Array.isArray(event.arguments.patterns)) {
         patterns = event.arguments.patterns;
+      } else if (event.arguments.query) {
+        patterns = [event.arguments.query];
       } else if (event.arguments.pattern) {
         patterns = [event.arguments.pattern];
       }
     } else if (event.tool_data) {
-      if (Array.isArray(event.tool_data.patterns)) {
+      if (Array.isArray(event.tool_data.queries)) {
+        patterns = event.tool_data.queries;
+      } else if (Array.isArray(event.tool_data.patterns)) {
         patterns = event.tool_data.patterns;
+      } else if (event.tool_data.query) {
+        patterns = [event.tool_data.query];
       } else if (event.tool_data.pattern) {
         patterns = [event.tool_data.pattern];
       }
@@ -3277,6 +3291,8 @@ const getToolDescription = (event: any): string => {
     return success ? t('agentStream.toolStatus.searchKb') : t('agentStream.toolStatus.searchKbFailed');
   } else if (toolName === 'web_search') {
     return success ? t('agentStream.toolStatus.webSearch') : t('agentStream.toolStatus.webSearchFailed');
+  } else if (toolName === 'grep_chunks') {
+    return success ? t('agentStream.toolStatus.grepSearch') : t('agentStream.toolStatus.grepSearchFailed');
   } else if (toolName === 'get_document_info') {
     return success ? t('agentStream.toolStatus.getDocInfo') : t('agentStream.toolStatus.getDocInfoFailed');
   } else if (toolName === 'thinking') {

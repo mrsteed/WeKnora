@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
 	"github.com/Tencent/WeKnora/cli/internal/config"
-	"github.com/Tencent/WeKnora/cli/internal/format"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 	"github.com/Tencent/WeKnora/cli/internal/prompt"
 	"github.com/Tencent/WeKnora/cli/internal/secrets"
@@ -73,7 +71,7 @@ func TestRefresh_Happy(t *testing.T) {
 		AccessToken:  "new-access",
 		RefreshToken: "new-refresh",
 	}}
-	require.NoError(t, runRefresh(context.Background(), &RefreshOptions{}, f, stubSvc(svc)))
+	require.NoError(t, runRefresh(context.Background(), &RefreshOptions{}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}, f, stubSvc(svc)))
 
 	assert.Equal(t, "old-refresh", svc.gotTok, "must pass stored refresh token to SDK")
 	gotAccess, _ := store.Get("prod", "access")
@@ -98,7 +96,7 @@ func TestRefresh_NamedContext(t *testing.T) {
 	svc := &fakeRefreshService{resp: &sdk.RefreshTokenResponse{
 		Success: true, AccessToken: "new-stg-access", RefreshToken: "new-stg-refresh",
 	}}
-	require.NoError(t, runRefresh(context.Background(), &RefreshOptions{Name: "staging"}, f, stubSvc(svc)))
+	require.NoError(t, runRefresh(context.Background(), &RefreshOptions{Name: "staging"}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}, f, stubSvc(svc)))
 
 	assert.Equal(t, "stg-refresh", svc.gotTok, "--name=staging must refresh the staging context, not current")
 	// current is untouched
@@ -110,7 +108,7 @@ func TestRefresh_NamedContext(t *testing.T) {
 func TestRefresh_NoCurrentContext(t *testing.T) {
 	iostreams.SetForTest(t)
 	f := newRefreshFactory(t, &config.Config{}, secrets.NewMemStore())
-	err := runRefresh(context.Background(), &RefreshOptions{}, f, stubSvc(&fakeRefreshService{}))
+	err := runRefresh(context.Background(), &RefreshOptions{}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}, f, stubSvc(&fakeRefreshService{}))
 	require.Error(t, err)
 	var typed *cmdutil.Error
 	require.ErrorAs(t, err, &typed)
@@ -126,7 +124,7 @@ func TestRefresh_APIKeyContext(t *testing.T) {
 		Contexts:       map[string]config.Context{"ci": {Host: "https://kb", APIKeyRef: "mem://ci/api_key"}},
 	}
 	f := newRefreshFactory(t, cfg, store)
-	err := runRefresh(context.Background(), &RefreshOptions{}, f, stubSvc(&fakeRefreshService{}))
+	err := runRefresh(context.Background(), &RefreshOptions{}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}, f, stubSvc(&fakeRefreshService{}))
 	require.Error(t, err)
 	var typed *cmdutil.Error
 	require.ErrorAs(t, err, &typed)
@@ -142,9 +140,9 @@ func TestRefresh_NoRefreshTokenStored(t *testing.T) {
 			"prod": {Host: "https://kb", TokenRef: "mem://prod/access", RefreshRef: "mem://prod/refresh"},
 		},
 	}
-	// MemStore is empty — RefreshRef points to a slot that doesn't exist.
+	// MemStore is empty - RefreshRef points to a slot that doesn't exist.
 	f := newRefreshFactory(t, cfg, secrets.NewMemStore())
-	err := runRefresh(context.Background(), &RefreshOptions{}, f, stubSvc(&fakeRefreshService{}))
+	err := runRefresh(context.Background(), &RefreshOptions{}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}, f, stubSvc(&fakeRefreshService{}))
 	require.Error(t, err)
 	var typed *cmdutil.Error
 	require.ErrorAs(t, err, &typed)
@@ -162,7 +160,7 @@ func TestRefresh_ServerRefused(t *testing.T) {
 	}
 	f := newRefreshFactory(t, cfg, store)
 	svc := &fakeRefreshService{resp: &sdk.RefreshTokenResponse{Success: false, Message: "refresh token expired"}}
-	err := runRefresh(context.Background(), &RefreshOptions{}, f, stubSvc(svc))
+	err := runRefresh(context.Background(), &RefreshOptions{}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}, f, stubSvc(svc))
 	require.Error(t, err)
 	var typed *cmdutil.Error
 	require.ErrorAs(t, err, &typed)
@@ -170,7 +168,7 @@ func TestRefresh_ServerRefused(t *testing.T) {
 	assert.Contains(t, typed.Hint, "auth login")
 	// stored access must NOT have been overwritten with empty
 	if v, _ := store.Get("prod", "access"); v == "" {
-		// Was never set in this test, that's fine — main thing is no panic.
+		// Was never set in this test, that's fine - main thing is no panic.
 		_ = v
 	}
 }
@@ -185,7 +183,7 @@ func TestRefresh_TransportError(t *testing.T) {
 	}
 	f := newRefreshFactory(t, cfg, store)
 	svc := &fakeRefreshService{err: errors.New("connection reset")}
-	err := runRefresh(context.Background(), &RefreshOptions{}, f, stubSvc(svc))
+	err := runRefresh(context.Background(), &RefreshOptions{}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}, f, stubSvc(svc))
 	require.Error(t, err)
 	var typed *cmdutil.Error
 	require.ErrorAs(t, err, &typed)
@@ -205,16 +203,14 @@ func TestRefresh_JSONOutput(t *testing.T) {
 	}
 	f := newRefreshFactory(t, cfg, store)
 	svc := &fakeRefreshService{resp: &sdk.RefreshTokenResponse{Success: true, AccessToken: "a", RefreshToken: "r"}}
-	require.NoError(t, runRefresh(context.Background(), &RefreshOptions{JSONOut: true}, f, stubSvc(svc)))
+	require.NoError(t, runRefresh(context.Background(), &RefreshOptions{}, &cmdutil.FormatOptions{Mode: cmdutil.FormatJSON}, f, stubSvc(svc)))
 
-	var env format.Envelope
-	require.NoError(t, json.Unmarshal(out.Bytes(), &env))
-	assert.True(t, env.OK)
-	// payload should not leak the actual token values.
 	body := out.String()
-	assert.NotContains(t, body, "ok-refresh", "envelope must not leak refresh token")
-	assert.NotContains(t, body, "\"a\"", "envelope must not leak the new access token")
-	assert.NotContains(t, body, "\"r\"", "envelope must not leak the new refresh token")
+	// payload must not leak the actual token values.
+	assert.NotContains(t, body, "ok-refresh", "output must not leak refresh token")
+	assert.NotContains(t, body, "\"a\"", "output must not leak the new access token")
+	assert.NotContains(t, body, "\"r\"", "output must not leak the new refresh token")
 	// must mention the context name so agents can confirm what was refreshed
-	assert.True(t, strings.Contains(body, "prod"), "envelope should reference the refreshed context")
+	assert.True(t, strings.Contains(body, "prod"), "output should reference the refreshed context")
+	assert.NotContains(t, body, `"ok":`)
 }
