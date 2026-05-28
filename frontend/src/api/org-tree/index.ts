@@ -85,6 +85,7 @@ export interface OrgMember {
   email: string
   phone?: string
   role: string
+  is_owner?: boolean
   is_admin: boolean
   is_super_admin?: boolean
   is_direct?: boolean

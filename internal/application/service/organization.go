@@ -95,6 +95,7 @@ func (s *organizationService) CreateOrganization(ctx context.Context, userID str
 		Description:            req.Description,
 		Avatar:                 strings.TrimSpace(req.Avatar),
 		OwnerID:                userID,
+		OwnerTenantID:          tenantID,
 		InviteCode:             generateInviteCode(),
 		InviteCodeExpiresAt:    resolveInviteExpiry(validityDays, now),
 		InviteCodeValidityDays: validityDays,
@@ -157,9 +158,9 @@ func (s *organizationService) GetOrganizationByInviteCode(ctx context.Context, i
 	return org, nil
 }
 
-// ListUserOrganizations lists all organizations that a user belongs to
-func (s *organizationService) ListUserOrganizations(ctx context.Context, userID string) ([]*types.Organization, error) {
-	return s.orgRepo.ListByUserID(ctx, userID)
+// ListUserOrganizations lists all organizations that a user belongs to in the current tenant
+func (s *organizationService) ListUserOrganizations(ctx context.Context, userID string, tenantID uint64) ([]*types.Organization, error) {
+	return s.orgRepo.ListByUserID(ctx, userID, tenantID)
 }
 
 // UpdateOrganization updates an organization

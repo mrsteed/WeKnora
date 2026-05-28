@@ -222,7 +222,7 @@ Stop services: `docker compose down`
 | Service | URL |
 |---------|-----|
 | Web UI | `http://localhost` |
-| Backend API | `http://localhost:8080` |
+| Backend API | `http://localhost:8081` |
 | Langfuse Tracing | `http://localhost:3000` |
 
 ## MCP Server

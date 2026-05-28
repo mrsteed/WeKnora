@@ -238,6 +238,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       localStorage.removeItem('weknora_last_chat_model_id')
       localStorage.removeItem('weknora_current_kb')
+      localStorage.removeItem('weknora_current_org_id')
       const raw = localStorage.getItem('WeKnora_settings')
       if (raw) {
         const parsed = JSON.parse(raw)
@@ -256,6 +257,19 @@ export const useAuthStore = defineStore('auth', () => {
           localStorage.setItem('WeKnora_settings', JSON.stringify(parsed))
         }
       }
+
+      // Shared-space / org-tree views are tenant-scoped. When the active
+      // tenant changes, any previously loaded organization list, current
+      // organization selection, and related caches must be dropped;
+      // otherwise pages like shared spaces can briefly render the old
+      // tenant's organizations until a later fetch overwrites them.
+      import('@/stores/organization')
+        .then(({ useOrganizationStore }) => {
+          useOrganizationStore().clearState()
+        })
+        .catch(() => {
+          // best-effort; a subsequent page load will recreate the store
+        })
     } catch (e) {
       // localStorage may be disabled or contain malformed JSON — best effort.
       console.warn('[auth] failed to clear tenant-scoped client state', e)

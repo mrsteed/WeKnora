@@ -77,6 +77,7 @@ var startupEnvVars = []envVarSpec{
 	{name: "JWT_SECRET", sensitive: true},
 	// Runtime
 	{name: "GIN_MODE"},
+	{name: "WEKNORA_SWAGGER_ENABLED"},
 	{name: "AUTO_MIGRATE"},
 	// Database
 	{name: "DB_DRIVER"},

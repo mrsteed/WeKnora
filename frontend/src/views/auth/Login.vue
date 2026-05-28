@@ -172,7 +172,7 @@
 import { ref, reactive, nextTick, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { login, register } from '@/api/auth'
+import { getCurrentUser, login, register, userInfoFromApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
 
@@ -362,6 +362,36 @@ const handleLogin = async () => {
           updated_at: response.tenant.updated_at || new Date().toISOString()
         })
         authStore.setSelectedTenant(null, null)
+
+        try {
+          const currentUserResponse = await getCurrentUser()
+          const currentUser = currentUserResponse.data?.user
+          const currentTenant = currentUserResponse.data?.tenant
+          const memberships = currentUserResponse.data?.memberships
+          if (currentUserResponse.success && currentUser) {
+            authStore.setUser(userInfoFromApi(currentUser, currentTenant?.id))
+            if (currentTenant) {
+              authStore.setTenant({
+                id: String(currentTenant.id) || '',
+                name: currentTenant.name || '',
+                api_key: currentTenant.api_key || '',
+                owner_id: currentTenant.owner_id || currentUser.id || '',
+                description: currentTenant.description,
+                status: currentTenant.status,
+                business: currentTenant.business,
+                storage_quota: currentTenant.storage_quota,
+                storage_used: currentTenant.storage_used,
+                created_at: currentTenant.created_at || new Date().toISOString(),
+                updated_at: currentTenant.updated_at || new Date().toISOString(),
+              })
+            }
+            if (Array.isArray(memberships)) {
+              authStore.setMemberships(memberships)
+            }
+          }
+        } catch {
+          // best effort: token and base user context are already set above.
+        }
 
         if (rememberAccount.value || rememberPassword.value) {
           saveRememberedCredentials()

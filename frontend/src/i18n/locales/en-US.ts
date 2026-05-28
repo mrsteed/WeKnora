@@ -2746,6 +2746,8 @@ export default {
       baseUrlPlaceholderAsr: 'e.g. https://api.openai.com/v1',
       apiKeyOptional: 'API Key (optional)',
       apiKeyPlaceholder: 'Enter API Key',
+      apiKeyConfiguredPlaceholder: 'API Key is configured; enter a new value to replace it',
+      apiKeyConfiguredHint: 'An API Key is already saved. Leave this field empty to keep it unchanged.',
       customHeadersLabel: 'Custom Request Headers (optional)',
       customHeadersDesc: 'Extra HTTP headers appended to requests to the remote model API (e.g. for enterprise gateway auth or tracing). Reserved headers like Authorization / Content-Type are ignored.',
       customHeadersAdd: 'Add Header',

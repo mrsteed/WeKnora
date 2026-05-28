@@ -148,6 +148,11 @@
                     <UserProfile />
                   </div>
 
+                  <!-- 租户管理 -->
+                  <div v-if="currentSection === 'tenant-management'" class="section">
+                    <TenantManagement />
+                  </div>
+
                   <!-- 租户信息 -->
                   <div v-if="currentSection === 'tenant'" class="section">
                     <TenantInfo />
@@ -184,6 +189,7 @@ import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
 import SystemInfo from './SystemInfo.vue'
+import TenantManagement from './TenantManagement.vue'
 import TenantInfo from './TenantInfo.vue'
 import ApiInfo from './ApiInfo.vue'
 import UserProfile from './UserProfile.vue'
@@ -251,6 +257,7 @@ const SECTION_MIN_ROLE: Record<string, RoleKey> = {
   mcp: 'admin',
   system: 'viewer',
   userprofile: 'viewer',
+  'tenant-management': 'viewer',
   tenant: 'viewer',
   members: 'viewer',
   api: 'owner',
@@ -287,6 +294,7 @@ const navItems = computed(() => {
     { key: 'system', icon: 'info-circle', label: t('settings.versionInfo') },
     { key: 'system-global', icon: 'server', label: '系统设置' },
     { key: 'userprofile', icon: 'user', label: t('userProfile.title') },
+    { key: 'tenant-management', icon: 'swap', label: t('settings.tenantManagement') },
     { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
     { key: 'members', icon: 'usergroup', label: t('tenantMember.title') },
     { key: 'api', icon: 'secured', label: t('settings.apiInfo') },
@@ -316,7 +324,7 @@ const navGroups = computed<NavGroup[]>(() => {
     {
       key: 'workspace',
       label: t('settings.navGroups.workspace'),
-      items: pickItems(['tenant', 'members', 'chathistory']),
+      items: pickItems(['tenant-management', 'tenant', 'members', 'chathistory']),
     },
     {
       key: 'models_runtime',

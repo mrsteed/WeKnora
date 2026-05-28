@@ -59,7 +59,7 @@ func (h *OrgTreeHandler) isOrgAdminOf(c *gin.Context, user *types.User, orgID st
 	orgMembers, err := h.orgTreeService.ListOrgMembers(ctx, orgID, tenantID)
 	if err == nil {
 		for _, member := range orgMembers {
-			if member.UserID == user.ID && member.Role == types.OrgRoleAdmin {
+			if member.UserID == user.ID && (member.Role == types.OrgRoleAdmin || member.IsOwner) {
 				return true
 			}
 		}
@@ -896,6 +896,7 @@ func (h *OrgTreeHandler) ListOrgMembers(c *gin.Context) {
 			"email":          m.User.Email,
 			"phone":          m.User.Phone,
 			"role":           string(m.Role),
+			"is_owner":       m.IsOwner,
 			"is_admin":       m.Role == types.OrgRoleAdmin,
 			"is_super_admin": m.User.IsSuperAdmin,
 			"is_direct":      true,
@@ -927,6 +928,7 @@ func (h *OrgTreeHandler) ListOrgMembers(c *gin.Context) {
 			"email":          m.User.Email,
 			"phone":          m.User.Phone,
 			"role":           string(m.Role),
+			"is_owner":       m.IsOwner,
 			"is_admin":       m.Role == types.OrgRoleAdmin,
 			"is_super_admin": m.User.IsSuperAdmin,
 			"joined_at":      m.CreatedAt,

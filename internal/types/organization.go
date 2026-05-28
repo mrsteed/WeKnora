@@ -88,6 +88,9 @@ type Organization struct {
 	Avatar string `json:"avatar" gorm:"type:varchar(512)"`
 	// User ID of the organization owner
 	OwnerID string `json:"owner_id" gorm:"type:varchar(36);not null;index"`
+	// OwnerTenantID pins the tenant that owns this organization when the
+	// shared-space membership model is tenant-keyed.
+	OwnerTenantID uint64 `json:"owner_tenant_id" gorm:"column:owner_tenant_id"`
 	// Unique invitation code for joining the organization
 	InviteCode string `json:"invite_code" gorm:"type:varchar(32);uniqueIndex"`
 	// When the current invite code expires; nil means no expiry
@@ -149,6 +152,7 @@ type OrganizationMember struct {
 	// Associations (not stored in database)
 	Organization *Organization `json:"organization,omitempty" gorm:"foreignKey:OrganizationID"`
 	User         *User         `json:"user,omitempty" gorm:"foreignKey:UserID"`
+	IsOwner      bool          `json:"is_owner,omitempty" gorm:"-"`
 }
 
 // TableName returns the table name for GORM
@@ -412,6 +416,7 @@ type OrganizationResponse struct {
 	Description             string     `json:"description"`
 	Avatar                  string     `json:"avatar,omitempty"`
 	OwnerID                 string     `json:"owner_id"`
+	OwnerTenantID           uint64     `json:"owner_tenant_id"`
 	InviteCode              string     `json:"invite_code,omitempty"`
 	InviteCodeExpiresAt     *time.Time `json:"invite_code_expires_at,omitempty"`
 	InviteCodeValidityDays  int        `json:"invite_code_validity_days"`

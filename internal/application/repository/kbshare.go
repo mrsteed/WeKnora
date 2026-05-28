@@ -175,10 +175,10 @@ func (r *kbShareRepository) ListSharedKBsForUser(ctx context.Context, userID str
 	err := r.db.WithContext(ctx).
 		Joins("JOIN knowledge_bases ON knowledge_bases.id = kb_shares.knowledge_base_id AND knowledge_bases.deleted_at IS NULL").
 		Joins("JOIN organizations ON organizations.id = kb_shares.organization_id AND organizations.deleted_at IS NULL").
-		Joins("JOIN organization_members om ON om.organization_id = kb_shares.organization_id AND om.deleted_at IS NULL").
+		Joins("JOIN organization_members_pre_plan3 omp ON omp.organization_id = kb_shares.organization_id").
 		Preload("KnowledgeBase").
 		Preload("Organization").
-		Where("om.user_id = ?", userID).
+		Where("omp.user_id = ?", userID).
 		Where("kb_shares.deleted_at IS NULL").
 		Order("kb_shares.created_at DESC").
 		Find(&shares).Error

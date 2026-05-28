@@ -24,6 +24,7 @@ import (
 type AuthHandler struct {
 	userService   interfaces.UserService
 	tenantService interfaces.TenantService
+	memberService interfaces.TenantMemberService
 	configInfo    *config.Config
 }
 
@@ -34,11 +35,12 @@ type AuthHandler struct {
 //
 // Returns a pointer to the newly created AuthHandler
 func NewAuthHandler(configInfo *config.Config,
-	userService interfaces.UserService, tenantService interfaces.TenantService, _ ...interface{}) *AuthHandler {
+	userService interfaces.UserService, tenantService interfaces.TenantService, memberService interfaces.TenantMemberService, _ ...interface{}) *AuthHandler {
 	return &AuthHandler{
 		configInfo:    configInfo,
 		userService:   userService,
 		tenantService: tenantService,
+		memberService: memberService,
 	}
 }
 
@@ -447,12 +449,104 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	}
 	userInfo := user.ToUserInfo()
 	userInfo.CanAccessAllTenants = user.CanAccessAllTenants && h.configInfo.Tenant.EnableCrossTenantAccess
+	memberships := make([]types.Membership, 0)
+	if h.memberService != nil {
+		memberRows, listErr := h.memberService.ListByUser(ctx, user.ID)
+		if listErr != nil {
+			logger.Warnf(ctx, "Failed to list memberships for user %s: %v", user.ID, listErr)
+		} else {
+			tenantNames := make(map[uint64]string, len(memberRows))
+			if tenant != nil {
+				tenantNames[tenant.ID] = tenant.Name
+			}
+			for _, member := range memberRows {
+				if member == nil || member.Status != types.TenantMemberStatusActive {
+					continue
+				}
+				tenantName := tenantNames[member.TenantID]
+				if tenantName == "" && h.tenantService != nil {
+					if tenantInfo, tenantErr := h.tenantService.GetTenantByID(ctx, member.TenantID); tenantErr == nil && tenantInfo != nil {
+						tenantName = tenantInfo.Name
+						tenantNames[member.TenantID] = tenantName
+					} else if tenantErr != nil {
+						logger.Warnf(ctx, "Failed to get tenant info for membership user=%s tenant=%d: %v", user.ID, member.TenantID, tenantErr)
+					}
+				}
+				memberships = append(memberships, types.Membership{
+					TenantID:   member.TenantID,
+					TenantName: tenantName,
+					Role:       member.Role,
+				})
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"user":   userInfo,
-			"tenant": tenant,
+			"user":        userInfo,
+			"tenant":      tenant,
+			"memberships": memberships,
 		},
+	})
+}
+
+// UpdateCurrentUserPreferences godoc
+// @Summary      更新当前用户偏好设置
+// @Description  更新当前登录用户的偏好设置。请求体采用 PATCH 语义，只覆盖显式传入的字段。
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Param        request  body      types.UserPreferences  true  "用户偏好补丁"
+// @Success      200      {object}  map[string]interface{} "更新后的偏好设置"
+// @Failure      400      {object}  errors.AppError        "请求参数错误"
+// @Failure      401      {object}  errors.AppError        "未授权"
+// @Failure      500      {object}  errors.AppError        "更新失败"
+// @Security     Bearer
+// @Router       /auth/me/preferences [put]
+// @Router       /auth/me/preferences [patch]
+func (h *AuthHandler) UpdateCurrentUserPreferences(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var patch types.UserPreferences
+	if err := c.ShouldBindJSON(&patch); err != nil {
+		logger.Errorf(ctx, "Failed to parse user preferences patch: %v", err)
+		appErr := errors.NewValidationError("Invalid preferences payload").WithDetails(err.Error())
+		c.Error(appErr)
+		return
+	}
+
+	user, err := h.userService.GetCurrentUser(ctx)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get current user for preference update: %v", err)
+		appErr := errors.NewUnauthorizedError("Failed to get user information").WithDetails(err.Error())
+		c.Error(appErr)
+		return
+	}
+
+	merged := user.Preferences
+	changed := false
+	if patch.EnableMemory != nil {
+		merged.EnableMemory = patch.EnableMemory
+		changed = true
+	}
+	if patch.LastActiveTenantID != nil {
+		merged.LastActiveTenantID = patch.LastActiveTenantID
+		changed = true
+	}
+
+	if changed {
+		user.Preferences = merged
+		if err := h.userService.UpdateUser(ctx, user); err != nil {
+			logger.Errorf(ctx, "Failed to update user preferences for user %s: %v", user.ID, err)
+			appErr := errors.NewInternalServerError("Failed to update user preferences").WithDetails(err.Error())
+			c.Error(appErr)
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    merged,
 	})
 }
 

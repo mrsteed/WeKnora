@@ -47,6 +47,9 @@ type RouterParams struct {
 	KBHandler                *handler.KnowledgeBaseHandler
 	KnowledgeHandler         *handler.KnowledgeHandler
 	TenantHandler            *handler.TenantHandler
+	TenantMemberHandler      *handler.TenantMemberHandler
+	TenantInvitationHandler  *handler.TenantInvitationHandler
+	AuditLogHandler          *handler.AuditLogHandler
 	TenantService            interfaces.TenantService
 	TenantMemberService      interfaces.TenantMemberService
 	ChunkHandler             *handler.ChunkHandler
@@ -101,15 +104,19 @@ func NewRouter(params RouterParams) *gin.Engine {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// Swagger API 文档（仅在非生产环境下启用）
-	// 通过 GIN_MODE 环境变量判断：release 模式下禁用 Swagger
-	if gin.Mode() != gin.ReleaseMode {
+	// Swagger API 文档。
+	// 默认在非生产环境启用；生产环境可通过 APP_ENV/ENV 识别，或用
+	// WEKNORA_SWAGGER_ENABLED/SWAGGER_ENABLED 显式覆盖。
+	if swaggerEnabled, reason := resolveSwaggerEnabled(); swaggerEnabled {
+		logger.Infof(context.Background(), "[swagger] enabled (%s)", reason)
 		r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler,
 			ginSwagger.DefaultModelsExpandDepth(-1), // 默认折叠 Models
 			ginSwagger.DocExpansion("list"),         // 展开模式: "list"(展开标签), "full"(全部展开), "none"(全部折叠)
 			ginSwagger.DeepLinking(true),            // 启用深度链接
 			ginSwagger.PersistAuthorization(true),   // 持久化认证信息
 		))
+	} else {
+		logger.Infof(context.Background(), "[swagger] disabled (%s)", reason)
 	}
 
 	// 前端静态文件（仅 Lite 版本内嵌前端）
@@ -143,7 +150,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	{
 		RegisterAuthRoutes(v1, params.AuthHandler)
-		RegisterTenantRoutes(v1, params.TenantHandler)
+		RegisterTenantRoutes(v1, params.Config, params.TenantHandler, params.TenantMemberHandler, params.TenantInvitationHandler, params.AuditLogHandler)
 		RegisterKnowledgeBaseRoutes(v1, params.KBHandler)
 		RegisterKnowledgeTagRoutes(v1, params.TagHandler)
 		RegisterKnowledgeRoutes(v1, params.KnowledgeHandler)
@@ -422,8 +429,16 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
 	}
 }
 
-// RegisterTenantRoutes registers tenant read routes (accessible to all authenticated users)
-func RegisterTenantRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
+// RegisterTenantRoutes registers tenant routes, including tenant-member,
+// invitation and audit-log subresources.
+func RegisterTenantRoutes(
+	r *gin.RouterGroup,
+	cfg *config.Config,
+	handler *handler.TenantHandler,
+	memberHandler *handler.TenantMemberHandler,
+	invitationHandler *handler.TenantInvitationHandler,
+	auditLogHandler *handler.AuditLogHandler,
+) {
 	// 添加获取所有租户的路由（需要跨租户权限）
 	r.GET("/tenants/all", handler.ListAllTenants)
 	// 添加搜索租户的路由（需要跨租户权限，支持分页和搜索）
@@ -432,16 +447,48 @@ func RegisterTenantRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
 	tenantRoutes := r.Group("/tenants")
 	{
 		tenantRoutes.POST("", handler.CreateTenant)
-		tenantRoutes.GET("/:id", handler.GetTenant)
-		tenantRoutes.PUT("/:id", handler.UpdateTenant)
-		tenantRoutes.DELETE("/:id", handler.DeleteTenant)
-		tenantRoutes.POST("/:id/api-key", handler.ResetAPIKey)
 		tenantRoutes.GET("", handler.ListTenants)
 
 		// Tenant KV read (all authenticated users)
 		tenantRoutes.GET("/kv/:key", handler.GetTenantKV)
 		// Tenant KV write (all authenticated users can update their own tenant's config)
 		tenantRoutes.PUT("/kv/:key", handler.UpdateTenantKV)
+
+		tenantByID := tenantRoutes.Group("/:id", middleware.RequirePathTenantMatch(cfg))
+		{
+			tenantByID.GET("", handler.GetTenant)
+			tenantByID.PUT("", handler.UpdateTenant)
+			tenantByID.DELETE("", handler.DeleteTenant)
+			tenantByID.POST("/api-key", handler.ResetAPIKey)
+
+			if memberHandler != nil {
+				tenantByID.GET("/members", middleware.RequireRole(types.TenantRoleViewer, cfg), memberHandler.ListMembers)
+				tenantByID.POST("/members", middleware.RequireRole(types.TenantRoleOwner, cfg), memberHandler.AddMember)
+				tenantByID.PUT("/members/:user_id", middleware.RequireRole(types.TenantRoleOwner, cfg), memberHandler.UpdateMemberRole)
+				tenantByID.DELETE("/members/:user_id", middleware.RequireRole(types.TenantRoleOwner, cfg), memberHandler.RemoveMember)
+				tenantByID.POST("/leave", middleware.RequireRole(types.TenantRoleViewer, cfg), memberHandler.LeaveTenant)
+			}
+
+			if invitationHandler != nil {
+				tenantByID.GET("/invitations", middleware.RequireRole(types.TenantRoleViewer, cfg), invitationHandler.ListTenantInvitations)
+				tenantByID.POST("/invitations", middleware.RequireRole(types.TenantRoleOwner, cfg), invitationHandler.CreateInvitation)
+				tenantByID.DELETE("/invitations/:inv_id", middleware.RequireRole(types.TenantRoleOwner, cfg), invitationHandler.RevokeInvitation)
+			}
+
+			if auditLogHandler != nil {
+				tenantByID.GET("/audit-log", middleware.RequireRole(types.TenantRoleAdmin, cfg), auditLogHandler.ListTenantAuditLog)
+			}
+		}
+	}
+
+	if invitationHandler != nil {
+		meRoutes := r.Group("/me")
+		{
+			meRoutes.GET("/invitations", invitationHandler.ListMyInvitations)
+			meRoutes.GET("/invitations/pending-count", invitationHandler.CountMyPendingInvitations)
+			meRoutes.POST("/invitations/:inv_id/accept", invitationHandler.AcceptMyInvitation)
+			meRoutes.POST("/invitations/:inv_id/decline", invitationHandler.DeclineMyInvitation)
+		}
 	}
 }
 
@@ -499,6 +546,8 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler) {
 	r.GET("/auth/validate", handler.ValidateToken)
 	r.POST("/auth/logout", handler.Logout)
 	r.GET("/auth/me", handler.GetCurrentUser)
+	r.PUT("/auth/me/preferences", handler.UpdateCurrentUserPreferences)
+	r.PATCH("/auth/me/preferences", handler.UpdateCurrentUserPreferences)
 	r.POST("/auth/change-password", handler.ChangePassword)
 }
 

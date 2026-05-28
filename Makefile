@@ -212,7 +212,7 @@ docs:
 	@echo "生成 Swagger API 文档..."
 	swag init -g $(MAIN_PATH)/main.go -o ./docs --parseDependency --parseInternal
 	@echo "文档已生成到 ./docs 目录"
-	@echo "启动服务后访问 http://localhost:8080/swagger/index.html 查看文档"
+	@echo "启动服务后访问 http://localhost:8081/swagger/index.html 查看文档"
 
 # Install swagger tool
 install-swagger:

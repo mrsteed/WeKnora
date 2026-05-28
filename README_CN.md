@@ -201,7 +201,7 @@ docker compose up -d   # 启动核心服务
 | 服务 | 地址 |
 |------|------|
 | Web UI | `http://localhost` |
-| 后端 API | `http://localhost:8080` |
+| 后端 API | `http://localhost:8081` |
 | 链路追踪 (Langfuse) | `http://localhost:3000` |
 
 ## 文档知识图谱

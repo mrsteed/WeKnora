@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -17,6 +18,86 @@ var (
 	ErrInviteCodeNotFound     = errors.New("invite code not found")
 	ErrInviteCodeExpired      = errors.New("invite code has expired")
 )
+
+type organizationMemberRow struct {
+	ID             string
+	OrganizationID string
+	UserID         string
+	TenantID       uint64
+	Role           types.OrgMemberRole
+	JoinedAt       time.Time
+	UpdatedAt      time.Time
+	Username       string
+	Email          string
+	Avatar         string
+}
+
+type orgTreeMemberRow struct {
+	ID             string
+	OrganizationID string
+	UserID         string
+	TenantID       uint64
+	Role           types.OrgMemberRole
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	Username       string
+	Email          string
+	Phone          string
+	Avatar         string
+	IsSuperAdmin   bool
+	IsOwner        bool
+}
+
+func buildOrganizationMember(row organizationMemberRow) *types.OrganizationMember {
+	member := &types.OrganizationMember{
+		ID:             row.ID,
+		OrganizationID: row.OrganizationID,
+		UserID:         row.UserID,
+		TenantID:       row.TenantID,
+		Role:           row.Role,
+		CreatedAt:      row.JoinedAt,
+		UpdatedAt:      row.UpdatedAt,
+	}
+	if row.UserID != "" || row.Username != "" || row.Email != "" || row.Avatar != "" {
+		member.User = &types.User{
+			ID:       row.UserID,
+			Username: row.Username,
+			Email:    row.Email,
+			Avatar:   row.Avatar,
+		}
+	}
+	return member
+}
+
+func buildOrgTreeMember(row orgTreeMemberRow) *types.OrganizationMember {
+	member := &types.OrganizationMember{
+		ID:             row.ID,
+		OrganizationID: row.OrganizationID,
+		UserID:         row.UserID,
+		TenantID:       row.TenantID,
+		Role:           row.Role,
+		CreatedAt:      row.CreatedAt,
+		UpdatedAt:      row.UpdatedAt,
+		IsOwner:        row.IsOwner,
+	}
+	member.User = &types.User{
+		ID:           row.UserID,
+		Username:     row.Username,
+		Email:        row.Email,
+		Phone:        row.Phone,
+		Avatar:       row.Avatar,
+		IsSuperAdmin: row.IsSuperAdmin,
+	}
+	return member
+}
+
+func parseOrganizationMemberIdentifier(identifier string) (uint64, bool) {
+	tenantID, err := strconv.ParseUint(identifier, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return tenantID, true
+}
 
 // organizationRepository implements OrganizationRepository interface
 type organizationRepository struct {
@@ -45,6 +126,7 @@ func (r *organizationRepository) Create(ctx context.Context, org *types.Organiza
 			"description":               org.Description,
 			"avatar":                    org.Avatar,
 			"owner_id":                  org.OwnerID,
+			"owner_tenant_id":           org.OwnerTenantID,
 			"invite_code":               nil, // Explicitly set to NULL
 			"invite_code_expires_at":    org.InviteCodeExpiresAt,
 			"invite_code_validity_days": org.InviteCodeValidityDays,
@@ -92,14 +174,16 @@ func (r *organizationRepository) GetByInviteCode(ctx context.Context, inviteCode
 	return &org, nil
 }
 
-// ListByUserID lists organizations that a user belongs to
-func (r *organizationRepository) ListByUserID(ctx context.Context, userID string) ([]*types.Organization, error) {
+// ListByUserID lists organizations that a user belongs to within the current tenant
+func (r *organizationRepository) ListByUserID(ctx context.Context, userID string, tenantID uint64) ([]*types.Organization, error) {
 	var orgs []*types.Organization
 
-	// Get organizations where user is a member
 	err := r.db.WithContext(ctx).
-		Joins("JOIN organization_members ON organization_members.organization_id = organizations.id").
-		Where("organization_members.user_id = ?", userID).
+		Table("organizations").
+		Distinct("organizations.*").
+		Joins("JOIN organization_tenant_members otm ON otm.organization_id = organizations.id AND otm.tenant_id = ?", tenantID).
+		Joins("JOIN tenant_members tm ON tm.tenant_id = otm.tenant_id AND tm.user_id = ? AND tm.deleted_at IS NULL AND tm.status = ?", userID, types.TenantMemberStatusActive).
+		Where("organizations.deleted_at IS NULL").
 		Order("organizations.created_at DESC").
 		Find(&orgs).Error
 
@@ -142,24 +226,48 @@ func (r *organizationRepository) Delete(ctx context.Context, id string) error {
 
 // AddMember adds a member to an organization
 func (r *organizationRepository) AddMember(ctx context.Context, member *types.OrganizationMember) error {
-	// Check if member already exists
 	var count int64
-	r.db.WithContext(ctx).Model(&types.OrganizationMember{}).
-		Where("organization_id = ? AND user_id = ?", member.OrganizationID, member.UserID).
+	r.db.WithContext(ctx).
+		Table("organization_tenant_members").
+		Where("organization_id = ? AND tenant_id = ?", member.OrganizationID, member.TenantID).
 		Count(&count)
 
 	if count > 0 {
 		return ErrOrgMemberAlreadyExists
 	}
 
-	return r.db.WithContext(ctx).Create(member).Error
+	joinedAt := member.CreatedAt
+	if joinedAt.IsZero() {
+		joinedAt = time.Now()
+	}
+	updatedAt := member.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = joinedAt
+	}
+
+	return r.db.WithContext(ctx).
+		Table("organization_tenant_members").
+		Create(map[string]interface{}{
+			"id":                     member.ID,
+			"organization_id":        member.OrganizationID,
+			"tenant_id":              member.TenantID,
+			"role":                   member.Role,
+			"representative_user_id": member.UserID,
+			"joined_at":              joinedAt,
+			"created_at":             joinedAt,
+			"updated_at":             updatedAt,
+		}).Error
 }
 
 // RemoveMember removes a member from an organization
 func (r *organizationRepository) RemoveMember(ctx context.Context, orgID string, userID string) error {
-	result := r.db.WithContext(ctx).
-		Where("organization_id = ? AND user_id = ?", orgID, userID).
-		Delete(&types.OrganizationMember{})
+	query := r.db.WithContext(ctx).Table("organization_tenant_members").Where("organization_id = ?", orgID)
+	if tenantID, ok := parseOrganizationMemberIdentifier(userID); ok {
+		query = query.Where("tenant_id = ?", tenantID)
+	} else {
+		query = query.Where("representative_user_id = ?", userID)
+	}
+	result := query.Delete(nil)
 
 	if result.Error != nil {
 		return result.Error
@@ -172,9 +280,15 @@ func (r *organizationRepository) RemoveMember(ctx context.Context, orgID string,
 
 // UpdateMemberRole updates a member's role in an organization
 func (r *organizationRepository) UpdateMemberRole(ctx context.Context, orgID string, userID string, role types.OrgMemberRole) error {
-	result := r.db.WithContext(ctx).
-		Model(&types.OrganizationMember{}).
-		Where("organization_id = ? AND user_id = ?", orgID, userID).
+	query := r.db.WithContext(ctx).
+		Table("organization_tenant_members").
+		Where("organization_id = ?", orgID)
+	if tenantID, ok := parseOrganizationMemberIdentifier(userID); ok {
+		query = query.Where("tenant_id = ?", tenantID)
+	} else {
+		query = query.Where("representative_user_id = ?", userID)
+	}
+	result := query.
 		Update("role", role)
 
 	if result.Error != nil {
@@ -188,25 +302,40 @@ func (r *organizationRepository) UpdateMemberRole(ctx context.Context, orgID str
 
 // ListMembers lists all members of an organization
 func (r *organizationRepository) ListMembers(ctx context.Context, orgID string) ([]*types.OrganizationMember, error) {
-	var members []*types.OrganizationMember
+	var rows []organizationMemberRow
 	err := r.db.WithContext(ctx).
-		Preload("User").
-		Where("organization_id = ?", orgID).
-		Order("created_at ASC").
-		Find(&members).Error
+		Table("organization_tenant_members otm").
+		Select("otm.id, otm.organization_id, otm.tenant_id, otm.role, COALESCE(otm.joined_at, otm.created_at) AS joined_at, otm.updated_at, u.id AS user_id, u.username, u.email, u.avatar").
+		Joins("LEFT JOIN users u ON u.id = otm.representative_user_id").
+		Where("otm.organization_id = ?", orgID).
+		Order("COALESCE(otm.joined_at, otm.created_at) ASC, otm.id ASC").
+		Scan(&rows).Error
 
 	if err != nil {
 		return nil, err
+	}
+	members := make([]*types.OrganizationMember, 0, len(rows))
+	for _, row := range rows {
+		members = append(members, buildOrganizationMember(row))
 	}
 	return members, nil
 }
 
 // GetMember gets a specific member of an organization
 func (r *organizationRepository) GetMember(ctx context.Context, orgID string, userID string) (*types.OrganizationMember, error) {
-	var member types.OrganizationMember
-	err := r.db.WithContext(ctx).
-		Where("organization_id = ? AND user_id = ?", orgID, userID).
-		First(&member).Error
+	query := r.db.WithContext(ctx).
+		Table("organization_tenant_members otm").
+		Select("otm.id, otm.organization_id, otm.tenant_id, otm.role, COALESCE(otm.joined_at, otm.created_at) AS joined_at, otm.updated_at, u.id AS user_id, u.username, u.email, u.avatar").
+		Joins("LEFT JOIN users u ON u.id = otm.representative_user_id").
+		Where("otm.organization_id = ?", orgID)
+	if tenantID, ok := parseOrganizationMemberIdentifier(userID); ok {
+		query = query.Where("otm.tenant_id = ?", tenantID)
+	} else {
+		query = query.Joins("JOIN tenant_members tm ON tm.tenant_id = otm.tenant_id AND tm.user_id = ? AND tm.deleted_at IS NULL AND tm.status = ?", userID, types.TenantMemberStatusActive)
+	}
+
+	var row organizationMemberRow
+	err := query.Order("COALESCE(otm.joined_at, otm.created_at) ASC, otm.id ASC").Take(&row).Error
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -214,7 +343,7 @@ func (r *organizationRepository) GetMember(ctx context.Context, orgID string, us
 		}
 		return nil, err
 	}
-	return &member, nil
+	return buildOrganizationMember(row), nil
 }
 
 // ListMembersByUserForOrgs returns one member record per org where the user is a member (batch).
@@ -222,17 +351,22 @@ func (r *organizationRepository) ListMembersByUserForOrgs(ctx context.Context, u
 	if len(orgIDs) == 0 {
 		return make(map[string]*types.OrganizationMember), nil
 	}
-	var members []*types.OrganizationMember
+	var rows []organizationMemberRow
 	err := r.db.WithContext(ctx).
-		Where("user_id = ? AND organization_id IN ?", userID, orgIDs).
-		Find(&members).Error
+		Table("organization_tenant_members otm").
+		Select("otm.id, otm.organization_id, otm.tenant_id, otm.role, COALESCE(otm.joined_at, otm.created_at) AS joined_at, otm.updated_at, u.id AS user_id, u.username, u.email, u.avatar").
+		Joins("JOIN tenant_members tm ON tm.tenant_id = otm.tenant_id AND tm.user_id = ? AND tm.deleted_at IS NULL AND tm.status = ?", userID, types.TenantMemberStatusActive).
+		Joins("LEFT JOIN users u ON u.id = otm.representative_user_id").
+		Where("otm.organization_id IN ?", orgIDs).
+		Order("COALESCE(otm.joined_at, otm.created_at) ASC, otm.id ASC").
+		Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]*types.OrganizationMember, len(members))
-	for _, m := range members {
-		if m != nil {
-			out[m.OrganizationID] = m
+	out := make(map[string]*types.OrganizationMember, len(rows))
+	for _, row := range rows {
+		if _, exists := out[row.OrganizationID]; !exists {
+			out[row.OrganizationID] = buildOrganizationMember(row)
 		}
 	}
 	return out, nil
@@ -242,7 +376,7 @@ func (r *organizationRepository) ListMembersByUserForOrgs(ctx context.Context, u
 func (r *organizationRepository) CountMembers(ctx context.Context, orgID string) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).
-		Model(&types.OrganizationMember{}).
+		Table("organization_tenant_members").
 		Where("organization_id = ?", orgID).
 		Count(&count).Error
 	return count, err
@@ -259,7 +393,7 @@ func (r *organizationRepository) BatchCountMembers(ctx context.Context, orgIDs [
 	}
 	var results []countResult
 	err := r.db.WithContext(ctx).
-		Model(&types.OrganizationMember{}).
+		Table("organization_tenant_members").
 		Select("organization_id, COUNT(*) as count").
 		Where("organization_id IN ?", orgIDs).
 		Group("organization_id").
@@ -285,8 +419,8 @@ func (r *organizationRepository) BatchListMemberUserIDs(ctx context.Context, org
 	}
 	var rows []memberRow
 	err := r.db.WithContext(ctx).
-		Model(&types.OrganizationMember{}).
-		Select("organization_id, user_id").
+		Table("organization_tenant_members").
+		Select("organization_id, representative_user_id AS user_id").
 		Where("organization_id IN ?", orgIDs).
 		Find(&rows).Error
 	if err != nil {
@@ -306,9 +440,171 @@ func (r *organizationRepository) IsAdminOfAnyOrg(ctx context.Context, userID str
 	}
 	var count int64
 	err := r.db.WithContext(ctx).
-		Model(&types.OrganizationMember{}).
-		Where("user_id = ? AND organization_id IN ? AND role = ? AND tenant_id = ?",
-			userID, orgIDs, types.OrgRoleAdmin, tenantID).
+		Table("organization_tenant_members otm").
+		Joins("JOIN tenant_members tm ON tm.tenant_id = otm.tenant_id AND tm.user_id = ? AND tm.deleted_at IS NULL AND tm.status = ?", userID, types.TenantMemberStatusActive).
+		Where("otm.organization_id IN ? AND otm.role = ? AND otm.tenant_id = ?",
+			orgIDs, types.OrgRoleAdmin, tenantID).
+		Limit(1).
+		Count(&count).Error
+	if err != nil {
+		return false
+	}
+	return count > 0
+}
+
+func (r *organizationRepository) AddOrgTreeMember(ctx context.Context, member *types.OrganizationMember) error {
+	var count int64
+	r.db.WithContext(ctx).
+		Table("organization_members_pre_plan3").
+		Where("organization_id = ? AND user_id = ?", member.OrganizationID, member.UserID).
+		Count(&count)
+	if count > 0 {
+		return ErrOrgMemberAlreadyExists
+	}
+
+	createdAt := member.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+	updatedAt := member.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = createdAt
+	}
+
+	return r.db.WithContext(ctx).
+		Table("organization_members_pre_plan3").
+		Create(map[string]interface{}{
+			"id":              member.ID,
+			"organization_id": member.OrganizationID,
+			"user_id":         member.UserID,
+			"tenant_id":       member.TenantID,
+			"role":            member.Role,
+			"created_at":      createdAt,
+			"updated_at":      updatedAt,
+		}).Error
+}
+
+func (r *organizationRepository) RemoveOrgTreeMember(ctx context.Context, orgID string, userID string) error {
+	result := r.db.WithContext(ctx).
+		Table("organization_members_pre_plan3").
+		Where("organization_id = ? AND user_id = ?", orgID, userID).
+		Delete(nil)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrOrgMemberNotFound
+	}
+	return nil
+}
+
+func (r *organizationRepository) UpdateOrgTreeMemberRole(ctx context.Context, orgID string, userID string, role types.OrgMemberRole) error {
+	result := r.db.WithContext(ctx).
+		Table("organization_members_pre_plan3").
+		Where("organization_id = ? AND user_id = ?", orgID, userID).
+		Update("role", role)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrOrgMemberNotFound
+	}
+	return nil
+}
+
+func (r *organizationRepository) ListOrgTreeMembers(ctx context.Context, orgID string) ([]*types.OrganizationMember, error) {
+	var rows []orgTreeMemberRow
+	err := r.db.WithContext(ctx).
+		Table("organization_members_pre_plan3 omp").
+		Select("omp.id, omp.organization_id, omp.user_id, omp.tenant_id, omp.role, omp.created_at, omp.updated_at, u.username, u.email, u.phone, u.avatar, u.is_super_admin, (o.owner_id = omp.user_id) AS is_owner").
+		Joins("JOIN organizations o ON o.id = omp.organization_id").
+		Joins("LEFT JOIN users u ON u.id = omp.user_id").
+		Where("omp.organization_id = ?", orgID).
+		Order("omp.created_at ASC, omp.id ASC").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	members := make([]*types.OrganizationMember, 0, len(rows))
+	for _, row := range rows {
+		members = append(members, buildOrgTreeMember(row))
+	}
+	return members, nil
+}
+
+func (r *organizationRepository) ListOrgTreeOrganizationsByUserID(ctx context.Context, userID string) ([]*types.Organization, error) {
+	var orgs []*types.Organization
+	err := r.db.WithContext(ctx).
+		Table("organizations").
+		Distinct("organizations.*").
+		Joins("JOIN organization_members_pre_plan3 omp ON omp.organization_id = organizations.id").
+		Where("omp.user_id = ?", userID).
+		Order("organizations.created_at DESC").
+		Find(&orgs).Error
+	if err != nil {
+		return nil, err
+	}
+	return orgs, nil
+}
+
+func (r *organizationRepository) BatchCountOrgTreeMembers(ctx context.Context, orgIDs []string) (map[string]int, error) {
+	if len(orgIDs) == 0 {
+		return make(map[string]int), nil
+	}
+	type countResult struct {
+		OrganizationID string `gorm:"column:organization_id"`
+		Count          int    `gorm:"column:count"`
+	}
+	var results []countResult
+	err := r.db.WithContext(ctx).
+		Table("organization_members_pre_plan3").
+		Select("organization_id, COUNT(*) as count").
+		Where("organization_id IN ?", orgIDs).
+		Group("organization_id").
+		Find(&results).Error
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int, len(results))
+	for _, row := range results {
+		counts[row.OrganizationID] = row.Count
+	}
+	return counts, nil
+}
+
+func (r *organizationRepository) BatchListOrgTreeMemberUserIDs(ctx context.Context, orgIDs []string) (map[string][]string, error) {
+	if len(orgIDs) == 0 {
+		return make(map[string][]string), nil
+	}
+	type memberRow struct {
+		OrganizationID string `gorm:"column:organization_id"`
+		UserID         string `gorm:"column:user_id"`
+	}
+	var rows []memberRow
+	err := r.db.WithContext(ctx).
+		Table("organization_members_pre_plan3").
+		Select("organization_id, user_id").
+		Where("organization_id IN ?", orgIDs).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]string, len(orgIDs))
+	for _, row := range rows {
+		result[row.OrganizationID] = append(result[row.OrganizationID], row.UserID)
+	}
+	return result, nil
+}
+
+func (r *organizationRepository) IsAdminOfAnyOrgTree(ctx context.Context, userID string, orgIDs []string, tenantID uint64) bool {
+	if len(orgIDs) == 0 {
+		return false
+	}
+	var count int64
+	err := r.db.WithContext(ctx).
+		Table("organization_members_pre_plan3 omp").
+		Joins("JOIN organizations o ON o.id = omp.organization_id").
+		Where("omp.user_id = ? AND omp.organization_id IN ? AND omp.tenant_id = ? AND (omp.role = ? OR o.owner_id = ?)", userID, orgIDs, tenantID, types.OrgRoleAdmin, userID).
 		Limit(1).
 		Count(&count).Error
 	if err != nil {

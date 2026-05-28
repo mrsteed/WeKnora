@@ -489,12 +489,30 @@ const isWebSearchEnabled = computed(() => isSharePageMode.value ? Boolean(runtim
 const selectedKbIds = computed(() => isSharePageMode.value ? (runtimeContext.value?.fixedKnowledgeBaseIds || []) : (settingsStore.settings.selectedKnowledgeBases || []));
 const selectedFileIds = computed(() => isSharePageMode.value ? [] : (settingsStore.settings.selectedFiles || []));
 
+interface SelectedKnowledgeItem {
+  id: string
+  name: string
+  type?: 'document' | 'faq' | 'database'
+  knowledge_count?: number
+  chunk_count?: number
+  org_name?: string
+}
+
+interface SelectedChipItem {
+  id: string
+  name: string
+  type: 'kb' | 'file'
+  kbType?: 'document' | 'faq' | 'database'
+  isAgentConfigured: boolean
+  org_name?: string
+}
+
 // 获取已选择的知识库信息
 const knowledgeBases = ref<Array<{ id: string; name: string; type?: 'document' | 'faq' | 'database'; knowledge_count?: number; chunk_count?: number }>>([]);
 const fileList = ref<Array<{ id: string; name: string }>>([]);
 
 // 选中的知识库：包含自己的 + 组织共享的 + 共享智能体下的（用于展示已选列表与 org 角标）
-const selectedKbs = computed(() => {
+const selectedKbs = computed<SelectedKnowledgeItem[]>(() => {
   const own = knowledgeBases.value.filter(kb => selectedKbIds.value.includes(kb.id));
   const sharedList = orgStore.sharedKnowledgeBases || [];
   const sharedMapped = sharedList
@@ -539,7 +557,7 @@ const selectedFiles = computed(() => {
     const agentKbIds = agentKnowledgeBases.value;
     
     // 所有选中的知识库，标记是否为智能体配置
-    const allKbs = selectedKbs.value.map(kb => ({ 
+    const allKbs: SelectedChipItem[] = selectedKbs.value.map(kb => ({ 
       ...kb, 
       type: 'kb' as const,
       kbType: kb.type,
@@ -558,7 +576,7 @@ const selectedFiles = computed(() => {
         sharedKbOrgMap[String(kb.id)] = sharedAgentOrgName.value;
       });
     }
-    const files = selectedFiles.value.map((f: { id: string; name: string }) => {
+    const files: SelectedChipItem[] = selectedFiles.value.map((f: { id: string; name: string }) => {
       const kbId = fileIdToKbId.value[f.id];
       const org_name = kbId ? sharedKbOrgMap[String(kbId)] || '' : '';
       return {
@@ -885,35 +903,35 @@ const handleModelChange = async (value: string | number | Array<string | number>
     showModelSelector.value = false;
     return;
   }
-  
-  // 保存到后端
-  try {
-    if (conversationConfig.value) {
-      const updatedConfig = {
-        ...conversationConfig.value,
-        summary_model_id: val
-      };
-      const response = await updateConversationConfig(updatedConfig);
       
-      // 更新本地状态
-      conversationConfig.value = response.data;
+      // 先更新当前会话里的选中模型，避免配置接口暂未就绪时用户看起来“无法切换”。
       selectedModelId.value = val;
       showModelSelector.value = false;
-      
-      // 同步到 store
-      settingsStore.updateConversationModels({
-        summaryModelId: val,
-        selectedChatModelId: val,
-        rerankModelId: conversationConfig.value?.rerank_model_id || '',
-      });
-      
-      MessagePlugin.success(t('conversationSettings.toasts.chatModelSaved'));
-    }
+      settingsStore.updateConversationModels({ selectedChatModelId: val });
+
+      if (!conversationConfig.value) {
+        return;
+      }
+
+      // 再异步保存为租户默认对话模型。
+  try {
+        const updatedConfig = {
+          ...conversationConfig.value,
+          summary_model_id: val
+        };
+        const response = await updateConversationConfig(updatedConfig);
+
+        conversationConfig.value = response.data;
+        settingsStore.updateConversationModels({
+          summaryModelId: val,
+          selectedChatModelId: val,
+          rerankModelId: response.data?.rerank_model_id || '',
+        });
+
+        MessagePlugin.success(t('conversationSettings.toasts.chatModelSaved'));
   } catch (error) {
     console.error('保存模型配置失败:', error);
     MessagePlugin.error(t('conversationSettings.toasts.saveFailed'));
-    // 恢复到之前的值
-    selectedModelId.value = conversationConfig.value?.summary_model_id || '';
   }
 };
 

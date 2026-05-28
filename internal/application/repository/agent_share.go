@@ -194,10 +194,10 @@ func (r *agentShareRepository) ListSharedAgentsForUser(ctx context.Context, user
 	err := r.db.WithContext(ctx).
 		Joins("JOIN custom_agents ON custom_agents.id = agent_shares.agent_id AND custom_agents.tenant_id = agent_shares.source_tenant_id AND custom_agents.deleted_at IS NULL").
 		Joins("JOIN organizations ON organizations.id = agent_shares.organization_id AND organizations.deleted_at IS NULL").
-		Joins("JOIN organization_members om ON om.organization_id = agent_shares.organization_id AND om.deleted_at IS NULL").
+		Joins("JOIN organization_members_pre_plan3 omp ON omp.organization_id = agent_shares.organization_id").
 		Preload("Agent").
 		Preload("Organization").
-		Where("om.user_id = ?", userID).
+		Where("omp.user_id = ?", userID).
 		Where("agent_shares.deleted_at IS NULL").
 		Order("agent_shares.created_at DESC").
 		Find(&shares).Error
@@ -232,9 +232,9 @@ func (r *agentShareRepository) GetShareByAgentIDForTenant(ctx context.Context, t
 func (r *agentShareRepository) GetShareByAgentIDForUser(ctx context.Context, userID, agentID string, excludeTenantID uint64) (*types.AgentShare, error) {
 	var share types.AgentShare
 	err := r.db.WithContext(ctx).
-		Joins("JOIN organization_members om ON om.organization_id = agent_shares.organization_id AND om.deleted_at IS NULL").
+		Joins("JOIN organization_members_pre_plan3 omp ON omp.organization_id = agent_shares.organization_id").
 		Where("agent_shares.agent_id = ?", agentID).
-		Where("om.user_id = ?", userID).
+		Where("omp.user_id = ?", userID).
 		Where("agent_shares.source_tenant_id != ?", excludeTenantID).
 		Where("agent_shares.deleted_at IS NULL").
 		First(&share).Error

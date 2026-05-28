@@ -55,6 +55,9 @@
           <t-tag v-if="member.is_super_admin" theme="warning" variant="light" size="small">
             {{ $t('admin.member.superAdmin') }}
           </t-tag>
+          <t-tag v-else-if="member.is_owner" theme="primary" variant="light" size="small">
+            {{ $t('organization.owner') }}
+          </t-tag>
           <t-tag v-else-if="member.is_admin" theme="primary" variant="light" size="small">
             {{ $t('admin.member.admin') }}
           </t-tag>
@@ -84,6 +87,7 @@
             size="small"
             variant="text"
             :theme="member.is_admin ? 'default' : 'primary'"
+            :disabled="member.is_owner === true"
             @click="$emit('setAdmin', member.user_id, !member.is_admin)"
           >
             {{ member.is_admin ? $t('admin.member.revokeAdmin') : $t('admin.member.setAdmin') }}
@@ -96,8 +100,8 @@
               size="small"
               variant="text"
               theme="danger"
-              :disabled="member.user_id === authStore.currentUserId"
-              :title="member.user_id === authStore.currentUserId ? $t('admin.member.cannotModifySelf') : ''"
+              :disabled="member.user_id === authStore.currentUserId || member.is_owner === true"
+              :title="member.user_id === authStore.currentUserId ? $t('admin.member.cannotModifySelf') : (member.is_owner === true ? $t('organization.owner') : '')"
             >
               {{ $t('admin.member.remove') }}
             </t-button>

@@ -15,11 +15,11 @@ WeKnora 提供了一系列 RESTful API，用于创建和管理知识库、检索
 
 ## 最权威参考：Swagger UI
 
-WeKnora 同时提供基于 OpenAPI 的 Swagger 文档。**启动服务后访问 `http://localhost:8080/swagger/index.html`**，可看到所有端点的完整参数、请求/响应 schema，并可直接在浏览器内试调——它随代码自动更新，是最准确的接口参考。
+WeKnora 同时提供基于 OpenAPI 的 Swagger 文档。默认后端端口为 8081，启动服务后可直接访问 `http://localhost:8081/swagger/index.html`；前端开发服务器联调时，也可以通过同源代理访问 `http://localhost:5173/swagger/index.html`。它随代码自动更新，可看到所有端点的完整参数、请求/响应 schema，并可直接在浏览器内试调，是最准确的接口参考。
 
 本目录下的 markdown 文档提供更易读的示例与场景说明，与 swagger 同步维护；当二者出现差异时，以 swagger 为准。
 
-> Swagger UI 仅在非 release 模式（`GIN_MODE != release`）下挂载；生产部署默认关闭。
+> Swagger UI 默认在非生产环境启用；当 `APP_ENV` 或 `ENV` 为 `prod` / `production` 时默认关闭，也可通过 `WEKNORA_SWAGGER_ENABLED=true|false` 显式覆盖。
 
 ## 基础信息
 

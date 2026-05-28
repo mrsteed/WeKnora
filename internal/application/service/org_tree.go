@@ -34,13 +34,14 @@ func (s *orgTreeService) CreateNode(ctx context.Context, tenantID uint64, userID
 	logger.Infof(ctx, "Creating org-tree node: %s under tenant: %d by user: %s", req.Name, tenantID, userID)
 
 	org := &types.Organization{
-		ID:          uuid.New().String(),
-		Name:        req.Name,
-		Description: req.Description,
-		OwnerID:     userID,
-		ParentID:    req.ParentID,
-		SortOrder:   req.SortOrder,
-		OrgTenantID: &tenantID,
+		ID:            uuid.New().String(),
+		Name:          req.Name,
+		Description:   req.Description,
+		OwnerID:       userID,
+		OwnerTenantID: tenantID,
+		ParentID:      req.ParentID,
+		SortOrder:     req.SortOrder,
+		OrgTenantID:   &tenantID,
 	}
 
 	// Calculate path and level
@@ -73,7 +74,7 @@ func (s *orgTreeService) CreateNode(ctx context.Context, tenantID uint64, userID
 			Role:           types.OrgRoleAdmin,
 			TenantID:       tenantID,
 		}
-		if err := s.orgRepo.AddMember(ctx, creatorMember); err != nil {
+		if err := s.orgRepo.AddOrgTreeMember(ctx, creatorMember); err != nil {
 			logger.Errorf(ctx, "Failed to add creator as admin: %v", err)
 			// Don't fail the entire operation, but log the error
 		} else {
@@ -195,24 +196,24 @@ func (s *orgTreeService) GetTree(ctx context.Context, tenantID uint64) ([]*types
 	for i, org := range orgs {
 		orgIDs[i] = org.ID
 	}
-	memberCounts, err := s.orgRepo.BatchCountMembers(ctx, orgIDs)
+	memberCounts, err := s.orgRepo.BatchCountOrgTreeMembers(ctx, orgIDs)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to batch count members, falling back to per-org counting: %v", err)
 		// Fallback: count individually
 		memberCounts = make(map[string]int)
 		for _, org := range orgs {
-			count, err := s.orgRepo.CountMembers(ctx, org.ID)
+			members, err := s.orgRepo.ListOrgTreeMembers(ctx, org.ID)
 			if err != nil {
 				logger.Errorf(ctx, "Failed to count members for org %s: %v", org.ID, err)
 				memberCounts[org.ID] = 0
 			} else {
-				memberCounts[org.ID] = int(count)
+				memberCounts[org.ID] = len(members)
 			}
 		}
 	}
 
 	// Batch query member user IDs for subtree aggregation
-	memberUserIDs, err := s.orgRepo.BatchListMemberUserIDs(ctx, orgIDs)
+	memberUserIDs, err := s.orgRepo.BatchListOrgTreeMemberUserIDs(ctx, orgIDs)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to batch list member user IDs: %v", err)
 		memberUserIDs = make(map[string][]string)
@@ -523,10 +524,10 @@ func (s *orgTreeService) AssignUserToOrg(ctx context.Context, orgID string, tena
 		TenantID:       tenantID,
 	}
 
-	if err := s.orgRepo.AddMember(ctx, member); err != nil {
+	if err := s.orgRepo.AddOrgTreeMember(ctx, member); err != nil {
 		if err == repository.ErrOrgMemberAlreadyExists {
 			// Update existing member's role
-			if err := s.orgRepo.UpdateMemberRole(ctx, orgID, req.UserID, req.Role); err != nil {
+			if err := s.orgRepo.UpdateOrgTreeMemberRole(ctx, orgID, req.UserID, req.Role); err != nil {
 				return fmt.Errorf("failed to update member role: %w", err)
 			}
 			return nil
@@ -542,12 +543,15 @@ func (s *orgTreeService) RemoveUserFromOrg(ctx context.Context, orgID string, te
 	logger.Infof(ctx, "Removing user %s from org %s", req.UserID, orgID)
 
 	// Verify the org belongs to the tenant
-	_, err := s.orgTreeRepo.GetByIDAndTenant(ctx, orgID, tenantID)
+	org, err := s.orgTreeRepo.GetByIDAndTenant(ctx, orgID, tenantID)
 	if err != nil {
 		return fmt.Errorf("org not found or not in tenant: %w", err)
 	}
+	if org.OwnerID == req.UserID {
+		return fmt.Errorf("cannot remove organization owner")
+	}
 
-	if err := s.orgRepo.RemoveMember(ctx, orgID, req.UserID); err != nil {
+	if err := s.orgRepo.RemoveOrgTreeMember(ctx, orgID, req.UserID); err != nil {
 		return fmt.Errorf("failed to remove member: %w", err)
 	}
 	return nil
@@ -558,7 +562,7 @@ func (s *orgTreeService) SetOrgAdmin(ctx context.Context, orgID string, tenantID
 	logger.Infof(ctx, "Setting org admin: user %s, org %s, isAdmin %v", req.UserID, orgID, req.IsAdmin)
 
 	// Verify the org belongs to this tenant (prevents cross-tenant privilege escalation)
-	_, err := s.orgTreeRepo.GetByIDAndTenant(ctx, orgID, tenantID)
+	org, err := s.orgTreeRepo.GetByIDAndTenant(ctx, orgID, tenantID)
 	if err != nil {
 		return fmt.Errorf("organization not found in this tenant: %w", err)
 	}
@@ -567,10 +571,13 @@ func (s *orgTreeService) SetOrgAdmin(ctx context.Context, orgID string, tenantID
 	if req.IsAdmin {
 		role = types.OrgRoleAdmin
 	} else {
+		if org.OwnerID == req.UserID {
+			return fmt.Errorf("cannot change organization owner role")
+		}
 		role = types.OrgRoleViewer
 	}
 
-	if err := s.orgRepo.UpdateMemberRole(ctx, orgID, req.UserID, role); err != nil {
+	if err := s.orgRepo.UpdateOrgTreeMemberRole(ctx, orgID, req.UserID, role); err != nil {
 		return fmt.Errorf("failed to update member role: %w", err)
 	}
 	return nil
@@ -581,7 +588,7 @@ func (s *orgTreeService) GetUserOrganizations(ctx context.Context, userID string
 	logger.Infof(ctx, "Getting organizations for user %s in tenant %d", userID, tenantID)
 
 	// Get all orgs user is a member of
-	allOrgs, err := s.orgRepo.ListByUserID(ctx, userID)
+	allOrgs, err := s.orgRepo.ListOrgTreeOrganizationsByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user organizations: %w", err)
 	}
@@ -591,7 +598,7 @@ func (s *orgTreeService) GetUserOrganizations(ctx context.Context, userID string
 	for _, org := range allOrgs {
 		if org.OrgTenantID != nil && *org.OrgTenantID == tenantID {
 			// Check if user is admin in this org
-			members, err := s.orgRepo.ListMembers(ctx, org.ID)
+			members, err := s.orgRepo.ListOrgTreeMembers(ctx, org.ID)
 			if err != nil {
 				logger.Warnf(ctx, "Failed to get members for org %s: %v", org.ID, err)
 				continue
@@ -599,7 +606,7 @@ func (s *orgTreeService) GetUserOrganizations(ctx context.Context, userID string
 
 			isAdmin := false
 			for _, member := range members {
-				if member.UserID == userID && member.Role == types.OrgRoleAdmin {
+				if member.UserID == userID && (member.Role == types.OrgRoleAdmin || member.IsOwner) {
 					isAdmin = true
 					break
 				}
@@ -637,7 +644,7 @@ func (s *orgTreeService) ListOrgMembers(ctx context.Context, orgID string, tenan
 		return nil, fmt.Errorf("org not found or not in tenant: %w", err)
 	}
 
-	members, err := s.orgRepo.ListMembers(ctx, orgID)
+	members, err := s.orgRepo.ListOrgTreeMembers(ctx, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list org members: %w", err)
 	}
@@ -646,7 +653,7 @@ func (s *orgTreeService) ListOrgMembers(ctx context.Context, orgID string, tenan
 
 // IsAdminOfAnyOrg checks if the user is an admin of any of the specified organizations
 func (s *orgTreeService) IsAdminOfAnyOrg(ctx context.Context, userID string, orgIDs []string, tenantID uint64) bool {
-	return s.orgRepo.IsAdminOfAnyOrg(ctx, userID, orgIDs, tenantID)
+	return s.orgRepo.IsAdminOfAnyOrgTree(ctx, userID, orgIDs, tenantID)
 }
 
 // ListInheritedAdmins returns admins inherited from ancestor organizations
@@ -673,7 +680,7 @@ func (s *orgTreeService) ListInheritedAdmins(ctx context.Context, orgID string, 
 	// 3. Query admin members of ancestor orgs
 	var adminMembers []*types.OrganizationMember
 	for _, ancestorID := range ancestorIDs {
-		members, err := s.orgRepo.ListMembers(ctx, ancestorID)
+		members, err := s.orgRepo.ListOrgTreeMembers(ctx, ancestorID)
 		if err != nil {
 			continue
 		}
@@ -695,7 +702,7 @@ func (s *orgTreeService) ListInheritedAdmins(ctx context.Context, orgID string, 
 	}
 
 	// 5. Exclude users already in the current org (direct members)
-	directMembers, _ := s.orgRepo.ListMembers(ctx, orgID)
+	directMembers, _ := s.orgRepo.ListOrgTreeMembers(ctx, orgID)
 	directUserIDs := make(map[string]bool)
 	for _, dm := range directMembers {
 		directUserIDs[dm.UserID] = true

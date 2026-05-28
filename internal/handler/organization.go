@@ -136,7 +136,7 @@ func (h *OrganizationHandler) ListMyOrganizations(c *gin.Context) {
 	userID := c.GetString(types.UserIDContextKey.String())
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 
-	orgs, err := h.orgService.ListUserOrganizations(ctx, userID)
+	orgs, err := h.orgService.ListUserOrganizations(ctx, userID, tenantID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to list organizations: %v", err)
 		c.Error(apperrors.NewInternalServerError("Failed to list organizations").WithDetails(err.Error()))
@@ -1644,6 +1644,7 @@ func (h *OrganizationHandler) toOrgResponse(ctx context.Context, org *types.Orga
 		Description:            org.Description,
 		Avatar:                 org.Avatar,
 		OwnerID:                org.OwnerID,
+		OwnerTenantID:          org.OwnerTenantID,
 		IsOwner:                org.OwnerID == currentUserID,
 		RequireApproval:        org.RequireApproval,
 		Searchable:             org.Searchable,

@@ -255,6 +255,11 @@ async function hydrateSessionFromToken(authStore: ReturnType<typeof useAuthStore
       })
     }
 
+	const memberships = response.data?.memberships
+	if (Array.isArray(memberships)) {
+		authStore.setMemberships(memberships)
+	}
+
     return true
   } catch {
     return false

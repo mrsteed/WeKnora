@@ -13,7 +13,7 @@ type OrganizationService interface {
 	CreateOrganization(ctx context.Context, userID string, tenantID uint64, req *types.CreateOrganizationRequest) (*types.Organization, error)
 	GetOrganization(ctx context.Context, id string) (*types.Organization, error)
 	GetOrganizationByInviteCode(ctx context.Context, inviteCode string) (*types.Organization, error)
-	ListUserOrganizations(ctx context.Context, userID string) ([]*types.Organization, error)
+	ListUserOrganizations(ctx context.Context, userID string, tenantID uint64) ([]*types.Organization, error)
 	UpdateOrganization(ctx context.Context, id string, userID string, req *types.UpdateOrganizationRequest) (*types.Organization, error)
 	DeleteOrganization(ctx context.Context, id string, userID string) error
 
@@ -52,7 +52,7 @@ type OrganizationRepository interface {
 	Create(ctx context.Context, org *types.Organization) error
 	GetByID(ctx context.Context, id string) (*types.Organization, error)
 	GetByInviteCode(ctx context.Context, inviteCode string) (*types.Organization, error)
-	ListByUserID(ctx context.Context, userID string) ([]*types.Organization, error)
+	ListByUserID(ctx context.Context, userID string, tenantID uint64) ([]*types.Organization, error)
 	ListSearchable(ctx context.Context, query string, limit int) ([]*types.Organization, error)
 	Update(ctx context.Context, org *types.Organization) error
 	Delete(ctx context.Context, id string) error
@@ -71,6 +71,18 @@ type OrganizationRepository interface {
 	BatchListMemberUserIDs(ctx context.Context, orgIDs []string) (map[string][]string, error)
 	// IsAdminOfAnyOrg checks if the user is an admin of any org in the given list
 	IsAdminOfAnyOrg(ctx context.Context, userID string, orgIDs []string, tenantID uint64) bool
+
+	// Legacy org-tree member operations (user-keyed rows stored in
+	// organization_members_pre_plan3). Kept separate from the tenant-keyed
+	// shared-space membership model used by ListMembers/GetMember above.
+	AddOrgTreeMember(ctx context.Context, member *types.OrganizationMember) error
+	RemoveOrgTreeMember(ctx context.Context, orgID string, userID string) error
+	UpdateOrgTreeMemberRole(ctx context.Context, orgID string, userID string, role types.OrgMemberRole) error
+	ListOrgTreeMembers(ctx context.Context, orgID string) ([]*types.OrganizationMember, error)
+	ListOrgTreeOrganizationsByUserID(ctx context.Context, userID string) ([]*types.Organization, error)
+	BatchCountOrgTreeMembers(ctx context.Context, orgIDs []string) (map[string]int, error)
+	BatchListOrgTreeMemberUserIDs(ctx context.Context, orgIDs []string) (map[string][]string, error)
+	IsAdminOfAnyOrgTree(ctx context.Context, userID string, orgIDs []string, tenantID uint64) bool
 
 	// Invite code
 	UpdateInviteCode(ctx context.Context, orgID string, inviteCode string, expiresAt *time.Time) error

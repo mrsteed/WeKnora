@@ -208,8 +208,11 @@
             <t-input
               v-model="formData.apiKey"
               type="password"
-              :placeholder="$t('model.editor.apiKeyPlaceholder')"
+              :placeholder="apiKeyPlaceholderText"
             />
+            <p v-if="apiKeyConfigured && !formData.apiKey" class="form-desc credential-hint">
+              {{ $t('model.editor.apiKeyConfiguredHint') }}
+            </p>
           </div>
 
           <!-- 自定义 HTTP Header（类似 OpenAI Python SDK 的 extra_headers） -->
@@ -354,6 +357,7 @@ interface ModelFormData {
   supportsVision?: boolean
   // 自定义 HTTP 请求头（类似 OpenAI Python SDK 的 extra_headers）
   customHeaders?: CustomHeaderItem[]
+    credentials?: Record<string, { configured: boolean }>
 }
 
 interface Props {
@@ -544,6 +548,12 @@ const dialogVisible = computed({
 })
 
 const isEdit = computed(() => !!props.modelData)
+  const apiKeyConfigured = computed(() => Boolean(props.modelData?.credentials?.api_key?.configured))
+  const apiKeyPlaceholderText = computed(() => (
+    apiKeyConfigured.value
+      ? t('model.editor.apiKeyConfiguredPlaceholder')
+      : t('model.editor.apiKeyPlaceholder')
+  ))
 
 const formRef = ref()
 const saving = ref(false)
@@ -750,9 +760,11 @@ watch(() => props.visible, (val) => {
     const currentId = props.modelData?.id ?? null
 
     if (props.modelData) {
-      // 编辑：始终用最新的 modelData 覆盖
+      // 编辑：始终用最新的 modelData 覆盖，但 apiKey 输入框只用于“替换”。
+      // 不把后端返回的已保存值/脱敏值回填进表单；留空表示测试和保存时继续
       formData.value = {
         ...props.modelData,
+        apiKey: '',
         customHeaders: Array.isArray(props.modelData.customHeaders)
           ? props.modelData.customHeaders.map(h => ({ key: h.key, value: h.value }))
           : []
@@ -996,6 +1008,12 @@ const checkRemoteAPI = async () => {
       ? { customHeaders }
       : {}
 
+    // 编辑已有模型时，如果用户没有输入新 key，就透传 modelId 让后端从已保存
+    // 凭证里回填真实密钥；如果输入了新 key，下面各分支仍会优先使用新值。
+    const idPayload = isEdit.value && props.modelData?.id
+      ? { modelId: props.modelData.id }
+      : {}
+
     // 根据模型类型调用不同的校验接口
     switch (props.modelType) {
       case 'chat':
@@ -1005,6 +1023,7 @@ const checkRemoteAPI = async () => {
           baseUrl: remoteBaseUrl,
           apiKey: formData.value.apiKey || '',
           provider: formData.value.provider,
+          ...idPayload,
           ...headerPayload,
         })
         break
@@ -1018,6 +1037,7 @@ const checkRemoteAPI = async () => {
           apiKey: formData.value.apiKey || '',
           dimension: formData.value.dimension,
           provider: formData.value.provider,
+          ...idPayload,
           ...headerPayload,
         })
         // 如果测试成功且返回了维度，自动填充
@@ -1034,6 +1054,7 @@ const checkRemoteAPI = async () => {
           baseUrl: remoteBaseUrl,
           apiKey: formData.value.apiKey || '',
           provider: formData.value.provider,
+          ...idPayload,
           ...headerPayload,
         })
         break
@@ -1046,6 +1067,7 @@ const checkRemoteAPI = async () => {
           baseUrl: remoteBaseUrl,
           apiKey: formData.value.apiKey || '',
           provider: formData.value.provider,
+          ...idPayload,
           ...headerPayload,
         })
         break
@@ -1057,6 +1079,7 @@ const checkRemoteAPI = async () => {
           baseUrl: remoteBaseUrl,
           apiKey: formData.value.apiKey || '',
           provider: formData.value.provider,
+          ...idPayload,
           ...headerPayload,
         })
         break
@@ -1287,6 +1310,10 @@ const handleCancel = () => {
 // 表单项样式
 .form-item {
   margin-bottom: 16px;
+
+.credential-hint {
+  margin-top: 6px;
+}
 
   &:last-child {
     margin-bottom: 0;

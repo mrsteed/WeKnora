@@ -22,11 +22,6 @@
       <div class="builtin-models-hint" role="note">
         <p class="builtin-hint-label">{{ $t('modelSettings.builtinModels.title') }}</p>
         <p class="builtin-hint-text">{{ $t('modelSettings.builtinModels.description') }}</p>
-        <a class="doc-link" href="https://github.com/Tencent/WeKnora/blob/main/docs/BUILTIN_MODELS.md" target="_blank"
-          rel="noopener noreferrer">
-          {{ $t('modelSettings.builtinModels.viewGuide') }}
-          <t-icon name="link" class="link-icon" />
-        </a>
       </div>
     </div>
 
@@ -124,7 +119,7 @@ import { AddIcon } from 'tdesign-icons-vue-next'
 import { useI18n } from 'vue-i18n'
 import ModelEditorDialog from '@/components/ModelEditorDialog.vue'
 import { useConfirmDelete } from '@/components/settings/useConfirmDelete'
-import { listModels, createModel, updateModel as updateModelAPI, deleteModel as deleteModelAPI, type ModelConfig } from '@/api/model'
+import { listModels, createModel, updateModel as updateModelAPI, deleteModel as deleteModelAPI, putModelCredentials, type ModelConfig } from '@/api/model'
 import { useAuthStore } from '@/stores/auth'
 
 const { t } = useI18n()
@@ -349,7 +344,10 @@ const handleModelSave = async (modelData: any) => {
     }
 
     if (editingModel.value && editingModel.value.id) {
-      await updateModelAPI(editingModel.value.id, apiModelData)
+          await updateModelAPI(editingModel.value.id, apiModelData)
+          if (trimmedApiKey) {
+            await putModelCredentials(editingModel.value.id, { api_key: trimmedApiKey })
+          }
       MessagePlugin.success(t('modelSettings.toasts.updated'))
     } else {
       await createModel(apiModelData)
