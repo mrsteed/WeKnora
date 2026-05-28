@@ -2550,6 +2550,11 @@ export default {
       usageLabel: 'Storage Usage',
       usageDescription: 'Percentage of storage capacity used'
     },
+    leaveDangerZone: {
+      title: 'Leave Current Tenant',
+      desc: 'After leaving, you will lose your membership and access to this tenant. Ask the tenant owner or an admin to invite you again if you need to come back.',
+      button: 'Leave Tenant'
+    },
     messages: {
       fetchFailed: 'Failed to fetch tenant information',
       networkError: 'Network error, please try again later'

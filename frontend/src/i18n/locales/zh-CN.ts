@@ -1799,6 +1799,11 @@ export default {
       usageLabel: "存储使用率",
       usageDescription: "存储空间的使用百分比",
     },
+    leaveDangerZone: {
+      title: "退出当前租户",
+      desc: "退出后，您将失去当前租户下的成员身份与访问权限。如需重新加入，请联系租户拥有者或管理员再次邀请您。",
+      button: "退出租户",
+    },
     messages: {
       fetchFailed: "获取租户信息失败",
       networkError: "网络错误，请稍后重试",

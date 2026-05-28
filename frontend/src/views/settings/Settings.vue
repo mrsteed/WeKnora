@@ -233,7 +233,8 @@ type NavGroup = {
 // 以「页面里至少有 1 个有意义的写操作所要求的最低角色」为基准，把基础设
 // 施配置（models 写、ollama 下载、websearch 写、parser/storage/vector/mcp
 // CRUD、chat-history 配置）统一收到 admin；只读类（general / system info /
-// tenant-info / members 名册）保留 viewer 可见；最高敏感的 reset api
+// tenant-info / members 名册）保留 viewer 可见；tenant-management 仅 owner
+// 可见；最高敏感的 reset api
 // key 是 owner-only。改这张表前请在 router.go 里复核对应路由组。
 //
 // 特别说明：
@@ -257,7 +258,7 @@ const SECTION_MIN_ROLE: Record<string, RoleKey> = {
   mcp: 'admin',
   system: 'viewer',
   userprofile: 'viewer',
-  'tenant-management': 'viewer',
+  'tenant-management': 'owner',
   tenant: 'viewer',
   members: 'viewer',
   api: 'owner',
@@ -307,6 +308,14 @@ const navItems = computed(() => {
   }
   return all.filter((it) => canSeeSection(it.key))
 })
+
+const resolveVisibleSection = (section?: string): string => {
+  if (!section) return navItems.value[0]?.key || 'general'
+  if (navItems.value.length === 0) return section
+  return navItems.value.some((item) => item.key === section)
+    ? section
+    : (navItems.value[0]?.key || 'general')
+}
 
 const navGroups = computed<NavGroup[]>(() => {
   const itemMap = new Map(navItems.value.map((item) => [item.key, item]))
@@ -399,11 +408,11 @@ const handleClose = () => {
 // 监听初始导航设置
 watch(() => uiStore.settingsInitialSection, (section) => {
   if (section && visible.value) {
-    currentSection.value = section
-    const navItem = (navItems.value as any[]).find((item) => item.key === section)
+    currentSection.value = resolveVisibleSection(section)
+    const navItem = (navItems.value as any[]).find((item) => item.key === currentSection.value)
     if (navItem && navItem.children && navItem.children.length > 0) {
-      if (!expandedMenus.value.includes(section)) {
-        expandedMenus.value.push(section)
+      if (!expandedMenus.value.includes(currentSection.value)) {
+        expandedMenus.value.push(currentSection.value)
       }
       currentSubSection.value = uiStore.settingsInitialSubSection || navItem.children[0].key
       if (uiStore.settingsInitialSubSection) {
@@ -424,7 +433,7 @@ watch(
   () => [visible.value, route.query.section],
   ([isVisible, section]) => {
     if (!isVisible || typeof section !== 'string') return
-    currentSection.value = section
+    currentSection.value = resolveVisibleSection(section)
     currentSubSection.value = ''
   },
   { immediate: true },
@@ -450,12 +459,12 @@ const handleEscape = (e: KeyboardEvent) => {
 const handleSettingsNav = (e: CustomEvent) => {
   const { section, subsection } = e.detail
   if (section) {
-    currentSection.value = section
+    currentSection.value = resolveVisibleSection(section)
     // 如果有子菜单，自动展开
-    const navItem = (navItems.value as any[]).find((item: any) => item.key === section)
+    const navItem = (navItems.value as any[]).find((item: any) => item.key === currentSection.value)
     if (navItem && navItem.children && navItem.children.length > 0) {
-      if (!expandedMenus.value.includes(section)) {
-        expandedMenus.value.push(section)
+      if (!expandedMenus.value.includes(currentSection.value)) {
+        expandedMenus.value.push(currentSection.value)
       }
       // 如果有 subsection，选中对应的子菜单项
       currentSubSection.value = subsection || navItem.children[0].key

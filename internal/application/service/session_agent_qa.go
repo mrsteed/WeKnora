@@ -86,6 +86,7 @@ func (s *sessionService) AgentQA(
 		logger.Warnf(ctx, "Tenant info not available for agent tenant %d, proceeding with defaults", agentTenantID)
 		tenantInfo = &types.Tenant{ID: agentTenantID}
 	}
+	ctx = ensureRetrievalTenantContext(ctx, agentTenantID, tenantInfo)
 
 	// Ensure defaults are set
 	req.CustomAgent.EnsureDefaults()
@@ -286,6 +287,29 @@ func agentDocumentContextFromQARequest(req *types.QARequest) *types.AgentDocumen
 		AutoContinueRound: req.AutoContinueRound,
 		CompletionMarker:  types.ChatDocumentCompletionMarker,
 	}
+}
+
+func ensureRetrievalTenantContext(
+	ctx context.Context,
+	tenantID uint64,
+	tenantInfo *types.Tenant,
+) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if tenantID != 0 {
+		currentTenantID, ok := types.TenantIDFromContext(ctx)
+		if !ok || currentTenantID != tenantID {
+			ctx = context.WithValue(ctx, types.TenantIDContextKey, tenantID)
+		}
+	}
+	if tenantInfo != nil {
+		currentTenantInfo, ok := types.TenantInfoFromContext(ctx)
+		if !ok || currentTenantInfo == nil || currentTenantInfo.ID != tenantInfo.ID {
+			ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenantInfo)
+		}
+	}
+	return ctx
 }
 
 func shouldApplyDocumentStopgap(req *types.QARequest) bool {

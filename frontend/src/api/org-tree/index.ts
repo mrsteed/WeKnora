@@ -63,7 +63,6 @@ export interface UpdateUserInOrgRequest {
 }
 
 export interface UpdateUserPasswordInOrgRequest {
-  current_password: string
   new_password: string
   confirm_password: string
 }

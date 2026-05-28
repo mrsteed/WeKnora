@@ -13,15 +13,6 @@
         <t-input :value="user?.username || ''" readonly />
       </t-form-item>
 
-      <t-form-item :label="$t('auth.currentPassword')" name="currentPassword">
-        <t-input
-          v-model="formData.currentPassword"
-          type="password"
-          :placeholder="$t('auth.currentPasswordPlaceholder')"
-          clearable
-        />
-      </t-form-item>
-
       <t-form-item :label="$t('auth.password')" name="newPassword">
         <t-input
           v-model="formData.newPassword"
@@ -67,17 +58,11 @@ const formRef = ref()
 const submitting = ref(false)
 
 const formData = reactive({
-  currentPassword: '',
   newPassword: '',
   confirmPassword: '',
 })
 
 const formRules = {
-  currentPassword: [
-    { required: true, message: () => t('auth.currentPasswordRequired'), trigger: 'blur' },
-    { min: 8, message: () => t('auth.passwordMinLength'), trigger: 'blur' },
-    { max: 32, message: () => t('auth.passwordMaxLength'), trigger: 'blur' },
-  ],
   newPassword: [
     { required: true, message: () => t('auth.passwordRequired'), trigger: 'blur' },
     { min: 8, message: () => t('auth.passwordMinLength'), trigger: 'blur' },
@@ -96,7 +81,6 @@ const formRules = {
 }
 
 const resetForm = () => {
-  formData.currentPassword = ''
   formData.newPassword = ''
   formData.confirmPassword = ''
 }
@@ -123,7 +107,6 @@ const handleSubmit = async () => {
   submitting.value = true
   try {
     const res = await updateUserPasswordInOrg(props.orgId, props.user.user_id, {
-      current_password: formData.currentPassword,
       new_password: formData.newPassword,
       confirm_password: formData.confirmPassword,
     })

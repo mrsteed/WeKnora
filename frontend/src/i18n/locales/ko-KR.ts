@@ -1644,6 +1644,11 @@ export default {
       usageLabel: "저장소 사용률",
       usageDescription: "저장 스페이스의 사용 백분율",
     },
+    leaveDangerZone: {
+      title: "현재 테넌트 나가기",
+      desc: "나가면 현재 테넌트의 멤버십과 접근 권한을 잃게 됩니다. 다시 참여하려면 테넌트 소유자 또는 관리자에게 재초대를 요청하세요.",
+      button: "테넌트 나가기",
+    },
     messages: {
       fetchFailed: "테넌트 정보 가져오기 실패",
       networkError: "네트워크 오류, 나중에 다시 시도해주세요",

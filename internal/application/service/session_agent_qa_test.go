@@ -1167,6 +1167,36 @@ func TestRetrieveKnowledgeGroundedFullDocumentEvidence_FiltersAndDeduplicates(t 
 	assert.ElementsMatch(t, []string{"kb-1", "kb-2"}, pack.ScopeKBIDs)
 }
 
+func TestEnsureRetrievalTenantContext_InjectsTenantScopeForLongDocumentRetrieval(t *testing.T) {
+	tenant := &types.Tenant{ID: 10000}
+	ctx := ensureRetrievalTenantContext(context.Background(), tenant.ID, tenant)
+
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	require.True(t, ok)
+	assert.Equal(t, tenant.ID, tenantID)
+
+	tenantInfo, ok := types.TenantInfoFromContext(ctx)
+	require.True(t, ok)
+	assert.Same(t, tenant, tenantInfo)
+}
+
+func TestEnsureRetrievalTenantContext_ReplacesMismatchedTenantScope(t *testing.T) {
+	originalTenant := &types.Tenant{ID: 1}
+	targetTenant := &types.Tenant{ID: 10000}
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, originalTenant.ID)
+	ctx = context.WithValue(ctx, types.TenantInfoContextKey, originalTenant)
+
+	ctx = ensureRetrievalTenantContext(ctx, targetTenant.ID, targetTenant)
+
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	require.True(t, ok)
+	assert.Equal(t, targetTenant.ID, tenantID)
+
+	tenantInfo, ok := types.TenantInfoFromContext(ctx)
+	require.True(t, ok)
+	assert.Same(t, targetTenant, tenantInfo)
+}
+
 func TestBuildKnowledgeGroundedFullDocumentOutlineMessages_IncludesLocalKnowledgeContext(t *testing.T) {
 	req := &types.QARequest{Query: "请输出完整的智慧运行技术方案"}
 	messages := buildKnowledgeGroundedFullDocumentOutlineMessages(req, "Chinese (Simplified)", knowledgeGroundedEvidencePack{

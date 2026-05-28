@@ -229,7 +229,6 @@ type UpdateUserInOrgRequest struct {
 
 // UpdateUserPasswordInOrgRequest represents a request to reset a user's login password in an organization.
 type UpdateUserPasswordInOrgRequest struct {
-	CurrentPassword string `json:"current_password" binding:"required,min=8,max=32"`
 	NewPassword     string `json:"new_password" binding:"required,min=8,max=32"`
 	ConfirmPassword string `json:"confirm_password" binding:"required,min=8,max=32"`
 }
