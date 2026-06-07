@@ -1265,10 +1265,7 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
           cardList.value[index].description = item.description;
           
           // Check if this item is still processing
-          const isParsing = item.parse_status == 'pending' || item.parse_status == 'processing';
-          const isSummaryPending = item.parse_status == 'completed' && 
-            (item.summary_status == 'pending' || item.summary_status == 'processing');
-          if (isParsing || isSummaryPending) {
+          if (knowledgeNeedsStatusPolling(item)) {
             allCompleted = false;
           }
         });
@@ -1285,23 +1282,13 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
       // If there are no changes, the watch won't trigger, so we must manually poll again
       // Even if there are changes, we can manually poll again just to be safe.
       // The watch will clear this timeout if it triggers.
-      const stillPending = cardList.value.filter(item => {
-        const isParsing = item.parse_status == 'pending' || item.parse_status == 'processing';
-        const isSummaryPending = item.parse_status == 'completed' && 
-          (item.summary_status == 'pending' || item.summary_status == 'processing');
-        return isParsing || isSummaryPending;
-      });
+      const stillPending = cardList.value.filter(knowledgeNeedsStatusPolling);
       if (stillPending.length > 0) {
         updateStatus(stillPending);
       }
     }).catch((_err) => {
       // 错误处理
-      const stillPending = cardList.value.filter(item => {
-        const isParsing = item.parse_status == 'pending' || item.parse_status == 'processing';
-        const isSummaryPending = item.parse_status == 'completed' && 
-          (item.summary_status == 'pending' || item.summary_status == 'processing');
-        return isParsing || isSummaryPending;
-      });
+      const stillPending = cardList.value.filter(knowledgeNeedsStatusPolling);
       if (stillPending.length > 0) {
         updateStatus(stillPending);
       }
