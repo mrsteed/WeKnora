@@ -60,6 +60,7 @@ func parseFinalAnswerArgs(rawArgs string) (string, bool) {
 
 	return "", false
 }
+
 // manageContextWindow consolidates or compresses messages if approaching the token limit.
 // currentTokens is the caller's best estimate of the current context size (using
 // API-reported Usage when available, falling back to BPE estimation).
@@ -343,12 +344,12 @@ func (e *AgentEngine) analyzeResponse(
 					Type:      event.EventAgentFinalAnswer,
 					SessionID: sessionID,
 					Data: event.AgentFinalAnswerData{
-							Content:          response.Content,
-							Done:             false,
-							CompletionStatus: "completed",
-							FinishReason:     "stop",
-							AllowIndexing:    true,
-							AllowComplete:    true,
+						Content:          response.Content,
+						Done:             false,
+						CompletionStatus: "completed",
+						FinishReason:     "stop",
+						AllowIndexing:    true,
+						AllowComplete:    true,
 					},
 				})
 			}

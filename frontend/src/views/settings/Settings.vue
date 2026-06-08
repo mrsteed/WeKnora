@@ -293,7 +293,7 @@ const navItems = computed(() => {
     { key: 'storage', icon: 'cloud', label: t('settings.storageEngine') },
     { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
     { key: 'system', icon: 'info-circle', label: t('settings.versionInfo') },
-    { key: 'system-global', icon: 'server', label: '系统设置' },
+    { key: 'system-global', icon: 'server', label: t('settings.systemSettings') },
     { key: 'userprofile', icon: 'user', label: t('userProfile.title') },
     { key: 'tenant-management', icon: 'swap', label: t('settings.tenantManagement') },
     { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
@@ -303,7 +303,7 @@ const navItems = computed(() => {
   // currentTenantRole 为空表示「membership 还没加载」—— 比起渲染整套
   // viewer 入口然后角色一返回又消失，先卡住不渲染更稳，跟原先 members
   // 入口的策略一致。
-  if (!authStore.currentTenantRole && !authStore.canAccessAllTenants) {
+  if (!authStore.currentTenantRole && !authStore.canAccessAllTenants && !authStore.isSystemAdmin) {
     return [] as NavItem[]
   }
   return all.filter((it) => canSeeSection(it.key))

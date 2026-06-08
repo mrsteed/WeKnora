@@ -524,8 +524,11 @@ const { t, tm, te, locale } = useI18n()
 // service/system_setting.go on the backend; locales without an entry
 // fall back to the raw key so a misconfigured deploy still renders.
 function keyLabel(k: string): string {
-  const path = `system.globalSettings.keyLabels.${k}`
-  return te(path) ? (t(path) as string) : k
+  const bag = tm('system.globalSettings.keyLabels') as unknown
+  if (bag !== null && typeof bag === 'object' && typeof (bag as Record<string, string>)[k] === 'string') {
+    return (bag as Record<string, string>)[k]
+  }
+  return k
 }
 
 // Enum keys whose change triggers a whole-value inline popconfirm before
@@ -597,8 +600,14 @@ const highRiskPopconfirm = createInlinePopconfirm()
 // (system.globalSettings.enumLabels.<key>.<value>). Falls back to the
 // raw enum value when no translation exists.
 function enumLabel(itemKey: string, optionValue: string): string {
-  const path = `system.globalSettings.enumLabels.${itemKey}.${optionValue}`
-  return te(path) ? (t(path) as string) : optionValue
+  const bag = tm('system.globalSettings.enumLabels') as unknown
+  if (bag !== null && typeof bag === 'object') {
+    const perKey = (bag as Record<string, Record<string, string>>)[itemKey]
+    if (perKey && typeof perKey[optionValue] === 'string') {
+      return perKey[optionValue]
+    }
+  }
+  return optionValue
 }
 
 const emptyListPlaceholder = computed(() => t('system.globalSettings.tagInputPlaceholder'))
@@ -815,12 +824,13 @@ function confirmSsrfListEntryChange(
   action: 'add' | 'remove',
   entry: string,
 ): Promise<boolean> {
-  const base = `system.globalSettings.listConfirm.${SSRF_WHITELIST_KEY}.${action}`
+  const bag = tm('system.globalSettings.listConfirm') as unknown as Record<string, Record<string, { body?: string; confirmBtn?: string }>>
+  const itemBag = bag?.[SSRF_WHITELIST_KEY]?.[action] || {}
   return ssrfPopconfirm.ask({
-    content: globalSettingsText(`${base}.body`, { entry }),
+    content: itemBag.body ? (t(`system.globalSettings.listConfirm.${SSRF_WHITELIST_KEY}.${action}.body`, { entry }) as string) : entry,
     theme: action === 'add' ? 'danger' : 'warning',
     confirmBtn: {
-      content: globalSettingsText(`${base}.confirmBtn`),
+      content: itemBag.confirmBtn || t('system.globalSettings.confirm.confirmBtn') as string,
       theme: action === 'add' ? 'danger' : 'primary',
     },
   })

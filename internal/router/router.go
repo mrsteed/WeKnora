@@ -196,6 +196,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 		// System info routes (accessible by all authenticated users)
 		RegisterSystemRoutes(v1, params.SystemHandler)
+		RegisterSystemAdminRoutes(v1, params.Config, params.SystemHandler, params.AuditLogHandler)
 
 		// Org-tree management routes (accessible by super admin and org admin, permission enforced in handler)
 		RegisterOrgTreeRoutes(v1, params.OrgTreeHandler)
@@ -616,6 +617,30 @@ func RegisterSystemRoutes(r *gin.RouterGroup, handler *handler.SystemHandler) {
 		systemRoutes.POST("/docreader/reconnect", handler.ReconnectDocReader)
 		systemRoutes.GET("/storage-engine-status", handler.GetStorageEngineStatus)
 		systemRoutes.POST("/storage-engine-check", handler.CheckStorageEngine)
+	}
+}
+
+// RegisterSystemAdminRoutes registers system-admin-only routes for global
+// settings, system-admin management, and platform audit logs.
+func RegisterSystemAdminRoutes(
+	r *gin.RouterGroup,
+	cfg *config.Config,
+	systemHandler *handler.SystemHandler,
+	auditHandler *handler.AuditLogHandler,
+) {
+	admin := r.Group("/system/admin", middleware.RequireSystemAdmin(cfg))
+	{
+		admin.GET("/list", systemHandler.ListSystemAdmins)
+		admin.POST("/promote", systemHandler.PromoteUserToSystemAdmin)
+		admin.POST("/revoke", systemHandler.RevokeSystemAdmin)
+		admin.GET("/settings", systemHandler.ListSystemSettings)
+		admin.GET("/settings/:key", systemHandler.GetSystemSetting)
+		admin.PUT("/settings/:key", systemHandler.UpdateSystemSetting)
+		admin.DELETE("/settings/:key", systemHandler.ResetSystemSetting)
+		admin.POST("/tenants/apply-default-storage-quota", systemHandler.ApplyDefaultStorageQuotaToAllTenants)
+		if auditHandler != nil {
+			admin.GET("/audit-log", auditHandler.ListSystemAuditLog)
+		}
 	}
 }
 

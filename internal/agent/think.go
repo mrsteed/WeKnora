@@ -604,11 +604,11 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	}
 
 	resp := &types.ChatResponse{
-		Content:          fullContent,
-		ReasoningContent: llmResult.ReasoningContent,
-		ToolCalls:        llmResult.ToolCalls,
-		FinishReason:     finishReason,
-		AnswerStreamed:   answerStreamed || llmResult.AnswerStreamed,
+		Content:             fullContent,
+		ReasoningContent:    llmResult.ReasoningContent,
+		ToolCalls:           llmResult.ToolCalls,
+		FinishReason:        finishReason,
+		AnswerStreamed:      answerStreamed || llmResult.AnswerStreamed,
 		FinalAnswerStreamed: finalAnswerStreamed || llmResult.FinalAnswerStreamed,
 	}
 	if answerStreamed || llmResult.AnswerStreamed {

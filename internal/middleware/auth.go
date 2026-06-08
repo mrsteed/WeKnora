@@ -172,14 +172,15 @@ func Auth(
 				c.Set(types.UserContextKey.String(), user)
 				c.Set(types.UserIDContextKey.String(), user.ID)
 				c.Set(types.TenantRoleContextKey.String(), role)
-				c.Set(types.SystemAdminContextKey.String(), user.IsSystemAdmin)
+				effectiveSystemAdmin := user.IsSystemAdmin || user.IsSuperAdmin
+				c.Set(types.SystemAdminContextKey.String(), effectiveSystemAdmin)
 				ctx := c.Request.Context()
 				ctx = context.WithValue(ctx, types.TenantIDContextKey, targetTenantID)
 				ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenant)
 				ctx = context.WithValue(ctx, types.UserContextKey, user)
 				ctx = context.WithValue(ctx, types.UserIDContextKey, user.ID)
 				ctx = context.WithValue(ctx, types.TenantRoleContextKey, role)
-				ctx = context.WithValue(ctx, types.SystemAdminContextKey, user.IsSystemAdmin)
+				ctx = context.WithValue(ctx, types.SystemAdminContextKey, effectiveSystemAdmin)
 				c.Request = c.Request.WithContext(ctx)
 				c.Next()
 				return
