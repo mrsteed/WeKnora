@@ -117,6 +117,8 @@ type Model struct {
 	TenantID uint64 `yaml:"tenant_id"   json:"tenant_id"`
 	// Name of the model
 	Name string `yaml:"name"        json:"name"`
+	// DisplayName is the user-facing label shown in model pickers.
+	DisplayName string `yaml:"display_name" json:"display_name"`
 	// Type of the model
 	Type ModelType `yaml:"type"        json:"type"`
 	// Source of the model

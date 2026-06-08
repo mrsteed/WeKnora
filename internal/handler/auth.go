@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -22,10 +23,16 @@ import (
 // Provides functionality for user registration, login, logout, and token management
 // through the REST API endpoints
 type AuthHandler struct {
-	userService   interfaces.UserService
-	tenantService interfaces.TenantService
-	memberService interfaces.TenantMemberService
-	configInfo    *config.Config
+	userService      interfaces.UserService
+	tenantService    interfaces.TenantService
+	memberService    interfaces.TenantMemberService
+	configInfo       *config.Config
+	systemSettingSvc interfaces.SystemSettingService
+	// invitationSvc is required for the share-link registration path
+	// (POST /auth/register-by-invite). When nil — e.g. legacy test
+	// fixtures — the share-link endpoints respond 503 rather than
+	// blocking the rest of the auth surface.
+	invitationSvc interfaces.TenantInvitationService
 }
 
 // NewAuthHandler creates a new auth handler instance with the provided services
@@ -35,12 +42,28 @@ type AuthHandler struct {
 //
 // Returns a pointer to the newly created AuthHandler
 func NewAuthHandler(configInfo *config.Config,
-	userService interfaces.UserService, tenantService interfaces.TenantService, memberService interfaces.TenantMemberService, _ ...interface{}) *AuthHandler {
+	userService interfaces.UserService, tenantService interfaces.TenantService,
+	memberService interfaces.TenantMemberService,
+	systemSettingSvc interfaces.SystemSettingService,
+	invitationSvc interfaces.TenantInvitationService,
+) *AuthHandler {
+	// Boot-time guard: a nil-or-empty Auth section silently disables the
+	// invite_only gate (see Register below). Emit a loud one-shot log
+	// pointing at the misconfiguration so operators notice on startup
+	// instead of discovering it the day someone hits /auth/register.
+	if configInfo == nil || configInfo.Auth == nil {
+		logger.Errorf(context.Background(),
+			"[auth] AuthHandler constructed with nil/incomplete config (cfg=%v); "+
+				"registration_mode enforcement is disabled. This is almost certainly a wiring bug.",
+			configInfo)
+	}
 	return &AuthHandler{
-		configInfo:    configInfo,
-		userService:   userService,
-		tenantService: tenantService,
-		memberService: memberService,
+		configInfo:       configInfo,
+		userService:      userService,
+		tenantService:    tenantService,
+		memberService:    memberService,
+		systemSettingSvc: systemSettingSvc,
+		invitationSvc:    invitationSvc,
 	}
 }
 

@@ -155,6 +155,8 @@ type LoginResponse struct {
 	Message      string  `json:"message,omitempty"`
 	User         *User   `json:"user,omitempty"`
 	Tenant       *Tenant `json:"tenant,omitempty"`
+	ActiveTenant *Tenant `json:"active_tenant,omitempty"`
+	Memberships  []Membership `json:"memberships,omitempty"`
 	Token        string  `json:"token,omitempty"`
 	RefreshToken string  `json:"refresh_token,omitempty"`
 }

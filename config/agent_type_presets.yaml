@@ -54,7 +54,6 @@ agent_type_presets:
         - "grep_chunks"
         - "list_knowledge_chunks"
         - "get_document_info"
-        - "final_answer"
       retain_retrieval_history: false
       faq_priority_enabled: true
       kb_selection_mode: "all"
@@ -86,7 +85,6 @@ agent_type_presets:
         - "wiki_read_page"
         - "wiki_read_source_doc"
         - "wiki_flag_issue"
-        - "final_answer"
       retain_retrieval_history: false
       kb_selection_mode: "all"
     # kb_filter derived from allowed_tools: any_of = [wiki]
@@ -120,7 +118,6 @@ agent_type_presets:
         - "list_knowledge_chunks"
         - "get_document_info"
         - "wiki_flag_issue"
-        - "final_answer"
       retain_retrieval_history: false
       faq_priority_enabled: true
       kb_selection_mode: "all"
@@ -162,7 +159,6 @@ agent_type_presets:
         - "todo_write"
         - "data_schema"
         - "data_analysis"
-        - "final_answer"
       # retain_retrieval_history is irrelevant here — data-analysis has no
       # retrieval tools in allowed_tools. Leave defaults.
       web_search_enabled: false

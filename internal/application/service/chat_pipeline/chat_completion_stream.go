@@ -6,72 +6,10 @@ import (
 	"fmt"
 
 	"github.com/Tencent/WeKnora/internal/event"
-	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/google/uuid"
 )
-
-func answerCompletionEventData(response types.StreamResponse, content string, done bool) event.AgentFinalAnswerData {
-	completionStatus := "completed"
-	finishReason := response.FinishReason
-	allowIndexing := true
-	allowComplete := true
-	failureReason := ""
-
-	if finishReason == "" {
-		finishReason = "stop"
-	}
-
-	switch finishReason {
-	case "length":
-		completionStatus = "partial"
-		allowIndexing = false
-		allowComplete = false
-		failureReason = "length"
-	case "content_filter":
-		completionStatus = "failed"
-		allowIndexing = false
-		allowComplete = false
-		failureReason = "content_filter"
-	case "cancelled":
-		completionStatus = "cancelled"
-		allowIndexing = false
-		allowComplete = false
-		failureReason = "cancelled"
-	}
-
-	return event.AgentFinalAnswerData{
-		Content:          content,
-		Done:             done,
-		CompletionStatus: completionStatus,
-		FinishReason:     finishReason,
-		IsPartial:        completionStatus == "partial",
-		AllowIndexing:    allowIndexing,
-		AllowComplete:    allowComplete,
-		FailureReason:    failureReason,
-	}
-}
-
-func emitFinalAnswerEvent(
-	ctx context.Context,
-	eventBus types.EventBusInterface,
-	answerID string,
-	chatManage *types.ChatManage,
-	response types.StreamResponse,
-	content string,
-	done bool,
-) {
-	if eventBus == nil || chatManage == nil {
-		return
-	}
-	_ = eventBus.Emit(ctx, types.Event{
-		ID:        answerID,
-		Type:      types.EventType(event.EventAgentFinalAnswer),
-		SessionID: chatManage.SessionID,
-		Data:      answerCompletionEventData(response, content, done),
-	})
-}
 
 // PluginChatCompletionStream implements streaming chat completion functionality
 // as a plugin that can be registered to EventManager
@@ -162,44 +100,34 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 	})
 
 	// Start goroutine to consume channel and emit events directly.
-	// For non-agent mode, thinking content is embedded in answer stream with <think> tags.
+	// reasoning_content is routed to EventAgentThought (SSE response_type=thinking)
+	// and plain answer text to EventAgentFinalAnswer, matching the Agent pipeline.
 	// The goroutine monitors ctx.Done() to avoid leaking when the context is cancelled
 	// and the upstream channel is not closed promptly.
 	go func() {
+		thinkingID := fmt.Sprintf("%s-thinking", uuid.New().String()[:8])
 		answerID := fmt.Sprintf("%s-answer", uuid.New().String()[:8])
-		var finalContent string
-		var thinkingStarted bool
-		var thinkingEnded bool
-		var completionEmitted bool
-		requestID, _ := types.RequestIDFromContext(ctx)
+		thinkingOpen := false
 
-		emitCompletionIfMissing := func(finishReason string, reasonSource string) {
-			if completionEmitted {
+		closeThinking := func() {
+			if !thinkingOpen {
 				return
 			}
-			if finishReason == "" {
-				finishReason = "stop"
-			}
-			if thinkingStarted && !thinkingEnded {
-				thinkingEnded = true
-				finalContent += "</think>"
-				emitFinalAnswerEvent(ctx, eventBus, answerID, chatManage, types.StreamResponse{FinishReason: finishReason}, "</think>", false)
-			}
-			if finalContent != "" {
-				chatManage.ChatResponse = &types.ChatResponse{Content: finalContent}
-			}
-			logger.Infof(ctx,
-				"Streaming completion emitted, session_id: %s, request_id: %s, answer_id: %s, finish_reason: %s, reason_source: %s, final_content_len: %d, thinking_started: %t, thinking_ended: %t",
-				chatManage.SessionID, requestID, answerID, finishReason, reasonSource, len([]rune(finalContent)), thinkingStarted, thinkingEnded,
-			)
-			completionEmitted = true
-			emitFinalAnswerEvent(ctx, eventBus, answerID, chatManage, types.StreamResponse{FinishReason: finishReason}, "", true)
+			eventBus.Emit(ctx, types.Event{
+				ID:        thinkingID,
+				Type:      types.EventType(event.EventAgentThought),
+				SessionID: chatManage.SessionID,
+				Data: event.AgentThoughtData{
+					Done: true,
+				},
+			})
+			thinkingOpen = false
 		}
 
 		for {
 			select {
 			case <-ctx.Done():
-				emitCompletionIfMissing("cancelled", "context_cancelled")
+				closeThinking()
 				pipelineInfo(ctx, "Stream", "context_cancelled", map[string]interface{}{
 					"session_id": chatManage.SessionID,
 				})
@@ -207,7 +135,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 
 			case response, ok := <-responseChan:
 				if !ok {
-					emitCompletionIfMissing("stop", "channel_close_default_stop")
+					closeThinking()
 					pipelineInfo(ctx, "Stream", "channel_close", map[string]interface{}{
 						"session_id": chatManage.SessionID,
 					})
@@ -233,40 +161,35 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 				}
 
 				if response.ResponseType == types.ResponseTypeThinking {
-					content := response.Content
-					if !thinkingStarted {
-						content = "<think>" + content
-						thinkingStarted = true
+					if response.Content != "" {
+						thinkingOpen = true
+						eventBus.Emit(ctx, types.Event{
+							ID:        thinkingID,
+							Type:      types.EventType(event.EventAgentThought),
+							SessionID: chatManage.SessionID,
+							Data: event.AgentThoughtData{
+								Content: response.Content,
+								Done:    false,
+							},
+						})
 					}
-					if response.Done && !thinkingEnded {
-						content = content + "</think>"
-						thinkingEnded = true
+					if response.Done {
+						closeThinking()
 					}
-					finalContent += content
-					emitFinalAnswerEvent(ctx, eventBus, answerID, chatManage, response, content, false)
 					continue
 				}
 
 				if response.ResponseType == types.ResponseTypeAnswer {
-					if thinkingStarted && !thinkingEnded {
-						thinkingEnded = true
-						finalContent += "</think>"
-						emitFinalAnswerEvent(ctx, eventBus, answerID, chatManage, response, "</think>", false)
-					}
-					finalContent += response.Content
-					if response.Done {
-						reasonSource := "response_done_default_stop"
-						if response.FinishReason != "" {
-							reasonSource = "response_done_model_finish_reason"
-						}
-						logger.Infof(ctx,
-							"Streaming answer reached done state, session_id: %s, request_id: %s, answer_id: %s, finish_reason: %s, reason_source: %s, chunk_len: %d, accumulated_content_len: %d",
-							chatManage.SessionID, requestID, answerID, response.FinishReason, reasonSource, len([]rune(response.Content)), len([]rune(finalContent)),
-						)
-						completionEmitted = true
-						chatManage.ChatResponse = &types.ChatResponse{Content: finalContent}
-					}
-					emitFinalAnswerEvent(ctx, eventBus, answerID, chatManage, response, response.Content, response.Done)
+					closeThinking()
+					eventBus.Emit(ctx, types.Event{
+						ID:        answerID,
+						Type:      types.EventType(event.EventAgentFinalAnswer),
+						SessionID: chatManage.SessionID,
+						Data: event.AgentFinalAnswerData{
+							Content: response.Content,
+							Done:    response.Done,
+						},
+					})
 				}
 			}
 		}

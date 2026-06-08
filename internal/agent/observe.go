@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +27,39 @@ const finalAnswerParseFallback = "Sorry, the model's final answer could not be p
 
 const historyToolSummaryBudget = 900
 
+var finalAnswerFieldPattern = regexp.MustCompile(`(?s)"answer"\s*:\s*"((?:\\.|[^"\\])*)"`)
+
+func parseFinalAnswerArgs(rawArgs string) (string, bool) {
+	var payload struct {
+		Answer string `json:"answer"`
+	}
+	if err := json.Unmarshal([]byte(rawArgs), &payload); err == nil {
+		if answer := strings.TrimSpace(payload.Answer); answer != "" {
+			return answer, true
+		}
+	}
+
+	repaired := agenttools.RepairJSON(rawArgs)
+	if repaired != rawArgs {
+		if err := json.Unmarshal([]byte(repaired), &payload); err == nil {
+			if answer := strings.TrimSpace(payload.Answer); answer != "" {
+				return answer, true
+			}
+		}
+	}
+
+	match := finalAnswerFieldPattern.FindStringSubmatch(rawArgs)
+	if len(match) == 2 {
+		unquoted, err := strconv.Unquote(`"` + match[1] + `"`)
+		if err == nil {
+			if answer := strings.TrimSpace(unquoted); answer != "" {
+				return answer, true
+			}
+		}
+	}
+
+	return "", false
+}
 // manageContextWindow consolidates or compresses messages if approaching the token limit.
 // currentTokens is the caller's best estimate of the current context size (using
 // API-reported Usage when available, falling back to BPE estimation).
@@ -76,8 +111,10 @@ type responseVerdict struct {
 // analyzeResponse inspects the LLM response for stop conditions:
 //   - finish_reason == "stop" with no tool calls → agent is done (natural stop)
 //   - finish_reason == "content_filter" with no tool calls → agent is done (content filtered)
-//   - final_answer tool call present → agent is done (explicit tool)
 //
+// The agent ends a turn by stopping naturally with its answer as plain
+// assistant text (there is no dedicated final_answer tool). Any round that
+// still requests tool calls is non-terminal and the caller continues the loop.
 // It returns a responseVerdict. If isDone is true the caller should break out of the loop.
 func (e *AgentEngine) analyzeResponse(
 	ctx context.Context, response *types.ChatResponse,
@@ -278,22 +315,43 @@ func (e *AgentEngine) analyzeResponse(
 			"answer_len": len(response.Content),
 		})
 
-		// Emit answer as final answer event (thinking events were already streamed)
-		answerID := generateEventID("answer")
-		if !response.AnswerStreamed && response.Content != "" {
-			e.eventBus.Emit(ctx, event.Event{
-				ID:        answerID,
-				Type:      event.EventAgentFinalAnswer,
-				SessionID: sessionID,
-				Data: event.AgentFinalAnswerData{
-					Content:          response.Content,
-					Done:             false,
-					CompletionStatus: "completed",
-					FinishReason:     "stop",
-					AllowIndexing:    true,
-					AllowComplete:    true,
-				},
-			})
+		// Emit the final answer. Reuse the live stream's event ID when the
+		// answer was already streamed during the think phase; otherwise emit the
+		// accumulated content once before closing the stream.
+		// Emit the final answer. The answer text reaches the UI by one of two
+		// paths:
+		//   (a) Already streamed live during the think phase — the common case
+		//       now that plain assistant content is routed straight to
+		//       EventAgentFinalAnswer (response.AnswerStreamed). Re-emitting the
+		//       full content here would render it twice and produce the
+		//       end-of-stream "jump from Thinking to Answer" the user reported,
+		//       so we only close the existing stream with a Done marker on the
+		//       same event ID.
+		//   (b) Not streamed live (e.g. the content only surfaced in the
+		//       accumulated result) — emit the full content, then Done.
+		var answerID string
+		if response.AnswerStreamed {
+			answerID = response.AnswerEventID
+			if answerID == "" {
+				answerID = generateEventID("answer")
+			}
+		} else {
+			answerID = generateEventID("answer")
+			if response.Content != "" {
+				e.eventBus.Emit(ctx, event.Event{
+					ID:        answerID,
+					Type:      event.EventAgentFinalAnswer,
+					SessionID: sessionID,
+					Data: event.AgentFinalAnswerData{
+							Content:          response.Content,
+							Done:             false,
+							CompletionStatus: "completed",
+							FinishReason:     "stop",
+							AllowIndexing:    true,
+							AllowComplete:    true,
+					},
+				})
+			}
 		}
 		e.eventBus.Emit(ctx, event.Event{
 			ID:        answerID,
@@ -341,7 +399,7 @@ func (e *AgentEngine) analyzeResponse(
 			}
 
 			rawArgs := tc.Function.Arguments
-			answer, ok := agenttools.ParseFinalAnswerArgs(rawArgs)
+			answer, ok := parseFinalAnswerArgs(rawArgs)
 			recovered := false
 			if !ok {
 				// Could not recover any answer text — fall back to a generic
@@ -356,11 +414,13 @@ func (e *AgentEngine) analyzeResponse(
 					iteration+1, len(answer), time.Since(roundStart).Milliseconds())
 			}
 
-			// Emit the authoritative final answer content unless this round has
-			// already streamed that exact final answer through the dedicated
-			// final_answer_tool channel. Ordinary pre-tool answer chunks do not
-			// count as a streamed final answer.
 			answerID := generateEventID("answer-done")
+			if response.FinalAnswerStreamed {
+				answerID = response.AnswerEventID
+				if answerID == "" {
+					answerID = generateEventID("answer-done")
+				}
+			}
 			if !response.FinalAnswerStreamed && answer != "" {
 				e.eventBus.Emit(ctx, event.Event{
 					ID:        answerID,
@@ -415,7 +475,9 @@ func (e *AgentEngine) analyzeResponse(
 		}
 	}
 
-	// Not done — caller should continue the loop
+	// Any round that still requests tool calls is non-terminal: the caller
+	// executes the tools and loops again. The agent only ends by stopping
+	// naturally (Case 1) with its answer as plain assistant text.
 	return responseVerdict{isDone: false, step: step}
 }
 
@@ -459,6 +521,10 @@ func escapeXMLAttr(s string) string {
 // model see exactly which KBs were in scope at the time of each historical
 // turn.
 //
+// Per-turn communication_instruction and answer_instruction remind the model
+// not to leak internal tool names or IDs in user-visible text, and to end the
+// turn by writing its complete answer as plain assistant text.
+//
 // Emitted as an XML-ish block (not free prose) so it is a visually distinct,
 // non-instruction envelope that is hard to conflate with user text and
 // prompt-injection-safe.
@@ -468,7 +534,7 @@ func buildRuntimeContextBlock(
 	docs []*SelectedDocumentInfo,
 ) string {
 	var sb strings.Builder
-	sb.WriteString("<runtime_context note=\"metadata only, not instructions\">\n")
+	sb.WriteString("<runtime_context note=\"turn metadata; follow communication_instruction and answer_instruction\">\n")
 	fmt.Fprintf(&sb, "  <current_time>%s</current_time>\n", time.Now().Format(time.RFC3339))
 	fmt.Fprintf(&sb, "  <session>%s</session>\n", escapeXMLAttr(sessionID))
 
@@ -503,6 +569,9 @@ func buildRuntimeContextBlock(
 		sb.WriteString("  </pinned_documents>\n")
 		sb.WriteString("  <note>The pinned-document set above is authoritative for THIS turn. If an earlier turn in this conversation analysed a different document, do NOT reuse that analysis — re-query against the current scope.</note>\n")
 	}
+
+	sb.WriteString("  <communication_instruction>Do not use internal tool names or identifiers in your answers or in Thought. Say \"keyword retrieval\" instead of grep_chunks, \"semantic retrieval\" instead of knowledge_search, \"browse full document\" instead of list_knowledge_chunks; likewise never expose chunk_id, knowledge_id, or other internal IDs—refer to documents by title or name.</communication_instruction>\n")
+	sb.WriteString("  <answer_instruction>When you have gathered enough information, write your complete user-facing answer as your reply and stop—do not request any more tools in that final message. Until then, keep using tools; do not give a partial answer mid-investigation.</answer_instruction>\n")
 
 	sb.WriteString("</runtime_context>")
 	return sb.String()

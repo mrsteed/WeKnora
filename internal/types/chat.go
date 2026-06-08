@@ -55,6 +55,10 @@ type ChatResponse struct {
 	FinishReason     string        `json:"finish_reason,omitempty"`
 	Usage            TokenUsage    `json:"usage"`
 	AnswerStreamed   bool          `json:"-"`
+	// AnswerEventID identifies the live final-answer event stream so the
+	// terminal phase can close the existing stream instead of emitting a
+	// duplicate answer event.
+	AnswerEventID string `json:"-"`
 	// FinalAnswerStreamed 标记最终答案是否已经以流式事件发给前端，避免终态阶段重复补发一份完整答案。
 	FinalAnswerStreamed bool `json:"-"`
 }

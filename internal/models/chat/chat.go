@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"regexp"
 	"strings"
 
@@ -179,7 +178,9 @@ func NewChat(config *ChatConfig, ollamaService *ollama.OllamaService) (Chat, err
 	return wrapChatLangfuse(c, err)
 }
 
-// NewRemoteChat 根据 provider 创建远程聊天实例
+// NewRemoteChat 根据 provider 创建远程聊天实例。
+// Anthropic 走独立的 Messages 协议实现；其余 OpenAI 兼容供应商统一由
+// RemoteAPIChat 处理，provider 特定行为在构造时通过 providerAdapter 解析。
 func NewRemoteChat(config *ChatConfig) (Chat, error) {
 	providerName := provider.ProviderName(config.Provider)
 	if providerName == "" {
@@ -188,26 +189,5 @@ func NewRemoteChat(config *ChatConfig) (Chat, error) {
 	if providerName == provider.ProviderAnthropic {
 		return NewAnthropicChat(config)
 	}
-
-	remoteChat, err := NewRemoteAPIChat(config)
-	if err != nil {
-		return nil, err
-	}
-
-	// Look up provider-specific behavior from spec registry
-	if spec := findProviderSpec(providerName, config.ModelName); spec != nil {
-		if spec.RequestCustomizer != nil {
-			remoteChat.SetRequestCustomizer(spec.RequestCustomizer)
-		}
-		if spec.EndpointCustomizer != nil {
-			remoteChat.SetEndpointCustomizer(spec.EndpointCustomizer)
-		}
-		if spec.HeaderCustomizer != nil {
-			remoteChat.SetHeaderCustomizer(func(req *http.Request, body []byte) error {
-				return spec.HeaderCustomizer(remoteChat, req, body)
-			})
-		}
-	}
-
-	return remoteChat, nil
+	return NewRemoteAPIChat(config)
 }

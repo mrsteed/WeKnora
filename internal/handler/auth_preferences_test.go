@@ -59,7 +59,7 @@ func TestUpdateCurrentUserPreferences_MergesPatch(t *testing.T) {
 			savedUser = &copied
 			return nil
 		},
-	}, nil, nil)
+	}, nil, nil, nil, nil)
 
 	body, err := json.Marshal(types.UserPreferences{EnableMemory: &newMemory})
 	if err != nil {

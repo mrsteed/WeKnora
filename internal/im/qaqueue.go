@@ -43,10 +43,10 @@ type qaRequest struct {
 	adapter   Adapter
 	channel   *IMChannel
 	channelID string
+	fileSvc   interfaces.FileService
 
-	// fileSvc resolves storage URLs to HTTP URLs for the tenant's storage backend.
-	// May be nil if the tenant has no storage config.
-	fileSvc interfaces.FileService
+	// tenant is used to resolve provider:// URLs in outbound replies (scheme-aware).
+	tenant *types.Tenant
 
 	// userKey is "channelID:userID:chatID", used for per-user limits and /stop.
 	userKey    string

@@ -52,6 +52,8 @@ type RouterParams struct {
 	AuditLogHandler          *handler.AuditLogHandler
 	TenantService            interfaces.TenantService
 	TenantMemberService      interfaces.TenantMemberService
+	KBShareService           interfaces.KBShareService
+	AgentShareService        interfaces.AgentShareService
 	ChunkHandler             *handler.ChunkHandler
 	SessionHandler           *session.Handler
 	MessageHandler           *handler.MessageHandler
@@ -139,21 +141,37 @@ func NewRouter(params RouterParams) *gin.Engine {
 	// Presigned file access: no auth required, signature-verified.
 	servePresignedFiles(r, params.TenantService)
 
+	// Diagnostic preview of presigned URLs (Admin only, behind auth middleware).
+	servePresignedPreview(r, params.Config)
+
 	// 添加OpenTelemetry追踪中间件
 	// r.Use(middleware.TracingMiddleware())
 
 	// Langfuse observability — only active when LANGFUSE_* env vars are set.
 	// The middleware is registered unconditionally; when disabled it's a no-op.
 	r.Use(langfuse.GinMiddleware())
+	g := newRBACGuards(
+		params.Config,
+		params.KBHandler,
+		params.CustomAgentHandler,
+		params.KnowledgeHandler,
+		params.ChunkHandler,
+		params.WikiPageHandler,
+		params.KBService,
+		params.KnowledgeService,
+		params.ChunkService,
+		params.KBShareService,
+		params.AgentShareService,
+	)
 
 	// 需要认证的API路由
 	v1 := r.Group("/api/v1")
 	{
 		RegisterAuthRoutes(v1, params.AuthHandler)
-		RegisterTenantRoutes(v1, params.Config, params.TenantHandler, params.TenantMemberHandler, params.TenantInvitationHandler, params.AuditLogHandler)
+		RegisterTenantRoutes(v1, g, params.Config, params.TenantHandler, params.TenantMemberHandler, params.TenantInvitationHandler, params.AuditLogHandler)
 		RegisterKnowledgeBaseRoutes(v1, params.KBHandler)
 		RegisterKnowledgeTagRoutes(v1, params.TagHandler)
-		RegisterKnowledgeRoutes(v1, params.KnowledgeHandler)
+		RegisterKnowledgeRoutes(v1, g, params.KnowledgeHandler)
 		RegisterFAQRoutes(v1, params.FAQHandler)
 		RegisterChunkRoutes(v1, params.ChunkHandler)
 		RegisterSessionRoutes(v1, params.SessionHandler)
@@ -227,7 +245,7 @@ func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler) {
 }
 
 // RegisterKnowledgeRoutes 注册知识相关的路由
-func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandler) {
+func RegisterKnowledgeRoutes(r *gin.RouterGroup, g *rbacGuards, handler *handler.KnowledgeHandler) {
 	// 知识库下的知识路由组
 	kb := r.Group("/knowledge-bases/:id/knowledge")
 	{
@@ -246,34 +264,31 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 	// 知识路由组
 	k := r.Group("/knowledge")
 	{
-		// 批量获取知识
-		k.GET("/batch", handler.GetKnowledgeBatch)
-		// 获取知识详情
-		k.GET("/:id", handler.GetKnowledge)
-		// 删除知识
-		k.DELETE("/:id", handler.DeleteKnowledge)
-		// 更新知识
-		k.PUT("/:id", handler.UpdateKnowledge)
-		// 更新手工 Markdown 知识
-		k.PUT("/manual/:id", handler.UpdateManualKnowledge)
-		// 重新解析知识
-		k.POST("/:id/reparse", handler.ReparseKnowledge)
-		// 获取知识文件
-		k.GET("/:id/download", handler.DownloadKnowledgeFile)
-		// 预览知识文件（内联显示，返回正确 Content-Type）
-		k.GET("/:id/preview", handler.PreviewKnowledgeFile)
-		// 更新图像分块信息
-		k.PUT("/image/:id/:chunk_id", handler.UpdateImageInfo)
-		// 批量更新知识标签
-		k.PUT("/tags", handler.UpdateKnowledgeTagBatch)
-		// 搜索知识
-		k.GET("/search", handler.SearchKnowledge)
-		// 批量删除知识（同一知识库内）
-		k.POST("/batch-delete", handler.BatchDeleteKnowledge)
-		// 移动知识到其他知识库
-		k.POST("/move", handler.MoveKnowledge)
-		// 获取知识移动进度
-		k.GET("/move/progress/:task_id", handler.GetKnowledgeMoveProgress)
+		// Cross-knowledge endpoints (no :id) can't be gated on a single
+		// KB — they accept arbitrary knowledge IDs and the handler must
+		// fan out the access check itself. So /batch and /search keep
+		// the role-only floor; /move and /batch-delete stay Contributor.
+		k.GET("/batch", g.Viewer(), handler.GetKnowledgeBatch)
+		k.GET("/:id", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledge)
+		k.GET("/:id/stages", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledgeSpans)
+		k.GET("/:id/spans", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledgeSpans)
+		k.DELETE("/:id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.DeleteKnowledge)
+		k.PUT("/:id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateKnowledge)
+		k.PUT("/manual/:id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateManualKnowledge)
+		k.POST("/:id/reparse", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.ReparseKnowledge)
+		k.POST("/:id/cancel-parse", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.CancelKnowledgeParse)
+		k.GET("/:id/download", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.DownloadKnowledgeFile)
+		k.GET("/:id/preview", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.PreviewKnowledgeFile)
+		k.PUT("/image/:id/:chunk_id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateImageInfo)
+		// Batch / cross-KB ops stay Contributor-gated: there is no
+		// single owning KB to walk back to. A future PR could add a
+		// "must own every targeted KB" guard if the requirement
+		// surfaces.
+		k.PUT("/tags", g.Contributor(), handler.UpdateKnowledgeTagBatch)
+		k.GET("/search", g.Viewer(), handler.SearchKnowledge)
+		k.POST("/batch-delete", g.Contributor(), handler.BatchDeleteKnowledge)
+		k.POST("/move", g.Contributor(), handler.MoveKnowledge)
+		k.GET("/move/progress/:task_id", g.Viewer(), handler.GetKnowledgeMoveProgress)
 	}
 }
 
@@ -433,6 +448,7 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
 // invitation and audit-log subresources.
 func RegisterTenantRoutes(
 	r *gin.RouterGroup,
+	g *rbacGuards,
 	cfg *config.Config,
 	handler *handler.TenantHandler,
 	memberHandler *handler.TenantMemberHandler,
@@ -470,9 +486,14 @@ func RegisterTenantRoutes(
 			}
 
 			if invitationHandler != nil {
-				tenantByID.GET("/invitations", middleware.RequireRole(types.TenantRoleViewer, cfg), invitationHandler.ListTenantInvitations)
-				tenantByID.POST("/invitations", middleware.RequireRole(types.TenantRoleOwner, cfg), invitationHandler.CreateInvitation)
-				tenantByID.DELETE("/invitations/:inv_id", middleware.RequireRole(types.TenantRoleOwner, cfg), invitationHandler.RevokeInvitation)
+				tenantByID.GET("/invitations", g.Viewer(), invitationHandler.ListTenantInvitations)
+				tenantByID.POST("/invitations", g.Owner(), invitationHandler.CreateInvitation)
+				tenantByID.DELETE("/invitations/:inv_id", g.Owner(), invitationHandler.RevokeInvitation)
+				// Share-link create lives under /invite-links so the URL
+				// reads as "create a link" rather than another flavour
+				// of /invitations; the underlying row still lives in the
+				// tenant_invitations table and shows up in the GET above.
+				tenantByID.POST("/invite-links", g.Owner(), invitationHandler.CreateInviteLink)
 			}
 
 			if auditLogHandler != nil {
@@ -537,6 +558,14 @@ func RegisterEvaluationRoutes(r *gin.RouterGroup, handler *handler.EvaluationHan
 // RegisterAuthRoutes registers authentication routes
 func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler) {
 	r.POST("/auth/register", handler.Register)
+	// Share-link surfaces are unauthenticated and accept a plaintext
+	// token from the caller; rate-limit by IP to bound brute-force /
+	// enumeration / abuse traffic. Limiter is shared across both
+	// endpoints (see middleware/auth_public_ratelimit.go) so total
+	// budget per IP is intuitive.
+	publicAuthRL := middleware.PublicAuthRateLimit()
+	r.POST("/auth/register-by-invite", publicAuthRL, handler.RegisterByInvite)
+	r.POST("/auth/invitations/lookup", publicAuthRL, handler.LookupInvitationByToken)
 	r.POST("/auth/login", handler.Login)
 	r.POST("/auth/auto-setup", handler.AutoSetup)
 	r.GET("/auth/oidc/config", handler.GetOIDCConfig)
@@ -954,6 +983,12 @@ func serveFiles(r getRouteRegistrar, globalFileService interfaces.FileService) {
 			return
 		}
 
+		if err := secutils.ValidateStoragePathTenant(filePath, tenant.ID); err != nil {
+			logger.Warnf(context.Background(), "[Router] /files denied cross-tenant or invalid path: tenant_id=%d file_path=%q err=%v", tenant.ID, filePath, err)
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: file path not accessible"})
+			return
+		}
+
 		var (
 			fileSvc          interfaces.FileService
 			resolvedProvider string
@@ -1022,8 +1057,17 @@ func serveFiles(r getRouteRegistrar, globalFileService interfaces.FileService) {
 // servePresignedFiles serves files via HMAC-signed URLs without requiring authentication.
 // This is used by IM channels to serve images that are embedded in bot replies.
 //
-// Route:
-//   - /api/v1/files/presigned?file_path=<provider://...>&tenant_id=<id>&expires=<unix>&sig=<hmac>
+// Routes:
+//   - GET  /api/v1/files/presigned?file_path=<provider://...>&tenant_id=<id>&expires=<unix>&sig=<hmac>
+//   - HEAD /api/v1/files/presigned?...  (IM platforms issue HEAD first to validate
+//     Content-Type / Content-Length before rendering image previews; HEAD must
+//     succeed or the inline image renders as broken)
+//
+// Failure paths log client IP + User-Agent + (truncated) file_path so operators
+// can correlate an IM platform's fetch against the upstream signing log line.
+// Without this it is otherwise impossible to tell whether a "broken image" is
+// caused by an expired signature, a stale URL cached by the platform, the
+// platform's IP being blocked, or the URL simply never reaching us.
 func servePresignedFiles(r *gin.Engine, tenantService interfaces.TenantService) {
 	baseDir := os.Getenv("LOCAL_STORAGE_BASE_DIR")
 	if baseDir == "" {
@@ -1031,56 +1075,71 @@ func servePresignedFiles(r *gin.Engine, tenantService interfaces.TenantService) 
 	}
 	absDir, _ := filepath.Abs(baseDir)
 
-	r.GET("/api/v1/files/presigned", func(c *gin.Context) {
+	handler := presignedFileHandler(tenantService, absDir)
+	r.GET("/api/v1/files/presigned", handler)
+	r.HEAD("/api/v1/files/presigned", handler)
+}
+
+// presignedFileHandler returns the shared Gin handler used by both GET and HEAD.
+// For HEAD requests it returns the same status + headers but does not stream
+// the body — this is enough for IM platforms to validate the URL while saving
+// us a full read of the backing object.
+func presignedFileHandler(tenantService interfaces.TenantService, absDir string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		clientIP := c.ClientIP()
+		userAgent := c.Request.UserAgent()
+
 		filePath := strings.TrimSpace(c.Query("file_path"))
 		tenantIDStr := strings.TrimSpace(c.Query("tenant_id"))
 		expiresStr := strings.TrimSpace(c.Query("expires"))
 		sig := strings.TrimSpace(c.Query("sig"))
 
 		if filePath == "" || tenantIDStr == "" || expiresStr == "" || sig == "" {
+			logger.Warnf(ctx, "[Router] /files/presigned missing params: client_ip=%s ua=%q file_path=%q tenant_id=%q expires=%q has_sig=%v",
+				clientIP, userAgent, filePath, tenantIDStr, expiresStr, sig != "")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "missing required parameters"})
 			return
 		}
 		if strings.Contains(filePath, "..") {
+			logger.Warnf(ctx, "[Router] /files/presigned rejected path traversal: client_ip=%s file_path=%q", clientIP, filePath)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file path"})
 			return
 		}
 
 		tenantID, err := strconv.ParseUint(tenantIDStr, 10, 64)
 		if err != nil {
+			logger.Warnf(ctx, "[Router] /files/presigned invalid tenant_id: client_ip=%s tenant_id=%q err=%v", clientIP, tenantIDStr, err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant_id"})
 			return
 		}
 
-		// Verify HMAC signature and expiry.
+		// Verify HMAC signature and expiry. Logged at Warn because every 403
+		// here is a signal worth investigating: either the URL was tampered
+		// with, the IM platform cached an expired URL, or SYSTEM_AES_KEY was
+		// rotated without invalidating in-flight links.
 		if !secutils.VerifyFileURLSig(filePath, tenantID, expiresStr, sig) {
+			logger.Warnf(ctx, "[Router] /files/presigned sig invalid or expired: client_ip=%s ua=%q tenant_id=%d file_path=%q expires=%s",
+				clientIP, userAgent, tenantID, filePath, expiresStr)
 			c.JSON(http.StatusForbidden, gin.H{"error": "invalid or expired signature"})
 			return
 		}
 
-		// Resolve the file service for this tenant.
 		provider := types.ParseProviderScheme(filePath)
-		tenant, err := tenantService.GetTenantByID(c.Request.Context(), tenantID)
+		tenant, err := tenantService.GetTenantByID(ctx, tenantID)
 		if err != nil {
-			logger.Warnf(context.Background(), "[Router] /files/presigned tenant lookup failed: tenant_id=%d err=%v", tenantID, err)
+			logger.Warnf(ctx, "[Router] /files/presigned tenant lookup failed: client_ip=%s tenant_id=%d err=%v", clientIP, tenantID, err)
 			c.Status(http.StatusNotFound)
 			return
 		}
 
 		fileSvc, resolvedProvider, err := filesvc.NewFileServiceFromStorageConfig(provider, tenant.StorageEngineConfig, absDir)
 		if err != nil {
-			logger.Warnf(context.Background(), "[Router] /files/presigned resolve file service failed: tenant_id=%d provider=%s err=%v", tenantID, provider, err)
+			logger.Warnf(ctx, "[Router] /files/presigned resolve file service failed: client_ip=%s tenant_id=%d provider=%s err=%v",
+				clientIP, tenantID, provider, err)
 			c.Status(http.StatusBadRequest)
 			return
 		}
-
-		reader, err := fileSvc.GetFile(c.Request.Context(), filePath)
-		if err != nil {
-			logger.Warnf(context.Background(), "[Router] /files/presigned get file failed: tenant_id=%d provider=%s path=%q err=%v", tenantID, resolvedProvider, filePath, err)
-			c.Status(http.StatusNotFound)
-			return
-		}
-		defer reader.Close()
 
 		ext := filepath.Ext(filePath)
 		contentType := "application/octet-stream"
@@ -1101,13 +1160,107 @@ func servePresignedFiles(r *gin.Engine, tenantService interfaces.TenantService) 
 			contentType = "application/pdf"
 		}
 
+		// HEAD short-circuits the body read. We still need to confirm the
+		// object exists, but we use a 0-byte content length and skip io.Copy.
+		// Skipping GetFile entirely for HEAD would risk reporting 200 for a
+		// signed URL that no longer points at a real object; that mismatch
+		// would make subsequent GETs from the same client mysteriously fail.
+		reader, err := fileSvc.GetFile(ctx, filePath)
+		if err != nil {
+			logger.Warnf(ctx, "[Router] /files/presigned get file failed: client_ip=%s tenant_id=%d provider=%s path=%q err=%v",
+				clientIP, tenantID, resolvedProvider, filePath, err)
+			c.Status(http.StatusNotFound)
+			return
+		}
+		defer reader.Close()
+
 		c.Header("Content-Type", contentType)
 		c.Header("Cache-Control", "public, max-age=86400")
+		if c.Request.Method == http.MethodHead {
+			c.Status(http.StatusOK)
+			return
+		}
 		c.Status(http.StatusOK)
 		if _, err := io.Copy(c.Writer, reader); err != nil {
-			logger.Warnf(context.Background(), "[Router] /files/presigned write response failed: %v", err)
+			logger.Warnf(ctx, "[Router] /files/presigned write response failed: client_ip=%s tenant_id=%d err=%v", clientIP, tenantID, err)
 		}
-	})
+	}
+}
+
+// servePresignedPreview registers an Admin-only diagnostic endpoint that
+// returns the presigned HTTP URL that *would be* generated for a given
+// storage path by the calling tenant's current storage config — exactly the
+// URL an IM channel would embed in a reply. Operators can paste the result
+// into a 4G/mobile browser to verify public reachability without having to
+// send a real message through an IM bot.
+//
+// Route:
+//   - GET /api/v1/files/presigned-preview?file_path=<provider://...>
+func servePresignedPreview(r *gin.Engine, cfg *config.Config) {
+	baseDir := os.Getenv("LOCAL_STORAGE_BASE_DIR")
+	if baseDir == "" {
+		baseDir = "/data/files"
+	}
+	absDir, _ := filepath.Abs(baseDir)
+
+	r.GET("/api/v1/files/presigned-preview",
+		middleware.RequireRole(types.TenantRoleAdmin, cfg),
+		func(c *gin.Context) {
+			ctx := c.Request.Context()
+			filePath := strings.TrimSpace(c.Query("file_path"))
+			if filePath == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "missing required parameter: file_path"})
+				return
+			}
+			if strings.Contains(filePath, "..") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file path"})
+				return
+			}
+
+			tenant, _ := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+			if tenant == nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: tenant context missing"})
+				return
+			}
+
+			provider := types.ParseProviderScheme(filePath)
+			fileSvc, resolvedProvider, err := filesvc.NewFileServiceFromStorageConfig(provider, tenant.StorageEngineConfig, absDir)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error":    err.Error(),
+					"provider": provider,
+					"hint":     "tenant storage config is missing or incomplete for this provider",
+				})
+				return
+			}
+
+			httpURL, err := fileSvc.GetFileURL(ctx, filePath)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":    err.Error(),
+					"provider": resolvedProvider,
+					"hint":     "GetFileURL failed; for local storage this usually means APP_EXTERNAL_URL is unset",
+				})
+				return
+			}
+
+			// Detect the "no-op" case where local storage falls back to the
+			// provider:// path because APP_EXTERNAL_URL is missing. Surfacing
+			// this explicitly is the whole point of the endpoint.
+			rewritten := httpURL != filePath
+			hint := ""
+			if !rewritten {
+				hint = "URL unchanged; for local storage set APP_EXTERNAL_URL to enable presigned HTTP URLs"
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"file_path": filePath,
+				"provider":  resolvedProvider,
+				"url":       httpURL,
+				"rewritten": rewritten,
+				"hint":      hint,
+			})
+		})
 }
 
 // RegisterDataSourceRoutes 注册数据源相关的路由
