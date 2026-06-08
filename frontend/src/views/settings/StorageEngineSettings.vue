@@ -129,7 +129,7 @@
           <div class="mode-selector">
             <div
               :class="['mode-option', { active: config.minio.mode !== 'remote' }]"
-              @click="config.minio.mode = 'docker'"
+              @click="switchMinioMode('docker')"
             >
               <span class="mode-label">{{ $t('settings.storage.minioDocker') }}</span>
               <t-tag v-if="minioEnvAvailable" theme="success" variant="light" size="small">{{ $t('settings.storage.detected') }}</t-tag>
@@ -137,7 +137,7 @@
             </div>
             <div
               :class="['mode-option', { active: config.minio.mode === 'remote' }]"
-              @click="config.minio.mode = 'remote'"
+              @click="switchMinioMode('remote')"
             >
               <span class="mode-label">{{ $t('settings.storage.minioRemote') }}</span>
             </div>
@@ -706,6 +706,16 @@ function openDrawer(engine: string) {
   obsCheckResult.value = null
 }
 
+async function switchMinioMode(mode: 'docker' | 'remote') {
+  if (config.value.minio.mode === mode) return
+
+  config.value.minio.mode = mode
+  minioCheckResult.value = null
+
+  await loadStatus()
+  await onCheckMinio()
+}
+
 async function loadConfig() {
   try {
     const res = await getStorageEngineConfig()
@@ -837,9 +847,9 @@ function buildPayload(): StorageEngineConfig {
     local: { path_prefix: (config.value.local?.path_prefix || '').trim() },
     minio: {
       mode,
-      endpoint: mode === 'remote' ? (config.value.minio?.endpoint || '').trim() : '',
-      access_key_id: mode === 'remote' ? (config.value.minio?.access_key_id || '').trim() : '',
-      secret_access_key: mode === 'remote' ? (config.value.minio?.secret_access_key || '').trim() : '',
+      endpoint: (config.value.minio?.endpoint || '').trim(),
+      access_key_id: (config.value.minio?.access_key_id || '').trim(),
+      secret_access_key: (config.value.minio?.secret_access_key || '').trim(),
       bucket_name: (config.value.minio?.bucket_name || '').trim(),
       use_ssl: config.value.minio?.use_ssl ?? false,
       path_prefix: (config.value.minio?.path_prefix || '').trim(),
