@@ -145,6 +145,9 @@ func (s *stubLifecycleDataSourceRepo) Update(_ context.Context, ds *types.DataSo
 	s.byID[ds.ID] = &clone
 	return nil
 }
+func (s *stubLifecycleDataSourceRepo) UpdateSyncState(ctx context.Context, ds *types.DataSource) error {
+	return s.Update(ctx, ds)
+}
 func (s *stubLifecycleDataSourceRepo) Delete(_ context.Context, id string) error {
 	s.deletedID = id
 	delete(s.byID, id)
@@ -170,6 +173,9 @@ func (s *stubLifecycleSyncLogRepo) HasRunningSync(context.Context, string) (bool
 	return false, nil
 }
 func (s *stubLifecycleSyncLogRepo) Update(context.Context, *types.SyncLog) error { return nil }
+func (s *stubLifecycleSyncLogRepo) UpdateResult(ctx context.Context, log *types.SyncLog) error {
+	return s.Update(ctx, log)
+}
 func (s *stubLifecycleSyncLogRepo) CancelPendingByDataSource(_ context.Context, id string) error {
 	s.canceledID = id
 	return nil

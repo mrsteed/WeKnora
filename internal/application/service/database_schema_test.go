@@ -100,7 +100,17 @@ func (s *stubDataSourceRepo) FindByKnowledgeBase(_ context.Context, kbID string)
 	return s.byKB[kbID], nil
 }
 func (s *stubDataSourceRepo) Update(context.Context, *types.DataSource) error { return nil }
-func (s *stubDataSourceRepo) Delete(context.Context, string) error            { return nil }
+func (s *stubDataSourceRepo) UpdateSyncState(_ context.Context, ds *types.DataSource) error {
+	if ds == nil {
+		return nil
+	}
+	if s.byID != nil {
+		clone := *ds
+		s.byID[ds.ID] = &clone
+	}
+	return nil
+}
+func (s *stubDataSourceRepo) Delete(context.Context, string) error { return nil }
 func (s *stubDataSourceRepo) FindActive(context.Context) ([]*types.DataSource, error) {
 	return nil, nil
 }

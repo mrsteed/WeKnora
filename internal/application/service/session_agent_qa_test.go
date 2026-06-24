@@ -560,9 +560,9 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_PersistsGenerationRun(t 
 	}
 	require.Len(t, chatModel.streamMessages, 4)
 	assert.Contains(t, chatModel.streamMessages[0][1].Content, "Planning requirements")
-	assert.Contains(t, chatModel.streamMessages[0][1].Content, "项目背景与建设目标")
-	assert.Contains(t, chatModel.streamMessages[1][1].Content, "设计文档深度要求")
-	assert.Contains(t, chatModel.streamMessages[1][1].Content, "已确认事实、设计推导、待补充项")
+	assert.Contains(t, chatModel.streamMessages[0][1].Content, "infer the outline directly from the user goal and available context")
+	assert.Contains(t, chatModel.streamMessages[1][1].Content, "文档内容深度要求")
+	assert.Contains(t, chatModel.streamMessages[1][1].Content, "已确认事实、合理推导、待补充项")
 	assert.Contains(t, chatModel.streamMessages[2][1].Content, "Completed document summary")
 	assert.NotContains(t, chatModel.streamMessages[2][1].Content, "Completed content so far")
 	assert.NotContains(t, chatModel.streamMessages[2][1].Content, "历史正文尾部标记-不应完整透传")
@@ -1221,10 +1221,11 @@ func TestBuildKnowledgeGroundedFullDocumentOutlineMessages_IncludesLocalKnowledg
 	assert.Contains(t, messages[1].Content, "智慧运行总体方案")
 	assert.Contains(t, messages[1].Content, "数据湖、算力平台与实施保障")
 	assert.Contains(t, messages[1].Content, "If the user explicitly provides chapters")
-	assert.Contains(t, messages[1].Content, "项目背景与建设目标")
-	assert.Contains(t, messages[1].Content, "sections should usually contain 6 to 10 chapter objects")
+	assert.Contains(t, messages[1].Content, "infer the outline directly from the user goal and available context")
+	assert.Contains(t, messages[1].Content, "For a detailed implementation or development guide")
 	assert.Contains(t, messages[1].Content, "heading must equal \"第{number}章 {title}\"")
 	assert.Contains(t, messages[1].Content, "JSON schema")
+	assert.NotContains(t, messages[1].Content, "technical-solution outline")
 }
 
 func TestBuildDedicatedFullDocumentOutlineMessages_DefinesStructuredJSONContract(t *testing.T) {
@@ -1233,12 +1234,51 @@ func TestBuildDedicatedFullDocumentOutlineMessages_DefinesStructuredJSONContract
 	require.Len(t, messages, 2)
 	assert.Contains(t, messages[0].Content, "Return JSON only")
 	assert.Contains(t, messages[0].Content, "stable chapter number")
+	assert.Contains(t, messages[0].Content, "Do not inject a default document taxonomy")
 	assert.Contains(t, messages[1].Content, "If the user explicitly provides chapters")
-	assert.Contains(t, messages[1].Content, "项目背景与建设目标")
-	assert.Contains(t, messages[1].Content, "sections should usually contain 6 to 10 chapter objects")
+	assert.Contains(t, messages[1].Content, "infer the outline directly from the user goal and available context")
+	assert.Contains(t, messages[1].Content, "Do not force a preset chapter count")
 	assert.Contains(t, messages[1].Content, "heading must equal \"第{number}章 {title}\"")
 	assert.Contains(t, messages[1].Content, "subsections")
 	assert.Contains(t, messages[1].Content, "JSON schema")
+}
+
+func TestBuildDedicatedFullDocumentOutlineMessages_DoesNotInjectDocumentTypeTemplate(t *testing.T) {
+	req := &types.QARequest{Query: "根据 Forest City 文档输出一份指导网站开发的产品文档"}
+	messages := buildDedicatedFullDocumentOutlineMessages(req, "Chinese (Simplified)")
+	require.Len(t, messages, 2)
+	assert.Contains(t, messages[1].Content, "infer the outline directly from the user goal and available context")
+	assert.Contains(t, messages[1].Content, "First extract the concrete deliverable requirements from the user goal")
+	assert.Contains(t, messages[1].Content, "For a detailed implementation or development guide")
+	assert.Contains(t, messages[1].Content, "each section should normally include 2 to 4 planned subsections")
+	assert.NotContains(t, messages[0].Content, "product-document outline")
+	assert.NotContains(t, messages[0].Content, "technical-solution outline")
+	assert.NotContains(t, messages[1].Content, "product goals, target users and scenarios")
+}
+
+func TestBuildKnowledgeGroundedOutlineQueriesForGoal_UsesGenericQueries(t *testing.T) {
+	queries := buildKnowledgeGroundedOutlineQueriesForGoal("根据 Forest City 文档输出一份指导网站开发的产品文档")
+	require.Len(t, queries, 2)
+	assert.Equal(t, "根据 Forest City 文档输出一份指导网站开发的产品文档", queries[0])
+	assert.Contains(t, queries[1], "直接相关的本地事实、关键主题和待确认事项")
+	assert.Contains(t, queries[1], "根据 Forest City 文档输出一份指导网站开发的产品文档")
+}
+
+func TestBuildDedicatedFullDocumentSectionMessages_UsesGenericPrompt(t *testing.T) {
+	req := &types.QARequest{Query: "根据 Forest City 文档输出一份指导网站开发的产品文档"}
+	messages := buildDedicatedFullDocumentSectionMessages(req, "Chinese (Simplified)", "Forest City 网站开发产品文档", dedicatedFullDocumentOutline{
+		Title: "Forest City 网站开发产品文档",
+		Sections: []dedicatedFullDocumentSection{
+			{Number: 1, Title: "产品目标与建设范围", Heading: "第1章 产品目标与建设范围"},
+			{Number: 2, Title: "页面与功能需求", Heading: "第2章 页面与功能需求", Subsections: []dedicatedFullDocumentSubsection{{Number: "2.1", Title: "核心页面规划"}, {Number: "2.2", Title: "关键功能需求"}}},
+		},
+	}, dedicatedFullDocumentSection{Number: 2, Title: "页面与功能需求", Heading: "第2章 页面与功能需求", Subsections: []dedicatedFullDocumentSubsection{{Number: "2.1", Title: "核心页面规划"}, {Number: "2.2", Title: "关键功能需求"}}}, "## 第1章 产品目标与建设范围\n\n已有内容")
+	require.Len(t, messages, 2)
+	assert.Contains(t, messages[0].Content, "matches the user's requested deliverable and intended readers")
+	assert.Contains(t, messages[1].Content, "## 文档内容深度要求")
+	assert.Contains(t, messages[1].Content, "不要额外套用未被用户要求的文档模板")
+	assert.NotContains(t, messages[1].Content, "产品文档深度要求")
+	assert.NotContains(t, messages[1].Content, "投标技术方案")
 }
 
 func TestBuildDedicatedFullDocumentSectionMessages_StrengthensMarkdownLayoutConstraints(t *testing.T) {
@@ -1251,7 +1291,7 @@ func TestBuildDedicatedFullDocumentSectionMessages_StrengthensMarkdownLayoutCons
 		},
 	}, dedicatedFullDocumentSection{Number: 2, Title: "数据湖与基础算力平台", Heading: "第2章 数据湖与基础算力平台", Subsections: []dedicatedFullDocumentSubsection{{Number: "2.1", Title: "全域数据湖建设"}, {Number: "2.2", Title: "标准化数据治理"}}}, "## 第1章 项目背景与建设目标\n\n已有内容")
 	require.Len(t, messages, 2)
-	assert.Contains(t, messages[0].Content, "customer-facing technical bid")
+	assert.Contains(t, messages[0].Content, "matches the user's requested deliverable and intended readers")
 	assert.Contains(t, messages[0].Content, "completed document summary")
 	assert.Contains(t, messages[0].Content, "### 3.1 全域数据湖建设")
 	assert.Contains(t, messages[0].Content, "###3.1全域数据湖建设")
@@ -1316,6 +1356,21 @@ func TestValidateGeneratedSectionMarkdownAllowsH4Details(t *testing.T) {
 	})
 
 	assert.Empty(t, issues)
+}
+
+func TestValidateGeneratedSectionMarkdownRejectsMissingPlannedSubsection(t *testing.T) {
+	issues := validateGeneratedSectionMarkdown("### 1.2 实施路径\n\n说明内容充足，包含实施阶段安排与依赖关系。", dedicatedFullDocumentSection{
+		Number:  1,
+		Title:   "建设目标",
+		Heading: "第1章 建设目标",
+		Subsections: []dedicatedFullDocumentSubsection{
+			{Number: "1.1", Title: "目标分解"},
+			{Number: "1.2", Title: "实施路径"},
+		},
+	})
+
+	require.NotEmpty(t, issues)
+	assert.Contains(t, markdownQualityIssueCodes(issues), types.ChatDocumentQualityIssueMarkdownStructureInvalid)
 }
 
 func TestApplyGeneratedSectionMarkdownQualityGate_DoesNotRepairValidNormalizedContent(t *testing.T) {

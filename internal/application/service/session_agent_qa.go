@@ -853,13 +853,12 @@ type ModelCapability struct {
 }
 
 type DocumentProfile struct {
-	Goal                  string
-	OutputMode            string
-	EstimatedDocumentType string
-	ExpectedSectionCount  int
-	KnowledgeGrounded     bool
-	EvidenceScopeKBCount  int
-	AutoContinue          bool
+	Goal                 string
+	OutputMode           string
+	ExpectedSectionCount int
+	KnowledgeGrounded    bool
+	EvidenceScopeKBCount int
+	AutoContinue         bool
 }
 
 type documentGenerationRuntimeSectionFeedback struct {
@@ -1643,20 +1642,28 @@ func fallbackDocumentGenerationBudget(cfg *config.Config) DocumentGenerationBudg
 	}
 }
 
-func estimateDocumentType(goal string) string {
-	trimmedGoal := strings.TrimSpace(strings.ToLower(goal))
-	switch {
-	case strings.Contains(trimmedGoal, "投标"), strings.Contains(trimmedGoal, "技术方案"), strings.Contains(trimmedGoal, "proposal"):
-		return "technical_proposal"
-	case strings.Contains(trimmedGoal, "报告"), strings.Contains(trimmedGoal, "report"):
-		return "report"
-	case strings.Contains(trimmedGoal, "手册"), strings.Contains(trimmedGoal, "manual"), strings.Contains(trimmedGoal, "说明书"):
-		return "manual"
-	case strings.Contains(trimmedGoal, "摘要"), strings.Contains(trimmedGoal, "总结"), strings.Contains(trimmedGoal, "summary"):
-		return "summary"
-	default:
-		return "long_markdown"
+func buildFullDocumentOutlinePlanningRequirements(knowledgeGrounded bool) string {
+	var builder strings.Builder
+	builder.WriteString("Planning requirements:\n")
+	builder.WriteString("1. Return JSON only. Do not output markdown or explanatory text.\n")
+	builder.WriteString("2. title must be the document H1 title, written as a clean user-facing deliverable title rather than a raw source filename. Avoid carrying over file extensions, date suffixes, language markers, or ingestion artefact names unless the user explicitly requests them.\n")
+	builder.WriteString("3. If the user explicitly provides chapters, headings, numbering, audience, or document structure, preserve that intent and only normalize numbering or duplicates when necessary.\n")
+	builder.WriteString("4. If the user does not provide chapters, infer the outline directly from the user goal and available context. Do not inject a fixed chapter template, hidden document classification, preferred chapter set, or assumed lifecycle structure.\n")
+	builder.WriteString("5. First extract the concrete deliverable requirements from the user goal, such as target audience, execution depth, required outputs, named topics, constraints, and explicitly requested sections. The outline must visibly cover those requirements instead of only paraphrasing the title.\n")
+	builder.WriteString("6. Choose the number of chapters and subsection depth according to the actual task complexity. For a detailed implementation or development guide, the outline should usually be more fine-grained than a high-level summary.\n")
+	builder.WriteString("7. Each section must include number, title, and heading.\n")
+	builder.WriteString("8. When the user asks for a detailed, executable, or development-guiding document, each section should normally include 2 to 4 planned subsections so later generation remains structurally constrained. Avoid empty high-level chapters unless the user explicitly asked for a compact outline.\n")
+	builder.WriteString("9. subsection titles must be specific, actionable, and traceable to the user's requested scope. Do not use generic placeholders when the request already names concrete concerns.\n")
+	builder.WriteString("10. number must start at 1 and increase continuously without gaps.\n")
+	builder.WriteString("11. heading must equal \"第{number}章 {title}\".\n")
+	builder.WriteString("12. Each subsection.number must use \"{chapter}.{index}\" format, such as \"2.3\".\n")
+	if knowledgeGrounded {
+		builder.WriteString("13. If local knowledge is insufficient, include evidence gaps and待补充项 as planned subsections instead of fabricating facts.\n")
+	} else {
+		builder.WriteString("13. Later section generation must follow these numbers and titles exactly.\n")
 	}
+	builder.WriteString("\nJSON schema:\n{\n  \"title\": \"string\",\n  \"sections\": [\n    {\n      \"number\": 1,\n      \"title\": \"string\",\n      \"heading\": \"第1章 string\",\n      \"subsections\": [\n        {\"number\": \"1.1\", \"title\": \"string\"}\n      ]\n    }\n  ]\n}")
+	return builder.String()
 }
 
 func estimateExpectedSectionsFromArtifact(artifact *types.ChatDocumentArtifact) int {
@@ -1689,9 +1696,6 @@ func buildDocumentProfile(req *types.QARequest, agentConfig *types.AgentConfig, 
 	if expectedSections <= 0 && req != nil {
 		expectedSections = estimateExpectedSectionsFromArtifact(req.BaseArtifact)
 	}
-	if expectedSections <= 0 {
-		expectedSections = 6
-	}
 	evidenceScopeKBCount := 0
 	if agentConfig != nil {
 		evidenceScopeKBCount = len(agentConfig.SearchTargets.GetAllKnowledgeBaseIDs())
@@ -1701,13 +1705,12 @@ func buildDocumentProfile(req *types.QARequest, agentConfig *types.AgentConfig, 
 		outputMode = req.DocumentOutputMode
 	}
 	return DocumentProfile{
-		Goal:                  goal,
-		OutputMode:            strings.TrimSpace(outputMode),
-		EstimatedDocumentType: estimateDocumentType(goal),
-		ExpectedSectionCount:  expectedSections,
-		KnowledgeGrounded:     knowledgeGrounded,
-		EvidenceScopeKBCount:  evidenceScopeKBCount,
-		AutoContinue:          req != nil && req.AutoContinue,
+		Goal:                 goal,
+		OutputMode:           strings.TrimSpace(outputMode),
+		ExpectedSectionCount: expectedSections,
+		KnowledgeGrounded:    knowledgeGrounded,
+		EvidenceScopeKBCount: evidenceScopeKBCount,
+		AutoContinue:         req != nil && req.AutoContinue,
 	}
 }
 
@@ -1870,7 +1873,7 @@ func buildDocumentBudgetNegotiationMessages(req *types.QARequest, profile Docume
 		goal = strings.TrimSpace(req.Query)
 	}
 
-	userContent := fmt.Sprintf("Known constraints:\n- model_context_window_tokens: %d\n- model_max_output_tokens: %d\n- current_outline_max_completion_tokens: %d\n- current_section_max_completion_tokens: %d\n- current_continuation_max_completion_tokens: %d\n- current_outline_evidence_top_k: %d\n- current_section_evidence_top_k: %d\n- current_continuation_evidence_top_k: %d\n- current_section_call_timeout_seconds: %d\n- user_goal: %s\n- expected_document_type: %s\n- expected_sections: %d\n- local_knowledge_available: %t\n- evidence_scope_kb_count: %d\n- auto_continue: %t\n\nReturn exactly this JSON object:\n{\n  \"outline_max_completion_tokens\": number,\n  \"section_max_completion_tokens\": number,\n  \"continuation_max_completion_tokens\": number,\n  \"outline_evidence_top_k\": number,\n  \"section_evidence_top_k\": number,\n  \"continuation_evidence_top_k\": number,\n  \"section_call_timeout_seconds\": number,\n  \"reason\": string\n}", capability.ContextWindowTokens, capability.MaxOutputTokens, baseline.OutlineMaxCompletionTokens, baseline.SectionMaxCompletionTokens, baseline.ContinuationMaxCompletionTokens, baseline.OutlineEvidenceTopK, baseline.SectionEvidenceTopK, baseline.ContinuationEvidenceTopK, baseline.SectionCallTimeoutSeconds, goal, profile.EstimatedDocumentType, profile.ExpectedSectionCount, profile.KnowledgeGrounded, profile.EvidenceScopeKBCount, profile.AutoContinue)
+	userContent := fmt.Sprintf("Known constraints:\n- model_context_window_tokens: %d\n- model_max_output_tokens: %d\n- current_outline_max_completion_tokens: %d\n- current_section_max_completion_tokens: %d\n- current_continuation_max_completion_tokens: %d\n- current_outline_evidence_top_k: %d\n- current_section_evidence_top_k: %d\n- current_continuation_evidence_top_k: %d\n- current_section_call_timeout_seconds: %d\n- user_goal: %s\n- expected_sections: %d\n- local_knowledge_available: %t\n- evidence_scope_kb_count: %d\n- auto_continue: %t\n\nReturn exactly this JSON object:\n{\n  \"outline_max_completion_tokens\": number,\n  \"section_max_completion_tokens\": number,\n  \"continuation_max_completion_tokens\": number,\n  \"outline_evidence_top_k\": number,\n  \"section_evidence_top_k\": number,\n  \"continuation_evidence_top_k\": number,\n  \"section_call_timeout_seconds\": number,\n  \"reason\": string\n}", capability.ContextWindowTokens, capability.MaxOutputTokens, baseline.OutlineMaxCompletionTokens, baseline.SectionMaxCompletionTokens, baseline.ContinuationMaxCompletionTokens, baseline.OutlineEvidenceTopK, baseline.SectionEvidenceTopK, baseline.ContinuationEvidenceTopK, baseline.SectionCallTimeoutSeconds, goal, profile.ExpectedSectionCount, profile.KnowledgeGrounded, profile.EvidenceScopeKBCount, profile.AutoContinue)
 
 	return []chat.Message{
 		{Role: "system", Content: strings.TrimSpace(systemPrompt.String())},
@@ -2325,17 +2328,18 @@ type fullDocumentKnowledgeSearchService interface {
 
 func buildDedicatedFullDocumentOutlineMessages(req *types.QARequest, language string) []chat.Message {
 	var systemPrompt strings.Builder
-	systemPrompt.WriteString("You are planning a complete customer-facing markdown document. Return JSON only. ")
+	systemPrompt.WriteString("You are planning a complete long-form markdown document. Return JSON only. ")
 	systemPrompt.WriteString("Do not write the document body. Do not call tools. Do not output markdown fences, commentary, or hidden reasoning. ")
 	systemPrompt.WriteString("Do not echo internal input labels or metadata such as User goal, Planning requirements, local_knowledge_context, Current section, Completed document summary, knowledge_id, knowledge_base_id, or chunk_id. ")
 	systemPrompt.WriteString("The outline is a contract for later generation. Each section must have a stable chapter number, heading, and ordered subsection plan. ")
-	systemPrompt.WriteString("Prioritize the user's requested document type, audience, explicit chapters, numbering, and detail level over any generic template. ")
-	systemPrompt.WriteString("If the user did not provide a clear structure, plan a practical design-document outline that covers background, requirements, architecture, functions, data and interfaces, security, deployment, implementation, acceptance, risks, and open items where relevant. ")
+	systemPrompt.WriteString("Prioritize the user's explicit requirements, audience, chapters, numbering, and detail level over any generic assumptions. ")
+	systemPrompt.WriteString("Derive the outline directly from the user goal and available context. Do not inject a default document taxonomy, preferred chapter set, or hidden document classification. ")
+	systemPrompt.WriteString(" ")
 	if strings.TrimSpace(language) != "" {
 		systemPrompt.WriteString(fmt.Sprintf("Respond in %s. ", language))
 	}
 
-	userContent := "User goal:\n" + strings.TrimSpace(req.Query) + "\n\nPlanning requirements:\n1. Return JSON only. Do not output markdown or explanatory text.\n2. title must be the document H1 title.\n3. If the user explicitly provides chapters, headings, numbering, or a required document type, preserve that intent and only normalize numbering/duplicates.\n4. If the user does not provide chapters, use this baseline structure when applicable: 项目背景与建设目标, 需求分析与建设范围, 总体架构设计, 核心功能设计, 数据与接口设计, 安全与权限设计, 部署实施方案, 运维保障与验收建议.\n5. sections should usually contain 6 to 10 chapter objects; fewer chapters are allowed only when the user explicitly asked for a compact structure.\n6. Each section must include number, title, heading, and subsections.\n7. number must start at 1 and increase continuously without gaps.\n8. heading must equal \"第{number}章 {title}\".\n9. subsections must contain 3 to 6 items and should describe concrete design-document coverage, not vague overview labels.\n10. Each subsection.number must use \"{chapter}.{index}\" format, such as \"2.3\".\n11. Later section generation must follow these numbers and titles exactly.\n\nJSON schema:\n{\n  \"title\": \"string\",\n  \"sections\": [\n    {\n      \"number\": 1,\n      \"title\": \"string\",\n      \"heading\": \"第1章 string\",\n      \"subsections\": [\n        {\"number\": \"1.1\", \"title\": \"string\"}\n      ]\n    }\n  ]\n}"
+	userContent := "User goal:\n" + strings.TrimSpace(req.Query) + "\n\n" + buildFullDocumentOutlinePlanningRequirements(false)
 
 	return []chat.Message{
 		{Role: "system", Content: strings.TrimSpace(systemPrompt.String())},
@@ -2345,13 +2349,15 @@ func buildDedicatedFullDocumentOutlineMessages(req *types.QARequest, language st
 
 func buildKnowledgeGroundedFullDocumentOutlineMessages(req *types.QARequest, language string, evidence knowledgeGroundedEvidencePack) []chat.Message {
 	var systemPrompt strings.Builder
-	systemPrompt.WriteString("You are planning a customer-facing markdown document grounded in local knowledge. Return JSON only. ")
+	systemPrompt.WriteString("You are planning a long-form markdown document grounded in local knowledge. Return JSON only. ")
 	systemPrompt.WriteString("Use only facts from <local_knowledge_context>. Do not call tools. Do not write section body paragraphs. Do not output markdown fences, commentary, or hidden reasoning. ")
 	systemPrompt.WriteString("Do not echo internal input labels or metadata such as User goal, Planning requirements, local_knowledge_context, Current section, Completed document summary, knowledge_id, knowledge_base_id, or chunk_id. ")
 	systemPrompt.WriteString("Do not invent project background, system modules, implementation scope, product capabilities, or technical indicators that are not present in <local_knowledge_context>. ")
-	systemPrompt.WriteString("Prioritize the user's requested document type, audience, explicit chapters, numbering, and detail level over any generic template. ")
-	systemPrompt.WriteString("If the local knowledge is insufficient, keep a useful design-document structure but include evidence-gap/open-item chapters or subsections instead of fabricating facts. ")
+	systemPrompt.WriteString("Prioritize the user's explicit requirements, audience, chapters, numbering, and detail level over any generic assumptions. ")
+	systemPrompt.WriteString("If the local knowledge is insufficient, keep a useful structure aligned with the user's requested deliverable and include evidence-gap/open-item chapters or subsections instead of fabricating facts. ")
 	systemPrompt.WriteString("Each section must have a stable chapter number, heading, and ordered subsection plan. ")
+	systemPrompt.WriteString("Derive the outline directly from the user goal and available evidence. Do not inject a default document taxonomy, preferred chapter set, or hidden document classification. ")
+	systemPrompt.WriteString(" ")
 	if strings.TrimSpace(language) != "" {
 		systemPrompt.WriteString(fmt.Sprintf("Respond in %s. ", language))
 	}
@@ -2359,7 +2365,9 @@ func buildKnowledgeGroundedFullDocumentOutlineMessages(req *types.QARequest, lan
 	var userContent strings.Builder
 	userContent.WriteString("User goal:\n")
 	userContent.WriteString(strings.TrimSpace(req.Query))
-	userContent.WriteString("\n\nPlanning requirements:\n1. Return JSON only. Do not output markdown or explanatory text.\n2. title must be the document H1 title.\n3. If the user explicitly provides chapters, headings, numbering, or a required document type, preserve that intent and only normalize numbering/duplicates.\n4. If the user does not provide chapters, use this baseline structure when applicable: 项目背景与建设目标, 需求分析与建设范围, 总体架构设计, 核心功能设计, 数据与接口设计, 安全与权限设计, 部署实施方案, 运维保障与验收建议.\n5. sections should usually contain 6 to 10 chapter objects; fewer chapters are allowed only when the user explicitly asked for a compact structure.\n6. Each section must include number, title, heading, and subsections.\n7. number must start at 1 and increase continuously without gaps.\n8. heading must equal \"第{number}章 {title}\".\n9. subsections must contain 3 to 6 concrete design-document items, such as capability groups, data flow, interfaces, security, deployment, implementation, acceptance, risks, or open items.\n10. Each subsection.number must use \"{chapter}.{index}\" format, such as \"2.3\".\n11. If local knowledge is insufficient, include evidence gaps and待补充项 as planned subsections instead of fabricating facts.\n\nJSON schema:\n{\n  \"title\": \"string\",\n  \"sections\": [\n    {\n      \"number\": 1,\n      \"title\": \"string\",\n      \"heading\": \"第1章 string\",\n      \"subsections\": [\n        {\"number\": \"1.1\", \"title\": \"string\"}\n      ]\n    }\n  ]\n}\n\n")
+	userContent.WriteString("\n\n")
+	userContent.WriteString(buildFullDocumentOutlinePlanningRequirements(true))
+	userContent.WriteString("\n\n")
 	userContent.WriteString(buildKnowledgeGroundedLocalKnowledgeContext(evidence))
 
 	return []chat.Message{
@@ -2869,7 +2877,7 @@ func buildKnowledgeGroundedSectionQueriesForGoal(goal string, documentTitle stri
 		queries = append(queries, strings.TrimSpace(documentTitle)+" "+strings.TrimSpace(section))
 	}
 	if strings.TrimSpace(section) != "" {
-		queries = append(queries, "请检索与当前章节直接相关的本地事实和能力说明："+strings.TrimSpace(section))
+		queries = append(queries, "请检索与当前章节“"+strings.TrimSpace(section)+"”直接相关的本地事实、关键主题和待确认事项。")
 	}
 	return uniqueNonEmptyStrings(queries)
 }
@@ -3858,25 +3866,26 @@ func buildKnowledgeGroundedLocalKnowledgeContext(evidence knowledgeGroundedEvide
 }
 
 func fullDocumentDesignDepthPrompt() string {
-	return strings.TrimSpace(`## 设计文档深度要求
-- 本节需要写成可交付的设计文档或投标技术方案正文，不要停留在概述层面。
-- 优先覆盖与当前章节相关的建设目标、业务范围、功能能力、数据流程、接口边界、安全权限、部署实施、运维保障、验收指标、风险控制和待补充项。
-- 按“已确认事实、设计推导、待补充项”分层表达：已确认事实必须来自用户提示词、上下文或本地知识；设计推导要使用保守表述；缺失信息要明确标注为待确认或建议补充。
-- 对能力组、流程、接口、安全策略、部署步骤、交付物和验收口径，尽量使用条目化清单展开，避免只写抽象口号。
-- 如果证据不足，不要把未知内容写成确定事实；可以输出建议方案框架、实施前置条件和待确认清单，让章节保持完整且可继续修订。`)
+	return strings.TrimSpace(`## 文档内容深度要求
+- 本节需要写成可直接交付或继续修订的正式正文，不要停留在概述层面。
+- 优先覆盖与当前章节直接相关的已确认事实、用户要求、功能或内容范围、流程或规则、依赖约束、验收口径、风险和待补充项；具体取舍以当前章节标题和大纲为准。
+- 按“已确认事实、合理推导、待补充项”分层表达：已确认事实必须来自用户提示词、已生成大纲、上下文或本地知识；推导内容要使用保守表述；缺失信息要明确标注为待确认或建议补充。
+- 对模块、流程、规则、依赖、交付物和验收点，尽量使用条目化清单展开，避免只写抽象口号。
+- 如果证据不足，不要把未知内容写成确定事实；可以输出待确认事项、补充资料建议和继续修订所需信息。`)
 }
 
 func fullDocumentSectionMarkdownStyleInstructions() string {
 	return strings.Join([]string{
-		"Use polished proposal-style writing suitable for a customer-facing technical bid.",
+		"Use polished, professional writing that matches the user's requested deliverable and intended readers.",
 		"Do not repeat the document title or the current H2 heading because the system has already emitted them.",
-		"Write detailed design-document content rather than a high-level summary, while separating confirmed facts, design inference, and open items.",
+		"Write detailed section content rather than a high-level summary, while separating confirmed facts, cautious inference, and open items.",
 		"Use H3 or H4 headings only when they improve readability inside the current section.",
 		"Every markdown heading must be on its own line and must contain exactly one space after heading markers, for example: ### 3.1 全域数据湖建设.",
 		"Never write malformed headings such as ###3.1全域数据湖建设, ### 3.1 全域数据湖建设正文内容粘连, or two headings on the same line.",
 		"Leave one blank line after each heading before the next paragraph or list.",
-		"Keep paragraphs concise and scannable. Prefer bullet lists for capability groups, implementation steps, safeguards, and value points.",
-		"You may use bold lead-in labels such as **建设内容：**, **技术价值：**, and **实施要点：** when it improves readability.",
+		"Keep paragraphs concise and scannable. Prefer bullet lists for requirements, modules, rules, implementation notes, risks, and open items.",
+		"You may use bold lead-in labels such as **要点：**, **说明：**, **约束：**, and **验收口径：** when it improves readability.",
+		"Do not switch to an unrequested document template or writing genre on your own.",
 		"Do not output process text or internal labels such as Current section, Completed document summary, local_knowledge_context, knowledge_id, knowledge_base_id, chunk_id, tool names, or prompt instructions.",
 		"If evidence is insufficient, say 本地知识不足 or 待确认/待补充 in user-facing prose instead of exposing internal context fields.",
 		"Do not output HTML, code fences, JSON, prompt text, or hidden reasoning.",
@@ -3885,7 +3894,8 @@ func fullDocumentSectionMarkdownStyleInstructions() string {
 
 func fullDocumentSectionMarkdownStylePrompt() string {
 	return strings.TrimSpace(`## 排版与行文要求
-- 本节正文用于提交甲方的投标技术方案，请使用正式、清晰、专业的技术方案文风。
+- 本节正文用于长文档正式交付，请根据用户要求和当前章节目标，使用正式、清晰、专业的文风。
+- 不要额外套用未被用户要求的文档模板、章节范式或写作体裁。
 - 当前 H2 章节标题已经由系统输出，请不要重复输出 H1/H2 标题。
 - 如需拆分小节，只能使用 H3/H4 标题；标题必须独占一行，且 ### 或 #### 后必须有一个空格。
 - 正确示例：### 3.1 全域数据湖建设
@@ -3893,8 +3903,8 @@ func fullDocumentSectionMarkdownStylePrompt() string {
 - 错误示例：### 3.1 全域数据湖建设正文内容粘连
 - 每个标题后必须空一行再写正文或列表。
 - 每个自然段控制在 2-4 句，避免大段堆叠。
-- 对平台能力、建设内容、技术路径、业务价值、保障措施等内容，优先使用项目符号拆分。
-- 可使用加粗标签提升可读性，例如：**建设内容：**、**技术价值：**、**实施要点：**。
+- 对需求、内容模块、流程规则、实现要点、风险与保障等内容，优先使用项目符号拆分。
+- 可使用加粗标签提升可读性，例如：**要点：**、**说明：**、**约束：**、**验收口径：**。
 - 不得输出 Current section、Completed document summary、local_knowledge_context、knowledge_id、knowledge_base_id、chunk_id、工具名或任何过程说明。
 - 如果证据不足，请在用户可见正文中明确写出“本地知识不足”“待确认”或“建议补充资料”，不要泄漏内部上下文标签。
 - 不要输出 HTML、代码块、JSON、提示词说明或隐藏推理。`)
@@ -3910,15 +3920,21 @@ func trimRunes(content string, limit int) string {
 }
 
 func buildKnowledgeGroundedOutlineQueries(req *types.QARequest) []string {
-	trimmedQuery := strings.TrimSpace(req.Query)
+	if req == nil {
+		return nil
+	}
+	return buildKnowledgeGroundedOutlineQueriesForGoal(req.Query)
+}
+
+func buildKnowledgeGroundedOutlineQueriesForGoal(goal string) []string {
+	trimmedQuery := strings.TrimSpace(goal)
 	if trimmedQuery == "" {
 		return nil
 	}
-	return []string{
+	return uniqueNonEmptyStrings([]string{
 		trimmedQuery,
-		"请检索与该文档目标相关的项目背景、总体架构、核心能力、实施方案和保障措施。",
-		"请检索与该技术方案相关的业务价值、平台能力、实施边界和运维保障事实。",
-	}
+		"请检索与“" + trimmedQuery + "”直接相关的本地事实、关键主题和待确认事项。",
+	})
 }
 
 func buildKnowledgeGroundedSectionQueries(req *types.QARequest, documentTitle string, section string) []string {

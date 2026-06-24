@@ -227,6 +227,7 @@ func validateGeneratedSectionMarkdown(content string, section dedicatedFullDocum
 	}
 	allowedByNumber := make(map[string]string, len(section.Subsections))
 	allowedByTitle := make(map[string]string, len(section.Subsections))
+	seenByNumber := make(map[string]struct{}, len(section.Subsections))
 	for _, subsection := range section.Subsections {
 		number := strings.TrimSpace(subsection.Number)
 		title := normalizeMarkdownQualityTitle(subsection.Title)
@@ -270,6 +271,7 @@ func validateGeneratedSectionMarkdown(content string, section dedicatedFullDocum
 		}
 		normalizedTitle := normalizeMarkdownQualityTitle(title)
 		if expectedTitle, ok := allowedByNumber[number]; ok {
+			seenByNumber[number] = struct{}{}
 			if expectedTitle != normalizedTitle {
 				issues = append(issues, markdownQualityIssue{Code: types.ChatDocumentQualityIssueMarkdownUnplannedSubsection, Message: fmt.Sprintf("subsection %s title does not match planned outline", number)})
 			}
@@ -277,6 +279,14 @@ func validateGeneratedSectionMarkdown(content string, section dedicatedFullDocum
 		}
 		if plannedNumber, ok := allowedByTitle[normalizedTitle]; !ok || plannedNumber != number {
 			issues = append(issues, markdownQualityIssue{Code: types.ChatDocumentQualityIssueMarkdownUnplannedSubsection, Message: fmt.Sprintf("subsection %s is not in the planned outline", number)})
+		}
+	}
+	if len(allowedByNumber) > 0 {
+		for number := range allowedByNumber {
+			if _, ok := seenByNumber[number]; ok {
+				continue
+			}
+			issues = append(issues, markdownQualityIssue{Code: types.ChatDocumentQualityIssueMarkdownStructureInvalid, Message: fmt.Sprintf("planned subsection %s is missing from generated section", number)})
 		}
 	}
 	return dedupeMarkdownQualityIssues(issues)

@@ -639,6 +639,8 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 		}
 	}
 
+	allFailedErr := allFetchedItemsFailedError(result)
+
 	// Update sync log with results
 	syncLog.ItemsTotal = result.Total
 	syncLog.ItemsCreated = result.Created
@@ -646,7 +648,6 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	syncLog.ItemsDeleted = result.Deleted
 	syncLog.ItemsSkipped = result.Skipped
 	syncLog.ItemsFailed = result.Failed
-	syncLog.Status = types.SyncLogStatusSuccess
 	syncLog.FinishedAt = timePtr(time.Now().UTC())
 
 	// Update cursor for next incremental sync
@@ -656,12 +657,24 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	}
 
 	ds.LastSyncAt = timePtr(time.Now().UTC())
-	if wasPaused {
-		ds.Status = types.DataSourceStatusPaused
+	if allFailedErr != nil {
+		syncLog.Status = types.SyncLogStatusFailed
+		syncLog.ErrorMessage = allFailedErr.Error()
+		if wasPaused {
+			ds.Status = types.DataSourceStatusPaused
+		} else {
+			ds.Status = types.DataSourceStatusError
+		}
+		ds.ErrorMessage = allFailedErr.Error()
 	} else {
-		ds.Status = types.DataSourceStatusActive
+		syncLog.Status = types.SyncLogStatusSuccess
+		if wasPaused {
+			ds.Status = types.DataSourceStatusPaused
+		} else {
+			ds.Status = types.DataSourceStatusActive
+		}
+		ds.ErrorMessage = ""
 	}
-	ds.ErrorMessage = ""
 
 	// Store result
 	resultJSON, _ := result.ToJSON()
@@ -709,6 +722,38 @@ func (s *DataSourceService) ValidateCredentials(
 }
 
 // Helper functions
+
+func allFetchedItemsFailedError(result *types.SyncResult) error {
+	if result == nil {
+		return nil
+	}
+	if result.Total <= 0 || result.Failed <= 0 || result.Failed != result.Total {
+		return nil
+	}
+	if result.Created > 0 || result.Updated > 0 || result.Deleted > 0 || result.Skipped > 0 {
+		return nil
+	}
+	message := fmt.Sprintf("all fetched items failed during sync (%d/%d)", result.Failed, result.Total)
+	if detail := truncateSyncErrorDetail(strings.Join(result.Errors, "; "), 512); detail != "" {
+		message += ": " + detail
+	}
+	return errors.New(message)
+}
+
+func truncateSyncErrorDetail(detail string, maxRunes int) string {
+	trimmed := strings.TrimSpace(detail)
+	if trimmed == "" || maxRunes <= 0 {
+		return trimmed
+	}
+	runes := []rune(trimmed)
+	if len(runes) <= maxRunes {
+		return trimmed
+	}
+	if maxRunes <= 3 {
+		return string(runes[:maxRunes])
+	}
+	return strings.TrimSpace(string(runes[:maxRunes-3])) + "..."
+}
 
 func (s *DataSourceService) validateDataSourceConfig(ctx context.Context, ds *types.DataSource) error {
 	connector, err := s.connectorRegistry.Get(ds.Type)
