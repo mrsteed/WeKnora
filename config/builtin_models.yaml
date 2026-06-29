@@ -1,0 +1,59 @@
+builtin_models:
+  - id: builtin-llm-local-qwen
+    name: qwen3.6-27b-fp8
+    type: KnowledgeQA
+    source: remote
+    is_default: true
+    description: Local Qwen LLM served by vLLM
+    parameters:
+      base_url: http://host.docker.internal:8000/v1
+      api_key: local-vllm
+      provider: generic
+
+  - id: builtin-embedding-local-bge
+    name: bge-m3
+    type: Embedding
+    source: remote
+    is_default: true
+    description: Local embedding model served by Infinity on device 2
+    parameters:
+      base_url: http://host.docker.internal:7997
+      api_key: local-infinity
+      provider: generic
+      embedding_parameters:
+        dimension: 1024
+        truncate_prompt_tokens: 0
+
+  - id: builtin-rerank-local-bge
+    name: bge-reranker-v2-m3
+    type: Rerank
+    source: remote
+    is_default: true
+    description: Local rerank model served by Infinity on device 2
+    parameters:
+      base_url: http://host.docker.internal:7997
+      api_key: local-infinity
+      provider: generic
+
+  - id: builtin-vlm-qwen3-vl
+    name: qwen3-vl-8b-q4
+    type: VLLM
+    source: remote
+    is_default: true
+    description: Qwen3-VL via llama.cpp
+    parameters:
+      base_url: http://host.docker.internal:18080/v1
+      api_key: ""
+      provider: generic
+      supports_vision: true
+
+  - id: builtin-asr-local-default
+    name: Systran/faster-whisper-medium
+    type: ASR
+    source: remote
+    is_default: true
+    description: Default ASR model served by Speaches
+    parameters:
+      base_url: http://host.docker.internal:18000/v1
+      api_key: ""
+      provider: generic

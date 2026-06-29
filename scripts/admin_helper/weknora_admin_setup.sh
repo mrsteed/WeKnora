@@ -9,6 +9,7 @@ set -euo pipefail
 # Scope of this script:
 # - applies only the minimal migrations needed for tenants/users/auth tables
 # - creates or updates a default admin account idempotently
+# - marks the account as both legacy super admin and current system admin
 # - mirrors the current code logic for bcrypt password hashing and tenant API key
 #   generation by delegating those calculations to weknora_admin_helper.go
 
@@ -19,7 +20,7 @@ DEFAULT_ADMIN_EMAIL="admin@hlsa.com"
 DEFAULT_ADMIN_USERNAME="admin"
 DEFAULT_ADMIN_PASSWORD="a1234567."
 DEFAULT_TENANT_NAME="admin's Workspace"
-DEFAULT_TENANT_DESCRIPTION="Default workspace"
+DEFAULT_TENANT_DESCRIPTION="Default workspace" 
 DEFAULT_TENANT_BUSINESS="Default workspace"
 
 ADMIN_EMAIL="${ADMIN_EMAIL:-$DEFAULT_ADMIN_EMAIL}"
@@ -80,6 +81,7 @@ run_psql_file "$PROJECT_ROOT/migrations/versioned/000000_init.up.sql"
 run_psql_file "$PROJECT_ROOT/migrations/versioned/000001_agent.up.sql"
 "${psql_base[@]}" <<'SQL'
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_system_admin BOOLEAN NOT NULL DEFAULT false;
 SQL
 
 existing_user_line="$(run_psql_scalar "SELECT id || '|' || COALESCE(tenant_id::text, '') FROM users WHERE email = '$ADMIN_EMAIL' LIMIT 1;")"
@@ -134,16 +136,16 @@ if [[ "$tenant_action" == "created" ]]; then
 fi
 
 if [[ -n "$user_id" ]]; then
-	run_psql_scalar "UPDATE users SET username = '$ADMIN_USERNAME', password_hash = '$password_hash', tenant_id = ${tenant_id:-NULL}, is_active = true, can_access_all_tenants = true, is_super_admin = true, updated_at = NOW(), deleted_at = NULL WHERE id = '$user_id';" >/dev/null
+	run_psql_scalar "UPDATE users SET username = '$ADMIN_USERNAME', password_hash = '$password_hash', tenant_id = ${tenant_id:-NULL}, is_active = true, can_access_all_tenants = true, is_super_admin = true, is_system_admin = true, updated_at = NOW(), deleted_at = NULL WHERE id = '$user_id';" >/dev/null
 else
-	user_id="$(run_psql_scalar "INSERT INTO users (id, username, email, password_hash, tenant_id, is_active, can_access_all_tenants, is_super_admin, created_at, updated_at) VALUES (uuid_generate_v4(), '$ADMIN_USERNAME', '$ADMIN_EMAIL', '$password_hash', $tenant_id, true, true, true, NOW(), NOW()) RETURNING id;")"
+	user_id="$(run_psql_scalar "INSERT INTO users (id, username, email, password_hash, tenant_id, is_active, can_access_all_tenants, is_super_admin, is_system_admin, created_at, updated_at) VALUES (uuid_generate_v4(), '$ADMIN_USERNAME', '$ADMIN_EMAIL', '$password_hash', $tenant_id, true, true, true, true, NOW(), NOW()) RETURNING id;")"
 	user_action="created"
 fi
 
 echo
-echo "Schema applied: migrations/versioned/000000_init.up.sql, migrations/versioned/000001_agent.up.sql, users.is_super_admin"
+echo "Schema applied: migrations/versioned/000000_init.up.sql, migrations/versioned/000001_agent.up.sql, users.is_super_admin, users.is_system_admin"
 echo "Tenant action: $tenant_action (tenant_id=${tenant_id:-none})"
 echo "User action: $user_action (user_id=${user_id:-none})"
 echo
 echo "Final admin row:"
-run_psql_scalar "SELECT id || '|' || username || '|' || email || '|' || COALESCE(tenant_id::text, '') || '|' || is_active || '|' || can_access_all_tenants || '|' || is_super_admin || '|' || created_at FROM users WHERE email = '$ADMIN_EMAIL' LIMIT 1;"
+run_psql_scalar "SELECT id || '|' || username || '|' || email || '|' || COALESCE(tenant_id::text, '') || '|' || is_active || '|' || can_access_all_tenants || '|' || is_super_admin || '|' || is_system_admin || '|' || created_at FROM users WHERE email = '$ADMIN_EMAIL' LIMIT 1;"

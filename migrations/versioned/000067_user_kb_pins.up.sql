@@ -16,6 +16,12 @@
 -- knowledge_bases are left in place for one release to keep rollback
 -- safe; new code stops writing them and reads pin state from this
 -- table instead.
+--
+-- Compatibility note:
+--   * Fresh PostgreSQL databases can reach this migration before the
+--     legacy knowledge_bases.is_pinned / pinned_at columns are added by
+--     000074_add_kb_pinned. In that case there is nothing to backfill,
+--     so skip the INSERT instead of aborting startup.
 DO $$ BEGIN RAISE NOTICE '[Migration 000050] Creating table: user_kb_pins'; END $$;
 
 CREATE TABLE IF NOT EXISTS user_kb_pins (
@@ -39,15 +45,34 @@ CREATE INDEX IF NOT EXISTS idx_user_kb_pins_user_tenant_pinned_at
 -- intentionally skipped — we have no user to attribute the pin to, and
 -- silently dropping these is preferable to attributing them to a tenant
 -- owner who may not actually want the KB pinned in their view.
-INSERT INTO user_kb_pins (tenant_id, user_id, kb_id, pinned_at)
-SELECT kb.tenant_id,
-       kb.creator_id,
-       kb.id,
-       COALESCE(kb.pinned_at, CURRENT_TIMESTAMP)
-  FROM knowledge_bases kb
- WHERE kb.is_pinned = TRUE
-   AND kb.creator_id IS NOT NULL
-   AND kb.creator_id <> ''
-ON CONFLICT (tenant_id, user_id, kb_id) DO NOTHING;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+          FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = 'knowledge_bases'
+           AND column_name = 'is_pinned'
+    ) AND EXISTS (
+        SELECT 1
+          FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = 'knowledge_bases'
+           AND column_name = 'pinned_at'
+    ) THEN
+        INSERT INTO user_kb_pins (tenant_id, user_id, kb_id, pinned_at)
+        SELECT kb.tenant_id,
+               kb.creator_id,
+               kb.id,
+               COALESCE(kb.pinned_at, CURRENT_TIMESTAMP)
+          FROM knowledge_bases kb
+         WHERE kb.is_pinned = TRUE
+           AND kb.creator_id IS NOT NULL
+           AND kb.creator_id <> ''
+        ON CONFLICT (tenant_id, user_id, kb_id) DO NOTHING;
+    ELSE
+        RAISE NOTICE '[Migration 000050] Skipping KB pin backfill because knowledge_bases.is_pinned/pinned_at are not present yet';
+    END IF;
+END $$;
 
 DO $$ BEGIN RAISE NOTICE '[Migration 000050] user_kb_pins table ready'; END $$;

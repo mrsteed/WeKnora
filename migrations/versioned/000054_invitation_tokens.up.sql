@@ -27,7 +27,35 @@
 --     coexist on the same tenant.
 --   * token gets its own partial unique index for lookup at
 --     /auth/register-by-invite.
+--
+-- Compatibility note:
+--   * Clean PostgreSQL databases may hit this migration before the
+--     tenant_invitations bootstrap file (currently numbered 000065).
+--     Bootstrap the base table here as well so fresh installs and dirty-state
+--     recovery both converge on the same final schema.
 DO $$ BEGIN RAISE NOTICE '[Migration 000054] Extending tenant_invitations for share-link invitations'; END $$;
+
+CREATE TABLE IF NOT EXISTS tenant_invitations (
+    id              BIGSERIAL   PRIMARY KEY,
+    tenant_id       INTEGER     NOT NULL,
+    invitee_user_id VARCHAR(36) NOT NULL DEFAULT '',
+    invited_by      VARCHAR(36),
+    role            VARCHAR(20) NOT NULL,
+    status          VARCHAR(20) NOT NULL DEFAULT 'pending',
+    message         VARCHAR(500),
+    expires_at      TIMESTAMP WITH TIME ZONE NOT NULL,
+    responded_at    TIMESTAMP WITH TIME ZONE,
+    token           VARCHAR(64) NOT NULL DEFAULT '',
+    accepted_count  INTEGER     NOT NULL DEFAULT 0,
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at      TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_invitations_tenant
+    ON tenant_invitations(tenant_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tenant_invitations_invitee
+    ON tenant_invitations(invitee_user_id) WHERE deleted_at IS NULL;
 
 ALTER TABLE tenant_invitations
     ALTER COLUMN invitee_user_id SET DEFAULT '',

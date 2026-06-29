@@ -11,6 +11,9 @@ NC='\033[0m' # 无颜色
 # 获取项目根目录
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+WEKNORA_DEV_DATA_ROOT_DEFAULT="${WEKNORA_DEV_DATA_ROOT_DEFAULT:-/data/weknora}"
+WEKNORA_DEV_COMPOSE_PROJECT_NAME="${WEKNORA_DEV_COMPOSE_PROJECT_NAME:-weknora-dev}"
+WEKNORA_DEV_COMPOSE_FILE="$PROJECT_ROOT/docker-compose.dev.yml"
 
 # 日志函数
 log_info() {
@@ -49,6 +52,18 @@ detect_compose_cmd() {
     return 1
 }
 
+dev_compose() {
+    local compose_cmd=("$DOCKER_COMPOSE_BIN")
+
+    if [ -n "$DOCKER_COMPOSE_SUBCMD" ]; then
+        compose_cmd+=("$DOCKER_COMPOSE_SUBCMD")
+    fi
+
+    compose_cmd+=(--project-name "$WEKNORA_DEV_COMPOSE_PROJECT_NAME" -f docker-compose.dev.yml)
+    compose_cmd+=("$@")
+    "${compose_cmd[@]}"
+}
+
 # 显示帮助信息
 show_help() {
     printf "%b\n" "${GREEN}WeKnora 开发环境脚本${NC}"
@@ -73,6 +88,9 @@ show_help() {
     echo "  --dex      启动 Dex（OIDC 身份认证）"
     echo "  --full     启动所有可选服务"
     echo ""
+    echo "环境变量:"
+    echo "  WEKNORA_DEV_DATA_ROOT  显式设置后改为绑定宿主机目录；推荐默认值: $WEKNORA_DEV_DATA_ROOT_DEFAULT；普通启动未设置时沿用 Docker named volume，sudo/root 启动未设置时自动使用默认目录"
+    echo ""
     echo "示例："
     echo "  $0 start                    # 按 .env 启动基础服务（仓库默认含 MinIO）"
     echo "  $0 start --qdrant           # 启动基础服务 + Qdrant"
@@ -80,6 +98,9 @@ show_help() {
     echo "  $0 start --qdrant --jaeger  # 启动基础服务 + Qdrant + Jaeger"
     echo "  $0 start --dex             # 启动基础服务 + Dex"
     echo "  $0 start --full             # 启动所有服务"
+    echo "  WEKNORA_DEV_DATA_ROOT=$WEKNORA_DEV_DATA_ROOT_DEFAULT $0 start"
+    echo "  source ./scripts/dev-host-data.sh && $0 start"
+    echo "  source ./scripts/dev-named-volume.sh && $0 start"
     echo "  $0 app                      # 在另一个终端启动后端"
     echo "  $0 frontend                 # 在另一个终端启动前端"
 }
@@ -172,6 +193,228 @@ check_docker() {
     return 0
 }
 
+load_project_env() {
+    local required="${1:-false}"
+
+    if [ -f "$PROJECT_ROOT/.env" ]; then
+        set -a
+        source "$PROJECT_ROOT/.env"
+        set +a
+        return 0
+    fi
+
+    if [ "$required" = "true" ]; then
+        log_error ".env 文件不存在，请先创建配置文件"
+        return 1
+    fi
+
+    return 0
+}
+
+configure_dev_data_mounts() {
+    local requested_path="${WEKNORA_DEV_DATA_ROOT:-}"
+    local data_base=""
+    local postgres_path=""
+
+    if [ -z "${WEKNORA_DEV_DATA_ROOT:-}" ]; then
+        unset WEKNORA_DEV_POSTGRES_VOLUME \
+            WEKNORA_DEV_REDIS_VOLUME \
+            WEKNORA_DEV_MINIO_VOLUME \
+            WEKNORA_DEV_QDRANT_VOLUME \
+            WEKNORA_DEV_OPENSEARCH_VOLUME \
+            WEKNORA_DEV_MILVUS_VOLUME \
+            WEKNORA_DEV_NEO4J_VOLUME \
+            WEKNORA_DEV_DOCREADER_TMP_VOLUME \
+            WEKNORA_DEV_JAEGER_VOLUME \
+            WEKNORA_DEV_SEARXNG_CONFIG_VOLUME \
+            WEKNORA_DEV_LANGFUSE_CLICKHOUSE_DATA_VOLUME \
+            WEKNORA_DEV_LANGFUSE_CLICKHOUSE_LOGS_VOLUME \
+            WEKNORA_DEV_LANGFUSE_MINIO_VOLUME \
+            WEKNORA_DEV_DATA_BASE
+        return 0
+    fi
+
+    case "$requested_path" in
+        /*)
+            ;;
+        *)
+            requested_path="$PROJECT_ROOT/$requested_path"
+            ;;
+    esac
+    requested_path="${requested_path%/}"
+
+    if [ "${requested_path##*/}" = "postgres" ]; then
+        postgres_path="$requested_path"
+        data_base="$(dirname "$requested_path")"
+    else
+        data_base="$requested_path"
+        postgres_path="$data_base/postgres"
+    fi
+
+    WEKNORA_DEV_DATA_ROOT="$requested_path"
+    WEKNORA_DEV_DATA_BASE="$data_base"
+    export WEKNORA_DEV_DATA_ROOT
+    export WEKNORA_DEV_DATA_BASE
+
+    export WEKNORA_DEV_POSTGRES_VOLUME="$postgres_path"
+    export WEKNORA_DEV_REDIS_VOLUME="$WEKNORA_DEV_DATA_BASE/redis"
+    export WEKNORA_DEV_MINIO_VOLUME="$WEKNORA_DEV_DATA_BASE/minio"
+    export WEKNORA_DEV_QDRANT_VOLUME="$WEKNORA_DEV_DATA_BASE/qdrant"
+    export WEKNORA_DEV_OPENSEARCH_VOLUME="$WEKNORA_DEV_DATA_BASE/opensearch"
+    export WEKNORA_DEV_MILVUS_VOLUME="$WEKNORA_DEV_DATA_BASE/milvus"
+    export WEKNORA_DEV_NEO4J_VOLUME="$WEKNORA_DEV_DATA_BASE/neo4j"
+    export WEKNORA_DEV_DOCREADER_TMP_VOLUME="$WEKNORA_DEV_DATA_BASE/docreader/tmp"
+    export WEKNORA_DEV_JAEGER_VOLUME="$WEKNORA_DEV_DATA_BASE/jaeger"
+    export WEKNORA_DEV_SEARXNG_CONFIG_VOLUME="$WEKNORA_DEV_DATA_BASE/searxng/config"
+    export WEKNORA_DEV_LANGFUSE_CLICKHOUSE_DATA_VOLUME="$WEKNORA_DEV_DATA_BASE/langfuse/clickhouse/data"
+    export WEKNORA_DEV_LANGFUSE_CLICKHOUSE_LOGS_VOLUME="$WEKNORA_DEV_DATA_BASE/langfuse/clickhouse/logs"
+    export WEKNORA_DEV_LANGFUSE_MINIO_VOLUME="$WEKNORA_DEV_DATA_BASE/langfuse/minio"
+
+    return 0
+}
+
+prepare_dev_data_dirs() {
+    configure_dev_data_mounts
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    if [ -z "${WEKNORA_DEV_DATA_ROOT:-}" ]; then
+        log_info "开发环境数据存储: Docker named volumes（兼容历史脚本行为）"
+        return 0
+    fi
+
+    local data_dirs=(
+        "$WEKNORA_DEV_POSTGRES_VOLUME"
+        "$WEKNORA_DEV_REDIS_VOLUME"
+        "$WEKNORA_DEV_MINIO_VOLUME"
+        "$WEKNORA_DEV_QDRANT_VOLUME"
+        "$WEKNORA_DEV_OPENSEARCH_VOLUME"
+        "$WEKNORA_DEV_MILVUS_VOLUME"
+        "$WEKNORA_DEV_NEO4J_VOLUME"
+        "$WEKNORA_DEV_DOCREADER_TMP_VOLUME"
+        "$WEKNORA_DEV_JAEGER_VOLUME"
+        "$WEKNORA_DEV_SEARXNG_CONFIG_VOLUME"
+        "$WEKNORA_DEV_LANGFUSE_CLICKHOUSE_DATA_VOLUME"
+        "$WEKNORA_DEV_LANGFUSE_CLICKHOUSE_LOGS_VOLUME"
+        "$WEKNORA_DEV_LANGFUSE_MINIO_VOLUME"
+    )
+    local dir=""
+
+    for dir in "${data_dirs[@]}"; do
+        if ! mkdir -p "$dir"; then
+            log_error "无法创建开发环境数据目录: $dir"
+            log_info "请确保当前用户对 $WEKNORA_DEV_DATA_BASE 有写权限，或设置 WEKNORA_DEV_DATA_ROOT 指向可写目录。"
+            return 1
+        fi
+    done
+
+    for dir in "${data_dirs[@]}"; do
+        if ! chmod 0777 "$dir"; then
+            log_warning "无法调整目录权限: $dir"
+        fi
+    done
+
+    log_info "PostgreSQL 数据目录: $WEKNORA_DEV_POSTGRES_VOLUME"
+    log_info "开发环境数据根目录: $WEKNORA_DEV_DATA_BASE"
+    return 0
+}
+
+is_sudo_or_root() {
+    if [ -n "${SUDO_USER:-}" ]; then
+        return 0
+    fi
+
+    if [ "$(id -u)" -eq 0 ] 2>/dev/null; then
+        return 0
+    fi
+
+    return 1
+}
+
+apply_default_dev_data_root_for_sudo() {
+    if [ -n "${WEKNORA_DEV_DATA_ROOT:-}" ]; then
+        return 0
+    fi
+
+    if [ -z "${WEKNORA_DEV_DATA_ROOT_DEFAULT:-}" ]; then
+        return 0
+    fi
+
+    if ! is_sudo_or_root; then
+        return 0
+    fi
+
+    WEKNORA_DEV_DATA_ROOT="$WEKNORA_DEV_DATA_ROOT_DEFAULT"
+    export WEKNORA_DEV_DATA_ROOT
+    log_info "检测到 sudo/root 启动且未显式设置 WEKNORA_DEV_DATA_ROOT，改用默认宿主机目录: $WEKNORA_DEV_DATA_ROOT"
+    return 0
+}
+
+mount_source_missing() {
+    local source_path="$1"
+
+    case "$source_path" in
+        /data/docker/volumes/*)
+            [ ! -e "$source_path" ]
+            return
+            ;;
+    esac
+
+    return 1
+}
+
+container_project_mismatch() {
+    local container_id="$1"
+    local project_label=""
+
+    project_label="$(docker inspect "$container_id" --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null || true)"
+    [[ -n "$project_label" && "$project_label" != "$WEKNORA_DEV_COMPOSE_PROJECT_NAME" ]]
+}
+
+cleanup_stale_dev_containers() {
+    local container_id=""
+    local container_name=""
+    local mount_source=""
+    local has_missing_mount="false"
+    local has_project_mismatch="false"
+    local removed_any="false"
+
+    while IFS= read -r container_id; do
+        [ -n "$container_id" ] || continue
+        has_missing_mount="false"
+        has_project_mismatch="false"
+
+        if container_project_mismatch "$container_id"; then
+            has_project_mismatch="true"
+        fi
+
+        while IFS= read -r mount_source; do
+            [ -n "$mount_source" ] || continue
+            if mount_source_missing "$mount_source"; then
+                has_missing_mount="true"
+                break
+            fi
+        done < <(docker inspect "$container_id" --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' 2>/dev/null)
+
+        if [ "$has_missing_mount" != "true" ] && [ "$has_project_mismatch" != "true" ]; then
+            continue
+        fi
+
+        container_name="$(docker inspect "$container_id" --format '{{.Name}}' 2>/dev/null | sed 's#^/##')"
+        if [ "$has_project_mismatch" = "true" ]; then
+            log_warning "检测到旧的开发容器 project 名与当前配置不一致，移除后重建: ${container_name:-$container_id}"
+        else
+            log_warning "检测到失效的开发容器挂载，移除容器后重建: ${container_name:-$container_id}"
+        fi
+        if docker rm -fv "$container_id" >/dev/null 2>&1; then
+            removed_any="true"
+        fi
+    done < <(docker ps -aq --filter "label=com.docker.compose.project.config_files=$WEKNORA_DEV_COMPOSE_FILE" 2>/dev/null)
+
+    [ "$removed_any" = "true" ]
+}
+
 # 启动基础设施服务
 start_services() {
     log_info "启动开发环境基础设施服务..."
@@ -182,16 +425,21 @@ start_services() {
     fi
     
     cd "$PROJECT_ROOT"
-    
-    # 检查 .env 文件
-    if [ ! -f ".env" ]; then
-        log_error ".env 文件不存在，请先创建"
+
+    load_project_env true
+    if [ $? -ne 0 ]; then
         return 1
     fi
 
-    set -a
-    source .env
-    set +a
+    apply_default_dev_data_root_for_sudo
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    prepare_dev_data_dirs
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
     
     # 解析 profile 参数
     shift  # 移除 "start" 命令本身
@@ -238,9 +486,13 @@ start_services() {
     else
         log_info "按 .env 配置仅启动基础服务: postgres, redis, docreader"
     fi
+
+    if cleanup_stale_dev_containers; then
+        log_info "已清理失效的开发容器挂载，继续启动服务"
+    fi
     
     # 启动服务
-    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml $PROFILES up -d
+    dev_compose $PROFILES up -d
     
     if [ $? -eq 0 ]; then
         log_success "基础设施服务已启动"
@@ -284,6 +536,8 @@ start_services() {
 # 停止服务
 stop_services() {
     log_info "停止开发环境服务..."
+    local services=()
+    local service=""
     
     check_docker
     if [ $? -ne 0 ]; then
@@ -291,7 +545,29 @@ stop_services() {
     fi
     
     cd "$PROJECT_ROOT"
-    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml --profile full down --remove-orphans
+    load_project_env
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    configure_dev_data_mounts
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    while IFS= read -r service; do
+        if [ -n "$service" ]; then
+            services+=("$service")
+        fi
+    done < <(dev_compose --profile full config --services)
+
+    if [ ${#services[@]} -eq 0 ]; then
+        log_error "未能解析开发环境服务列表"
+        return 1
+    fi
+
+    # Avoid 'down --remove-orphans': sibling compose stacks under the same
+    # default project name would be treated as orphans and stopped/removed.
+    dev_compose --profile full stop "${services[@]}"
     
     if [ $? -eq 0 ]; then
         log_success "所有服务已停止"
@@ -316,7 +592,15 @@ show_logs() {
         return 1
     fi
     cd "$PROJECT_ROOT"
-    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml logs -f
+    load_project_env
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    configure_dev_data_mounts
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    dev_compose logs -f
 }
 
 # 查看状态
@@ -326,7 +610,15 @@ show_status() {
         return 1
     fi
     cd "$PROJECT_ROOT"
-    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml ps
+    load_project_env
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    configure_dev_data_mounts
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    dev_compose ps
 }
 
 # 启动后端应用（本地）
@@ -341,14 +633,9 @@ start_app() {
         return 1
     fi
     
-    # 加载环境变量（使用 set -a 确保所有变量都被导出）
-    if [ -f ".env" ]; then
-        log_info "加载 .env 文件..."
-        set -a
-        source .env
-        set +a
-    else
-        log_error ".env 文件不存在，请先创建配置文件"
+    log_info "加载 .env 文件..."
+    load_project_env true
+    if [ $? -ne 0 ]; then
         return 1
     fi
     

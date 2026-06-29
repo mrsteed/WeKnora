@@ -46,7 +46,8 @@ bash scripts/admin_helper/weknora_admin_setup.sh
    - 创建管理员账号
 5. 若管理员用户已存在：
    - 更新用户名、密码哈希、激活状态、跨租户权限和超管标记
-6. 最后输出数据库中的最终管理员记录。
+6. 额外补齐并写入 `users.is_system_admin`，让账号能进入当前 WeKnora 的 System Admin 权限体系。
+7. 最后输出数据库中的最终管理员记录。
 
 ## 为什么不直接用 `make migrate-up`
 

@@ -11,7 +11,7 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_NAME}
     volumes:
-      - postgres-data-dev:/var/lib/postgresql/data
+      - ${WEKNORA_DEV_POSTGRES_VOLUME:-postgres-data-dev}:/var/lib/postgresql/data
     networks:
       - WeKnora-network-dev
     healthcheck:
@@ -29,7 +29,7 @@ services:
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
-      - redis_data_dev:/data
+      - ${WEKNORA_DEV_REDIS_VOLUME:-redis_data_dev}:/data
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     restart: always
     networks:
@@ -43,7 +43,7 @@ services:
     command: ["sh", "-c", "cp /template/settings.yml /etc/searxng/settings.yml && chmod 0644 /etc/searxng/settings.yml"]
     volumes:
       - ./docker/searxng/settings.yml:/template/settings.yml:ro
-      - searxng_config_dev:/etc/searxng
+      - ${WEKNORA_DEV_SEARXNG_CONFIG_VOLUME:-searxng_config_dev}:/etc/searxng
     restart: "no"
     networks:
       - WeKnora-network-dev
@@ -59,7 +59,7 @@ services:
     ports:
       - "${SEARXNG_BIND:-127.0.0.1}:${SEARXNG_PORT:-8888}:8080"
     volumes:
-      - searxng_config_dev:/etc/searxng
+      - ${WEKNORA_DEV_SEARXNG_CONFIG_VOLUME:-searxng_config_dev}:/etc/searxng
     environment:
       - SEARXNG_BASE_URL=http://localhost:${SEARXNG_PORT:-8888}/
       - INSTANCE_NAME=weknora-searxng-dev
@@ -92,7 +92,7 @@ services:
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_ACCESS_KEY:-minioadmin}
     command: server --console-address ":9001" /data
     volumes:
-      - minio_data_dev:/data
+      - ${WEKNORA_DEV_MINIO_VOLUME:-minio_data_dev}:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
@@ -111,7 +111,7 @@ services:
       - "${QDRANT_REST_PORT:-6333}:6333"
       - "${QDRANT_PORT:-6334}:6334"
     volumes:
-      - qdrant_data_dev:/qdrant/storage
+      - ${WEKNORA_DEV_QDRANT_VOLUME:-qdrant_data_dev}:/qdrant/storage
     networks:
       - WeKnora-network-dev
     restart: unless-stopped
@@ -142,7 +142,7 @@ services:
     ports:
       - "${OPENSEARCH_PORT:-9200}:9200"
     volumes:
-      - opensearch_data_dev:/usr/share/opensearch/data
+      - ${WEKNORA_DEV_OPENSEARCH_VOLUME:-opensearch_data_dev}:/usr/share/opensearch/data
     networks:
       - WeKnora-network-dev
     restart: unless-stopped
@@ -195,7 +195,7 @@ services:
       - "${MILVUS_PORT:-19530}:19530"
       - "${MILVUS_HEALTH_PORT:-9091}:9091"
     volumes:
-      - milvus_data_dev:/var/lib/milvus
+      - ${WEKNORA_DEV_MILVUS_VOLUME:-milvus_data_dev}:/var/lib/milvus
     networks:
       - WeKnora-network-dev
     restart: unless-stopped
@@ -207,7 +207,7 @@ services:
     image: neo4j:latest
     container_name: WeKnora-neo4j-dev
     volumes:
-      - neo4j-data-dev:/data
+      - ${WEKNORA_DEV_NEO4J_VOLUME:-neo4j-data-dev}:/data
     environment:
       - NEO4J_AUTH=${NEO4J_USERNAME:-neo4j}/${NEO4J_PASSWORD:-password}
       - NEO4J_apoc_export_file_enabled=true
@@ -245,7 +245,7 @@ services:
     ports:
       - "${DOCREADER_PORT:-50051}:50051"
     volumes:
-      - docreader-tmp-dev:/tmp/docreader
+      - ${WEKNORA_DEV_DOCREADER_TMP_VOLUME:-docreader-tmp-dev}:/tmp/docreader
     environment:
       - DOCREADER_IMAGE_OUTPUT_DIR=/tmp/docreader
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-}
@@ -315,7 +315,7 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
       - COLLECTOR_ZIPKIN_HOST_PORT=:9411
     volumes:
-      - jaeger_data_dev:/var/lib/jaeger
+      - ${WEKNORA_DEV_JAEGER_VOLUME:-jaeger_data_dev}:/var/lib/jaeger
     networks:
       - WeKnora-network-dev
     restart: unless-stopped
@@ -392,8 +392,8 @@ services:
       CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-clickhouse}
       CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
     volumes:
-      - langfuse_clickhouse_data_dev:/var/lib/clickhouse
-      - langfuse_clickhouse_logs_dev:/var/log/clickhouse-server
+      - ${WEKNORA_DEV_LANGFUSE_CLICKHOUSE_DATA_VOLUME:-langfuse_clickhouse_data_dev}:/var/lib/clickhouse
+      - ${WEKNORA_DEV_LANGFUSE_CLICKHOUSE_LOGS_VOLUME:-langfuse_clickhouse_logs_dev}:/var/log/clickhouse-server
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 5s
@@ -419,7 +419,7 @@ services:
       - "${LANGFUSE_MINIO_S3_PORT:-9100}:9000"
       - "${LANGFUSE_MINIO_CONSOLE_PORT:-9101}:9001"
     volumes:
-      - langfuse_minio_data_dev:/data
+      - ${WEKNORA_DEV_LANGFUSE_MINIO_VOLUME:-langfuse_minio_data_dev}:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s

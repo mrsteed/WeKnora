@@ -36,8 +36,8 @@ services:
     ports:
       - "${APP_PORT:-8080}:8080"
     volumes:
-      - data-files:/data/files
-      - docreader-tmp:/tmp/docreader:ro
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/app/files:/data/files
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/docreader/tmp:/tmp/docreader:ro
       - ./config/config.yaml:/app/config/config.yaml
       # Optional: mount custom skills directory (allows adding skills without rebuilding image)
       - ./skills/preloaded:/app/skills/preloaded
@@ -244,7 +244,7 @@ services:
     expose:
       - "50051"
     volumes:
-      - docreader-tmp:/tmp/docreader
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/docreader/tmp:/tmp/docreader
     environment:
       - DOCREADER_IMAGE_OUTPUT_DIR=/tmp/docreader
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-}
@@ -302,7 +302,7 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_NAME}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/postgres:/var/lib/postgresql/data
     networks:
       - WeKnora-network
     healthcheck:
@@ -318,6 +318,8 @@ services:
   redis:
     image: redis:7.0-alpine
     container_name: WeKnora-redis
+    volumes:
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/redis:/data
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     restart: always
     networks:
@@ -334,7 +336,7 @@ services:
     command: ["sh", "-c", "cp /template/settings.yml /etc/searxng/settings.yml && chmod 0644 /etc/searxng/settings.yml"]
     volumes:
       - ./docker/searxng/settings.yml:/template/settings.yml:ro
-      - searxng_config:/etc/searxng
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/searxng/config:/etc/searxng
     restart: "no"
     networks:
       - WeKnora-network
@@ -350,7 +352,7 @@ services:
     ports:
       - "${SEARXNG_BIND:-127.0.0.1}:${SEARXNG_PORT:-8888}:8080"
     volumes:
-      - searxng_config:/etc/searxng
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/searxng/config:/etc/searxng
     environment:
       - SEARXNG_BASE_URL=http://localhost:${SEARXNG_PORT:-8888}/
       - INSTANCE_NAME=weknora-searxng
@@ -386,7 +388,7 @@ services:
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_ACCESS_KEY:-minioadmin}
     command: server --console-address ":9001" /data
     volumes:
-      - minio_data:/data
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/minio:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
@@ -415,7 +417,7 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
       - COLLECTOR_ZIPKIN_HOST_PORT=:9411
     volumes:
-      - jaeger_data:/var/lib/jaeger # 持久化 Jaeger 数据
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/jaeger:/var/lib/jaeger # 持久化 Jaeger 数据
     networks:
       - WeKnora-network
     restart: unless-stopped
@@ -427,7 +429,7 @@ services:
     image: neo4j:2025.10.1
     container_name: WeKnora-neo4j
     volumes:
-      - neo4j-data:/data
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/neo4j:/data
     environment:
       - NEO4J_AUTH=${NEO4J_USERNAME:-neo4j}/${NEO4J_PASSWORD:-password}
       - NEO4J_apoc_export_file_enabled=true
@@ -451,7 +453,7 @@ services:
       - "${QDRANT_REST_PORT:-6333}:6333"
       - "${QDRANT_PORT:-6334}:6334"
     volumes:
-      - qdrant_data:/qdrant/storage
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/qdrant:/qdrant/storage
     networks:
       - WeKnora-network
     restart: unless-stopped
@@ -480,7 +482,7 @@ services:
       - "19530:19530"
       - "9091:9091"
     volumes:
-      - milvus_data:/var/lib/milvus
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/milvus:/var/lib/milvus
     networks:
       - WeKnora-network
     restart: unless-stopped
@@ -503,7 +505,7 @@ services:
       - "9035:8080"
       - "50052:50051"
     volumes:
-      - weaviate_data:/var/lib/weaviate
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/weaviate:/var/lib/weaviate
     networks:
       - WeKnora-network
     restart: unless-stopped
@@ -537,8 +539,8 @@ services:
       - "${DORIS_FE_HTTP_PORT:-8030}:8030"
       - "${DORIS_FE_MYSQL_PORT:-9030}:9030"
     volumes:
-      - doris_fe_meta:/opt/apache-doris/fe/doris-meta
-      - doris_fe_log:/opt/apache-doris/fe/log
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/doris/fe/meta:/opt/apache-doris/fe/doris-meta
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/doris/fe/log:/opt/apache-doris/fe/log
     networks:
       - WeKnora-network
     restart: unless-stopped
@@ -557,8 +559,8 @@ services:
     ports:
       - "${DORIS_BE_HTTP_PORT:-8040}:8040"
     volumes:
-      - doris_be_storage:/opt/apache-doris/be/storage
-      - doris_be_log:/opt/apache-doris/be/log
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/doris/be/storage:/opt/apache-doris/be/storage
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/doris/be/log:/opt/apache-doris/be/log
     networks:
       - WeKnora-network
     restart: unless-stopped
@@ -640,8 +642,8 @@ services:
       CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-clickhouse}
       CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
     volumes:
-      - langfuse_clickhouse_data:/var/lib/clickhouse
-      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/langfuse/clickhouse/data:/var/lib/clickhouse
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/langfuse/clickhouse/logs:/var/log/clickhouse-server
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 5s
@@ -670,7 +672,7 @@ services:
       # 9101：MinIO 控制台（可选，方便排障）
       - "${LANGFUSE_MINIO_CONSOLE_PORT:-9101}:9001"
     volumes:
-      - langfuse_minio_data:/data
+      - ${WEKNORA_STACK_DATA_ROOT:-/data/weknora}/langfuse/minio:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
@@ -817,22 +819,3 @@ services:
 networks:
   WeKnora-network:
     driver: bridge
-
-volumes:
-  postgres-data:
-  data-files:
-  docreader-tmp:
-  jaeger_data:
-  minio_data:
-  neo4j-data:
-  qdrant_data:
-  milvus_data:
-  weaviate_data:
-  doris_fe_meta:
-  doris_fe_log:
-  doris_be_storage:
-  doris_be_log:
-  langfuse_clickhouse_data:
-  langfuse_clickhouse_logs:
-  langfuse_minio_data:
-  searxng_config:

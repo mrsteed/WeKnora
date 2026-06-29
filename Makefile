@@ -49,8 +49,12 @@ help:
 	@echo "  show-platform     显示当前构建平台"
 	@echo ""
 	@echo "开发模式（推荐）:"
-	@echo "  dev-start         启动开发环境基础设施（仅启动依赖服务）"
+	@echo "  dev-start         启动开发环境基础设施（仅启动依赖服务；普通启动未设置 WEKNORA_DEV_DATA_ROOT 时沿用 Docker named volume）"
 	@echo "                    可选: make dev-start DEV_ARGS=--odl-hybrid"
+	@echo "                    宿主机目录模式默认值: $(WEKNORA_DEV_DATA_ROOT_DEFAULT)"
+	@echo "                    宿主机目录模式: make dev-start WEKNORA_DEV_DATA_ROOT=$(WEKNORA_DEV_DATA_ROOT_DEFAULT)"
+	@echo "                    sudo/root 启动未显式设置时，会自动使用上述默认目录"
+	@echo "                    回退旧模式: source ./scripts/dev-named-volume.sh && make dev-start"
 	@echo "  dev-stop          停止开发环境"
 	@echo "  dev-restart       重启开发环境"
 	@echo "  dev-logs          查看开发环境日志"
@@ -71,6 +75,7 @@ MAIN_PATH=./cmd/server
 # Docker related variables
 DOCKER_IMAGE=wechatopenai/weknora-app
 DOCKER_TAG=latest
+WEKNORA_DEV_DATA_ROOT_DEFAULT ?= /data/weknora
 
 # Platform detection
 ifeq ($(shell uname -m),x86_64)
@@ -309,26 +314,35 @@ show-platform:
 	@echo "当前系统架构: $(shell uname -m)"
 	@echo "Docker构建平台: $(PLATFORM)"
 
+define RUN_DEV_SCRIPT
+	@DEV_DATA_ROOT="$(WEKNORA_DEV_DATA_ROOT)"; \
+	if [ -z "$$DEV_DATA_ROOT" ] && { [ -n "$$SUDO_USER" ] || [ "$$(id -u)" -eq 0 ]; }; then \
+		DEV_DATA_ROOT="$(WEKNORA_DEV_DATA_ROOT_DEFAULT)"; \
+	fi; \
+	echo "WEKNORA_DEV_DATA_ROOT_DEFAULT=\"$(WEKNORA_DEV_DATA_ROOT_DEFAULT)\" WEKNORA_DEV_DATA_ROOT=\"$$DEV_DATA_ROOT\" ./scripts/dev.sh $(1)$(if $(2), $(2))"; \
+	WEKNORA_DEV_DATA_ROOT_DEFAULT="$(WEKNORA_DEV_DATA_ROOT_DEFAULT)" WEKNORA_DEV_DATA_ROOT="$$DEV_DATA_ROOT" ./scripts/dev.sh $(1)$(if $(2), $(2))
+endef
+
 # Development mode commands
 dev-start:
-	./scripts/dev.sh start $(DEV_ARGS)
+	$(call RUN_DEV_SCRIPT,start,$(DEV_ARGS))
 
 dev-stop:
-	./scripts/dev.sh stop
+	$(call RUN_DEV_SCRIPT,stop)
 
 dev-restart:
-	./scripts/dev.sh restart
+	$(call RUN_DEV_SCRIPT,restart)
 
 dev-logs:
-	./scripts/dev.sh logs
+	$(call RUN_DEV_SCRIPT,logs)
 
 dev-status:
-	./scripts/dev.sh status
+	$(call RUN_DEV_SCRIPT,status)
 
 dev-app:
-	./scripts/dev.sh app
+	$(call RUN_DEV_SCRIPT,app)
 
 dev-frontend:
-	./scripts/dev.sh frontend
+	$(call RUN_DEV_SCRIPT,frontend)
 
 
