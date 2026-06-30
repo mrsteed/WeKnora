@@ -75,7 +75,7 @@ MAIN_PATH=./cmd/server
 # Docker related variables
 DOCKER_IMAGE=wechatopenai/weknora-app
 DOCKER_TAG=latest
-#WEKNORA_DEV_DATA_ROOT_DEFAULT ?= /data/weknora
+WEKNORA_DEV_DATA_ROOT_DEFAULT ?= /data/weknora
 
 # Platform detection
 ifeq ($(shell uname -m),x86_64)
