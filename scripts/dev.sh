@@ -11,7 +11,6 @@ NC='\033[0m' # 无颜色
 # 获取项目根目录
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
-WEKNORA_DEV_DATA_ROOT_DEFAULT="${WEKNORA_DEV_DATA_ROOT_DEFAULT:-/data/weknora}"
 WEKNORA_DEV_COMPOSE_PROJECT_NAME="${WEKNORA_DEV_COMPOSE_PROJECT_NAME:-weknora-dev}"
 WEKNORA_DEV_COMPOSE_FILE="$PROJECT_ROOT/docker-compose.dev.yml"
 
