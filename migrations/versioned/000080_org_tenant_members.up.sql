@@ -54,6 +54,18 @@ COMMENT ON TABLE organization_tenant_members IS 'Plan 3: Tenants (not users) are
 COMMENT ON COLUMN organization_tenant_members.role IS 'Tenant role inside the org: admin | editor | viewer.';
 COMMENT ON COLUMN organization_tenant_members.representative_user_id IS 'Display-only: the user who first brought this tenant into the org.';
 
+DO $$
+BEGIN
+    IF to_regclass('public.organization_members') IS NOT NULL THEN
+        EXECUTE 'CREATE OR REPLACE VIEW organization_members_migration_source AS SELECT * FROM organization_members';
+    ELSIF to_regclass('public.organization_members_pre_plan3') IS NOT NULL THEN
+        RAISE NOTICE '[Migration 000080] organization_members already renamed; using organization_members_pre_plan3 as migration source';
+        EXECUTE 'CREATE OR REPLACE VIEW organization_members_migration_source AS SELECT * FROM organization_members_pre_plan3';
+    ELSE
+        RAISE EXCEPTION '[Migration 000080] neither organization_members nor organization_members_pre_plan3 exists; cannot backfill organization_tenant_members';
+    END IF;
+END $$;
+
 -- 2. Surface conflicting roles before backfilling so operators see them
 --    in the migration log. The collapse strategy is "max role wins"
 --    (admin > editor > viewer); this is a permission *promotion* for
@@ -72,7 +84,7 @@ BEGIN
                    WHEN BOOL_OR(role = 'editor') THEN 'editor'
                    ELSE 'viewer'
                END AS resolved_role
-        FROM organization_members
+        FROM organization_members_migration_source
         GROUP BY organization_id, tenant_id
     LOOP
         IF rec.user_count > 1 AND ARRAY_LENGTH(rec.observed_roles, 1) > 1 THEN
@@ -98,7 +110,7 @@ SELECT
     -- Representative: earliest joiner in the group, fallback to lowest user_id
     -- so the choice is deterministic across re-runs.
     (SELECT om2.user_id
-       FROM organization_members om2
+       FROM organization_members_migration_source om2
       WHERE om2.organization_id = om.organization_id
         AND om2.tenant_id       = om.tenant_id
       ORDER BY om2.created_at ASC, om2.user_id ASC
@@ -106,7 +118,7 @@ SELECT
     MIN(om.created_at) AS joined_at,
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP
-FROM organization_members om
+FROM organization_members_migration_source om
 GROUP BY om.organization_id, om.tenant_id
 ON CONFLICT DO NOTHING;
 
@@ -114,7 +126,14 @@ ON CONFLICT DO NOTHING;
 --    here so a botched rollout can be reversed without re-creating data.
 --    A follow-up destructive migration removes it in a later release.
 DO $$ BEGIN RAISE NOTICE '[Migration 000080] Renaming organization_members → organization_members_pre_plan3'; END $$;
-ALTER TABLE organization_members RENAME TO organization_members_pre_plan3;
+DO $$
+BEGIN
+    IF to_regclass('public.organization_members') IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE organization_members RENAME TO organization_members_pre_plan3';
+    ELSE
+        RAISE NOTICE '[Migration 000080] organization_members already absent; skipping rename';
+    END IF;
+END $$;
 
 -- The unique-index name must move with the table; renaming the table does
 -- not rename the indices in older PG versions, so do it explicitly.
@@ -159,5 +178,7 @@ UPDATE organization_join_requests r
 CREATE UNIQUE INDEX IF NOT EXISTS uq_org_join_requests_pending_per_tenant
     ON organization_join_requests (organization_id, tenant_id, request_type)
     WHERE status = 'pending';
+
+DROP VIEW IF EXISTS organization_members_migration_source;
 
 DO $$ BEGIN RAISE NOTICE '[Migration 000080] Plan 3 setup ready'; END $$;
