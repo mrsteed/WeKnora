@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -108,6 +109,8 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 		thinkingID := fmt.Sprintf("%s-thinking", uuid.New().String()[:8])
 		answerID := fmt.Sprintf("%s-answer", uuid.New().String()[:8])
 		thinkingOpen := false
+		terminalSent := false
+		var answerBuilder strings.Builder
 
 		closeThinking := func() {
 			if !thinkingOpen {
@@ -124,6 +127,34 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 			thinkingOpen = false
 		}
 
+		emitTerminalAnswer := func() {
+			if terminalSent {
+				return
+			}
+			finalContent := answerBuilder.String()
+			if finalContent == "" {
+				return
+			}
+			if chatManage.ChatResponse == nil {
+				chatManage.ChatResponse = &types.ChatResponse{}
+			}
+			chatManage.ChatResponse.Content = finalContent
+			eventBus.Emit(ctx, types.Event{
+				ID:        fmt.Sprintf("%s-terminal", answerID),
+				Type:      types.EventType(event.EventAgentFinalAnswer),
+				SessionID: chatManage.SessionID,
+				Data: event.AgentFinalAnswerData{
+					Content:          finalContent,
+					Done:             true,
+					CompletionStatus: types.MessageCompletionStatusCompleted,
+					FinishReason:     "stop",
+					AllowIndexing:    true,
+					AllowComplete:    true,
+				},
+			})
+			terminalSent = true
+		}
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -136,6 +167,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 			case response, ok := <-responseChan:
 				if !ok {
 					closeThinking()
+					emitTerminalAnswer()
 					pipelineInfo(ctx, "Stream", "channel_close", map[string]interface{}{
 						"session_id": chatManage.SessionID,
 					})
@@ -181,6 +213,13 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 
 				if response.ResponseType == types.ResponseTypeAnswer {
 					closeThinking()
+					if response.Content != "" {
+						answerBuilder.WriteString(response.Content)
+					}
+					if response.Done {
+						emitTerminalAnswer()
+						continue
+					}
 					eventBus.Emit(ctx, types.Event{
 						ID:        answerID,
 						Type:      types.EventType(event.EventAgentFinalAnswer),

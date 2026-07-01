@@ -126,14 +126,14 @@ type OIDCConfigResponse struct {
 }
 
 type OIDCCallbackResponse struct {
-	Success      bool    `json:"success"`
-	Message      string  `json:"message,omitempty"`
-	User         *User   `json:"user,omitempty"`
-	Tenant       *Tenant `json:"tenant,omitempty"`
+	Success      bool         `json:"success"`
+	Message      string       `json:"message,omitempty"`
+	User         *User        `json:"user,omitempty"`
+	Tenant       *Tenant      `json:"tenant,omitempty"`
 	Memberships  []Membership `json:"memberships,omitempty"`
-	Token        string  `json:"token,omitempty"`
-	RefreshToken string  `json:"refresh_token,omitempty"`
-	IsNewUser    bool    `json:"is_new_user,omitempty"`
+	Token        string       `json:"token,omitempty"`
+	RefreshToken string       `json:"refresh_token,omitempty"`
+	IsNewUser    bool         `json:"is_new_user,omitempty"`
 }
 
 type OIDCUserInfo struct {
@@ -152,14 +152,14 @@ type RegisterRequest struct {
 
 // LoginResponse represents a login response
 type LoginResponse struct {
-	Success      bool    `json:"success"`
-	Message      string  `json:"message,omitempty"`
-	User         *User   `json:"user,omitempty"`
-	Tenant       *Tenant `json:"tenant,omitempty"`
-	ActiveTenant *Tenant `json:"active_tenant,omitempty"`
+	Success      bool         `json:"success"`
+	Message      string       `json:"message,omitempty"`
+	User         *User        `json:"user,omitempty"`
+	Tenant       *Tenant      `json:"tenant,omitempty"`
+	ActiveTenant *Tenant      `json:"active_tenant,omitempty"`
 	Memberships  []Membership `json:"memberships,omitempty"`
-	Token        string  `json:"token,omitempty"`
-	RefreshToken string  `json:"refresh_token,omitempty"`
+	Token        string       `json:"token,omitempty"`
+	RefreshToken string       `json:"refresh_token,omitempty"`
 }
 
 // RegisterResponse represents a registration response

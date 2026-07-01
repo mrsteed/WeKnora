@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS custom_agents (
     is_builtin BOOLEAN NOT NULL DEFAULT 0,
     tenant_id INTEGER NOT NULL,
     created_by VARCHAR(36),
+	visibility VARCHAR(20) DEFAULT 'private',
+	organization_id VARCHAR(36),
     config TEXT NOT NULL DEFAULT '{}',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,

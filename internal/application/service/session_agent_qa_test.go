@@ -415,7 +415,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_PersistsGenerationRun(t 
 			"kb-1|智慧运行建设方案 建设目标": {
 				{ID: "sec-1b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "建设目标", Content: "建设目标补充依据。", Score: 0.88},
 			},
-			"kb-1|请检索与当前章节直接相关的本地事实和能力说明：建设目标": {
+			"kb-1|请检索与当前章节“建设目标”直接相关的本地事实、关键主题和待确认事项。": {
 				{ID: "sec-1c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "建设目标", Content: "建设目标事实。", Score: 0.87},
 			},
 			"kb-1|请输出完整的智慧运行建设方案 平台架构": {
@@ -424,7 +424,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_PersistsGenerationRun(t 
 			"kb-1|智慧运行建设方案 平台架构": {
 				{ID: "sec-2b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-2", KnowledgeTitle: "平台架构", Content: "平台架构补充依据。", Score: 0.86},
 			},
-			"kb-1|请检索与当前章节直接相关的本地事实和能力说明：平台架构": {
+			"kb-1|请检索与当前章节“平台架构”直接相关的本地事实、关键主题和待确认事项。": {
 				{ID: "sec-2c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-2", KnowledgeTitle: "平台架构", Content: "平台架构事实。", Score: 0.85},
 			},
 			"kb-1|请输出完整的智慧运行建设方案 实施保障": {
@@ -433,7 +433,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_PersistsGenerationRun(t 
 			"kb-1|智慧运行建设方案 实施保障": {
 				{ID: "sec-3b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-3", KnowledgeTitle: "实施保障", Content: "实施保障补充依据。", Score: 0.83},
 			},
-			"kb-1|请检索与当前章节直接相关的本地事实和能力说明：实施保障": {
+			"kb-1|请检索与当前章节“实施保障”直接相关的本地事实、关键主题和待确认事项。": {
 				{ID: "sec-3c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-3", KnowledgeTitle: "实施保障", Content: "实施保障事实。", Score: 0.82},
 			},
 		},
@@ -593,7 +593,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_RuntimeFeedbackAdjustsBu
 			"kb-1|智慧运行建设方案 建设目标": {
 				{ID: "sec-1b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "建设目标", Content: "建设目标补充依据。", Score: 0.88},
 			},
-			"kb-1|请检索与当前章节直接相关的本地事实和能力说明：建设目标": {
+			"kb-1|请检索与当前章节“建设目标”直接相关的本地事实、关键主题和待确认事项。": {
 				{ID: "sec-1c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "建设目标", Content: "建设目标事实。", Score: 0.87},
 			},
 			"kb-1|请输出完整的智慧运行建设方案 平台架构": {
@@ -602,7 +602,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_RuntimeFeedbackAdjustsBu
 			"kb-1|智慧运行建设方案 平台架构": {
 				{ID: "sec-2b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-2", KnowledgeTitle: "平台架构", Content: "平台架构补充依据。", Score: 0.86},
 			},
-			"kb-1|请检索与当前章节直接相关的本地事实和能力说明：平台架构": {
+			"kb-1|请检索与当前章节“平台架构”直接相关的本地事实、关键主题和待确认事项。": {
 				{ID: "sec-2c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-2", KnowledgeTitle: "平台架构", Content: "平台架构事实。", Score: 0.85},
 			},
 		},
@@ -713,7 +713,7 @@ func TestRunKnowledgeGroundedDocumentContinuationPath_ValidatesPlannedSubsection
 				"kb-1|智慧运行建设方案 平台架构": {
 					{ID: "sec-2b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-2", KnowledgeTitle: "平台架构", Content: "平台架构补充依据。", Score: 0.88},
 				},
-				"kb-1|请检索与当前章节直接相关的本地事实和能力说明：平台架构": {
+				"kb-1|请检索与当前章节“平台架构”直接相关的本地事实、关键主题和待确认事项。": {
 					{ID: "sec-2c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-2", KnowledgeTitle: "平台架构", Content: "平台架构事实。", Score: 0.86},
 				},
 			},
@@ -3636,7 +3636,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_UsesNegotiatedBudgetWhen
 			"kb-1|智慧运行建设方案 建设目标": {
 				{ID: "sec-1b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "建设目标", Content: "建设目标补充依据。", Score: 0.88},
 			},
-			"kb-1|请检索与当前章节直接相关的本地事实和能力说明：建设目标": {
+			"kb-1|请检索与当前章节“建设目标”直接相关的本地事实、关键主题和待确认事项。": {
 				{ID: "sec-1c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "建设目标", Content: "建设目标事实。", Score: 0.87},
 			},
 		},
@@ -3735,7 +3735,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_UsesStaticModelCapabilit
 			"kb-1|智慧运行建设方案 建设目标": {
 				{ID: "sec-1b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "建设目标", Content: "建设目标补充依据。", Score: 0.88},
 			},
-			"kb-1|请检索与当前章节直接相关的本地事实和能力说明：建设目标": {
+			"kb-1|请检索与当前章节“建设目标”直接相关的本地事实、关键主题和待确认事项。": {
 				{ID: "sec-1c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "建设目标", Content: "建设目标事实。", Score: 0.87},
 			},
 		},
@@ -3822,7 +3822,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_DoesNotCapSectionTimeout
 			"kb-1|智慧运行建设方案 建设目标": {
 				{ID: "sec-1b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "建设目标", Content: "建设目标补充依据。", Score: 0.88},
 			},
-			"kb-1|请检索与当前章节直接相关的本地事实和能力说明：建设目标": {
+			"kb-1|请检索与当前章节“建设目标”直接相关的本地事实、关键主题和待确认事项。": {
 				{ID: "sec-1c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "建设目标", Content: "建设目标事实。", Score: 0.87},
 			},
 		},
@@ -3904,7 +3904,7 @@ func TestRunKnowledgeGroundedDocumentContinuationPath_UsesGenerationRunProgress(
 				"kb-1|智慧运行建设方案 平台架构": {
 					{ID: "sec-2b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-2", KnowledgeTitle: "平台架构", Content: "平台架构补充依据。", Score: 0.88},
 				},
-				"kb-1|请检索与当前章节直接相关的本地事实和能力说明：平台架构": {
+				"kb-1|请检索与当前章节“平台架构”直接相关的本地事实、关键主题和待确认事项。": {
 					{ID: "sec-2c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-2", KnowledgeTitle: "平台架构", Content: "平台架构事实。", Score: 0.86},
 				},
 				"kb-1|请输出完整的智慧运行建设方案 实施保障": {
@@ -3913,7 +3913,7 @@ func TestRunKnowledgeGroundedDocumentContinuationPath_UsesGenerationRunProgress(
 				"kb-1|智慧运行建设方案 实施保障": {
 					{ID: "sec-3b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-3", KnowledgeTitle: "实施保障", Content: "实施保障补充依据。", Score: 0.87},
 				},
-				"kb-1|请检索与当前章节直接相关的本地事实和能力说明：实施保障": {
+				"kb-1|请检索与当前章节“实施保障”直接相关的本地事实、关键主题和待确认事项。": {
 					{ID: "sec-3c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-3", KnowledgeTitle: "实施保障", Content: "实施保障事实。", Score: 0.85},
 				},
 			},
@@ -4037,7 +4037,7 @@ func TestRunKnowledgeGroundedDocumentContinuationPath_UsesPersistedRuntimeFeedba
 				"kb-1|智慧运行建设方案 平台架构": {
 					{ID: "sec-2b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-2", KnowledgeTitle: "平台架构", Content: "平台架构补充依据。", Score: 0.88},
 				},
-				"kb-1|请检索与当前章节直接相关的本地事实和能力说明：平台架构": {
+				"kb-1|请检索与当前章节“平台架构”直接相关的本地事实、关键主题和待确认事项。": {
 					{ID: "sec-2c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-2", KnowledgeTitle: "平台架构", Content: "平台架构事实。", Score: 0.86},
 				},
 				"kb-1|请输出完整的智慧运行建设方案 实施保障": {
@@ -4046,7 +4046,7 @@ func TestRunKnowledgeGroundedDocumentContinuationPath_UsesPersistedRuntimeFeedba
 				"kb-1|智慧运行建设方案 实施保障": {
 					{ID: "sec-3b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-3", KnowledgeTitle: "实施保障", Content: "实施保障补充依据。", Score: 0.87},
 				},
-				"kb-1|请检索与当前章节直接相关的本地事实和能力说明：实施保障": {
+				"kb-1|请检索与当前章节“实施保障”直接相关的本地事实、关键主题和待确认事项。": {
 					{ID: "sec-3c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-3", KnowledgeTitle: "实施保障", Content: "实施保障事实。", Score: 0.85},
 				},
 			},
@@ -4138,7 +4138,7 @@ func TestRunKnowledgeGroundedFullDocumentGenerationPath_AutoContinuesAfterRecove
 			"kb-1|智慧运行建设方案 建设目标": {
 				{ID: "sec-1b", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "建设目标", Content: "建设目标补充依据。", Score: 0.88},
 			},
-			"kb-1|请检索与当前章节直接相关的本地事实和能力说明：建设目标": {
+			"kb-1|请检索与当前章节“建设目标”直接相关的本地事实、关键主题和待确认事项。": {
 				{ID: "sec-1c", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-1", KnowledgeTitle: "建设目标", Content: "建设目标事实。", Score: 0.87},
 			},
 		},
@@ -4225,7 +4225,7 @@ func TestRunKnowledgeGroundedDocumentContinuationPath_StopsAfterSecondRecoverabl
 	searchStub := &fullDocumentKnowledgeSearchStub{
 		kbs: map[string]*types.KnowledgeBase{"kb-1": {ID: "kb-1", Type: types.KnowledgeBaseTypeDocument}},
 		results: map[string][]*types.SearchResult{
-			"kb-1|请检索与当前章节直接相关的本地事实和能力说明：平台架构": {
+			"kb-1|请检索与当前章节“平台架构”直接相关的本地事实、关键主题和待确认事项。": {
 				{ID: "sec-2", KnowledgeBaseID: "kb-1", KnowledgeID: "doc-2", KnowledgeTitle: "平台架构", Content: "平台架构依据。", Score: 0.9},
 			},
 			"kb-1|智慧运行建设方案 平台架构": {

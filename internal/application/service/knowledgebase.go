@@ -175,6 +175,13 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		return nil, err
 	}
 	kb.EnsureDefaults()
+	if kb.GetStorageProvider() == "" {
+		if tenantInfo, ok := ctx.Value(types.TenantInfoContextKey).(*types.Tenant); ok && tenantInfo != nil && tenantInfo.StorageEngineConfig != nil {
+			if provider := strings.ToLower(strings.TrimSpace(tenantInfo.StorageEngineConfig.DefaultProvider)); provider != "" {
+				kb.SetStorageProvider(provider)
+			}
+		}
+	}
 
 	logger.Infof(ctx, "Creating knowledge base, ID: %s, tenant ID: %d, name: %s", kb.ID, kb.TenantID, kb.Name)
 

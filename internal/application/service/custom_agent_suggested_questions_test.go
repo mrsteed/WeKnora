@@ -100,7 +100,7 @@ func TestGetSuggestedQuestionsFiltersKnowledgeBasesByAllowedToolsInAllMode(t *te
 		wikiPageRepo: &stubSuggestedQuestionsWikiRepo{},
 	}
 
-	questions, err := svc.GetSuggestedQuestions(ctx, "agent-db", nil, nil, 6)
+	questions, err := svc.GetSuggestedQuestions(ctx, "agent-db", nil, nil, nil, 6)
 	require.NoError(t, err)
 	assert.Empty(t, questions)
 	assert.Equal(t, []string{"kb-database"}, chunkRepo.faqKBIDs)
@@ -135,7 +135,7 @@ func TestGetSuggestedQuestionsIncludesCompatibleSharedKnowledgeBasesInAllMode(t 
 		wikiPageRepo:   &stubSuggestedQuestionsWikiRepo{},
 	}
 
-	questions, err := svc.GetSuggestedQuestions(ctx, "agent-db", nil, nil, 6)
+	questions, err := svc.GetSuggestedQuestions(ctx, "agent-db", nil, nil, nil, 6)
 	require.NoError(t, err)
 	assert.Empty(t, questions)
 	assert.Equal(t, []string{"kb-shared-database"}, chunkRepo.faqKBIDs)

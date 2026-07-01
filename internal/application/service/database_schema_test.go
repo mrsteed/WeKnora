@@ -73,6 +73,12 @@ func (s *stubKnowledgeBaseRepo) DeleteKnowledgeBase(context.Context, string) err
 func (s *stubKnowledgeBaseRepo) CountByVectorStoreID(context.Context, *gorm.DB, uint64, string) (int64, error) {
 	return 0, nil
 }
+func (s *stubKnowledgeBaseRepo) CountByModelID(context.Context, uint64, string) (int64, error) {
+	return 0, nil
+}
+func (s *stubKnowledgeBaseRepo) SetUserKBPin(context.Context, uint64, string, string, bool) (*time.Time, error) {
+	return nil, nil
+}
 func (s *stubKnowledgeBaseRepo) TogglePinKnowledgeBase(context.Context, string, uint64) (*types.KnowledgeBase, error) {
 	return nil, nil
 }

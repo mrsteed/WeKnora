@@ -47,7 +47,16 @@ func (s *stubKBRepoForModelDelete) CountByModelID(context.Context, uint64, strin
 func (s *stubKBRepoForModelDelete) SetUserKBPin(context.Context, uint64, string, string, bool) (*time.Time, error) {
 	return nil, nil
 }
+func (s *stubKBRepoForModelDelete) TogglePinKnowledgeBase(context.Context, string, uint64) (*types.KnowledgeBase, error) {
+	return nil, nil
+}
 func (s *stubKBRepoForModelDelete) ListUserKBPinIDs(context.Context, uint64, string) (map[string]time.Time, error) {
+	return nil, nil
+}
+func (s *stubKBRepoForModelDelete) ListAccessibleKBs(context.Context, string, uint64, []string) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+func (s *stubKBRepoForModelDelete) ListKBsByOrganization(context.Context, string) ([]*types.KnowledgeBase, error) {
 	return nil, nil
 }
 
@@ -62,6 +71,9 @@ func (s *stubAgentRepoForModelDelete) GetAgentByID(context.Context, string, uint
 	return nil, nil
 }
 func (s *stubAgentRepoForModelDelete) ListAgentsByTenantID(context.Context, uint64) ([]*types.CustomAgent, error) {
+	return nil, nil
+}
+func (s *stubAgentRepoForModelDelete) ListAccessibleAgents(context.Context, string, uint64, []string) ([]*types.CustomAgent, error) {
 	return nil, nil
 }
 func (s *stubAgentRepoForModelDelete) UpdateAgent(context.Context, *types.CustomAgent) error {

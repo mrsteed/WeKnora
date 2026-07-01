@@ -61,6 +61,14 @@ func (s *messageLookupSessionRepoStub) Update(context.Context, *types.Session, s
 	return 0, nil
 }
 
+func (s *messageLookupSessionRepoStub) SetOwnerID(context.Context, uint64, string, string) (int64, error) {
+	return 0, nil
+}
+
+func (s *messageLookupSessionRepoStub) UpdateLastRequestState(context.Context, uint64, string, string, *types.SessionLastRequestState) (int64, error) {
+	return 0, nil
+}
+
 func (s *messageLookupSessionRepoStub) SetPinned(context.Context, uint64, string, string, bool) (int64, error) {
 	return 0, nil
 }

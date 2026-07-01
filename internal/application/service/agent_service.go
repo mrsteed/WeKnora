@@ -664,6 +664,8 @@ func (s *agentService) registerTools(
 		case tools.ToolDataSchema:
 			toolToRegister = tools.NewDataSchemaTool(s.knowledgeService, s.chunkService.GetRepository(), s.fileService, s.duckdb, sessionID)
 			logger.Infof(ctx, "Registered data_schema tool")
+		case tools.ToolFinalAnswer:
+			toolToRegister = tools.NewFinalAnswerTool()
 
 		// Wiki tools — only registered when wiki KBs are detected
 		case tools.ToolWikiReadPage:

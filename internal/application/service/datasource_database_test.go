@@ -256,7 +256,10 @@ type stubLifecycleConnector struct{}
 
 func (s *stubLifecycleConnector) Type() string                                            { return types.DatabaseTypeMySQL }
 func (s *stubLifecycleConnector) Validate(context.Context, *types.DataSourceConfig) error { return nil }
-func (s *stubLifecycleConnector) ListResources(context.Context, *types.DataSourceConfig) ([]types.Resource, error) {
+func (s *stubLifecycleConnector) ListResources(context.Context, *types.DataSourceConfig, string) ([]types.Resource, error) {
+	return nil, nil
+}
+func (s *stubLifecycleConnector) ResolveResourceAncestors(context.Context, *types.DataSourceConfig, []string) ([]string, error) {
 	return nil, nil
 }
 func (s *stubLifecycleConnector) FetchAll(context.Context, *types.DataSourceConfig, []string) ([]types.FetchedItem, error) {

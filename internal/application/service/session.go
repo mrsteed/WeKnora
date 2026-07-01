@@ -128,7 +128,7 @@ func (s *sessionService) GetSession(ctx context.Context, id string) (*types.Sess
 	// Get tenant ID from context
 	tenantID := types.MustTenantIDFromContext(ctx)
 	// Get user ID from context for ownership check
-	userID, _ := types.UserIDFromContext(ctx)
+	userID := sessionUserIDFromContext(ctx)
 	logger.Infof(ctx, "Retrieving session, ID: %s, tenant ID: %d, user ID: %s", id, tenantID, userID)
 
 	// Get session from repository (filtered by user ownership)
@@ -180,7 +180,7 @@ func (s *sessionService) UpdateSessionLastRequestState(
 		return stderrors.New("session id is required")
 	}
 	tenantID := types.MustTenantIDFromContext(ctx)
-	userID, _ := types.UserIDFromContext(ctx)
+	userID := sessionUserIDFromContext(ctx)
 	affected, err := s.sessionRepo.UpdateLastRequestState(ctx, tenantID, userID, sessionID, state)
 	if err != nil {
 		return err
@@ -196,7 +196,7 @@ func (s *sessionService) GetSessionsByTenant(ctx context.Context) ([]*types.Sess
 	// Get tenant ID from context
 	tenantID := types.MustTenantIDFromContext(ctx)
 	// Get user ID from context for per-user filtering
-	userID, _ := types.UserIDFromContext(ctx)
+	userID := sessionUserIDFromContext(ctx)
 	logger.Infof(ctx, "Retrieving all sessions for tenant, tenant ID: %d, user ID: %s", tenantID, userID)
 
 	// Get sessions from repository (filtered by user ownership)
@@ -240,7 +240,7 @@ func (s *sessionService) GetPagedSessionsByTenant(ctx context.Context,
 	// Get tenant ID from context
 	tenantID := types.MustTenantIDFromContext(ctx)
 	// Get user ID from context for per-user filtering
-	userID, _ := types.UserIDFromContext(ctx)
+	userID := sessionUserIDFromContext(ctx)
 	// Get paged sessions from repository (filtered by user ownership)
 	sessions, total, err := s.sessionRepo.GetPagedByTenantAndUser(ctx, tenantID, userID, pagination)
 	if err != nil {
@@ -295,7 +295,7 @@ func (s *sessionService) SetSessionPinned(
 		return 0, errors.New("session id is required")
 	}
 	tenantID := types.MustTenantIDFromContext(ctx)
-	userID, _ := types.UserIDFromContext(ctx)
+	userID := sessionUserIDFromContext(ctx)
 	return s.sessionRepo.SetPinned(ctx, tenantID, userID, sessionID, pinned)
 }
 
@@ -307,7 +307,7 @@ func (s *sessionService) UpdateSession(ctx context.Context, session *types.Sessi
 		return errors.New("session id is required")
 	}
 
-	userID, _ := types.UserIDFromContext(ctx)
+	userID := sessionUserIDFromContext(ctx)
 
 	// Update session in repository
 	rowsAffected, err := s.sessionRepo.Update(ctx, session, userID)
@@ -337,7 +337,7 @@ func (s *sessionService) DeleteSession(ctx context.Context, id string) error {
 	// Get tenant ID from context
 	tenantID := types.MustTenantIDFromContext(ctx)
 	// Get user ID from context for ownership check
-	userID, _ := types.UserIDFromContext(ctx)
+	userID := sessionUserIDFromContext(ctx)
 
 	// Cleanup chat history knowledge entries for this session (async, best-effort).
 	// Use WithoutCancel so the goroutine survives after the HTTP request context is done.
@@ -383,7 +383,7 @@ func (s *sessionService) BatchDeleteSessions(ctx context.Context, ids []string) 
 
 	// Get tenant ID from context
 	tenantID := types.MustTenantIDFromContext(ctx)
-	userID, _ := types.UserIDFromContext(ctx)
+	userID := sessionUserIDFromContext(ctx)
 
 	// Cleanup associated resources for each session
 	bgCtx := context.WithoutCancel(ctx)
@@ -423,7 +423,7 @@ func (s *sessionService) BatchDeleteSessions(ctx context.Context, ids []string) 
 // DeleteAllSessions deletes all sessions for the current tenant
 func (s *sessionService) DeleteAllSessions(ctx context.Context) error {
 	tenantID := types.MustTenantIDFromContext(ctx)
-	userID, _ := types.UserIDFromContext(ctx)
+	userID := sessionUserIDFromContext(ctx)
 	logger.Infof(ctx, "Deleting all sessions for tenant %d", tenantID)
 
 	sessions, err := s.sessionRepo.GetByTenantAndUser(ctx, tenantID, userID)
@@ -569,7 +569,7 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 	session.Title = strings.TrimPrefix(response.Content, "<think>\n\n</think>")
 
 	// Update session with new title
-	userID, _ := types.UserIDFromContext(ctx)
+	userID := sessionUserIDFromContext(ctx)
 	_, err = s.sessionRepo.Update(ctx, session, userID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
