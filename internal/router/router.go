@@ -236,7 +236,6 @@ func NewRouter(params RouterParams) *gin.Engine {
 		superAdmin := v1.Group("", middleware.RequireSuperAdmin())
 		{
 			RegisterOrgTreeSuperAdminRoutes(superAdmin, params.OrgTreeHandler)
-			RegisterModelWriteRoutes(superAdmin, params.ModelHandler)
 		}
 
 		// User org-tree membership route (accessible by all authenticated users)
@@ -531,19 +530,6 @@ func RegisterModelRoutes(r *gin.RouterGroup, handler *handler.ModelHandler, cred
 		models.DELETE("/:id", g.Admin(), handler.DeleteModel)
 		models.PUT("/:id/credentials", g.Admin(), credHandler.Put)
 		models.DELETE("/:id/credentials/:field", g.Admin(), credHandler.DeleteField)
-	}
-}
-
-// RegisterModelWriteRoutes registers model write routes (super admin only)
-func RegisterModelWriteRoutes(r *gin.RouterGroup, handler *handler.ModelHandler) {
-	models := r.Group("/models")
-	{
-		// 创建模型
-		models.POST("", handler.CreateModel)
-		// 更新模型
-		models.PUT("/:id", handler.UpdateModel)
-		// 删除模型
-		models.DELETE("/:id", handler.DeleteModel)
 	}
 }
 
