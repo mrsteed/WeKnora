@@ -12,26 +12,24 @@ interface MenuItem {
   path: string
   childrenPath?: string
   children?: MenuChild[]
-  superAdminOnly?: boolean
-  orgAdminOnly?: boolean
 }
 
 const createMenuChildren = () => reactive<MenuChild[]>([])
 
 export const useMenuStore = defineStore('menuStore', () => {
   const menuArr = reactive<MenuItem[]>([
-    { title: '', titleKey: 'menu.knowledgeBase', icon: 'zhishiku', path: 'knowledge-bases' },
-    { title: '', titleKey: 'menu.agents', icon: 'agent', path: 'agents' },
-    { title: '', titleKey: 'menu.organizations', icon: 'organization', path: 'organizations' },
-    { title: '', titleKey: 'menu.admin', icon: 'setting', path: 'admin', orgAdminOnly: true },
     {
       title: '',
-      titleKey: 'menu.chat',
+      titleKey: 'menu.newChat',
       icon: 'prefixIcon',
       path: 'creatChat',
       childrenPath: 'chat',
       children: createMenuChildren()
     },
+    { title: '', titleKey: 'menu.knowledgeBase', icon: 'zhishiku', path: 'knowledge-bases' },
+    { title: '', titleKey: 'menu.agents', icon: 'agent', path: 'agents' },
+    { title: '', titleKey: 'menu.integrations', icon: 'integration', path: 'integrations' },
+    { title: '', titleKey: 'menu.organizations', icon: 'organization', path: 'organizations' },
     { title: '', titleKey: 'menu.settings', icon: 'setting', path: 'settings' },
     { title: '', titleKey: 'menu.logout', icon: 'logout', path: 'logout' }
   ])
@@ -63,36 +61,33 @@ export const useMenuStore = defineStore('menuStore', () => {
 
   const liteHiddenPaths = new Set(['logout', 'organizations'])
 
+  // 共享空间 (organizations) 仅对当前租户的 admin / owner 暴露入口。
+  // viewer / contributor 即便在共享空间里拥有资源，也无需自行管理共享关系，
+  // 入口在侧栏只会徒增噪音；后端 RBAC 才是权限的最终来源（见 middleware/rbac.go）。
   const visibleMenuArr = computed(() => {
     const authStore = useAuthStore()
     return menuArr.filter(item => {
       if (authStore.isLiteMode && liteHiddenPaths.has(item.path)) {
         return false
       }
-      if (item.superAdminOnly && !authStore.isSuperAdmin) {
-        return false
-      }
-      if (item.orgAdminOnly && !authStore.isSuperAdmin) {
+      if (item.path === 'organizations' && !authStore.hasRole('admin')) {
         return false
       }
       return true
     })
   })
 
-  const findChatMenu = () => menuArr.find(item => item.path === 'creatChat')
+  const chatMenuIndex = menuArr.findIndex(item => item.path === 'creatChat')
 
   const clearMenuArr = () => {
-    const chatMenu = findChatMenu()
+    const chatMenu = menuArr[chatMenuIndex]
     if (chatMenu && chatMenu.children) {
       chatMenu.children = createMenuChildren()
     }
   }
 
   const updatemenuArr = (obj: any) => {
-    const chatMenu = findChatMenu()
-    if (!chatMenu) {
-      return
-    }
+    const chatMenu = menuArr[chatMenuIndex]
     if (!chatMenu.children) {
       chatMenu.children = createMenuChildren()
     }
@@ -103,10 +98,7 @@ export const useMenuStore = defineStore('menuStore', () => {
   }
 
   const updataMenuChildren = (item: MenuChild) => {
-    const chatMenu = findChatMenu()
-    if (!chatMenu) {
-      return
-    }
+    const chatMenu = menuArr[chatMenuIndex]
     if (!chatMenu.children) {
       chatMenu.children = createMenuChildren()
     }
@@ -114,8 +106,8 @@ export const useMenuStore = defineStore('menuStore', () => {
   }
 
   const updatasessionTitle = (sessionId: string, title: string) => {
-    const chatMenu = findChatMenu()
-    chatMenu?.children?.forEach((item: MenuChild) => {
+    const chatMenu = menuArr[chatMenuIndex]
+    chatMenu.children?.forEach((item: MenuChild) => {
       if (item.id === sessionId) {
         item.title = title
         item.isNoTitle = false

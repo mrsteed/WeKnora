@@ -13,6 +13,7 @@ import (
 	filesvc "github.com/Tencent/WeKnora/internal/application/service/file"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/dig"
@@ -34,49 +35,59 @@ import (
 type RouterParams struct {
 	dig.In
 
-	Config                   *config.Config
-	FileService              interfaces.FileService
-	UserService              interfaces.UserService
-	KBService                interfaces.KnowledgeBaseService
-	KnowledgeService         interfaces.KnowledgeService
-	ChunkService             interfaces.ChunkService
-	SessionService           interfaces.SessionService
-	MessageService           interfaces.MessageService
-	ModelService             interfaces.ModelService
-	EvaluationService        interfaces.EvaluationService
-	KBHandler                *handler.KnowledgeBaseHandler
-	KnowledgeHandler         *handler.KnowledgeHandler
-	TenantHandler            *handler.TenantHandler
-	TenantMemberHandler      *handler.TenantMemberHandler
-	TenantInvitationHandler  *handler.TenantInvitationHandler
-	AuditLogHandler          *handler.AuditLogHandler
-	TenantService            interfaces.TenantService
-	TenantMemberService      interfaces.TenantMemberService
-	KBShareService           interfaces.KBShareService
-	AgentShareService        interfaces.AgentShareService
-	ChunkHandler             *handler.ChunkHandler
-	SessionHandler           *session.Handler
-	MessageHandler           *handler.MessageHandler
-	ModelHandler             *handler.ModelHandler
-	EvaluationHandler        *handler.EvaluationHandler
-	AuthHandler              *handler.AuthHandler
-	InitializationHandler    *handler.InitializationHandler
-	SystemHandler            *handler.SystemHandler
-	MCPServiceHandler        *handler.MCPServiceHandler
-	WebSearchHandler         *handler.WebSearchHandler
-	WebSearchProviderHandler *handler.WebSearchProviderHandler
-	VectorStoreHandler       *handler.VectorStoreHandler
-	FAQHandler               *handler.FAQHandler
-	TagHandler               *handler.TagHandler
-	CustomAgentHandler       *handler.CustomAgentHandler
-	SkillHandler             *handler.SkillHandler
-	OrganizationHandler      *handler.OrganizationHandler
-	IMHandler                *handler.IMHandler
-	DataSourceHandler        *handler.DataSourceHandler
-	WeKnoraCloudHandler      *handler.WeKnoraCloudHandler
-	WikiPageHandler          *handler.WikiPageHandler
-	OrgTreeHandler           *handler.OrgTreeHandler
-	ExportHandler            *handler.ExportHandler
+	Config                       *config.Config
+	FileService                  interfaces.FileService
+	UserService                  interfaces.UserService
+	KBService                    interfaces.KnowledgeBaseService
+	KnowledgeService             interfaces.KnowledgeService
+	ChunkService                 interfaces.ChunkService
+	SessionService               interfaces.SessionService
+	MessageService               interfaces.MessageService
+	ModelService                 interfaces.ModelService
+	EvaluationService            interfaces.EvaluationService
+	KBShareService               interfaces.KBShareService
+	AgentShareService            interfaces.AgentShareService
+	KBHandler                    *handler.KnowledgeBaseHandler
+	KnowledgeHandler             *handler.KnowledgeHandler
+	TenantHandler                *handler.TenantHandler
+	TenantService                interfaces.TenantService
+	TenantMemberService          interfaces.TenantMemberService
+	TenantMemberHandler          *handler.TenantMemberHandler
+	TenantInvitationHandler      *handler.TenantInvitationHandler
+	AuditLogHandler              *handler.AuditLogHandler
+	AuditLogService              interfaces.AuditLogService
+	ChunkHandler                 *handler.ChunkHandler
+	SessionHandler               *session.Handler
+	MessageHandler               *handler.MessageHandler
+	ModelHandler                 *handler.ModelHandler
+	ModelCredentialsHandler      *handler.ModelCredentialsHandler
+	EvaluationHandler            *handler.EvaluationHandler
+	AuthHandler                  *handler.AuthHandler
+	InitializationHandler        *handler.InitializationHandler
+	SystemHandler                *handler.SystemHandler
+	MCPServiceHandler            *handler.MCPServiceHandler
+	MCPCredentialsHandler        *handler.MCPCredentialsHandler
+	MCPOAuthHandler              *handler.MCPOAuthHandler
+	WebSearchHandler             *handler.WebSearchHandler
+	WebSearchProviderHandler     *handler.WebSearchProviderHandler
+	WebSearchCredentialsHandler  *handler.WebSearchProviderCredentialsHandler
+	VectorStoreHandler           *handler.VectorStoreHandler
+	FAQHandler                   *handler.FAQHandler
+	TagHandler                   *handler.TagHandler
+	CustomAgentHandler           *handler.CustomAgentHandler
+	UserFavoriteHandler          *handler.UserResourceFavoriteHandler
+	SkillHandler                 *handler.SkillHandler
+	OrganizationHandler          *handler.OrganizationHandler
+	IMHandler                    *handler.IMHandler
+	EmbedChannelHandler          *handler.EmbedChannelHandler
+	EmbedChannelService          interfaces.EmbedChannelService
+	RedisClient                  *redis.Client
+	DataSourceHandler            *handler.DataSourceHandler
+	DataSourceCredentialsHandler *handler.DataSourceCredentialsHandler
+	WeKnoraCloudHandler          *handler.WeKnoraCloudHandler
+	WikiPageHandler              *handler.WikiPageHandler
+	OrgTreeHandler               *handler.OrgTreeHandler
+	ExportHandler                *handler.ExportHandler
 }
 
 // NewRouter 创建新的路由
@@ -84,11 +95,21 @@ func NewRouter(params RouterParams) *gin.Engine {
 	r := gin.New()
 	r.ContextWithFallback = true
 
+	// Trusted proxies: gin defaults to trusting ALL proxies, which makes
+	// c.ClientIP() honor a client-supplied X-Forwarded-For. Public, unauthed
+	// embed endpoints rate-limit per (channel, ClientIP), so a spoofed XFF would
+	// trivially bypass the limiter. Restrict to the fronting proxy network so
+	// only the real client IP (appended by nginx) is returned. Configurable via
+	// WEKNORA_TRUSTED_PROXIES (comma-separated CIDRs/IPs).
+	if err := r.SetTrustedProxies(trustedProxies()); err != nil {
+		logger.Errorf(context.Background(), "[Router] failed to set trusted proxies: %v", err)
+	}
+
 	// CORS 中间件应放在最前面
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-API-Key", "X-Request-ID", "X-Share-Session-Token"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-API-Key", "X-Request-ID", "X-Share-Session-Token", "X-Tenant-ID", "X-Embed-Session"},
 		ExposeHeaders:    []string{"Content-Length", "Access-Control-Allow-Origin"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
@@ -121,6 +142,15 @@ func NewRouter(params RouterParams) *gin.Engine {
 		logger.Infof(context.Background(), "[swagger] disabled (%s)", reason)
 	}
 
+	// Embed page framing policy: emit a per-channel `frame-ancestors` CSP so the
+	// embed SPA page (/embed/:channelId) can only be iframed by the channel's
+	// allowed origins. This is the page-level counterpart to the API Origin
+	// allowlist enforced in EmbedAuth. Registered before the static handler so
+	// it runs for the embed HTML response.
+	if params.EmbedChannelService != nil {
+		r.Use(embedFrameAncestorsMiddleware(params.EmbedChannelService))
+	}
+
 	// 前端静态文件（仅 Lite 版本内嵌前端）
 	if handler.Edition == "lite" {
 		serveFrontendStatic(r)
@@ -131,6 +161,9 @@ func NewRouter(params RouterParams) *gin.Engine {
 	RegisterPublicAgentPageShareRoutes(r, params.CustomAgentHandler)
 	RegisterPublicAgentPageShareChatRoutes(r, params.SessionHandler)
 	RegisterPublicAgentPageShareExportRoutes(r, params.ExportHandler)
+
+	// Web embed 公开路由（使用 publish token 鉴权，不走全局 Auth）
+	RegisterEmbedPublicRoutes(r, params.EmbedChannelHandler, params.EmbedChannelService, params.TenantService, params.RedisClient, params.FileService)
 
 	// 认证中间件
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.TenantMemberService, params.Config))
@@ -143,9 +176,6 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 	// Diagnostic preview of presigned URLs (Admin only, behind auth middleware).
 	servePresignedPreview(r, params.Config)
-
-	// 添加OpenTelemetry追踪中间件
-	// r.Use(middleware.TracingMiddleware())
 
 	// Langfuse observability — only active when LANGFUSE_* env vars are set.
 	// The middleware is registered unconditionally; when disabled it's a no-op.
@@ -168,35 +198,36 @@ func NewRouter(params RouterParams) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	{
 		RegisterAuthRoutes(v1, params.AuthHandler)
-		RegisterTenantRoutes(v1, g, params.Config, params.TenantHandler, params.TenantMemberHandler, params.TenantInvitationHandler, params.AuditLogHandler)
-		RegisterKnowledgeBaseRoutes(v1, params.KBHandler)
-		RegisterKnowledgeTagRoutes(v1, params.TagHandler)
-		RegisterKnowledgeRoutes(v1, g, params.KnowledgeHandler)
-		RegisterFAQRoutes(v1, params.FAQHandler)
-		RegisterChunkRoutes(v1, params.ChunkHandler)
-		RegisterSessionRoutes(v1, params.SessionHandler)
-		RegisterChatRoutes(v1, params.SessionHandler)
-		RegisterMessageRoutes(v1, params.MessageHandler)
-		RegisterModelRoutes(v1, params.ModelHandler)
-		RegisterEvaluationRoutes(v1, params.EvaluationHandler)
-		RegisterInitializationRoutes(v1, params.InitializationHandler)
-		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler)
-		RegisterWebSearchRoutes(v1, params.WebSearchHandler)
-		RegisterWebSearchProviderRoutes(v1, params.WebSearchProviderHandler)
-		RegisterVectorStoreRoutes(v1, params.VectorStoreHandler)
-		RegisterCustomAgentRoutes(v1, params.CustomAgentHandler)
-		RegisterSkillRoutes(v1, params.SkillHandler)
-		RegisterOrganizationRoutes(v1, params.OrganizationHandler)
-		RegisterIMChannelRoutes(v1, params.IMHandler)
-		RegisterDataSourceRoutes(v1, params.DataSourceHandler)
-		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler)
-		RegisterWikiPageRoutes(v1, params.WikiPageHandler)
-		RegisterChunkerDebugRoutes(v1)
+		RegisterTenantRoutes(v1, params.TenantHandler, params.TenantMemberHandler, params.TenantInvitationHandler, params.AuditLogHandler, g)
+		RegisterMyInvitationRoutes(v1, params.TenantInvitationHandler)
+		RegisterKnowledgeBaseRoutes(v1, params.KBHandler, g)
+		RegisterKnowledgeTagRoutes(v1, params.TagHandler, g)
+		RegisterKnowledgeRoutes(v1, params.KnowledgeHandler, g)
+		RegisterFAQRoutes(v1, params.FAQHandler, g)
+		RegisterChunkRoutes(v1, params.ChunkHandler, g)
+		RegisterSessionRoutes(v1, params.SessionHandler, g)
+		RegisterChatRoutes(v1, params.SessionHandler, g)
+		RegisterMessageRoutes(v1, params.MessageHandler, g)
+		RegisterModelRoutes(v1, params.ModelHandler, params.ModelCredentialsHandler, g)
+		RegisterEvaluationRoutes(v1, params.EvaluationHandler, g)
+		RegisterInitializationRoutes(v1, params.InitializationHandler, g)
+		RegisterSystemRoutes(v1, params.SystemHandler, g)
+		RegisterSystemAdminRoutes(v1, params.SystemHandler, params.AuditLogHandler, g)
+		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler, params.MCPCredentialsHandler, params.MCPOAuthHandler, g)
+		RegisterWebSearchRoutes(v1, params.WebSearchHandler, g)
+		RegisterWebSearchProviderRoutes(v1, params.WebSearchProviderHandler, params.WebSearchCredentialsHandler, g)
+		RegisterVectorStoreRoutes(v1, params.VectorStoreHandler, g)
+		RegisterCustomAgentRoutes(v1, params.CustomAgentHandler, g)
+		RegisterUserFavoriteRoutes(v1, params.UserFavoriteHandler, g)
+		RegisterSkillRoutes(v1, params.SkillHandler, g)
+		RegisterOrganizationRoutes(v1, params.OrganizationHandler, g)
+		RegisterIMChannelRoutes(v1, params.IMHandler, g)
+		RegisterEmbedChannelRoutes(v1, params.EmbedChannelHandler, g)
+		RegisterDataSourceRoutes(v1, params.DataSourceHandler, params.DataSourceCredentialsHandler, g)
+		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler, g)
+		RegisterWikiPageRoutes(v1, params.WikiPageHandler, g)
+		RegisterChunkerDebugRoutes(v1, g)
 		RegisterExportRoutes(v1, params.ExportHandler)
-
-		// System info routes (accessible by all authenticated users)
-		RegisterSystemRoutes(v1, params.SystemHandler)
-		RegisterSystemAdminRoutes(v1, params.Config, params.SystemHandler, params.AuditLogHandler)
 
 		// Org-tree management routes (accessible by super admin and org admin, permission enforced in handler)
 		RegisterOrgTreeRoutes(v1, params.OrgTreeHandler)
@@ -204,12 +235,8 @@ func NewRouter(params RouterParams) *gin.Engine {
 		// Super admin routes (require super admin privileges)
 		superAdmin := v1.Group("", middleware.RequireSuperAdmin())
 		{
-			// Super admin only org-tree operations
 			RegisterOrgTreeSuperAdminRoutes(superAdmin, params.OrgTreeHandler)
-			// Model write operations (super admin only)
 			RegisterModelWriteRoutes(superAdmin, params.ModelHandler)
-			// Note: Tenant KV write routes moved to RegisterTenantRoutes to allow
-			// normal users to update their own tenant's configuration
 		}
 
 		// User org-tree membership route (accessible by all authenticated users)
@@ -221,45 +248,34 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 // RegisterChunkerDebugRoutes wires the read-only chunker preview endpoint
 // used by the KB editor's debug panel. Stateless — uses no service deps.
-func RegisterChunkerDebugRoutes(r *gin.RouterGroup) {
-	r.POST("/chunker/preview", handler.PreviewChunking)
+func RegisterChunkerDebugRoutes(r *gin.RouterGroup, g *rbacGuards) {
+	r.POST("/chunker/preview", g.Viewer(), handler.PreviewChunking)
 }
 
 // RegisterChunkRoutes 注册分块相关的路由
-func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler) {
+func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler, g *rbacGuards) {
 	// 分块路由组
 	chunks := r.Group("/chunks")
 	{
-		// 获取分块列表
-		chunks.GET("/:knowledge_id", handler.ListKnowledgeChunks)
-		// 通过chunk_id获取单个chunk（不需要knowledge_id）
-		chunks.GET("/by-id/:id", handler.GetChunkByIDOnly)
-		// 删除分块
-		chunks.DELETE("/:knowledge_id/:id", handler.DeleteChunk)
-		// 删除知识下的所有分块
-		chunks.DELETE("/:knowledge_id", handler.DeleteChunksByKnowledgeID)
-		// 更新分块信息
-		chunks.PUT("/:knowledge_id/:id", handler.UpdateChunk)
-		// 删除单个生成的问题（通过问题ID）
-		chunks.DELETE("/by-id/:id/questions", handler.DeleteGeneratedQuestion)
+		chunks.GET("/:knowledge_id", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("knowledge_id"), handler.ListKnowledgeChunks)
+		chunks.GET("/by-id/:id", g.Viewer(), g.KBAccessReadFromChunkIDParam("id"), handler.GetChunkByIDOnly)
+		chunks.DELETE("/:knowledge_id/:id", g.OwnedChunkKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunk)
+		chunks.DELETE("/:knowledge_id", g.OwnedChunkKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunksByKnowledgeID)
+		chunks.PUT("/:knowledge_id/:id", g.OwnedChunkKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.UpdateChunk)
+		chunks.DELETE("/by-id/:id/questions", g.OwnedChunkKBOrAdminFromChunkID(), g.KBAccessWriteFromChunkIDParam("id"), handler.DeleteGeneratedQuestion)
 	}
 }
 
 // RegisterKnowledgeRoutes 注册知识相关的路由
-func RegisterKnowledgeRoutes(r *gin.RouterGroup, g *rbacGuards, handler *handler.KnowledgeHandler) {
+func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandler, g *rbacGuards) {
 	// 知识库下的知识路由组
 	kb := r.Group("/knowledge-bases/:id/knowledge")
 	{
-		// 从文件创建知识
-		kb.POST("/file", handler.CreateKnowledgeFromFile)
-		// 从URL创建知识（支持网页URL和文件URL，传 file_name/file_type 或 URL 含已知扩展名时自动切换为文件下载模式）
-		kb.POST("/url", handler.CreateKnowledgeFromURL)
-		// 手工 Markdown 录入
-		kb.POST("/manual", handler.CreateManualKnowledge)
-		// 获取知识库下的知识列表
-		kb.GET("", handler.ListKnowledge)
-		// 清空知识库下的所有知识
-		kb.DELETE("", handler.ClearKnowledgeBaseContents)
+		kb.POST("/file", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.CreateKnowledgeFromFile)
+		kb.POST("/url", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.CreateKnowledgeFromURL)
+		kb.POST("/manual", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.CreateManualKnowledge)
+		kb.GET("", g.Viewer(), g.KBAccessRead("id"), handler.ListKnowledge)
+		kb.DELETE("", g.Admin(), g.KBAccessWrite("id"), handler.ClearKnowledgeBaseContents)
 	}
 
 	// 知识路由组
@@ -286,6 +302,7 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, g *rbacGuards, handler *handler
 		// "must own every targeted KB" guard if the requirement
 		// surfaces.
 		k.PUT("/tags", g.Contributor(), handler.UpdateKnowledgeTagBatch)
+		k.POST("/batch-reparse", g.Contributor(), handler.BatchReparseKnowledge)
 		k.GET("/search", g.Viewer(), handler.SearchKnowledge)
 		k.POST("/batch-delete", g.Contributor(), handler.BatchDeleteKnowledge)
 		k.POST("/move", g.Contributor(), handler.MoveKnowledge)
@@ -294,89 +311,74 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, g *rbacGuards, handler *handler
 }
 
 // RegisterFAQRoutes 注册 FAQ 相关路由
-func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler) {
+func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler, g *rbacGuards) {
 	if handler == nil {
 		return
 	}
 	faq := r.Group("/knowledge-bases/:id/faq")
 	{
-		faq.GET("/entries", handler.ListEntries)
-		faq.GET("/entries/export", handler.ExportEntries)
-		faq.GET("/entries/:entry_id", handler.GetEntry)
-		faq.POST("/entries", handler.UpsertEntries)
-		faq.POST("/entry", handler.CreateEntry)
-		faq.PUT("/entries/:entry_id", handler.UpdateEntry)
-		faq.POST("/entries/:entry_id/similar-questions", handler.AddSimilarQuestions)
-		// Unified batch update API - supports is_enabled, is_recommended, tag_id
-		faq.PUT("/entries/fields", handler.UpdateEntryFieldsBatch)
-		faq.PUT("/entries/tags", handler.UpdateEntryTagBatch)
-		faq.DELETE("/entries", handler.DeleteEntries)
-		faq.POST("/search", handler.SearchFAQ)
-		// FAQ import result display status
-		faq.PUT("/import/last-result/display", handler.UpdateLastImportResultDisplayStatus)
+		faq.GET("/entries", g.Viewer(), g.KBAccessRead("id"), handler.ListEntries)
+		faq.GET("/entries/export", g.Viewer(), g.KBAccessRead("id"), handler.ExportEntries)
+		faq.GET("/entries/:entry_id", g.Viewer(), g.KBAccessRead("id"), handler.GetEntry)
+		faq.POST("/entries", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpsertEntries)
+		faq.POST("/entry", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.CreateEntry)
+		faq.PUT("/entries/:entry_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateEntry)
+		faq.POST("/entries/:entry_id/similar-questions", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.AddSimilarQuestions)
+		faq.PUT("/entries/fields", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateEntryFieldsBatch)
+		faq.PUT("/entries/tags", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateEntryTagBatch)
+		faq.DELETE("/entries", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.DeleteEntries)
+		faq.POST("/search", g.Viewer(), g.KBAccessRead("id"), handler.SearchFAQ)
+		faq.PUT("/import/last-result/display", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateLastImportResultDisplayStatus)
 	}
 	// FAQ import progress route (outside of knowledge-base scope)
 	faqImport := r.Group("/faq/import")
 	{
-		faqImport.GET("/progress/:task_id", handler.GetImportProgress)
+		faqImport.GET("/progress/:task_id", g.Viewer(), handler.GetImportProgress)
 	}
 }
 
 // RegisterKnowledgeBaseRoutes 注册知识库相关的路由
-func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeBaseHandler) {
+func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeBaseHandler, g *rbacGuards) {
 	// 知识库路由组
 	kb := r.Group("/knowledge-bases")
 	{
-		// 创建知识库
-		kb.POST("", handler.CreateKnowledgeBase)
-		// 获取知识库列表
-		kb.GET("", handler.ListKnowledgeBases)
-		// 获取知识库详情
-		kb.GET("/:id", handler.GetKnowledgeBase)
-		// 更新知识库
-		kb.PUT("/:id", handler.UpdateKnowledgeBase)
-		// 删除知识库
-		kb.DELETE("/:id", handler.DeleteKnowledgeBase)
-		// 置顶/取消置顶知识库
-		kb.PUT("/:id/pin", handler.TogglePinKnowledgeBase)
-		// 混合搜索
-		kb.GET("/:id/hybrid-search", handler.HybridSearch)
-		// 拷贝知识库
-		kb.POST("/copy", handler.CopyKnowledgeBase)
-		// 获取知识库复制进度
-		kb.GET("/copy/progress/:task_id", handler.GetKBCloneProgress)
-		// 获取可移动目标知识库列表
-		kb.GET("/:id/move-targets", handler.ListMoveTargets)
+		kb.POST("", g.Contributor(), handler.CreateKnowledgeBase)
+		kb.GET("", g.Viewer(), handler.ListKnowledgeBases)
+		kb.GET("/:id", g.Viewer(), g.KBAccessRead("id"), handler.GetKnowledgeBase)
+		kb.PUT("/:id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateKnowledgeBase)
+		kb.DELETE("/:id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.DeleteKnowledgeBase)
+		kb.PUT("/:id/pin", g.Viewer(), g.KBAccessRead("id"), handler.TogglePinKnowledgeBase)
+		kb.POST("/:id/hybrid-search", g.Viewer(), g.KBAccessRead("id"), handler.HybridSearch)
+		kb.GET("/:id/hybrid-search", g.Viewer(), g.KBAccessRead("id"), handler.HybridSearch)
+		kb.POST("/copy", g.Contributor(), handler.CopyKnowledgeBase)
+		kb.GET("/copy/progress/:task_id", g.Viewer(), handler.GetKBCloneProgress)
+		kb.GET("/:id/move-targets", g.Viewer(), g.KBAccessRead("id"), handler.ListMoveTargets)
 	}
 }
 
 // RegisterKnowledgeTagRoutes 注册知识库标签相关路由
-func RegisterKnowledgeTagRoutes(r *gin.RouterGroup, tagHandler *handler.TagHandler) {
+func RegisterKnowledgeTagRoutes(r *gin.RouterGroup, tagHandler *handler.TagHandler, g *rbacGuards) {
 	if tagHandler == nil {
 		return
 	}
 	kbTags := r.Group("/knowledge-bases/:id/tags")
 	{
-		kbTags.GET("", tagHandler.ListTags)
-		kbTags.POST("", tagHandler.CreateTag)
-		kbTags.PUT("/:tag_id", tagHandler.UpdateTag)
-		kbTags.DELETE("/:tag_id", tagHandler.DeleteTag)
+		kbTags.GET("", g.Viewer(), g.KBAccessRead("id"), tagHandler.ListTags)
+		kbTags.POST("", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), tagHandler.CreateTag)
+		kbTags.PUT("/:tag_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), tagHandler.UpdateTag)
+		kbTags.DELETE("/:tag_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), tagHandler.DeleteTag)
 	}
 }
 
 // RegisterMessageRoutes 注册消息相关的路由
-func RegisterMessageRoutes(r *gin.RouterGroup, handler *handler.MessageHandler) {
+func RegisterMessageRoutes(r *gin.RouterGroup, handler *handler.MessageHandler, g *rbacGuards) {
 	// 消息路由组
 	messages := r.Group("/messages")
 	{
-		// 搜索历史对话（关键词 + 向量混合搜索）
-		messages.POST("/search", handler.SearchMessages)
-		// 获取聊天历史知识库的统计信息
-		messages.GET("/chat-history-stats", handler.GetChatHistoryKBStats)
-		// 加载更早的消息，用于向上滚动加载
-		messages.GET("/:session_id/load", handler.LoadMessages)
-		// 删除消息
-		messages.DELETE("/:session_id/:id", handler.DeleteMessage)
+		messages.POST("/search", g.Viewer(), handler.SearchMessages)
+		messages.GET("/chat-history-stats", g.Viewer(), handler.GetChatHistoryKBStats)
+		messages.GET("/:session_id/load", g.Viewer(), handler.LoadMessages)
+		messages.DELETE("/:session_id/:id", g.Viewer(), handler.DeleteMessage)
 	}
 }
 
@@ -394,8 +396,8 @@ func RegisterExportRoutes(r *gin.RouterGroup, h *handler.ExportHandler) {
 }
 
 // RegisterSessionRoutes 注册路由
-func RegisterSessionRoutes(r *gin.RouterGroup, handler *session.Handler) {
-	sessions := r.Group("/sessions")
+func RegisterSessionRoutes(r *gin.RouterGroup, handler *session.Handler, g *rbacGuards) {
+	sessions := r.Group("/sessions", g.Viewer())
 	{
 		sessions.POST("", handler.CreateSession)
 		sessions.DELETE("/batch", handler.BatchDeleteSessions)
@@ -418,19 +420,19 @@ func RegisterSessionRoutes(r *gin.RouterGroup, handler *session.Handler) {
 }
 
 // RegisterChatRoutes 注册路由
-func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
-	knowledgeChat := r.Group("/knowledge-chat")
+func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler, g *rbacGuards) {
+	knowledgeChat := r.Group("/knowledge-chat", g.Viewer())
 	{
 		knowledgeChat.POST("/:session_id", handler.KnowledgeQA)
 	}
 
 	// Agent-based chat
-	agentChat := r.Group("/agent-chat")
+	agentChat := r.Group("/agent-chat", g.Viewer())
 	{
 		agentChat.POST("/:session_id", handler.AgentQA)
 	}
 
-	chatDocumentArtifacts := r.Group("/chat-document-artifacts")
+	chatDocumentArtifacts := r.Group("/chat-document-artifacts", g.Viewer())
 	{
 		chatDocumentArtifacts.GET("", handler.ListChatDocumentArtifacts)
 		chatDocumentArtifacts.GET("/latest", handler.GetLatestChatDocumentArtifact)
@@ -439,7 +441,7 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
 	}
 
 	// 新增知识检索接口，不需要session_id
-	knowledgeSearch := r.Group("/knowledge-search")
+	knowledgeSearch := r.Group("/knowledge-search", g.Viewer())
 	{
 		knowledgeSearch.POST("", handler.SearchKnowledge)
 	}
@@ -449,68 +451,63 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
 // invitation and audit-log subresources.
 func RegisterTenantRoutes(
 	r *gin.RouterGroup,
-	g *rbacGuards,
-	cfg *config.Config,
 	handler *handler.TenantHandler,
 	memberHandler *handler.TenantMemberHandler,
 	invitationHandler *handler.TenantInvitationHandler,
 	auditLogHandler *handler.AuditLogHandler,
+	g *rbacGuards,
 ) {
-	// 添加获取所有租户的路由（需要跨租户权限）
-	r.GET("/tenants/all", handler.ListAllTenants)
-	// 添加搜索租户的路由（需要跨租户权限，支持分页和搜索）
-	r.GET("/tenants/search", handler.SearchTenants)
-	// 租户路由组
+	r.GET("/tenants/all", g.CrossTenant(), handler.ListAllTenants)
+	r.GET("/tenants/search", g.CrossTenant(), handler.SearchTenants)
 	tenantRoutes := r.Group("/tenants")
 	{
 		tenantRoutes.POST("", handler.CreateTenant)
 		tenantRoutes.GET("", handler.ListTenants)
+		tenantRoutes.GET("/kv/:key", g.Viewer(), handler.GetTenantKV)
+		tenantRoutes.PUT("/kv/:key", g.Admin(), handler.UpdateTenantKV)
 
-		// Tenant KV read (all authenticated users)
-		tenantRoutes.GET("/kv/:key", handler.GetTenantKV)
-		// Tenant KV write (all authenticated users can update their own tenant's config)
-		tenantRoutes.PUT("/kv/:key", handler.UpdateTenantKV)
-
-		tenantByID := tenantRoutes.Group("/:id", middleware.RequirePathTenantMatch(cfg))
+		tenantByID := tenantRoutes.Group("/:id", g.PathTenantMatch())
 		{
-			tenantByID.GET("", handler.GetTenant)
-			tenantByID.PUT("", handler.UpdateTenant)
-			tenantByID.DELETE("", handler.DeleteTenant)
-			tenantByID.POST("/api-key", handler.ResetAPIKey)
+			tenantByID.GET("", g.Viewer(), handler.GetTenant)
+			tenantByID.PUT("", g.Owner(), handler.UpdateTenant)
+			tenantByID.DELETE("", g.Owner(), handler.DeleteTenant)
+			tenantByID.POST("/api-key", g.Owner(), handler.ResetAPIKey)
+			tenantByID.GET("/api-principal-config", g.Owner(), handler.GetAPIPrincipalConfig)
+			tenantByID.PUT("/api-principal-config", g.Owner(), handler.UpdateAPIPrincipalConfig)
 
 			if memberHandler != nil {
-				tenantByID.GET("/members", middleware.RequireRole(types.TenantRoleViewer, cfg), memberHandler.ListMembers)
-				tenantByID.POST("/members", middleware.RequireRole(types.TenantRoleOwner, cfg), memberHandler.AddMember)
-				tenantByID.PUT("/members/:user_id", middleware.RequireRole(types.TenantRoleOwner, cfg), memberHandler.UpdateMemberRole)
-				tenantByID.DELETE("/members/:user_id", middleware.RequireRole(types.TenantRoleOwner, cfg), memberHandler.RemoveMember)
-				tenantByID.POST("/leave", middleware.RequireRole(types.TenantRoleViewer, cfg), memberHandler.LeaveTenant)
+				tenantByID.GET("/members", g.Viewer(), memberHandler.ListMembers)
+				tenantByID.POST("/members", g.Owner(), memberHandler.AddMember)
+				tenantByID.PUT("/members/:user_id", g.Owner(), memberHandler.UpdateMemberRole)
+				tenantByID.DELETE("/members/:user_id", g.Owner(), memberHandler.RemoveMember)
+				tenantByID.POST("/leave", g.Viewer(), memberHandler.LeaveTenant)
 			}
 
 			if invitationHandler != nil {
 				tenantByID.GET("/invitations", g.Viewer(), invitationHandler.ListTenantInvitations)
 				tenantByID.POST("/invitations", g.Owner(), invitationHandler.CreateInvitation)
 				tenantByID.DELETE("/invitations/:inv_id", g.Owner(), invitationHandler.RevokeInvitation)
-				// Share-link create lives under /invite-links so the URL
-				// reads as "create a link" rather than another flavour
-				// of /invitations; the underlying row still lives in the
-				// tenant_invitations table and shows up in the GET above.
 				tenantByID.POST("/invite-links", g.Owner(), invitationHandler.CreateInviteLink)
 			}
 
 			if auditLogHandler != nil {
-				tenantByID.GET("/audit-log", middleware.RequireRole(types.TenantRoleAdmin, cfg), auditLogHandler.ListTenantAuditLog)
+				tenantByID.GET("/audit-log", g.Admin(), auditLogHandler.ListTenantAuditLog)
 			}
 		}
 	}
+}
 
-	if invitationHandler != nil {
-		meRoutes := r.Group("/me")
-		{
-			meRoutes.GET("/invitations", invitationHandler.ListMyInvitations)
-			meRoutes.GET("/invitations/pending-count", invitationHandler.CountMyPendingInvitations)
-			meRoutes.POST("/invitations/:inv_id/accept", invitationHandler.AcceptMyInvitation)
-			meRoutes.POST("/invitations/:inv_id/decline", invitationHandler.DeclineMyInvitation)
-		}
+// RegisterMyInvitationRoutes wires the current user's invitation inbox.
+func RegisterMyInvitationRoutes(r *gin.RouterGroup, invitationHandler *handler.TenantInvitationHandler) {
+	if invitationHandler == nil {
+		return
+	}
+	meRoutes := r.Group("/me")
+	{
+		meRoutes.GET("/invitations", invitationHandler.ListMyInvitations)
+		meRoutes.GET("/invitations/pending-count", invitationHandler.CountMyPendingInvitations)
+		meRoutes.POST("/invitations/:inv_id/accept", invitationHandler.AcceptMyInvitation)
+		meRoutes.POST("/invitations/:inv_id/decline", invitationHandler.DeclineMyInvitation)
 	}
 }
 
@@ -521,17 +518,19 @@ func RegisterTenantWriteRoutes(r *gin.RouterGroup, handler *handler.TenantHandle
 	// Moved to RegisterTenantRoutes
 }
 
-// RegisterModelRoutes registers model read routes (accessible to all authenticated users)
-func RegisterModelRoutes(r *gin.RouterGroup, handler *handler.ModelHandler) {
-	// 模型路由组 (read-only for all users)
+// RegisterModelRoutes registers model routes.
+func RegisterModelRoutes(r *gin.RouterGroup, handler *handler.ModelHandler, credHandler *handler.ModelCredentialsHandler, g *rbacGuards) {
 	models := r.Group("/models")
 	{
-		// 获取模型厂商列表
-		models.GET("/providers", handler.ListModelProviders)
-		// 获取模型列表
-		models.GET("", handler.ListModels)
-		// 获取单个模型
-		models.GET("/:id", handler.GetModel)
+		models.GET("/providers", g.Viewer(), handler.ListModelProviders)
+		models.POST("", g.Admin(), handler.CreateModel)
+		models.GET("", g.Viewer(), handler.ListModels)
+		models.POST("/:id/debug", g.Admin(), handler.DebugModel)
+		models.GET("/:id", g.Viewer(), handler.GetModel)
+		models.PUT("/:id", g.Admin(), handler.UpdateModel)
+		models.DELETE("/:id", g.Admin(), handler.DeleteModel)
+		models.PUT("/:id/credentials", g.Admin(), credHandler.Put)
+		models.DELETE("/:id/credentials/:field", g.Admin(), credHandler.DeleteField)
 	}
 }
 
@@ -548,11 +547,11 @@ func RegisterModelWriteRoutes(r *gin.RouterGroup, handler *handler.ModelHandler)
 	}
 }
 
-func RegisterEvaluationRoutes(r *gin.RouterGroup, handler *handler.EvaluationHandler) {
+func RegisterEvaluationRoutes(r *gin.RouterGroup, handler *handler.EvaluationHandler, g *rbacGuards) {
 	evaluationRoutes := r.Group("/evaluation")
 	{
-		evaluationRoutes.POST("/", handler.Evaluation)
-		evaluationRoutes.GET("/", handler.GetEvaluationResult)
+		evaluationRoutes.POST("/", g.Admin(), handler.Evaluation)
+		evaluationRoutes.GET("/", g.Viewer(), handler.GetEvaluationResult)
 	}
 }
 
@@ -581,42 +580,39 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler) {
 	r.POST("/auth/change-password", handler.ChangePassword)
 }
 
-func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.InitializationHandler) {
-	// 初始化接口
-	r.GET("/initialization/config/:kbId", handler.GetCurrentConfigByKB)
-	r.POST("/initialization/initialize/:kbId", handler.InitializeByKB)
-	r.PUT("/initialization/config/:kbId", handler.UpdateKBConfig) // 新的简化版接口，只传模型ID
+func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.InitializationHandler, g *rbacGuards) {
+	r.GET("/initialization/config/:kbId", g.Viewer(), handler.GetCurrentConfigByKB)
+	r.POST("/initialization/initialize/:kbId", g.OwnedKBOrAdminFromKbIDParam(), handler.InitializeByKB)
+	r.PUT("/initialization/config/:kbId", g.OwnedKBOrAdminFromKbIDParam(), handler.UpdateKBConfig)
 
-	// Ollama相关接口
-	r.GET("/initialization/ollama/status", handler.CheckOllamaStatus)
-	r.GET("/initialization/ollama/models", handler.ListOllamaModels)
-	r.POST("/initialization/ollama/models/check", handler.CheckOllamaModels)
-	r.POST("/initialization/ollama/models/download", handler.DownloadOllamaModel)
-	r.GET("/initialization/ollama/download/progress/:taskId", handler.GetDownloadProgress)
-	r.GET("/initialization/ollama/download/tasks", handler.ListDownloadTasks)
+	r.GET("/initialization/ollama/status", g.Viewer(), handler.CheckOllamaStatus)
+	r.GET("/initialization/ollama/models", g.Viewer(), handler.ListOllamaModels)
+	r.POST("/initialization/ollama/models/check", g.Admin(), handler.CheckOllamaModels)
+	r.POST("/initialization/ollama/models/download", g.Admin(), handler.DownloadOllamaModel)
+	r.GET("/initialization/ollama/download/progress/:taskId", g.Viewer(), handler.GetDownloadProgress)
+	r.GET("/initialization/ollama/download/tasks", g.Viewer(), handler.ListDownloadTasks)
 
-	// 远程API相关接口
-	r.POST("/initialization/remote/check", handler.CheckRemoteModel)
-	r.POST("/initialization/embedding/test", handler.TestEmbeddingModel)
-	r.POST("/initialization/rerank/check", handler.CheckRerankModel)
-	r.POST("/initialization/asr/check", handler.CheckASRModel)
-	r.POST("/initialization/multimodal/test", handler.TestMultimodalFunction)
+	r.POST("/initialization/remote/check", g.Admin(), handler.CheckRemoteModel)
+	r.POST("/initialization/embedding/test", g.Admin(), handler.TestEmbeddingModel)
+	r.POST("/initialization/rerank/check", g.Admin(), handler.CheckRerankModel)
+	r.POST("/initialization/asr/check", g.Admin(), handler.CheckASRModel)
+	r.POST("/initialization/multimodal/test", g.Admin(), handler.TestMultimodalFunction)
 
-	r.POST("/initialization/extract/text-relation", handler.ExtractTextRelations)
-	r.POST("/initialization/extract/fabri-tag", handler.FabriTag)
-	r.POST("/initialization/extract/fabri-text", handler.FabriText)
+	r.POST("/initialization/extract/text-relation", g.Admin(), handler.ExtractTextRelations)
+	r.POST("/initialization/extract/fabri-tag", g.Admin(), handler.FabriTag)
+	r.POST("/initialization/extract/fabri-text", g.Admin(), handler.FabriText)
 }
 
 // RegisterSystemRoutes registers system information routes
-func RegisterSystemRoutes(r *gin.RouterGroup, handler *handler.SystemHandler) {
+func RegisterSystemRoutes(r *gin.RouterGroup, handler *handler.SystemHandler, g *rbacGuards) {
 	systemRoutes := r.Group("/system")
 	{
-		systemRoutes.GET("/info", handler.GetSystemInfo)
-		systemRoutes.GET("/parser-engines", handler.ListParserEngines)
-		systemRoutes.POST("/parser-engines/check", handler.CheckParserEngines)
-		systemRoutes.POST("/docreader/reconnect", handler.ReconnectDocReader)
-		systemRoutes.GET("/storage-engine-status", handler.GetStorageEngineStatus)
-		systemRoutes.POST("/storage-engine-check", handler.CheckStorageEngine)
+		systemRoutes.GET("/info", g.Viewer(), handler.GetSystemInfo)
+		systemRoutes.GET("/parser-engines", g.Viewer(), handler.ListParserEngines)
+		systemRoutes.POST("/parser-engines/check", g.Admin(), handler.CheckParserEngines)
+		systemRoutes.POST("/docreader/reconnect", g.Admin(), handler.ReconnectDocReader)
+		systemRoutes.GET("/storage-engine-status", g.Viewer(), handler.GetStorageEngineStatus)
+		systemRoutes.POST("/storage-engine-check", g.Admin(), handler.CheckStorageEngine)
 	}
 }
 
@@ -624,11 +620,11 @@ func RegisterSystemRoutes(r *gin.RouterGroup, handler *handler.SystemHandler) {
 // settings, system-admin management, and platform audit logs.
 func RegisterSystemAdminRoutes(
 	r *gin.RouterGroup,
-	cfg *config.Config,
 	systemHandler *handler.SystemHandler,
 	auditHandler *handler.AuditLogHandler,
+	g *rbacGuards,
 ) {
-	admin := r.Group("/system/admin", middleware.RequireSystemAdmin(cfg))
+	admin := r.Group("/system/admin", g.SystemAdmin())
 	{
 		admin.GET("/list", systemHandler.ListSystemAdmins)
 		admin.POST("/promote", systemHandler.PromoteUserToSystemAdmin)
@@ -644,114 +640,114 @@ func RegisterSystemAdminRoutes(
 	}
 }
 
-// RegisterMCPServiceRoutes registers MCP service routes
-func RegisterMCPServiceRoutes(r *gin.RouterGroup, handler *handler.MCPServiceHandler) {
+func RegisterMCPServiceRoutes(
+	r *gin.RouterGroup,
+	handler *handler.MCPServiceHandler,
+	credHandler *handler.MCPCredentialsHandler,
+	oauthHandler *handler.MCPOAuthHandler,
+	g *rbacGuards,
+) {
+	// MCP OAuth provider redirect. Registered OUTSIDE the /mcp-services group
+	// to avoid a static-vs-":id" route conflict, and left unauthenticated
+	// (allow-listed in middleware/auth.go) because the third-party browser
+	// redirect carries no WeKnora bearer — the single-use state authenticates.
+	r.GET("/mcp-oauth/callback", oauthHandler.Callback)
+
 	mcpServices := r.Group("/mcp-services")
 	{
-		// Create MCP service
-		mcpServices.POST("", handler.CreateMCPService)
-		// List MCP services
-		mcpServices.GET("", handler.ListMCPServices)
-		// Get MCP service by ID
-		mcpServices.GET("/:id", handler.GetMCPService)
-		// Update MCP service
-		mcpServices.PUT("/:id", handler.UpdateMCPService)
-		// Delete MCP service
-		mcpServices.DELETE("/:id", handler.DeleteMCPService)
-		// Test MCP service connection
-		mcpServices.POST("/:id/test", handler.TestMCPService)
-		// Get MCP service tools
-		mcpServices.GET("/:id/tools", handler.GetMCPServiceTools)
-		// Get MCP service resources
-		mcpServices.GET("/:id/resources", handler.GetMCPServiceResources)
-		// MCP tool human approval (issue #1173)
-		mcpServices.GET("/:id/tool-approvals", handler.ListMCPToolApprovals)
-		mcpServices.PUT("/:id/tool-approvals/:tool_name", handler.SetMCPToolApproval)
+		mcpServices.POST("", g.Admin(), handler.CreateMCPService)
+		mcpServices.GET("", g.Viewer(), handler.ListMCPServices)
+		mcpServices.GET("/:id", g.Viewer(), handler.GetMCPService)
+		mcpServices.PUT("/:id", g.Admin(), handler.UpdateMCPService)
+		mcpServices.DELETE("/:id", g.Admin(), handler.DeleteMCPService)
+		mcpServices.POST("/:id/test", g.Admin(), handler.TestMCPService)
+		mcpServices.GET("/:id/tools", g.Viewer(), handler.GetMCPServiceTools)
+		mcpServices.GET("/:id/resources", g.Viewer(), handler.GetMCPServiceResources)
+		mcpServices.PUT("/:id/credentials", g.Admin(), credHandler.Put)
+		mcpServices.DELETE("/:id/credentials/:field", g.Admin(), credHandler.DeleteField)
+		mcpServices.GET("/:id/tool-approvals", g.Viewer(), handler.ListMCPToolApprovals)
+		mcpServices.PUT("/:id/tool-approvals/:tool_name", g.Admin(), handler.SetMCPToolApproval)
+		mcpServices.POST("/:id/oauth/authorize-url", g.Viewer(), oauthHandler.AuthorizeURL)
+		mcpServices.GET("/:id/oauth/status", g.Viewer(), oauthHandler.Status)
+		mcpServices.DELETE("/:id/oauth/token", g.Viewer(), oauthHandler.Revoke)
 	}
 
 	agentTool := r.Group("/agent")
 	{
-		agentTool.POST("/tool-approvals/:pending_id", handler.ResolveToolApproval)
+		agentTool.POST("/tool-approvals/:pending_id", g.Viewer(), handler.ResolveToolApproval)
+		agentTool.POST("/mcp-oauth-resolutions/:pending_id", g.Viewer(), oauthHandler.ResolveMCPOAuth)
+		agentTool.POST("/mcp-oauth-resolutions/:pending_id/cancel", g.Viewer(), oauthHandler.CancelMCPOAuth)
 	}
 }
 
 // RegisterWebSearchRoutes registers web search routes
-func RegisterWebSearchRoutes(r *gin.RouterGroup, webSearchHandler *handler.WebSearchHandler) {
-	// Web search providers
+func RegisterWebSearchRoutes(r *gin.RouterGroup, webSearchHandler *handler.WebSearchHandler, g *rbacGuards) {
 	webSearch := r.Group("/web-search")
 	{
-		// Get available providers
-		webSearch.GET("/providers", webSearchHandler.GetProviders)
+		webSearch.GET("/providers", g.Viewer(), webSearchHandler.GetProviders)
 	}
 }
 
 // RegisterWebSearchProviderRoutes registers CRUD routes for web search provider configurations
-func RegisterWebSearchProviderRoutes(r *gin.RouterGroup, h *handler.WebSearchProviderHandler) {
+func RegisterWebSearchProviderRoutes(r *gin.RouterGroup, h *handler.WebSearchProviderHandler, credHandler *handler.WebSearchProviderCredentialsHandler, g *rbacGuards) {
 	providers := r.Group("/web-search-providers")
 	{
-		// List available provider types (metadata for UI forms)
-		providers.GET("/types", h.ListProviderTypes)
-		// Test with raw credentials (no persistence)
-		providers.POST("/test", h.TestProviderRaw)
-		// CRUD
-		providers.POST("", h.CreateProvider)
-		providers.GET("", h.ListProviders)
-		providers.GET("/:id", h.GetProvider)
-		providers.PUT("/:id", h.UpdateProvider)
-		providers.DELETE("/:id", h.DeleteProvider)
-		// Test existing saved provider
-		providers.POST("/:id/test", h.TestProviderByID)
+		providers.GET("/types", g.Viewer(), h.ListProviderTypes)
+		providers.POST("/test", g.Admin(), h.TestProviderRaw)
+		providers.POST("", g.Admin(), h.CreateProvider)
+		providers.GET("", g.Viewer(), h.ListProviders)
+		providers.GET("/:id", g.Viewer(), h.GetProvider)
+		providers.PUT("/:id", g.Admin(), h.UpdateProvider)
+		providers.DELETE("/:id", g.Admin(), h.DeleteProvider)
+		providers.PUT("/:id/credentials", g.Admin(), credHandler.Put)
+		providers.DELETE("/:id/credentials/:field", g.Admin(), credHandler.DeleteField)
+		providers.POST("/:id/test", g.Admin(), h.TestProviderByID)
 	}
 }
 
 // RegisterVectorStoreRoutes registers CRUD routes for vector store configurations
-func RegisterVectorStoreRoutes(r *gin.RouterGroup, h *handler.VectorStoreHandler) {
+func RegisterVectorStoreRoutes(r *gin.RouterGroup, h *handler.VectorStoreHandler, g *rbacGuards) {
 	stores := r.Group("/vector-stores")
 	{
-		// List available engine types (metadata for UI forms)
-		stores.GET("/types", h.ListStoreTypes)
-		// Test with raw credentials (no persistence)
-		stores.POST("/test", h.TestStoreRaw)
-		// CRUD
-		stores.POST("", h.CreateStore)
-		stores.GET("", h.ListStores)
-		stores.GET("/:id", h.GetStore)
-		stores.PUT("/:id", h.UpdateStore)
-		stores.DELETE("/:id", h.DeleteStore)
-		// Test existing saved or env store
-		stores.POST("/:id/test", h.TestStoreByID)
+		stores.GET("/types", g.Viewer(), h.ListStoreTypes)
+		stores.POST("/test", g.Admin(), h.TestStoreRaw)
+		stores.POST("", g.Admin(), h.CreateStore)
+		stores.GET("", g.Viewer(), h.ListStores)
+		stores.GET("/:id", g.Viewer(), h.GetStore)
+		stores.PUT("/:id", g.Admin(), h.UpdateStore)
+		stores.DELETE("/:id", g.Admin(), h.DeleteStore)
+		stores.POST("/:id/test", g.Admin(), h.TestStoreByID)
 	}
 }
 
 // RegisterCustomAgentRoutes registers custom agent routes
-func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomAgentHandler) {
+func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomAgentHandler, g *rbacGuards) {
 	agents := r.Group("/agents")
 	{
-		// Get placeholder definitions (must be before /:id to avoid conflict)
-		agents.GET("/placeholders", agentHandler.GetPlaceholders)
-		// List smart-reasoning agent type presets (rag-qa / wiki-qa / hybrid / custom)
-		agents.GET("/type-presets", agentHandler.GetAgentTypePresets)
-		// Create custom agent
-		agents.POST("", agentHandler.CreateAgent)
-		// List all agents (including built-in)
-		agents.GET("", agentHandler.ListAgents)
-		// Get the current page-share state of one custom agent
-		agents.GET("/:id/page-share", agentHandler.GetAgentPageShare)
-		// Open or re-enable page share for one custom agent
-		agents.POST("/:id/page-share", agentHandler.CreateOrEnableAgentPageShare)
-		// Close page share for one custom agent
-		agents.DELETE("/:id/page-share", agentHandler.DeleteAgentPageShare)
-		// Get agent by ID
-		agents.GET("/:id", agentHandler.GetAgent)
-		// Update agent
-		agents.PUT("/:id", agentHandler.UpdateAgent)
-		// Delete agent
-		agents.DELETE("/:id", agentHandler.DeleteAgent)
-		// Copy agent
-		agents.POST("/:id/copy", agentHandler.CopyAgent)
+		agents.GET("/placeholders", g.Viewer(), agentHandler.GetPlaceholders)
+		agents.GET("/type-presets", g.Viewer(), agentHandler.GetAgentTypePresets)
+		agents.POST("", g.Contributor(), agentHandler.CreateAgent)
+		agents.GET("", g.Viewer(), agentHandler.ListAgents)
+		agents.GET("/:id/page-share", g.OwnedAgentOrAdmin(), agentHandler.GetAgentPageShare)
+		agents.POST("/:id/page-share", g.OwnedAgentOrAdmin(), agentHandler.CreateOrEnableAgentPageShare)
+		agents.DELETE("/:id/page-share", g.OwnedAgentOrAdmin(), agentHandler.DeleteAgentPageShare)
+		agents.GET("/:id", g.Viewer(), agentHandler.GetAgent)
+		agents.PUT("/:id", g.OwnedAgentOrAdmin(), agentHandler.UpdateAgent)
+		agents.DELETE("/:id", g.OwnedAgentOrAdmin(), agentHandler.DeleteAgent)
+		agents.POST("/:id/copy", g.Contributor(), agentHandler.CopyAgent)
 	}
 	// Registered outside the group to avoid Gin route conflict with /agents/:id/shares in organization routes
-	r.GET("/agents/:id/suggested-questions", agentHandler.GetSuggestedQuestions)
+	r.GET("/agents/:id/suggested-questions", g.Viewer(), agentHandler.GetSuggestedQuestions)
+}
+
+// RegisterUserFavoriteRoutes wires the per-user starred-resource endpoints.
+func RegisterUserFavoriteRoutes(r *gin.RouterGroup, h *handler.UserResourceFavoriteHandler, g *rbacGuards) {
+	favs := r.Group("/user/favorites")
+	{
+		favs.GET("", g.Viewer(), h.ListFavorites)
+		favs.POST("", g.Viewer(), h.AddFavorite)
+		favs.DELETE("/:type/:id", g.Viewer(), h.RemoveFavorite)
+	}
 }
 
 // RegisterPublicAgentPageShareRoutes registers anonymous readonly routes for agent page shares.
@@ -786,95 +782,122 @@ func RegisterPublicAgentPageShareExportRoutes(r *gin.Engine, exportHandler *hand
 }
 
 // RegisterSkillRoutes registers skill routes
-func RegisterSkillRoutes(r *gin.RouterGroup, skillHandler *handler.SkillHandler) {
+func RegisterSkillRoutes(r *gin.RouterGroup, skillHandler *handler.SkillHandler, g *rbacGuards) {
 	skills := r.Group("/skills")
 	{
-		// List all preloaded skills
-		skills.GET("", skillHandler.ListSkills)
+		skills.GET("", g.Viewer(), skillHandler.ListSkills)
 	}
 }
 
 // RegisterOrganizationRoutes registers organization and sharing routes
-func RegisterOrganizationRoutes(r *gin.RouterGroup, orgHandler *handler.OrganizationHandler) {
+func RegisterOrganizationRoutes(r *gin.RouterGroup, orgHandler *handler.OrganizationHandler, g *rbacGuards) {
 	// Organization routes
 	orgs := r.Group("/organizations")
 	{
-		// Create organization
-		orgs.POST("", orgHandler.CreateOrganization)
-		// List my organizations
-		orgs.GET("", orgHandler.ListMyOrganizations)
-		// Preview organization by invite code (without joining)
-		orgs.GET("/preview/:code", orgHandler.PreviewByInviteCode)
-		// Join organization by invite code
-		orgs.POST("/join", orgHandler.JoinByInviteCode)
-		// Submit join request (for organizations that require approval)
-		orgs.POST("/join-request", orgHandler.SubmitJoinRequest)
-		// Search searchable (discoverable) organizations
-		orgs.GET("/search", orgHandler.SearchOrganizations)
-		// Join searchable organization by ID (no invite code)
-		orgs.POST("/join-by-id", orgHandler.JoinByOrganizationID)
-		// Get organization by ID
-		orgs.GET("/:id", orgHandler.GetOrganization)
-		// Update organization
-		orgs.PUT("/:id", orgHandler.UpdateOrganization)
-		// Delete organization
-		orgs.DELETE("/:id", orgHandler.DeleteOrganization)
-		// Leave organization
-		orgs.POST("/:id/leave", orgHandler.LeaveOrganization)
-		// Request role upgrade (for existing members)
-		orgs.POST("/:id/request-upgrade", orgHandler.RequestRoleUpgrade)
-		// Generate invite code
-		orgs.POST("/:id/invite-code", orgHandler.GenerateInviteCode)
-		// Search users for invite (admin only)
-		orgs.GET("/:id/search-users", orgHandler.SearchUsersForInvite)
-		// Invite member directly (admin only)
-		orgs.POST("/:id/invite", orgHandler.InviteMember)
-		// List members
-		orgs.GET("/:id/members", orgHandler.ListMembers)
-		// Update member role
-		orgs.PUT("/:id/members/:user_id", orgHandler.UpdateMemberRole)
-		// Remove member
-		orgs.DELETE("/:id/members/:user_id", orgHandler.RemoveMember)
-		// List join requests (admin only)
-		orgs.GET("/:id/join-requests", orgHandler.ListJoinRequests)
-		// Review join request (admin only)
-		orgs.PUT("/:id/join-requests/:request_id/review", orgHandler.ReviewJoinRequest)
-		// List knowledge bases shared to this organization
-		orgs.GET("/:id/shares", orgHandler.ListOrgShares)
-		// List agents shared to this organization
-		orgs.GET("/:id/agent-shares", orgHandler.ListOrgAgentShares)
-		// List all knowledge bases in this organization (including mine) for list-page space view
-		orgs.GET("/:id/shared-knowledge-bases", orgHandler.ListOrganizationSharedKnowledgeBases)
-		// List all agents in this organization (including mine) for list-page space view
-		orgs.GET("/:id/shared-agents", orgHandler.ListOrganizationSharedAgents)
+		orgs.POST("", g.Admin(), orgHandler.CreateOrganization)
+		orgs.GET("", g.Viewer(), orgHandler.ListMyOrganizations)
+		orgs.GET("/preview/:code", g.Viewer(), orgHandler.PreviewByInviteCode)
+		orgs.POST("/join", g.Admin(), orgHandler.JoinByInviteCode)
+		orgs.POST("/join-request", g.Admin(), orgHandler.SubmitJoinRequest)
+		orgs.GET("/search", g.Viewer(), orgHandler.SearchOrganizations)
+		orgs.POST("/join-by-id", g.Admin(), orgHandler.JoinByOrganizationID)
+		orgs.GET("/:id", g.Viewer(), orgHandler.GetOrganization)
+		orgs.PUT("/:id", g.Admin(), orgHandler.UpdateOrganization)
+		orgs.DELETE("/:id", g.Admin(), orgHandler.DeleteOrganization)
+		orgs.POST("/:id/leave", g.Admin(), orgHandler.LeaveOrganization)
+		orgs.POST("/:id/request-upgrade", g.Admin(), orgHandler.RequestRoleUpgrade)
+		orgs.POST("/:id/invite-code", g.Admin(), orgHandler.GenerateInviteCode)
+		orgs.GET("/:id/search-users", g.Admin(), orgHandler.SearchUsersForInvite)
+		orgs.POST("/:id/invite", g.Admin(), orgHandler.InviteMember)
+		orgs.GET("/:id/members", g.Viewer(), orgHandler.ListMembers)
+		orgs.PUT("/:id/members/:user_id", g.Admin(), orgHandler.UpdateMemberRole)
+		orgs.DELETE("/:id/members/:user_id", g.Admin(), orgHandler.RemoveMember)
+		orgs.GET("/:id/join-requests", g.Admin(), orgHandler.ListJoinRequests)
+		orgs.PUT("/:id/join-requests/:request_id/review", g.Admin(), orgHandler.ReviewJoinRequest)
+		orgs.GET("/:id/shares", g.Viewer(), orgHandler.ListOrgShares)
+		orgs.GET("/:id/agent-shares", g.Viewer(), orgHandler.ListOrgAgentShares)
+		orgs.GET("/:id/shared-knowledge-bases", g.Viewer(), orgHandler.ListOrganizationSharedKnowledgeBases)
+		orgs.GET("/:id/shared-agents", g.Viewer(), orgHandler.ListOrganizationSharedAgents)
 	}
 
 	// Knowledge base sharing routes (add to existing kb routes)
 	kbShares := r.Group("/knowledge-bases/:id/shares")
 	{
-		// Share knowledge base
-		kbShares.POST("", orgHandler.ShareKnowledgeBase)
-		// List shares
-		kbShares.GET("", orgHandler.ListKBShares)
-		// Update share permission
-		kbShares.PUT("/:share_id", orgHandler.UpdateSharePermission)
-		// Remove share
-		kbShares.DELETE("/:share_id", orgHandler.RemoveShare)
+		kbShares.POST("", g.OwnedKBOrAdmin(), orgHandler.ShareKnowledgeBase)
+		kbShares.GET("", g.Viewer(), orgHandler.ListKBShares)
+		kbShares.PUT("/:share_id", g.OwnedKBOrAdmin(), orgHandler.UpdateSharePermission)
+		kbShares.DELETE("/:share_id", g.OwnedKBOrAdmin(), orgHandler.RemoveShare)
 	}
 
 	// Agent sharing routes
 	agentShares := r.Group("/agents/:id/shares")
 	{
-		agentShares.POST("", orgHandler.ShareAgent)
-		agentShares.GET("", orgHandler.ListAgentShares)
-		agentShares.DELETE("/:share_id", orgHandler.RemoveAgentShare)
+		agentShares.POST("", g.OwnedAgentOrAdmin(), orgHandler.ShareAgent)
+		agentShares.GET("", g.OwnedAgentOrAdmin(), orgHandler.ListAgentShares)
+		agentShares.DELETE("/:share_id", g.OwnedAgentOrAdmin(), orgHandler.RemoveAgentShare)
 	}
 
-	// Shared knowledge bases route
-	r.GET("/shared-knowledge-bases", orgHandler.ListSharedKnowledgeBases)
-	// Shared agents route
-	r.GET("/shared-agents", orgHandler.ListSharedAgents)
-	r.POST("/shared-agents/disabled", orgHandler.SetSharedAgentDisabledByMe)
+	r.GET("/shared-knowledge-bases", g.Viewer(), orgHandler.ListSharedKnowledgeBases)
+	r.GET("/shared-agents", g.Viewer(), orgHandler.ListSharedAgents)
+	r.POST("/shared-agents/disabled", g.Admin(), orgHandler.SetSharedAgentDisabledByMe)
+}
+
+// RegisterEmbedPublicRoutes registers anonymous embed endpoints secured by publish tokens.
+func RegisterEmbedPublicRoutes(
+	r *gin.Engine,
+	embedHandler *handler.EmbedChannelHandler,
+	embedService interfaces.EmbedChannelService,
+	tenantService interfaces.TenantService,
+	redisClient *redis.Client,
+	fileService interfaces.FileService,
+) {
+	if embedHandler == nil || embedService == nil {
+		return
+	}
+	embed := r.Group("/api/v1/embed/:channel_id", middleware.EmbedAuth(embedService, tenantService, redisClient))
+	{
+		embed.POST("/exchange", embedHandler.ExchangeEmbedSession)
+		embed.GET("/config", embedHandler.GetEmbedConfig)
+		embed.GET("/suggested-questions", embedHandler.GetEmbedSuggestedQuestions)
+		embed.GET("/chunks/:chunk_id", embedHandler.GetEmbedChunk)
+		embed.POST("/sessions", embedHandler.CreateEmbedSession)
+		embed.POST("/knowledge-chat/:session_id", embedHandler.EmbedKnowledgeChat)
+		embed.POST("/agent-chat/:session_id", embedHandler.EmbedAgentChat)
+		embed.GET("/messages/:session_id/load", embedHandler.EmbedLoadMessages)
+		embed.POST("/sessions/:session_id/stop", embedHandler.EmbedStopSession)
+		embed.POST("/sessions/:session_id/events", embedHandler.EmbedRelayWebhookEvent)
+		embed.POST("/sessions/:session_id/mcp-oauth-resolutions/:pending_id", embedHandler.EmbedResolveMCPOAuth)
+		embed.POST("/sessions/:session_id/mcp-oauth-resolutions/:pending_id/cancel", embedHandler.EmbedCancelMCPOAuth)
+		embed.POST("/sessions/:session_id/mcp-services/:id/oauth/authorize-url", embedHandler.EmbedMCPOAuthAuthorizeURL)
+		embed.GET("/sessions/:session_id/mcp-services/:id/oauth/status", embedHandler.EmbedMCPOAuthStatus)
+		embed.POST("/sessions/:session_id/tool-approvals/:pending_id", embedHandler.EmbedResolveToolApproval)
+		// Serve images embedded in bot replies (e.g. chart exports). EmbedAuth
+		// injects the channel's tenant, and the handler enforces that the
+		// requested path belongs to that tenant.
+		embed.GET("/files", newFileServeHandler(fileService))
+	}
+}
+
+// RegisterEmbedChannelRoutes registers authenticated embed channel management routes.
+func RegisterEmbedChannelRoutes(r *gin.RouterGroup, embedHandler *handler.EmbedChannelHandler, g *rbacGuards) {
+	if embedHandler == nil {
+		return
+	}
+	agentEmbed := r.Group("/agents/:id/embed-channels")
+	{
+		agentEmbed.POST("", g.Admin(), embedHandler.CreateEmbedChannel)
+		agentEmbed.GET("", g.Viewer(), embedHandler.ListEmbedChannels)
+	}
+	channels := r.Group("/embed-channels")
+	{
+		channels.GET("", g.Viewer(), embedHandler.ListAllEmbedChannels)
+		channels.GET("/:channel_id", g.Viewer(), embedHandler.GetEmbedChannel)
+		channels.PUT("/:channel_id", g.Admin(), embedHandler.UpdateEmbedChannel)
+		channels.DELETE("/:channel_id", g.Admin(), embedHandler.DeleteEmbedChannel)
+		channels.POST("/:channel_id/rotate-token", g.Admin(), embedHandler.RotateEmbedToken)
+		channels.POST("/:channel_id/preview-session", g.Viewer(), embedHandler.IssuePreviewSession)
+		channels.GET("/:channel_id/stats", g.Viewer(), embedHandler.GetEmbedChannelStats)
+	}
 }
 
 // RegisterIMRoutes registers IM callback routes.
@@ -888,28 +911,114 @@ func RegisterIMRoutes(r *gin.Engine, imHandler *handler.IMHandler) {
 }
 
 // RegisterIMChannelRoutes registers IM channel CRUD routes (requires authentication).
-func RegisterIMChannelRoutes(r *gin.RouterGroup, imHandler *handler.IMHandler) {
+func RegisterIMChannelRoutes(r *gin.RouterGroup, imHandler *handler.IMHandler, g *rbacGuards) {
 	// Channel CRUD under agents
 	agentChannels := r.Group("/agents/:id/im-channels")
 	{
-		agentChannels.POST("", imHandler.CreateIMChannel)
-		agentChannels.GET("", imHandler.ListIMChannels)
+		agentChannels.POST("", g.Admin(), imHandler.CreateIMChannel)
+		agentChannels.GET("", g.Viewer(), imHandler.ListIMChannels)
 	}
 
 	// Channel operations by channel ID
 	channels := r.Group("/im-channels")
 	{
-		channels.GET("", imHandler.ListAllIMChannels)
-		channels.PUT("/:id", imHandler.UpdateIMChannel)
-		channels.DELETE("/:id", imHandler.DeleteIMChannel)
-		channels.POST("/:id/toggle", imHandler.ToggleIMChannel)
+		channels.GET("", g.Viewer(), imHandler.ListAllIMChannels)
+		channels.PUT("/:id", g.Admin(), imHandler.UpdateIMChannel)
+		channels.DELETE("/:id", g.Admin(), imHandler.DeleteIMChannel)
+		channels.POST("/:id/toggle", g.Admin(), imHandler.ToggleIMChannel)
 	}
 
 	// WeChat QR code login (requires authentication)
 	wechatGroup := r.Group("/wechat")
 	{
-		wechatGroup.POST("/qrcode", imHandler.WeChatGetQRCode)
-		wechatGroup.POST("/qrcode/status", imHandler.WeChatPollQRCodeStatus)
+		wechatGroup.POST("/qrcode", g.Admin(), imHandler.WeChatGetQRCode)
+		wechatGroup.POST("/qrcode/status", g.Admin(), imHandler.WeChatPollQRCodeStatus)
+	}
+}
+
+// trustedProxies returns the proxy CIDRs/IPs whose X-Forwarded-For headers
+// gin should trust when resolving the client IP. Defaults to loopback and
+// private ranges (covers the bundled nginx in a container network); override
+// with WEKNORA_TRUSTED_PROXIES (comma-separated). An explicit empty value
+// disables proxy trust entirely so ClientIP() returns the direct peer.
+func trustedProxies() []string {
+	raw, ok := os.LookupEnv("WEKNORA_TRUSTED_PROXIES")
+	if !ok {
+		return []string{
+			"127.0.0.0/8",
+			"::1/128",
+			"10.0.0.0/8",
+			"172.16.0.0/12",
+			"192.168.0.0/16",
+			"fc00::/7",
+		}
+	}
+	proxies := make([]string, 0)
+	for _, p := range strings.Split(raw, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			proxies = append(proxies, p)
+		}
+	}
+	return proxies
+}
+
+// embedChannelIDFromPath extracts the channel id from an /embed/:channelID path.
+func embedChannelIDFromPath(path string) string {
+	const prefix = "/embed/"
+	if !strings.HasPrefix(path, prefix) {
+		return ""
+	}
+	rest := strings.TrimPrefix(path, prefix)
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		rest = rest[:i]
+	}
+	if i := strings.IndexByte(rest, '?'); i >= 0 {
+		rest = rest[:i]
+	}
+	return strings.TrimSpace(rest)
+}
+
+// embedFrameAncestorsMiddleware sets a per-channel `frame-ancestors` CSP on the
+// embed SPA page so it can only be framed by the channel's allowed origins.
+// When the channel declares no origins (or "*"), no restriction is applied,
+// matching the API allowlist semantics. Only GET/HEAD page loads are handled.
+func embedFrameAncestorsMiddleware(svc interfaces.EmbedChannelService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+			c.Next()
+			return
+		}
+		channelID := embedChannelIDFromPath(c.Request.URL.Path)
+		if channelID == "" {
+			c.Next()
+			return
+		}
+		ch, err := svc.LookupEnabledChannel(c.Request.Context(), channelID)
+		if err != nil || ch == nil {
+			c.Next()
+			return
+		}
+		origins := ch.AllowedOriginsList()
+		sources := make([]string, 0, len(origins))
+		wildcard := false
+		for _, o := range origins {
+			o = strings.TrimSpace(o)
+			if o == "" {
+				continue
+			}
+			if o == "*" {
+				wildcard = true
+				break
+			}
+			sources = append(sources, o)
+		}
+		// No explicit origins or a wildcard => do not constrain framing here.
+		if wildcard || len(sources) == 0 {
+			c.Next()
+			return
+		}
+		c.Header("Content-Security-Policy", "frame-ancestors "+strings.Join(sources, " "))
+		c.Next()
 	}
 }
 
@@ -975,7 +1084,12 @@ type getRouteRegistrar interface {
 	GET(string, ...gin.HandlerFunc) gin.IRoutes
 }
 
-func serveFiles(r getRouteRegistrar, globalFileService interfaces.FileService) {
+// newFileServeHandler builds the file-proxy handler. It reads the tenant from
+// the request context (set by whichever auth middleware precedes it), so the
+// same handler backs both the authenticated /files route and the embed route
+// (where EmbedAuth injects the channel's tenant). Tenant ownership of the
+// requested path is enforced via ValidateStoragePathTenant either way.
+func newFileServeHandler(globalFileService interfaces.FileService) gin.HandlerFunc {
 	baseDir := os.Getenv("LOCAL_STORAGE_BASE_DIR")
 	if baseDir == "" {
 		baseDir = "/data/files"
@@ -987,9 +1101,7 @@ func serveFiles(r getRouteRegistrar, globalFileService interfaces.FileService) {
 		}
 	}
 
-	logger.Infof(context.Background(), "[Router] Serving files from /files (local base: %s)", absDir)
-
-	r.GET("/files", func(c *gin.Context) {
+	return func(c *gin.Context) {
 		filePath := strings.TrimSpace(c.Query("file_path"))
 		if filePath == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "missing required parameter: file_path"})
@@ -1076,7 +1188,12 @@ func serveFiles(r getRouteRegistrar, globalFileService interfaces.FileService) {
 		if _, err := io.Copy(c.Writer, reader); err != nil {
 			logger.Warnf(context.Background(), "[Router] /files write response failed: %v", err)
 		}
-	})
+	}
+}
+
+func serveFiles(r getRouteRegistrar, globalFileService interfaces.FileService) {
+	logger.Infof(context.Background(), "[Router] Serving files from /files")
+	r.GET("/files", newFileServeHandler(globalFileService))
 }
 
 // servePresignedFiles serves files via HMAC-signed URLs without requiring authentication.
@@ -1289,72 +1406,76 @@ func servePresignedPreview(r *gin.Engine, cfg *config.Config) {
 }
 
 // RegisterDataSourceRoutes 注册数据源相关的路由
-func RegisterDataSourceRoutes(r *gin.RouterGroup, handler *handler.DataSourceHandler) {
-	r.GET("/knowledge-bases/:id/database-schema", handler.GetDatabaseSchema)
-	r.GET("/database-query-audits", handler.ListDatabaseQueryAudits)
+func RegisterDataSourceRoutes(r *gin.RouterGroup, handler *handler.DataSourceHandler, credHandler *handler.DataSourceCredentialsHandler, g *rbacGuards) {
+	r.GET("/knowledge-bases/:id/database-schema", g.Viewer(), g.KBAccessRead("id"), handler.GetDatabaseSchema)
+	r.GET("/database-query-audits", g.Viewer(), handler.ListDatabaseQueryAudits)
 
 	// Data source routes
 	ds := r.Group("/datasource")
 	{
-		// Get available connector types
-		ds.GET("/types", handler.GetAvailableConnectors)
+		ds.POST("/:id/validate", g.Admin(), handler.ValidateConnection)
+		ds.POST("/:id/refresh-schema", g.Admin(), handler.RefreshSchema)
+		ds.GET("/:id/resources", g.Admin(), handler.ListAvailableResources)
+		ds.PUT("/:id/credentials", g.Admin(), credHandler.Put)
+		ds.DELETE("/:id/credentials/:field", g.Admin(), credHandler.DeleteField)
+		ds.POST("/:id/resource-ancestors", g.Admin(), handler.ResolveResourceAncestors)
 
-		// Validate credentials without persistence (for "Test Connection" button)
-		ds.POST("/validate-credentials", handler.ValidateCredentials)
-
-		// CRUD operations
-		ds.POST("", handler.CreateDataSource)
-		ds.GET("", handler.ListDataSources)
-		ds.GET("/:id", handler.GetDataSource)
-		ds.PUT("/:id", handler.UpdateDataSource)
-		ds.DELETE("/:id", handler.DeleteDataSource)
-
-		// Connection and resource management
-		ds.POST("/:id/validate", handler.ValidateConnection)
-		ds.POST("/:id/refresh-schema", handler.RefreshSchema)
-		ds.GET("/:id/resources", handler.ListAvailableResources)
-
-		// Sync management
-		ds.POST("/:id/sync", handler.ManualSync)
-		ds.POST("/:id/pause", handler.PauseDataSource)
-		ds.POST("/:id/resume", handler.ResumeDataSource)
+		ds.GET("/types", g.Viewer(), handler.GetAvailableConnectors)
+		ds.POST("/validate-credentials", g.Admin(), handler.ValidateCredentials)
+		ds.POST("", g.Admin(), handler.CreateDataSource)
+		ds.GET("", g.Viewer(), handler.ListDataSources)
+		ds.GET("/:id", g.Viewer(), handler.GetDataSource)
+		ds.PUT("/:id", g.Admin(), handler.UpdateDataSource)
+		ds.DELETE("/:id", g.Admin(), handler.DeleteDataSource)
+		ds.POST("/:id/sync", g.Admin(), handler.ManualSync)
+		ds.POST("/:id/pause", g.Admin(), handler.PauseDataSource)
+		ds.POST("/:id/resume", g.Admin(), handler.ResumeDataSource)
 
 		// Sync logs
-		ds.GET("/:id/logs", handler.GetSyncLogs)
-		ds.GET("/logs/:log_id", handler.GetSyncLog)
+		ds.GET("/:id/logs", g.Viewer(), handler.GetSyncLogs)
+		ds.GET("/logs/:log_id", g.Viewer(), handler.GetSyncLog)
 	}
 }
 
 // RegisterWeKnoraCloudRoutes 注册 WeKnoraCloud 初始化路由
-func RegisterWeKnoraCloudRoutes(r *gin.RouterGroup, handler *handler.WeKnoraCloudHandler) {
-	r.POST("/weknoracloud/credentials", handler.SaveCredentials)
-	r.GET("/models/weknoracloud/status", handler.Status)
+func RegisterWeKnoraCloudRoutes(r *gin.RouterGroup, handler *handler.WeKnoraCloudHandler, g *rbacGuards) {
+	r.POST("/weknoracloud/credentials", g.Admin(), handler.SaveCredentials)
+	r.GET("/models/weknoracloud/status", g.Viewer(), handler.Status)
 }
 
 // RegisterWikiPageRoutes registers wiki page related routes
-func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHandler) {
+func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHandler, g *rbacGuards) {
 	wiki := r.Group("/knowledgebase/:kb_id/wiki")
 	{
 		// Page CRUD
-		wiki.GET("/pages", wikiHandler.ListPages)
-		wiki.POST("/pages", wikiHandler.CreatePage)
-		wiki.GET("/pages/*slug", wikiHandler.GetPage)
-		wiki.PUT("/pages/*slug", wikiHandler.UpdatePage)
-		wiki.DELETE("/pages/*slug", wikiHandler.DeletePage)
+		wiki.GET("/pages", g.Viewer(), wikiHandler.ListPages)
+		wiki.POST("/pages", g.OwnedWikiKBOrAdmin(), wikiHandler.CreatePage)
+		wiki.PUT("/move-page", g.OwnedWikiKBOrAdmin(), wikiHandler.MovePage)
+		wiki.GET("/pages/*slug", g.Viewer(), wikiHandler.GetPage)
+		wiki.PUT("/pages/*slug", g.OwnedWikiKBOrAdmin(), wikiHandler.UpdatePage)
+		wiki.DELETE("/pages/*slug", g.OwnedWikiKBOrAdmin(), wikiHandler.DeletePage)
+
+		// Folder tree (directory nodes)
+		wiki.GET("/folders", g.Viewer(), wikiHandler.ListFolders)
+		wiki.POST("/folders", g.OwnedWikiKBOrAdmin(), wikiHandler.CreateFolder)
+		wiki.PUT("/folders/:folder_id", g.OwnedWikiKBOrAdmin(), wikiHandler.UpdateFolder)
+		wiki.DELETE("/folders/:folder_id", g.OwnedWikiKBOrAdmin(), wikiHandler.DeleteFolder)
 
 		// Special pages
-		wiki.GET("/index", wikiHandler.GetIndex)
-		wiki.GET("/log", wikiHandler.GetLog)
+		wiki.GET("/index", g.Viewer(), wikiHandler.GetIndex)
+		wiki.GET("/log", g.Viewer(), wikiHandler.GetLog)
+		wiki.GET("/graph", g.Viewer(), wikiHandler.GetGraph)
+		wiki.GET("/stats", g.Viewer(), wikiHandler.GetStats)
 
 		// Search and maintenance
-		wiki.GET("/search", wikiHandler.SearchPages)
-		wiki.POST("/rebuild-links", wikiHandler.RebuildLinks)
-		wiki.GET("/lint", wikiHandler.Lint)
-		wiki.POST("/auto-fix", wikiHandler.AutoFix)
+		wiki.GET("/search", g.Viewer(), wikiHandler.SearchPages)
+		wiki.POST("/rebuild-links", g.OwnedWikiKBOrAdmin(), wikiHandler.RebuildLinks)
+		wiki.GET("/lint", g.Viewer(), wikiHandler.Lint)
+		wiki.POST("/auto-fix", g.OwnedWikiKBOrAdmin(), wikiHandler.AutoFix)
 
 		// Issues
-		wiki.GET("/issues", wikiHandler.ListIssues)
-		wiki.PUT("/issues/:issue_id/status", wikiHandler.UpdateIssueStatus)
+		wiki.GET("/issues", g.Viewer(), wikiHandler.ListIssues)
+		wiki.PUT("/issues/:issue_id/status", g.OwnedWikiKBOrAdmin(), wikiHandler.UpdateIssueStatus)
 	}
 }
 

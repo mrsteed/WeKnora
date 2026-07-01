@@ -559,7 +559,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MessagePlugin, Icon as TIcon } from 'tdesign-vue-next'
-import { listAgents, deleteAgent, copyAgent, type CustomAgent } from '@/api/agent'
+import { deleteAgent, copyAgent, type CustomAgent } from '@/api/agent'
+import { useChatResourcesStore } from '@/stores/chatResources'
 import { formatStringDate } from '@/utils/index'
 import { useI18n } from 'vue-i18n'
 import { createSessions } from '@/api/chat/index'
@@ -578,6 +579,7 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const orgStore = useOrganizationStore()
+const chatResources = useChatResourcesStore()
 
 interface AgentWithUI extends CustomAgent {
   showMore?: boolean
@@ -684,21 +686,22 @@ const editorInitialSection = ref<string>('basic')
 /** 当前打开三点菜单的卡片 agent.id（用于受控弹出层，避免 computed 项无持久引用导致菜单不响应） */
 const openMoreAgentId = ref<string | null>(null)
 
-const fetchList = () => {
+const applyAgentListData = (res: { data: CustomAgent[]; disabled_own_agent_ids: string[] }) => {
+  const disabledOwnIds = res.disabled_own_agent_ids || []
+  agents.value = (res.data || []).map((agent: CustomAgent) => ({
+    ...agent,
+    showMore: false,
+    disabled_by_me: disabledOwnIds.includes(agent.id)
+  }))
+  checkAndOpenEditModal()
+}
+
+const fetchList = (force = false) => {
   loading.value = true
   return Promise.all([
-    listAgents().then((res: any) => {
-      const data = res.data || []
-      const disabledOwnIds = res.disabled_own_agent_ids || []
-      agents.value = data.map((agent: CustomAgent) => ({
-        ...agent,
-        showMore: false,
-        disabled_by_me: disabledOwnIds.includes(agent.id)
-      }))
-      checkAndOpenEditModal()
-    }),
-    orgStore.fetchSharedAgents(),
-    orgStore.fetchOrganizations()
+    chatResources.fetchAgentsForList(undefined, force).then(applyAgentListData),
+    orgStore.fetchSharedAgents({ force }),
+    orgStore.fetchOrganizations({ force }),
   ]).finally(() => { loading.value = false }).then(() => {
     // 各空间智能体数量已由 GET /organizations 的 resource_counts 带回，存于 orgStore.resourceCounts
     const counts = orgStore.resourceCounts?.agents?.by_organization
@@ -710,6 +713,14 @@ const fetchList = () => {
 const checkAndOpenEditModal = () => {
   const editId = route.query.edit as string
   const section = route.query.section as string
+  if (editId && (section === 'im' || section === 'embed' || section === 'integrations')) {
+    const tab = section === 'embed' ? 'embed' : 'im'
+    router.replace({
+      path: '/platform/integrations',
+      query: { tab, agentId: editId },
+    })
+    return
+  }
   if (editId) {
     const agent = agents.value.find(a => a.id === editId)
     if (agent) {
@@ -864,7 +875,7 @@ const handleCopy = (agent: AgentWithUI) => {
   copyAgent(agent.id).then((res: any) => {
     if (res.data) {
       MessagePlugin.success(t('agent.messages.copied'))
-      fetchList()
+      fetchList(true)
     } else {
       MessagePlugin.error(res.message || t('agent.messages.copyFailed'))
     }
@@ -880,7 +891,7 @@ const handleToggleDisabled = (agent: AgentWithUI) => {
   setSharedAgentDisabledByMe(agent.id, nextDisabled).then((res: any) => {
     if (res.success) {
       MessagePlugin.success(nextDisabled ? t('agent.messages.disabled') : t('agent.messages.enabled'))
-      fetchList()
+      fetchList(true)
     } else {
       MessagePlugin.error(res.message || t('agent.messages.saveFailed'))
     }
@@ -897,7 +908,7 @@ const handleToggleSharedDisabled = (agent: DisplayAgent) => {
   setSharedAgentDisabledByMe(agent.id, nextDisabled).then((res: any) => {
     if (res.success) {
       MessagePlugin.success(nextDisabled ? t('agent.messages.disabled') : t('agent.messages.enabled'))
-      orgStore.fetchSharedAgents()
+      orgStore.fetchSharedAgents({ force: true })
     } else {
       MessagePlugin.error(res.message || t('agent.messages.saveFailed'))
     }
@@ -913,7 +924,7 @@ const handleToggleSharedDisabledFromShared = (shared: SharedAgentInfo) => {
   setSharedAgentDisabledByMe(shared.agent.id, nextDisabled).then((res: any) => {
     if (res.success) {
       MessagePlugin.success(nextDisabled ? t('agent.messages.disabled') : t('agent.messages.enabled'))
-      orgStore.fetchSharedAgents()
+      orgStore.fetchSharedAgents({ force: true })
     } else {
       MessagePlugin.error(res.message || t('agent.messages.saveFailed'))
     }
@@ -930,7 +941,7 @@ const confirmDelete = () => {
       MessagePlugin.success(t('agent.messages.deleted'))
       deleteVisible.value = false
       deletingAgent.value = null
-      fetchList()
+      fetchList(true)
     } else {
       MessagePlugin.error(res.message || t('agent.messages.deleteFailed'))
     }
@@ -939,10 +950,12 @@ const confirmDelete = () => {
   })
 }
 
-const handleEditorSuccess = () => {
-  editorVisible.value = false
-  editingAgent.value = null
-  fetchList()
+const handleEditorSuccess = (agent?: CustomAgent) => {
+  if (agent) {
+    editingAgent.value = agent
+    editorMode.value = 'edit'
+  }
+  fetchList(true)
 }
 
 const formatDate = (dateStr: string) => {

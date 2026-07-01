@@ -269,43 +269,122 @@ func TestConvertMessages_ReasoningContentRoundTrip(t *testing.T) {
 		assert.Empty(t, out[0].ReasoningContent)
 	})
 }
+func TestApplyCompletionToolCallMetadata(t *testing.T) {
+	c := newTestRemoteChat(t)
+	c.adapter = geminiProvider{}
 
-func TestDeepseekRequestCustomizer_DisablesThinkingViaThinkingField(t *testing.T) {
-	thinking := false
-	req := &openai.ChatCompletionRequest{
-		Model:    "deepseek-v4-pro",
-		Messages: []openai.ChatCompletionMessage{{Role: "user", Content: "给出北海电厂的技术方案。"}},
+	resp := &types.ChatResponse{
+		ToolCalls: []types.LLMToolCall{{
+			ID:   "call_1",
+			Type: "function",
+			Function: types.FunctionCall{
+				Name:      "wiki_search",
+				Arguments: `{"query":"MACS"}`,
+			},
+		}},
 	}
+	body := []byte(`{
+		"choices":[{
+			"message":{
+				"tool_calls":[{
+					"id":"call_1",
+					"type":"function",
+					"function":{"name":"wiki_search","arguments":"{\"query\":\"MACS\"}"},
+					"extra_content":{"google":{"thought_signature":"sig-from-gemini"}}
+				}]
+			}
+		}]
+	}`)
 
-	customReq, useRawHTTP := deepseekRequestCustomizer(req, &ChatOptions{Thinking: &thinking}, false)
-
-	require.True(t, useRawHTTP)
-	typedReq, ok := customReq.(ThinkingChatCompletionRequest)
-	require.True(t, ok)
-	require.NotNil(t, typedReq.Thinking)
-	assert.Equal(t, "disabled", typedReq.Thinking.Type)
-
-	payload, err := json.Marshal(typedReq)
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"给出北海电厂的技术方案。"}],"thinking":{"type":"disabled"}}`, string(payload))
+	c.applyCompletionToolCallMetadata(body, resp)
+	require.Len(t, resp.ToolCalls, 1)
+	assert.JSONEq(t, `{"thought_signature":"sig-from-gemini"}`,
+		string(resp.ToolCalls[0].ProviderMetadata["google"]))
 }
 
-func TestDeepseekRequestCustomizer_ClearsToolChoiceAndKeepsThinkingControl(t *testing.T) {
-	thinking := false
-	req := &openai.ChatCompletionRequest{
-		Model:      "deepseek-v4-pro",
-		Messages:   []openai.ChatCompletionMessage{{Role: "user", Content: "test"}},
-		ToolChoice: "auto",
+func TestApplyStreamToolCallMetadata(t *testing.T) {
+	c := newTestRemoteChat(t)
+	c.adapter = geminiProvider{}
+	state := newStreamState()
+
+	body := []byte(`{
+		"choices":[{
+			"delta":{
+				"tool_calls":[{
+					"index":0,
+					"id":"call_1",
+					"type":"function",
+					"function":{"name":"wiki_search","arguments":"{\"query\":\"MACS\"}"},
+					"extra_content":{"google":{"thought_signature":"stream-sig-from-gemini"}}
+				}]
+			}
+		}]
+	}`)
+
+	c.applyStreamToolCallMetadata(body, state)
+	toolCalls := state.buildOrderedToolCalls()
+	require.Len(t, toolCalls, 1)
+	assert.JSONEq(t, `{"thought_signature":"stream-sig-from-gemini"}`,
+		string(toolCalls[0].ProviderMetadata["google"]))
+}
+
+func TestApplyCompletionToolCallMetadata(t *testing.T) {
+	c := newTestRemoteChat(t)
+	c.adapter = geminiProvider{}
+
+	resp := &types.ChatResponse{
+		ToolCalls: []types.LLMToolCall{{
+			ID:   "call_1",
+			Type: "function",
+			Function: types.FunctionCall{
+				Name:      "wiki_search",
+				Arguments: `{"query":"MACS"}`,
+			},
+		}},
 	}
+	body := []byte(`{
+		"choices":[{
+			"message":{
+				"tool_calls":[{
+					"id":"call_1",
+					"type":"function",
+					"function":{"name":"wiki_search","arguments":"{\"query\":\"MACS\"}"},
+					"extra_content":{"google":{"thought_signature":"sig-from-gemini"}}
+				}]
+			}
+		}]
+	}`)
 
-	customReq, useRawHTTP := deepseekRequestCustomizer(req, &ChatOptions{Thinking: &thinking, ToolChoice: "auto"}, false)
+	c.applyCompletionToolCallMetadata(body, resp)
+	require.Len(t, resp.ToolCalls, 1)
+	assert.JSONEq(t, `{"thought_signature":"sig-from-gemini"}`,
+		string(resp.ToolCalls[0].ProviderMetadata["google"]))
+}
 
-	require.True(t, useRawHTTP)
-	typedReq, ok := customReq.(ThinkingChatCompletionRequest)
-	require.True(t, ok)
-	assert.Nil(t, typedReq.ToolChoice)
-	require.NotNil(t, typedReq.Thinking)
-	assert.Equal(t, "disabled", typedReq.Thinking.Type)
+func TestApplyStreamToolCallMetadata(t *testing.T) {
+	c := newTestRemoteChat(t)
+	c.adapter = geminiProvider{}
+	state := newStreamState()
+
+	body := []byte(`{
+		"choices":[{
+			"delta":{
+				"tool_calls":[{
+					"index":0,
+					"id":"call_1",
+					"type":"function",
+					"function":{"name":"wiki_search","arguments":"{\"query\":\"MACS\"}"},
+					"extra_content":{"google":{"thought_signature":"stream-sig-from-gemini"}}
+				}]
+			}
+		}]
+	}`)
+
+	c.applyStreamToolCallMetadata(body, state)
+	toolCalls := state.buildOrderedToolCalls()
+	require.Len(t, toolCalls, 1)
+	assert.JSONEq(t, `{"thought_signature":"stream-sig-from-gemini"}`,
+		string(toolCalls[0].ProviderMetadata["google"]))
 }
 
 // TestRemoteAPIChat 综合测试 Remote API Chat 的所有功能

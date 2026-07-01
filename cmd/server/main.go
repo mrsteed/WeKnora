@@ -36,7 +36,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/container"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/runtime"
-	"github.com/Tencent/WeKnora/internal/tracing"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
@@ -66,7 +65,6 @@ func main() {
 	err := c.Invoke(func(
 		cfg *config.Config,
 		router *gin.Engine,
-		tracer *tracing.Tracer,
 		resourceCleaner interfaces.ResourceCleaner,
 		systemSettingSvc interfaces.SystemSettingService,
 	) error {
@@ -75,14 +73,6 @@ func main() {
 		if shutdownTimeout == 0 {
 			shutdownTimeout = 30 * time.Second
 		}
-
-		// Register tracer cleanup function to resource cleaner
-		// Note: cleanup context will be created at shutdown time, not at startup
-		resourceCleaner.RegisterWithName("Tracer", func() error {
-			ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-			defer cancel()
-			return tracer.Cleanup(ctx)
-		})
 		// Create HTTP server
 		server := &http.Server{
 			Handler: router,

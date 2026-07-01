@@ -80,13 +80,15 @@ show_help() {
     echo "  help       显示此帮助信息"
     echo ""
     echo "可选 Profile（用于 start 命令）:"
-    echo "  --minio    启动 MinIO 对象存储"
-    echo "  --qdrant   启动 Qdrant 向量数据库"
-    echo "  --milvus   启动 Milvus 向量数据库"
-    echo "  --neo4j    启动 Neo4j 图数据库"
-    echo "  --jaeger   启动 Jaeger 链路追踪"
-    echo "  --dex      启动 Dex（OIDC 身份认证）"
-    echo "  --full     启动所有可选服务"
+    echo "  --minio       启动 MinIO 对象存储"
+    echo "  --qdrant      启动 Qdrant 向量数据库"
+    echo "  --milvus      启动 Milvus 向量数据库"
+    echo "  --neo4j       启动 Neo4j 图数据库"
+    echo "  --dex         启动 Dex（OIDC 身份认证）"
+    echo "  --langfuse    启动 Langfuse（默认已开启）"
+    echo "  --no-langfuse 不启动 Langfuse"
+    echo "  --odl-hybrid  启动 OpenDataLoader hybrid（Docling，镜像较大，按需启用）"
+    echo "  --full        启动所有可选服务（不含 odl-hybrid，需另加 --odl-hybrid）"
     echo ""
     echo "环境变量:"
     echo "  WEKNORA_DEV_DATA_ROOT  显式设置后改为绑定宿主机目录；推荐默认值: $WEKNORA_DEV_DATA_ROOT_DEFAULT；普通启动未设置时沿用 Docker named volume，sudo/root 启动未设置时自动使用默认目录"
@@ -95,8 +97,8 @@ show_help() {
     echo "  $0 start                    # 按 .env 启动基础服务（仓库默认含 MinIO）"
     echo "  $0 start --qdrant           # 启动基础服务 + Qdrant"
     echo "  $0 start --milvus           # 启动基础服务 + Milvus"
-    echo "  $0 start --qdrant --jaeger  # 启动基础服务 + Qdrant + Jaeger"
     echo "  $0 start --dex             # 启动基础服务 + Dex"
+    echo "  $0 start --no-langfuse     # 关闭默认 Langfuse，自定义最小开发环境"
     echo "  $0 start --full             # 启动所有服务"
     echo "  WEKNORA_DEV_DATA_ROOT=$WEKNORA_DEV_DATA_ROOT_DEFAULT $0 start"
     echo "  source ./scripts/dev-host-data.sh && $0 start"
@@ -447,7 +449,10 @@ start_services() {
     ENABLED_SERVICES=""
 
     auto_detect_profiles_from_env
-    
+        local enable_langfuse="true"
+        local enable_odl_hybrid="false"
+        local enable_full="false"
+
     while [ $# -gt 0 ]; do
         case "$1" in
             --minio)
@@ -462,17 +467,20 @@ start_services() {
             --neo4j)
                 append_profile "neo4j"
                 ;;
-            --jaeger)
-                append_profile "jaeger"
-                ;;
             --dex)
                 append_profile "dex"
                 ;;
+            --langfuse)
+                enable_langfuse="true"
+                ;;
+            --no-langfuse)
+                enable_langfuse="false"
+                ;;
+            --odl-hybrid)
+                enable_odl_hybrid="true"
+                ;;
             --full)
-                PROFILES=""
-                ENABLED_SERVICES=""
-                append_profile "full"
-                break
+                enable_full="true"
                 ;;
             *)
                 log_warning "未知参数: $1"
@@ -480,6 +488,22 @@ start_services() {
         esac
         shift
     done
+
+    if [ "$enable_full" = "true" ]; then
+        if [ "$enable_langfuse" != "true" ]; then
+            log_warning "--full profile 包含 Langfuse，忽略 --no-langfuse"
+        fi
+        PROFILES="--profile full"
+        ENABLED_SERVICES="minio qdrant milvus neo4j dex langfuse"
+    else
+        if [ "$enable_langfuse" = "true" ]; then
+            append_profile "langfuse"
+        fi
+    fi
+
+    if [ "$enable_odl_hybrid" = "true" ]; then
+        append_profile "odl-hybrid"
+    fi
 
     if [ -n "$ENABLED_SERVICES" ]; then
         log_info "按 .env/命令参数启用的可选服务:${ENABLED_SERVICES}"
@@ -515,11 +539,14 @@ start_services() {
         if [[ "$ENABLED_SERVICES" == *"neo4j"* ]]; then
             echo "  - Neo4j:         localhost:7474 (Bolt: localhost:7687)"
         fi
-        if [[ "$ENABLED_SERVICES" == *"jaeger"* ]]; then
-            echo "  - Jaeger:        localhost:16686"
-        fi
         if [[ "$ENABLED_SERVICES" == *"dex"* ]]; then
             echo "  - Dex:           localhost:5556"
+        fi
+        if [[ "$ENABLED_SERVICES" == *"langfuse"* ]]; then
+            echo "  - Langfuse:      localhost:${LANGFUSE_WEB_PORT:-3000}"
+        fi
+        if [[ "$ENABLED_SERVICES" == *"odl-hybrid"* ]]; then
+            echo "  - ODL Hybrid:    localhost:${ODL_HYBRID_PORT:-5002}"
         fi
         
         echo ""
@@ -648,7 +675,6 @@ start_app() {
     fi
     export REDIS_ADDR=localhost:6379
     export MILVUS_ADDRESS=localhost:19530
-    export OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
     export NEO4J_URI=bolt://localhost:7687
     export QDRANT_HOST=localhost
     export DB_PORT=${DB_PORT:-5432}

@@ -88,9 +88,10 @@ type Session struct {
 	Description string `json:"description"`
 	// Tenant ID
 	TenantID uint64 `json:"tenant_id"   gorm:"index"`
-	// UserID is the owner of the session. Empty for legacy rows (visible at
-	// tenant level) and for IM-created sessions that do not map to a WeKnora user.
-	UserID string `json:"user_id,omitempty" gorm:"type:varchar(36);index"`
+	// UserID is the owner scope for this session. WeKnora user UUIDs, API
+	// external-user principals, embed visitor principals and legacy tenant-level
+	// sessions all share this column.
+	UserID string `json:"user_id,omitempty" gorm:"type:varchar(512);index"`
 	// AccessMode indicates how the session was created and which runtime boundary owns it.
 	AccessMode string `json:"access_mode,omitempty" gorm:"type:varchar(32);default:'platform';index"`
 	// AgentPageShareID links anonymous share-page sessions back to the owning share record.
@@ -156,7 +157,8 @@ func (s *Session) BeforeCreate(tx *gorm.DB) (err error) {
 // SessionListQuery bundles the parameters for listing sessions.
 // UserID empty means "tenant-wide" (used by API-key callers / legacy rows).
 // Keyword matches title ILIKE '%keyword%'.
-// Source values: "web" (no IM mapping) or an IM platform name (e.g. "feishu", "wechat").
+// Source values: "web" (user chats, no IM/embed), "embed" / "embed:{channelID}",
+// or an IM platform name (e.g. "feishu", "wechat").
 // AgentID currently only filters sessions that have an IM channel mapping.
 type SessionListQuery struct {
 	TenantID uint64
@@ -224,12 +226,16 @@ func (c *SummaryConfig) Scan(value interface{}) error {
 // to the frontend by GetSession so the chat input can restore the same agent,
 // model, KB scope, etc. the user had selected last time.
 type SessionLastRequestState struct {
-	AgentID          string   `json:"agent_id,omitempty"`
-	AgentEnabled     bool     `json:"agent_enabled"`
-	ModelID          string   `json:"model_id,omitempty"`
-	KnowledgeBaseIDs []string `json:"knowledge_base_ids,omitempty"`
-	KnowledgeIDs     []string `json:"knowledge_ids,omitempty"`
-	WebSearchEnabled bool     `json:"web_search_enabled"`
+	AgentID          string         `json:"agent_id,omitempty"`
+	AgentEnabled     bool           `json:"agent_enabled"`
+	ModelID          string         `json:"model_id,omitempty"`
+	KnowledgeBaseIDs []string       `json:"knowledge_base_ids,omitempty"`
+	KnowledgeIDs     []string       `json:"knowledge_ids,omitempty"`
+	TagIDs           []string       `json:"tag_ids,omitempty"`
+	MCPServiceIDs    []string       `json:"mcp_service_ids,omitempty"`
+	SkillNames       []string       `json:"skill_names,omitempty"`
+	MentionedItems   MentionedItems `json:"mentioned_items,omitempty"`
+	WebSearchEnabled bool           `json:"web_search_enabled"`
 }
 
 // Value implements driver.Valuer for SessionLastRequestState (JSONB).

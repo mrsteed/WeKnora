@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -446,5 +447,50 @@ func TestInjectAndConditions(t *testing.T) {
 				t.Fatalf("InjectAndConditions() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestValidateAndSecureSQL_WithStructuredSearchScopes(t *testing.T) {
+	securedSQL, validation, err := ValidateAndSecureSQL(
+		"SELECT id FROM chunks",
+		WithSearchScopes([]SearchScope{
+			{KnowledgeBaseID: "kb-full"},
+			{KnowledgeBaseID: "kb-doc", KnowledgeIDs: []string{"doc-1"}},
+			{KnowledgeBaseID: "kb-tag", TagIDs: []string{"tag-a", "tag-b"}},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ValidateAndSecureSQL() error = %v", err)
+	}
+	if !validation.Valid {
+		t.Fatalf("expected validation to pass, got %#v", validation.Errors)
+	}
+
+	for _, want := range []string{
+		"chunks.knowledge_base_id = 'kb-full'",
+		"chunks.knowledge_base_id = 'kb-doc' AND chunks.knowledge_id IN ('doc-1')",
+		"chunks.knowledge_base_id = 'kb-tag' AND EXISTS",
+		"knowledge_tag_relations",
+		"ktr.knowledge_id = chunks.knowledge_id",
+		"ktr.tag_id IN ('tag-a', 'tag-b')",
+		" OR ",
+	} {
+		if !strings.Contains(securedSQL, want) {
+			t.Fatalf("secured SQL missing %q:\n%s", want, securedSQL)
+		}
+	}
+}
+
+func BenchmarkInjectAndConditions(b *testing.B) {
+	const sql = "SELECT id, title FROM docs WHERE status = 'active' ORDER BY created_at LIMIT 50"
+	for i := 0; i < b.N; i++ {
+		_ = InjectAndConditions(sql, "tenant_id = 1")
+	}
+}
+
+func BenchmarkCheckSQLInjectionRisks(b *testing.B) {
+	const where = "status = 'active' AND name LIKE '%foo%' AND (deleted_at IS NULL OR archived = false)"
+	for i := 0; i < b.N; i++ {
+		_ = checkSQLInjectionRisks(where)
 	}
 }

@@ -68,13 +68,10 @@
 
             <!-- 右侧内容区域 -->
             <div class="settings-content">
-              <div
-                class="content-wrapper"
-                :class="{
-                  'content-wrapper--wide': currentSection === 'members',
-                  'content-wrapper--full': currentSection === 'system-global',
-                }"
-              >
+              <div class="content-wrapper" :class="{
+                'content-wrapper--wide': currentSection === 'members',
+                'content-wrapper--full': currentSection === 'system-global',
+              }">
                 <!-- 角色不允许访问当前 section（deep-link 进来 / 跨租户切换后角色降级）—— 优先于具体 section 渲染。
                      正常导航走 navItems filter 不会到这里，但 watch(navItems) 的 fallback 会在角色降级
                      的瞬间触发；这一段做兜底兼容旧 URL。 -->
@@ -148,11 +145,6 @@
                     <UserProfile />
                   </div>
 
-                  <!-- 租户管理 -->
-                  <div v-if="currentSection === 'tenant-management'" class="section">
-                    <TenantManagement />
-                  </div>
-
                   <!-- 租户信息 -->
                   <div v-if="currentSection === 'tenant'" class="section">
                     <TenantInfo />
@@ -189,7 +181,6 @@ import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
 import SystemInfo from './SystemInfo.vue'
-import TenantManagement from './TenantManagement.vue'
 import TenantInfo from './TenantInfo.vue'
 import ApiInfo from './ApiInfo.vue'
 import UserProfile from './UserProfile.vue'
@@ -233,8 +224,7 @@ type NavGroup = {
 // 以「页面里至少有 1 个有意义的写操作所要求的最低角色」为基准，把基础设
 // 施配置（models 写、ollama 下载、websearch 写、parser/storage/vector/mcp
 // CRUD、chat-history 配置）统一收到 admin；只读类（general / system info /
-// tenant-info / members 名册）保留 viewer 可见；tenant-management 仅 owner
-// 可见；最高敏感的 reset api
+// tenant-info / members 名册）保留 viewer 可见；最高敏感的 reset api
 // key 是 owner-only。改这张表前请在 router.go 里复核对应路由组。
 //
 // 特别说明：
@@ -258,7 +248,6 @@ const SECTION_MIN_ROLE: Record<string, RoleKey> = {
   mcp: 'admin',
   system: 'viewer',
   userprofile: 'viewer',
-  'tenant-management': 'owner',
   tenant: 'viewer',
   members: 'viewer',
   api: 'owner',
@@ -293,9 +282,8 @@ const navItems = computed(() => {
     { key: 'storage', icon: 'cloud', label: t('settings.storageEngine') },
     { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
     { key: 'system', icon: 'info-circle', label: t('settings.versionInfo') },
-    { key: 'system-global', icon: 'server', label: t('settings.systemSettings') },
+    { key: 'system-global', icon: 'server', label: t('settings.system') },
     { key: 'userprofile', icon: 'user', label: t('userProfile.title') },
-    { key: 'tenant-management', icon: 'swap', label: t('settings.tenantManagement') },
     { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
     { key: 'members', icon: 'usergroup', label: t('tenantMember.title') },
     { key: 'api', icon: 'secured', label: t('settings.apiInfo') },
@@ -303,19 +291,11 @@ const navItems = computed(() => {
   // currentTenantRole 为空表示「membership 还没加载」—— 比起渲染整套
   // viewer 入口然后角色一返回又消失，先卡住不渲染更稳，跟原先 members
   // 入口的策略一致。
-  if (!authStore.currentTenantRole && !authStore.canAccessAllTenants && !authStore.isSystemAdmin) {
+  if (!authStore.currentTenantRole && !authStore.canAccessAllTenants) {
     return [] as NavItem[]
   }
   return all.filter((it) => canSeeSection(it.key))
 })
-
-const resolveVisibleSection = (section?: string): string => {
-  if (!section) return navItems.value[0]?.key || 'general'
-  if (navItems.value.length === 0) return section
-  return navItems.value.some((item) => item.key === section)
-    ? section
-    : (navItems.value[0]?.key || 'general')
-}
 
 const navGroups = computed<NavGroup[]>(() => {
   const itemMap = new Map(navItems.value.map((item) => [item.key, item]))
@@ -333,7 +313,7 @@ const navGroups = computed<NavGroup[]>(() => {
     {
       key: 'workspace',
       label: t('settings.navGroups.workspace'),
-      items: pickItems(['tenant-management', 'tenant', 'members', 'chathistory']),
+      items: pickItems(['tenant', 'members', 'chathistory']),
     },
     {
       key: 'models_runtime',
@@ -408,11 +388,11 @@ const handleClose = () => {
 // 监听初始导航设置
 watch(() => uiStore.settingsInitialSection, (section) => {
   if (section && visible.value) {
-    currentSection.value = resolveVisibleSection(section)
-    const navItem = (navItems.value as any[]).find((item) => item.key === currentSection.value)
+    currentSection.value = section
+    const navItem = (navItems.value as any[]).find((item) => item.key === section)
     if (navItem && navItem.children && navItem.children.length > 0) {
-      if (!expandedMenus.value.includes(currentSection.value)) {
-        expandedMenus.value.push(currentSection.value)
+      if (!expandedMenus.value.includes(section)) {
+        expandedMenus.value.push(section)
       }
       currentSubSection.value = uiStore.settingsInitialSubSection || navItem.children[0].key
       if (uiStore.settingsInitialSubSection) {
@@ -433,7 +413,7 @@ watch(
   () => [visible.value, route.query.section],
   ([isVisible, section]) => {
     if (!isVisible || typeof section !== 'string') return
-    currentSection.value = resolveVisibleSection(section)
+    currentSection.value = section
     currentSubSection.value = ''
   },
   { immediate: true },
@@ -459,12 +439,12 @@ const handleEscape = (e: KeyboardEvent) => {
 const handleSettingsNav = (e: CustomEvent) => {
   const { section, subsection } = e.detail
   if (section) {
-    currentSection.value = resolveVisibleSection(section)
+    currentSection.value = section
     // 如果有子菜单，自动展开
-    const navItem = (navItems.value as any[]).find((item: any) => item.key === currentSection.value)
+    const navItem = (navItems.value as any[]).find((item: any) => item.key === section)
     if (navItem && navItem.children && navItem.children.length > 0) {
-      if (!expandedMenus.value.includes(currentSection.value)) {
-        expandedMenus.value.push(currentSection.value)
+      if (!expandedMenus.value.includes(section)) {
+        expandedMenus.value.push(section)
       }
       // 如果有 subsection，选中对应的子菜单项
       currentSubSection.value = subsection || navItem.children[0].key
@@ -508,6 +488,7 @@ onUnmounted(() => {
   // and the modal shrinks to fit minus the 20px padding.
   max-width: 1080px;
   height: 780px;
+  max-height: calc(100vh - 40px);
   background: var(--td-bg-color-container);
   border-radius: 12px;
   box-shadow: 0 6px 28px rgba(15, 23, 42, 0.08);
@@ -599,12 +580,12 @@ onUnmounted(() => {
   user-select: none;
 
   &:hover {
-    background-color: var(--td-bg-color-secondarycontainer-hover);
+    background-color: var(--td-bg-color-container-hover);
     color: var(--td-text-color-primary);
   }
 
   &.active {
-    background-color: rgba(7, 192, 95, 0.1);
+    background-color: var(--td-bg-color-secondarycontainer);
     color: var(--td-brand-color);
     font-weight: 500;
   }
@@ -648,12 +629,12 @@ onUnmounted(() => {
   user-select: none;
 
   &:hover {
-    background-color: var(--td-bg-color-secondarycontainer-hover);
+    background-color: var(--td-bg-color-container-hover);
     color: var(--td-text-color-primary);
   }
 
   &.active {
-    background-color: rgba(7, 192, 95, 0.08);
+    background-color: var(--td-bg-color-secondarycontainer);
     color: var(--td-brand-color);
     font-weight: 500;
   }

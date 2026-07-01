@@ -30,6 +30,7 @@ const (
 	ChannelIM               = "im"                // Generic IM channel
 	ChannelNotion           = "notion"            // Notion
 	ChannelYuque            = "yuque"             // Yuque (语雀)
+	ChannelRSS              = "rss"               // RSS / Atom feed
 )
 
 // Knowledge parse status constants
@@ -87,8 +88,8 @@ const (
 // KnowledgeListFilter aggregates optional filters for listing knowledge entries
 // under a knowledge base. Empty / zero fields mean "no filter on that dimension".
 type KnowledgeListFilter struct {
-	// TagID filters by tag_id when non-empty.
-	TagID string
+	// TagIDs filters by multiple tags (OR semantics: match any of the given tags).
+	TagIDs []string
 	// Keyword performs a LIKE match on file_name / title when non-empty.
 	Keyword string
 	// FileType filters by file_type, or by type for the special values "manual" / "url".
@@ -115,8 +116,8 @@ type Knowledge struct {
 	TenantID uint64 `json:"tenant_id"`
 	// ID of the knowledge base
 	KnowledgeBaseID string `json:"knowledge_base_id"`
-	// Optional tag ID for categorization within a knowledge base
-	TagID string `json:"tag_id"             gorm:"type:varchar(36);index"`
+	// Tags holds the tags associated with this knowledge (populated on query, not persisted directly).
+	Tags []*KnowledgeTag `json:"tags"               gorm:"-"`
 	// Type of the knowledge
 	Type string `json:"type"`
 	// Title of the knowledge
@@ -204,11 +205,12 @@ type ManualKnowledgeMetadata struct {
 
 // ManualKnowledgePayload represents the payload for manual knowledge operations.
 type ManualKnowledgePayload struct {
-	Title   string `json:"title"`
-	Content string `json:"content"`
-	Status  string `json:"status"`
-	TagID   string `json:"tag_id"`
-	Channel string `json:"channel"`
+	Title         string                     `json:"title"`
+	Content       string                     `json:"content"`
+	Status        string                     `json:"status"`
+	TagIDs        []string                   `json:"tag_ids"`
+	Channel       string                     `json:"channel"`
+	ProcessConfig *KnowledgeProcessOverrides `json:"process_config,omitempty"`
 }
 
 // KnowledgeSearchScope defines a (tenant_id, knowledge_base_id) scope for knowledge search (e.g. own KBs + shared KBs).
@@ -340,6 +342,62 @@ func (k *Knowledge) EnsureManualDefaults() {
 // IsDraft returns whether the payload should be saved as draft.
 func (p ManualKnowledgePayload) IsDraft() bool {
 	return p.Status == "" || p.Status == ManualKnowledgeStatusDraft
+}
+
+const metadataKeyProcessOverrides = "process_overrides"
+
+// ProcessOverrides parses process config overrides from knowledge metadata.
+func (k *Knowledge) ProcessOverrides() (*KnowledgeProcessOverrides, error) {
+	if k == nil || len(k.Metadata) == 0 {
+		return nil, nil
+	}
+	metadataMap, err := k.Metadata.Map()
+	if err != nil {
+		return nil, err
+	}
+	raw, ok := metadataMap[metadataKeyProcessOverrides]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	bytes, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	var overrides KnowledgeProcessOverrides
+	if err := json.Unmarshal(bytes, &overrides); err != nil {
+		return nil, err
+	}
+	return &overrides, nil
+}
+
+// SetProcessOverrides merges process config overrides into knowledge metadata.
+func (k *Knowledge) SetProcessOverrides(o *KnowledgeProcessOverrides) error {
+	if k == nil {
+		return nil
+	}
+	metadataMap, err := k.Metadata.Map()
+	if err != nil {
+		return err
+	}
+	if o == nil {
+		delete(metadataMap, metadataKeyProcessOverrides)
+	} else {
+		bytes, err := json.Marshal(o)
+		if err != nil {
+			return err
+		}
+		var value interface{}
+		if err := json.Unmarshal(bytes, &value); err != nil {
+			return err
+		}
+		metadataMap[metadataKeyProcessOverrides] = value
+	}
+	bytes, err := json.Marshal(metadataMap)
+	if err != nil {
+		return err
+	}
+	k.Metadata = JSON(bytes)
+	return nil
 }
 
 // KnowledgeCheckParams defines parameters used to check if knowledge already exists.

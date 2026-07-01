@@ -1260,14 +1260,16 @@ onMounted(() => {
 }
 
 .login-features {
-  margin-top: 20px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 
   .feature-item {
     display: flex;
     align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(255, 255, 255, 0.66);
     font-family: var(--app-font-family);
 
     &:last-child {

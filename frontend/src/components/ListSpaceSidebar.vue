@@ -403,21 +403,20 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 
   &:hover {
-    background: var(--td-bg-color-secondarycontainer);
+    background: var(--td-bg-color-container-hover);
     color: var(--td-text-color-primary);
   }
 
   &.active {
-    background: var(--td-success-color-light);
+    background: var(--td-bg-color-secondarycontainer);
     color: var(--td-brand-color);
 
     &:hover {
-      background: var(--td-success-color-light);
+      background: var(--td-bg-color-secondarycontainer);
     }
 
     .icon-label {
       color: var(--td-brand-color);
-      font-weight: 520;
     }
   }
 
@@ -524,7 +523,7 @@ onBeforeUnmount(() => {
   }
 
   &:hover {
-    background: var(--td-bg-color-secondarycontainer);
+    background: var(--td-bg-color-container-hover);
     color: var(--td-text-color-primary);
 
     .item-icon {
@@ -538,25 +537,20 @@ onBeforeUnmount(() => {
   }
 
   &.active {
-    background: var(--td-success-color-light);
+    background: var(--td-bg-color-secondarycontainer);
     color: var(--td-brand-color);
 
     .item-icon {
       color: var(--td-brand-color);
     }
 
-    .item-label {
-      font-weight: 500;
-    }
-
     .item-count {
-      background: var(--td-success-color-light);
+      background: var(--td-bg-color-secondarycontainer);
       color: var(--td-brand-color);
-      font-weight: 520;
     }
 
     &:hover {
-      background: var(--td-success-color-light);
+      background: var(--td-bg-color-secondarycontainer);
     }
   }
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
-	"github.com/Tencent/WeKnora/internal/utils"
 )
 
 var getDocumentInfoTool = BaseTool{
@@ -46,13 +45,28 @@ Do not use when:
 ## IDs
 - knowledge_ids: regular documents knowledges
 - faq_ids: individual FAQ entries. Returns the standard question and answers, not the container title.`,
-	schema: utils.GenerateSchema[GetDocumentInfoInput](),
+	schema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "knowledge_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Document/knowledge IDs for regular documents"
+    },
+    "faq_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "FAQ entry IDs (= chunk_id from grep_chunks). Use instead of knowledge_ids for a single FAQ Q&A."
+    }
+  }
+}`),
 }
 
-// GetDocumentInfoInput defines the input parameters for get document info tool
+// GetDocumentInfoInput defines the input parameters for get document info tool.
+// Either knowledge_ids or faq_ids may be provided (at least one); both are optional in the schema.
 type GetDocumentInfoInput struct {
-	KnowledgeIDs []string `json:"knowledge_ids" jsonschema:"Document/knowledge IDs for regular documents or FAQ containers"`
-	FAQIDs       []string `json:"faq_ids" jsonschema:"FAQ entry IDs (= chunk_id from grep_chunks). Use instead of knowledge_ids for a single FAQ Q&A."`
+	KnowledgeIDs []string `json:"knowledge_ids,omitempty"`
+	FAQIDs       []string `json:"faq_ids,omitempty"`
 }
 
 // GetDocumentInfoTool retrieves detailed information about a document/knowledge
@@ -130,6 +144,17 @@ func (t *GetDocumentInfoTool) Execute(ctx context.Context, args json.RawMessage)
 				mu.Unlock()
 				return
 			}
+			allowed, scopeErr := searchTargetsAllowKnowledgeID(ctx, t.searchTargets, chunk.KnowledgeID, chunk.KnowledgeBaseID, t.knowledgeService)
+			if scopeErr != nil || !allowed {
+				mu.Lock()
+				if scopeErr != nil {
+					results["faq:"+id] = &docInfo{err: fmt.Errorf("failed to validate FAQ scope: %v", scopeErr)}
+				} else {
+					results["faq:"+id] = &docInfo{err: fmt.Errorf("FAQ entry %s is not within the current @mention scope", id)}
+				}
+				mu.Unlock()
+				return
+			}
 			var meta *types.FAQChunkMetadata
 			if chunk.ChunkType == types.ChunkTypeFAQ {
 				meta, _ = chunk.FAQMetadata()
@@ -161,6 +186,17 @@ func (t *GetDocumentInfoTool) Execute(ctx context.Context, args json.RawMessage)
 				mu.Lock()
 				results[id] = &docInfo{
 					err: fmt.Errorf("knowledge base %s is not accessible", knowledge.KnowledgeBaseID),
+				}
+				mu.Unlock()
+				return
+			}
+			allowed, scopeErr := searchTargetsAllowKnowledgeID(ctx, t.searchTargets, knowledge.ID, knowledge.KnowledgeBaseID, t.knowledgeService)
+			if scopeErr != nil || !allowed {
+				mu.Lock()
+				if scopeErr != nil {
+					results[id] = &docInfo{err: fmt.Errorf("failed to validate document scope: %v", scopeErr)}
+				} else {
+					results[id] = &docInfo{err: fmt.Errorf("document %s is not within the current @mention scope", knowledge.ID)}
 				}
 				mu.Unlock()
 				return

@@ -25,10 +25,14 @@ type History struct {
 
 // MentionedItem represents a mentioned knowledge base or file
 type MentionedItem struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Type   string `json:"type"`    // "kb" for knowledge base, "file" for file
-	KBType string `json:"kb_type"` // "document" or "faq" (only for kb type)
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`       // "kb", "file", "tag", "mcp", "skill"
+	KBType    string `json:"kb_type"`    // "document" or "faq" (only for kb type)
+	KBID      string `json:"kb_id"`      // Parent knowledge base for file/tag mentions
+	KBName    string `json:"kb_name"`    // Display name for parent KB
+	ServiceID string `json:"service_id"` // Parent MCP service for MCP tool mentions
+	SkillName string `json:"skill_name"` // Preloaded agent skill name
 }
 
 // MessageImage represents an image attached to a chat message

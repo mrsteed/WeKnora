@@ -5,10 +5,13 @@ declare module '*.vue' {
     import { Component } from 'vue'; const component: Component; export default component;
 }
 
-declare const __FRONTEND_VERSION__: string;
-
 // vue-i18n 全局类型增强，使 $t 等在模板中可用
 import 'vue-i18n'
+
+declare global {
+    const __FRONTEND_VERSION__: string;
+    const __FRONTEND_COMMIT__: string;
+}
 
 declare module 'vue' {
     interface ComponentCustomProperties {
@@ -18,3 +21,5 @@ declare module 'vue' {
         $tm: (key: string) => unknown
     }
 }
+
+export {}

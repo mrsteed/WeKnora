@@ -1,4 +1,4 @@
-import { get, post, put } from '@/utils/request'
+import { del, get, post, put } from '@/utils/request'
 import i18n from '@/i18n'
 
 const t = (key: string) => i18n.global.t(key)
@@ -15,6 +15,24 @@ export interface TenantInfo {
   storage_used?: number
   created_at: string
   updated_at: string
+}
+
+export type APIPrincipalMode = 'tenant' | 'direct_header' | 'signed_token'
+
+export interface APIPrincipalConfig {
+  mode: APIPrincipalMode
+  direct_header_name: string
+  signed_token_header_name: string
+  require_direct_header: boolean
+  has_hmac_secret: boolean
+}
+
+export interface UpdateAPIPrincipalConfigPayload {
+  mode: APIPrincipalMode
+  direct_header_name?: string
+  signed_token_header_name?: string
+  require_direct_header?: boolean
+  hmac_secret?: string
 }
 
 // 搜索租户参数
@@ -70,6 +88,35 @@ export async function resetTenantApiKey(
   }
 }
 
+export async function getAPIPrincipalConfig(
+  tenantId: number,
+): Promise<{ success: boolean; data?: APIPrincipalConfig; message?: string }> {
+  try {
+    const response = await get(`/api/v1/tenants/${tenantId}/api-principal-config`)
+    return response as unknown as { success: boolean; data?: APIPrincipalConfig; message?: string }
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || t('error.tenant.getApiPrincipalConfigFailed'),
+    }
+  }
+}
+
+export async function updateAPIPrincipalConfig(
+  tenantId: number,
+  payload: UpdateAPIPrincipalConfigPayload,
+): Promise<{ success: boolean; data?: APIPrincipalConfig; message?: string }> {
+  try {
+    const response = await put(`/api/v1/tenants/${tenantId}/api-principal-config`, payload)
+    return response as unknown as { success: boolean; data?: APIPrincipalConfig; message?: string }
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || t('error.tenant.updateApiPrincipalConfigFailed'),
+    }
+  }
+}
+
 /**
  * 更新租户信息（目前暴露名称、描述两个字段的编辑入口）。
  * 后端 `PUT /tenants/:id` 用指针字段区分"未传"和"显式空串"，未传的列不会
@@ -87,6 +134,23 @@ export async function updateTenant(
     return {
       success: false,
       message: error.message || t('error.tenant.updateFailed'),
+    }
+  }
+}
+
+/**
+ * 删除当前工作区。权限：owner。
+ */
+export async function deleteTenant(
+  tenantId: number,
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const response = await del(`/api/v1/tenants/${tenantId}`)
+    return response as unknown as { success: boolean; message?: string }
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || t('error.tenant.deleteFailed'),
     }
   }
 }
@@ -141,4 +205,3 @@ export async function searchTenants(params: SearchTenantsParams = {}): Promise<S
     }
   }
 }
-

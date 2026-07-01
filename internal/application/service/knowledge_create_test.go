@@ -39,6 +39,15 @@ func (r *createKnowledgeFileRepoStub) CreateKnowledge(ctx context.Context, knowl
 	return r.createErr
 }
 
+// GetKnowledgeTags is invoked by setAndAttachKnowledgeTags after create even
+// when no tags were supplied; a fresh knowledge has none, so return empty.
+func (r *createKnowledgeFileRepoStub) GetKnowledgeTags(
+	ctx context.Context,
+	knowledgeIDs []string,
+) (map[string][]*types.KnowledgeTag, error) {
+	return map[string][]*types.KnowledgeTag{}, nil
+}
+
 type createKnowledgeFileKBServiceStub struct {
 	interfaces.KnowledgeBaseService
 
@@ -136,8 +145,9 @@ func TestCreateKnowledgeFromFileDoesNotPersistWhenStorageSaveFails(t *testing.T)
 		nil,
 		nil,
 		"",
+		nil,
 		"",
-		"",
+		nil,
 	)
 
 	require.Error(t, err)
@@ -166,8 +176,9 @@ func TestCreateKnowledgeFromFilePersistsStoredFilePathOnCreate(t *testing.T) {
 		nil,
 		nil,
 		"",
+		nil,
 		"",
-		"",
+		nil,
 	)
 
 	require.NoError(t, err)
@@ -199,8 +210,9 @@ func TestCreateKnowledgeFromFileDeletesStoredFileWhenCreateFails(t *testing.T) {
 		nil,
 		nil,
 		"",
+		nil,
 		"",
-		"",
+		nil,
 	)
 
 	require.EqualError(t, err, "database unavailable")
@@ -209,6 +221,52 @@ func TestCreateKnowledgeFromFileDeletesStoredFileWhenCreateFails(t *testing.T) {
 	require.Equal(t, 1, repo.createCalls)
 	require.Equal(t, 1, fileSvc.deleteCalls)
 	require.Equal(t, "stored/"+fileSvc.savedWithKnowledgeID, fileSvc.deletedPath)
+}
+
+func TestCreateKnowledgeFromFile_PersistsProcessOverrides(t *testing.T) {
+	t.Parallel()
+
+	repo := &createKnowledgeFileRepoStub{}
+	fileSvc := &createKnowledgeFileServiceStub{}
+	task := &createKnowledgeTaskEnqueuerStub{}
+	svc := &knowledgeService{
+		repo:      repo,
+		kbService: &createKnowledgeFileKBServiceStub{kb: &types.KnowledgeBase{ID: "kb-1"}},
+		fileSvc:   fileSvc,
+		task:      task,
+	}
+
+	chunkSize := 512
+	overrides := &types.KnowledgeProcessOverrides{
+		ChunkingConfig: &types.ChunkingConfig{ChunkSize: chunkSize},
+	}
+
+	knowledge, err := svc.CreateKnowledgeFromFile(
+		newCreateKnowledgeFileContext(),
+		"kb-1",
+		newMultipartFileHeader(t, "doc.txt", "hello"),
+		map[string]string{"source": "test"},
+		nil,
+		"",
+		nil,
+		"",
+		overrides,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, knowledge)
+	require.Equal(t, 1, repo.createCalls)
+	require.NotNil(t, repo.createdKnowledge)
+
+	parsed, err := repo.createdKnowledge.ProcessOverrides()
+	require.NoError(t, err)
+	require.NotNil(t, parsed)
+	require.NotNil(t, parsed.ChunkingConfig)
+	require.Equal(t, chunkSize, parsed.ChunkingConfig.ChunkSize)
+
+	metadataMap, err := repo.createdKnowledge.Metadata.Map()
+	require.NoError(t, err)
+	require.Equal(t, "test", metadataMap["source"])
 }
 
 func newCreateKnowledgeFileContext() context.Context {

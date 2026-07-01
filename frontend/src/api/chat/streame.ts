@@ -29,13 +29,15 @@ export function useStream() {
   const error = ref<string | null>(null)// 错误信息
   const lastStreamRequest = ref<StreamRequestMeta | null>(null)
   let controller = new AbortController()
+  let streamGeneration = 0
 
   // 流式渲染缓冲
   let buffer: string[] = []
   let renderTimer: number | null = null
 
   // 启动流式请求
-  const startStream = async (params: { session_id: any; query: any; knowledge_base_ids?: string[]; knowledge_ids?: string[]; intent_hint?: string; base_artifact_id?: string; document_output_mode?: string; document_task_kind?: string; translation_options?: { source_language?: string; target_language?: string; preserve_structure?: boolean; output_format?: string }; document_target_heading?: string; document_merge_mode?: string; auto_continue?: boolean; generation_run_id?: string; auto_continue_root_id?: string; auto_continue_round?: number; auto_continue_prompt?: string; auto_continue_original_query?: string; agent_enabled?: boolean; agent_id?: string; web_search_enabled?: boolean; enable_memory?: boolean; summary_model_id?: string; mcp_service_ids?: string[]; mentioned_items?: Array<{id: string; name: string; type: string; kb_type?: string}>; images?: Array<{data: string}>; attachment_uploads?: Array<{data: string; file_name: string; file_size: number}>; method: string; url: string; headers?: Record<string, string>; requireAuth?: boolean; appendSessionIdToUrl?: boolean; includeSessionIdInBody?: boolean }) => {
+  const startStream = async (params: { session_id: any; query: any; knowledge_base_ids?: string[]; knowledge_ids?: string[]; intent_hint?: string; base_artifact_id?: string; document_output_mode?: string; document_task_kind?: string; translation_options?: { source_language?: string; target_language?: string; preserve_structure?: boolean; output_format?: string }; document_target_heading?: string; document_merge_mode?: string; auto_continue?: boolean; generation_run_id?: string; auto_continue_root_id?: string; auto_continue_round?: number; auto_continue_prompt?: string; auto_continue_original_query?: string; tag_ids?: string[]; agent_enabled?: boolean; agent_id?: string; web_search_enabled?: boolean; enable_memory?: boolean; summary_model_id?: string; mcp_service_ids?: string[]; skill_names?: string[]; mentioned_items?: Array<{id: string; name: string; type: string; kb_type?: string; kb_id?: string; kb_name?: string; service_id?: string; skill_name?: string}>; images?: Array<{data: string}>; attachment_uploads?: Array<{data: string; file_name: string; file_size: number}>; method: string; url: string; headers?: Record<string, string>; requireAuth?: boolean; appendSessionIdToUrl?: boolean; includeSessionIdInBody?: boolean; embed_token?: string; embed_session_sig?: string; embed_visitor_id?: string }) => {
+    const myGeneration = ++streamGeneration
     // 重置状态
     output.value = '';
     error.value = null;
@@ -45,10 +47,13 @@ export function useStream() {
     // 获取API配置
     const apiUrl = getApiBaseUrl();
     
-    // 获取JWT Token
-    const requireAuth = params.requireAuth !== false;
-    const token = localStorage.getItem('weknora_token');
-    if (requireAuth && !token) {
+    const embedToken = params.embed_token;
+    const requireAuth = params.requireAuth !== false || !!embedToken;
+    const token = embedToken || localStorage.getItem('weknora_token');
+    if (!token) {
+      if (!requireAuth) {
+        return;
+      }
       error.value = i18n.global.t('error.tokenNotFound');
       stopStream();
       return;
@@ -63,13 +68,6 @@ export function useStream() {
     // IsTenantAccessible 也允许 header 指向自家租户。
     const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
     const tenantIdHeader: string | null = selectedTenantId || null;
-
-    // Validate knowledge_base_ids for agent-chat requests
-    // Note: knowledge_base_ids can be empty if user hasn't selected any, but we allow it
-    // The backend will handle the case when no knowledge bases are selected
-    const isAgentChat = params.url === '/api/v1/agent-chat';
-    // Removed validation - allow empty knowledge_base_ids array
-    // The backend should handle this case appropriately
 
     // TTFB instrumentation: record the moment we kick off the request so
     // we can compare it with the first answer chunk we receive from the
@@ -181,6 +179,12 @@ export function useStream() {
       if (params.mcp_service_ids !== undefined && params.mcp_service_ids.length > 0) {
         postBody.mcp_service_ids = params.mcp_service_ids;
       }
+      if (params.skill_names !== undefined && params.skill_names.length > 0) {
+        postBody.skill_names = params.skill_names;
+      }
+      if (params.tag_ids !== undefined && params.tag_ids.length > 0) {
+        postBody.tag_ids = params.tag_ids;
+      }
       // Include mentioned_items if provided (for displaying @mentions in chat)
       if (params.mentioned_items !== undefined && params.mentioned_items.length > 0) {
         postBody.mentioned_items = params.mentioned_items;
@@ -193,7 +197,7 @@ export function useStream() {
       if (params.attachment_uploads !== undefined && params.attachment_uploads.length > 0) {
         postBody.attachment_uploads = params.attachment_uploads;
       }
-      postBody.channel = "web";
+      postBody.channel = embedToken ? "embed" : "web";
 
       lastStreamRequest.value = {
         requestId: requestID,
@@ -207,11 +211,13 @@ export function useStream() {
         method: params.method,
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { "Authorization": embedToken ? `Embed ${embedToken}` : `Bearer ${token}` } : {}),
           "Accept-Language": i18n.global.locale?.value || localStorage.getItem('locale') || 'zh-CN',
           "X-Request-ID": requestID,
-          ...(tenantIdHeader ? { "X-Tenant-ID": tenantIdHeader } : {}),
-          ...(requireAuth && token ? { "Authorization": `Bearer ${token}` } : {}),
+          ...(!embedToken && tenantIdHeader ? { "X-Tenant-ID": tenantIdHeader } : {}),
+          ...(params.embed_session_sig ? { "X-Embed-Session": params.embed_session_sig } : {}),
           ...(params.headers || {}),
+          ...(params.embed_visitor_id ? { "X-Embed-Visitor": params.embed_visitor_id } : {}),
         },
         body:
           params.method == "POST"
@@ -227,6 +233,7 @@ export function useStream() {
         },
 
         onmessage: (ev) => {
+          if (myGeneration !== streamGeneration) return
           const parsed = JSON.parse(ev.data);
           // Log first answer chunk for end-to-end TTFB measurement.
           // Filter by event type so non-answer events (references, tool
@@ -262,7 +269,7 @@ export function useStream() {
   let chunkHandler: ((data: any) => void) | null = null
   let closeHandler: (() => void) | null = null
   // 注册块处理器
-  const onChunk = (handler: () => void) => {
+  const onChunk = (handler: (data: any) => void) => {
     chunkHandler = handler
   }
 
@@ -274,6 +281,7 @@ export function useStream() {
 
   // 停止流
   const stopStream = () => {
+    streamGeneration++
     controller.abort();
     controller = new AbortController(); // 重置控制器（如需重新发起）
     isStreaming.value = false;

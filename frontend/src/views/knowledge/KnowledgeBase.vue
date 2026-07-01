@@ -10,11 +10,15 @@ import { useMenuStore } from '@/stores/menu';
 import { useUIStore } from '@/stores/ui';
 import { useOrganizationStore } from '@/stores/organization';
 import { useAuthStore } from '@/stores/auth';
+import { useChatResourcesStore } from '@/stores/chatResources';
+import { useEditorResourcesStore } from '@/stores/editorResources';
 import KnowledgeBaseEditorModal from './KnowledgeBaseEditorModal.vue';
 const usemenuStore = useMenuStore();
 const uiStore = useUIStore();
 const orgStore = useOrganizationStore();
 const authStore = useAuthStore();
+const chatResources = useChatResourcesStore();
+const editorResources = useEditorResourcesStore();
 const router = useRouter();
 import {
   batchQueryKnowledge,
@@ -27,7 +31,6 @@ import {
   deleteKnowledgeBaseTag,
   uploadKnowledgeFile,
   createKnowledgeFromURL,
-  listKnowledgeBases,
   reparseKnowledge,
   batchDeleteKnowledge,
 } from "@/api/knowledge-base/index";
@@ -36,11 +39,18 @@ import DocumentBatchBar from './components/DocumentBatchBar.vue';
 import WikiBrowser from './wiki/WikiBrowser.vue';
 import DatabaseKnowledgeOverview from './components/DatabaseKnowledgeOverview.vue';
 import { getWikiStats } from '@/api/wiki';
+import { getKnowledgeSpans } from '@/api/knowledge-base/index';
+import { knowledgeSpansPayloadHasTrace } from '@/utils/knowledgeTrace';
+import {
+  isKnowledgeParseInFlight,
+  knowledgeNeedsStatusPolling,
+  shouldRefreshWikiStatusAfterKnowledgePoll,
+} from './wikiStatusRefresh';
 import { listMoveTargets, moveKnowledge, getKnowledgeMoveProgress } from '@/api/knowledge-base';
 import { useI18n } from 'vue-i18n';
 import { formatStringDate, kbFileTypeVerification } from '@/utils';
 import { formatFileSize } from '@/utils/files';
-import { getParserEngines, type ParserEngineInfo } from '@/api/system';
+import type { ParserEngineInfo } from '@/api/system';
 const route = useRoute();
 const { t } = useI18n();
 const kbId = computed(() => (route.params as any).kbId as string || '');
@@ -159,7 +169,7 @@ const knowledgeBaseSubtitle = computed(() => {
   if (isDatabase.value) return t('knowledgeBase.databaseDetail.subtitle')
   return t('knowledgeEditor.document.subtitle')
 })
-const parserEngines = ref<ParserEngineInfo[]>([]);
+const parserEngines = computed<ParserEngineInfo[]>(() => editorResources.parserEngines);
 
 const supportedFileTypes = computed<Set<string>>(() => {
   const engines = parserEngines.value
@@ -275,6 +285,69 @@ const onVisibleChange = (visible: boolean) => {
     moveMenuMode.value = 'normal';
   }
 };
+
+/** Per-knowledge cache: whether /spans has a real trace (see knowledgeSpansPayloadHasTrace). */
+const traceAvailableById = reactive<Record<string, boolean>>({});
+const traceProbeInflight = new Set<string>();
+
+function clearTraceAvailabilityCache() {
+  for (const key of Object.keys(traceAvailableById)) {
+    delete traceAvailableById[key];
+  }
+  traceProbeInflight.clear();
+}
+
+// Parse phases where the backend pipeline is still actively running
+// (primary parse OR post-process fan-out). Trace data exists and the
+// UI should treat the row as "in flight" rather than terminal.
+function isParseInFlight(status?: string): boolean {
+  return isKnowledgeParseInFlight(status);
+}
+
+// Status line shown on the card body while parse is still in flight.
+function inFlightCardStatusText(item: KnowledgeCard): string {
+  if (item.parse_status === 'finalizing') {
+    if (item.summary_status === 'pending' || item.summary_status === 'processing') {
+      return t('knowledgeBase.generatingSummary');
+    }
+    return t('knowledgeBase.statusFinalizing');
+  }
+  return t('knowledgeBase.parsingInProgress');
+}
+
+function isTraceMenuVisible(item: KnowledgeCard): boolean {
+  if (!item?.id) return false;
+  if (isParseInFlight(item.parse_status)) {
+    return true;
+  }
+  return traceAvailableById[item.id] === true;
+}
+
+async function probeTraceAvailable(item: KnowledgeCard) {
+  const id = item.id;
+  if (!id || traceProbeInflight.has(id)) return;
+  if (isParseInFlight(item.parse_status)) {
+    traceAvailableById[id] = true;
+    return;
+  }
+  if (Object.prototype.hasOwnProperty.call(traceAvailableById, id)) return;
+  traceProbeInflight.add(id);
+  try {
+    const res: any = await getKnowledgeSpans(id);
+    traceAvailableById[id] = !!(res?.success && knowledgeSpansPayloadHasTrace(res.data));
+  } catch {
+    traceAvailableById[id] = false;
+  } finally {
+    traceProbeInflight.delete(id);
+  }
+}
+
+const onCardMoreVisibleChange = (visible: boolean, item: KnowledgeCard) => {
+  onVisibleChange(visible);
+  if (visible) {
+    probeTraceAvailable(item);
+  }
+};
 let isCardDetails = ref(false);
 let timeout: ReturnType<typeof setTimeout> | null = null;
 let delDialog = ref(false)
@@ -324,6 +397,8 @@ const fileTypeOptions = computed(() => [
   { label: 'DOC', value: 'doc' },
   { label: 'PPTX', value: 'pptx' },
   { label: 'PPT', value: 'ppt' },
+  { label: 'EPUB', value: 'epub' },
+  { label: 'MHTML', value: 'mhtml' },
   { label: 'TXT', value: 'txt' },
   { label: 'MD', value: 'md' },
   { label: 'URL', value: 'url' },
@@ -684,8 +759,8 @@ const confirmDeleteTag = (tag: any) => {
 const handleKnowledgeTagChange = async (knowledgeId: string, tagValue: string) => {
   try {
     // Pass the tag value directly (empty string means no tag)
-    const tagIdToUpdate = tagValue || null;
-    await updateKnowledgeTagBatch({ updates: { [knowledgeId]: tagIdToUpdate } });
+    const tagIdsToUpdate = tagValue ? [tagValue] : [];
+    await updateKnowledgeTagBatch({ updates: { [knowledgeId]: tagIdsToUpdate } });
     MessagePlugin.success(t('knowledgeBase.tagUpdateSuccess'));
     page = 1; // Reset page counter to 1 when reloading files after tag change
     loadKnowledgeFiles(kbId.value);
@@ -695,19 +770,19 @@ const handleKnowledgeTagChange = async (knowledgeId: string, tagValue: string) =
   }
 };
 
-const loadKnowledgeBaseInfo = async (targetKbId: string) => {
+const loadKnowledgeBaseInfo = async (targetKbId: string, force = false) => {
   if (!targetKbId) {
     kbInfo.value = null;
     return;
   }
   kbLoading.value = true;
   try {
-    const res: any = await getKnowledgeBaseById(targetKbId);
-    kbInfo.value = res?.data || null;
+    const data = await chatResources.fetchKnowledgeBaseById(targetKbId, force);
+    kbInfo.value = data;
     selectedTagId.value = '';
     // 重置store中的标签选择状态，避免上传文档时自动带上之前选择的标签
     uiStore.setSelectedTagId('');
-    const currentType = res?.data?.type || '';
+    const currentType = data?.type || '';
     if (currentType !== 'faq' && currentType !== 'database') {
       docListLoading.value = true;
       loadKnowledgeFiles(targetKbId);
@@ -726,8 +801,8 @@ const loadKnowledgeBaseInfo = async (targetKbId: string) => {
 
 const loadKnowledgeList = async () => {
   try {
-    const res: any = await listKnowledgeBases();
-    const myKbs: Array<{ id: string; name: string; type: string }> = (res?.data || []).map((item: any) => ({
+    await chatResources.ensureKnowledgeBases();
+    const myKbs = chatResources.rawKnowledgeBases.map((item: any) => ({
       id: String(item.id),
       name: item.name,
       type: item.type || 'document',
@@ -765,14 +840,25 @@ watch(activeKbTab, (tab) => {
 })
 
 watch(() => kbId.value, (newKbId, oldKbId) => {
-  if (newKbId && newKbId !== oldKbId) {
+  if (!newKbId) {
+    kbInfo.value = null;
+    cardList.value = [];
+    total.value = 0;
+    return;
+  }
+  if (newKbId === oldKbId && kbInfo.value) return;
+
+  if (newKbId !== oldKbId) {
+    clearTraceAvailabilityCache();
+    cardList.value = [];
+    total.value = 0;
+    docListLoading.value = true;
     tagSearchQuery.value = '';
     tagPage.value = 1;
-    // 重置标签选择状态，避免在不同知识库间保持标签选择
     uiStore.setSelectedTagId('');
-    loadKnowledgeBaseInfo(newKbId);
   }
-}, { immediate: false });
+  loadKnowledgeBaseInfo(newKbId);
+}, { immediate: true });
 
 watch(selectedTagId, (newVal, oldVal) => {
   if (oldVal === undefined) return
@@ -897,13 +983,8 @@ const handleOpenKnowledgeEvent = (e: Event) => {
 };
 
 onMounted(() => {
-  loadKnowledgeBaseInfo(kbId.value);
   loadKnowledgeList();
-  orgStore.fetchSharedKnowledgeBases();
-
-  getParserEngines()
-    .then(res => { parserEngines.value = res?.data || [] })
-    .catch(() => { parserEngines.value = [] })
+  editorResources.ensureParserEngines();
 
   window.addEventListener('knowledgeFileUploaded', handleFileUploaded as EventListener);
   window.addEventListener('openURLImportDialog', handleOpenURLImportDialog as EventListener);
@@ -976,6 +1057,16 @@ const readStoredDocumentViewMode = (): DocumentViewMode => {
   if (typeof window === 'undefined') return 'card';
   const storedMode = window.localStorage.getItem(DOCUMENT_VIEW_MODE_STORAGE_KEY);
   return storedMode === 'list' ? 'list' : 'card';
+};
+
+// needsStatusPolling decides whether a card row is still "in flight"
+// enough that the doc list should keep refreshing it. Keep in sync with
+// the backend lifecycle: pending / processing are the primary parse
+// phase, finalizing is the post-process fan-out (summary / question /
+// graph extract still running), and a `completed` row whose summary
+// hasn't landed yet keeps polling so the description fills in.
+const needsStatusPolling = (item: KnowledgeCard) => {
+  return knowledgeNeedsStatusPolling(item);
 };
 const documentViewMode = ref<DocumentViewMode>(readStoredDocumentViewMode());
 const documentListSortKey = ref<DocumentListSortKey>('updated_at');
@@ -1153,6 +1244,7 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
   timeout = setTimeout(() => {
     batchQueryKnowledge(query).then((result: any) => {
       let hasChanges = false;
+      let shouldRefreshWikiStatus = false;
       if (result.success && result.data) {
         let allCompleted = true;
         (result.data as KnowledgeCard[]).forEach((item: KnowledgeCard) => {
@@ -1160,8 +1252,10 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
           if (index == -1) return;
           
           if (cardList.value[index].parse_status !== item.parse_status ||
-              cardList.value[index].summary_status !== item.summary_status ||
-              cardList.value[index].description !== item.description) {
+            cardList.value[index].summary_status !== item.summary_status ||
+            cardList.value[index].description !== item.description) {
+            shouldRefreshWikiStatus ||= shouldRefreshWikiStatusAfterKnowledgePoll(cardList.value[index], item);
+            delete traceAvailableById[item.id];
             hasChanges = true;
           }
 
@@ -1184,6 +1278,9 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
           clearInterval(timeout);
           timeout = null;
         }
+      }
+      if (shouldRefreshWikiStatus) {
+        void fetchWikiStatusOnce();
       }
       // If there are no changes, the watch won't trigger, so we must manually poll again
       // Even if there are changes, we can manually poll again just to be safe.
@@ -1229,35 +1326,121 @@ const openSourceDoc = (knowledgeId: string) => {
   getCardDetails({ id: knowledgeId });
 };
 
-// 悬停知识卡片时跟随鼠标显示详情气泡
+// 悬停知识卡片时显示详情气泡（基于卡片位置定位）
 const hoveredCardItem = ref<KnowledgeCard | null>(null);
 const cardPopoverPos = ref({ x: 0, y: 0 });
-const CARD_POPOVER_OFFSET = 16;
+const CARD_POPOVER_OFFSET = 12;
+const CARD_POPOVER_ESTIMATED_WIDTH = 360;
+const CARD_POPOVER_ESTIMATED_HEIGHT = 300;
 const cardHoverShowDelay = 300;
 let cardHoverTimer: ReturnType<typeof setTimeout> | null = null;
+let cardPopoverElement: HTMLElement | null = null;
+
+// 根据卡片位置计算气泡位置（优先右侧，自动避开边界）
+const calculatePopoverPositionFromCard = (cardElement: HTMLElement): { x: number; y: number } => {
+  const cardRect = cardElement.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  // 获取实际气泡尺寸
+  let popoverWidth = CARD_POPOVER_ESTIMATED_WIDTH;
+  let popoverHeight = CARD_POPOVER_ESTIMATED_HEIGHT;
+
+  if (cardPopoverElement) {
+    const rect = cardPopoverElement.getBoundingClientRect();
+    if (rect.width > 0) popoverWidth = rect.width;
+    if (rect.height > 0) popoverHeight = rect.height;
+  }
+
+  let x = 0;
+  let y = 0;
+
+  // 策略1：优先尝试放在卡片右侧
+  const rightX = cardRect.right + CARD_POPOVER_OFFSET;
+  if (rightX + popoverWidth <= viewportWidth - 10) {
+    x = rightX;
+    y = cardRect.top;
+    // 确保不超出底部
+    if (y + popoverHeight > viewportHeight - 10) {
+      y = viewportHeight - popoverHeight - 10;
+    }
+    // 确保不超出顶部
+    y = Math.max(10, y);
+    return { x, y };
+  }
+
+  // 策略2：尝试放在卡片左侧
+  const leftX = cardRect.left - popoverWidth - CARD_POPOVER_OFFSET;
+  if (leftX >= 10) {
+    x = leftX;
+    y = cardRect.top;
+    // 确保不超出底部
+    if (y + popoverHeight > viewportHeight - 10) {
+      y = viewportHeight - popoverHeight - 10;
+    }
+    // 确保不超出顶部
+    y = Math.max(10, y);
+    return { x, y };
+  }
+
+  // 策略3：尝试放在卡片下方
+  const bottomY = cardRect.bottom + CARD_POPOVER_OFFSET;
+  if (bottomY + popoverHeight <= viewportHeight - 10) {
+    y = bottomY;
+    x = cardRect.left;
+    // 确保不超出右边界
+    if (x + popoverWidth > viewportWidth - 10) {
+      x = viewportWidth - popoverWidth - 10;
+    }
+    // 确保不超出左边界
+    x = Math.max(10, x);
+    return { x, y };
+  }
+
+  // 策略4：放在卡片上方
+  const topY = cardRect.top - popoverHeight - CARD_POPOVER_OFFSET;
+  y = Math.max(10, topY);
+  x = cardRect.left;
+  // 确保不超出右边界
+  if (x + popoverWidth > viewportWidth - 10) {
+    x = viewportWidth - popoverWidth - 10;
+  }
+  // 确保不超出左边界
+  x = Math.max(10, x);
+
+  return { x, y };
+};
 
 const onCardMouseEnter = (ev: MouseEvent, item: KnowledgeCard) => {
   if (cardHoverTimer) {
     clearTimeout(cardHoverTimer);
     cardHoverTimer = null;
   }
+
+  const cardElement = (ev.currentTarget as HTMLElement);
+
   cardHoverTimer = setTimeout(() => {
     cardHoverTimer = null;
     hoveredCardItem.value = item;
-    cardPopoverPos.value = {
-      x: ev.clientX + CARD_POPOVER_OFFSET,
-      y: ev.clientY + CARD_POPOVER_OFFSET,
-    };
+
+    // 基于卡片位置计算气泡位置
+    const pos = calculatePopoverPositionFromCard(cardElement);
+    cardPopoverPos.value = pos;
+
+    // 获取实际元素后精确计算
+    nextTick(() => {
+      cardPopoverElement = document.querySelector('.knowledge-card-hover-popover') as HTMLElement;
+      if (cardPopoverElement) {
+        const refinedPos = calculatePopoverPositionFromCard(cardElement);
+        cardPopoverPos.value = refinedPos;
+      }
+    });
   }, cardHoverShowDelay);
 };
 
+// 鼠标在卡片上移动时不更新气泡位置
 const onCardMouseMove = (ev: MouseEvent) => {
-  if (hoveredCardItem.value) {
-    cardPopoverPos.value = {
-      x: ev.clientX + CARD_POPOVER_OFFSET,
-      y: ev.clientY + CARD_POPOVER_OFFSET,
-    };
-  }
+  // 保持气泡固定在卡片旁边
 };
 
 const onCardMouseLeave = () => {
@@ -1266,6 +1449,7 @@ const onCardMouseLeave = () => {
     cardHoverTimer = null;
   }
   hoveredCardItem.value = null;
+  cardPopoverElement = null;
 };
 
 const delCard = (index: number, item: KnowledgeCard) => {
@@ -1757,7 +1941,11 @@ const handleURLImportConfirm = async () => {
   try {
     // 获取当前选中的分类ID
     const tagIdToUpload = selectedTagId.value !== '__untagged__' ? selectedTagId.value : undefined;
-    const responseData: any = await createKnowledgeFromURL(kbId.value, { url, tag_id: tagIdToUpload });
+    const responseData: any = await createKnowledgeFromURL(kbId.value, {
+      url,
+      tag_ids: tagIdToUpload ? [tagIdToUpload] : undefined,
+      tag_id: tagIdToUpload,
+    });
     window.dispatchEvent(new CustomEvent('knowledgeFileUploaded', {
       detail: { kbId: kbId.value }
     }));
@@ -2045,8 +2233,11 @@ watch(cardList, () => {
 // 处理知识库编辑成功后的回调
 const handleKBEditorSuccess = (payload: string | { id: string }) => {
   const kbIdValue = typeof payload === 'string' ? payload : payload.id;
+  chatResources.invalidateKnowledgeBaseDetail(kbIdValue);
+  chatResources.invalidate('knowledgeBases');
+  loadKnowledgeList();
   if (kbIdValue === kbId.value) {
-    loadKnowledgeBaseInfo(kbIdValue);
+    loadKnowledgeBaseInfo(kbIdValue, true);
   }
 };
 
@@ -2292,8 +2483,7 @@ async function createNewSession(value: string): Promise<void> {
                       size="small"
                       :maxlength="40"
                       :placeholder="$t('knowledgeBase.tagNamePlaceholder')"
-                      @keydown.enter.stop.prevent="submitCreateTag"
-                      @keydown.esc.stop.prevent="cancelCreateTag"
+                      @keydown="($event: KeyboardEvent) => { if ($event.key === 'Enter') { $event.stopPropagation(); $event.preventDefault(); submitCreateTag() } else if ($event.key === 'Escape') { $event.stopPropagation(); $event.preventDefault(); cancelCreateTag() } }"
                     />
                   </div>
                 </div>
@@ -2337,8 +2527,7 @@ async function createNewSession(value: string): Promise<void> {
                           v-model="editingTagName"
                           size="small"
                           :maxlength="40"
-                          @keydown.enter.stop.prevent="submitEditTag"
-                          @keydown.esc.stop.prevent="cancelEditTag"
+                          @keydown="($event: KeyboardEvent) => { if ($event.key === 'Enter') { $event.stopPropagation(); $event.preventDefault(); submitEditTag() } else if ($event.key === 'Escape') { $event.stopPropagation(); $event.preventDefault(); cancelEditTag() } }"
                         />
                       </div>
                     </template>
@@ -2541,7 +2730,7 @@ async function createNewSession(value: string): Promise<void> {
                             size="small"
                             :checked="selectedIds.has(item.id)"
                             :title="item.file_name"
-                            @change="(checked, ctx) => onCardGridCheckboxChange(item.id, checked, ctx)"
+                            @change="(checked: boolean, ctx: { e?: Event }) => onCardGridCheckboxChange(item.id, checked, ctx)"
                           />
                         </div>
                         <span class="card-content-title" :title="item.file_name">{{ item.file_name }}</span>
@@ -5030,6 +5219,13 @@ async function createNewSession(value: string): Promise<void> {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   font-family: var(--app-font-family);
   transition: opacity 0.15s ease;
+  will-change: transform;
+
+  /* 防止气泡内容抖动 */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
 
   .card-popover-title {
     font-size: 14px;

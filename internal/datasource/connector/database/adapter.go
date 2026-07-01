@@ -40,17 +40,23 @@ func (a *Adapter) Validate(ctx context.Context, config *types.DataSourceConfig) 
 }
 
 // ListResources discovers database/schema/table/view resources for datasource management UI.
-func (a *Adapter) ListResources(ctx context.Context, config *types.DataSourceConfig) ([]types.Resource, error) {
+func (a *Adapter) ListResources(ctx context.Context, config *types.DataSourceConfig, parentID string) ([]types.Resource, error) {
 	connector, cfg, err := a.resolve(config)
 	if err != nil {
 		return nil, err
 	}
+	_ = parentID
 
 	schema, err := connector.DiscoverSchema(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
 	return schemaToResources(schema), nil
+}
+
+// ResolveResourceAncestors returns no ancestors because database resources are exposed as a flat synthetic tree.
+func (a *Adapter) ResolveResourceAncestors(context.Context, *types.DataSourceConfig, []string) ([]string, error) {
+	return nil, nil
 }
 
 // FetchAll is intentionally unsupported because realtime databases do not use sync ingestion.

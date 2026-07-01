@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/textproto"
+	"reflect"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/hibiken/asynq"
 )
 
@@ -95,6 +97,12 @@ func (s *DataSourceService) CreateDataSource(ctx context.Context, ds *types.Data
 	}
 
 	// Validate configuration
+	if cfg, err := ds.ParseConfig(); err == nil && cfg != nil {
+		cfg.StripNonSecretCredentials(ds.Type)
+		if blob, err := cfg.ToJSON(); err == nil {
+			ds.Config = blob
+		}
+	}
 	if err := s.validateDataSourceConfig(ctx, ds); err != nil {
 		return nil, err
 	}
@@ -172,13 +180,51 @@ func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.Data
 	if err := prepareDatabaseDataSourceForStorage(ds, existing); err != nil {
 		return nil, err
 	}
+
+	var mergedCfg, existingParsedCfg *types.DataSourceConfig
+	if !isDatabaseDataSourceType(ds.Type) && len(ds.Config) > 0 {
+		incomingCfg, parseIncErr := ds.ParseConfig()
+		existingCfg, parseExErr := existing.ParseConfig()
+		if parseIncErr == nil && parseExErr == nil && incomingCfg != nil {
+			if incomingCfg.HasCredentials() {
+				logger.Warnf(ctx,
+					"deprecated: credentials in PUT /datasource/%s body are ignored; use PUT /credentials instead",
+					secutils.SanitizeForLog(ds.ID))
+			}
+			merged := *incomingCfg
+			if existingCfg != nil {
+				merged.Credentials = existingCfg.Credentials
+			} else {
+				merged.Credentials = nil
+			}
+			merged.StripNonSecretCredentials(ds.Type)
+			if blob, err := merged.ToJSON(); err == nil {
+				ds.Config = blob
+			}
+			mergedCfg = &merged
+			existingParsedCfg = existingCfg
+		}
+	}
 	shouldRefreshDatabaseSchema := isDatabaseDataSourceType(ds.Type) && (ds.Type != existing.Type || string(ds.Config) != string(existing.Config))
 	shouldInvalidateOldConnection := shouldRefreshDatabaseSchema && databaseConnectionIdentityChanged(existing, ds)
 
-	// Validate new configuration if changed
-	if ds.Type != existing.Type || string(ds.Config) != string(existing.Config) {
-		if err := s.validateDataSourceConfig(ctx, ds); err != nil {
-			return nil, err
+	configChanged := ds.Type != existing.Type || string(ds.Config) != string(existing.Config)
+	if isDatabaseDataSourceType(ds.Type) {
+		if configChanged {
+			if err := s.validateDataSourceConfig(ctx, ds); err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		configActuallyChanged := true
+		if mergedCfg != nil && existingParsedCfg != nil {
+			configActuallyChanged = !reflect.DeepEqual(*mergedCfg, *existingParsedCfg)
+		}
+		hasCreds := mergedCfg != nil && mergedCfg.HasConfiguredCredentials(ds.Type)
+		if configChanged && (mergedCfg == nil || hasCreds || configActuallyChanged) {
+			if err := s.validateDataSourceConfig(ctx, ds); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -203,6 +249,90 @@ func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.Data
 
 	logger.Infof(ctx, "data source updated: id=%s", ds.ID)
 	return ds, nil
+}
+
+// UpdateDataSourceCredentials replaces the connector credential map. This is
+// a single atomic write; the previous credential set is discarded entirely
+// (callers cannot patch individual keys because half-configured connector
+// auth is meaningless). After persisting, the live connection is validated
+// so the caller learns immediately if the new credentials are wrong.
+func (s *DataSourceService) UpdateDataSourceCredentials(
+	ctx context.Context, id string, credentials map[string]interface{},
+) (*types.DataSource, error) {
+	if id == "" {
+		return nil, datasource.ErrDataSourceInvalid
+	}
+	existing, err := s.dsRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := existing.ParseConfig()
+	if err != nil {
+		return nil, err
+	}
+	if parsed == nil {
+		parsed = &types.DataSourceConfig{Type: existing.Type}
+	}
+	parsed.Credentials = credentials
+	parsed.StripNonSecretCredentials(existing.Type)
+	blob, err := parsed.ToJSON()
+	if err != nil {
+		return nil, err
+	}
+	existing.Config = blob
+
+	// Run live validation now that the credentials are in place — surfaces
+	// "wrong token" feedback immediately to the user instead of waiting for
+	// the next scheduled sync.
+	if err := s.validateDataSourceConfig(ctx, existing); err != nil {
+		return nil, err
+	}
+	if err := s.dsRepo.Update(ctx, existing); err != nil {
+		return nil, err
+	}
+	s.invalidateDatabaseConnector(ctx, existing)
+	logger.Infof(ctx, "DataSource credentials updated: id=%s", secutils.SanitizeForLog(id))
+	return existing, nil
+}
+
+// ClearDataSourceCredentials wipes the connector credential map without
+// touching any other config field. Idempotent.
+func (s *DataSourceService) ClearDataSourceCredentials(ctx context.Context, id string) error {
+	if id == "" {
+		return datasource.ErrDataSourceInvalid
+	}
+	existing, err := s.dsRepo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	parsed, err := existing.ParseConfig()
+	if err != nil {
+		return err
+	}
+	if parsed == nil {
+		return nil
+	}
+	parsed.StripNonSecretCredentials(existing.Type)
+	if !parsed.HasConfiguredCredentials(existing.Type) {
+		blob, err := parsed.ToJSON()
+		if err != nil {
+			return err
+		}
+		existing.Config = blob
+		return s.dsRepo.Update(ctx, existing)
+	}
+	parsed.Credentials = nil
+	blob, err := parsed.ToJSON()
+	if err != nil {
+		return err
+	}
+	existing.Config = blob
+	if err := s.dsRepo.Update(ctx, existing); err != nil {
+		return err
+	}
+	s.invalidateDatabaseConnector(ctx, existing)
+	logger.Infof(ctx, "DataSource credentials cleared by user: id=%s", secutils.SanitizeForLog(id))
+	return nil
 }
 
 // DeleteDataSource deletes a data source (soft delete)
@@ -237,38 +367,6 @@ func (s *DataSourceService) DeleteDataSource(ctx context.Context, id string) err
 
 	logger.Infof(ctx, "data source deleted: id=%s", id)
 	return nil
-}
-
-// UpdateDataSourceCredentials replaces the credential map inside the data-source config.
-// Other connector settings and selected resources are preserved so this subresource stays atomic.
-func (s *DataSourceService) UpdateDataSourceCredentials(ctx context.Context, id string, credentials map[string]interface{}) (*types.DataSource, error) {
-	ds, err := s.dsRepo.FindByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	var config types.DataSourceConfig
-	if len(ds.Config) > 0 {
-		if err := json.Unmarshal(ds.Config, &config); err != nil {
-			return nil, fmt.Errorf("failed to parse datasource config: %w", err)
-		}
-	}
-	config.Credentials = credentials
-	data, err := json.Marshal(config)
-	if err != nil {
-		return nil, err
-	}
-	ds.Config = types.JSON(data)
-	if err := s.dsRepo.Update(ctx, ds); err != nil {
-		return nil, err
-	}
-	s.invalidateDatabaseConnector(ctx, ds)
-	return ds, nil
-}
-
-// ClearDataSourceCredentials removes all persisted connector credentials while keeping other config intact.
-func (s *DataSourceService) ClearDataSourceCredentials(ctx context.Context, id string) error {
-	_, err := s.UpdateDataSourceCredentials(ctx, id, map[string]interface{}{})
-	return err
 }
 
 // ValidateConnection tests the connection to an external data source
@@ -309,8 +407,12 @@ func (s *DataSourceService) ValidateConnection(ctx context.Context, dsID string)
 	return nil
 }
 
-// ListAvailableResources lists resources available for sync in the external system
-func (s *DataSourceService) ListAvailableResources(ctx context.Context, dsID string) ([]types.Resource, error) {
+// ListAvailableResources lists resources available for sync in the external system.
+// parentID enables lazy (on-demand) loading of hierarchical resources: pass "" to
+// list the top level, or a resource's ExternalID to list only its direct children.
+func (s *DataSourceService) ListAvailableResources(
+	ctx context.Context, dsID string, parentID string,
+) ([]types.Resource, error) {
 	ds, err := s.GetDataSource(ctx, dsID)
 	if err != nil {
 		return nil, err
@@ -329,13 +431,46 @@ func (s *DataSourceService) ListAvailableResources(ctx context.Context, dsID str
 	}
 
 	// List resources
-	resources, err := connector.ListResources(ctx, config)
+	resources, err := connector.ListResources(ctx, config, parentID)
 	if err != nil {
 		logger.Errorf(ctx, "failed to list resources: %v", err)
 		return nil, err
 	}
 
 	return resources, nil
+}
+
+// ResolveResourceAncestors resolves the ancestor ExternalIDs needed to reveal the
+// given resources in a lazily-loaded picker (see the connector method for details).
+func (s *DataSourceService) ResolveResourceAncestors(
+	ctx context.Context, dsID string, resourceIDs []string,
+) ([]string, error) {
+	if len(resourceIDs) == 0 {
+		return []string{}, nil
+	}
+
+	ds, err := s.GetDataSource(ctx, dsID)
+	if err != nil {
+		return nil, err
+	}
+
+	connector, err := s.connectorRegistry.Get(ds.Type)
+	if err != nil {
+		return nil, err
+	}
+
+	config, err := ds.ParseConfig()
+	if err != nil {
+		return nil, datasource.ErrInvalidConfig
+	}
+
+	ancestors, err := connector.ResolveResourceAncestors(ctx, config, resourceIDs)
+	if err != nil {
+		logger.Errorf(ctx, "failed to resolve resource ancestors: %v", err)
+		return nil, err
+	}
+
+	return ancestors, nil
 }
 
 // ManualSync triggers an immediate sync for a data source
@@ -489,6 +624,16 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 		return nil
 	}
 
+	if _, err := s.kbService.GetKnowledgeBaseByID(ctx, ds.KnowledgeBaseID); err != nil {
+		logger.Warnf(ctx, "knowledge base not found (likely deleted), cancelling sync: kb=%s ds=%s err=%v",
+			ds.KnowledgeBaseID, payload.DataSourceID, err)
+		syncLog.Status = types.SyncLogStatusCanceled
+		syncLog.FinishedAt = timePtr(time.Now().UTC())
+		syncLog.ErrorMessage = "knowledge base has been deleted"
+		_ = s.syncLogRepo.Update(ctx, syncLog)
+		return nil
+	}
+
 	wasPaused := ds.Status == types.DataSourceStatusPaused
 	if isDatabaseDataSourceType(ds.Type) {
 		syncLog.Status = types.SyncLogStatusFailed
@@ -548,7 +693,24 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 		logger.Infof(ctx, "incremental sync fetched %d items", len(items))
 	}
 
+	var fetchWarnings []string
+	var partialFetch *datasource.PartialFetchError
+	if errors.As(fetchErr, &partialFetch) {
+		fetchWarnings = partialFetch.Details
+		fetchErr = nil
+	}
+
 	if fetchErr != nil {
+		// Persist connector cursor even when fetch failed so transient outages
+		// (e.g. RSS feed downtime) do not force a full re-ingest on recovery.
+		if nextCursor != nil {
+			if cursorJSON, cerr := nextCursor.ToJSON(); cerr == nil {
+				ds.LastSyncCursor = cursorJSON
+				if uerr := s.dsRepo.UpdateSyncState(ctx, ds); uerr != nil {
+					logger.Warnf(ctx, "failed to persist sync cursor after fetch error: %v", uerr)
+				}
+			}
+		}
 		logger.Errorf(ctx, "fetch operation failed: %v", fetchErr)
 		syncLog.Status = types.SyncLogStatusFailed
 		syncLog.FinishedAt = timePtr(time.Now().UTC())
@@ -587,13 +749,13 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenant)
 
 	// Auto-tag: find or create a tag for this data source so synced items are easily identifiable
-	autoTagID := ""
+	autoTagIDs := []string{}
 	autoTagName := ds.Name
 	if autoTag, tagErr := s.tagService.FindOrCreateTagByName(ctx, ds.KnowledgeBaseID, autoTagName); tagErr != nil {
 		logger.Warnf(ctx, "failed to find/create auto-tag %q: %v (proceeding without tag)", autoTagName, tagErr)
 	} else if autoTag != nil {
-		autoTagID = autoTag.ID
-		logger.Infof(ctx, "using auto-tag %q (id=%s) for data source sync", autoTagName, autoTagID)
+		autoTagIDs = append(autoTagIDs, autoTag.ID)
+		logger.Infof(ctx, "using auto-tag %q (id=%s) for data source sync", autoTagName, autoTag.ID)
 	}
 
 	for _, item := range items {
@@ -620,7 +782,7 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 			continue
 		}
 
-		isUpdate, err := s.ingestItem(ctx, ds, &item, autoTagID)
+		isUpdate, err := s.ingestItem(ctx, ds, &item, autoTagIDs)
 		if err != nil {
 			// Duplicate file/URL is not a failure — count as skipped
 			var dupErr *types.DuplicateKnowledgeError
@@ -658,35 +820,21 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 
 	ds.LastSyncAt = timePtr(time.Now().UTC())
 	if allFailedErr != nil {
-		syncLog.Status = types.SyncLogStatusFailed
-		syncLog.ErrorMessage = allFailedErr.Error()
-		if wasPaused {
-			ds.Status = types.DataSourceStatusPaused
-		} else {
-			ds.Status = types.DataSourceStatusError
-		}
-		ds.ErrorMessage = allFailedErr.Error()
+		resultJSON, _ := result.ToJSON()
+		s.updateSyncRunResult(ctx, ds, syncLog, result, resultJSON, types.SyncLogStatusFailed, allFailedErr.Error(), wasPaused)
 	} else {
-		syncLog.Status = types.SyncLogStatusSuccess
-		if wasPaused {
-			ds.Status = types.DataSourceStatusPaused
-		} else {
-			ds.Status = types.DataSourceStatusActive
+		resultJSON, _ := result.ToJSON()
+		syncStatus := types.SyncLogStatusSuccess
+		syncErrorMessage := ""
+		if len(fetchWarnings) > 0 {
+			syncStatus = types.SyncLogStatusPartial
+			syncErrorMessage = fmt.Sprintf("Some feeds failed: %s", strings.Join(fetchWarnings, "; "))
+			for _, w := range fetchWarnings {
+				result.Errors = append(result.Errors, w)
+			}
+			resultJSON, _ = result.ToJSON()
 		}
-		ds.ErrorMessage = ""
-	}
-
-	// Store result
-	resultJSON, _ := result.ToJSON()
-	ds.LastSyncResult = resultJSON
-	syncLog.Result = resultJSON
-
-	// Update database
-	if err := s.dsRepo.Update(ctx, ds); err != nil {
-		logger.Errorf(ctx, "failed to update data source: %v", err)
-	}
-	if err := s.syncLogRepo.Update(ctx, syncLog); err != nil {
-		logger.Errorf(ctx, "failed to update sync log: %v", err)
+		s.updateSyncRunResult(ctx, ds, syncLog, result, resultJSON, syncStatus, syncErrorMessage, wasPaused)
 	}
 
 	logger.Infof(ctx, "data source sync completed: ds=%s created=%d updated=%d deleted=%d",
@@ -777,7 +925,7 @@ func (s *DataSourceService) validateDataSourceConfig(ctx context.Context, ds *ty
 //   - Has URL only      → CreateKnowledgeFromURL  (让 WeKnora 下载并解析)
 //
 // Returns (isUpdate, error) — isUpdate is true when an existing item was replaced.
-func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource, item *types.FetchedItem, tagID string) (bool, error) {
+func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource, item *types.FetchedItem, tagIDs []string) (bool, error) {
 	channel := ds.Type // e.g. "feishu", "notion"
 
 	metadata := map[string]string{
@@ -820,8 +968,9 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 			metadata,
 			nil,           // use KB default for multimodal
 			item.FileName, // customFileName — must include extension for file-type validation
-			tagID,         // auto-tag from data source
+			tagIDs,        // auto-tag from data source
 			channel,
+			nil,
 		)
 		return isUpdate, err
 	}
@@ -836,8 +985,9 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 			"",  // auto-detect file type
 			nil, // use KB default for multimodal
 			item.Title,
-			tagID, // auto-tag from data source
+			tagIDs, // auto-tag from data source
 			channel,
+			nil,
 		)
 		return isUpdate, err
 	}
@@ -887,6 +1037,46 @@ func bytesToFileHeader(data []byte, filename string) (*multipart.FileHeader, err
 func timePtr(t time.Time) *time.Time {
 	utc := t.UTC()
 	return &utc
+}
+
+func (s *DataSourceService) updateSyncRunResult(
+	ctx context.Context,
+	ds *types.DataSource,
+	syncLog *types.SyncLog,
+	result *types.SyncResult,
+	resultJSON types.JSON,
+	status string,
+	errorMessage string,
+	wasPaused bool,
+) {
+	syncLog.ItemsTotal = result.Total
+	syncLog.ItemsCreated = result.Created
+	syncLog.ItemsUpdated = result.Updated
+	syncLog.ItemsDeleted = result.Deleted
+	syncLog.ItemsSkipped = result.Skipped
+	syncLog.ItemsFailed = result.Failed
+	syncLog.Status = status
+	syncLog.FinishedAt = timePtr(time.Now().UTC())
+	syncLog.ErrorMessage = errorMessage
+	syncLog.Result = resultJSON
+	if err := s.syncLogRepo.UpdateResult(ctx, syncLog); err != nil {
+		logger.Errorf(ctx, "failed to update sync log: %v", err)
+	}
+
+	if status == types.SyncLogStatusFailed {
+		if !wasPaused {
+			ds.Status = types.DataSourceStatusError
+		}
+	} else if wasPaused {
+		ds.Status = types.DataSourceStatusPaused
+	} else {
+		ds.Status = types.DataSourceStatusActive
+	}
+	ds.ErrorMessage = errorMessage
+	ds.LastSyncResult = resultJSON
+	if err := s.dsRepo.UpdateSyncState(ctx, ds); err != nil {
+		logger.Errorf(ctx, "failed to update data source: %v", err)
+	}
 }
 
 // prepareDatabaseDataSourceForStorage normalizes database datasource payloads before validation/persistence.

@@ -21,7 +21,6 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 	esv7 "github.com/elastic/go-elasticsearch/v7"
 	"github.com/elastic/go-elasticsearch/v8"
-	_ "github.com/go-sql-driver/mysql" // 给 Doris (database/sql) 注册 MySQL 协议驱动
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 	"github.com/panjf2000/ants/v2"
@@ -61,6 +60,7 @@ import (
 	databaseDatasourceConnector "github.com/Tencent/WeKnora/internal/datasource/connector/database"
 	feishuConnector "github.com/Tencent/WeKnora/internal/datasource/connector/feishu"
 	notionConnector "github.com/Tencent/WeKnora/internal/datasource/connector/notion"
+	rssConnector "github.com/Tencent/WeKnora/internal/datasource/connector/rss"
 	yuqueConnector "github.com/Tencent/WeKnora/internal/datasource/connector/yuque"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/handler"
@@ -69,6 +69,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/im/dingtalk"
 	"github.com/Tencent/WeKnora/internal/im/feishu"
 	"github.com/Tencent/WeKnora/internal/im/mattermost"
+	"github.com/Tencent/WeKnora/internal/im/qqbot"
 	"github.com/Tencent/WeKnora/internal/im/slack"
 	"github.com/Tencent/WeKnora/internal/im/telegram"
 	"github.com/Tencent/WeKnora/internal/im/wechat"
@@ -82,7 +83,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/models/utils/ollama"
 	"github.com/Tencent/WeKnora/internal/router"
 	"github.com/Tencent/WeKnora/internal/stream"
-	"github.com/Tencent/WeKnora/internal/tracing"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -111,15 +111,12 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// Core infrastructure configuration
 	logger.Debugf(ctx, "[Container] Registering core infrastructure...")
 	must(container.Provide(config.LoadConfig))
-	must(container.Provide(initTracer))
 	must(container.Provide(initLangfuse))
 	must(container.Provide(initDatabase))
 	must(container.Provide(initFileService))
 	must(container.Provide(initRedisClient))
 	must(container.Provide(initAntsPool))
 
-	// Register tracer cleanup handler (tracer needs to be available for cleanup registration)
-	must(container.Invoke(registerTracerCleanup))
 	must(container.Invoke(registerLangfuseCleanup))
 
 	// Register goroutine pool cleanup handler
@@ -157,6 +154,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(memoryRepo.NewMemoryRepository))
 	must(container.Provide(repository.NewMCPServiceRepository))
 	must(container.Provide(repository.NewMCPToolApprovalRepository))
+	must(container.Provide(repository.NewMCPOAuthRepository))
 	must(container.Provide(repository.NewCustomAgentRepository))
 	must(container.Provide(repository.NewOrganizationRepository))
 	must(container.Provide(repository.NewOrgTreeRepository))
@@ -164,6 +162,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewAgentShareRepository))
 	must(container.Provide(repository.NewAgentPageShareRepository))
 	must(container.Provide(repository.NewAgentPageShareSessionRepository))
+	must(container.Provide(repository.NewEmbedChannelRepository))
 	must(container.Provide(repository.NewTenantDisabledSharedAgentRepository))
 	must(container.Provide(repository.NewTenantMemberRepository))
 	must(container.Provide(repository.NewTenantInvitationRepository))
@@ -185,6 +184,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// MCP manager for managing MCP client connections
 	logger.Debugf(ctx, "[Container] Registering MCP manager...")
 	must(container.Provide(mcp.NewMCPManager))
+	must(container.Provide(mcp.NewOAuthManager))
 
 	// Business service layer
 	logger.Debugf(ctx, "[Container] Registering business services...")
@@ -230,6 +230,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewWikiLintService))
 	must(container.Provide(service.NewAgentVisibilityService))
 	must(container.Provide(service.NewChatDocumentArtifactService))
+	must(container.Provide(service.NewEmbedChannelService))
 
 	// Web search service (needed by AgentService)
 	logger.Debugf(ctx, "[Container] Registering web search registry and providers...")
@@ -345,6 +346,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewAuditLogHandler))
 	must(container.Provide(handler.NewSystemHandler))
 	must(container.Provide(handler.NewMCPServiceHandler))
+	must(container.Provide(handler.NewMCPCredentialsHandler))
+	must(container.Provide(handler.NewMCPOAuthHandler))
+	must(container.Provide(handler.NewModelCredentialsHandler))
+	must(container.Provide(handler.NewWebSearchProviderCredentialsHandler))
+	must(container.Provide(handler.NewDataSourceCredentialsHandler))
 	must(container.Provide(handler.NewWebSearchHandler))
 	must(container.Provide(handler.NewWebSearchProviderHandler))
 	must(container.Provide(handler.NewVectorStoreHandler))
@@ -361,6 +367,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(imPkg.NewService))
 	must(container.Invoke(registerIMAdapterFactories))
 	must(container.Provide(handler.NewIMHandler))
+	must(container.Provide(handler.NewEmbedChannelHandler))
 	must(container.Provide(handler.NewWeKnoraCloudHandler))
 	must(container.Provide(handler.NewOrgTreeHandler))
 	must(container.Provide(handler.NewExportHandler))
@@ -429,18 +436,6 @@ func must(err error) {
 	}
 }
 
-// initTracer initializes OpenTelemetry tracer
-// Sets up distributed tracing for observability across the application
-// Parameters:
-//   - None
-//
-// Returns:
-//   - Configured tracer instance
-//   - Error if initialization fails
-func initTracer() (*tracing.Tracer, error) {
-	return tracing.InitTracer()
-}
-
 // initLangfuse initializes the Langfuse ingestion client.
 // Configuration is read from LANGFUSE_* environment variables (see
 // docs/langfuse.md). Returns a disabled manager if credentials are absent —
@@ -462,20 +457,14 @@ func initRedisClient() (*redis.Client, error) {
 	}
 
 	client := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
 		Username: os.Getenv("REDIS_USERNAME"),
 		Password: os.Getenv("REDIS_PASSWORD"),
 		DB:       db,
 	})
 
-	_, err = client.Ping(context.Background()).Result()
-	if err != nil {
-		return nil, fmt.Errorf("连接Redis失败: %w", err)
-	}
 
 	return client, nil
 }
-
 // initDatabase initializes database connection
 // Creates and configures database connection based on environment configuration
 // Supports multiple database backends (PostgreSQL)
@@ -1258,19 +1247,6 @@ func registerPoolCleanup(pool *ants.Pool, cleaner interfaces.ResourceCleaner) {
 	})
 }
 
-// registerTracerCleanup registers the tracer for cleanup
-// Ensures proper cleanup of the tracer when application shuts down
-// Parameters:
-//   - tracer: Tracer instance
-//   - cleaner: Resource cleaner
-func registerTracerCleanup(tracer *tracing.Tracer, cleaner interfaces.ResourceCleaner) {
-	// Register the cleanup function - actual context will be provided during cleanup
-	cleaner.RegisterWithName("Tracer", func() error {
-		// Create context for cleanup with longer timeout for tracer shutdown
-		return tracer.Cleanup(context.Background())
-	})
-}
-
 // registerLangfuseCleanup ensures buffered Langfuse events are flushed on
 // shutdown. A 5-second timeout matches other external-service cleanups and
 // balances data durability against a slow remote endpoint holding up exit.
@@ -1418,6 +1394,7 @@ func registerIMAdapterFactories(imService *imPkg.Service) {
 	imService.RegisterAdapterFactory("dingtalk", dingtalk.NewFactory())
 	imService.RegisterAdapterFactory("mattermost", mattermost.NewFactory())
 	imService.RegisterAdapterFactory("wechat", wechat.NewFactory())
+	imService.RegisterAdapterFactory("qqbot", qqbot.NewFactory())
 
 	// Load and start all enabled channels from database
 	if err := imService.LoadAndStartChannels(); err != nil {
@@ -1447,6 +1424,9 @@ func initConnectorRegistry(dbRegistry *databaseconnector.Registry) (*datasource.
 	if err := registry.Register(databaseDatasourceConnector.NewAdapter(types.DatabaseTypePostgreSQL, dbRegistry)); err != nil {
 		errs = errors.Join(errs, fmt.Errorf("register postgresql datasource adapter: %w", err))
 	}
+	if err := registry.Register(rssConnector.NewConnector()); err != nil {
+		errs = errors.Join(errs, fmt.Errorf("register rss connector: %w", err))
+	}
 
 	// Future connectors will be registered here:
 	// if err := registry.Register(confluenceConnector.NewConnector()); err != nil { ... }
@@ -1459,7 +1439,6 @@ func initConnectorRegistry(dbRegistry *databaseconnector.Registry) (*datasource.
 }
 
 // initDatabaseConnectorRegistry creates and populates the realtime database connector registry.
-// MySQL and PostgreSQL are the MVP connectors for external structured-query access.
 func initDatabaseConnectorRegistry() (*databaseconnector.Registry, error) {
 	registry := databaseconnector.NewRegistry()
 

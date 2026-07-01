@@ -173,7 +173,7 @@
               :title="t('system.globalSettings.badgeOverrideTooltip')"
             >{{ t('system.globalSettings.badgeOverride') }}</t-tag>
           </label>
-          <p v-if="item.description" class="desc">{{ item.description }}</p>
+          <p v-if="settingDescription(item)" class="desc">{{ settingDescription(item) }}</p>
           <div v-if="modifiedMeta(item)" class="setting-meta">
             {{ t('system.globalSettings.modifiedAt', { value: modifiedMeta(item) }) }}
           </div>
@@ -529,6 +529,14 @@ function keyLabel(k: string): string {
     return (bag as Record<string, string>)[k]
   }
   return k
+}
+
+// Descriptions are registered in Chinese on the backend for operator docs;
+// user-facing copy lives in i18n (system.globalSettings.keyDescriptions.*).
+function settingDescription(item: { key: string; description?: string }): string {
+  const path = `system.globalSettings.keyDescriptions.${item.key}`
+  if (te(path)) return t(path) as string
+  return item.description ?? ''
 }
 
 // Enum keys whose change triggers a whole-value inline popconfirm before

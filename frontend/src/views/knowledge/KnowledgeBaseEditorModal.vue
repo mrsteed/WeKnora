@@ -500,7 +500,7 @@
                 </div>
 
                 <!-- 数据源管理（仅编辑模式） -->
-                <div v-if="mode === 'edit' && kbId" v-show="currentSection === 'datasource'" class="section">
+                <div v-if="mode === 'edit' && kbId && currentSection === 'datasource'" class="section">
                   <DataSourceSettings :kb-id="kbId" @count="dsCount = $event" />
                 </div>
 
@@ -534,6 +534,9 @@ import { createKnowledgeBase, getKnowledgeBaseById, listKnowledgeFiles, updateKn
 import { validateCredentials } from '@/api/datasource'
 import { updateKBConfig, type KBModelConfigRequest } from '@/api/initialization'
 import { listModels } from '@/api/model'
+import { type ModelConfig } from '@/api/model'
+import { useChatResourcesStore } from '@/stores/chatResources'
+import { useEditorResourcesStore } from '@/stores/editorResources'
 import { useUIStore } from '@/stores/ui'
 import { useOrganizationStore } from '@/stores/organization'
 import { useAuthStore } from '@/stores/auth'
@@ -552,6 +555,8 @@ import { useI18n } from 'vue-i18n'
 const uiStore = useUIStore()
 const orgStore = useOrganizationStore()
 const authStore = useAuthStore()
+const chatResources = useChatResourcesStore()
+const editorResources = useEditorResourcesStore()
 const { t } = useI18n()
 
 // Props
@@ -900,10 +905,10 @@ const initFormData = (type: 'document' | 'faq' | 'database' = 'document', visibi
 }
 
 // 加载所有模型
-const loadAllModels = async () => {
+const loadAllModels = async (force = false) => {
   try {
-    const models = await listModels()
-    allModels.value = models || []
+    await chatResources.ensureModels(force)
+    allModels.value = chatResources.allModels || []
   } catch (error) {
     console.error('Failed to load model list:', error)
     MessagePlugin.error(t('knowledgeEditor.messages.loadModelsFailed'))
@@ -917,9 +922,8 @@ const loadKBData = async () => {
   
   loading.value = true
   try {
-    const [kbInfo, models, filesResult] = await Promise.all([
+    const [kbInfo, filesResult] = await Promise.all([
       getKnowledgeBaseById(props.kbId),
-      loadAllModels(),
       listKnowledgeFiles(props.kbId, { page: 1, page_size: 1 })
     ])
     
@@ -1327,7 +1331,6 @@ const buildSubmitData = () => {
       chunk_size: formData.value.chunkingConfig.chunkSize,
       chunk_overlap: formData.value.chunkingConfig.chunkOverlap,
       separators: formData.value.chunkingConfig.separators,
-      enable_multimodal: formData.value.multimodalConfig.enabled,
       enable_parent_child: formData.value.chunkingConfig.enableParentChild,
       parent_chunk_size: formData.value.chunkingConfig.parentChunkSize,
       child_chunk_size: formData.value.chunkingConfig.childChunkSize,
@@ -1682,7 +1685,7 @@ watch(
   () => uiStore.showSettingsModal,
   async (visible, previous) => {
     if (!visible && previous && props.visible) {
-      await loadAllModels()
+      await loadAllModels(true)
     }
   }
 )

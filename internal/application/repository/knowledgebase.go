@@ -102,6 +102,69 @@ func (r *knowledgeBaseRepository) ListKnowledgeBasesByTenantID(
 	return kbs, nil
 }
 
+// userKBPinRow mirrors the user_kb_pins table for repository-local pin lookups.
+type userKBPinRow struct {
+	TenantID uint64    `gorm:"column:tenant_id"`
+	UserID   string    `gorm:"column:user_id"`
+	KBID     string    `gorm:"column:kb_id"`
+	PinnedAt time.Time `gorm:"column:pinned_at"`
+}
+
+func (userKBPinRow) TableName() string { return "user_kb_pins" }
+
+// SetUserKBPin upserts or removes a user-specific KB pin row.
+func (r *knowledgeBaseRepository) SetUserKBPin(
+	ctx context.Context, tenantID uint64, userID string, kbID string, pinned bool,
+) (*time.Time, error) {
+	if userID == "" {
+		return nil, errors.New("user_kb_pins: empty user_id")
+	}
+	if !pinned {
+		err := r.db.WithContext(ctx).
+			Where("tenant_id = ? AND user_id = ? AND kb_id = ?", tenantID, userID, kbID).
+			Delete(&userKBPinRow{}).Error
+		if err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	row := userKBPinRow{
+		TenantID: tenantID,
+		UserID:   userID,
+		KBID:     kbID,
+		PinnedAt: time.Now(),
+	}
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND user_id = ? AND kb_id = ?", tenantID, userID, kbID).
+		Attrs(userKBPinRow{PinnedAt: row.PinnedAt}).
+		FirstOrCreate(&row).Error; err != nil {
+		return nil, err
+	}
+	pa := row.PinnedAt
+	return &pa, nil
+}
+
+// ListUserKBPinIDs returns every KB pinned by the user in the tenant.
+func (r *knowledgeBaseRepository) ListUserKBPinIDs(
+	ctx context.Context, tenantID uint64, userID string,
+) (map[string]time.Time, error) {
+	out := make(map[string]time.Time)
+	if userID == "" {
+		return out, nil
+	}
+	var rows []userKBPinRow
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.KBID] = row.PinnedAt
+	}
+	return out, nil
+}
+
 // TogglePinKnowledgeBase toggles the pin status of a knowledge base
 func (r *knowledgeBaseRepository) TogglePinKnowledgeBase(ctx context.Context, id string, tenantID uint64) (*types.KnowledgeBase, error) {
 	var kb types.KnowledgeBase
@@ -203,4 +266,18 @@ func (r *knowledgeBaseRepository) ListKBsByOrganization(
 		return nil, err
 	}
 	return kbs, nil
+}
+
+// CountByModelID counts active knowledge bases that reference modelID in any
+// model-binding column (scalar fields or JSON config blobs).
+func (r *knowledgeBaseRepository) CountByModelID(
+	ctx context.Context, tenantID uint64, modelID string,
+) (int64, error) {
+	var count int64
+	query := r.db.WithContext(ctx).
+		Model(&types.KnowledgeBase{}).
+		Where("tenant_id = ?", tenantID)
+	query = scopeKnowledgeBasesByModelID(query, modelID)
+	err := query.Count(&count).Error
+	return count, err
 }

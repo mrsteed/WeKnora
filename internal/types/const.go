@@ -16,6 +16,8 @@ const (
 	UserContextKey ContextKey = "User"
 	// UserIDContextKey is the context key for user ID
 	UserIDContextKey ContextKey = "UserID"
+	// PrincipalContextKey is the context key for the terminal caller principal.
+	PrincipalContextKey ContextKey = "Principal"
 	// TenantRoleContextKey is the context key for the caller's TenantRole
 	// in the currently active tenant (loaded by the auth middleware from
 	// the tenant_members table). See TenantRoleFromContext.
@@ -27,6 +29,8 @@ const (
 	EmbedQueryContextKey ContextKey = "EmbedQuery"
 	// LanguageContextKey is the context key for user language preference (e.g. "zh-CN", "en-US")
 	LanguageContextKey ContextKey = "Language"
+	// EmbedVisitorContextKey is the anonymous visitor id for embed OAuth isolation.
+	EmbedVisitorContextKey ContextKey = "EmbedVisitorID"
 	// LangfuseTraceContextKey carries the active Langfuse *Trace across the
 	// request lifecycle. Defined here (not inside the langfuse package) so
 	// that logger.CloneContext can preserve it without importing langfuse.

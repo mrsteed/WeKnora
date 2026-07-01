@@ -1183,6 +1183,10 @@ type qaRequestContext struct {
 	assistantMessage          *types.Message
 	knowledgeBaseIDs          []string
 	knowledgeIDs              []string
+	tagScopes                 []types.TagScope
+	tagIDs                    []string
+	mcpServiceIDs             []string
+	skillNames                []string
 	summaryModelID            string
 	webSearchEnabled          bool
 	enableMemory              bool // Whether memory feature is enabled
@@ -1192,6 +1196,12 @@ type qaRequestContext struct {
 	userMessageID             string                   // Created user message ID (populated after createUserMessage)
 	channel                   string                   // Source channel: "web", "api", "im", etc.
 	attachments               types.MessageAttachments // Processed file attachments
+
+	// Snapshot of the request fields needed to persist the input-bar state
+	// for session restoration. Kept verbatim from the request so we record
+	// what the user had selected on the UI (not server-side resolutions).
+	reqAgentEnabled bool
+	reqAgentID      string
 }
 
 // buildQARequest converts the qaRequestContext into a types.QARequest for service invocation.
@@ -1206,6 +1216,9 @@ func (rc *qaRequestContext) buildQARequest() *types.QARequest {
 		CustomAgent:               rc.customAgent,
 		KnowledgeBaseIDs:          rc.knowledgeBaseIDs,
 		KnowledgeIDs:              rc.knowledgeIDs,
+		TagScopes:                 rc.tagScopes,
+		MCPServiceIDs:             rc.mcpServiceIDs,
+		SkillNames:                rc.skillNames,
 		ImageURLs:                 imageURLs,
 		ImageDescription:          imageDescription,
 		UserMessageID:             rc.userMessageID,
@@ -1380,6 +1393,25 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		logger.Infof(ctx, "[%s] all attachments processed", logPrefix)
 	}
 
+	// Resolve enable_memory:
+	//   1. Explicit value in request → honour it. Used by embedded mode
+	//      (force false) and by older clients still sending the literal bool.
+	//   2. Not set → fall back to the calling user's stored preference.
+	//      The toggle is persisted server-side per user (see PUT
+	//      /auth/me/preferences); this is the canonical path for the
+	//      normal logged-in web UI now that it no longer sends the field.
+	//   3. No user / no preference → false. API-key-only callers never
+	//      had memory enabled in practice, keep that behaviour.
+	enableMemory := h.resolveEnableMemory(ctx, request.EnableMemory)
+
+	tagScopes := mergeTagScopesFromRequestIDs(
+		tagScopesFromMentionedItems(request.MentionedItems),
+		dedupRequestStrings(request.TagIDs),
+		secutils.SanitizeForLogArray(kbIDs),
+	)
+	tagIDs := dedupRequestStrings(append(request.TagIDs, mentionedIDsByType(request.MentionedItems, "tag")...))
+	mcpServiceIDs := dedupRequestStrings(append(request.MCPServiceIDs, mentionedIDsByType(request.MentionedItems, "mcp")...))
+	skillNames := dedupRequestStrings(append(request.SkillNames, mentionedIDsByType(request.MentionedItems, "skill")...))
 	// Build request context
 	reqCtx := &qaRequestContext{
 		ctx:                       ctx,
@@ -1413,14 +1445,20 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		},
 		knowledgeBaseIDs:  secutils.SanitizeForLogArray(kbIDs),
 		knowledgeIDs:      secutils.SanitizeForLogArray(knowledgeIDs),
+		tagScopes:         tagScopes,
+		tagIDs:            secutils.SanitizeForLogArray(tagIDs),
+		mcpServiceIDs:     secutils.SanitizeForLogArray(mcpServiceIDs),
+		skillNames:        secutils.SanitizeForLogArray(skillNames),
 		summaryModelID:    secutils.SanitizeForLog(request.SummaryModelID),
 		webSearchEnabled:  request.WebSearchEnabled,
-		enableMemory:      request.EnableMemory,
+		enableMemory:      enableMemory,
 		mentionedItems:    convertMentionedItems(request.MentionedItems),
 		effectiveTenantID: effectiveTenantID,
 		images:            request.Images,
 		channel:           request.Channel,
 		attachments:       processedAttachments,
+		reqAgentEnabled:   request.AgentEnabled,
+		reqAgentID:        secutils.SanitizeForLog(request.AgentID),
 	}
 
 	documentContextQuery := reqCtx.query
@@ -1817,6 +1855,24 @@ func (h *Handler) AgentQA(c *gin.Context) {
 			agentModeEnabled, reqCtx.customAgent.Config.AgentMode)
 	}
 
+	// Sanity gate: agent mode requires a resolved CustomAgent. If we got
+	// here with agent_enabled=true but agent_id missing/unresolvable, the
+	// AgentQA service will fail deep inside the async goroutine with a
+	// generic "custom agent configuration is required" error and the user
+	// just sees a broken stream. Reject early with a clear 400 so the
+	// frontend can recover (e.g. fall back to quick-answer). Most likely
+	// cause is a stale localStorage settings blob where selectedAgentId
+	// got blanked but isAgentEnabled stayed true — usually after a
+	// cross-tenant switch where the previously selected agent is no
+	// longer visible.
+	if agentModeEnabled && reqCtx.customAgent == nil {
+		logger.Warnf(reqCtx.ctx,
+			"Agent mode requested without a resolvable agent_id, rejecting; session=%s, request.AgentID=%q",
+			reqCtx.sessionID, secutils.SanitizeForLog(request.AgentID))
+		c.Error(errors.NewBadRequestError(
+			"agent_id is required when agent mode is enabled"))
+		return
+	}
 	// Route to appropriate handler based on agent mode
 	if agentModeEnabled {
 		h.executeQA(reqCtx, qaModeAgent, true)
@@ -1833,6 +1889,17 @@ const (
 	qaModeNormal qaMode = iota // KnowledgeQA pipeline (RAG / pure chat)
 	qaModeAgent                // Agent engine with tool calling
 )
+
+func (h *Handler) resolveEnableMemory(ctx context.Context, requested *bool) bool {
+	if requested != nil {
+		return *requested
+	}
+	user, ok := ctx.Value(types.UserContextKey).(*types.User)
+	if !ok || user == nil || user.Preferences.EnableMemory == nil {
+		return false
+	}
+	return *user.Preferences.EnableMemory
+}
 
 // executeQA is the unified execution flow for both KnowledgeQA and AgentQA modes.
 // It handles message creation, SSE setup, VLM analysis, service invocation, and error handling.
@@ -2163,6 +2230,57 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 	})
 }
 
+// persistLastRequestState records the input-bar state the user just sent so
+// that reopening this session restores agent/model/KB/web-search/MCP picks.
+// Pure UI memo — failures are logged but never bubble up; the caller runs
+// this in a goroutine and is safe to discard the returned context.
+func (h *Handler) persistLastRequestState(parentCtx context.Context, reqCtx *qaRequestContext, mode qaMode) {
+	// Detach from the HTTP request lifetime: this write must survive both
+	// SSE disconnects and the parent gin context being released after the
+	// handler returns.
+	ctx := logger.CloneContext(context.WithoutCancel(parentCtx))
+
+	agentEnabled := reqCtx.reqAgentEnabled
+	// Mirror the resolution rule used in AgentQA: a resolved custom agent's
+	// agent_mode wins over the request flag. For KnowledgeQA the request
+	// itself carries agent_enabled=false, so this collapses correctly.
+	if mode == qaModeAgent && reqCtx.customAgent != nil {
+		agentEnabled = reqCtx.customAgent.IsAgentMode()
+	}
+
+	state := &types.SessionLastRequestState{
+		AgentID:          reqCtx.reqAgentID,
+		AgentEnabled:     agentEnabled,
+		ModelID:          reqCtx.summaryModelID,
+		KnowledgeBaseIDs: reqCtx.knowledgeBaseIDs,
+		KnowledgeIDs:     reqCtx.knowledgeIDs,
+		TagIDs:           reqCtx.tagIDs,
+		MCPServiceIDs:    reqCtx.mcpServiceIDs,
+		SkillNames:       reqCtx.skillNames,
+		MentionedItems:   reqCtx.mentionedItems,
+		WebSearchEnabled: reqCtx.webSearchEnabled,
+	}
+
+	if err := h.sessionService.UpdateSessionLastRequestState(ctx, reqCtx.sessionID, state); err != nil {
+		logger.Warnf(ctx, "persist last_request_state failed for session %s: %v", reqCtx.sessionID, err)
+	}
+}
+
+// appendQuickAnswerReasoning accumulates streamed reasoning_content from
+// KnowledgeQA (fast answer) into a single AgentStep for history replay.
+func appendQuickAnswerReasoning(msg *types.Message, content string) {
+	if content == "" {
+		return
+	}
+	if len(msg.AgentSteps) == 0 {
+		msg.AgentSteps = types.AgentSteps{{
+			Iteration: 0,
+			Timestamp: time.Now(),
+			ToolCalls: make([]types.ToolCall, 0),
+		}}
+	}
+	msg.AgentSteps[0].ReasoningContent += content
+}
 // completeAssistantMessage marks an assistant message as complete, updates it,
 // and asynchronously indexes the Q&A pair into the chat history knowledge base.
 func (h *Handler) completeAssistantMessage(

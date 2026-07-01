@@ -791,7 +791,7 @@
       :mode="uiStore.kbEditorMode"
       :kb-id="uiStore.currentKBId || undefined"
       :initial-type="uiStore.kbEditorType"
-      :initial-visibility="uiStore.kbEditorInitialVisibility"
+      :initial-visibility="uiStore.kbEditorInitialVisibility || undefined"
       @update:visible="(val) => val ? null : uiStore.closeKBEditor()"
       @success="handleKBEditorSuccess"
     />
@@ -869,7 +869,8 @@
 import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { MessagePlugin, Icon as TIcon } from 'tdesign-vue-next'
-import { listKnowledgeBases, deleteKnowledgeBase, togglePinKnowledgeBase } from '@/api/knowledge-base'
+import { deleteKnowledgeBase, togglePinKnowledgeBase } from '@/api/knowledge-base'
+import { useChatResourcesStore } from '@/stores/chatResources'
 import { formatStringDate } from '@/utils/index'
 import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
@@ -885,6 +886,7 @@ const route = useRoute()
 const uiStore = useUIStore()
 const authStore = useAuthStore()
 const orgStore = useOrganizationStore()
+const chatResources = useChatResourcesStore()
 const { t } = useI18n()
 
 type KnowledgeBadgeMeta = {
@@ -1096,23 +1098,22 @@ interface UploadSummary {
   hasError: boolean
 }
 
-const fetchList = () => {
+const applyKbListData = (data: any[]) => {
+  kbs.value = data.map((kb: any) => ({
+    ...kb,
+    updated_at: kb.updated_at ? formatStringDate(new Date(kb.updated_at)) : '',
+    showMore: false,
+    isProcessing: kb.is_processing || false,
+    processing_count: kb.processing_count || 0
+  }))
+}
+
+const fetchList = (force = false) => {
   loading.value = true
   return Promise.all([
-    listKnowledgeBases().then((res: any) => {
-      const data = res.data || []
-      // 格式化时间，并初始化 showMore 状态
-      // is_processing 字段由后端返回
-      kbs.value = data.map((kb: any) => ({
-        ...kb,
-        updated_at: kb.updated_at ? formatStringDate(new Date(kb.updated_at)) : '',
-        showMore: false,
-        isProcessing: kb.is_processing || false,
-        processing_count: kb.processing_count || 0
-      }))
-    }),
-    orgStore.fetchSharedKnowledgeBases(),
-    orgStore.fetchOrganizations()
+    chatResources.fetchKnowledgeBasesForList(undefined, force).then(applyKbListData),
+    orgStore.fetchSharedKnowledgeBases({ force }),
+    orgStore.fetchOrganizations({ force }),
   ]).finally(() => { loading.value = false }).then(() => {
     // 各空间知识库数量已由 GET /organizations 的 resource_counts 带回，存于 orgStore.resourceCounts
     const counts = orgStore.resourceCounts?.knowledge_bases?.by_organization
@@ -1220,7 +1221,7 @@ const handleTogglePin = async (kb: KB) => {
       MessagePlugin.success(
         res.data.is_pinned ? t('knowledgeList.pin.pinSuccess') : t('knowledgeList.pin.unpinSuccess')
       )
-      fetchList()
+      fetchList(true)
     }
   } catch {
     MessagePlugin.error(t('knowledgeList.pin.failed'))
@@ -1234,7 +1235,7 @@ const handleTogglePinById = async (id: string) => {
       MessagePlugin.success(
         res.data.is_pinned ? t('knowledgeList.pin.pinSuccess') : t('knowledgeList.pin.unpinSuccess')
       )
-      fetchList()
+      fetchList(true)
     }
   } catch {
     MessagePlugin.error(t('knowledgeList.pin.failed'))
@@ -1251,7 +1252,7 @@ const handleShare = (kb: KB) => {
 
 const handleShareSuccess = () => {
   // 共享成功后可刷新列表
-  fetchList()
+  fetchList(true)
 }
 
 const handleSharedKbClick = (sharedKb: SharedKnowledgeBase) => {
@@ -1319,7 +1320,7 @@ const confirmDelete = () => {
       MessagePlugin.success(t('knowledgeList.messages.deleted'))
       deleteVisible.value = false
       deletingKb.value = null
-      fetchList()
+      fetchList(true)
     } else {
       MessagePlugin.error(res.message || t('knowledgeList.messages.deleteFailed'))
     }
@@ -1489,7 +1490,10 @@ const handleKBEditorSuccess = (payload: KnowledgeBaseOperationSuccess) => {
     }
   }
 
-  fetchList().then(() => {
+  // 列表页编辑同样要让单 KB 详情缓存失效，否则侧栏 / 详情页 60s 内仍显示旧信息
+  chatResources.invalidateKnowledgeBaseDetail(kbId)
+
+  fetchList(true).then(() => {
     triggerHighlightFlash(kbId)
     if (route.query.highlightKbId === kbId) {
       router.replace({ query: {} })
@@ -1558,7 +1562,7 @@ const handleUploadFinishedEvent = (event: Event) => {
     clearTimeout(uploadRefreshTimer)
   }
   uploadRefreshTimer = setTimeout(() => {
-    fetchList()
+    fetchList(true)
     uploadRefreshTimer = null
   }, 800)
 }

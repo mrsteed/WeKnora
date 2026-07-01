@@ -8,6 +8,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/im"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -20,15 +21,23 @@ type CustomAgentHandler struct {
 	service           interfaces.CustomAgentService
 	pageShareService  interfaces.AgentPageShareService
 	visibilityService interfaces.AgentVisibilityService
+	imService         *im.Service
 	disabledRepo      interfaces.TenantDisabledSharedAgentRepository
 }
 
 // NewCustomAgentHandler creates a new custom agent handler instance
-func NewCustomAgentHandler(service interfaces.CustomAgentService, pageShareService interfaces.AgentPageShareService, visibilityService interfaces.AgentVisibilityService, disabledRepo interfaces.TenantDisabledSharedAgentRepository) *CustomAgentHandler {
+func NewCustomAgentHandler(
+	service interfaces.CustomAgentService,
+	pageShareService interfaces.AgentPageShareService,
+	visibilityService interfaces.AgentVisibilityService,
+	imService *im.Service,
+	disabledRepo interfaces.TenantDisabledSharedAgentRepository,
+) *CustomAgentHandler {
 	return &CustomAgentHandler{
 		service:           service,
 		pageShareService:  pageShareService,
 		visibilityService: visibilityService,
+		imService:         imService,
 		disabledRepo:      disabledRepo,
 	}
 }
@@ -428,6 +437,20 @@ func (h *CustomAgentHandler) DeleteAgent(c *gin.Context) {
 
 	logger.Infof(ctx, "Deleting custom agent, ID: %s", secutils.SanitizeForLog(id))
 
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		c.Error(errors.NewUnauthorizedError("Unauthorized"))
+		return
+	}
+
+	if err := h.imService.DeleteChannelsByAgent(id, tenantID); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"agent_id": id,
+		})
+		c.Error(errors.NewInternalServerError("Failed to delete agent IM channels"))
+		return
+	}
+
 	// Delete the agent
 	err = h.service.DeleteAgent(ctx, id)
 	if err != nil {
@@ -594,6 +617,15 @@ func (h *CustomAgentHandler) GetSuggestedQuestions(c *gin.Context) {
 		}
 	}
 
+	var tagIDs []string
+	if tagIDsStr := strings.TrimSpace(c.Query("tag_ids")); tagIDsStr != "" {
+		for _, id := range strings.Split(tagIDsStr, ",") {
+			if trimmed := strings.TrimSpace(id); trimmed != "" {
+				tagIDs = append(tagIDs, trimmed)
+			}
+		}
+	}
+
 	limit := 6
 	if limitStr := c.Query("limit"); limitStr != "" {
 		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
@@ -601,10 +633,10 @@ func (h *CustomAgentHandler) GetSuggestedQuestions(c *gin.Context) {
 		}
 	}
 
-	logger.Infof(ctx, "Getting suggested questions for agent %s, kbIDs: %v, limit: %d",
-		secutils.SanitizeForLog(id), kbIDs, limit)
+	logger.Infof(ctx, "Getting suggested questions for agent %s, kbIDs: %v, tagIDs: %v, limit: %d",
+		secutils.SanitizeForLog(id), kbIDs, tagIDs, limit)
 
-	questions, err := h.service.GetSuggestedQuestions(ctx, id, kbIDs, knowledgeIDs, limit)
+	questions, err := h.service.GetSuggestedQuestions(ctx, id, kbIDs, knowledgeIDs, tagIDs, limit)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"agent_id": id,

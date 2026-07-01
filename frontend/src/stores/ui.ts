@@ -6,10 +6,10 @@ export const useUIStore = defineStore('ui', {
     showKBEditorModal: false,
     kbEditorMode: 'create' as 'create' | 'edit',
     currentKBId: null as string | null,
-    kbEditorType: 'document' as 'document' | 'faq' | 'database',
-    kbEditorInitialVisibility: 'private' as 'private' | 'org' | 'global',
-    // 当前选中的分类ID，用于文件上传时传递
-    selectedTagId: '__untagged__' as string,
+    kbEditorType: 'document' as 'document' | 'faq',
+    kbEditorInitialVisibility: null as 'private' | 'global' | 'org' | null,
+    // 当前选中的标签 ID，用于文件上传时传递
+    selectedTagIds: [] as string[],
     kbEditorInitialSection: null as string | null,
     settingsInitialSection: null as string | null,
     settingsInitialSubSection: null as string | null,
@@ -53,12 +53,21 @@ export const useUIStore = defineStore('ui', {
       this.openKBSettings(kbId, initialSection)
     },
 
-    openCreateKB(type: 'document' | 'faq' | 'database' = 'document', visibility: 'private' | 'org' | 'global' = 'private') {
+    openCreateKB(
+      type: 'document' | 'faq' = 'document',
+      initialVisibilityOrSection?: 'private' | 'global' | 'org' | string,
+      initialSection?: string,
+    ) {
       this.currentKBId = null
       this.kbEditorMode = 'create'
       this.kbEditorType = type
-      this.kbEditorInitialVisibility = visibility
-      this.kbEditorInitialSection = null
+      if (initialVisibilityOrSection === 'private' || initialVisibilityOrSection === 'global' || initialVisibilityOrSection === 'org') {
+        this.kbEditorInitialVisibility = initialVisibilityOrSection
+        this.kbEditorInitialSection = initialSection || null
+      } else {
+        this.kbEditorInitialVisibility = null
+        this.kbEditorInitialSection = initialVisibilityOrSection || null
+      }
       this.showKBEditorModal = true
     },
 
@@ -66,8 +75,8 @@ export const useUIStore = defineStore('ui', {
       this.showKBEditorModal = false
       this.currentKBId = null
       this.kbEditorInitialSection = null
+      this.kbEditorInitialVisibility = null
       this.kbEditorType = 'document'
-      this.kbEditorInitialVisibility = 'private'
     },
 
     openManualEditor(options: {
@@ -109,9 +118,22 @@ export const useUIStore = defineStore('ui', {
       this.manualEditorOnSuccess = null
     },
 
-    // 设置当前选中的分类ID
+    // 设置当前选中的标签 ID
+    toggleSelectedTagId(tagId: string) {
+      const idx = this.selectedTagIds.indexOf(tagId)
+      if (idx >= 0) {
+        this.selectedTagIds.splice(idx, 1)
+      } else {
+        this.selectedTagIds.push(tagId)
+      }
+    },
+
     setSelectedTagId(tagId: string) {
-      this.selectedTagId = tagId
+	  this.selectedTagIds = tagId ? [tagId] : []
+    },
+
+    clearSelectedTagIds() {
+      this.selectedTagIds = []
     },
 
     toggleSidebar() {

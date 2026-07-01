@@ -30,6 +30,13 @@ func (s *messageLookupSessionRepoStub) Get(context.Context, uint64, string, stri
 	return s.getResult, nil
 }
 
+func (s *messageLookupSessionRepoStub) GetByID(context.Context, uint64, string) (*types.Session, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
+	return s.getResult, nil
+}
+
 func (s *messageLookupSessionRepoStub) GetByTenantAndUser(context.Context, uint64, string) ([]*types.Session, error) {
 	return nil, nil
 }

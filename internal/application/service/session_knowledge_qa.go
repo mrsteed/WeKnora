@@ -112,7 +112,7 @@ func (s *sessionService) KnowledgeQA(
 	retrievalTenantID := s.resolveRetrievalTenantID(ctx, req)
 
 	// Build unified search targets (computed once, used throughout pipeline)
-	searchTargets, err := s.buildSearchTargets(ctx, retrievalTenantID, knowledgeBaseIDs, knowledgeIDs)
+	searchTargets, err := s.buildSearchTargets(ctx, retrievalTenantID, knowledgeBaseIDs, knowledgeIDs, req.TagScopes)
 	if err != nil {
 		logger.Warnf(ctx, "Failed to build search targets: %v", err)
 	}
@@ -127,8 +127,8 @@ func (s *sessionService) KnowledgeQA(
 		len(searchTargets),
 	)
 
-	// Get UserID from context
-	userID, _ := types.UserIDFromContext(ctx)
+	// Scope memory and pipeline attribution to the same owner as the session.
+	userID := types.SessionOwnerIDFromContext(ctx)
 
 	chatManage := &types.ChatManage{
 		PipelineRequest: types.PipelineRequest{
@@ -242,21 +242,6 @@ func (s *sessionService) KnowledgeQA(
 			"session_id": req.Session.ID,
 		})
 		return err
-	}
-
-	// Emit references event if we have search results
-	if len(chatManage.MergeResult) > 0 {
-		logger.Infof(ctx, "Emitting references event with %d results", len(chatManage.MergeResult))
-		if err := eventBus.Emit(ctx, event.Event{
-			ID:        generateEventID("references"),
-			Type:      event.EventAgentReferences,
-			SessionID: req.Session.ID,
-			Data: event.AgentReferencesData{
-				References: chatManage.MergeResult,
-			},
-		}); err != nil {
-			logger.Errorf(ctx, "Failed to emit references event: %v", err)
-		}
 	}
 
 	// Note: Answer events are now emitted directly by chat_completion_stream plugin
@@ -473,6 +458,7 @@ func (s *sessionService) buildSearchTargets(
 	tenantID uint64,
 	knowledgeBaseIDs []string,
 	knowledgeIDs []string,
+	tagScopes []types.TagScope,
 ) (types.SearchTargets, error) {
 	var targets types.SearchTargets
 
@@ -558,7 +544,56 @@ func (s *sessionService) buildSearchTargets(
 		}
 	}
 
-	logger.Infof(ctx, "Built %d search targets: %d full KB, %d partial KB, kbTenantMap=%v",
+	if len(tagScopes) > 0 {
+		tagKBIDs := make([]string, 0, len(tagScopes))
+		for _, scope := range tagScopes {
+			if scope.KnowledgeBaseID != "" && !fullKBSet[scope.KnowledgeBaseID] {
+				tagKBIDs = append(tagKBIDs, scope.KnowledgeBaseID)
+			}
+		}
+		kbByID := make(map[string]*types.KnowledgeBase, len(tagKBIDs))
+		if len(tagKBIDs) > 0 {
+			if kbs, err := s.knowledgeBaseService.GetKnowledgeBasesByIDsOnly(ctx, tagKBIDs); err == nil {
+				for _, kb := range kbs {
+					if kb != nil {
+						kbByID[kb.ID] = kb
+					}
+				}
+			}
+		}
+		callerTenantRole := types.TenantRoleFromContext(ctx)
+		userID, _ := types.UserIDFromContext(ctx)
+		for _, scope := range tagScopes {
+			if scope.KnowledgeBaseID == "" || len(scope.TagIDs) == 0 || fullKBSet[scope.KnowledgeBaseID] {
+				continue
+			}
+			kbTenant := kbTenantMap[scope.KnowledgeBaseID]
+			if kbTenant == 0 {
+				kb := kbByID[scope.KnowledgeBaseID]
+				if kb == nil || kb.TenantID == tenantID {
+					kbTenant = tenantID
+				} else if s.kbShareService != nil && userID != "" {
+					hasAccess, _ := s.kbShareService.HasTenantKBPermission(ctx, scope.KnowledgeBaseID, tenantID, callerTenantRole, types.OrgRoleViewer)
+					if hasAccess {
+						kbTenant = kb.TenantID
+					} else {
+						kbTenant = tenantID
+					}
+				} else {
+					kbTenant = tenantID
+				}
+				kbTenantMap[scope.KnowledgeBaseID] = kbTenant
+			}
+			targets = append(targets, &types.SearchTarget{
+				Type:            types.SearchTargetTypeKnowledgeBase,
+				KnowledgeBaseID: scope.KnowledgeBaseID,
+				TenantID:        kbTenant,
+				TagIDs:          append([]string(nil), scope.TagIDs...),
+			})
+		}
+	}
+
+	logger.Infof(ctx, "Built %d search targets: %d full KB, %d partial/tag KB, kbTenantMap=%v",
 		len(targets), len(knowledgeBaseIDs), len(targets)-len(knowledgeBaseIDs), kbTenantMap)
 
 	return targets, nil
@@ -579,6 +614,11 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 	logger.Infof(ctx, "Trigger event list: %v", methods)
 
 	pipelineStart := time.Now()
+	lastRetrievalStage := chatpipeline.LastConsolidatedRetrievalStage(eventList, chatManage)
+	var retrievalProgress *chatpipeline.StageProgress
+	var retrievalStart time.Time
+	var understandProgress *chatpipeline.StageProgress
+	var understandStart time.Time
 	for _, eventType := range eventList {
 		stageStart := time.Now()
 		// Wrap each pipeline stage in a Langfuse span so the trace timeline
@@ -604,7 +644,30 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 				},
 			})
 		}
+		if eventType == types.QUERY_UNDERSTAND && chatpipeline.ShouldEmitQueryUnderstandProgress(chatManage) {
+			understandStart = stageStart
+			understandProgress = chatpipeline.BeginQueryUnderstandProgress(stageCtx, chatManage)
+		}
+		if chatpipeline.IsConsolidatedRetrievalStage(eventType, chatManage) && retrievalProgress == nil {
+			retrievalStart = stageStart
+			retrievalProgress = chatpipeline.BeginRetrievalProgress(stageCtx, chatManage)
+		}
+		// Emit references before answer streaming so the SSE client receives
+		// them while the connection is still open. Previously references were
+		// emitted after the pipeline returned — by then the `complete` event had
+		// already closed the stream, so the frontend only saw citations on refresh.
+		if eventType == types.CHAT_COMPLETION_STREAM {
+			emitKnowledgeReferencesEvent(ctx, chatManage)
+		}
 		err := s.eventManager.Trigger(stageCtx, eventType, chatManage)
+		if understandProgress != nil && eventType == types.QUERY_UNDERSTAND {
+			chatpipeline.EndQueryUnderstandProgress(stageCtx, chatManage, understandProgress, understandStart, err)
+			understandProgress = nil
+		}
+		if retrievalProgress != nil && eventType == lastRetrievalStage {
+			chatpipeline.EndRetrievalProgress(stageCtx, chatManage, retrievalProgress, retrievalStart, err)
+			retrievalProgress = nil
+		}
 		stageDuration := time.Since(stageStart)
 		var spanErr error
 		if err != nil && err != chatpipeline.ErrSearchNothing {
@@ -687,7 +750,7 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 	}
 
 	// Build unified search targets (computed once, used throughout pipeline)
-	searchTargets, err := s.buildSearchTargets(ctx, tenantID, knowledgeBaseIDs, knowledgeIDs)
+	searchTargets, err := s.buildSearchTargets(ctx, tenantID, knowledgeBaseIDs, knowledgeIDs, nil)
 	if err != nil {
 		logger.Warnf(ctx, "Failed to build search targets: %v", err)
 	}
@@ -698,7 +761,7 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 	}
 
 	// Create default retrieval parameters — prefer tenant RetrievalConfig, fallback to built-in defaults
-	userID, _ := types.UserIDFromContext(ctx)
+	userID := types.SessionOwnerIDFromContext(ctx)
 
 	// Load tenant-level retrieval config (nil is safe — GetEffective* methods handle nil receiver)
 	var rc *types.RetrievalConfig
@@ -1008,6 +1071,26 @@ func (s *sessionService) consumeFallbackStream(
 	if !streamCompleted {
 		logger.Warnf(ctx, "Fallback stream closed without completion, emitting final event with fixed response")
 		s.emitFallbackAnswer(ctx, chatManage, chatManage.FallbackResponse)
+	}
+}
+
+// emitKnowledgeReferencesEvent streams retrieved chunks to the client as a
+// `references` SSE event. Must run before CHAT_COMPLETION_STREAM so citations
+// arrive while the connection is still open (complete closes the stream).
+func emitKnowledgeReferencesEvent(ctx context.Context, chatManage *types.ChatManage) {
+	if chatManage == nil || chatManage.EventBus == nil || len(chatManage.MergeResult) == 0 {
+		return
+	}
+	logger.Infof(ctx, "Emitting references event with %d results (pre-answer)", len(chatManage.MergeResult))
+	if err := chatManage.EventBus.Emit(ctx, types.Event{
+		ID:        generateEventID("references"),
+		Type:      types.EventType(event.EventAgentReferences),
+		SessionID: chatManage.SessionID,
+		Data: event.AgentReferencesData{
+			References: chatManage.MergeResult,
+		},
+	}); err != nil {
+		logger.Errorf(ctx, "Failed to emit references event: %v", err)
 	}
 }
 

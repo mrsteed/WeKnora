@@ -24,7 +24,7 @@
                         <div class="suggested-questions-title"><t-skeleton animation="gradient" :row-col="[{ width: '120px', height: '18px' }]" /></div>
                         <div class="suggested-questions-grid">
                             <div v-for="n in 6" :key="'sq-skel-'+n" class="suggested-question-card sq-card-skeleton">
-                                <t-skeleton animation="gradient" :row-col="[{ width: '90%', height: '14px' }, { width: '60%', height: '14px' }]" />
+                                <t-skeleton animation="gradient" :row-col="[{ width: '100%', height: '14px', type: 'rect' }]" />
                             </div>
                         </div>
                     </div>
@@ -150,7 +150,7 @@
 </template>
 <script setup>
 import { storeToRefs } from 'pinia';
-import { ref, computed, onMounted, onUnmounted, nextTick, watch, reactive, onBeforeUnmount, defineProps } from 'vue';
+import { ref, computed, onMounted, onBeforeMount, onUnmounted, nextTick, watch, reactive, markRaw, onBeforeUnmount, defineProps } from 'vue';
 import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import InputField from '../../components/Input-field.vue';
 import botmsg from './components/botmsg.vue';
@@ -373,6 +373,27 @@ const suggestedQuestionsLoading = ref(false);
 let suggestedQuestionsFetchId = 0; // 用于取消过时的请求
 let suggestedDebounceTimer = null;
 
+const cancelSuggestedQuestionsFetch = () => {
+    suggestedQuestionsFetchId++;
+    suggestedQuestionsLoading.value = false;
+    suggestedQuestions.value = [];
+    if (suggestedDebounceTimer) {
+        clearTimeout(suggestedDebounceTimer);
+        suggestedDebounceTimer = null;
+    }
+};
+
+const fetchSuggestedQuestionsIfNeeded = async () => {
+    // 初始历史尚未拉完时不能判断是否有消息，避免有历史的会话误请求推荐问法
+    if (historyLoading.value || messagesList.length > 0) {
+        if (messagesList.length > 0) {
+            cancelSuggestedQuestionsFetch();
+        }
+        return;
+    }
+    await fetchSuggestedQuestions();
+};
+
 const fetchSuggestedQuestions = async () => {
     if (isSharePageMode.value) {
         syncRuntimeSuggestedQuestions();
@@ -421,7 +442,7 @@ const debouncedFetchSuggestions = () => {
         return;
     }
     if (suggestedDebounceTimer) clearTimeout(suggestedDebounceTimer);
-    suggestedDebounceTimer = setTimeout(() => { fetchSuggestedQuestions(); }, 300);
+    suggestedDebounceTimer = setTimeout(() => { fetchSuggestedQuestionsIfNeeded(); }, 300);
 };
 
 // 监听 Agent / 知识库 / 文件切换，重新获取推荐问题
@@ -2020,7 +2041,7 @@ const handleRetry = async (assistantSession) => {
         resetReplyState();
     }
 };
-watch([() => route.params], (newvalue) => {
+watch([() => route.params], async (newvalue) => {
     isFirstEnter.value = true;
     if (newvalue[0].chatid) {
         if (!firstQuery.value) {
@@ -2045,6 +2066,7 @@ watch([() => route.params], (newvalue) => {
         userHasScrolledUp.value = false;
         
         checkmenuTitle(session_id.value)
+        await loadSessionAndHydrate(session_id.value);
         let data = {
             session_id: session_id.value,
             created_at: '',
@@ -2086,8 +2108,22 @@ const onChatScrollTop = () => {
     }
 }
 const debouncedScrollTop = debounce(onChatScrollTop, 500);
+let lastScrollTop = 0;
 const handleScroll = () => {
-    userHasScrolledUp.value = !isNearBottom();
+    const el = scrollContainer.value;
+    if (el) {
+        const currentTop = el.scrollTop;
+        // Only an actual upward scroll detaches from the live edge. Content that
+        // grows after a chunk (images, diagrams) keeps scrollTop fixed and would
+        // otherwise fire a stale scroll event that falsely marks the user as
+        // scrolled up, killing the auto-follow during streaming.
+        if (currentTop < lastScrollTop - 1) {
+            userHasScrolledUp.value = !isNearBottom();
+        } else if (isNearBottom()) {
+            userHasScrolledUp.value = false;
+        }
+        lastScrollTop = currentTop;
+    }
     debouncedScrollTop();
 };
 
@@ -3089,13 +3125,13 @@ const handleSessionCleared = (e) => {
     if (e.detail?.sessionId === session_id.value) {
         messagesList.splice(0);
         created_at.value = '';
+        hasMoreHistory.value = true;
+        historyLoadingMore.value = false;
+        fetchSuggestedQuestionsIfNeeded();
     }
 };
 
-onMounted(async () => {
-    window.addEventListener('session-messages-cleared', handleSessionCleared);
-    messagesList.splice(0);
-    
+onBeforeMount(async () => {
     // 若从智能体列表点击共享智能体进入，URL 带 agent_id 与 source_tenant_id，同步到 store
     const agentIdFromQuery = effectiveAgentId.value || (route.query.agent_id && String(route.query.agent_id));
     const sourceTenantIdFromQuery = route.query.source_tenant_id && String(route.query.source_tenant_id);
@@ -3104,15 +3140,23 @@ onMounted(async () => {
     } else if (!isSharePageMode.value && agentIdFromQuery) {
         useSettingsStoreInstance.selectAgent(agentIdFromQuery, null);
     }
-    
+
     if (!isSharePageMode.value && effectiveKBIds.value.length > 0) {
         useSettingsStoreInstance.selectKnowledgeBases(effectiveKBIds.value);
     }
-    
+
+    // 必须在 Input-field onMounted 之前完成：按 session.last_request_state 恢复输入栏
+    await loadSessionAndHydrate(session_id.value);
+});
+
+onMounted(async () => {
+    window.addEventListener('session-messages-cleared', handleSessionCleared);
+    messagesList.splice(0);
+
     // 初始化状态：加载历史消息时不应显示loading
     loading.value = false;
     isReplying.value = false;
-    
+
     // Load session data to get agent_config
     if (!isSharePageMode.value) {
         try {
@@ -3142,9 +3186,6 @@ onMounted(async () => {
         }
         getmsgList(data)
     }
-
-    // 初始加载推荐问题
-    fetchSuggestedQuestions();
 })
 const clearData = () => {
     stopStream();
@@ -3169,7 +3210,8 @@ onBeforeRouteUpdate((to, from, next) => {
 <style lang="less" scoped>
 .chat {
     font-size: 20px;
-    padding: 20px;
+    // 右侧不留 padding，滚动条贴到内容区最右缘
+    padding: 20px 0 20px 20px;
     box-sizing: border-box;
     flex: 1;
     // The parent .platform-route-outlet is a flex column with min-height:0
@@ -3223,11 +3265,23 @@ onBeforeRouteUpdate((to, from, next) => {
     min-height: 0;
     width: 100%;
     overflow-y: auto;
+    // 使用系统原生滚动条（macOS 滚动时自动显示 overlay 滚动条，类似 ChatGPT）
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+}
 
-    &::-webkit-scrollbar {
-        width: 0;
-        height: 0;
-        color: transparent;
+// 深色模式下 theme.css 对 * 做了 webkit 滚动条着色，这里恢复为系统默认
+:global(:root[theme-mode="dark"]) .chat_scroll_box {
+    &::-webkit-scrollbar-thumb {
+        background-color: initial !important;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background-color: initial !important;
+    }
+
+    &::-webkit-scrollbar-track {
+        background-color: initial !important;
     }
 }
 
@@ -3328,6 +3382,7 @@ onBeforeRouteUpdate((to, from, next) => {
     width: 100%;
     max-width: 800px;
     box-sizing: border-box;
+    padding-right: 20px;
 
     &.is-embedded {
         max-width: 100%;
@@ -3579,7 +3634,31 @@ onBeforeRouteUpdate((to, from, next) => {
     transition: all 0.2s ease;
     max-width: 100%;
 
-    &:hover {
+    &.sq-card-skeleton {
+        pointer-events: none;
+        flex-shrink: 0;
+        border-color: transparent;
+        background: var(--td-bg-color-secondarycontainer);
+
+        :deep(.t-skeleton) {
+            width: 100%;
+        }
+        :deep(.t-skeleton__row) {
+            margin: 0;
+        }
+        :deep(.t-skeleton__col) {
+            border-radius: 4px;
+        }
+
+        &:nth-child(1) { width: 132px; }
+        &:nth-child(2) { width: 168px; }
+        &:nth-child(3) { width: 116px; }
+        &:nth-child(4) { width: 152px; }
+        &:nth-child(5) { width: 124px; }
+        &:nth-child(6) { width: 144px; }
+    }
+
+    &:not(.sq-card-skeleton):hover {
         border-color: var(--td-brand-color);
         background: var(--td-brand-color-light);
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);

@@ -6,6 +6,7 @@ package interfaces
 
 import (
 	"context"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/hibiken/asynq"
@@ -211,6 +212,18 @@ type KnowledgeBaseRepository interface {
 	// CountByVectorStoreID counts active knowledge bases bound to a vector store in one tenant.
 	// Passing a transaction handle lets callers share row-lock context; nil uses the repository DB.
 	CountByVectorStoreID(ctx context.Context, db *gorm.DB, tenantID uint64, storeID string) (int64, error)
+
+	// CountByModelID counts active KBs in the tenant that reference the given
+	// model ID in any model-binding field (embedding, summary, VLM, ASR, etc.).
+	CountByModelID(ctx context.Context, tenantID uint64, modelID string) (int64, error)
+	// SetUserKBPin inserts or removes a row in user_kb_pins for the given
+	// (tenant, user, kb) triple. Returns the resulting pinned_at (nil when
+	// pinned=false) and an error. The tenant_id is captured to support
+	// efficient "wipe a tenant" cleanups even though (user_id, kb_id)
+	// alone would be unique in practice.
+	SetUserKBPin(
+		ctx context.Context, tenantID uint64, userID string, kbID string, pinned bool,
+	) (pinnedAt *time.Time, err error)
 
 	// TogglePinKnowledgeBase toggles the pin status of a knowledge base
 	TogglePinKnowledgeBase(ctx context.Context, id string, tenantID uint64) (*types.KnowledgeBase, error)

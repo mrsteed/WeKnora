@@ -104,7 +104,7 @@ func TestAdapterListResourcesBuildsDatabaseTree(t *testing.T) {
 			"database": "crm",
 			"schema":   "analytics",
 		},
-	})
+	}, "")
 	require.NoError(t, err)
 	require.Len(t, resources, 4)
 	assert.Equal(t, "database", resources[0].Type)
