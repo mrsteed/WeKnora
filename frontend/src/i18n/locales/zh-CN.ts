@@ -265,7 +265,7 @@ export default {
       steps: {
         kb: {
           title: "选择知识范围",
-          desc: "点击 @ 可指定一个或多个知识库/文件，仅基于选中内容回答；不选则按当前智能体配置检索。",
+          desc: "点击 {'@'} 可指定一个或多个知识库/文件，仅基于选中内容回答；不选则按当前智能体配置检索。",
         },
         input: {
           title: "输入你的问题",
@@ -988,6 +988,16 @@ export default {
     noWebContent: "未获取到网页内容",
     lengthChars: "{value} 字",
     lengthThousands: "{value} 千字",
+    chatExport: {
+      title: "导出答案",
+      pdf: "导出为 PDF",
+      markdown: "导出为 Markdown",
+      word: "导出为 Word",
+      xlsx: "导出为 XLSX",
+      success: "导出成功",
+      failed: "导出失败",
+      emptyContent: "暂无可导出的内容",
+    },
     lengthTenThousands: "{value} 万字",
     sqlQueryExecuted: "执行的 SQL 查询:",
     sqlResultsLabel: "返回结果:",

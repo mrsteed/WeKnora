@@ -465,9 +465,9 @@ func initRedisClient() (*redis.Client, error) {
 		DB:       db,
 	})
 
-
 	return client, nil
 }
+
 // initDatabase initializes database connection
 // Creates and configures database connection based on environment configuration
 // Supports multiple database backends (PostgreSQL)

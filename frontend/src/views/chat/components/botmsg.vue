@@ -16,6 +16,7 @@
             </div>
             <div v-if="session.isRagMode" class="rag-answer-stack">
                 <RagPipelineProgress :session="session" :embedded-mode="embeddedMode" />
+                <docInfo v-if="session.knowledge_references?.length" :session="session"></docInfo>
                 <AgentStreamDisplay v-if="session.isAgentMode" :session="session" :session-id="sessionId"
                     :user-query="userQuery" :rag-mode="true" />
             </div>
@@ -48,6 +49,7 @@
                     :title="$t('agent.copy')">
                     <t-icon name="copy" />
                 </t-button>
+                <ExportDropdown :content="getActualContent()" />
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge"
                     :title="$t('agent.addToKnowledgeBase')">
                     <t-icon name="bookmark-add" />
@@ -77,6 +79,7 @@ import docInfo from './docInfo.vue';
 import deepThink from './deepThink.vue';
 import AgentStreamDisplay from './AgentStreamDisplay.vue';
 import RagPipelineProgress from './RagPipelineProgress.vue';
+import ExportDropdown from './ExportDropdown.vue';
 import ChatRequestInfoButton from '@/components/ChatRequestInfoButton.vue';
 import ChatCitationFloat from '@/components/ChatCitationFloat.vue';
 import picturePreview from '@/components/picture-preview.vue';
