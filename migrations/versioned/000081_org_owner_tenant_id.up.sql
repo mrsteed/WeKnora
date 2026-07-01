@@ -1,4 +1,4 @@
--- Migration: 000046_org_owner_tenant_id
+-- Migration: 000081_org_owner_tenant_id
 --
 -- Plan 3 follow-up to #1303: pin the org's "owning tenant" in the
 -- organizations table itself instead of recomputing it on every
@@ -21,7 +21,7 @@
 --      We refuse to silently ship an unconstrained NOT NULL since it
 --      would mean some org rows are unreachable.
 
-DO $$ BEGIN RAISE NOTICE '[Migration 000046] Adding organizations.owner_tenant_id'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000081] Adding organizations.owner_tenant_id'; END $$;
 
 ALTER TABLE organizations
     ADD COLUMN IF NOT EXISTS owner_tenant_id BIGINT;
@@ -60,7 +60,7 @@ BEGIN
        AND deleted_at      IS NULL;
     IF orphan_count > 0 THEN
         RAISE EXCEPTION
-            '[Migration 000046] % orphan organization(s) have no resolvable owner_tenant_id (owner user missing AND no admin tenant in OTM). Either soft-delete them or backfill manually before retrying. Inspect with: SELECT id, name, owner_id FROM organizations WHERE owner_tenant_id IS NULL AND deleted_at IS NULL;',
+            '[Migration 000081] % orphan organization(s) have no resolvable owner_tenant_id (owner user missing AND no admin tenant in OTM). Either soft-delete them or backfill manually before retrying. Inspect with: SELECT id, name, owner_id FROM organizations WHERE owner_tenant_id IS NULL AND deleted_at IS NULL;',
             orphan_count;
     END IF;
 END $$;

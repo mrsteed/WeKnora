@@ -1,4 +1,4 @@
--- Migration: 000044_audit_log
+-- Migration: 000079_audit_log
 -- Adds a generic per-tenant audit log table (issue #1303 PR 6).
 --
 -- Scope:
@@ -15,7 +15,7 @@
 --   - (tenant_id, action) for action-class filtering and powering the
 --     1-minute sliding-window dedup that LogDenied uses to keep a
 --     probing client from filling the table.
-DO $$ BEGIN RAISE NOTICE '[Migration 000044] Creating table: audit_logs'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000079] Creating table: audit_logs'; END $$;
 
 CREATE TABLE IF NOT EXISTS audit_logs (
     id              BIGSERIAL PRIMARY KEY,
@@ -63,4 +63,4 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_action
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at
     ON audit_logs (created_at);
 
-DO $$ BEGIN RAISE NOTICE '[Migration 000044] audit_logs table ready'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000079] audit_logs table ready'; END $$;

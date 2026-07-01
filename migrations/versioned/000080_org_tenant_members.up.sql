@@ -1,4 +1,4 @@
--- Migration: 000045_org_tenant_members
+-- Migration: 000080_org_tenant_members
 --
 -- Plan 3 of issue #1303: lift "organization membership" from per-user to
 -- per-tenant. Today `organization_members` is keyed on (org_id, user_id) —
@@ -26,10 +26,10 @@
 -- `weknora.allow_destructive_migration`) will DROP it once the new model
 -- is settled.
 
-DO $$ BEGIN RAISE NOTICE '[Migration 000045] Starting Plan 3: org members → org tenant members'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000080] Starting Plan 3: org members → org tenant members'; END $$;
 
 -- 1. New table.
-DO $$ BEGIN RAISE NOTICE '[Migration 000045] Creating table: organization_tenant_members'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000080] Creating table: organization_tenant_members'; END $$;
 CREATE TABLE IF NOT EXISTS organization_tenant_members (
     id                      VARCHAR(36) PRIMARY KEY DEFAULT uuid_generate_v4(),
     organization_id         VARCHAR(36) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -76,14 +76,14 @@ BEGIN
         GROUP BY organization_id, tenant_id
     LOOP
         IF rec.user_count > 1 AND ARRAY_LENGTH(rec.observed_roles, 1) > 1 THEN
-            RAISE NOTICE '[Migration 000045] dedup org=% tenant=% chose role=% from observed=%, user_count=%',
+            RAISE NOTICE '[Migration 000080] dedup org=% tenant=% chose role=% from observed=%, user_count=%',
                 rec.organization_id, rec.tenant_id, rec.resolved_role, rec.observed_roles, rec.user_count;
         END IF;
     END LOOP;
 END $$;
 
 -- 3. Backfill the new table from the old one.
-DO $$ BEGIN RAISE NOTICE '[Migration 000045] Backfilling organization_tenant_members from organization_members'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000080] Backfilling organization_tenant_members from organization_members'; END $$;
 INSERT INTO organization_tenant_members (
     organization_id, tenant_id, role, representative_user_id, joined_at, created_at, updated_at
 )
@@ -113,7 +113,7 @@ ON CONFLICT DO NOTHING;
 -- 4. Park the old table so `down.sql` can restore it. We do NOT drop it
 --    here so a botched rollout can be reversed without re-creating data.
 --    A follow-up destructive migration removes it in a later release.
-DO $$ BEGIN RAISE NOTICE '[Migration 000045] Renaming organization_members → organization_members_pre_plan3'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000080] Renaming organization_members → organization_members_pre_plan3'; END $$;
 ALTER TABLE organization_members RENAME TO organization_members_pre_plan3;
 
 -- The unique-index name must move with the table; renaming the table does
@@ -135,7 +135,7 @@ ALTER INDEX IF EXISTS idx_org_members_role          RENAME TO idx_org_members_ro
 --    audit trail makes it clear this was a Plan 3 cleanup, not a
 --    human reject. Then add a partial unique index to keep the
 --    invariant going forward.
-DO $$ BEGIN RAISE NOTICE '[Migration 000045] Deduping pending join/upgrade requests at (org, tenant, type) level'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000080] Deduping pending join/upgrade requests at (org, tenant, type) level'; END $$;
 WITH ranked AS (
     SELECT id,
            ROW_NUMBER() OVER (
@@ -160,4 +160,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_org_join_requests_pending_per_tenant
     ON organization_join_requests (organization_id, tenant_id, request_type)
     WHERE status = 'pending';
 
-DO $$ BEGIN RAISE NOTICE '[Migration 000045] Plan 3 setup ready'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000080] Plan 3 setup ready'; END $$;

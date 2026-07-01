@@ -1,4 +1,4 @@
--- Reverse migration for 000045_org_tenant_members.
+-- Reverse migration for 000080_org_tenant_members.
 --
 -- Restore organization_members from the parked _pre_plan3 table and drop
 -- the new tenant-scoped table. Because we only RENAMEd the original on
@@ -9,7 +9,7 @@
 -- migration already dropped it), this script falls through gracefully:
 -- the IF EXISTS guards leave the database in whatever state it was in.
 
-DO $$ BEGIN RAISE NOTICE '[Migration 000045] Reverting Plan 3'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000080] Reverting Plan 3'; END $$;
 
 -- Move legacy table back into place.
 ALTER TABLE IF EXISTS organization_members_pre_plan3 RENAME TO organization_members;
@@ -32,4 +32,4 @@ DROP TABLE IF EXISTS organization_tenant_members;
 -- rows easy to audit if a manual fix is later needed.
 DROP INDEX IF EXISTS uq_org_join_requests_pending_per_tenant;
 
-DO $$ BEGIN RAISE NOTICE '[Migration 000045] Plan 3 reverted'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000080] Plan 3 reverted'; END $$;

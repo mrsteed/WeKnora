@@ -1,4 +1,4 @@
--- Migration: 000043_tenant_rbac
+-- Migration: 000078_tenant_rbac
 -- Introduces tenant-level RBAC (issue #1303):
 --   1. tenant_members table holds the (user, tenant) role assignments that replace
 --      the coarse "User.TenantID only" model. A user may now have rows in multiple
@@ -19,10 +19,10 @@
 --   - API-key-only tenants (tenants with no human users) get no membership rows;
 --     the auth middleware auto-promotes the first human authenticating into such
 --     a tenant to Owner.
-DO $$ BEGIN RAISE NOTICE '[Migration 000043] Starting tenant RBAC setup...'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000078] Starting tenant RBAC setup...'; END $$;
 
 -- 1. tenant_members table
-DO $$ BEGIN RAISE NOTICE '[Migration 000043] Creating table: tenant_members'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000078] Creating table: tenant_members'; END $$;
 CREATE TABLE IF NOT EXISTS tenant_members (
     id          BIGSERIAL PRIMARY KEY,
     user_id     VARCHAR(36) NOT NULL,
@@ -51,7 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_tenant_members_user
 
 -- 2. Backfill one membership row per existing active user.
 --    Earliest-created active user per tenant => owner; others => contributor.
-DO $$ BEGIN RAISE NOTICE '[Migration 000043] Backfilling tenant_members rows from users'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000078] Backfilling tenant_members rows from users'; END $$;
 INSERT INTO tenant_members (user_id, tenant_id, role, status, joined_at, created_at, updated_at)
 SELECT u.id,
        u.tenant_id,
@@ -78,7 +78,7 @@ SELECT u.id,
 ON CONFLICT DO NOTHING;
 
 -- 3. knowledge_bases.creator_id
-DO $$ BEGIN RAISE NOTICE '[Migration 000043] Adding creator_id to knowledge_bases'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000078] Adding creator_id to knowledge_bases'; END $$;
 ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS creator_id VARCHAR(36);
 CREATE INDEX IF NOT EXISTS idx_knowledge_bases_tenant_creator
     ON knowledge_bases(tenant_id, creator_id);
@@ -100,8 +100,8 @@ UPDATE knowledge_bases kb
  WHERE kb.creator_id IS NULL;
 
 -- 4. custom_agents.runnable_by_viewer
-DO $$ BEGIN RAISE NOTICE '[Migration 000043] Adding runnable_by_viewer to custom_agents'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000078] Adding runnable_by_viewer to custom_agents'; END $$;
 ALTER TABLE custom_agents
     ADD COLUMN IF NOT EXISTS runnable_by_viewer BOOLEAN NOT NULL DEFAULT TRUE;
 
-DO $$ BEGIN RAISE NOTICE '[Migration 000043] tenant RBAC setup ready'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000078] tenant RBAC setup ready'; END $$;

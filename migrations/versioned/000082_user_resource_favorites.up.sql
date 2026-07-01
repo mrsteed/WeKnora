@@ -1,4 +1,4 @@
--- Migration: 000047_user_resource_favorites
+-- Migration: 000082_user_resource_favorites
 -- Per-(user, tenant) starred resources (knowledge bases and custom agents).
 --
 -- Why (user_id, tenant_id) instead of (user_id) alone:
@@ -19,7 +19,7 @@
 --   the eventual soft-delete -> hard-delete window. Hydrating with a
 --   LEFT JOIN at read time is cheap (<= ~30 rows per user) and lets us
 --   silently drop entries for resources the user can no longer see.
-DO $$ BEGIN RAISE NOTICE '[Migration 000047] Creating table: user_resource_favorites'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000082] Creating table: user_resource_favorites'; END $$;
 
 CREATE TABLE IF NOT EXISTS user_resource_favorites (
     user_id        VARCHAR(36) NOT NULL,
@@ -40,4 +40,4 @@ CREATE INDEX IF NOT EXISTS idx_user_resource_favorites_user_tenant_type_created_
 CREATE INDEX IF NOT EXISTS idx_user_resource_favorites_tenant_id
     ON user_resource_favorites (tenant_id);
 
-DO $$ BEGIN RAISE NOTICE '[Migration 000047] user_resource_favorites table ready'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000082] user_resource_favorites table ready'; END $$;

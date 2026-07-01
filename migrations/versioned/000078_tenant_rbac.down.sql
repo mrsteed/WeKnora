@@ -1,4 +1,4 @@
--- Migration 000043 down: revert tenant RBAC schema additions.
+-- Migration 000078 down: revert tenant RBAC schema additions.
 --
 -- DANGER: This drops the tenant_members table and the creator_id /
 --         runnable_by_viewer columns. All role assignments, KB ownership
@@ -13,10 +13,10 @@ DO $$
 BEGIN
     IF coalesce(current_setting('weknora.allow_destructive_migration', true), 'false') <> 'true' THEN
         RAISE EXCEPTION
-            '[Migration 000043 down] BLOCKED: refuse to drop tenant_members / creator_id / runnable_by_viewer. '
+            '[Migration 000078 down] BLOCKED: refuse to drop tenant_members / creator_id / runnable_by_viewer. '
             'Set weknora.allow_destructive_migration = ''true'' in this session to override.';
     END IF;
-    RAISE WARNING '[Migration 000043 down] Reverting tenant RBAC — role data will be lost';
+    RAISE WARNING '[Migration 000078 down] Reverting tenant RBAC — role data will be lost';
 END $$;
 
 ALTER TABLE custom_agents DROP COLUMN IF EXISTS runnable_by_viewer;
@@ -29,4 +29,4 @@ DROP INDEX IF EXISTS idx_tenant_members_tenant_role;
 DROP INDEX IF EXISTS idx_tenant_members_user_tenant_unique;
 DROP TABLE IF EXISTS tenant_members;
 
-DO $$ BEGIN RAISE NOTICE '[Migration 000043 down] tenant RBAC reverted'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000078 down] tenant RBAC reverted'; END $$;
