@@ -45,8 +45,15 @@ export interface ChatDocumentEvidenceSummary {
 }
 
 export interface ChatDocumentArtifactExportPayload {
+  content_snapshot?: string;
   evidence_refs?: ChatDocumentEvidenceRef[];
   evidence_summary?: ChatDocumentEvidenceSummary | null;
+}
+
+export interface ChatExportContentSource {
+  content?: string | null;
+  final_document_content?: string | null;
+  chat_document_artifact?: ChatDocumentArtifactExportPayload | null;
 }
 
 /**
@@ -235,6 +242,39 @@ export const appendChatDocumentEvidenceAppendix = (
   }
 
   return `${normalizedContent}\n\n${appendixSections.filter(Boolean).join('\n\n')}`.trim();
+};
+
+export const resolveChatExportContent = (
+  source?: ChatExportContentSource | null,
+  fallbackContent = '',
+): string => {
+  const normalizedFallback = typeof fallbackContent === 'string' ? fallbackContent.trim() : '';
+  const artifact = source?.chat_document_artifact || null;
+
+  const finalDocument = typeof source?.final_document_content === 'string'
+    ? source.final_document_content.trim()
+    : '';
+  if (finalDocument) {
+    return appendChatDocumentEvidenceAppendix(finalDocument, artifact);
+  }
+
+  const artifactSnapshot = typeof artifact?.content_snapshot === 'string'
+    ? artifact.content_snapshot.trim()
+    : '';
+  if (artifactSnapshot) {
+    return appendChatDocumentEvidenceAppendix(artifactSnapshot, artifact);
+  }
+
+  const messageContent = typeof source?.content === 'string' ? source.content.trim() : '';
+  if (messageContent) {
+    return appendChatDocumentEvidenceAppendix(messageContent, artifact);
+  }
+
+  if (!normalizedFallback) {
+    return '';
+  }
+
+  return appendChatDocumentEvidenceAppendix(normalizedFallback, artifact);
 };
 
 const normalizeExportError = (error: any): Error => {

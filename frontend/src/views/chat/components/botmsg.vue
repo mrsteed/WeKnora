@@ -18,12 +18,12 @@
                 <RagPipelineProgress :session="session" :embedded-mode="embeddedMode" />
                 <docInfo v-if="session.knowledge_references?.length" :session="session"></docInfo>
                 <AgentStreamDisplay v-if="session.isAgentMode" :session="session" :session-id="sessionId"
-                    :user-query="userQuery" :rag-mode="true" />
+                    :user-query="userQuery" :rag-mode="true" :export-api-base="publicExportApiBase || undefined" />
             </div>
             <template v-else>
                 <docInfo v-if="session.knowledge_references?.length" :session="session"></docInfo>
                 <AgentStreamDisplay :session="session" :session-id="sessionId" :user-query="userQuery"
-                    v-if="session.isAgentMode" />
+                    :export-api-base="publicExportApiBase || undefined" v-if="session.isAgentMode" />
             </template>
             <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
         </div>
@@ -49,7 +49,7 @@
                     :title="$t('agent.copy')">
                     <t-icon name="copy" />
                 </t-button>
-                <ExportDropdown :content="getActualContent()" />
+                <ExportDropdown :content-resolver="resolveExportContent" :export-api-base="publicExportApiBase || undefined" />
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge"
                     :title="$t('agent.addToKnowledgeBase')">
                     <t-icon name="bookmark-add" />
@@ -96,6 +96,7 @@ import {
     createChatMarkdownRenderer,
     renderChatMarkdown,
 } from '@/utils/chatMarkdownRenderer';
+import { resolveChatExportContent } from '@/utils/exportUtils';
 import {
     createMermaidCodeRenderer,
     ensureMermaidInitialized,
@@ -156,6 +157,10 @@ const props = defineProps({
         default: false
     },
     sessionId: {
+        type: String,
+        default: ''
+    },
+    publicExportApiBase: {
         type: String,
         default: ''
     }
@@ -220,6 +225,10 @@ const hasActualContent = computed(() => {
 // 获取实际内容
 const getActualContent = () => {
     return (props.content || props.session?.content || '').trim();
+};
+
+const resolveExportContent = () => {
+    return resolveChatExportContent(props.session, getActualContent());
 };
 
 // 复制回答内容

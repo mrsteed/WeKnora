@@ -2,6 +2,7 @@
   <div class="embed-bot-msg" :class="{ 'is-embedded': embeddedMode }">
     <div v-if="session?.isRagMode" class="rag-answer-stack">
       <RagPipelineProgress :session="session" embedded-mode />
+      <DocInfo v-if="session?.knowledge_references?.length" :session="session" embedded-mode />
       <AgentStreamDisplay v-if="session?.isAgentMode" :session="session" :session-id="sessionId" :user-query="userQuery"
         rag-mode :embedded-mode="embeddedMode" :embed-channel-id="embedChannelId" :embed-token="embedToken"
         :embed-session-sig="embedSessionSig" :embed-visitor-id="embedVisitorId" />

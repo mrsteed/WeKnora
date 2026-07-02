@@ -806,6 +806,14 @@ export function useChatStreamHandler(options: UseChatStreamHandlerOptions) {
         loading.value = false
         isReplying.value = false
         message.is_completed = true
+        if (!Array.isArray(message.knowledge_references) || message.knowledge_references.length === 0) {
+          const completeRefs = Array.isArray(dataPayload?.knowledge_references)
+            ? dataPayload.knowledge_references
+            : (Array.isArray(dataPayload?.knowledge_refs) ? dataPayload.knowledge_refs : [])
+          if (completeRefs.length > 0) {
+            message.knowledge_references = completeRefs
+          }
+        }
         onReplyComplete?.(String(message.content || ''))
         fullContent.value = ''
         currentAssistantMessageId.value = ''

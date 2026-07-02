@@ -19,7 +19,6 @@
       <div v-for="(step, index) in steps" :key="step.id" class="tree-child" :class="{
         'tree-child-last':
           !showDoneRow
-          && !hasReferences
           && !showThinkingStep
           && index === steps.length - 1,
       }">
@@ -36,25 +35,6 @@
               <div v-if="step.summaryHtml" class="search-results-summary-fixed">
                 <div class="results-summary-text" v-html="step.summaryHtml" />
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="hasReferences" class="tree-child rag-ref-step"
-        :class="{ 'tree-child-last': !showThinkingStep && !showDoneRow }">
-        <div class="tree-branch" />
-        <div class="tree-child-content">
-          <div class="tool-event">
-            <div class="action-card">
-              <div class="action-header" @click="toggleReferences">
-                <div class="action-title">
-                  <t-icon class="action-title-icon" name="file-search" />
-                  <span class="action-name">{{ referencesHeaderText }}</span>
-                </div>
-              </div>
-              <DocInfo v-show="refsExpanded" :session="session" :embedded-mode="embeddedMode" timeline-mode
-                content-only />
             </div>
           </div>
         </div>
@@ -120,7 +100,7 @@
 
       <div v-if="showExpandedTimeline" class="tree-children tree-children-expanded">
         <div v-for="(step, index) in steps" :key="step.id" class="tree-child"
-          :class="{ 'tree-child-last': index === steps.length - 1 && !hasReferences && !showDoneRow && !showThinkingStep }">
+          :class="{ 'tree-child-last': index === steps.length - 1 && !showDoneRow && !showThinkingStep }">
           <div class="tree-branch" />
           <div class="tree-child-content">
             <div class="tool-event">
@@ -134,25 +114,6 @@
                 <div v-if="step.summaryHtml" class="search-results-summary-fixed">
                   <div class="results-summary-text" v-html="step.summaryHtml" />
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="hasReferences" class="tree-child rag-ref-step"
-          :class="{ 'tree-child-last': !showThinkingStep && !showDoneRow }">
-          <div class="tree-branch" />
-          <div class="tree-child-content">
-            <div class="tool-event">
-              <div class="action-card">
-                <div class="action-header" @click="toggleReferences">
-                  <div class="action-title">
-                    <t-icon class="action-title-icon" name="file-search" />
-                    <span class="action-name">{{ referencesHeaderText }}</span>
-                  </div>
-                </div>
-                <DocInfo v-show="refsExpanded" :session="session" :embedded-mode="embeddedMode" timeline-mode
-                  content-only />
               </div>
             </div>
           </div>
@@ -207,7 +168,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import DocInfo from './docInfo.vue'
 import { getAgentToolIconName } from '@/utils/agent-tool-icons'
 import {
   getKnowledgeSearchSummaryHtml,
@@ -227,7 +187,6 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const userExpanded = ref(false)
-const refsExpanded = ref(false)
 const thinkingExpanded = ref(true)
 const rootElement = ref<HTMLElement | null>(null)
 
@@ -426,10 +385,6 @@ function toggleExpanded() {
   userExpanded.value = !userExpanded.value
 }
 
-function toggleReferences() {
-  refsExpanded.value = !refsExpanded.value
-}
-
 function toggleThinking() {
   if (!showThinkingStep.value || !thinkingContent.value) return
   thinkingExpanded.value = !thinkingExpanded.value
@@ -560,32 +515,6 @@ watch(thinkingExpanded, (expanded) => {
     &::before {
       content: none;
     }
-  }
-}
-
-.rag-ref-step {
-  .action-header {
-    width: 100%;
-    gap: 8px;
-  }
-
-  .action-title {
-    gap: 12px;
-  }
-
-  .action-show-icon {
-    color: var(--td-text-color-placeholder);
-    font-size: 14px;
-    flex-shrink: 0;
-  }
-
-  :deep(.refer-timeline.refer) {
-    margin-top: 4px;
-    padding-left: 0;
-  }
-
-  :deep(.refer-timeline .doc-group-chunks) {
-    padding-left: 18px;
   }
 }
 

@@ -199,12 +199,12 @@
     </div>
 
     <!-- Event Stream (non-tree mode: before answer starts, or answer events) -->
-    <div v-if="!ragMode || displayEvents.length > 0 || showAgentActivityIndicator" ref="streamingStepsContainer"
+    <div v-if="!ragMode || streamingDisplayEvents.length > 0 || showAgentActivityIndicator" ref="streamingStepsContainer"
       class="streaming-steps-container" :class="{
         'streaming-steps-constrained': !answerEverStarted && !isConversationDone,
         'is-streaming-timeline': showStreamingTimeline
       }">
-      <template v-for="(event, index) in displayEvents" :key="getEventKey(event, index)">
+      <template v-for="(event, index) in streamingDisplayEvents" :key="getEventKey(event, index)">
         <div v-if="event && event.type" class="event-item" :class="{
           'event-answer': event.type === 'answer',
           'tree-child': isStreamingTimelineEvent(event),
@@ -303,6 +303,8 @@
                   :title="$t('agent.copy')">
                   <t-icon name="copy" />
                 </t-button>
+                <ExportDropdown :content-resolver="() => resolveExportContent(event)"
+                  :export-api-base="exportApiBase || undefined" />
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge(event)"
                   :title="$t('agent.addToKnowledgeBase')">
                   <t-icon name="bookmark-add" />
@@ -417,6 +419,39 @@
         </div>
       </div>
     </div>
+
+    <div v-if="ragMode && ragAnswerEvents.length > 0" class="rag-answer-stream">
+      <template v-for="(event, index) in ragAnswerEvents" :key="`rag-answer-${getEventKey(event, index)}`">
+        <div class="answer-event">
+          <div v-if="event.content && event.content.trim()" class="answer-content markdown-content">
+            <div v-stable-html="renderAnswerContent(event === activeAnswerEventRef ? typedAnswer : event.content)">
+            </div>
+          </div>
+          <div v-if="event.done && event.content && event.content.trim() && !embeddedMode" class="answer-toolbar">
+            <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer(event)"
+              :title="$t('agent.copy')">
+              <t-icon name="copy" />
+            </t-button>
+            <ExportDropdown :content-resolver="() => resolveExportContent(event)"
+              :export-api-base="exportApiBase || undefined" />
+            <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge(event)"
+              :title="$t('agent.addToKnowledgeBase')">
+              <t-icon name="bookmark-add" />
+            </t-button>
+            <t-tooltip v-if="event.is_fallback" :content="$t('chat.fallbackHint')" placement="top">
+              <t-button size="small" variant="outline" shape="round" class="fallback-icon-btn">
+                <t-icon name="info-circle" />
+              </t-button>
+            </t-tooltip>
+            <ChatRequestInfoButton v-if="showRequestInfo && isConversationDone" :session="session"
+              :session-id="sessionId" />
+          </div>
+        </div>
+      </template>
+      <div v-if="showRequestInfo && isConversationDone && !hasDoneAnswerContent" class="answer-toolbar">
+        <ChatRequestInfoButton :session="session" :session-id="sessionId" />
+      </div>
+    </div>
   </div>
   <!-- 引用 hover 浮层（与历史消息共用同一组件） -->
   <ChatCitationFloat :float="citationFloat" :on-enter="cancelCitationClose" :on-leave="scheduleCitationClose" />
@@ -459,6 +494,7 @@ import 'katex/dist/katex.min.css';
 import ToolResultRenderer from './ToolResultRenderer.vue';
 import ToolApprovalCard from './ToolApprovalCard.vue';
 import McpOAuthCard from './McpOAuthCard.vue';
+import ExportDropdown from './ExportDropdown.vue';
 import ChatRequestInfoButton from '@/components/ChatRequestInfoButton.vue';
 import ChatCitationFloat from '@/components/ChatCitationFloat.vue';
 import picturePreview from '@/components/picture-preview.vue';
@@ -476,6 +512,7 @@ import { hydrateProtectedFileImages, clearProtectedFileFailureCache, sanitizeMar
 import { unwrapFinalAnswerWrappers, thinkingEqualsAnswer } from '@/utils/finalAnswer';
 import { getAgentToolIconName } from '@/utils/agent-tool-icons';
 import { getQueryText, getWikiPageText } from '@/utils/agent-tool-display';
+import { resolveChatExportContent } from '@/utils/exportUtils';
 import {
   buildManualMarkdown,
   copyTextToClipboard,
@@ -740,6 +777,8 @@ interface SessionData {
   isAgentMode?: boolean;
   agentEventStream?: any[];
   knowledge_references?: any[];
+  final_document_content?: string;
+  chat_document_artifact?: Record<string, unknown> | null;
 }
 
 interface DocumentSectionProgressPreview {
@@ -762,6 +801,7 @@ const props = defineProps<{
   embedSessionSig?: string;
   embedVisitorId?: string;
   ragMode?: boolean;
+  exportApiBase?: string;
 }>();
 
 const embedAuthProps = computed(() => ({
@@ -1679,6 +1719,22 @@ const displayEvents = computed(() => {
   return result;
 });
 
+const streamingDisplayEvents = computed(() => {
+  if (props.ragMode) {
+    return [];
+  }
+  return displayEvents.value;
+});
+
+const ragAnswerEvents = computed(() => {
+  if (!props.ragMode) {
+    return [];
+  }
+  return displayEvents.value.filter(
+    (event: any) => event?.type === 'answer' && (event.done || (event.content && event.content.trim())),
+  );
+});
+
 // Get unique key for event
 const getEventKey = (event: any, index: number): string => {
   if (!event) return `event-${index}`;
@@ -2418,6 +2474,10 @@ const getActualContent = (answerEvent: any): string => {
   return '';
 };
 
+const resolveExportContent = (answerEvent: any): string => {
+  return resolveChatExportContent(props.session, getActualContent(answerEvent));
+};
+
 const handleCopyAnswer = async (answerEvent: any) => {
   const content = getActualContent(answerEvent);
   if (!content) {
@@ -2528,6 +2588,12 @@ const handleAddToKnowledge = (answerEvent: any) => {
       }
     }
   }
+}
+
+.rag-answer-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 // Event items (flat, no timeline)

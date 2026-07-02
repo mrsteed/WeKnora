@@ -806,6 +806,10 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 		"allow_complete":    allowComplete,
 		"failure_reason":    failureReason,
 	}
+	if len(h.assistantMessage.KnowledgeReferences) > 0 {
+		completeData["knowledge_references"] = types.References(h.assistantMessage.KnowledgeReferences)
+		completeData["knowledge_refs"] = types.References(h.assistantMessage.KnowledgeReferences)
+	}
 	if data.DocumentGenerationStatus != "" {
 		status := types.NormalizeChatDocumentGenerationStatus(data.DocumentGenerationStatus)
 		completeData["document_generation_status"] = status

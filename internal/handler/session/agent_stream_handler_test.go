@@ -70,6 +70,46 @@ func TestHandleComplete_UsesStreamedAnswerWithoutAppendingCompletePayload(t *tes
 	assert.Equal(t, 1, completeEvents)
 }
 
+func TestHandleComplete_IncludesKnowledgeReferencesInCompletePayload(t *testing.T) {
+	streamStub := &streamManagerStub{}
+	assistant := &types.Message{
+		ID:        "msg-1",
+		SessionID: "sess-1",
+		Role:      "assistant",
+		KnowledgeReferences: types.References{
+			&types.SearchResult{ID: "chunk-1", KnowledgeID: "doc-1", KnowledgeTitle: "文档一", Content: "片段内容"},
+		},
+	}
+	handler := NewAgentStreamHandler(context.Background(), "sess-1", "msg-1", "req-1", time.Time{}, assistant, streamStub, event.NewEventBus(), nil)
+
+	require.NoError(t, handler.handleComplete(context.Background(), event.Event{
+		ID: "complete-1",
+		Data: event.AgentCompleteData{
+			MessageID:        "msg-1",
+			FinalAnswer:      "final answer",
+			CompletionStatus: types.MessageCompletionStatusCompleted,
+			FinishReason:     "stop",
+		},
+	}))
+
+	require.Len(t, streamStub.events, 2)
+	completeEvent := streamStub.events[1]
+	assert.Equal(t, types.ResponseTypeComplete, completeEvent.Type)
+	refs, ok := completeEvent.Data["knowledge_references"].(types.References)
+	if !ok {
+		var converted types.References
+		if raw, exists := completeEvent.Data["knowledge_references"].([]*types.SearchResult); exists {
+			converted = types.References(raw)
+			refs = converted
+			ok = true
+		}
+	}
+	require.True(t, ok)
+	require.Len(t, refs, 1)
+	assert.Equal(t, "chunk-1", refs[0].ID)
+	assert.NotNil(t, completeEvent.Data["knowledge_refs"])
+}
+
 func TestHandleComplete_DoesNotOverrideCancelledAssistantState(t *testing.T) {
 	streamStub := &streamManagerStub{}
 	assistant := &types.Message{

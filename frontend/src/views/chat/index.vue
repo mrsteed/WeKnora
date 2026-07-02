@@ -3014,6 +3014,14 @@ const handleAgentChunk = (data) => {
                     completePayload.failure_reason = '';
                 }
                 syncMessageCompletionState(message, completePayload);
+                if (!Array.isArray(message.knowledge_references) || message.knowledge_references.length === 0) {
+                    const completeRefs = Array.isArray(completePayload.knowledge_references)
+                        ? completePayload.knowledge_references
+                        : (Array.isArray(completePayload.knowledge_refs) ? completePayload.knowledge_refs : []);
+                    if (completeRefs.length > 0) {
+                        message.knowledge_references = completeRefs;
+                    }
+                }
                 if (completePayload.chat_document_artifact) {
                     promoteCompletedArtifactAsBase(message, completePayload.chat_document_artifact);
                 }
