@@ -45,12 +45,13 @@
                         </div>
                     </transition>
                 </div>
-                <div v-for="(session, id) in messagesList" :key='id'>
+                <div v-for="(session, index) in messagesList"
+                    :key="session.id || `${session.role}-${session.created_at}-${index}`" class="msg-item-wrapper">
                     <div v-if="session.role == 'user'">
                         <usermsg :content="session.content" :mentioned_items="session.mentioned_items" :images="session.images" :attachments="session.attachments" :embeddedMode="effectiveEmbeddedMode" :isAutoContinue="Boolean(session.is_auto_continue)"></usermsg>
                     </div>
-                    <div v-if="session.role == 'assistant'">
-                        <botmsg :content="session.content" :session="session" :user-query="getUserQuery(id)" @scroll-bottom="scrollToBottom" @retry="handleRetry"
+                    <div v-if="session.role == 'assistant' && shouldRenderAssistantMessage(session)">
+                        <botmsg :content="session.content" :session="session" :user-query="getUserQuery(index)" @scroll-bottom="scrollToBottom" @retry="handleRetry"
                             :isFirstEnter="isFirstEnter" :embeddedMode="effectiveEmbeddedMode" :selectedArtifactId="manuallySelectedBaseArtifactId"
                             :isSharePageMode="isSharePageMode"
                             :publicExportApiBase="publicExportApiBase"
@@ -58,7 +59,7 @@
                             @artifact-display-update="handleArtifactDisplayUpdate"></botmsg>
                     </div>
                 </div>
-                <div v-if="loading"
+                <div v-if="showGlobalTypingIndicator"
                     style="height: 41px;display: flex;align-items: center;padding-left: 4px;">
                     <div class="loading-typing">
                         <span></span>
@@ -1719,6 +1720,45 @@ const getAgentStreamSignals = (message) => {
     };
 };
 
+const shouldRenderAssistantMessage = (session) => {
+    if (!session?.isAgentMode) {
+        return true;
+    }
+    if (!session.is_completed) {
+        return true;
+    }
+    const stream = session.agentEventStream;
+    if (Array.isArray(stream) && stream.length > 0) {
+        return true;
+    }
+    if (Array.isArray(session.knowledge_references) && session.knowledge_references.length > 0) {
+        return true;
+    }
+    return false;
+};
+
+const showGlobalTypingIndicator = computed(() => {
+    if (!loading.value) {
+        return false;
+    }
+    const last = messagesList[messagesList.length - 1];
+    if (last?.role === 'assistant' && last?.isAgentMode && !last?.is_completed) {
+        return false;
+    }
+    return true;
+});
+
+const recomposeAgentAnswer = (message) => {
+    const stream = Array.isArray(message?.agentEventStream) ? message.agentEventStream : [];
+    let output = '';
+    for (const event of stream) {
+        if (event.type === 'answer' && !event.superseded && event.content) {
+            output += event.content;
+        }
+    }
+    return output;
+};
+
 const finalizeActiveAssistantOnStreamClose = () => {
     if (!isReplying.value && !loading.value) {
         return;
@@ -2866,6 +2906,20 @@ const handleAgentChunk = (data) => {
             if (data.data && data.data.tool_name === 'final_answer') {
                 break;
             }
+            if (message.agentEventStream) {
+                let retracted = false;
+                for (const event of message.agentEventStream) {
+                    if (event.type === 'answer' && !event.superseded && event.content && String(event.content).trim()) {
+                        event.superseded = true;
+                        event.done = true;
+                        retracted = true;
+                    }
+                }
+                if (retracted) {
+                    message.content = recomposeAgentAnswer(message);
+                    fullContent.value = String(message.content || '');
+                }
+            }
             // Store or update pending tool call to pair with result later
             if (data.data && (data.data.tool_name || data.data.tool_call_id)) {
                 const incomingToolName = data.data.tool_name;
@@ -2984,30 +3038,36 @@ const handleAgentChunk = (data) => {
         case 'answer':
             // 最终答案
             message.thinking = false;
-
-            // 只有当有实际内容时才追加，避免空内容覆盖
-            if (data.content) {
-                message.content = (message.content || '') + data.content;
-                fullContent.value += data.content;
-            }
-            
-            // Add or update answer event in agentEventStream
             if (!message.agentEventStream) message.agentEventStream = [];
-            
-            let answerEvent = message.agentEventStream.find((e) => e.type === 'answer');
+            if (!message._eventMap) message._eventMap = new Map();
+
+            const eventId = data.data?.event_id;
+            let answerEvent = eventId
+                ? message._eventMap.get(eventId)
+                : message.agentEventStream.find((event) => event.type === 'answer' && !event.event_id);
+
             if (!answerEvent) {
                 answerEvent = {
                     type: 'answer',
+                    event_id: eventId,
                     content: '',
                     done: false,
                     completion_status: 'pending'
                 };
                 message.agentEventStream.push(answerEvent);
+                if (eventId) {
+                    message._eventMap.set(eventId, answerEvent);
+                }
             }
-            
-            // 只有当有实际内容时才更新 answerEvent.content
-            if (data.content) {
+
+            if (!answerEvent.content && message.content && String(message.content).trim()) {
                 answerEvent.content = message.content;
+            }
+
+            if (data.content) {
+                answerEvent.content = String(answerEvent.content || '') + String(data.content);
+                message.content = recomposeAgentAnswer(message);
+                fullContent.value = String(message.content || '');
             }
 
             // 检查是否为 fallback 回答

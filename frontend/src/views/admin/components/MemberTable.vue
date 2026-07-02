@@ -12,8 +12,8 @@
         <div class="section-header clickable" @click="showInherited = !showInherited">
           <t-icon :name="showInherited ? 'chevron-down' : 'chevron-right'" size="14px" />
           <t-icon name="secured" size="14px" style="margin-left: 4px" />
-          <span style="margin-left: 4px">上级管理员 ({{ inheritedAdmins.length }})</span>
-          <span class="section-hint">继承自上级组织，拥有本组织管理权限</span>
+          <span style="margin-left: 4px">{{ $t('admin.member.inheritedAdmin') }} ({{ inheritedAdmins.length }})</span>
+          <span class="section-hint">{{ $t('admin.member.inheritedAdminHint') }}</span>
         </div>
         <template v-if="showInherited">
           <div v-for="admin in inheritedAdmins" :key="admin.user_id" class="table-row inherited-row">
@@ -25,10 +25,10 @@
             <span class="col-phone">-</span>
             <span class="col-role">
               <t-tag theme="warning" variant="light" size="small">
-                继承管理员
+                {{ $t('admin.member.inheritedAdmin') }}
               </t-tag>
               <t-tag theme="default" variant="light" size="small" style="margin-left: 4px">
-                来自: {{ admin.from_org_name }}
+                {{ $t('admin.member.inheritedFrom') }}: {{ admin.from_org_name }}
               </t-tag>
             </span>
             <span class="col-actions"></span>
@@ -62,7 +62,7 @@
             {{ $t('admin.member.admin') }}
           </t-tag>
           <t-tag v-else theme="default" variant="light" size="small">
-            {{ member.role || $t('admin.member.member') }}
+            {{ roleLabel(member.role) }}
           </t-tag>
         </span>
         <span class="col-actions">
@@ -114,10 +114,19 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getOrgMembers, type OrgMember, type InheritedAdmin } from '@/api/org-tree'
 import { useAuthStore } from '@/stores/auth'
 
+const { t } = useI18n()
 const authStore = useAuthStore()
+
+function roleLabel(role?: string) {
+  if (!role) return t('admin.member.member')
+  const key = `admin.member.role${role.charAt(0).toUpperCase()}${role.slice(1)}`
+  const translated = t(key)
+  return translated === key ? role : translated
+}
 
 const props = defineProps<{
   orgId: string

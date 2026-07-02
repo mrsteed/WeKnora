@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	filesvc "github.com/Tencent/WeKnora/internal/application/service/file"
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -82,8 +83,9 @@ func (p *AttachmentProcessor) ProcessAttachment(
 	}
 
 	uniqueFileName := fmt.Sprintf("attachment_%s%s", uuid.New().String()[:12], ext)
+	fileSvc := p.resolveAttachmentFileService(ctx)
 
-	storageURL, err := p.fileService.SaveBytes(ctx, data, tenantID, uniqueFileName, false)
+	storageURL, err := fileSvc.SaveBytes(ctx, data, tenantID, uniqueFileName, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save attachment: %w", err)
 	}
@@ -107,12 +109,12 @@ func (p *AttachmentProcessor) ProcessAttachment(
 			attachment.Content = fmt.Sprintf("<error><message>Failed to transcribe audio file</message><details>%v</details></error>", err)
 		}
 	} else if docparser.IsSimpleFormat(ext) {
-		if err := p.processWithDocParser(ctx, data, baseName, ext, attachment, tenantID); err != nil {
+		if err := p.processWithDocParser(ctx, data, baseName, ext, attachment, tenantID, fileSvc); err != nil {
 			logger.Warnf(ctx, "SimpleFormatReader failed: %v", err)
 			attachment.Content = fmt.Sprintf("<error><message>Failed to parse document</message><details>%v</details></error>", err)
 		}
 	} else {
-		if err := p.processWithDocumentReader(ctx, data, baseName, ext, attachment, tenantID); err != nil {
+		if err := p.processWithDocumentReader(ctx, data, baseName, ext, attachment, tenantID, fileSvc); err != nil {
 			logger.Warnf(ctx, "DocumentReader failed: %v, keeping metadata only", err)
 			attachment.Content = fmt.Sprintf("<error><message>Failed to read document</message><details>%v</details></error>", err)
 		}
@@ -167,6 +169,7 @@ func (p *AttachmentProcessor) processWithDocParser(
 	fileType string,
 	attachment *types.MessageAttachment,
 	tenantID uint64,
+	fileSvc interfaces.FileService,
 ) error {
 	reader := &docparser.SimpleFormatReader{}
 	result, err := reader.Read(ctx, &types.ReadRequest{
@@ -180,7 +183,7 @@ func (p *AttachmentProcessor) processWithDocParser(
 
 	// Resolve embedded image refs to storage URLs.
 	if len(result.ImageRefs) > 0 && p.imageResolver != nil {
-		updatedMarkdown, _, err := p.imageResolver.ResolveAndStore(ctx, result, p.fileService, tenantID)
+		updatedMarkdown, _, err := p.imageResolver.ResolveAndStore(ctx, result, fileSvc, tenantID)
 		if err != nil {
 			logger.Warnf(ctx, "image resolution failed: %v", err)
 		} else {
@@ -231,11 +234,12 @@ func (p *AttachmentProcessor) processWithDocumentReader(
 	fileType string,
 	attachment *types.MessageAttachment,
 	tenantID uint64,
+	fileSvc interfaces.FileService,
 ) error {
 	if p.documentReader == nil {
 		return fmt.Errorf("DocumentReader not configured")
 	}
-	
+
 	normalizedType := strings.TrimPrefix(fileType, ".")
 
 	result, err := p.documentReader.Read(ctx, &types.ReadRequest{
@@ -250,7 +254,7 @@ func (p *AttachmentProcessor) processWithDocumentReader(
 
 	// Resolve embedded image refs to storage URLs.
 	if len(result.ImageRefs) > 0 && p.imageResolver != nil {
-		updatedMarkdown, _, err := p.imageResolver.ResolveAndStore(ctx, result, p.fileService, tenantID)
+		updatedMarkdown, _, err := p.imageResolver.ResolveAndStore(ctx, result, fileSvc, tenantID)
 		if err != nil {
 			logger.Warnf(ctx, "image resolution failed: %v", err)
 		} else {
@@ -260,6 +264,23 @@ func (p *AttachmentProcessor) processWithDocumentReader(
 
 	p.applyLineTruncation(ctx, result.MarkdownContent, attachment)
 	return nil
+}
+
+// resolveAttachmentFileService prefers the active tenant's configured storage
+// backend so attachments do not inherit a startup-time fallback local service.
+func (p *AttachmentProcessor) resolveAttachmentFileService(ctx context.Context) interfaces.FileService {
+	tenant, _ := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	if tenant == nil || tenant.StorageEngineConfig == nil {
+		return p.fileService
+	}
+
+	svc, provider, err := filesvc.NewFileServiceFromStorageConfig("", tenant.StorageEngineConfig, "")
+	if err != nil {
+		logger.Warnf(ctx, "[attachment-storage] failed to resolve tenant storage service: %v, fallback to default", err)
+		return p.fileService
+	}
+	logger.Infof(ctx, "[attachment-storage] using provider=%s for attachments", provider)
+	return svc
 }
 
 // applyLineTruncation stores content into attachment, truncating at maxTextFileLines if needed.

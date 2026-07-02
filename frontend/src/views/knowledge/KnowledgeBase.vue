@@ -44,6 +44,7 @@ import DocumentBatchBar from './components/DocumentBatchBar.vue';
 import KbUploadSourceDropdown from './components/KbUploadSourceDropdown.vue';
 import TagEditDialog from './components/TagEditDialog.vue';
 import KbTagManageDrawer from './components/KbTagManageDrawer.vue';
+import DatabaseKnowledgeOverview from './components/DatabaseKnowledgeOverview.vue';
 import { useTagChipsOverflow } from '@/composables/useTagChipsOverflow';
 import type { KnowledgeProcessOverrides } from '@/types/knowledgeProcess';
 import { useUploadConfirmStore, type UploadConfirmResult } from '@/stores/uploadConfirm';
@@ -69,6 +70,7 @@ const uploading = ref(false);
 const kbLoading = ref(false);
 const docListLoading = ref(true);
 const isFAQ = computed(() => (kbInfo.value?.type || '') === 'faq');
+const isDatabase = computed(() => (kbInfo.value?.type || '') === 'database');
 const isWiki = computed(() => !!kbInfo.value?.indexing_strategy?.wiki_enabled);
 const validTabs = ['documents', 'wiki', 'graph'] as const
 type KbTab = typeof validTabs[number]
@@ -156,7 +158,7 @@ onUnmounted(() => {
   clearWikiStatusProbes()
 })
 const missingStorageEngine = computed(() => {
-  if (!kbInfo.value || isFAQ.value) return false
+  if (!kbInfo.value || isFAQ.value || isDatabase.value) return false
   const spc = kbInfo.value.storage_provider_config
   return !spc || !spc.provider
 })
@@ -305,6 +307,7 @@ let { cardList, total, moreIndex, details, getKnowled, delKnowledge, openMore, o
 const showKbDetailContextualGuide = computed(() => {
   return Boolean(kbId.value)
     && !isFAQ.value
+    && !isDatabase.value
     && canEdit.value
     && !docListLoading.value
     && cardList.value.length === 0;
@@ -868,13 +871,20 @@ const loadKnowledgeBaseInfo = async (targetKbId: string, force = false) => {
     uiStore.clearSelectedTagIds();
     // 重置store中的标签选择状态，避免上传文档时自动带上之前选择的标签
     uiStore.clearSelectedTagIds();
-    if (!isFAQ.value) {
+    if (!isFAQ.value && !isDatabase.value) {
       loadKnowledgeFiles(targetKbId);
     } else {
       cardList.value = [];
       total.value = 0;
     }
-    loadTags(targetKbId, true);
+    if (!isDatabase.value) {
+      loadTags(targetKbId, true);
+    } else {
+      tagList.value = [];
+      tagTotal.value = 0;
+      tagHasMore.value = false;
+      tagPage.value = 1;
+    }
   } catch (error) {
     if (!isCurrentKb(targetKbId)) return;
 
@@ -1005,7 +1015,7 @@ watch([selectedParseStatus, selectedSource, updatedTimeRange], () => {
 const handleFileUploaded = (event: CustomEvent) => {
   const uploadedKbId = event.detail.kbId;
   console.log('接收到文件上传事件，上传的知识库ID:', uploadedKbId, '当前知识库ID:', kbId.value);
-  if (uploadedKbId && uploadedKbId === kbId.value && !isFAQ.value) {
+  if (uploadedKbId && uploadedKbId === kbId.value && !isFAQ.value && !isDatabase.value) {
     console.log('匹配当前知识库，开始刷新文件列表');
     // 如果上传的文件属于当前知识库，使用 loadKnowledgeFiles 刷新文件列表
     resetPage(); // Reset page counter when reloading files after upload
@@ -1021,7 +1031,7 @@ const handleFileUploaded = (event: CustomEvent) => {
 const handleOpenURLImportDialog = (event: CustomEvent) => {
   const eventKbId = event.detail.kbId;
   console.log('接收到URL导入对话框打开事件，知识库ID:', eventKbId, '当前知识库ID:', kbId.value);
-  if (eventKbId && eventKbId === kbId.value && !isFAQ.value) {
+  if (eventKbId && eventKbId === kbId.value && !isFAQ.value && !isDatabase.value) {
     if (ensureDocumentKbReady()) {
       uploadSourceRef.value?.openUrlDialog();
     }
@@ -2079,7 +2089,8 @@ watch(cardList, () => {
 }, { deep: false });
 
 // 处理知识库编辑成功后的回调
-const handleKBEditorSuccess = (kbIdValue: string) => {
+const handleKBEditorSuccess = (payload: string | { id: string; visibility?: 'private' | 'global' | 'org'; organization_id?: string }) => {
+	const kbIdValue = typeof payload === 'string' ? payload : payload.id;
   chatResources.invalidateKnowledgeBaseDetail(kbIdValue);
   chatResources.invalidate('knowledgeBases');
   loadKnowledgeList();
@@ -2174,7 +2185,7 @@ async function createNewSession(value: string): Promise<void> {
                   </span>
                 </t-tooltip>
               </template>
-              <span v-else class="breadcrumb-current">{{ $t('knowledgeEditor.document.title') }}</span>
+              <span v-else class="breadcrumb-current">{{ isDatabase ? $t('knowledgeBase.databaseDetail.breadcrumb') : $t('knowledgeEditor.document.title') }}</span>
             </h2>
             <!-- 标题行右侧的动作锚点：聚拢"信息"和"设置"两个圆形按钮。 -->
             <div class="kb-title-actions">
@@ -2187,8 +2198,8 @@ async function createNewSession(value: string): Promise<void> {
               </t-tooltip>
             </div>
           </div>
-          <p class="document-subtitle">{{ $t('knowledgeEditor.document.subtitle') }}</p>
-          <p v-if="unsupportedFileTypes.length" class="parser-hint" @click="goToParserSettings">
+          <p class="document-subtitle">{{ isDatabase ? $t('knowledgeBase.databaseDetail.subtitle') : $t('knowledgeEditor.document.subtitle') }}</p>
+          <p v-if="!isDatabase && unsupportedFileTypes.length" class="parser-hint" @click="goToParserSettings">
             <t-icon name="info-circle" class="parser-hint-icon" />
             <span>{{$t('knowledgeBase.unsupportedTypesHint', {
               types: unsupportedFileTypes.map(t => '.' + t).join('、')
@@ -2211,7 +2222,11 @@ async function createNewSession(value: string): Promise<void> {
           @view-graph="onViewWikiInGraph" />
       </div>
 
-      <template v-if="activeKbTab === 'documents' || !isWiki">
+      <div v-else-if="isDatabase" class="knowledge-main knowledge-main--database">
+        <DatabaseKnowledgeOverview v-if="kbId" :kb-id="kbId" :kb-info="kbInfo" />
+      </div>
+
+      <template v-else-if="activeKbTab === 'documents' || !isWiki">
         <div class="knowledge-main">
           <div class="tag-content">
             <div class="doc-card-area">
@@ -2811,6 +2826,7 @@ async function createNewSession(value: string): Promise<void> {
   min-width: 0;
   padding: 24px 32px 0px;
   box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 // Breadcrumb tab switch (文档/Wiki in breadcrumb)
@@ -2864,6 +2880,15 @@ async function createNewSession(value: string): Promise<void> {
   min-height: 0;
   background: transparent;
   border: none;
+}
+
+// 数据库知识库概览页：独立滚动区，内容撑开时可向下滚动
+.knowledge-main--database {
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 24px 28px 40px;
+  flex-direction: column;
+  align-items: stretch;
 }
 
 // 标签筛选浮层：点击工具栏入口展开，不占文档列表横向空间

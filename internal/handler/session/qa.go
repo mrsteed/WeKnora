@@ -1300,6 +1300,14 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		logger.Errorf(ctx, "Failed to get session, session ID: %s, error: %v", sessionID, err)
 		return nil, nil, errors.NewNotFoundError("Session not found")
 	}
+	if ctx.Value(types.TenantInfoContextKey) == nil {
+		tenantID := c.GetUint64(types.TenantIDContextKey.String())
+		if tenantID != 0 {
+			if tenant, tenantErr := h.tenantService.GetTenantByID(ctx, tenantID); tenantErr == nil && tenant != nil {
+				ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenant)
+			}
+		}
+	}
 
 	// Get custom agent if agent_id is provided. Backend resolves shared agent from share relation (no client-provided tenant).
 	customAgent, effectiveTenantID := h.resolveAgent(ctx, c, request.AgentID)
@@ -2281,6 +2289,7 @@ func appendQuickAnswerReasoning(msg *types.Message, content string) {
 	}
 	msg.AgentSteps[0].ReasoningContent += content
 }
+
 // completeAssistantMessage marks an assistant message as complete, updates it,
 // and asynchronously indexes the Q&A pair into the chat history knowledge base.
 func (h *Handler) completeAssistantMessage(

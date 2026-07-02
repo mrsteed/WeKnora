@@ -1875,8 +1875,6 @@ export default {
     reset: "重置",
     clear: "清空",
     website: "官方网站",
-    chromeExtension: "浏览器插件",
-    clawhubSkill: "Claw 技能",
     newBadge: "New",
     github: 'GitHub',
     githubStarTip: '在 GitHub 打开仓库，若觉得有用欢迎点个 Star',
@@ -2410,9 +2408,9 @@ export default {
     loadingInfo: "正在加载信息...",
     retry: "重试",
     versionLabel: "应用版本",
-    versionDescription: "当前应用服务（weknora-app）的版本号",
+    versionDescription: "当前应用服务（IntarMind-app）的版本号",
     frontendVersionLabel: "UI 版本",
-    frontendVersionDescription: "当前 UI 界面（weknora-ui）的构建版本号",
+    frontendVersionDescription: "当前 UI 界面（IntarMind-ui）的构建版本号",
     versionMismatch: "与应用版本不一致",
     buildTimeLabel: "构建时间",
     buildTimeDescription: "系统构建的时间",
@@ -2462,46 +2460,30 @@ export default {
         tier3: "若想让某项重新由环境变量控制，点击该行的「重置」按钮即可清除当前 UI 设置。",
       },
       keyLabels: {
-        auth: {
-          registration_mode: "自助注册模式",
-        },
-        ssrf: {
-          whitelist: "SSRF 防护白名单",
-        },
-        tenant: {
-          max_owned_per_user: "每用户最大租户数",
-          default_storage_quota_gb: "新租户默认存储配额 (GB)",
-        },
-        asynq: {
-          concurrency: "异步任务并发数",
-        },
+        "auth.registration_mode": "自助注册模式",
+        "ssrf.whitelist": "SSRF 防护白名单",
+        "tenant.max_owned_per_user": "每用户最大租户数",
+        "tenant.default_storage_quota_gb": "新租户默认存储配额 (GB)",
+        "asynq.concurrency": "异步任务并发数",
       },
       keyDescriptions: {
-        auth: {
-          registration_mode:
-            "自助注册模式。self_serve = 任何人可注册账号；invite_only = 关闭公网注册，" +
-            "仅 Owner/Admin 可邀请。修改后立即生效，但谨慎对待 self_serve（公网会接受 spam）。",
-        },
-        ssrf: {
-          whitelist:
-            "SSRF 防护白名单。可填入 example.com / *.foo.com / 10.0.0.0/8 / 2001:db8::1。" +
-            "修改后立即生效。SSRF_WHITELIST_EXTRA 环境变量仍由部署方维护，不在此处覆盖。",
-        },
-        tenant: {
-          max_owned_per_user:
-            "每个非超管用户通过自助创建可拥有的最大租户数。每次创建租户时实时读取，" +
-            "修改后立即生效。0 表示使用内置默认值 10；负数表示完全关闭限制（不建议在公开部署使用）。",
-          default_storage_quota_gb:
-            "新建租户时默认分配的存储配额（GB），包含向量、原文、文本、索引等。" +
-            "仅在创建时读取，修改后只对之后新建的租户生效，不会回写已存在的租户。" +
-            "0 或负数表示使用内置默认值 10GB。",
-        },
-        asynq: {
-          concurrency:
-            "异步任务 worker 并发数（asynq 线程池大小）。" +
-            "文档解析、嵌入等任务多为 I/O 等待，适当提高可缩短批量上传排队时间。" +
-            "修改后需重启服务进程方可生效。",
-        },
+        "auth.registration_mode":
+          "自助注册模式。self_serve = 任何人可注册账号；invite_only = 关闭公网注册，" +
+          "仅 Owner/Admin 可邀请。修改后立即生效，但谨慎对待 self_serve（公网会接受 spam）。",
+        "ssrf.whitelist":
+          "SSRF 防护白名单。可填入 example.com / *.foo.com / 10.0.0.0/8 / 2001:db8::1。" +
+          "修改后立即生效。SSRF_WHITELIST_EXTRA 环境变量仍由部署方维护，不在此处覆盖。",
+        "tenant.max_owned_per_user":
+          "每个非超管用户通过自助创建可拥有的最大租户数。每次创建租户时实时读取，" +
+          "修改后立即生效。0 表示使用内置默认值 10；负数表示完全关闭限制（不建议在公开部署使用）。",
+        "tenant.default_storage_quota_gb":
+          "新建租户时默认分配的存储配额（GB），包含向量、原文、文本、索引等。" +
+          "仅在创建时读取，修改后只对之后新建的租户生效，不会回写已存在的租户。" +
+          "0 或负数表示使用内置默认值 10GB。",
+        "asynq.concurrency":
+          "异步任务 worker 并发数（asynq 线程池大小）。" +
+          "文档解析、嵌入等任务多为 I/O 等待，适当提高可缩短批量上传排队时间。" +
+          "修改后需重启服务进程方可生效。",
       },
       enumLabels: {
         auth: {
@@ -3138,7 +3120,7 @@ export default {
     },
   },
   createChat: {
-    title: "Hi，我是 WeKnora，让你的知识触手可及",
+    title: "Hi，我是 IntarMind，让你的知识触手可及",
     newSessionTitle: "新会话",
     messages: {
       selectKnowledgeBase: "请先选择知识库",
@@ -4032,6 +4014,55 @@ export default {
     title: "组织管理",
     orgTreeManage: "组织树管理",
     memberManage: "组织人员管理",
+    member: {
+      selectOrg: "选择组织",
+      selectOrgHint: "请在左侧选择组织以查看成员列表",
+      noMembers: "暂无成员",
+      username: "姓名",
+      email: "邮箱",
+      phone: "手机号",
+      role: "角色",
+      actions: "操作",
+      member: "成员",
+      admin: "管理员",
+      superAdmin: "超级管理员",
+      createUser: "创建用户",
+      createUserTo: "在「{org}」中创建用户",
+      createUserSuccess: "用户创建成功",
+      createUserFailed: "用户创建失败",
+      addMember: "添加成员",
+      addMemberTo: "添加成员到「{org}」",
+      searchUser: "搜索用户",
+      searchUserPlaceholder: "输入用户名、邮箱或手机号搜索",
+      noUsersFound: "未找到匹配的用户",
+      roleViewer: "只读",
+      roleEditor: "编辑",
+      roleAdmin: "管理员",
+      usernamePlaceholder: "请输入用户名",
+      emailOptionalPlaceholder: "选填，请输入邮箱",
+      phonePlaceholder: "选填，请输入手机号",
+      passwordPlaceholder: "8-32个字符，包含字母和数字",
+      editUserIn: "编辑「{org}」中的用户",
+      updateUserSuccess: "用户信息已更新",
+      updateUserFailed: "更新用户信息失败",
+      emailOrPhoneRequired: "邮箱或手机号至少填一项",
+      assignSuccess: "成员添加成功",
+      removeSuccess: "成员已移除",
+      removeFailed: "移除成员失败",
+      remove: "移除",
+      removeConfirm: "确定要移除该成员吗？",
+      cannotModifySelf: "不能修改自己的成员状态",
+      setAdmin: "设为管理员",
+      revokeAdmin: "取消管理员",
+      resetPassword: "重置密码",
+      resetPasswordFor: "为「{org}」中的成员重置密码",
+      resetPasswordSuccess: "密码已重置",
+      resetPasswordFailed: "重置密码失败",
+      updateSuccess: "操作成功",
+      inheritedAdmin: "继承管理员",
+      inheritedAdminHint: "继承自上级组织，拥有本组织管理权限",
+      inheritedFrom: "来自",
+    },
   },
   agentSettings: {
     title: "Agent 配置",
@@ -5808,8 +5839,6 @@ export default {
       im: "IM 集成",
       embed: "网页嵌入",
       api: "API 集成",
-      chrome: "Chrome 插件",
-      claw: "Claw Skill",
     },
     api: {
       title: "API 集成",
@@ -5885,118 +5914,6 @@ export default {
       label: "发布渠道",
       desc: "将智能体发布到 IM 平台或网站，在集成中心统一管理",
       manage: "管理",
-    },
-    chrome: {
-      title: "知识管理助手",
-      subtitle:
-        "配合 WeKnora 自建服务使用：在任意网页侧边栏提问、剪藏内容、Markdown 速记，将浏览中的知识沉淀到你的知识库。",
-      capabilitiesTitle: "核心能力",
-      capabilities: {
-        qa: {
-          title: "知识库智能问答",
-          desc: "侧边栏对话面板，支持多知识库切换与快速/深度/精确三种回答模式，边浏览边提问不打断工作流。",
-        },
-        clip: {
-          title: "网页内容一键采集",
-          desc: "保存页面 URL、AI 智能剪藏正文，或手动框选区域，精准写入指定知识库。",
-        },
-        notes: {
-          title: "Markdown 速记",
-          desc: "内置 Markdown 编辑器，随时记录灵感与笔记，一键保存到知识库。",
-        },
-        shortcuts: {
-          title: "高效快捷键",
-          desc: "可自定义快捷键快速提问、打开侧边栏等操作，提升日常效率。",
-        },
-      },
-      scenariosTitle: "适用场景",
-      scenarios: {
-        research: "日常资料调研",
-        learning: "学习笔记整理",
-        tech: "技术资料收集",
-        work: "工作知识沉淀",
-      },
-      stepsTitle: "配置步骤",
-      steps: {
-        api: {
-          title: "获取 API 凭证",
-          desc: "在「设置 → API 信息」中复制 API Key 与 API 地址。",
-        },
-        port: {
-          title: "桌面版配置固定端口（推荐）",
-          desc: "使用 WeKnora 桌面版时，在 API 信息中设置固定端口（如 37841），避免每次启动后地址变化导致插件断连。",
-        },
-        install: {
-          title: "安装 Chrome 插件",
-          desc: "前往 Chrome 应用商店安装「知识管理助手」。",
-        },
-        connect: {
-          title: "在插件中完成连接",
-          desc: "打开插件设置，选择「企业/开发者」模式，填入服务 API 地址与 API Key。下方为当前服务地址。",
-        },
-      },
-      openApiSettings: "打开 API 信息",
-      copy: "复制",
-      copySuccess: "已复制 API 地址",
-      installCta: "前往 Chrome 应用商店",
-      installCtaHint: "官方扩展 · 将在新标签页打开",
-      storeMeta: "Chrome 应用商店 · v1.0.0",
-    },
-    claw: {
-      title: "WeKnora Skill",
-      subtitle:
-        "通过 WeKnora REST API 导入文档并执行混合检索（向量 + 关键词）。适用于上传文件/URL/Markdown 到知识库、跨库检索与浏览知识内容。",
-      capabilitiesTitle: "Skill 能力",
-      capabilities: {
-        upload: {
-          title: "上传文件",
-          desc: "将 PDF、Word、Excel 等文档上传至知识库，自动解析与向量化。",
-        },
-        url: {
-          title: "导入网页",
-          desc: "通过 URL 抓取网页内容并写入知识库，支持解析状态轮询。",
-        },
-        manual: {
-          title: "写入 Markdown",
-          desc: "以 Markdown 形式创建或编辑知识条目，适合会议记录与结构化笔记。",
-        },
-        search: {
-          title: "混合检索",
-          desc: "单库 hybrid-search 与跨库 knowledge-search，结合向量与关键词召回。",
-        },
-        browse: {
-          title: "浏览知识库",
-          desc: "列出知识库与条目、查看详情，管理已导入的知识内容。",
-        },
-      },
-      stepsTitle: "配置步骤",
-      steps: {
-        api: {
-          title: "获取 API 凭证",
-          desc: "在「设置 → API 信息」中复制 API Key 与 API 地址。",
-        },
-        env: {
-          title: "配置环境变量",
-          desc: "在终端或 ~/.zshrc、~/.bashrc 中设置 WEKNORA_BASE_URL 与 WEKNORA_API_KEY。下方示例已填入当前 API 地址，请将 API Key 替换为实际值。",
-        },
-        install: {
-          title: "安装 Skill",
-          desc: "在已安装 OpenClaw CLI 的环境中执行下方命令，或前往 ClawHub 页面按指引安装。",
-        },
-        verify: {
-          title: "验证连接",
-          desc: "安装后让 Agent 列出知识库或执行一次检索，确认 API 凭证与网络可达。",
-        },
-      },
-      openApiSettings: "打开 API 信息",
-      copy: "复制",
-      copyEnvSuccess: "已复制环境变量示例",
-      copyCmdSuccess: "已复制安装命令",
-      ecosystemNote:
-        "Skill 托管于 ClawHub（{'@'}lyingbug/weknora），完整 API 说明与版本历史请参见 ClawHub 页面。",
-      installCta: "前往 ClawHub",
-      installCtaHint: "安装 WeKnora Skill · 将在新标签页打开",
-      hubMeta: "ClawHub · {'@'}lyingbug/weknora · MIT-0",
     },
   },
   imOverview: {

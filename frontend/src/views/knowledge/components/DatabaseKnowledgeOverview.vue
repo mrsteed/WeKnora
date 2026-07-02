@@ -2,6 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DataSourceSettings from '../settings/DataSourceSettings.vue'
+import DatabaseSchemaDialog from '../settings/DatabaseSchemaDialog.vue'
+import DatabaseQueryAuditDialog from '../settings/DatabaseQueryAuditDialog.vue'
 import {
   getDatabaseSchema,
   listDataSources,
@@ -15,16 +17,17 @@ const props = defineProps<{
   kbInfo?: Record<string, any> | null
 }>()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const overviewLoading = ref(false)
 const dataSources = ref<DataSource[]>([])
 const schema = ref<DatabaseSchema | null>(null)
 const auditTotal = ref(0)
 const latestAuditAt = ref('')
+const schemaDialogVisible = ref(false)
+const auditDialogVisible = ref(false)
 
 function translateOrFallback(key: string, fallback: string) {
-  const translated = t(key)
-  return translated === key ? fallback : translated
+  return te(key) ? t(key) : fallback
 }
 
 function formatDateTime(value?: string) {
@@ -68,10 +71,21 @@ const queryLimitText = computed(() => primarySettings.value.max_rows ? String(pr
 const timeoutText = computed(() => primarySettings.value.query_timeout_sec ? `${primarySettings.value.query_timeout_sec}s` : '--')
 const allowedTableCount = computed(() => Array.isArray(primarySettings.value.table_allowlist) ? primarySettings.value.table_allowlist.length : 0)
 const sampleRowsText = computed(() => primarySettings.value.sample_rows ? `${primarySettings.value.sample_rows}` : '--')
+const canOpenDatabaseDialogs = computed(() => Boolean(props.kbId && primaryDataSource.value?.id))
 const connectionAddress = computed(() => {
   if (!primaryDataSource.value) return '--'
   return `${primarySettings.value.host || '--'}:${primarySettings.value.port || '--'}`
 })
+
+function openSchemaDialog() {
+  if (!canOpenDatabaseDialogs.value) return
+  schemaDialogVisible.value = true
+}
+
+function openAuditDialog() {
+  if (!canOpenDatabaseDialogs.value) return
+  auditDialogVisible.value = true
+}
 
 const overviewCards = computed(() => [
   {
@@ -238,10 +252,38 @@ watch(() => props.kbId, () => {
             <strong class="card-detail-value">{{ detail.value }}</strong>
           </div>
         </div>
+        <div v-if="card.key === 'schema' || card.key === 'audit'" class="card-action-row">
+          <t-button
+            variant="text"
+            size="small"
+            :disabled="!canOpenDatabaseDialogs"
+            @click="card.key === 'schema' ? openSchemaDialog() : openAuditDialog()"
+          >
+            <template #icon>
+              <t-icon :name="card.key === 'schema' ? 'table' : 'root-list'" />
+            </template>
+            {{ card.key === 'schema'
+              ? translateOrFallback('datasource.schemaDialogAction', '查看结构')
+              : translateOrFallback('datasource.auditDialogAction', '查看审计日志') }}
+          </t-button>
+        </div>
       </article>
     </section>
 
     <DataSourceSettings :kb-id="kbId" @database-change="loadOverview" />
+
+    <DatabaseSchemaDialog
+      v-model:visible="schemaDialogVisible"
+      :kb-id="kbId"
+      :data-source-id="primaryDataSource?.id"
+      :data-source-name="primaryDataSource?.name"
+    />
+
+    <DatabaseQueryAuditDialog
+      v-model:visible="auditDialogVisible"
+      :kb-id="kbId"
+      :data-source-name="primaryDataSource?.name"
+    />
   </div>
 </template>
 
@@ -301,9 +343,24 @@ watch(() => props.kbId, () => {
 }
 
 .database-summary-card:hover {
-  border-color: rgba(7, 192, 95, 0.24);
-  box-shadow: 0 8px 24px rgba(7, 192, 95, 0.12);
+  border-color: rgba(7, 192, 95, 0.28);
+  box-shadow: 0 8px 24px rgba(7, 192, 95, 0.1);
   transform: translateY(-1px);
+}
+
+.database-summary-card.theme-primary:hover {
+  border-color: rgba(0, 82, 217, 0.24);
+  box-shadow: 0 8px 24px rgba(0, 82, 217, 0.1);
+}
+
+.database-summary-card.theme-warning:hover {
+  border-color: rgba(237, 108, 2, 0.24);
+  box-shadow: 0 8px 24px rgba(237, 108, 2, 0.1);
+}
+
+.database-summary-card.theme-default:hover {
+  border-color: rgba(96, 125, 139, 0.24);
+  box-shadow: 0 8px 24px rgba(96, 125, 139, 0.1);
 }
 
 .database-summary-card.theme-primary::before {
@@ -372,6 +429,12 @@ watch(() => props.kbId, () => {
   font-weight: 600;
   color: var(--td-text-color-primary);
   word-break: break-all;
+}
+
+.card-action-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 @media (max-width: 1200px) {

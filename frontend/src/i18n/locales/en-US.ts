@@ -1997,8 +1997,6 @@ export default {
     reset: 'Reset',
     clear: 'Clear',
     website: 'Official Website',
-    chromeExtension: 'Chrome extension',
-    clawhubSkill: 'Claw Skill',
     newBadge: 'New',
     github: 'GitHub',
     githubStarTip: 'Open the repo on GitHub — star it if you find it useful',
@@ -2211,6 +2209,55 @@ export default {
     title: 'Organization Management',
     orgTreeManage: 'Org Tree',
     memberManage: 'Organization Members',
+    member: {
+      selectOrg: 'Select Organization',
+      selectOrgHint: 'Select an organization on the left to view its members',
+      noMembers: 'No members yet',
+      username: 'Name',
+      email: 'Email',
+      phone: 'Phone',
+      role: 'Role',
+      actions: 'Actions',
+      member: 'Member',
+      admin: 'Admin',
+      superAdmin: 'Super Admin',
+      createUser: 'Create User',
+      createUserTo: 'Create user in "{org}"',
+      createUserSuccess: 'User created',
+      createUserFailed: 'Failed to create user',
+      addMember: 'Add Member',
+      addMemberTo: 'Add member to "{org}"',
+      searchUser: 'Search User',
+      searchUserPlaceholder: 'Search by username, email, or phone',
+      noUsersFound: 'No matching users found',
+      roleViewer: 'Viewer',
+      roleEditor: 'Editor',
+      roleAdmin: 'Admin',
+      usernamePlaceholder: 'Please enter a username',
+      emailOptionalPlaceholder: 'Optional, please enter email',
+      phonePlaceholder: 'Optional, please enter phone',
+      passwordPlaceholder: '8-32 characters with letters and digits',
+      editUserIn: 'Edit user in "{org}"',
+      updateUserSuccess: 'User updated',
+      updateUserFailed: 'Failed to update user',
+      emailOrPhoneRequired: 'Email or phone is required',
+      assignSuccess: 'Member added',
+      removeSuccess: 'Member removed',
+      removeFailed: 'Failed to remove member',
+      remove: 'Remove',
+      removeConfirm: 'Are you sure you want to remove this member?',
+      cannotModifySelf: 'You cannot modify your own membership',
+      setAdmin: 'Set as Admin',
+      revokeAdmin: 'Revoke Admin',
+      resetPassword: 'Reset Password',
+      resetPasswordFor: 'Reset password for member in "{org}"',
+      resetPasswordSuccess: 'Password reset',
+      resetPasswordFailed: 'Failed to reset password',
+      updateSuccess: 'Updated successfully',
+      inheritedAdmin: 'Inherited Admin',
+      inheritedAdminHint: 'Inherited from a parent organization',
+      inheritedFrom: 'From',
+    },
   },
   createChat: {
     title: 'Hi, I am WeKnora — your knowledge, within reach',
@@ -3376,9 +3423,9 @@ export default {
     loadingInfo: 'Loading information...',
     retry: 'Retry',
     versionLabel: 'App Version',
-    versionDescription: 'Version of the application service (weknora-app)',
+    versionDescription: 'Version of the application service (IntarMind-app)',
     frontendVersionLabel: 'UI Version',
-    frontendVersionDescription: 'Build version of the UI (weknora-ui)',
+    frontendVersionDescription: 'Build version of the UI (IntarMind-ui)',
     versionMismatch: 'Mismatch with app version',
     buildTimeLabel: 'Build Time',
     buildTimeDescription: 'Time when the system was built',
@@ -3428,39 +3475,23 @@ export default {
         tier3: 'To put an item back under environment-variable control, click the "Reset" button on its row.',
       },
       keyLabels: {
-        auth: {
-          registration_mode: 'Self-service registration mode',
-        },
-        ssrf: {
-          whitelist: 'SSRF protection allowlist',
-        },
-        tenant: {
-          max_owned_per_user: 'Max tenants owned per user',
-          default_storage_quota_gb: 'Default storage quota for new tenants (GB)',
-        },
-        asynq: {
-          concurrency: 'Async task worker concurrency',
-        },
+        "auth.registration_mode": 'Self-service registration mode',
+        "ssrf.whitelist": 'SSRF protection allowlist',
+        "tenant.max_owned_per_user": 'Max tenants owned per user',
+        "tenant.default_storage_quota_gb": 'Default storage quota for new tenants (GB)',
+        "asynq.concurrency": 'Async task worker concurrency',
       },
       keyDescriptions: {
-        auth: {
-          registration_mode:
-            'Self-service registration mode. self_serve = anyone can register an account; invite_only = public registration is disabled and only Owners/Admins can invite. Takes effect immediately after saving, but use self_serve with care (the public internet will send spam sign-ups).',
-        },
-        ssrf: {
-          whitelist:
-            'SSRF protection allowlist. Accepts entries such as example.com / *.foo.com / 10.0.0.0/8 / 2001:db8::1. Takes effect immediately after saving. The SSRF_WHITELIST_EXTRA environment variable is still maintained by the deployer and is not overridden here.',
-        },
-        tenant: {
-          max_owned_per_user:
-            'Maximum number of tenants a non-superuser may own via self-service creation. Read on every tenant creation and takes effect immediately after saving. 0 uses the built-in default of 10; a negative value disables the cap entirely (not recommended on public deployments).',
-          default_storage_quota_gb:
-            'Default storage quota (GB) assigned when a new tenant is created, covering vectors, originals, text, indexes, and related data. Read only at creation time — changes apply to newly created tenants only and do not retroactively update existing tenants. 0 or a negative value uses the built-in default of 10 GB.',
-        },
-        asynq: {
-          concurrency:
-            'Async task worker concurrency (asynq thread-pool size). Document parsing, embedding, and similar tasks are mostly I/O-bound, so raising this value can shorten queue time for bulk uploads. Requires a service process restart to take effect.',
-        },
+        "auth.registration_mode":
+          'Self-service registration mode. self_serve = anyone can register an account; invite_only = public registration is disabled and only Owners/Admins can invite. Takes effect immediately after saving, but use self_serve with care (the public internet will send spam sign-ups).',
+        "ssrf.whitelist":
+          'SSRF protection allowlist. Accepts entries such as example.com / *.foo.com / 10.0.0.0/8 / 2001:db8::1. Takes effect immediately after saving. The SSRF_WHITELIST_EXTRA environment variable is still maintained by the deployer and is not overridden here.',
+        "tenant.max_owned_per_user":
+          'Maximum number of tenants a non-superuser may own via self-service creation. Read on every tenant creation and takes effect immediately after saving. 0 uses the built-in default of 10; a negative value disables the cap entirely (not recommended on public deployments).',
+        "tenant.default_storage_quota_gb":
+          'Default storage quota (GB) assigned when a new tenant is created, covering vectors, originals, text, indexes, and related data. Read only at creation time — changes apply to newly created tenants only and do not retroactively update existing tenants. 0 or a negative value uses the built-in default of 10 GB.',
+        "asynq.concurrency":
+          'Async task worker concurrency (asynq thread-pool size). Document parsing, embedding, and similar tasks are mostly I/O-bound, so raising this value can shorten queue time for bulk uploads. Requires a service process restart to take effect.',
       },
       enumLabels: {
         auth: {
@@ -5749,8 +5780,6 @@ export default {
       im: 'IM Integration',
       embed: 'Web Embed',
       api: 'API Integration',
-      chrome: 'Chrome Extension',
-      claw: 'Claw Skill',
     },
     api: {
       title: 'API Integration',
@@ -5826,118 +5855,6 @@ export default {
       label: 'Publish channels',
       desc: 'Publish this agent to IM platforms or websites. Manage in Integrations.',
       manage: 'Manage',
-    },
-    chrome: {
-      title: 'Knowledge Assistant',
-      subtitle:
-        'For self-hosted WeKnora: ask questions in a sidebar, clip web pages, and save Markdown notes into your knowledge bases while you browse.',
-      capabilitiesTitle: 'Core capabilities',
-      capabilities: {
-        qa: {
-          title: 'Knowledge-base Q&A',
-          desc: 'Sidebar chat with multi-KB switching and fast/deep/precise answer modes—ask without leaving the page.',
-        },
-        clip: {
-          title: 'One-click web capture',
-          desc: 'Save page URLs, AI-extract main content, or manually select regions into a target knowledge base.',
-        },
-        notes: {
-          title: 'Markdown quick notes',
-          desc: 'Built-in Markdown editor for ideas and notes, saved to your knowledge base in one click.',
-        },
-        shortcuts: {
-          title: 'Keyboard shortcuts',
-          desc: 'Customize shortcuts to ask questions, open the sidebar, and speed up daily workflows.',
-        },
-      },
-      scenariosTitle: 'Use cases',
-      scenarios: {
-        research: 'Daily research',
-        learning: 'Study notes',
-        tech: 'Technical references',
-        work: 'Work knowledge',
-      },
-      stepsTitle: 'Setup steps',
-      steps: {
-        api: {
-          title: 'Get API credentials',
-          desc: 'Copy your API Key and base URL from Settings → API Info.',
-        },
-        port: {
-          title: 'Desktop: fixed port (recommended)',
-          desc: 'On WeKnora Desktop, set a fixed API port (e.g. 37841) in API Info so the URL stays stable across restarts.',
-        },
-        install: {
-          title: 'Install the extension',
-          desc: 'Install “Knowledge Assistant” from the Chrome Web Store.',
-        },
-        connect: {
-          title: 'Connect in the extension',
-          desc: 'Open extension settings, choose enterprise/developer mode, and enter the service API URL and API Key. Your current API URL is shown below.',
-        },
-      },
-      openApiSettings: 'Open API Info',
-      copy: 'Copy',
-      copySuccess: 'API URL copied',
-      installCta: 'Chrome Web Store',
-      installCtaHint: 'Official extension · opens in a new tab',
-      storeMeta: 'Chrome Web Store · v1.0.0',
-    },
-    claw: {
-      title: 'WeKnora Skill',
-      subtitle:
-        'Import documents and run hybrid retrieval (vector + keyword) via the WeKnora REST API—for uploads, URL imports, Markdown entries, and cross-KB search.',
-      capabilitiesTitle: 'Skill capabilities',
-      capabilities: {
-        upload: {
-          title: 'Upload files',
-          desc: 'Upload PDF, Word, Excel, and more; automatic parsing and vectorization.',
-        },
-        url: {
-          title: 'Import URLs',
-          desc: 'Fetch web pages by URL into a knowledge base with parse-status polling.',
-        },
-        manual: {
-          title: 'Write Markdown',
-          desc: 'Create or edit knowledge entries as Markdown—ideal for meeting notes.',
-        },
-        search: {
-          title: 'Hybrid search',
-          desc: 'Per-KB hybrid-search and cross-KB knowledge-search combining vector and keyword recall.',
-        },
-        browse: {
-          title: 'Browse knowledge',
-          desc: 'List knowledge bases and entries, view details, and manage imported content.',
-        },
-      },
-      stepsTitle: 'Setup steps',
-      steps: {
-        api: {
-          title: 'Get API credentials',
-          desc: 'Copy API Key and base URL from Settings → API Info.',
-        },
-        env: {
-          title: 'Configure environment',
-          desc: 'Set WEKNORA_BASE_URL and WEKNORA_API_KEY in your shell or ~/.zshrc / ~/.bashrc. The example below uses your current API base URL—replace the API Key with your actual value.',
-        },
-        install: {
-          title: 'Install the skill',
-          desc: 'Run the command below in an environment with the OpenClaw CLI installed, or follow the ClawHub page instructions.',
-        },
-        verify: {
-          title: 'Verify connection',
-          desc: 'Ask the agent to list knowledge bases or run a search to confirm credentials and connectivity.',
-        },
-      },
-      openApiSettings: 'Open API Info',
-      copy: 'Copy',
-      copyEnvSuccess: 'Environment example copied',
-      copyCmdSuccess: 'Install command copied',
-      ecosystemNote:
-        'Skill hosted on ClawHub ({\'@\'}lyingbug/weknora). See the ClawHub page for full API docs and version history.',
-      installCta: 'Open ClawHub',
-      installCtaHint: 'Install WeKnora Skill · opens in a new tab',
-      hubMeta: 'ClawHub · {\'@\'}lyingbug/weknora · MIT-0',
     },
   },
   imOverview: {

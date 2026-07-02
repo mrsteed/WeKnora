@@ -1841,8 +1841,6 @@ export default {
     reset: "초기화",
     clear: "지우기",
     website: "공식 웹사이트",
-    chromeExtension: 'Chrome 확장 프로그램',
-    clawhubSkill: 'Claw Skill',
     newBadge: 'New',
     github: 'GitHub',
     githubStarTip: 'GitHub에서 저장소로 이동합니다. 유용하다면 Star를 부탁드립니다',
@@ -2431,39 +2429,23 @@ export default {
         tier3: "특정 항목을 다시 환경 변수 기반으로 되돌리려면 해당 행의 \"초기화\" 버튼을 누르세요.",
       },
       keyLabels: {
-        auth: {
-          registration_mode: "셀프 가입 모드",
-        },
-        ssrf: {
-          whitelist: "SSRF 보호 허용 목록",
-        },
-        tenant: {
-          max_owned_per_user: "사용자당 최대 테넌트 수",
-          default_storage_quota_gb: "신규 테넌트 기본 저장 용량 (GB)",
-        },
-        asynq: {
-          concurrency: "비동기 작업 워커 동시 처리 수",
-        },
+        "auth.registration_mode": "셀프 가입 모드",
+        "ssrf.whitelist": "SSRF 보호 허용 목록",
+        "tenant.max_owned_per_user": "사용자당 최대 테넌트 수",
+        "tenant.default_storage_quota_gb": "신규 테넌트 기본 저장 용량 (GB)",
+        "asynq.concurrency": "비동기 작업 워커 동시 처리 수",
       },
       keyDescriptions: {
-        auth: {
-          registration_mode:
-            "셀프 가입 모드입니다. self_serve = 누구나 계정을 만들 수 있음; invite_only = 공개 가입을 끄고 Owner/Admin만 초대 가능. 저장 즉시 적용되며, self_serve는 스팸 가입이 들어올 수 있으니 신중히 사용하세요.",
-        },
-        ssrf: {
-          whitelist:
-            "SSRF 보호 허용 목록입니다. example.com / *.foo.com / 10.0.0.0/8 / 2001:db8::1 형식을 입력할 수 있습니다. 저장 즉시 적용됩니다. SSRF_WHITELIST_EXTRA 환경 변수는 배포자가 관리하며 여기서 덮어쓰지 않습니다.",
-        },
-        tenant: {
-          max_owned_per_user:
-            "슈퍼유저가 아닌 사용자가 셀프 서비스로 소유할 수 있는 최대 테넌트 수입니다. 테넌트 생성 시마다 읽으며 저장 즉시 적용됩니다. 0은 내장 기본값 10을 사용하고, 음수는 제한을 완전히 해제합니다(공개 배포에는 권장하지 않음).",
-          default_storage_quota_gb:
-            "신규 테넌트 생성 시 기본으로 할당되는 저장 용량(GB)으로, 벡터·원본·텍스트·인덱스 등을 포함합니다. 생성 시에만 읽으며, 변경은 이후 생성되는 테넌트에만 적용되고 기존 테넌트에는 소급되지 않습니다. 0 또는 음수는 내장 기본값 10GB를 사용합니다.",
-        },
-        asynq: {
-          concurrency:
-            "비동기 작업 worker 동시 처리 수(asynq 스레드 풀 크기)입니다. 문서 파싱·임베딩 등은 대부분 I/O 대기이므로 값을 올리면 대량 업로드 대기 시간을 줄일 수 있습니다. 적용하려면 서비스 프로세스를 재시작해야 합니다.",
-        },
+        "auth.registration_mode":
+          "셀프 가입 모드입니다. self_serve = 누구나 계정을 만들 수 있음; invite_only = 공개 가입을 끄고 Owner/Admin만 초대 가능. 저장 즉시 적용되며, self_serve는 스팸 가입이 들어올 수 있으니 신중히 사용하세요.",
+        "ssrf.whitelist":
+          "SSRF 보호 허용 목록입니다. example.com / *.foo.com / 10.0.0.0/8 / 2001:db8::1 형식을 입력할 수 있습니다. 저장 즉시 적용됩니다. SSRF_WHITELIST_EXTRA 환경 변수는 배포자가 관리하며 여기서 덮어쓰지 않습니다.",
+        "tenant.max_owned_per_user":
+          "슈퍼유저가 아닌 사용자가 셀프 서비스로 소유할 수 있는 최대 테넌트 수입니다. 테넌트 생성 시마다 읽으며 저장 즉시 적용됩니다. 0은 내장 기본값 10을 사용하고, 음수는 제한을 완전히 해제합니다(공개 배포에는 권장하지 않음).",
+        "tenant.default_storage_quota_gb":
+          "신규 테넌트 생성 시 기본으로 할당되는 저장 용량(GB)으로, 벡터·원본·텍스트·인덱스 등을 포함합니다. 생성 시에만 읽으며, 변경은 이후 생성되는 테넌트에만 적용되고 기존 테넌트에는 소급되지 않습니다. 0 또는 음수는 내장 기본값 10GB를 사용합니다.",
+        "asynq.concurrency":
+          "비동기 작업 worker 동시 처리 수(asynq 스레드 풀 크기)입니다. 문서 파싱·임베딩 등은 대부분 I/O 대기이므로 값을 올리면 대량 업로드 대기 시간을 줄일 수 있습니다. 적용하려면 서비스 프로세스를 재시작해야 합니다.",
       },
       enumLabels: {
         auth: {
@@ -3989,6 +3971,55 @@ export default {
     title: "조직 관리",
     orgTreeManage: "조직 트리 관리",
     memberManage: "조직 사용자 관리",
+    member: {
+      selectOrg: "조직 선택",
+      selectOrgHint: "왼쪽에서 조직을 선택하여 구성원 목록을 확인하세요",
+      noMembers: "구성원이 없습니다",
+      username: "이름",
+      email: "이메일",
+      phone: "휴대폰",
+      role: "역할",
+      actions: "작업",
+      member: "구성원",
+      admin: "관리자",
+      superAdmin: "최고 관리자",
+      createUser: "사용자 생성",
+      createUserTo: "\"{org}\"에 사용자 생성",
+      createUserSuccess: "사용자가 생성되었습니다",
+      createUserFailed: "사용자 생성 실패",
+      addMember: "구성원 추가",
+      addMemberTo: "\"{org}\"에 구성원 추가",
+      searchUser: "사용자 검색",
+      searchUserPlaceholder: "이름, 이메일 또는 휴대폰으로 검색",
+      noUsersFound: "일치하는 사용자를 찾을 수 없습니다",
+      roleViewer: "읽기 전용",
+      roleEditor: "편집자",
+      roleAdmin: "관리자",
+      usernamePlaceholder: "사용자 이름을 입력하세요",
+      emailOptionalPlaceholder: "선택 사항, 이메일을 입력하세요",
+      phonePlaceholder: "선택 사항, 휴대폰 번호를 입력하세요",
+      passwordPlaceholder: "8-32자, 영문과 숫자 포함",
+      editUserIn: "\"{org}\"의 사용자 편집",
+      updateUserSuccess: "사용자 정보가 업데이트되었습니다",
+      updateUserFailed: "사용자 업데이트 실패",
+      emailOrPhoneRequired: "이메일 또는 휴대폰 번호 중 하나는 필수입니다",
+      assignSuccess: "구성원이 추가되었습니다",
+      removeSuccess: "구성원이 제거되었습니다",
+      removeFailed: "구성원 제거 실패",
+      remove: "제거",
+      removeConfirm: "이 구성원을 제거하시겠습니까?",
+      cannotModifySelf: "본인의 구성원 상태는 변경할 수 없습니다",
+      setAdmin: "관리자로 지정",
+      revokeAdmin: "관리자 해제",
+      resetPassword: "비밀번호 재설정",
+      resetPasswordFor: "\"{org}\"의 구성원 비밀번호 재설정",
+      resetPasswordSuccess: "비밀번호가 재설정되었습니다",
+      resetPasswordFailed: "비밀번호 재설정 실패",
+      updateSuccess: "성공적으로 업데이트되었습니다",
+      inheritedAdmin: "상속된 관리자",
+      inheritedAdminHint: "상위 조직에서 상속됨",
+      inheritedFrom: "출처",
+    },
   },
   agentSettings: {
     title: "Agent 설정",
@@ -5760,8 +5791,6 @@ export default {
       im: "IM 통합",
       embed: "웹 임베드",
       api: "API 연동",
-      chrome: "Chrome 확장",
-      claw: "Claw Skill",
     },
     api: {
       title: "API 연동",
@@ -5837,96 +5866,6 @@ export default {
       label: "게시 채널",
       desc: "IM 플랫폼 또는 웹사이트에 에이전트를 게시합니다. 통합 센터에서 관리하세요.",
       manage: "관리",
-    },
-    chrome: {
-      title: "지식 관리 어시스턴트",
-      subtitle:
-        "자체 호스팅 WeKnora와 함께: 사이드바에서 질문하고, 웹 페이지를 클리핑하며, Markdown 메모를 지식베이스에 저장하세요.",
-      capabilitiesTitle: "핵심 기능",
-      capabilities: {
-        qa: {
-          title: "지식베이스 Q&A",
-          desc: "사이드바 대화, 다중 지식베이스 전환, 빠름/심층/정밀 모드로 페이지를 떠나지 않고 질문.",
-        },
-        clip: {
-          title: "원클릭 웹 수집",
-          desc: "URL 저장, AI 본문 추출, 영역 선택으로 지식베이스에 정확히 저장.",
-        },
-        notes: {
-          title: "Markdown 빠른 메모",
-          desc: "내장 Markdown 편집기로 아이디어를 기록하고 한 번에 지식베이스에 저장.",
-        },
-        shortcuts: {
-          title: "단축키",
-          desc: "질문, 사이드바 열기 등 단축키를 사용자 지정해 효율을 높이세요.",
-        },
-      },
-      scenariosTitle: "활용 시나리오",
-      scenarios: {
-        research: "자료 조사",
-        learning: "학습 노트",
-        tech: "기술 자료 수집",
-        work: "업무 지식 축적",
-      },
-      stepsTitle: "구성 단계",
-      steps: {
-        api: {
-          title: "API 자격 증명",
-          desc: "설정 → API 정보에서 API Key와 API 주소를 복사하세요.",
-        },
-        port: {
-          title: "데스크톱: 고정 포트(권장)",
-          desc: "WeKnora 데스크톱에서는 API 정보에서 고정 포트(예: 37841)를 설정하세요.",
-        },
-        install: {
-          title: "Chrome 확장 설치",
-          desc: "Chrome 웹 스토어에서 「지식 관리 어시스턴트」를 설치하세요.",
-        },
-        connect: {
-          title: "확장에서 연결",
-          desc: "확장 설정에서 기업/개발자 모드를 선택하고 서비스 API 주소와 API Key를 입력하세요. 아래는 현재 서비스 주소입니다.",
-        },
-      },
-      openApiSettings: "API 정보 열기",
-      copy: "복사",
-      copySuccess: "API 주소가 복사되었습니다",
-      installCta: "Chrome 웹 스토어",
-      installCtaHint: "공식 확장 · 새 탭에서 열림",
-      storeMeta: "Chrome 웹 스토어 · v1.0.0",
-    },
-    claw: {
-      title: "WeKnora Skill",
-      subtitle:
-        "WeKnora REST API로 문서를 가져오고 하이브리드 검색(벡터+키워드)을 수행합니다. 파일/URL/Markdown 업로드 및 검색에 사용.",
-      capabilitiesTitle: "Skill 기능",
-      capabilities: {
-        upload: { title: "파일 업로드", desc: "PDF, Word, Excel 등을 업로드하고 자동 파싱·벡터화." },
-        url: { title: "URL 가져오기", desc: "URL로 웹 페이지를 지식베이스에 가져오고 파싱 상태를 확인." },
-        manual: { title: "Markdown 작성", desc: "Markdown으로 지식 항목을 생성·편집." },
-        search: { title: "하이브리드 검색", desc: "단일 KB hybrid-search 및 교차 KB knowledge-search." },
-        browse: { title: "지식 탐색", desc: "지식베이스·항목 목록, 상세 보기 및 관리." },
-      },
-      stepsTitle: "구성 단계",
-      steps: {
-        api: { title: "API 자격 증명", desc: "설정 → API 정보에서 API Key와 주소를 복사하세요." },
-        env: {
-          title: "환경 변수 설정",
-          desc: "셸 또는 ~/.zshrc, ~/.bashrc에 WEKNORA_BASE_URL과 WEKNORA_API_KEY를 설정하세요. 아래 예시는 현재 API 주소를 사용하며, API Key는 실제 값으로 바꾸세요.",
-        },
-        install: {
-          title: "Skill 설치",
-          desc: "OpenClaw CLI가 설치된 환경에서 아래 명령을 실행하거나 ClawHub 안내를 따르세요.",
-        },
-        verify: { title: "연결 확인", desc: "에이전트로 지식베이스 목록 또는 검색을 실행해 연결을 확인하세요." },
-      },
-      openApiSettings: "API 정보 열기",
-      copy: "복사",
-      copyEnvSuccess: "환경 변수 예시가 복사되었습니다",
-      copyCmdSuccess: "설치 명령이 복사되었습니다",
-      ecosystemNote: "Skill은 ClawHub({'@'}lyingbug/weknora)에 호스팅됩니다. 전체 API 문서는 ClawHub 페이지를 참고하세요.",
-      installCta: "ClawHub 열기",
-      installCtaHint: "WeKnora Skill 설치 · 새 탭에서 열림",
-      hubMeta: "ClawHub · {'@'}lyingbug/weknora · MIT-0",
     },
   },
   imOverview: {

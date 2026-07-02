@@ -11,7 +11,7 @@ const props = defineProps<{
 }>()
 
 const visible = defineModel<boolean>('visible', { default: false })
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 const loading = ref(false)
 const refreshing = ref(false)
@@ -20,8 +20,7 @@ const schema = ref<DatabaseSchema | null>(null)
 const expandedTables = ref<string[]>([])
 
 function translateOrFallback(key: string, fallback: string) {
-  const translated = t(key)
-  return translated === key ? fallback : translated
+  return te(key) ? t(key) : fallback
 }
 
 function formatDateTime(value?: string) {

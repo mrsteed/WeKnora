@@ -29,7 +29,7 @@
                   <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
                 </svg>
               </button>
-              <div class="content-wrapper" :class="{ 'content-wrapper--landing': isLandingSection }">
+              <div class="content-wrapper">
                 <div v-if="currentSection === 'im'" class="section">
                   <div class="section-header">
                     <h2>{{ $t('agentEditor.im.title') }}</h2>
@@ -64,8 +64,6 @@
                   </div>
                   <ApiIntegrationSettings />
                 </div>
-                <ChromeExtensionLanding v-if="currentSection === 'chrome'" />
-                <ClawSkillLanding v-if="currentSection === 'claw'" />
               </div>
             </div>
           </div>
@@ -82,8 +80,6 @@ import { useI18n } from 'vue-i18n';
 import IMChannelPanel from '@/components/IMChannelPanel.vue';
 import AgentEmbedChannelPanel from '@/components/AgentEmbedChannelPanel.vue';
 import ApiIntegrationSettings from '@/views/integrations/ApiIntegrationSettings.vue';
-import ChromeExtensionLanding from '@/views/integrations/ChromeExtensionLanding.vue';
-import ClawSkillLanding from '@/views/integrations/ClawSkillLanding.vue';
 import {
   INTEGRATION_PREVIEW_ITEMS,
   INTEGRATION_TAB_MIN_ROLE,
@@ -101,10 +97,6 @@ const currentSection = ref<IntegrationTab>('im');
 const filterAgentId = ref('');
 
 const visible = computed(() => route.name === 'integrations');
-
-const isLandingSection = computed(
-  () => currentSection.value === 'chrome' || currentSection.value === 'claw',
-);
 
 function canSeeTab(tab: IntegrationTab): boolean {
   const min = INTEGRATION_TAB_MIN_ROLE[tab];

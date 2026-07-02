@@ -8,17 +8,25 @@ import {
   triggerSync,
   pauseDataSource,
   resumeDataSource,
+  getDatabaseSchema,
+  refreshDataSourceSchema,
   type DataSource,
+  type DatabaseSchema,
 } from '@/api/datasource'
 import { humanizeCron, relativeTime } from '@/utils/cronHumanize'
 import DataSourceEditorDialog from './DataSourceEditorDialog.vue'
 import DataSourceSyncLogs from './DataSourceSyncLogs.vue'
 import DataSourceTypeIcon from './DataSourceTypeIcon.vue'
+import DatabaseSchemaDialog from './DatabaseSchemaDialog.vue'
+import DatabaseQueryAuditDialog from './DatabaseQueryAuditDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{ kbId: string }>()
-const emit = defineEmits<{ (e: 'count', value: number): void }>()
-const { t } = useI18n()
+const emit = defineEmits<{
+  (e: 'count', value: number): void
+  (e: 'database-change'): void
+}>()
+const { t, te } = useI18n()
 const authStore = useAuthStore()
 
 // 后端 /datasource 的 list/logs 是 Viewer+，但所有写操作（POST/PUT/DELETE
@@ -34,6 +42,104 @@ const logsVisible = ref(false)
 const logsDsId = ref('')
 const logsDsName = ref('')
 const pollTimer = ref<number | null>(null)
+const schemaSnapshot = ref<DatabaseSchema | null>(null)
+const schemaDialogVisible = ref(false)
+const auditDialogVisible = ref(false)
+const activeDatabaseDataSource = ref<DataSource | null>(null)
+
+function translateOrFallback(key: string, fallback: string) {
+  return te(key) ? t(key) : fallback
+}
+
+function emitDatabaseChange() {
+  emit('database-change')
+}
+
+function isDatabaseDataSource(ds: DataSource) {
+  return ds.type === 'mysql' || ds.type === 'postgresql'
+}
+
+async function loadDatabaseSchemaSnapshot() {
+  if (!props.kbId) {
+    schemaSnapshot.value = null
+    return
+  }
+  try {
+    const res: any = await getDatabaseSchema(props.kbId)
+    schemaSnapshot.value = (res?.data || res || null) as DatabaseSchema | null
+  } catch {
+    schemaSnapshot.value = null
+  }
+}
+
+function databaseSettings(ds: DataSource): Record<string, any> {
+  const cfg = ds.config as Record<string, any> | undefined
+  return (cfg?.settings as Record<string, any>) || {}
+}
+
+function matchesSchemaSnapshot(ds: DataSource) {
+  if (!schemaSnapshot.value) return false
+  if (schemaSnapshot.value.data_source_id) {
+    return schemaSnapshot.value.data_source_id === ds.id
+  }
+  return true
+}
+
+function schemaDatabaseName(ds: DataSource) {
+  if (matchesSchemaSnapshot(ds) && schemaSnapshot.value?.database_name) {
+    return schemaSnapshot.value.database_name
+  }
+  return databaseSettings(ds).database || '--'
+}
+
+function schemaScopeName(ds: DataSource) {
+  if (matchesSchemaSnapshot(ds) && schemaSnapshot.value?.schema_name) {
+    return schemaSnapshot.value.schema_name
+  }
+  return databaseSettings(ds).schema || databaseSettings(ds).database || '--'
+}
+
+function schemaRefreshedAt(ds: DataSource) {
+  if (matchesSchemaSnapshot(ds) && schemaSnapshot.value?.refreshed_at) {
+    return relativeTime(schemaSnapshot.value.refreshed_at, t)
+  }
+  return '--'
+}
+
+function schemaRefreshedAtFull(ds: DataSource) {
+  if (matchesSchemaSnapshot(ds) && schemaSnapshot.value?.refreshed_at) {
+    return new Date(schemaSnapshot.value.refreshed_at).toLocaleString()
+  }
+  return ''
+}
+
+function schemaStatusLabel(ds: DataSource) {
+  if (matchesSchemaSnapshot(ds) && (schemaSnapshot.value?.tables?.length || 0) > 0) {
+    return translateOrFallback('datasource.schemaReady', '结构已更新')
+  }
+  return translateOrFallback('datasource.schemaPending', '等待刷新结构')
+}
+
+async function handleRefreshSchema(ds: DataSource) {
+  try {
+    await refreshDataSourceSchema(ds.id)
+    MessagePlugin.success(translateOrFallback('datasource.refreshSchemaSuccess', 'Schema 已刷新'))
+    await loadList(true)
+    emitDatabaseChange()
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || e?.error || translateOrFallback('datasource.refreshSchemaFailed', '刷新 Schema 失败'))
+  }
+}
+
+function openSchema(ds: DataSource) {
+  activeDatabaseDataSource.value = ds
+  schemaDialogVisible.value = true
+}
+
+function openAudit(ds: DataSource) {
+  activeDatabaseDataSource.value = ds
+  auditDialogVisible.value = true
+}
 
 function stopPolling() {
   if (pollTimer.value !== null) {
@@ -55,6 +161,12 @@ async function loadList(silent = false) {
     const res = await listDataSources(props.kbId)
     dataSources.value = res?.data || res || []
     emit('count', dataSources.value.length)
+
+    if (dataSources.value.some(isDatabaseDataSource)) {
+      await loadDatabaseSchemaSnapshot()
+    } else {
+      schemaSnapshot.value = null
+    }
 
     const hasRunningSync = dataSources.value.some(ds => ds.latest_sync_log?.status === 'running')
     if (hasRunningSync) {
@@ -90,12 +202,17 @@ async function removeDataSource(ds: DataSource) {
     await deleteDataSource(ds.id)
     MessagePlugin.success(t('datasource.deleteSuccess'))
     await loadList()
+    emitDatabaseChange()
   } catch (e: any) {
     MessagePlugin.error(e?.message || e?.error || t('datasource.deleteFailed'))
   }
 }
 
 async function handleSync(ds: DataSource) {
+  if (isDatabaseDataSource(ds)) {
+    await handleRefreshSchema(ds)
+    return
+  }
   try {
     await triggerSync(ds.id)
     MessagePlugin.success(t('datasource.syncTriggered'))
@@ -109,7 +226,10 @@ async function handlePause(ds: DataSource) {
   try {
     await pauseDataSource(ds.id)
     MessagePlugin.success(t('datasource.paused'))
-    loadList()
+    await loadList()
+    if (isDatabaseDataSource(ds)) {
+      emitDatabaseChange()
+    }
   } catch (e: any) {
     MessagePlugin.error(e?.message || e?.error || t('datasource.pauseFailed'))
   }
@@ -119,7 +239,10 @@ async function handleResume(ds: DataSource) {
   try {
     await resumeDataSource(ds.id)
     MessagePlugin.success(t('datasource.resumed'))
-    loadList()
+    await loadList()
+    if (isDatabaseDataSource(ds)) {
+      emitDatabaseChange()
+    }
   } catch (e: any) {
     MessagePlugin.error(e?.message || e?.error || t('datasource.resumeFailed'))
   }
@@ -172,9 +295,10 @@ function isSyncRunning(ds: DataSource) {
   return ds.latest_sync_log?.status === 'running'
 }
 
-function onEditorSaved() {
+async function onEditorSaved() {
   editorVisible.value = false
-  loadList()
+  await loadList()
+  emitDatabaseChange()
 }
 
 onMounted(loadList)
@@ -197,10 +321,98 @@ onBeforeUnmount(stopPolling)
       </div>
 
       <div v-else-if="!loading" class="ds-grid">
+        <template v-for="ds in dataSources" :key="ds.id">
+        <div
+          v-if="isDatabaseDataSource(ds)"
+          :class="['ds-card', 'ds-card--database', { 'ds-card--clickable': canManageDataSource }]"
+          @click="canManageDataSource ? openEdit(ds) : undefined"
+        >
+          <div class="ds-card__badge">
+            <DataSourceTypeIcon :type="ds.type" variant="badge" />
+          </div>
+          <div class="ds-card__body">
+            <div class="ds-card__header">
+              <div>
+                <h3 class="ds-card__title" :title="ds.name">{{ ds.name }}</h3>
+                <p class="ds-card__subtitle">
+                  {{ connectorLabel(ds.type) }}
+                  <span class="ds-card__sep">·</span>
+                  <span class="ds-card__status ds-card__status--active">
+                    <span class="ds-status-dot" aria-hidden="true" />
+                    {{ translateOrFallback('datasource.connected', '已连接') }}
+                  </span>
+                </p>
+              </div>
+              <div class="ds-db-actions" @click.stop>
+                <t-tooltip :content="translateOrFallback('datasource.refreshSchema', '刷新 Schema')" placement="top">
+                  <t-button size="small" variant="text" class="ds-card__action-btn" @click.stop="handleRefreshSchema(ds)">
+                    <template #icon><t-icon name="refresh" /></template>
+                  </t-button>
+                </t-tooltip>
+                <t-tooltip :content="translateOrFallback('datasource.schemaDialogTitle', '数据库结构')" placement="top">
+                  <t-button size="small" variant="text" class="ds-card__action-btn" @click.stop="openSchema(ds)">
+                    <template #icon><t-icon name="table" /></template>
+                  </t-button>
+                </t-tooltip>
+                <t-tooltip :content="translateOrFallback('datasource.auditDialogTitle', '数据库查询审计')" placement="top">
+                  <t-button size="small" variant="text" class="ds-card__action-btn" @click.stop="openAudit(ds)">
+                    <template #icon><t-icon name="list" /></template>
+                  </t-button>
+                </t-tooltip>
+                <t-dropdown v-if="canManageDataSource" trigger="click" :min-column-width="140" attach="body">
+                  <t-button variant="text" shape="square" size="small" class="ds-card__action-btn" @click.stop>
+                    <template #icon><t-icon name="ellipsis" /></template>
+                  </t-button>
+                  <template #dropdown>
+                    <t-dropdown-menu>
+                      <t-dropdown-item @click="openEdit(ds)">
+                        <t-icon name="edit" /> {{ t('datasource.edit') }}
+                      </t-dropdown-item>
+                      <t-dropdown-item theme="error" class="ds-dropdown-delete-item">
+                        <t-popconfirm
+                          :content="t('datasource.deleteConfirm')"
+                          :confirm-btn="{ content: t('datasource.delete'), theme: 'danger' }"
+                          :cancel-btn="{ content: t('common.cancel') }"
+                          placement="left"
+                          attach="body"
+                          @confirm="removeDataSource(ds)"
+                        >
+                          <span class="ds-dropdown-delete-trigger" @click.stop>
+                            <t-icon name="delete" />
+                            <span>{{ t('datasource.delete') }}</span>
+                          </span>
+                        </t-popconfirm>
+                      </t-dropdown-item>
+                    </t-dropdown-menu>
+                  </template>
+                </t-dropdown>
+              </div>
+            </div>
+            <div class="ds-db-summary">
+              <div class="ds-db-summary__item">
+                <span class="ds-db-summary__label">{{ translateOrFallback('knowledgeBase.databaseDetail.cards.datasource.suffix', '业务库') }}</span>
+                <strong class="ds-db-summary__value">{{ schemaDatabaseName(ds) }}</strong>
+              </div>
+              <div class="ds-db-summary__item">
+                <span class="ds-db-summary__label">{{ translateOrFallback('knowledgeBase.databaseDetail.cards.schema.tag', '结构范围') }}</span>
+                <strong class="ds-db-summary__value">{{ schemaScopeName(ds) }}</strong>
+              </div>
+              <div class="ds-db-summary__item">
+                <span class="ds-db-summary__label">{{ translateOrFallback('datasource.schema.refreshedAt', '上次刷新结构') }}</span>
+                <t-tooltip :content="schemaRefreshedAtFull(ds)" :disabled="!schemaRefreshedAtFull(ds)">
+                  <strong class="ds-db-summary__value">{{ schemaRefreshedAt(ds) }}</strong>
+                </t-tooltip>
+              </div>
+              <div class="ds-db-summary__item">
+                <span class="ds-db-summary__label">{{ translateOrFallback('datasource.schema.statusLabel', '结构状态') }}</span>
+                <strong class="ds-db-summary__value ds-db-summary__value--success">{{ schemaStatusLabel(ds) }}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
         <component
+          v-else
           :is="canManageDataSource ? 'button' : 'div'"
-          v-for="ds in dataSources"
-          :key="ds.id"
           :type="canManageDataSource ? 'button' : undefined"
           :class="['ds-card', `ds-card--${ds.type}`, { 'ds-card--clickable': canManageDataSource }]"
           @click="canManageDataSource ? openEdit(ds) : undefined"
@@ -309,6 +521,7 @@ onBeforeUnmount(stopPolling)
             </div>
           </div>
         </component>
+        </template>
 
         <button
           v-if="canManageDataSource"
@@ -336,6 +549,19 @@ onBeforeUnmount(stopPolling)
       :data-source-id="logsDsId"
       :data-source-name="logsDsName"
     />
+
+    <DatabaseSchemaDialog
+      v-model:visible="schemaDialogVisible"
+      :kb-id="kbId"
+      :data-source-id="activeDatabaseDataSource?.id"
+      :data-source-name="activeDatabaseDataSource?.name"
+    />
+
+    <DatabaseQueryAuditDialog
+      v-model:visible="auditDialogVisible"
+      :kb-id="kbId"
+      :data-source-name="activeDatabaseDataSource?.name"
+    />
   </div>
 </template>
 
@@ -346,17 +572,17 @@ onBeforeUnmount(stopPolling)
 }
 
 .section-header {
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 
   h2 {
-    font-size: 20px;
+    font-size: 16px;
     font-weight: 600;
     color: var(--td-text-color-primary);
-    margin: 0 0 8px 0;
+    margin: 0 0 6px 0;
   }
 
   .section-description {
-    font-size: 14px;
+    font-size: 13px;
     color: var(--td-text-color-secondary);
     margin: 0;
     line-height: 1.6;
@@ -376,10 +602,55 @@ onBeforeUnmount(stopPolling)
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 12px;
 
+  // 数据库型数据源信息量大，独占整行以避免与添加按钮并排导致子表格列宽压缩
+  .ds-card--database {
+    grid-column: 1 / -1;
+  }
+
   .ds-card--add {
     width: 100%;
-    height: 100%;
+    min-height: 80px;
   }
+}
+
+.ds-db-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ds-db-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--td-border-level-1-color);
+}
+
+.ds-db-summary__item {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ds-db-summary__label {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+}
+
+.ds-db-summary__value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ds-db-summary__value--success {
+  color: var(--td-success-color-5);
 }
 
 .ds-card {

@@ -141,10 +141,6 @@ func mimeToExt(mime string) string {
 }
 
 func (h *Handler) resolveImageFileService(ctx context.Context, storageProvider string) interfaces.FileService {
-	if strings.TrimSpace(storageProvider) == "" {
-		return h.fileService
-	}
-
 	tenant, _ := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 	if tenant == nil || tenant.StorageEngineConfig == nil {
 		return h.fileService

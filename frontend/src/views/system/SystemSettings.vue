@@ -520,6 +520,8 @@ const currentUserId = computed(() => authStore.currentUserId)
 const { t, tm, te, locale } = useI18n()
 
 // Friendly labels per key live in i18n (system.globalSettings.keyLabels.*).
+// Keys use literal dot-in-key form (e.g. "auth.registration_mode") so the
+// raw backend key can be looked up directly without walking a tree.
 // Adding a new entry there must accompany every new key registered in
 // service/system_setting.go on the backend; locales without an entry
 // fall back to the raw key so a misconfigured deploy still renders.
@@ -533,9 +535,12 @@ function keyLabel(k: string): string {
 
 // Descriptions are registered in Chinese on the backend for operator docs;
 // user-facing copy lives in i18n (system.globalSettings.keyDescriptions.*).
+// Same flat-key convention as keyLabels so the lookup mirrors keyLabel().
 function settingDescription(item: { key: string; description?: string }): string {
-  const path = `system.globalSettings.keyDescriptions.${item.key}`
-  if (te(path)) return t(path) as string
+  const bag = tm('system.globalSettings.keyDescriptions') as unknown
+  if (bag !== null && typeof bag === 'object' && typeof (bag as Record<string, string>)[item.key] === 'string') {
+    return (bag as Record<string, string>)[item.key]
+  }
   return item.description ?? ''
 }
 
