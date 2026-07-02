@@ -38,7 +38,8 @@ export default {
     loadMoreSessions: 'Загрузить ещё',
     agents: 'Агенты',
     integrations: 'Публикация и интеграция',
-    organizations: 'Общие пространства'
+    organizations: 'Общие пространства',
+    orgMemberManage: 'Участники организации'
   },
   newUserGuide: {
     stepOf: '{current} / {total}',
@@ -4335,7 +4336,13 @@ export default {
     agentConfiguredKb: 'Configured by agent, cannot be removed',
     modelLockedByAgent: 'Model selection is locked by the current agent',
     imageUploadDisabledByAgent: 'Image upload is not enabled for this agent',
+    attachmentUploadDisabledByAgent: 'This agent does not allow this attachment type',
     goToAgentSettings: 'Go to agent settings'
+  },
+  admin: {
+    title: 'Управление организацией',
+    orgTreeManage: 'Дерево организации',
+    memberManage: 'Участники организации',
   },
   preview: {
     tab: 'Предпросмотр',

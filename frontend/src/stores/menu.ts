@@ -30,6 +30,7 @@ export const useMenuStore = defineStore('menuStore', () => {
     { title: '', titleKey: 'menu.agents', icon: 'agent', path: 'agents' },
     { title: '', titleKey: 'menu.integrations', icon: 'integration', path: 'integrations' },
     { title: '', titleKey: 'menu.organizations', icon: 'organization', path: 'organizations' },
+    { title: '', titleKey: 'menu.orgMemberManage', icon: 'setting', path: 'admin' },
     { title: '', titleKey: 'menu.settings', icon: 'setting', path: 'settings' },
     { title: '', titleKey: 'menu.logout', icon: 'logout', path: 'logout' }
   ])
@@ -71,6 +72,9 @@ export const useMenuStore = defineStore('menuStore', () => {
         return false
       }
       if (item.path === 'organizations' && !authStore.hasRole('admin')) {
+        return false
+      }
+      if (item.path === 'admin' && !authStore.isSuperAdmin && !authStore.isOrgAdmin) {
         return false
       }
       return true

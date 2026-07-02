@@ -4,6 +4,7 @@ export default {
     agents: 'Agents',
     integrations: 'Publish & Integrations',
     organizations: 'Shared Spaces',
+    orgMemberManage: 'Organization Members',
     chat: 'Chat',
     newChat: 'New Chat',
     createChat: 'Create Chat',
@@ -2203,7 +2204,13 @@ export default {
     agentConfiguredKb: 'Configured by agent, cannot be removed',
     modelLockedByAgent: 'Model selection is locked by the current agent',
     imageUploadDisabledByAgent: 'Image upload is not enabled for this agent',
+    attachmentUploadDisabledByAgent: 'This agent does not allow this attachment type',
     goToAgentSettings: 'Go to agent settings'
+  },
+  admin: {
+    title: 'Organization Management',
+    orgTreeManage: 'Org Tree',
+    memberManage: 'Organization Members',
   },
   createChat: {
     title: 'Hi, I am WeKnora — your knowledge, within reach',

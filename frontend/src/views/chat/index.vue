@@ -315,6 +315,28 @@ const route = useRoute();
 const router = useRouter();
 const session_id = ref(props.session_id || route.params.chatid);
 const publicExportApiBase = computed(() => isSharePageMode.value && publicChatApiBase.value ? `${publicChatApiBase.value}/export` : '');
+
+// 进入已有会话时，需要按该会话最近一次请求的上下文恢复输入栏状态。
+// 这里只恢复“会话级别的输入配置快照”，不负责拉历史消息；历史消息仍由
+// getmsgList 负责，避免把会话元信息恢复与消息列表加载耦合在一起。
+// 共享页和嵌入页由宿主注入固定上下文，不应把公开页/宿主页状态写回本地 settings store。
+const loadSessionAndHydrate = async (sid) => {
+    if (!sid || effectiveEmbeddedMode.value || isSharePageMode.value) {
+        return;
+    }
+    try {
+        const sessionRes = await getSession(sid);
+        if (sessionRes?.data) {
+            const lastState = sessionRes.data.last_request_state;
+            if (lastState) {
+                useSettingsStoreInstance.snapshotAsDefaultsIfNeeded();
+                useSettingsStoreInstance.applyLastRequestState(lastState);
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load session data:', error);
+    }
+};
 const sessionData = ref(null);
 const inputFieldRef = ref();
 const created_at = ref('');

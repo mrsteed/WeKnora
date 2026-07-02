@@ -4,6 +4,7 @@ export default {
     agents: "에이전트",
     integrations: "게시 및 통합",
     organizations: "공유 스페이스",
+    orgMemberManage: "조직 사용자 관리",
     chat: "대화",
     newChat: "새 대화",
     createChat: "대화 생성",
@@ -3981,7 +3982,13 @@ export default {
     agentConfiguredKb: "에이전트에 의해 구성되었으며 삭제할 수 없습니다.",
     modelLockedByAgent: "현재 에이전트는 모델 구성을 잠갔습니다.",
     imageUploadDisabledByAgent: "현재 에이전트에서 이미지 업로드가 활성화되지 않았습니다",
+    attachmentUploadDisabledByAgent: "현재 에이전트에서 이 유형의 첨부파일 업로드를 지원하지 않습니다",
     goToAgentSettings: "에이전트 설정으로 이동",
+  },
+  admin: {
+    title: "조직 관리",
+    orgTreeManage: "조직 트리 관리",
+    memberManage: "조직 사용자 관리",
   },
   agentSettings: {
     title: "Agent 설정",

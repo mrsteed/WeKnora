@@ -416,6 +416,8 @@ const isMenuItemActive = (itemPath: string): boolean => {
             return currentRoute === 'integrations';
         case 'organizations':
             return currentRoute === 'organizationList';
+        case 'admin':
+            return currentRoute === 'orgTreeManage' || currentRoute === 'memberManage';
         case 'creatChat':
             return currentRoute === 'kbCreatChat' || currentRoute === 'globalCreatChat';
         case 'settings':
@@ -437,6 +439,7 @@ const getIconActiveState = (itemPath: string) => {
         ),
         isCreatChatActive: itemPath === 'creatChat' && (currentRoute === 'kbCreatChat' || currentRoute === 'globalCreatChat'),
         isSettingsActive: itemPath === 'settings' && currentRoute === 'settings',
+        isAdminActive: itemPath === 'admin' && (currentRoute === 'orgTreeManage' || currentRoute === 'memberManage'),
         isChatActive: itemPath === 'chat' && currentRoute === 'chat'
     };
 };
@@ -444,13 +447,13 @@ const getIconActiveState = (itemPath: string) => {
 // 分离上下两部分菜单（使用 visibleMenuArr 以便 lite 模式过滤 logout）
 const topMenuItems = computed<MenuItem[]>(() => {
     return (visibleMenuArr.value as unknown as MenuItem[]).filter((item: MenuItem) =>
-        item.path === 'knowledge-bases' || item.path === 'agents' || item.path === 'integrations' || item.path === 'organizations' || item.path === 'creatChat'
+        item.path === 'knowledge-bases' || item.path === 'agents' || item.path === 'integrations' || item.path === 'organizations' || item.path === 'admin' || item.path === 'creatChat'
     );
 });
 
 const bottomMenuItems = computed<MenuItem[]>(() => {
     return (visibleMenuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => {
-        if (item.path === 'knowledge-bases' || item.path === 'agents' || item.path === 'integrations' || item.path === 'organizations' || item.path === 'creatChat') {
+        if (item.path === 'knowledge-bases' || item.path === 'agents' || item.path === 'integrations' || item.path === 'organizations' || item.path === 'admin' || item.path === 'creatChat') {
             return false;
         }
         return true;
@@ -482,6 +485,7 @@ const filteredGroupedSessions = computed(() => {
         bucket.items.map((item) => ({
             ...item,
             path: `chat/${item.id}`,
+            title: item.title || '',
         })),
         dateBucketLabels.value,
         (session) => classifyDateBucket(session.updated_at || session.created_at),
@@ -1039,6 +1043,7 @@ const getIcon = (path: string) => {
     const kbActiveState = getIconActiveState('knowledge-bases');
     const creatChatActiveState = getIconActiveState('creatChat');
     const settingsActiveState = getIconActiveState('settings');
+    const adminActiveState = getIconActiveState('admin');
     const agentsActiveState = route.name === 'agentList';
     const integrationsActiveState = route.name === 'integrations';
     const organizationsActiveState = route.name === 'organizationList';
@@ -1058,7 +1063,7 @@ const getIcon = (path: string) => {
     prefixIcon.value = creatChatActiveState.isCreatChatActive ? 'prefixIcon-green.svg' : 'prefixIcon.svg';
 
     // 设置图标：只在设置页面显示绿色
-    settingIcon.value = settingsActiveState.isSettingsActive ? 'setting-green.svg' : 'setting.svg';
+    settingIcon.value = (settingsActiveState.isSettingsActive || adminActiveState.isAdminActive) ? 'setting-green.svg' : 'setting.svg';
 
     // 退出图标：始终显示默认
     logoutIcon.value = 'logout.svg';
@@ -1080,6 +1085,8 @@ const handleMenuClick = async (path: string) => {
     } else if (path === 'organizations') {
         // 组织菜单项：跳转到组织列表
         router.push('/platform/organizations')
+    } else if (path === 'admin') {
+        router.push('/platform/admin/members')
     } else if (path === 'settings') {
         // 设置菜单项：打开设置弹窗并跳转路由
         uiStore.openSettings()

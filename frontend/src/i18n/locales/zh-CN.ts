@@ -4,6 +4,7 @@ export default {
     agents: "智能体",
     integrations: "发布集成",
     organizations: "共享空间",
+    orgMemberManage: "组织人员管理",
     chat: "对话",
     newChat: "新对话",
     createChat: "创建对话",
@@ -4024,7 +4025,13 @@ export default {
     agentConfiguredKb: "由智能体配置，不可删除",
     modelLockedByAgent: "当前智能体已锁定模型配置",
     imageUploadDisabledByAgent: "当前智能体未启用图片上传",
+    attachmentUploadDisabledByAgent: "当前智能体不支持上传此类附件",
     goToAgentSettings: "去设置智能体",
+  },
+  admin: {
+    title: "组织管理",
+    orgTreeManage: "组织树管理",
+    memberManage: "组织人员管理",
   },
   agentSettings: {
     title: "Agent 配置",

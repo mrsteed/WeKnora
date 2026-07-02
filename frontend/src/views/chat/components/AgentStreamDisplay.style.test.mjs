@@ -60,8 +60,7 @@ test('tool rows use line icon names instead of legacy asset masks', () => {
 
 test('rag mode delegates pre-answer loading to pipeline and keeps dots while answer streams', () => {
   assert.match(source, /if \(props\.ragMode\) return hasAnswerStarted\.value/)
-  assert.match(source, /v-if="!ragMode \|\| streamingDisplayEvents\.length > 0 \|\| showAgentActivityIndicator"/)
-  assert.match(source, /v-if="ragMode && ragAnswerEvents\.length > 0"/)
+  assert.match(source, /v-if="!ragMode \|\| displayEvents\.length > 0 \|\| showAgentActivityIndicator"/)
 })
 
 test('rag mode keeps model thinking out of the answer stream component', () => {

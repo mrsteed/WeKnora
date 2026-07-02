@@ -304,7 +304,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, computed, withDefaults } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import { extractTextRelations, fabriText, fabriTag, type Node, type Relation } from '@/api/initialization'
@@ -569,13 +569,11 @@ const loadSystemInfo = async (force = false) => {
 
 const graphGuideUrl =
   import.meta.env.VITE_KG_GUIDE_URL ||
-  ''
+  'https://github.com/Tencent/WeKnora/blob/main/docs/KnowledgeGraph.md'
 
 // Open guide documentation to show how to enable graph database
 const handleOpenGraphGuide = () => {
-  if (graphGuideUrl) {
-    window.open(graphGuideUrl, '_blank', 'noopener')
-  }
+  window.open(graphGuideUrl, '_blank', 'noopener')
 }
 
 // 初始化

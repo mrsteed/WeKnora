@@ -36,7 +36,7 @@
                    preamble was folded in, it becomes the card title and the
                    reasoning is the expandable body. -->
               <div v-if="event.type === 'thinking'" class="tool-event">
-                <div class="action-card" :class="getThinkingCardClasses(event, isThinkingActive(event.event_id))">
+                <div class="action-card" :class="{ 'action-pending': isThinkingActive(event.event_id) }">
                   <div class="action-header" @click="toggleEvent(event.event_id)">
                     <div class="action-title">
                       <span class="action-title-icon icon-mask" :style="maskIconStyle(thinkingIcon)"
@@ -44,12 +44,8 @@
                       <span v-if="event.title" class="action-name action-preamble-title">{{ event.title }}</span>
                       <span v-else-if="isEventExpanded(event.event_id)" class="action-name">{{ $t('agent.think')
                       }}</span>
-                      <span v-if="getThinkingStageLabel(event)"
-                        :class="['action-badge', 'action-stage-badge', `action-stage-badge-${getThinkingStage(event)}`]">
-                        {{ getThinkingStageLabel(event) }}
-                      </span>
-                      <span v-if="!event.title && !isEventExpanded(event.event_id) && getThinkingSummary(event)"
-                        class="action-summary">{{ getThinkingSummary(event) }}</span>
+                      <span v-else-if="getThinkingSummary(event)" class="action-summary">{{ getThinkingSummary(event)
+                        }}</span>
                     </div>
                   </div>
                   <div v-if="event.content && isEventExpanded(event.event_id)" class="action-details">
@@ -63,16 +59,12 @@
               <!-- Thinking Tool Call -->
               <div v-else-if="event.type === 'tool_call' && event.tool_name === 'thinking'" class="tool-event">
                 <div class="action-card"
-                  :class="getThinkingCardClasses(event, event.pending || isThinkingActive(event.tool_call_id))">
+                  :class="{ 'action-pending': event.pending || isThinkingActive(event.tool_call_id) }">
                   <div class="action-header" @click="toggleEvent(event.tool_call_id)">
                     <div class="action-title">
                       <span class="action-title-icon icon-mask" :style="maskIconStyle(thinkingIcon)"
                         aria-hidden="true" />
                       <span class="action-name">{{ $t('agent.think') }}</span>
-                      <span v-if="getThinkingStageLabel(event)"
-                        :class="['action-badge', 'action-stage-badge', `action-stage-badge-${getThinkingStage(event)}`]">
-                        {{ getThinkingStageLabel(event) }}
-                      </span>
                       <span v-if="event.tool_data?.thought_number" class="action-badge">{{
                         event.tool_data.thought_number }}/{{ event.tool_data.total_thoughts }}</span>
                       <span v-if="getThinkingSummary(event) && !isEventExpanded(event.tool_call_id)"
@@ -199,12 +191,12 @@
     </div>
 
     <!-- Event Stream (non-tree mode: before answer starts, or answer events) -->
-    <div v-if="!ragMode || streamingDisplayEvents.length > 0 || showAgentActivityIndicator" ref="streamingStepsContainer"
+    <div v-if="!ragMode || displayEvents.length > 0 || showAgentActivityIndicator" ref="streamingStepsContainer"
       class="streaming-steps-container" :class="{
         'streaming-steps-constrained': !answerEverStarted && !isConversationDone,
         'is-streaming-timeline': showStreamingTimeline
       }">
-      <template v-for="(event, index) in streamingDisplayEvents" :key="getEventKey(event, index)">
+      <template v-for="(event, index) in displayEvents" :key="getEventKey(event, index)">
         <div v-if="event && event.type" class="event-item" :class="{
           'event-answer': event.type === 'answer',
           'tree-child': isStreamingTimelineEvent(event),
@@ -226,16 +218,12 @@
              from the answer area) is shown as the card title; the reasoning is
              the expandable body. -->
             <div v-if="event.type === 'thinking'" class="tool-event">
-              <div class="action-card" :class="getThinkingCardClasses(event, isThinkingActive(event.event_id))">
+              <div class="action-card" :class="{ 'action-pending': isThinkingActive(event.event_id) }">
                 <div class="action-header" @click="toggleEvent(event.event_id)">
                   <div class="action-title">
                     <span class="action-title-icon icon-mask" :style="maskIconStyle(thinkingIcon)" aria-hidden="true" />
                     <span v-if="event.title" class="action-name action-preamble-title">{{ event.title }}</span>
                     <span v-else class="action-name">{{ $t('agent.think') }}</span>
-                    <span v-if="getThinkingStageLabel(event)"
-                      :class="['action-badge', 'action-stage-badge', `action-stage-badge-${getThinkingStage(event)}`]">
-                      {{ getThinkingStageLabel(event) }}
-                    </span>
                     <span v-if="!event.title && getThinkingSummary(event) && !isEventExpanded(event.event_id)"
                       class="action-summary">{{ getThinkingSummary(event) }}</span>
                   </div>
@@ -253,7 +241,7 @@
               <ToolApprovalCard :pending-id="event.pending_id" :service-name="event.service_name || ''"
                 :mcp-tool-name="event.mcp_tool_name || ''" :description="event.description" :args-json="event.args_json"
                 :timeout-seconds="event.timeout_seconds" :requested-at="event.requested_at" :resolved="event.resolved"
-              :approved="event.approved" :resolve-reason="event.resolve_reason" v-bind="embedAuthProps" />
+                :approved="event.approved" :resolve-reason="event.resolve_reason" v-bind="embedAuthProps" />
             </div>
 
             <!-- MCP OAuth in-conversation authorization prompt -->
@@ -262,21 +250,17 @@
                 :service-name="event.service_name || ''" :mcp-tool-name="event.mcp_tool_name || ''"
                 :timeout-seconds="event.timeout_seconds" :requested-at="event.requested_at" :resolved="event.resolved"
                 :authorized="event.authorized" :resolve-reason="event.resolve_reason" :timed-out="event.timed_out"
-              :canceled="event.canceled" v-bind="embedAuthProps" />
+                :canceled="event.canceled" v-bind="embedAuthProps" />
             </div>
 
             <!-- Thinking Tool Call -->
             <div v-else-if="event.type === 'tool_call' && event.tool_name === 'thinking'" class="tool-event">
               <div class="action-card"
-                :class="getThinkingCardClasses(event, event.pending || isThinkingActive(event.tool_call_id))">
+                :class="{ 'action-pending': event.pending || isThinkingActive(event.tool_call_id) }">
                 <div class="action-header" @click="toggleEvent(event.tool_call_id)">
                   <div class="action-title">
                     <span class="action-title-icon icon-mask" :style="maskIconStyle(thinkingIcon)" aria-hidden="true" />
                     <span class="action-name">{{ $t('agent.think') }}</span>
-                    <span v-if="getThinkingStageLabel(event)"
-                      :class="['action-badge', 'action-stage-badge', `action-stage-badge-${getThinkingStage(event)}`]">
-                      {{ getThinkingStageLabel(event) }}
-                    </span>
                     <span v-if="event.tool_data?.thought_number" class="action-badge">{{ event.tool_data.thought_number
                     }}/{{ event.tool_data.total_thoughts }}</span>
                     <span v-if="getThinkingSummary(event) && !isEventExpanded(event.tool_call_id)"
@@ -299,12 +283,12 @@
                 </div>
               </div>
               <div v-if="event.done && event.content && event.content.trim() && !embeddedMode" class="answer-toolbar">
+                <ExportDropdown v-if="canExportAnswer(event)" :content="resolveAnswerExportContent(event)"
+                  :export-api-base="props.exportApiBase" />
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer(event)"
                   :title="$t('agent.copy')">
                   <t-icon name="copy" />
                 </t-button>
-                <ExportDropdown :content-resolver="() => resolveExportContent(event)"
-                  :export-api-base="exportApiBase || undefined" />
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge(event)"
                   :title="$t('agent.addToKnowledgeBase')">
                   <t-icon name="bookmark-add" />
@@ -411,45 +395,8 @@
               <span></span>
               <span></span>
             </div>
-            <div v-if="loadingStatus || loadingProgressLabel" class="loading-status">
-              <span v-if="loadingStatus" class="loading-status-main">{{ loadingStatus }}</span>
-              <span v-if="loadingProgressLabel" class="loading-status-detail">{{ loadingProgressLabel }}</span>
-            </div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <div v-if="ragMode && ragAnswerEvents.length > 0" class="rag-answer-stream">
-      <template v-for="(event, index) in ragAnswerEvents" :key="`rag-answer-${getEventKey(event, index)}`">
-        <div class="answer-event">
-          <div v-if="event.content && event.content.trim()" class="answer-content markdown-content">
-            <div v-stable-html="renderAnswerContent(event === activeAnswerEventRef ? typedAnswer : event.content)">
-            </div>
-          </div>
-          <div v-if="event.done && event.content && event.content.trim() && !embeddedMode" class="answer-toolbar">
-            <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer(event)"
-              :title="$t('agent.copy')">
-              <t-icon name="copy" />
-            </t-button>
-            <ExportDropdown :content-resolver="() => resolveExportContent(event)"
-              :export-api-base="exportApiBase || undefined" />
-            <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge(event)"
-              :title="$t('agent.addToKnowledgeBase')">
-              <t-icon name="bookmark-add" />
-            </t-button>
-            <t-tooltip v-if="event.is_fallback" :content="$t('chat.fallbackHint')" placement="top">
-              <t-button size="small" variant="outline" shape="round" class="fallback-icon-btn">
-                <t-icon name="info-circle" />
-              </t-button>
-            </t-tooltip>
-            <ChatRequestInfoButton v-if="showRequestInfo && isConversationDone" :session="session"
-              :session-id="sessionId" />
-          </div>
-        </div>
-      </template>
-      <div v-if="showRequestInfo && isConversationDone && !hasDoneAnswerContent" class="answer-toolbar">
-        <ChatRequestInfoButton :session="session" :session-id="sessionId" />
       </div>
     </div>
   </div>
@@ -512,7 +459,6 @@ import { hydrateProtectedFileImages, clearProtectedFileFailureCache, sanitizeMar
 import { unwrapFinalAnswerWrappers, thinkingEqualsAnswer } from '@/utils/finalAnswer';
 import { getAgentToolIconName } from '@/utils/agent-tool-icons';
 import { getQueryText, getWikiPageText } from '@/utils/agent-tool-display';
-import { resolveChatExportContent } from '@/utils/exportUtils';
 import {
   buildManualMarkdown,
   copyTextToClipboard,
@@ -536,6 +482,7 @@ import {
 import { attachMarkdownEnhancementListeners, refreshMarkdownEnhancements } from '@/utils/markdownEnhancements';
 import { useTypewriter } from '@/composables/useTypewriter';
 import { vStableHtml } from '@/directives/stableHtml';
+import { resolveChatExportContent } from '@/utils/exportUtils';
 
 const getToolIconName = getAgentToolIconName;
 
@@ -770,25 +717,13 @@ import agentIcon from '@/assets/img/agent.svg';
 import thinkingIcon from '@/assets/img/Frame3718.svg';
 
 interface SessionData {
-  [key: string]: unknown;
   id?: string;
   request_id?: string;
   debugRequest?: Record<string, unknown>;
   isAgentMode?: boolean;
   agentEventStream?: any[];
   knowledge_references?: any[];
-  final_document_content?: string;
-  chat_document_artifact?: Record<string, unknown> | null;
-}
-
-interface DocumentSectionProgressPreview {
-  sectionCurrent: number;
-  sectionTotal: number;
-  sectionTitle: string;
-  queryCurrent?: number;
-  queryTotal?: number;
-  progressLabel: string;
-  isSectionCompleted: boolean;
+  [key: string]: unknown;
 }
 
 const props = defineProps<{
@@ -805,17 +740,24 @@ const props = defineProps<{
 }>();
 
 const embedAuthProps = computed(() => ({
-	embeddedMode: props.embeddedMode,
-	embedChannelId: props.embedChannelId,
-	embedToken: props.embedToken,
-	embedSessionId: props.sessionId,
-	embedSessionSig: props.embedSessionSig,
-	embedVisitorId: props.embedVisitorId,
+  embeddedMode: props.embeddedMode,
+  embedChannelId: props.embedChannelId,
+  embedToken: props.embedToken,
+  embedSessionId: props.sessionId,
+  embedSessionSig: props.embedSessionSig,
+  embedVisitorId: props.embedVisitorId,
 }));
 
 const showRequestInfo = computed(
   () => !props.embeddedMode && !!(props.session?.request_id || props.session?.id),
 );
+
+const resolveAnswerExportContent = (answerEvent?: any): string => {
+  const fallbackContent = typeof answerEvent?.content === 'string' ? answerEvent.content : '';
+  return resolveChatExportContent(props.session as any, fallbackContent);
+};
+
+const canExportAnswer = (answerEvent?: any): boolean => Boolean(resolveAnswerExportContent(answerEvent));
 
 const {
   float: citationFloat,
@@ -1230,154 +1172,8 @@ const getThinkingContent = (event: any): string => {
   return '';
 };
 
-const isZhLocale = (): boolean => String(i18n.global.locale?.value || '').toLowerCase().startsWith('zh');
-
-const readPositiveProgressNumber = (value: unknown): number => {
-  const parsed = typeof value === 'number' ? value : Number.parseInt(String(value || ''), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-};
-
-const extractStructuredDocumentSectionProgress = (event: any): DocumentSectionProgressPreview | null => {
-  if (!event || typeof event !== 'object') return null;
-
-  const sectionCurrent = readPositiveProgressNumber(event.section_current);
-  const sectionTotal = readPositiveProgressNumber(event.section_total);
-  const sectionTitle = typeof event.section_title === 'string' ? event.section_title.trim() : '';
-  if (sectionCurrent <= 0 || sectionTotal <= 0) return null;
-
-  return {
-    sectionCurrent,
-    sectionTotal,
-    sectionTitle,
-    queryCurrent: readPositiveProgressNumber(event.query_current) || undefined,
-    queryTotal: readPositiveProgressNumber(event.query_total) || undefined,
-    progressLabel: typeof event.progress_label === 'string' ? event.progress_label.trim() : '',
-    isSectionCompleted: /已完成|completed/i.test(String(event.content || '')),
-  };
-};
-
-const extractDocumentSectionProgressFromContent = (content: string): DocumentSectionProgressPreview | null => {
-  const normalized = sanitizeForDisplay(content || '').replace(/\s+/g, ' ').trim();
-  if (!normalized) return null;
-
-  let sectionCurrent = 0;
-  let sectionTotal = 0;
-  let sectionTitle = '';
-
-  const quotedMatch = normalized.match(/第\s*(\d+)\s*\/\s*(\d+)\s*章[“\"]([^”\"]+)[”\"]/);
-  if (quotedMatch) {
-    sectionCurrent = Number.parseInt(quotedMatch[1], 10);
-    sectionTotal = Number.parseInt(quotedMatch[2], 10);
-    sectionTitle = quotedMatch[3].trim();
-  } else {
-    const colonMatch = normalized.match(/(?:正在(?:生成|检索|收尾)|已完成)?第\s*(\d+)\s*\/\s*(\d+)\s*章[:：]?\s*(.+)$/);
-    if (colonMatch) {
-      sectionCurrent = Number.parseInt(colonMatch[1], 10);
-      sectionTotal = Number.parseInt(colonMatch[2], 10);
-      sectionTitle = colonMatch[3].replace(/[。.]$/, '').trim();
-    }
-  }
-
-  if (sectionCurrent <= 0 || sectionTotal <= 0) return null;
-
-  const queryMatch = normalized.match(/[（(]\s*(\d+)\s*\/\s*(\d+)\s*[)）]\s*[:：]/);
-  return {
-    sectionCurrent,
-    sectionTotal,
-    sectionTitle,
-    queryCurrent: queryMatch ? Number.parseInt(queryMatch[1], 10) : undefined,
-    queryTotal: queryMatch ? Number.parseInt(queryMatch[2], 10) : undefined,
-    progressLabel: '',
-    isSectionCompleted: /已完成|completed/i.test(normalized),
-  };
-};
-
-const extractDocumentSectionProgress = (event: any): DocumentSectionProgressPreview | null => {
-  return extractStructuredDocumentSectionProgress(event) || extractDocumentSectionProgressFromContent(getThinkingContent(event));
-};
-
-const getThinkingStage = (event: any): string => {
-  if (typeof event?.stage === 'string' && event.stage.trim()) {
-    return event.stage.trim();
-  }
-
-  const content = sanitizeForDisplay(getThinkingContent(event) || '');
-  if (!content) return '';
-  if (/收尾完整文档|判断是否完成全文|正在整理最终文档|finaliz/i.test(content)) return 'finalizing';
-  if (/正在生成第\s*\d+\/\d+\s*章|继续生成剩余文档内容|继续生成后续章节|当前轮剩余内容已生成|将按大纲连续生成全部章节|remaining sections|remaining document|generate section|generating section|document section/i.test(content)) return 'generating';
-  if (/检索本地知识库|检索第\s*\d+\/\d+\s*章|本地知识证据|本地证据|evidence|retriev|searching local knowledge/i.test(content)) return 'retrieving';
-  if (/解析文档目标|解析续写上下文|解析.*知识库范围|规划完整文档大纲|规划完整大纲|规划文档大纲|正在生成大纲|已识别标题|已识别\s*\d+\s*个章节|document outline|full document outline|outline generation|planning outline/i.test(content)) return 'planning';
-  return '';
-};
-
-const getStageDisplayLabel = (stage: string): string => {
-  const normalized = String(stage || '').trim();
-  if (!normalized) return '';
-  const labels = isZhLocale()
-    ? { planning: '规划', retrieving: '检索', generating: '生成', finalizing: '收尾' }
-    : { planning: 'Planning', retrieving: 'Retrieving', generating: 'Generating', finalizing: 'Finalizing' };
-  return labels[normalized as keyof typeof labels] || normalized;
-};
-
-const getThinkingStageLabel = (event: any): string => getStageDisplayLabel(getThinkingStage(event));
-
-const formatDocumentSectionProgress = (progress: DocumentSectionProgressPreview | null, stage: string): string => {
-  if (!progress) return '';
-  if (progress.progressLabel) return progress.progressLabel;
-
-  const sectionPrefix = progress.isSectionCompleted && stage === 'finalizing'
-    ? (isZhLocale() ? `已完成第 ${progress.sectionCurrent}/${progress.sectionTotal} 章` : `Completed section ${progress.sectionCurrent}/${progress.sectionTotal}`)
-    : (isZhLocale() ? `第 ${progress.sectionCurrent}/${progress.sectionTotal} 章` : `Section ${progress.sectionCurrent}/${progress.sectionTotal}`);
-  const parts = [sectionPrefix];
-  if (progress.sectionTitle) parts.push(progress.sectionTitle);
-  if (progress.queryCurrent && progress.queryTotal && stage === 'retrieving') {
-    parts.push(isZhLocale() ? `检索 ${progress.queryCurrent}/${progress.queryTotal}` : `Retrieval ${progress.queryCurrent}/${progress.queryTotal}`);
-  }
-  return parts.join(' · ');
-};
-
-const formatDocumentLoadingStatus = (progress: DocumentSectionProgressPreview | null, stage: string): string => {
-  if (!progress || progress.sectionCurrent <= 0 || progress.sectionTotal <= 0) return '';
-  const title = progress.sectionTitle || (progress.progressLabel || '').replace(/^第\s*\d+\/\d+\s*章[:：]?\s*/, '').trim();
-  if (!title) return progress.progressLabel || '';
-  if (stage === 'retrieving') {
-    return isZhLocale()
-      ? `正在检索第 ${progress.sectionCurrent}/${progress.sectionTotal} 章：${title}`
-      : `Retrieving section ${progress.sectionCurrent}/${progress.sectionTotal}: ${title}`;
-  }
-  if (stage === 'finalizing') {
-    return isZhLocale()
-      ? `正在收尾第 ${progress.sectionCurrent}/${progress.sectionTotal} 章：${title}`
-      : `Finalizing section ${progress.sectionCurrent}/${progress.sectionTotal}: ${title}`;
-  }
-  return isZhLocale()
-    ? `正在生成第 ${progress.sectionCurrent}/${progress.sectionTotal} 章：${title}`
-    : `Generating section ${progress.sectionCurrent}/${progress.sectionTotal}: ${title}`;
-};
-
-const formatDocumentLoadingDetail = (progress: DocumentSectionProgressPreview | null, stage: string): string => {
-  if (!progress) return '';
-  if (stage === 'retrieving' && progress.queryCurrent && progress.queryTotal) {
-    return isZhLocale() ? `检索 ${progress.queryCurrent}/${progress.queryTotal}` : `Retrieval ${progress.queryCurrent}/${progress.queryTotal}`;
-  }
-  return '';
-};
-
-const getThinkingCardClasses = (event: any, isPending: boolean) => {
-  const stage = getThinkingStage(event);
-  return {
-    'action-pending': isPending,
-    'action-synthetic-progress': !!stage,
-    [`action-stage-${stage}`]: !!stage,
-  };
-};
-
 // Get a short summary snippet from thinking content for display in the header
 const getThinkingSummary = (event: any): string => {
-  const progress = extractDocumentSectionProgress(event);
-  const progressSummary = formatDocumentSectionProgress(progress, getThinkingStage(event));
-  if (progressSummary) return progressSummary;
-
   const content = getThinkingContent(event);
   if (!content) return '';
   const cleaned = sanitizeForDisplay(content)
@@ -1389,77 +1185,6 @@ const getThinkingSummary = (event: any): string => {
     .trim();
   if (cleaned.length <= 50) return cleaned;
   return cleaned.slice(0, 50) + '...';
-};
-
-const latestThinkingEvent = computed(() => {
-  const stream = eventStream.value;
-  if (!stream || !Array.isArray(stream)) return null;
-  for (let i = stream.length - 1; i >= 0; i -= 1) {
-    const event = stream[i];
-    if (isThinkingLikeEvent(event)) return event;
-  }
-  return null;
-});
-
-const activeDocumentSectionProgress = computed(() => {
-  return latestThinkingEvent.value ? extractDocumentSectionProgress(latestThinkingEvent.value) : null;
-});
-
-const activeDocumentStage = computed(() => {
-  return latestThinkingEvent.value ? getThinkingStage(latestThinkingEvent.value) : '';
-});
-
-const loadingStatus = computed(() => {
-  if (isConversationDone.value) return '';
-  const structuredStatus = formatDocumentLoadingStatus(activeDocumentSectionProgress.value, activeDocumentStage.value);
-  if (structuredStatus) return structuredStatus;
-  if (hasAnswerStarted.value) return getStageDisplayLabel('generating');
-  return latestThinkingEvent.value ? getThinkingStageLabel(latestThinkingEvent.value) : '';
-});
-
-const loadingProgressLabel = computed(() => {
-  if (isConversationDone.value) return '';
-  const detail = formatDocumentLoadingDetail(activeDocumentSectionProgress.value, activeDocumentStage.value);
-  if (detail) return detail;
-  if (activeDocumentSectionProgress.value?.progressLabel) return '';
-  return formatDocumentSectionProgress(activeDocumentSectionProgress.value, activeDocumentStage.value);
-});
-
-const hasMeaningfulThinkingMetadataValue = (value: unknown): boolean => {
-  if (typeof value === 'string') return value.trim().length > 0;
-  if (typeof value === 'number') return Number.isFinite(value) && value > 0;
-  if (typeof value === 'boolean') return value;
-  if (value && typeof value === 'object') return true;
-  return false;
-};
-
-const THINKING_METADATA_KEYS = [
-  'synthetic',
-  'stage',
-  'outline',
-  'outline_role',
-  'outline_source',
-  'base_outline',
-  'planning_outline',
-  'section_current',
-  'section_total',
-  'section_title',
-  'query_current',
-  'query_total',
-  'progress_label',
-];
-
-const mergeThinkingMetadata = (prev: any, event: any): Record<string, unknown> => {
-  const metadata: Record<string, unknown> = {};
-  for (const key of THINKING_METADATA_KEYS) {
-    const currentValue = event?.[key];
-    const previousValue = prev?.[key];
-    const selected = hasMeaningfulThinkingMetadataValue(currentValue) ? currentValue : previousValue;
-    if (hasMeaningfulThinkingMetadataValue(selected)) {
-      metadata[key] = selected;
-    }
-  }
-  return metadata;
 };
 
 // Helper: build the full result list with plan_task_change injections and thinking merging
@@ -1493,7 +1218,6 @@ const buildFullEventList = (stream: any[]) => {
         // Deduplicate: when a tool_call thinking event's thought content was
         // already delivered via streaming thinking events (same text), skip it.
         if (curContent && prevContent && prevContent.includes(curContent)) {
-          Object.assign(prev, mergeThinkingMetadata(prev, event));
           continue;
         }
         if (curContent && prevContent && curContent.includes(prevContent)) {
@@ -1504,7 +1228,6 @@ const buildFullEventList = (stream: any[]) => {
             content: curContent,
             thinking: prev.thinking || event.thinking,
             timestamp: prev.timestamp,
-            ...mergeThinkingMetadata(prev, event),
             _mergedContent: curContent,
           };
           continue;
@@ -1518,7 +1241,6 @@ const buildFullEventList = (stream: any[]) => {
           content: merged,
           thinking: prev.thinking || event.thinking,
           timestamp: prev.timestamp,
-          ...mergeThinkingMetadata(prev, event),
           _mergedContent: merged,
         };
         continue;
@@ -1717,22 +1439,6 @@ const displayEvents = computed(() => {
   }
 
   return result;
-});
-
-const streamingDisplayEvents = computed(() => {
-  if (props.ragMode) {
-    return [];
-  }
-  return displayEvents.value;
-});
-
-const ragAnswerEvents = computed(() => {
-  if (!props.ragMode) {
-    return [];
-  }
-  return displayEvents.value.filter(
-    (event: any) => event?.type === 'answer' && (event.done || (event.content && event.content.trim())),
-  );
 });
 
 // Get unique key for event
@@ -2474,10 +2180,6 @@ const getActualContent = (answerEvent: any): string => {
   return '';
 };
 
-const resolveExportContent = (answerEvent: any): string => {
-  return resolveChatExportContent(props.session, getActualContent(answerEvent));
-};
-
 const handleCopyAnswer = async (answerEvent: any) => {
   const content = getActualContent(answerEvent);
   if (!content) {
@@ -2590,16 +2292,14 @@ const handleAddToKnowledge = (answerEvent: any) => {
   }
 }
 
-.rag-answer-stream {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 // Event items (flat, no timeline)
 .event-item {
   position: relative;
   margin-bottom: 8px;
+
+  &.event-answer {
+    // answer 事件无特殊左侧装饰
+  }
 }
 
 // ============ Tree View ============
@@ -2674,6 +2374,10 @@ const handleAddToKnowledge = (answerEvent: any) => {
       content: none;
     }
   }
+}
+
+.tree-child-content {
+  // child content area
 }
 
 // Thinking detail content (inside action-details)
@@ -2889,34 +2593,6 @@ const handleAddToKnowledge = (answerEvent: any) => {
     white-space: nowrap;
     flex-shrink: 0;
   }
-
-    .action-stage-badge {
-      border: 1px solid transparent;
-    }
-
-    .action-stage-badge-planning {
-      background: rgba(59, 130, 246, 0.12);
-      color: #2563eb;
-      border-color: rgba(59, 130, 246, 0.18);
-    }
-
-    .action-stage-badge-retrieving {
-      background: rgba(16, 185, 129, 0.12);
-      color: #059669;
-      border-color: rgba(16, 185, 129, 0.18);
-    }
-
-    .action-stage-badge-generating {
-      background: rgba(245, 158, 11, 0.14);
-      color: #d97706;
-      border-color: rgba(245, 158, 11, 0.18);
-    }
-
-    .action-stage-badge-finalizing {
-      background: rgba(100, 116, 139, 0.14);
-      color: #475569;
-      border-color: rgba(100, 116, 139, 0.18);
-    }
 
   .action-summary {
     color: var(--td-text-color-secondary);
@@ -3306,7 +2982,6 @@ const handleAddToKnowledge = (answerEvent: any) => {
 .loading-indicator {
   display: flex;
   align-items: center;
-  gap: 10px;
   min-height: 24px;
   padding: 0;
   margin-top: 0;
@@ -3410,27 +3085,6 @@ const handleAddToKnowledge = (answerEvent: any) => {
     width: 24px;
     height: 18px;
     margin-left: 0;
-  }
-
-  .loading-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    color: var(--td-text-color-secondary);
-    font-size: var(--agent-step-summary-size);
-    line-height: 1.5;
-  }
-
-  .loading-status-main {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .loading-status-detail {
-    flex-shrink: 0;
-    color: var(--td-text-color-placeholder);
   }
 }
 

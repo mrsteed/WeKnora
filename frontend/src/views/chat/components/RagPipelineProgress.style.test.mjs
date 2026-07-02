@@ -37,10 +37,10 @@ test('only the collapsed root summary shows an expand chevron', () => {
   assert.equal((source.match(/class="action-show-icon"/g) || []).length, 1)
 })
 
-test('rag pipeline keeps references out of the timeline body', () => {
-  assert.doesNotMatch(source, /timeline-mode/)
-  assert.doesNotMatch(source, /content-only/)
-  assert.doesNotMatch(source, /rag-ref-step/)
+test('rag pipeline embeds references in the timeline instead of a separate card', () => {
+  assert.match(source, /timeline-mode/)
+  assert.match(source, /content-only/)
+  assert.match(source, /rag-ref-step[\s\S]*name="file-search"/)
 })
 
 test('rag pipeline keeps loading inside the thinking step instead of orphan dots', () => {
@@ -51,12 +51,11 @@ test('rag pipeline keeps loading inside the thinking step instead of orphan dots
   assert.doesNotMatch(source, /showActivityIndicator/)
 })
 
-test('rag pipeline can end directly with thinking or done rows', () => {
-  assert.match(source, /!showDoneRow\s*&&\s*!showThinkingStep/)
-  assert.match(
-    source,
-    /'tree-child-last':[\s\S]*!showDoneRow[\s\S]*!showThinkingStep[\s\S]*index === steps.length - 1/,
-  )
+test('rag pipeline places references before the done row', () => {
+  const refsIndex = source.indexOf('class="tree-child rag-ref-step"')
+  const doneIndex = source.indexOf('agent-step-done')
+  assert.ok(refsIndex > -1 && doneIndex > -1)
+  assert.ok(refsIndex < doneIndex)
 })
 
 test('done row appears only after the full turn completes', () => {

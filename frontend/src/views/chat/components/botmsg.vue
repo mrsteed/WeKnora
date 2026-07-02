@@ -16,14 +16,13 @@
             </div>
             <div v-if="session.isRagMode" class="rag-answer-stack">
                 <RagPipelineProgress :session="session" :embedded-mode="embeddedMode" />
-                <docInfo v-if="session.knowledge_references?.length" :session="session"></docInfo>
                 <AgentStreamDisplay v-if="session.isAgentMode" :session="session" :session-id="sessionId"
-                    :user-query="userQuery" :rag-mode="true" :export-api-base="publicExportApiBase || undefined" />
+                    :user-query="userQuery" :rag-mode="true" :export-api-base="publicExportApiBase" />
             </div>
             <template v-else>
                 <docInfo v-if="session.knowledge_references?.length" :session="session"></docInfo>
                 <AgentStreamDisplay :session="session" :session-id="sessionId" :user-query="userQuery"
-                    :export-api-base="publicExportApiBase || undefined" v-if="session.isAgentMode" />
+                    v-if="session.isAgentMode" :export-api-base="publicExportApiBase" />
             </template>
             <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
         </div>
@@ -44,12 +43,12 @@
                 </div>
             </div>
             <!-- 复制和添加到知识库按钮 - 非 Agent 模式下显示 -->
-            <div v-if="session.is_completed && (content || session.content)" class="answer-toolbar">
+            <div v-if="session.is_completed && (content || session.content || exportContent)" class="answer-toolbar">
+                <ExportDropdown v-if="canExportAnswer" :content="exportContent" :export-api-base="publicExportApiBase" />
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer"
                     :title="$t('agent.copy')">
                     <t-icon name="copy" />
                 </t-button>
-                <ExportDropdown :content-resolver="resolveExportContent" :export-api-base="publicExportApiBase || undefined" />
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge"
                     :title="$t('agent.addToKnowledgeBase')">
                     <t-icon name="bookmark-add" />
@@ -73,13 +72,12 @@
     </div>
 </template>
 <script setup>
-import { onMounted, onBeforeUnmount, watch, computed, ref, reactive, defineProps, nextTick, onUpdated } from 'vue';
+import { onMounted, onBeforeUnmount, watch, computed, ref, reactive, nextTick, onUpdated } from 'vue';
 import 'katex/dist/katex.min.css';
 import docInfo from './docInfo.vue';
 import deepThink from './deepThink.vue';
 import AgentStreamDisplay from './AgentStreamDisplay.vue';
 import RagPipelineProgress from './RagPipelineProgress.vue';
-import ExportDropdown from './ExportDropdown.vue';
 import ChatRequestInfoButton from '@/components/ChatRequestInfoButton.vue';
 import ChatCitationFloat from '@/components/ChatCitationFloat.vue';
 import picturePreview from '@/components/picture-preview.vue';
@@ -87,16 +85,17 @@ import { sanitizeMarkdownHTML, safeMarkdownToHTML, createSafeImage, isValidImage
 import { useI18n } from 'vue-i18n';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useUIStore } from '@/stores/ui';
+import ExportDropdown from './ExportDropdown.vue';
 import {
     buildManualMarkdown,
     copyTextToClipboard,
     formatManualTitle,
 } from '@/utils/chatMessageShared';
+import { resolveChatExportContent } from '@/utils/exportUtils';
 import {
     createChatMarkdownRenderer,
     renderChatMarkdown,
 } from '@/utils/chatMarkdownRenderer';
-import { resolveChatExportContent } from '@/utils/exportUtils';
 import {
     createMermaidCodeRenderer,
     ensureMermaidInitialized,
@@ -222,13 +221,15 @@ const hasActualContent = computed(() => {
     return text && text.trim().length > 0;
 });
 
+const exportContent = computed(() => {
+    return resolveChatExportContent(props.session, props.content || props.session?.content || '');
+});
+
+const canExportAnswer = computed(() => Boolean(exportContent.value));
+
 // 获取实际内容
 const getActualContent = () => {
     return (props.content || props.session?.content || '').trim();
-};
-
-const resolveExportContent = () => {
-    return resolveChatExportContent(props.session, getActualContent());
 };
 
 // 复制回答内容

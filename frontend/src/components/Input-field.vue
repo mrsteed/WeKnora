@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch, nextTick, h } from "vue";
+import { ref, onMounted, onUnmounted, computed, watch, nextTick, h, type PropType } from "vue";
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import { onBeforeRouteUpdate } from 'vue-router';
@@ -37,6 +37,7 @@ import {
 } from '@/utils/agent-readiness';
 import { formatLocalizedList } from '@/utils/format-list';
 import type { MentionItem, MentionItemType, MentionRequestItem } from '@/types/mention';
+import type { ChatRuntimeContext } from '@/types/chat-runtime';
 
 const route = useRoute();
 const router = useRouter();
@@ -91,7 +92,11 @@ const handleDroppedFiles = (files: File[]) => {
   }
 
   if (attachmentFiles.length > 0) {
-    attachmentUploadRef.value?.addFiles(attachmentFiles);
+    if (!isAttachmentUploadEnabledByAgent.value) {
+      MessagePlugin.warning(t('input.attachmentUploadDisabledByAgent'));
+    } else {
+      attachmentUploadRef.value?.addFiles(attachmentFiles);
+    }
   }
 };
 
@@ -307,6 +312,27 @@ const agentSupportedFileTypes = computed(() => {
   return currentAgentConfig.value?.supported_file_types || [];
 });
 
+const runtimeSupportedFileTypes = computed(() => {
+  if (!props.runtimeContext || !Array.isArray(props.runtimeContext.supportedFileTypes)) {
+    return null;
+  }
+  return props.runtimeContext.supportedFileTypes;
+});
+
+const effectiveAttachmentSupportedTypes = computed(() => {
+  if (runtimeSupportedFileTypes.value !== null) {
+    return runtimeSupportedFileTypes.value;
+  }
+  return agentSupportedFileTypes.value.length > 0 ? agentSupportedFileTypes.value : undefined;
+});
+
+const isAttachmentUploadEnabledByAgent = computed(() => {
+  if (props.runtimeContext?.attachmentUploadEnabled !== undefined) {
+    return props.runtimeContext.attachmentUploadEnabled !== false;
+  }
+  return true;
+});
+
 // 智能体配置的工具列表，驱动 @ 菜单的 KB 兼容性过滤
 const agentAllowedTools = computed<string[]>(() => {
   if (!hasAgentConfig.value) return [];
@@ -429,6 +455,9 @@ const mentionEmptyHint = computed(() => {
 
 // 智能体是否启用了图片上传（多模态）
 const isImageUploadEnabledByAgent = computed(() => {
+  if (props.runtimeContext?.imageUploadEnabled !== undefined) {
+    return props.runtimeContext.imageUploadEnabled === true;
+  }
   if (!hasAgentConfig.value) return false;
   return currentAgentConfig.value?.image_upload_enabled === true;
 });
@@ -488,6 +517,10 @@ const props = defineProps({
   embeddedMode: {
     type: Boolean,
     default: false
+  },
+  runtimeContext: {
+    type: Object as PropType<ChatRuntimeContext | null>,
+    default: null,
   }
 });
 
@@ -2432,6 +2465,7 @@ defineExpose({
 
       <!-- 附件列表区域 (由 AttachmentUpload 组件渲染) -->
       <AttachmentUpload ref="attachmentUploadRef" :max-files="5" :max-size="20"
+        :disabled="!isAttachmentUploadEnabledByAgent" :supported-types="effectiveAttachmentSupportedTypes"
         @update:files="uploadedAttachments = $event" />
 
       <!-- 选中的知识库和文件标签（显示在输入框内顶部） -->
@@ -2543,12 +2577,15 @@ defineExpose({
           <!-- 附件上传按钮 -->
           <t-tooltip placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
             <template #content>
-              <span>{{ uploadedAttachments.length > 0 ? $t('chat.attachmentWithCount', {
+              <span v-if="!isAttachmentUploadEnabledByAgent">{{ $t('input.attachmentUploadDisabledByAgent') }}</span>
+              <span v-else>{{ uploadedAttachments.length > 0 ? $t('chat.attachmentWithCount', {
                 count: uploadedAttachments.length
               }) : $t('chat.attachmentUploadTooltip') }}</span>
             </template>
-            <div class="control-btn attachment-upload-btn" :class="{ 'active': uploadedAttachments.length > 0 }"
-              @click.stop="attachmentUploadRef?.triggerFileSelect()">
+            <div class="control-btn attachment-upload-btn" :class="{
+              'active': uploadedAttachments.length > 0,
+              'disabled': !isAttachmentUploadEnabledByAgent
+            }" @click.stop="isAttachmentUploadEnabledByAgent && attachmentUploadRef?.triggerFileSelect()">
               <!-- 回形针图标 -->
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
                 stroke-linecap="round" stroke-linejoin="round" class="control-icon">
