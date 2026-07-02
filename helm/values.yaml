@@ -107,7 +107,7 @@ app:
   # -- Service configuration
   service:
     type: ClusterIP
-    port: 8080
+    port: 8081
 
   # -- Liveness probe configuration
   livenessProbe:
