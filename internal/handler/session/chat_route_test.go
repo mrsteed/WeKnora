@@ -147,6 +147,25 @@ func TestApplyDocumentRouteDecisionWithReason_ReportsFullDocumentBlocker(t *test
 	assert.Equal(t, "auto_continue", reason)
 }
 
+func TestApplyDocumentRouteDecisionWithReason_PromotesFullDocumentWhenKnowledgeScopeExists(t *testing.T) {
+	handler := &Handler{}
+	reqCtx := &qaRequestContext{
+		query:            "生成北海电厂完整的技术设计方案",
+		knowledgeBaseIDs: []string{"kb-1"},
+	}
+
+	applied, reason := handler.applyDocumentRouteDecisionWithReason(context.Background(), reqCtx, &CreateKnowledgeQARequest{}, &types.ChatRouteDecision{Kind: types.ChatRouteFullDocument}, true)
+
+	require.True(t, applied)
+	assert.Empty(t, reason)
+	assert.Equal(t, types.ChatDocumentIntentNormal, reqCtx.documentIntent)
+	assert.Equal(t, types.ChatDocumentOperationCreate, reqCtx.documentOperation)
+	assert.Equal(t, types.ChatDocumentOutputModeFull, reqCtx.documentOutputMode)
+	assert.Empty(t, reqCtx.baseArtifactID)
+	assert.Nil(t, reqCtx.baseArtifact)
+	assert.Empty(t, reqCtx.documentQuotedContext)
+}
+
 func TestDetectChatRouteDecision_SkipsDatabaseAnalysisAgent(t *testing.T) {
 	routeService := &handlerChatRouteServiceStub{}
 	handler := &Handler{chatRouteService: routeService}
@@ -188,7 +207,6 @@ func TestDetectChatRouteDecision_SkipsLegacyDatabaseToolOnlyAgent(t *testing.T) 
 					"todo_write",
 					"external_database_schema",
 					"external_database_query",
-					"final_answer",
 				},
 				KBSelectionMode: "selected",
 				KnowledgeBases:  []string{"kb-db"},
@@ -221,7 +239,6 @@ func TestDetectChatRouteDecision_DoesNotSkipMixedToolAgent(t *testing.T) {
 					"thinking",
 					"external_database_query",
 					"knowledge_search",
-					"final_answer",
 				},
 			},
 		},

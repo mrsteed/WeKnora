@@ -64,7 +64,6 @@ func AvailableToolDefinitions() []AvailableTool {
 		{Name: ToolDataSchema, Label: "查看数据元信息", Description: "获取表格文件的元信息"},
 		{Name: ToolReadSkill, Label: "读取技能", Description: "按需读取技能内容以学习专业能力"},
 		{Name: ToolExecuteSkillScript, Label: "执行技能脚本", Description: "在沙箱环境中执行技能脚本"},
-		{Name: ToolFinalAnswer, Label: "提交最终回答", Description: "提交最终回答给用户"},
 		{Name: ToolWikiReadPage, Label: "读取Wiki页面", Description: "读取指定的Wiki页面内容"},
 		{Name: ToolWikiSearch, Label: "搜索Wiki", Description: "在Wiki中搜索页面"},
 		{Name: ToolWikiReadSourceDoc, Label: "精读源文档", Description: "使用知识点深入阅读特定原始文档"},
@@ -94,6 +93,5 @@ func DefaultAllowedTools() []string {
 		ToolExternalDatabaseQuery,
 		ToolDataAnalysis,
 		ToolDataSchema,
-		ToolFinalAnswer,
 	}
 }

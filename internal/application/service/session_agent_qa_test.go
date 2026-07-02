@@ -868,6 +868,7 @@ func TestApplyDocumentStopgapAgentConfig(t *testing.T) {
 	assert.False(t, config.RetainRetrievalHistory)
 	assert.Equal(t, "none", config.MCPSelectionMode)
 	assert.Nil(t, config.MCPServices)
+	assert.True(t, config.AllowFinalAnswerTool)
 	assert.Equal(t, []string{agenttools.ToolFinalAnswer}, config.AllowedTools)
 }
 

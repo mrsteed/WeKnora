@@ -6464,6 +6464,7 @@ func applyDocumentStopgapAgentConfig(agentConfig *types.AgentConfig, req *types.
 	agentConfig.RetainRetrievalHistory = false
 	agentConfig.MCPSelectionMode = "none"
 	agentConfig.MCPServices = nil
+	agentConfig.AllowFinalAnswerTool = true
 	agentConfig.AllowedTools = []string{tools.ToolFinalAnswer}
 }
 

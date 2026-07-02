@@ -167,6 +167,7 @@ import { useI18n } from 'vue-i18n';
 import { useUIStore } from '@/stores/ui';
 import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
+import { useStickyBottomOnResize } from '@/composables/useStickyBottomOnResize';
 import { upsertThinkingEvent } from './utils/thinkingEvent';
 import { extractStructuredPlanningOutlineFromText } from './utils/planningOutline';
 import { createPlatformChatRuntimeContext, isAgentSharePageRuntimeContext } from '@/types/chat-runtime';
@@ -2149,6 +2150,12 @@ const onClickScrollToBottom = () => {
     userHasScrolledUp.value = false;
     scrollToBottom(true);
 }
+
+// Images, Mermaid diagrams, and the typewriter can grow the rendered answer
+// after the SSE chunk that introduced it. Keep following the live edge until
+// the user intentionally scrolls upward.
+useStickyBottomOnResize(scrollContainer, userHasScrolledUp, scrollToBottom);
+
 const debounce = (fn, delay) => {
     let timer
     return (...args) => {
@@ -2618,8 +2625,26 @@ onChunk((data) => {
         // 检查是否是继续流式传输（消息已存在）
         const existingMessage = messagesList.findLast((item) => item.id === data.id || item.request_id === data.id);
         if (!existingMessage) {
-            // 新消息，设置 loading 状态
-        loading.value = true;
+            const placeholderId = data.assistant_message_id || data.id;
+            messagesList.push({
+                id: placeholderId,
+                request_id: data.id,
+                role: 'assistant',
+                content: '',
+                isAgentMode: true,
+                isRagMode: !getEffectiveAgentEnabled(),
+                completion_status: 'pending',
+                finish_reason: '',
+                failure_reason: '',
+                is_completed: false,
+                is_failed: false,
+                agentEventStream: [],
+                _eventMap: new Map(),
+                _pendingToolCalls: new Map(),
+                knowledge_references: []
+            });
+            loading.value = false;
+            scrollToBottom(true);
         } else {
             existingMessage.isAgentMode = true;
             existingMessage.agentEventStream = existingMessage.agentEventStream || [];

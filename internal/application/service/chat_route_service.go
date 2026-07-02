@@ -256,6 +256,12 @@ func normalizeChatRouteDecision(decision *types.ChatRouteDecision, input types.C
 		normalized.Kind = types.ChatRouteFullDocument
 	case string(types.ChatRouteKnowledgeGroundedFullDoc):
 		normalized.Kind = types.ChatRouteKnowledgeGroundedFullDoc
+	case "doc_generation", "document_generation", "long_document", "long_doc":
+		if input.HasSelectedKnowledge || input.HasEffectiveAgentKB {
+			normalized.Kind = types.ChatRouteKnowledgeGroundedFullDoc
+		} else {
+			normalized.Kind = types.ChatRouteFullDocument
+		}
 	case string(types.ChatRouteDocumentEdit):
 		normalized.Kind = types.ChatRouteDocumentEdit
 	case string(types.ChatRouteKnowledgeGroundedContinue):
@@ -276,6 +282,15 @@ func normalizeChatRouteDecision(decision *types.ChatRouteDecision, input types.C
 		normalized.Confidence = 0
 	} else if normalized.Confidence > 1 {
 		normalized.Confidence = 1
+	}
+
+	// Route models sometimes emit the generic `full_document` kind even when the
+	// current turn already has an effective KB scope. In WeKnora that scope means
+	// the correct execution path is knowledge-grounded full document generation,
+	// otherwise the handler later rejects the route with `has_knowledge_scope` and
+	// falls back to ordinary Agent QA.
+	if normalized.Kind == types.ChatRouteFullDocument && (input.HasSelectedKnowledge || input.HasEffectiveAgentKB) {
+		normalized.Kind = types.ChatRouteKnowledgeGroundedFullDoc
 	}
 
 	if !normalized.UseAgent {

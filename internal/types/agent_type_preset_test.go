@@ -39,7 +39,7 @@ func TestLoadAgentTypePresetsConfigIncludesDatabaseAnalysisPreset(t *testing.T) 
 	assert.Equal(t, []string{"database"}, preset.KBFilter.AllOf)
 	assert.Contains(t, preset.Config.AllowedTools, "external_database_schema")
 	assert.Contains(t, preset.Config.AllowedTools, "external_database_query")
-	assert.Contains(t, preset.Config.AllowedTools, "final_answer")
+	assert.NotContains(t, preset.Config.AllowedTools, "final_answer")
 	assert.Contains(t, agentTypePresetIDs, AgentTypeDatabaseAnalysis)
 
 	localized := preset.I18n["zh-CN"]

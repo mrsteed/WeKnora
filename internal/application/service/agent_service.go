@@ -440,6 +440,17 @@ func (s *agentService) registerTools(
 		logger.Infof(ctx, "Using default allowed tools: %v", allowedTools)
 	}
 
+	if !config.AllowFinalAnswerTool {
+		filteredTools := make([]string, 0, len(allowedTools))
+		for _, toolName := range allowedTools {
+			if toolName == tools.ToolFinalAnswer {
+				continue
+			}
+			filteredTools = append(filteredTools, toolName)
+		}
+		allowedTools = filteredTools
+	}
+
 	// ---- Capability detection from SearchTargets ----
 	var hasVectorKB, hasWikiKB, hasDatabaseKB bool
 	var wikiKBIDs []string
@@ -600,7 +611,9 @@ func (s *agentService) registerTools(
 		}
 	}
 
-	allowedTools = append(allowedTools, tools.ToolFinalAnswer)
+	if config.AllowFinalAnswerTool {
+		allowedTools = append(allowedTools, tools.ToolFinalAnswer)
+	}
 	// Deduplicate while preserving original order.
 	allowedTools = dedupStrings(allowedTools)
 

@@ -31,6 +31,14 @@ func (s *continueStreamSessionServiceStub) GetSession(context.Context, string) (
 	return s.session, s.err
 }
 
+func (s *continueStreamSessionServiceStub) GetSessionByID(context.Context, uint64, string) (*types.Session, error) {
+	return s.session, s.err
+}
+
+func (s *continueStreamSessionServiceStub) SetSessionOwnerID(context.Context, uint64, string, string) error {
+	return nil
+}
+
 func (s *continueStreamSessionServiceStub) GetSessionsByTenant(context.Context) ([]*types.Session, error) {
 	return nil, nil
 }
@@ -61,6 +69,10 @@ func (s *continueStreamSessionServiceStub) ListSessions(context.Context, *types.
 
 func (s *continueStreamSessionServiceStub) SetSessionPinned(context.Context, string, bool) (int64, error) {
 	return 0, nil
+}
+
+func (s *continueStreamSessionServiceStub) UpdateSessionLastRequestState(context.Context, string, *types.SessionLastRequestState) error {
+	return nil
 }
 
 func (s *continueStreamSessionServiceStub) GenerateTitle(context.Context, *types.Session, []types.Message, string) (string, error) {

@@ -200,7 +200,6 @@ agent_type_presets:
         - "todo_write"
         - "external_database_schema"
         - "external_database_query"
-        - "final_answer"
       web_search_enabled: false
       kb_selection_mode: "all"
     kb_filter:

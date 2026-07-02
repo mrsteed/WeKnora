@@ -744,7 +744,7 @@ func (e *AgentEngine) runReActIteration(
 					round, *emptyRetries, maxEmptyResponseRetries)
 				*messagesPtr = append(*messagesPtr, chat.Message{
 					Role:    "user",
-					Content: "Please provide your answer by calling the final_answer tool.",
+					Content: "Please provide your complete answer now as plain text.",
 				})
 				return iterOutcomeContinue, nil
 			}

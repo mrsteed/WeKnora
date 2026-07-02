@@ -143,6 +143,18 @@ type generationRunBindingSessionServiceStub struct {
 	returnedState *types.ChatDocumentGenerationRunState
 }
 
+func (s *generationRunBindingSessionServiceStub) GetSessionByID(ctx context.Context, tenantID uint64, id string) (*types.Session, error) {
+	return s.continueStreamSessionServiceStub.GetSessionByID(ctx, tenantID, id)
+}
+
+func (s *generationRunBindingSessionServiceStub) SetSessionOwnerID(ctx context.Context, tenantID uint64, sessionID, ownerID string) error {
+	return s.continueStreamSessionServiceStub.SetSessionOwnerID(ctx, tenantID, sessionID, ownerID)
+}
+
+func (s *generationRunBindingSessionServiceStub) UpdateSessionLastRequestState(ctx context.Context, sessionID string, state *types.SessionLastRequestState) error {
+	return s.continueStreamSessionServiceStub.UpdateSessionLastRequestState(ctx, sessionID, state)
+}
+
 func (s *generationRunBindingSessionServiceStub) BindKnowledgeGroundedGenerationRunArtifact(_ context.Context, runID string, artifact *types.ChatDocumentArtifact) error {
 	s.boundRunID = runID
 	s.bindCallCount++

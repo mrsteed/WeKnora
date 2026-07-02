@@ -52,7 +52,7 @@ func TestAgentServiceRegisterToolsIncludesExternalDatabaseToolsWhenDatabaseKBInS
 	_, err = registry.GetTool(agenttools.ToolExternalDatabaseQuery)
 	require.NoError(t, err)
 	_, err = registry.GetTool(agenttools.ToolFinalAnswer)
-	require.NoError(t, err)
+	assert.Error(t, err)
 }
 
 func TestAgentServiceRegisterToolsFiltersExternalDatabaseToolsWithoutDatabaseKB(t *testing.T) {
@@ -75,6 +75,21 @@ func TestAgentServiceRegisterToolsFiltersExternalDatabaseToolsWithoutDatabaseKB(
 	assert.Error(t, err)
 	_, err = registry.GetTool(agenttools.ToolExternalDatabaseQuery)
 	assert.Error(t, err)
+	_, err = registry.GetTool(agenttools.ToolFinalAnswer)
+	assert.Error(t, err)
+}
+
+func TestAgentServiceRegisterToolsAllowsFinalAnswerForStopgapOnly(t *testing.T) {
+	svc := &agentService{}
+	registry := agenttools.NewToolRegistry()
+	config := &types.AgentConfig{
+		AllowedTools:         []string{agenttools.ToolFinalAnswer},
+		AllowFinalAnswerTool: true,
+	}
+
+	err := svc.registerTools(context.Background(), registry, config, nil, nil, "")
+	require.NoError(t, err)
+
 	_, err = registry.GetTool(agenttools.ToolFinalAnswer)
 	require.NoError(t, err)
 }

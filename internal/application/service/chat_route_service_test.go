@@ -124,6 +124,50 @@ func TestChatRouteServiceDecide_UsesModelDecision(t *testing.T) {
 	assert.Greater(t, remaining, 110*time.Second)
 }
 
+func TestChatRouteServiceDecide_PromotesFullDocumentToKnowledgeGroundedWhenKnowledgeScopeExists(t *testing.T) {
+	chatStub := &chatRouteChatModelStub{response: `{"kind":"full_document","confidence":0.95,"reason":"用户明确要求完整技术方案"}`}
+	svc := NewChatRouteService(&chatRouteModelServiceStub{chatModel: chatStub}, &config.Config{Agent: &config.AgentConfig{LLMCallTimeout: 120}})
+
+	decision, err := svc.Decide(context.Background(), types.ChatRouteInput{
+		Query:                    "生成北海电厂完整的技术设计方案",
+		ModelID:                  "model-1",
+		EndpointMode:             "agent_qa",
+		AgentConfigured:          true,
+		AgentModeEnabledByConfig: true,
+		HasSelectedKnowledge:     true,
+		HasEffectiveAgentKB:      true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, decision)
+	assert.Equal(t, types.ChatRouteKnowledgeGroundedFullDoc, decision.Kind)
+	assert.Equal(t, types.ChatDocumentOutputModeFull, decision.OutputMode)
+	assert.True(t, decision.UseKnowledge)
+	assert.True(t, decision.UseLongDocument)
+	assert.True(t, decision.NeedArtifact)
+}
+
+func TestChatRouteServiceDecide_NormalizesDocGenerationAlias(t *testing.T) {
+	chatStub := &chatRouteChatModelStub{response: `{"kind":"doc_generation","confidence":0.82,"reason":"用户明确要求完整技术方案"}`}
+	svc := NewChatRouteService(&chatRouteModelServiceStub{chatModel: chatStub}, &config.Config{Agent: &config.AgentConfig{LLMCallTimeout: 120}})
+
+	decision, err := svc.Decide(context.Background(), types.ChatRouteInput{
+		Query:                    "请输出完整的北海电厂的技术方案。",
+		ModelID:                  "model-1",
+		EndpointMode:             "agent_qa",
+		AgentConfigured:          true,
+		AgentModeEnabledByConfig: true,
+		HasSelectedKnowledge:     true,
+		HasEffectiveAgentKB:      true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, decision)
+	assert.Equal(t, types.ChatRouteKnowledgeGroundedFullDoc, decision.Kind)
+	assert.Equal(t, 0.82, decision.Confidence)
+	assert.Equal(t, "用户明确要求完整技术方案", decision.Reason)
+}
+
 func TestChatRouteServiceDecide_UsesDefaultLLMTimeoutWhenConfigMissing(t *testing.T) {
 	chatStub := &chatRouteChatModelStub{response: `{"kind":"agent_qa","confidence":0.88,"reason":"普通问答","use_agent":true}`}
 	svc := NewChatRouteService(&chatRouteModelServiceStub{chatModel: chatStub}, nil)

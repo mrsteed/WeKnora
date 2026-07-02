@@ -65,6 +65,11 @@ type AgentConfig struct {
 	// Whether to execute independent tool calls in parallel (default: false).
 	// When enabled and the LLM returns multiple tool calls, they run concurrently via errgroup.
 	ParallelToolCalls bool `json:"parallel_tool_calls,omitempty"`
+
+	// Runtime-only switch: allow exposing the terminal final_answer tool to the
+	// model. Ordinary Agent QA should not see this tool; it is reserved for
+	// explicit stopgap / deterministic document-edit scenarios.
+	AllowFinalAnswerTool bool `json:"-"`
 }
 
 // SessionAgentConfig represents session-level agent configuration

@@ -152,6 +152,16 @@ func (h *Handler) applyDocumentRouteDecisionWithReason(ctx context.Context, reqC
 		return false, "missing_request_context"
 	}
 
+	if decision.Kind == types.ChatRouteFullDocument {
+		hasKnowledgeScope := hasEffectiveAgentKB || len(reqCtx.knowledgeBaseIDs) > 0 || len(reqCtx.knowledgeIDs) > 0
+		if hasKnowledgeScope {
+			promoted := *decision
+			promoted.Kind = types.ChatRouteKnowledgeGroundedFullDoc
+			promoted.UseKnowledge = true
+			decision = &promoted
+		}
+	}
+
 	switch decision.Kind {
 	case types.ChatRouteShortDocument:
 		if reqCtx.autoContinue || strings.TrimSpace(reqCtx.baseArtifactID) != "" {
