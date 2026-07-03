@@ -42,6 +42,8 @@ type assistantCompletionOptions struct {
 	ArtifactObserver         func(*types.ChatDocumentArtifact)
 }
 
+const longDocumentEnabledField = "long_document_enabled"
+
 func applyChatDocumentCompletionMarker(content string, artifactOptions *types.RegisterChatDocumentArtifactOptions) string {
 	cleaned, completed := types.StripChatDocumentCompletionMarker(content)
 	if !completed {
@@ -638,18 +640,20 @@ func hasHigherPriorityAssistantCompletion(existing *types.Message, nextStatus st
 
 func emitAssistantCompleteEvent(eventBus *event.EventBus, sessionID string, message *types.Message, options assistantCompletionOptions, artifact *types.ChatDocumentArtifact) {
 	options = normalizeAssistantCompletionRetryBudgetOutcome(options)
+	longDocumentEnabled := shouldEnableLongDocumentUI(artifact, options.DocumentGenerationStatus, options.GenerationRunID, options.Extra)
 	completeData := event.AgentCompleteData{
-		FinalAnswer:      message.Content,
-		CompletionStatus: options.CompletionStatus,
-		FinishReason:     options.FinishReason,
-		IsPartial:        options.CompletionStatus == types.MessageCompletionStatusPartial,
-		AllowIndexing:    options.AllowIndexing,
-		AllowComplete:    options.AllowComplete,
-		FailureReason:    options.FailureReason,
-		KnowledgeRefs:    append([]interface{}(nil), options.KnowledgeRefs...),
-		AgentSteps:       message.AgentSteps,
-		TotalDurationMs:  message.AgentDurationMs,
-		Extra:            cloneCompleteExtra(options.Extra),
+		FinalAnswer:         message.Content,
+		LongDocumentEnabled: longDocumentEnabled,
+		CompletionStatus:    options.CompletionStatus,
+		FinishReason:        options.FinishReason,
+		IsPartial:           options.CompletionStatus == types.MessageCompletionStatusPartial,
+		AllowIndexing:       options.AllowIndexing,
+		AllowComplete:       options.AllowComplete,
+		FailureReason:       options.FailureReason,
+		KnowledgeRefs:       append([]interface{}(nil), options.KnowledgeRefs...),
+		AgentSteps:          message.AgentSteps,
+		TotalDurationMs:     message.AgentDurationMs,
+		Extra:               cloneCompleteExtra(options.Extra),
 	}
 	if options.DocumentGenerationStatus != "" {
 		completeData.DocumentGenerationStatus = types.NormalizeChatDocumentGenerationStatus(options.DocumentGenerationStatus)
@@ -670,12 +674,53 @@ func emitAssistantCompleteEvent(eventBus *event.EventBus, sessionID string, mess
 		completeData.Extra["chat_document_artifact"] = chatDocumentArtifactMetadata(artifact)
 		applyChatDocumentContinuationDecision(&completeData, artifact, options.AutoContinueRound)
 	}
+	if completeData.Extra == nil && longDocumentEnabled {
+		completeData.Extra = map[string]interface{}{}
+	}
+	if completeData.Extra != nil {
+		completeData.Extra[longDocumentEnabledField] = longDocumentEnabled
+	}
 
 	eventBus.Emit(context.Background(), event.Event{
 		Type:      event.EventAgentComplete,
 		SessionID: sessionID,
 		Data:      completeData,
 	})
+}
+
+func extraLongDocumentEnabled(extra map[string]interface{}) bool {
+	if len(extra) == 0 {
+		return false
+	}
+	if enabled, ok := extra[longDocumentEnabledField].(bool); ok {
+		return enabled
+	}
+	if runID, ok := extra["generation_run_id"].(string); ok && strings.TrimSpace(runID) != "" {
+		return true
+	}
+	if _, ok := extra["planning_outline"]; ok {
+		return true
+	}
+	if _, ok := extra["outline"]; ok {
+		return true
+	}
+	if role, ok := extra["outline_role"].(string); ok && strings.TrimSpace(role) != "" {
+		return true
+	}
+	return false
+}
+
+func shouldEnableLongDocumentUI(artifact *types.ChatDocumentArtifact, documentGenerationStatus string, generationRunID string, extra map[string]interface{}) bool {
+	if artifact != nil {
+		return true
+	}
+	if strings.TrimSpace(documentGenerationStatus) != "" {
+		return true
+	}
+	if strings.TrimSpace(generationRunID) != "" {
+		return true
+	}
+	return extraLongDocumentEnabled(extra)
 }
 
 func cloneCompleteExtra(extra map[string]interface{}) map[string]interface{} {
@@ -1031,6 +1076,7 @@ func addChatDocumentGenerationPayload(data map[string]interface{}, artifact *typ
 	if data == nil || artifact == nil {
 		return
 	}
+	data[longDocumentEnabledField] = true
 	status := types.NormalizeChatDocumentGenerationStatus(artifact.DocumentGenerationStatus)
 	finishReason, _ := data["finish_reason"].(string)
 	failureReason, _ := data["failure_reason"].(string)
@@ -1138,6 +1184,7 @@ func chatDocumentArtifactMetadata(artifact *types.ChatDocumentArtifact) map[stri
 		"can_use_as_base":            artifact.CanUseAsBase(),
 		"can_view":                   artifact.CanView(),
 		"can_index":                  artifact.CanIndex(),
+		"long_document_enabled":      artifact.LongDocumentEnabled,
 		"continuation_context_mode":  continuationContextMode,
 		"quality_issues":             artifact.QualityIssues,
 		"quality_issue_details":      qualityIssueDetails,

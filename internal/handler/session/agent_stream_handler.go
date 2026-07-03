@@ -178,6 +178,9 @@ func (h *AgentStreamHandler) handleThought(ctx context.Context, evt event.Event)
 	if data.Replace {
 		metadata["replace"] = true
 	}
+	if data.LongDocumentEnabled {
+		metadata[longDocumentEnabledField] = true
+	}
 	if data.Synthetic {
 		metadata["synthetic"] = true
 	}
@@ -813,6 +816,7 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 	if data.DocumentGenerationStatus != "" {
 		status := types.NormalizeChatDocumentGenerationStatus(data.DocumentGenerationStatus)
 		completeData["document_generation_status"] = status
+		completeData[longDocumentEnabledField] = true
 		if data.AutoContinueNext != nil {
 			completeData["auto_continue_next"] = *data.AutoContinueNext
 		} else {
@@ -845,6 +849,9 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 			continue
 		}
 		completeData[key] = value
+	}
+	if data.LongDocumentEnabled || shouldEnableLongDocumentUI(nil, data.DocumentGenerationStatus, chatDocumentGenerationRunIDFromExtra(data.Extra), data.Extra) {
+		completeData[longDocumentEnabledField] = true
 	}
 	if h.artifactProvider != nil {
 		if artifact := h.artifactProvider(); artifact != nil {

@@ -75,3 +75,29 @@ func (r *chatDocumentArtifactRepository) ListArtifactsBySession(ctx context.Cont
 	}
 	return artifacts, nil
 }
+
+func (r *chatDocumentArtifactRepository) ListArtifactsByRootArtifact(ctx context.Context, tenantID uint64, rootArtifactID string) ([]*types.ChatDocumentArtifact, error) {
+	if rootArtifactID == "" {
+		return nil, nil
+	}
+	var artifacts []*types.ChatDocumentArtifact
+	query := `
+WITH RECURSIVE artifact_chain AS (
+	SELECT *
+	FROM chat_document_artifacts
+	WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL
+	UNION ALL
+	SELECT child.*
+	FROM chat_document_artifacts child
+	JOIN artifact_chain parent ON child.parent_artifact_id = parent.id
+	WHERE child.tenant_id = ? AND child.deleted_at IS NULL
+)
+SELECT *
+FROM artifact_chain
+ORDER BY revision_no ASC, created_at ASC
+`
+	if err := r.db.WithContext(ctx).Raw(query, tenantID, rootArtifactID, tenantID).Scan(&artifacts).Error; err != nil {
+		return nil, err
+	}
+	return artifacts, nil
+}

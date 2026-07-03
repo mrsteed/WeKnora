@@ -23,9 +23,10 @@ import (
 // MessageHandler handles HTTP requests related to messages within chat sessions
 // It provides endpoints for loading and managing message history
 type MessageHandler struct {
-	MessageService interfaces.MessageService // Service that implements message business logic
-	SessionService interfaces.SessionService // Service for verifying session ownership
-	StreamManager  interfaces.StreamManager  // Stream manager used to reconcile stale pending assistant messages
+	MessageService              interfaces.MessageService // Service that implements message business logic
+	SessionService              interfaces.SessionService // Service for verifying session ownership
+	StreamManager               interfaces.StreamManager  // Stream manager used to reconcile stale pending assistant messages
+	chatDocumentArtifactService interfaces.ChatDocumentArtifactService
 }
 
 // NewMessageHandler creates a new message handler instance with the required service
@@ -34,12 +35,17 @@ type MessageHandler struct {
 //   - sessionService: Service for verifying session ownership
 //
 // Returns a pointer to a new MessageHandler
-func NewMessageHandler(messageService interfaces.MessageService, sessionService interfaces.SessionService, streamManager interfaces.StreamManager) *MessageHandler {
+func NewMessageHandler(messageService interfaces.MessageService, sessionService interfaces.SessionService, streamManager interfaces.StreamManager, chatDocumentArtifactService interfaces.ChatDocumentArtifactService) *MessageHandler {
 	return &MessageHandler{
-		MessageService: messageService,
-		SessionService: sessionService,
-		StreamManager:  streamManager,
+		MessageService:              messageService,
+		SessionService:              sessionService,
+		StreamManager:               streamManager,
+		chatDocumentArtifactService: chatDocumentArtifactService,
 	}
+}
+
+type historicalLongDocumentReplayExtraProvider interface {
+	BuildHistoricalLongDocumentReplayExtra(ctx context.Context, message *types.Message, artifact *types.ChatDocumentArtifact, rootArtifactID string) (map[string]interface{}, error)
 }
 
 func (h *MessageHandler) reconcilePendingAssistantMessages(ctx context.Context, messages []*types.Message) {
@@ -177,6 +183,7 @@ func (h *MessageHandler) reconcilePendingAssistantMessage(ctx context.Context, m
 	if !terminalDetected {
 		return false, nil
 	}
+	_ = updatedMessage.AfterFind(nil)
 
 	if updatedMessage.Content == message.Content &&
 		updatedMessage.IsCompleted == message.IsCompleted &&
@@ -260,6 +267,125 @@ func streamEventInt64(data map[string]interface{}, key string) int64 {
 		return int64(typed)
 	default:
 		return 0
+	}
+}
+
+func (h *MessageHandler) loadChatDocumentArtifactBySourceMessage(ctx context.Context, message *types.Message) *types.ChatDocumentArtifact {
+	if h == nil || h.chatDocumentArtifactService == nil || message == nil || strings.TrimSpace(message.ID) == "" {
+		return nil
+	}
+	artifact, err := h.chatDocumentArtifactService.GetArtifactBySourceMessageID(ctx, message.ID)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to load chat document artifact on history load, session ID: %s, message ID: %s, error: %v", message.SessionID, message.ID, err)
+		return nil
+	}
+	return artifact
+}
+
+func (h *MessageHandler) resolveRootArtifactID(ctx context.Context, artifact *types.ChatDocumentArtifact, cache map[string]string) string {
+	if h == nil || h.chatDocumentArtifactService == nil || artifact == nil || strings.TrimSpace(artifact.ID) == "" {
+		return ""
+	}
+	if cache == nil {
+		cache = map[string]string{}
+	}
+	if cached, ok := cache[artifact.ID]; ok {
+		return cached
+	}
+	visited := make([]string, 0, 4)
+	current := artifact
+	rootID := strings.TrimSpace(artifact.ID)
+	for current != nil && strings.TrimSpace(current.ID) != "" {
+		if cached, ok := cache[current.ID]; ok {
+			rootID = cached
+			break
+		}
+		visited = append(visited, current.ID)
+		rootID = current.ID
+		parentID := strings.TrimSpace(current.ParentArtifactID)
+		if parentID == "" {
+			break
+		}
+		parent, err := h.chatDocumentArtifactService.GetArtifact(ctx, parentID)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to load parent artifact on history load, artifact ID: %s, parent_artifact_id: %s, error: %v", current.ID, parentID, err)
+			break
+		}
+		if parent == nil {
+			break
+		}
+		current = parent
+	}
+	for _, visitedID := range visited {
+		cache[visitedID] = rootID
+	}
+	return rootID
+}
+
+func applyHistoricalLongDocumentExtra(message *types.Message, artifact *types.ChatDocumentArtifact, extra map[string]interface{}) {
+	if message == nil {
+		return
+	}
+	if artifact != nil {
+		message.LongDocumentEnabled = true
+		message.DocumentGenerationStatus = strings.TrimSpace(artifact.DocumentGenerationStatus)
+		if taskKind := strings.TrimSpace(artifact.DocumentTaskKind); taskKind != "" {
+			message.DocumentTaskKind = taskKind
+		}
+	}
+	if len(extra) == 0 {
+		return
+	}
+	if enabled, ok := extra["long_document_enabled"].(bool); ok && enabled {
+		message.LongDocumentEnabled = true
+	}
+	if generationStatus, ok := extra["document_generation_status"].(string); ok && strings.TrimSpace(generationStatus) != "" {
+		message.DocumentGenerationStatus = strings.TrimSpace(generationStatus)
+	}
+	if generationRunID, ok := extra["generation_run_id"].(string); ok && strings.TrimSpace(generationRunID) != "" {
+		message.GenerationRunID = strings.TrimSpace(generationRunID)
+		message.LongDocumentEnabled = true
+	}
+	if taskKind, ok := extra["document_task_kind"].(string); ok && strings.TrimSpace(taskKind) != "" {
+		message.DocumentTaskKind = strings.TrimSpace(taskKind)
+	}
+	if planningOutline, ok := extra["planning_outline"].(map[string]interface{}); ok && planningOutline != nil {
+		message.PlanningOutline = planningOutline
+		message.LongDocumentEnabled = true
+	}
+	if outlineRole, ok := extra["outline_role"].(string); ok {
+		message.OutlineRole = strings.TrimSpace(outlineRole)
+	}
+	if outlineSource, ok := extra["outline_source"].(string); ok {
+		message.OutlineSource = strings.TrimSpace(outlineSource)
+	}
+	if baseOutline, ok := extra["base_outline"].(map[string]interface{}); ok && baseOutline != nil {
+		message.BaseOutline = baseOutline
+	}
+}
+
+func (h *MessageHandler) hydrateHistoricalChatDocumentMessages(ctx context.Context, messages []*types.Message) {
+	if len(messages) == 0 {
+		return
+	}
+	provider, hasReplayExtra := h.SessionService.(historicalLongDocumentReplayExtraProvider)
+	rootArtifactCache := make(map[string]string)
+	for _, message := range messages {
+		if message == nil || message.Role != "assistant" {
+			continue
+		}
+		artifact := h.loadChatDocumentArtifactBySourceMessage(ctx, message)
+		rootArtifactID := h.resolveRootArtifactID(ctx, artifact, rootArtifactCache)
+		if hasReplayExtra {
+			extra, err := provider.BuildHistoricalLongDocumentReplayExtra(ctx, message, artifact, rootArtifactID)
+			if err != nil {
+				logger.Warnf(ctx, "Failed to build long document replay extra on history load, session ID: %s, message ID: %s, error: %v", message.SessionID, message.ID, err)
+			} else {
+				applyHistoricalLongDocumentExtra(message, artifact, extra)
+			}
+		} else {
+			applyHistoricalLongDocumentExtra(message, artifact, nil)
+		}
 	}
 }
 
@@ -355,6 +481,7 @@ func (h *MessageHandler) LoadMessages(c *gin.Context) {
 			return
 		}
 		h.reconcilePendingAssistantMessages(ctx, messages)
+		h.hydrateHistoricalChatDocumentMessages(ctx, messages)
 
 		logger.Infof(
 			ctx,
@@ -394,6 +521,7 @@ func (h *MessageHandler) LoadMessages(c *gin.Context) {
 		return
 	}
 	h.reconcilePendingAssistantMessages(ctx, messages)
+	h.hydrateHistoricalChatDocumentMessages(ctx, messages)
 
 	logger.Infof(
 		ctx,

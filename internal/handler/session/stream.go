@@ -356,6 +356,7 @@ func (h *Handler) emitTerminalStreamState(c *gin.Context, message *types.Message
 			data["chat_document_artifact"] = chatDocumentArtifactMetadata(artifact)
 			finalDocumentMode, finalDocument, finalDocumentArtifactID := buildFinalDocumentDelivery(artifact)
 			data["final_document_mode"] = finalDocumentMode
+			data[longDocumentEnabledField] = true
 			if finalDocument != "" {
 				data["final_document"] = finalDocument
 			}

@@ -82,20 +82,20 @@ var StageDependencies = map[string][]string{
 // how the dead-letter middleware already protects raw stack traces.
 type KnowledgeProcessingSpan struct {
 	ID           int64      `gorm:"primaryKey;column:id"             json:"-"`
-	KnowledgeID  string     `gorm:"column:knowledge_id"              json:"knowledge_id"`
-	Attempt      int        `gorm:"column:attempt"                   json:"attempt"`
-	SpanID       string     `gorm:"column:span_id;size:64"           json:"span_id"`
-	ParentSpanID string     `gorm:"column:parent_span_id;size:64"    json:"parent_span_id,omitempty"`
+	KnowledgeID  string     `gorm:"column:knowledge_id;uniqueIndex:uq_kpspan_attempt_span,priority:1;index:idx_kpspan_knowledge_attempt,priority:1" json:"knowledge_id"`
+	Attempt      int        `gorm:"column:attempt;uniqueIndex:uq_kpspan_attempt_span,priority:2;index:idx_kpspan_knowledge_attempt,priority:2" json:"attempt"`
+	SpanID       string     `gorm:"column:span_id;size:64;uniqueIndex:uq_kpspan_attempt_span,priority:3"           json:"span_id"`
+	ParentSpanID string     `gorm:"column:parent_span_id;size:64;index:idx_kpspan_parent,where:parent_span_id IS NOT NULL"    json:"parent_span_id,omitempty"`
 	Name         string     `gorm:"column:name;size:64"              json:"name"`
 	Kind         string     `gorm:"column:kind;size:16"              json:"kind"`
-	Status       string     `gorm:"column:status;size:16"            json:"status"`
+	Status       string     `gorm:"column:status;size:16;index:idx_kpspan_status_started,priority:1"            json:"status"`
 	Input        JSONMap    `gorm:"column:input;type:jsonb"          json:"input,omitempty"`
 	Output       JSONMap    `gorm:"column:output;type:jsonb"         json:"output,omitempty"`
 	Metadata     JSONMap    `gorm:"column:metadata;type:jsonb"       json:"metadata,omitempty"`
 	ErrorCode    string     `gorm:"column:error_code;size:64"        json:"error_code,omitempty"`
 	ErrorMessage string     `gorm:"column:error_message;type:text"   json:"error_message,omitempty"`
 	ErrorDetail  string     `gorm:"column:error_detail;type:text"    json:"-"`
-	StartedAt    *time.Time `gorm:"column:started_at"                json:"started_at,omitempty"`
+	StartedAt    *time.Time `gorm:"column:started_at;index:idx_kpspan_status_started,priority:2"                json:"started_at,omitempty"`
 	FinishedAt   *time.Time `gorm:"column:finished_at"               json:"finished_at,omitempty"`
 	DurationMs   int64      `gorm:"column:duration_ms"               json:"duration_ms,omitempty"`
 	CreatedAt    time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`

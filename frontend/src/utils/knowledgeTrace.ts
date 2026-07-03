@@ -1,7 +1,8 @@
 /** Whether GET /knowledge/:id/spans returned a real trace (not legacy placeholder-only). */
 export function knowledgeSpansPayloadHasTrace(
-  data: { trace?: { span_id?: string }; current_attempt?: number } | null | undefined,
+  data: { trace?: { span_id?: string }; current_attempt?: number; trace_recorded?: boolean } | null | undefined,
 ): boolean {
   if (!data?.trace) return false
+  if (typeof data.trace_recorded === 'boolean') return data.trace_recorded
   return !!(data.trace.span_id || (data.current_attempt ?? 0) > 0)
 }

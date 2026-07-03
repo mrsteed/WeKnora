@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -76,6 +77,34 @@ func (s *chatDocumentArtifactRepoStub) ListArtifactsBySession(ctx context.Contex
 	if limit > 0 && len(items) > limit {
 		return items[:limit], nil
 	}
+	return items, nil
+}
+
+func (s *chatDocumentArtifactRepoStub) ListArtifactsByRootArtifact(ctx context.Context, tenantID uint64, rootArtifactID string) ([]*types.ChatDocumentArtifact, error) {
+	_ = ctx
+	_ = tenantID
+	root := s.artifactsByID[rootArtifactID]
+	if root == nil {
+		return nil, nil
+	}
+	items := make([]*types.ChatDocumentArtifact, 0)
+	queue := []*types.ChatDocumentArtifact{root}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		items = append(items, current)
+		for _, candidate := range s.artifactsByID {
+			if candidate != nil && candidate.ParentArtifactID == current.ID {
+				queue = append(queue, candidate)
+			}
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].RevisionNo == items[j].RevisionNo {
+			return items[i].CreatedAt.Before(items[j].CreatedAt)
+		}
+		return items[i].RevisionNo < items[j].RevisionNo
+	})
 	return items, nil
 }
 
@@ -453,6 +482,29 @@ func TestBuildChatDocumentSnapshot_ContinueWithScopedTargetFallsBackToSectionApp
 func TestInferSectionTargetFromQuery_StripsContinuationLeadPhrase(t *testing.T) {
 	assert.Equal(t, "智慧运行", inferSectionTargetFromQuery("请继续补齐智慧运行章节"))
 	assert.Equal(t, "智慧运行", inferSectionTargetFromQuery("继续补充智慧运行章节，详细阐述每个模块功能"))
+}
+
+func TestInferSectionTargetFromQuery_RecognizesStandaloneChapterOrdinal(t *testing.T) {
+	assert.Equal(t, "第三章", inferSectionTargetFromQuery("请为第三章补充功能清单"))
+	assert.Equal(t, "第3章", inferSectionTargetFromQuery("为第3章插入功能清单"))
+}
+
+func TestBuildChatDocumentSnapshotResult_ContinueWithStandaloneChapterOrdinalFallsIntoMatchedSection(t *testing.T) {
+	base := &types.ChatDocumentArtifact{
+		ContentSnapshot: "# 北海电厂二期智慧电厂项目技术方案\n\n## 第1章 项目概述与建设目标\n\n第一章内容。\n\n## 第2章 数据湖与基础算力平台建设\n\n第二章内容。\n\n## 第3章 智慧运行系统\n\n第三章原有内容。\n\n## 第4章 智慧安防系统\n\n第四章内容。",
+	}
+
+	result := buildChatDocumentSnapshotResult("### 3.5 智慧运行系统功能清单\n\n- 功能清单 A\n- 功能清单 B", types.RegisterChatDocumentArtifactOptions{
+		UserQuery:    "请为第三章补充功能清单",
+		Intent:       types.ChatDocumentIntentContinue,
+		Operation:    types.ChatDocumentOperationContinue,
+		OutputMode:   types.ChatDocumentOutputModeDelta,
+		BaseArtifact: base,
+	})
+
+	assert.Contains(t, result.Snapshot, "## 第3章 智慧运行系统\n\n第三章原有内容。\n\n### 3.5 智慧运行系统功能清单")
+	assert.Contains(t, result.Snapshot, "## 第4章 智慧安防系统")
+	assert.NotContains(t, result.QualityIssues, types.ChatDocumentQualityIssueDeltaMergeUncertain)
 }
 
 func TestChatDocumentArtifactRegisterFromAssistantMessageAcceptsPatchWithRevisionPreamble(t *testing.T) {
@@ -982,6 +1034,66 @@ func TestChatDocumentArtifactRegisterFromAssistantMessageRepairsRevisionPreamble
 	assert.Contains(t, artifact.QualityIssues, types.ChatDocumentQualityIssueRevisionPreambleTrimmed)
 	assert.Contains(t, artifact.QualityIssues, types.ChatDocumentQualityIssueUnclosedCodeFence)
 	assert.Equal(t, "检测到末尾代码块未闭合，系统已自动补全代码围栏。", artifact.UserHint)
+}
+
+func TestChatDocumentArtifactListRevisionsReturnsFullRootChain(t *testing.T) {
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(10001))
+	rootCreatedAt := time.Date(2026, time.July, 3, 10, 0, 0, 0, time.UTC)
+	repo := &chatDocumentArtifactRepoStub{
+		artifactsByID: map[string]*types.ChatDocumentArtifact{
+			"artifact-root": {
+				ID:              "artifact-root",
+				TenantID:        10001,
+				SessionID:       "session-1",
+				SourceMessageID: "message-1",
+				RevisionNo:      1,
+				Title:           "V1",
+				Status:          types.ChatDocumentArtifactStatusAvailable,
+				ContentSnapshot: "# 标题\n\n## 第1章 现状",
+				CreatedAt:       rootCreatedAt,
+				UpdatedAt:       rootCreatedAt,
+			},
+			"artifact-v2": {
+				ID:               "artifact-v2",
+				TenantID:         10001,
+				SessionID:        "session-1",
+				SourceMessageID:  "message-2",
+				ParentArtifactID: "artifact-root",
+				RevisionNo:       2,
+				Title:            "V2",
+				Status:           types.ChatDocumentArtifactStatusAvailable,
+				ContentSnapshot:  "# 标题\n\n## 第1章 现状\n\n## 第2章 方案",
+				CreatedAt:        rootCreatedAt.Add(1 * time.Minute),
+				UpdatedAt:        rootCreatedAt.Add(1 * time.Minute),
+			},
+			"artifact-v3": {
+				ID:               "artifact-v3",
+				TenantID:         10001,
+				SessionID:        "session-1",
+				SourceMessageID:  "message-3",
+				ParentArtifactID: "artifact-v2",
+				RevisionNo:       3,
+				Title:            "V3",
+				Status:           types.ChatDocumentArtifactStatusAvailable,
+				ContentSnapshot:  "# 标题\n\n## 第1章 现状\n\n## 第2章 方案\n\n## 第3章 实施",
+				CreatedAt:        rootCreatedAt.Add(2 * time.Minute),
+				UpdatedAt:        rootCreatedAt.Add(2 * time.Minute),
+			},
+		},
+		artifactsBySession:   map[string][]*types.ChatDocumentArtifact{},
+		artifactsByMessageID: map[string]*types.ChatDocumentArtifact{},
+	}
+	repo.artifactsBySession["session-1"] = []*types.ChatDocumentArtifact{repo.artifactsByID["artifact-v3"]}
+	repo.artifactsByMessageID["message-1"] = repo.artifactsByID["artifact-root"]
+	repo.artifactsByMessageID["message-2"] = repo.artifactsByID["artifact-v2"]
+	repo.artifactsByMessageID["message-3"] = repo.artifactsByID["artifact-v3"]
+
+	svc := NewChatDocumentArtifactService(repo, &chatDocumentEvidenceRefRepoStub{}).(*chatDocumentArtifactService)
+
+	revisions, err := svc.ListRevisions(ctx, "artifact-v3")
+	require.NoError(t, err)
+	require.Len(t, revisions, 3)
+	assert.Equal(t, []string{"artifact-root", "artifact-v2", "artifact-v3"}, []string{revisions[0].ID, revisions[1].ID, revisions[2].ID})
 }
 
 func TestPrepareChatDocumentArtifactSnapshot_NormalizesMalformedMarkdownHeadings(t *testing.T) {

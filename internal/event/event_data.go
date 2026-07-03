@@ -139,6 +139,7 @@ type AgentCompleteData struct {
 	SessionID                 string                 `json:"session_id"`
 	TotalSteps                int                    `json:"total_steps"`
 	FinalAnswer               string                 `json:"final_answer"`
+	LongDocumentEnabled       bool                   `json:"long_document_enabled,omitempty"`
 	CompletionStatus          string                 `json:"completion_status,omitempty"`
 	FinishReason              string                 `json:"finish_reason,omitempty"`
 	IsPartial                 bool                   `json:"is_partial,omitempty"`
@@ -170,19 +171,20 @@ type AgentCompleteData struct {
 
 // AgentThoughtData represents agent thought streaming data
 type AgentThoughtData struct {
-	Content        string                 `json:"content"`
-	Iteration      int                    `json:"iteration"`
-	Done           bool                   `json:"done"`
-	Replace        bool                   `json:"replace,omitempty"`
-	Synthetic      bool                   `json:"synthetic,omitempty"`
-	Stage          string                 `json:"stage,omitempty"`
-	Outline        map[string]interface{} `json:"outline,omitempty"`
-	SectionCurrent int                    `json:"section_current,omitempty"`
-	SectionTotal   int                    `json:"section_total,omitempty"`
-	SectionTitle   string                 `json:"section_title,omitempty"`
-	QueryCurrent   int                    `json:"query_current,omitempty"`
-	QueryTotal     int                    `json:"query_total,omitempty"`
-	ProgressLabel  string                 `json:"progress_label,omitempty"`
+	Content             string                 `json:"content"`
+	Iteration           int                    `json:"iteration"`
+	LongDocumentEnabled bool                   `json:"long_document_enabled,omitempty"`
+	Done                bool                   `json:"done"`
+	Replace             bool                   `json:"replace,omitempty"`
+	Synthetic           bool                   `json:"synthetic,omitempty"`
+	Stage               string                 `json:"stage,omitempty"`
+	Outline             map[string]interface{} `json:"outline,omitempty"`
+	SectionCurrent      int                    `json:"section_current,omitempty"`
+	SectionTotal        int                    `json:"section_total,omitempty"`
+	SectionTitle        string                 `json:"section_title,omitempty"`
+	QueryCurrent        int                    `json:"query_current,omitempty"`
+	QueryTotal          int                    `json:"query_total,omitempty"`
+	ProgressLabel       string                 `json:"progress_label,omitempty"`
 }
 
 // AgentToolCallData represents agent tool call notification data

@@ -217,6 +217,29 @@ type Message struct {
 	FailureReason string `json:"failure_reason,omitempty" gorm:"type:text;column:failure_reason"`
 	// Whether this response is a fallback (no knowledge base match found)
 	IsFallback bool `json:"is_fallback,omitempty"`
+	// DocumentGenerationStatus mirrors the backend document generation state for
+	// long-document UI recovery on history load.
+	DocumentGenerationStatus string `json:"document_generation_status,omitempty" gorm:"-"`
+	// GenerationRunID lets the frontend continue using a persisted long-document
+	// generation run after a page refresh without re-inferring it from live SSE.
+	GenerationRunID string `json:"generation_run_id,omitempty" gorm:"-"`
+	// PlanningOutline stores the authoritative generated plan for long-document
+	// history replay. It is response-only and is not persisted on the message row.
+	PlanningOutline map[string]interface{} `json:"planning_outline,omitempty" gorm:"-"`
+	// OutlineRole differentiates a generated plan from a base document outline.
+	OutlineRole string `json:"outline_role,omitempty" gorm:"-"`
+	// OutlineSource records where the outline payload came from, such as
+	// generation_run or base_artifact.
+	OutlineSource string `json:"outline_source,omitempty" gorm:"-"`
+	// BaseOutline carries the selected baseline document outline when the current
+	// message is a continuation or revision around an existing artifact.
+	BaseOutline map[string]interface{} `json:"base_outline,omitempty" gorm:"-"`
+	// DocumentTaskKind exposes the long-document task kind to the frontend during
+	// history replay, for example translation or writing.
+	DocumentTaskKind string `json:"document_task_kind,omitempty" gorm:"-"`
+	// LongDocumentEnabled is the backend-authoritative UI signal used by the
+	// frontend to decide whether to mount long-document specific enhancements.
+	LongDocumentEnabled bool `json:"long_document_enabled,omitempty" gorm:"-"`
 	// Agent total execution duration in milliseconds (from query start to answer start)
 	AgentDurationMs int64 `json:"agent_duration_ms,omitempty" gorm:"column:agent_duration_ms;default:0"`
 	// RenderedContent stores the full RAG-augmented user message (with retrieved context)
@@ -273,6 +296,28 @@ func (m *Message) IsTerminal() bool {
 func (m *Message) syncCompletionFields() {
 	m.CompletionStatus = normalizeMessageCompletionStatus(m.Role, m.IsCompleted, m.CompletionStatus)
 	m.IsCompleted = m.CompletionStatus == MessageCompletionStatusCompleted
+	if !m.LongDocumentEnabled {
+		m.LongDocumentEnabled = inferLongDocumentEnabledFromMessage(m)
+	}
+}
+
+func inferLongDocumentEnabledFromMessage(m *Message) bool {
+	if m == nil {
+		return false
+	}
+	for _, step := range m.AgentSteps {
+		switch strings.TrimSpace(step.Stage) {
+		case "planning", "retrieving", "generating", "finalizing", "document_edit":
+			return true
+		}
+	}
+	for _, value := range []string{strings.TrimSpace(m.FinishReason), strings.TrimSpace(m.FailureReason)} {
+		switch value {
+		case "section_batch_limit", "auto_continue_round_limit", "document_complete_marker", "document_edit_error", "empty_document_edit_completion", "local_knowledge_not_found":
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeMessageCompletionStatus(role string, isCompleted bool, completionStatus string) string {

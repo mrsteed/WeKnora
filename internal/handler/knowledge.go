@@ -642,14 +642,16 @@ func (h *KnowledgeHandler) GetKnowledgeSpans(c *gin.Context) {
 
 	rows := []types.KnowledgeProcessingSpan{}
 	currentAttempt := 0
+	latestAttempt := 0
 	if h.spanRepo != nil {
+		latest, lerr := h.spanRepo.LatestAttempt(ctx, knowledge.ID)
+		if lerr != nil {
+			logger.Warnf(ctx, "spans LatestAttempt failed for %s: %v", knowledge.ID, lerr)
+		} else {
+			latestAttempt = latest
+		}
 		if requestedAttempt == 0 {
-			latest, lerr := h.spanRepo.LatestAttempt(ctx, knowledge.ID)
-			if lerr != nil {
-				logger.Warnf(ctx, "spans LatestAttempt failed for %s: %v", knowledge.ID, lerr)
-			} else {
-				currentAttempt = latest
-			}
+			currentAttempt = latestAttempt
 		} else {
 			currentAttempt = requestedAttempt
 		}
@@ -675,9 +677,12 @@ func (h *KnowledgeHandler) GetKnowledgeSpans(c *gin.Context) {
 
 	resp := gin.H{
 		"knowledge_id":    knowledge.ID,
+		"attempt":         currentAttempt,
+		"latest_attempt":  latestAttempt,
 		"parse_status":    knowledge.ParseStatus,
 		"current_attempt": currentAttempt,
 		"current_stage":   currentStageName,
+		"trace_recorded":  len(rows) > 0,
 		"trace":           tree,
 	}
 	if lastErr != nil {

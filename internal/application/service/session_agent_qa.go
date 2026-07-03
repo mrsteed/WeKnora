@@ -662,15 +662,16 @@ func emitDedicatedDocumentEditPatch(ctx context.Context, req *types.QARequest, e
 		Type:      event.EventAgentComplete,
 		SessionID: req.Session.ID,
 		Data: event.AgentCompleteData{
-			SessionID:        req.Session.ID,
-			MessageID:        req.AssistantMessageID,
-			FinalAnswer:      patch,
-			CompletionStatus: types.MessageCompletionStatusCompleted,
-			FinishReason:     finishReason,
-			AllowIndexing:    true,
-			AllowComplete:    true,
-			Extra:            buildDocumentEditPatchExtra(req, patch, true),
-			TotalDurationMs:  time.Since(startTime).Milliseconds(),
+			SessionID:           req.Session.ID,
+			MessageID:           req.AssistantMessageID,
+			FinalAnswer:         patch,
+			LongDocumentEnabled: true,
+			CompletionStatus:    types.MessageCompletionStatusCompleted,
+			FinishReason:        finishReason,
+			AllowIndexing:       true,
+			AllowComplete:       true,
+			Extra:               buildDocumentEditPatchExtra(req, patch, true),
+			TotalDurationMs:     time.Since(startTime).Milliseconds(),
 		},
 	})
 }
@@ -797,16 +798,17 @@ func emitDedicatedDocumentEditLocalKnowledgeBlocked(ctx context.Context, req *ty
 		Type:      event.EventAgentComplete,
 		SessionID: req.Session.ID,
 		Data: event.AgentCompleteData{
-			SessionID:        req.Session.ID,
-			MessageID:        req.AssistantMessageID,
-			FinalAnswer:      message,
-			CompletionStatus: types.MessageCompletionStatusPartial,
-			FinishReason:     "local_knowledge_not_found",
-			FailureReason:    "local_knowledge_not_found",
-			AllowIndexing:    false,
-			AllowComplete:    true,
-			Extra:            extra,
-			TotalDurationMs:  time.Since(startTime).Milliseconds(),
+			SessionID:           req.Session.ID,
+			MessageID:           req.AssistantMessageID,
+			FinalAnswer:         message,
+			LongDocumentEnabled: true,
+			CompletionStatus:    types.MessageCompletionStatusPartial,
+			FinishReason:        "local_knowledge_not_found",
+			FailureReason:       "local_knowledge_not_found",
+			AllowIndexing:       false,
+			AllowComplete:       true,
+			Extra:               extra,
+			TotalDurationMs:     time.Since(startTime).Milliseconds(),
 		},
 	})
 }
@@ -1374,17 +1376,18 @@ func (r *fullDocumentProgressReporter) UpdateStage(stage string, content string)
 		Type:      event.EventAgentThought,
 		SessionID: r.sessionID,
 		Data: event.AgentThoughtData{
-			Content:        trimmedContent,
-			Iteration:      0,
-			Replace:        true,
-			Synthetic:      true,
-			Stage:          trimmedStage,
-			SectionCurrent: sectionCurrent,
-			SectionTotal:   sectionTotal,
-			SectionTitle:   sectionTitle,
-			QueryCurrent:   queryCurrent,
-			QueryTotal:     queryTotal,
-			ProgressLabel:  progressLabel,
+			Content:             trimmedContent,
+			Iteration:           0,
+			LongDocumentEnabled: true,
+			Replace:             true,
+			Synthetic:           true,
+			Stage:               trimmedStage,
+			SectionCurrent:      sectionCurrent,
+			SectionTotal:        sectionTotal,
+			SectionTitle:        sectionTitle,
+			QueryCurrent:        queryCurrent,
+			QueryTotal:          queryTotal,
+			ProgressLabel:       progressLabel,
 		},
 	}); err != nil {
 		logger.Errorf(r.ctx, "Failed to emit full document progress thought: %v", err)
@@ -1399,18 +1402,20 @@ func (r *fullDocumentProgressReporter) PublishOutline(outline dedicatedFullDocum
 	if strings.TrimSpace(outlineMarkdown) == "" {
 		return
 	}
+	r.recordStep("planning", outlineMarkdown)
 	if err := r.eventBus.Emit(r.ctx, event.Event{
 		ID:        generateEventID("document-outline"),
 		Type:      event.EventAgentThought,
 		SessionID: r.sessionID,
 		Data: event.AgentThoughtData{
-			Content:   outlineMarkdown,
-			Iteration: 0,
-			Done:      true,
-			Replace:   false,
-			Synthetic: true,
-			Stage:     "planning",
-			Outline:   dedicatedFullDocumentOutlineData(outline),
+			Content:             outlineMarkdown,
+			Iteration:           0,
+			LongDocumentEnabled: true,
+			Done:                true,
+			Replace:             false,
+			Synthetic:           true,
+			Stage:               "planning",
+			Outline:             dedicatedFullDocumentOutlineData(outline),
 		},
 	}); err != nil {
 		logger.Errorf(r.ctx, "Failed to emit full document outline thought: %v", err)
@@ -3343,11 +3348,56 @@ func chatDocumentGenerationRunStatusFromOutcome(documentGenerationStatus string,
 	}
 }
 
+const (
+	longDocumentOutlineRoleGeneratedPlan   = "generated_plan"
+	longDocumentOutlineRoleBaseDocument    = "base_document"
+	longDocumentOutlineSourceGenerationRun = "generation_run"
+	longDocumentOutlineSourceBaseArtifact  = "base_artifact"
+)
+
+func withPlanningOutlineExtra(extra map[string]interface{}, outline dedicatedFullDocumentOutline, source string) map[string]interface{} {
+	outline = normalizeDedicatedFullDocumentOutline(outline)
+	if strings.TrimSpace(outline.Title) == "" && len(outline.Sections) == 0 {
+		return extra
+	}
+	if extra == nil {
+		extra = map[string]interface{}{}
+	}
+	data := dedicatedFullDocumentOutlineData(outline)
+	extra["planning_outline"] = data
+	if _, exists := extra["outline"]; !exists {
+		extra["outline"] = data
+	}
+	extra["outline_role"] = longDocumentOutlineRoleGeneratedPlan
+	if strings.TrimSpace(source) != "" {
+		extra["outline_source"] = strings.TrimSpace(source)
+	}
+	return extra
+}
+
+func withBaseOutlineExtra(extra map[string]interface{}, outline dedicatedFullDocumentOutline, source string) map[string]interface{} {
+	outline = normalizeDedicatedFullDocumentOutline(outline)
+	if strings.TrimSpace(outline.Title) == "" && len(outline.Sections) == 0 {
+		return extra
+	}
+	if extra == nil {
+		extra = map[string]interface{}{}
+	}
+	data := dedicatedFullDocumentOutlineData(outline)
+	extra["outline"] = data
+	extra["base_outline"] = data
+	extra["outline_role"] = longDocumentOutlineRoleBaseDocument
+	if strings.TrimSpace(source) != "" {
+		extra["outline_source"] = strings.TrimSpace(source)
+	}
+	return extra
+}
+
 func buildKnowledgeGroundedGenerationRunExtra(run *types.ChatDocumentGenerationRun, outline dedicatedFullDocumentOutline, effectiveKBIDs []string, budget DocumentGenerationBudget, feedback documentGenerationRuntimeFeedback) map[string]interface{} {
 	extra := withDocumentGenerationBudgetExtra(map[string]interface{}{
 		"effective_kb_ids": uniqueNonEmptyStrings(effectiveKBIDs),
-		"outline":          dedicatedFullDocumentOutlineData(outline),
 	}, budget)
+	extra = withPlanningOutlineExtra(extra, outline, longDocumentOutlineSourceGenerationRun)
 	extra = withDocumentGenerationRuntimeFeedbackExtra(extra, feedback)
 	extra = withDocumentGenerationRunStateExtra(extra, run, feedback)
 	if run != nil {
@@ -4319,6 +4369,7 @@ func emitFullDocumentCompletion(
 			TotalSteps:               len(agentSteps),
 			MessageID:                req.AssistantMessageID,
 			FinalAnswer:              finalAnswer,
+			LongDocumentEnabled:      true,
 			CompletionStatus:         completionStatus,
 			FinishReason:             finishReason,
 			FailureReason:            failureReason,
@@ -4800,10 +4851,7 @@ func (s *sessionService) runKnowledgeGroundedDocumentContinuationPath(
 			"effective_kb_ids":     evidence.ScopeKBIDs,
 			"evidence_queries":     evidence.Queries,
 		}, budget)
-		if strings.TrimSpace(baseOutline.Title) != "" || len(baseOutline.Sections) > 0 {
-			extra["outline"] = dedicatedFullDocumentOutlineData(baseOutline)
-			extra["outline_role"] = "base_document"
-		}
+		extra = withBaseOutlineExtra(extra, baseOutline, longDocumentOutlineSourceBaseArtifact)
 		return emitFullDocumentCompletion(ctx, req, eventBus, message, types.MessageCompletionStatusPartial, "local_knowledge_not_found", "local_knowledge_not_found", types.ChatDocumentGenerationStatusBlocked, progress.AgentSteps(), nil, extra, startTime)
 	}
 	progress.UpdateStage("generating", fmt.Sprintf("已命中 %d 条本地知识证据，正在继续生成剩余文档内容。", len(evidence.Items)))
@@ -4885,10 +4933,7 @@ func (s *sessionService) runKnowledgeGroundedDocumentContinuationPath(
 		"effective_kb_ids":     evidence.ScopeKBIDs,
 		"evidence_queries":     evidence.Queries,
 	}
-	if strings.TrimSpace(baseOutline.Title) != "" || len(baseOutline.Sections) > 0 {
-		extra["outline"] = dedicatedFullDocumentOutlineData(baseOutline)
-		extra["outline_role"] = "base_document"
-	}
+	extra = withBaseOutlineExtra(extra, baseOutline, longDocumentOutlineSourceBaseArtifact)
 	extra = withDocumentGenerationBudgetExtra(extra, currentBudget)
 	extra = withDocumentGenerationRuntimeFeedbackExtra(extra, runtimeFeedback)
 	if normalizedQualityIssues := uniqueNonEmptyStrings(qualityIssues); len(normalizedQualityIssues) > 0 {
@@ -6018,11 +6063,12 @@ func emitDedicatedDocumentEditThought(ctx context.Context, req *types.QARequest,
 		Type:      event.EventAgentThought,
 		SessionID: req.Session.ID,
 		Data: event.AgentThoughtData{
-			Content:   content,
-			Iteration: 0,
-			Done:      done,
-			Replace:   replace,
-			Synthetic: synthetic,
+			Content:             content,
+			Iteration:           0,
+			LongDocumentEnabled: true,
+			Done:                done,
+			Replace:             replace,
+			Synthetic:           synthetic,
 		},
 	}); err != nil {
 		logger.Errorf(ctx, "Failed to emit dedicated document edit progress event: %v", err)
@@ -6067,14 +6113,15 @@ func (s *sessionService) emitDedicatedDocumentEditFailure(ctx context.Context, r
 			Type:      event.EventAgentComplete,
 			SessionID: req.Session.ID,
 			Data: event.AgentCompleteData{
-				SessionID:        req.Session.ID,
-				MessageID:        req.AssistantMessageID,
-				FinalAnswer:      "",
-				CompletionStatus: completionStatus,
-				FinishReason:     reason,
-				FailureReason:    dedicatedDocumentEditFailureReasonForStatus(completionStatus, reason),
-				AllowIndexing:    false,
-				AllowComplete:    false,
+				SessionID:           req.Session.ID,
+				MessageID:           req.AssistantMessageID,
+				FinalAnswer:         "",
+				LongDocumentEnabled: true,
+				CompletionStatus:    completionStatus,
+				FinishReason:        reason,
+				FailureReason:       dedicatedDocumentEditFailureReasonForStatus(completionStatus, reason),
+				AllowIndexing:       false,
+				AllowComplete:       false,
 			},
 		})
 	}
@@ -6284,15 +6331,16 @@ func (s *sessionService) consumeDedicatedDocumentEditStream(
 							Type:      event.EventAgentComplete,
 							SessionID: req.Session.ID,
 							Data: event.AgentCompleteData{
-								SessionID:        req.Session.ID,
-								MessageID:        req.AssistantMessageID,
-								FinalAnswer:      finalContent.String(),
-								CompletionStatus: types.MessageCompletionStatusCompleted,
-								FinishReason:     finishReason,
-								AllowIndexing:    true,
-								AllowComplete:    true,
-								Extra:            mergeDocumentEditCompletionExtra(buildDocumentEditPatchExtra(req, finalContent.String(), false), completionExtra),
-								TotalDurationMs:  time.Since(startTime).Milliseconds(),
+								SessionID:           req.Session.ID,
+								MessageID:           req.AssistantMessageID,
+								FinalAnswer:         finalContent.String(),
+								LongDocumentEnabled: true,
+								CompletionStatus:    types.MessageCompletionStatusCompleted,
+								FinishReason:        finishReason,
+								AllowIndexing:       true,
+								AllowComplete:       true,
+								Extra:               mergeDocumentEditCompletionExtra(buildDocumentEditPatchExtra(req, finalContent.String(), false), completionExtra),
+								TotalDurationMs:     time.Since(startTime).Milliseconds(),
 							},
 						}); err != nil {
 							logger.Errorf(ctx, "Failed to emit dedicated document edit completion event: %v", err)
@@ -6341,15 +6389,16 @@ func (s *sessionService) consumeDedicatedDocumentEditStream(
 					Type:      event.EventAgentComplete,
 					SessionID: req.Session.ID,
 					Data: event.AgentCompleteData{
-						SessionID:        req.Session.ID,
-						MessageID:        req.AssistantMessageID,
-						FinalAnswer:      finalContent.String(),
-						CompletionStatus: types.MessageCompletionStatusCompleted,
-						FinishReason:     finishReason,
-						AllowIndexing:    true,
-						AllowComplete:    true,
-						Extra:            mergeDocumentEditCompletionExtra(buildDocumentEditPatchExtra(req, finalContent.String(), false), completionExtra),
-						TotalDurationMs:  time.Since(startTime).Milliseconds(),
+						SessionID:           req.Session.ID,
+						MessageID:           req.AssistantMessageID,
+						FinalAnswer:         finalContent.String(),
+						LongDocumentEnabled: true,
+						CompletionStatus:    types.MessageCompletionStatusCompleted,
+						FinishReason:        finishReason,
+						AllowIndexing:       true,
+						AllowComplete:       true,
+						Extra:               mergeDocumentEditCompletionExtra(buildDocumentEditPatchExtra(req, finalContent.String(), false), completionExtra),
+						TotalDurationMs:     time.Since(startTime).Milliseconds(),
 					},
 				}); err != nil {
 					logger.Errorf(ctx, "Failed to emit dedicated document edit completion event: %v", err)
@@ -6371,16 +6420,17 @@ finalize:
 		Type:      event.EventAgentComplete,
 		SessionID: req.Session.ID,
 		Data: event.AgentCompleteData{
-			SessionID:        req.Session.ID,
-			MessageID:        req.AssistantMessageID,
-			FinalAnswer:      finalContent.String(),
-			CompletionStatus: terminalStatus,
-			FinishReason:     failureReason,
-			FailureReason:    dedicatedDocumentEditFailureReasonForStatus(terminalStatus, failureReason),
-			AllowIndexing:    false,
-			AllowComplete:    false,
-			Extra:            mergeDocumentEditCompletionExtra(buildDocumentEditPatchExtra(req, finalContent.String(), false), completionExtra),
-			TotalDurationMs:  time.Since(startTime).Milliseconds(),
+			SessionID:           req.Session.ID,
+			MessageID:           req.AssistantMessageID,
+			FinalAnswer:         finalContent.String(),
+			LongDocumentEnabled: true,
+			CompletionStatus:    terminalStatus,
+			FinishReason:        failureReason,
+			FailureReason:       dedicatedDocumentEditFailureReasonForStatus(terminalStatus, failureReason),
+			AllowIndexing:       false,
+			AllowComplete:       false,
+			Extra:               mergeDocumentEditCompletionExtra(buildDocumentEditPatchExtra(req, finalContent.String(), false), completionExtra),
+			TotalDurationMs:     time.Since(startTime).Milliseconds(),
 		},
 	}); emitErr != nil {
 		logger.Errorf(ctx, "Failed to emit dedicated document edit failure completion event: %v", emitErr)

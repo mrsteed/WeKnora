@@ -137,6 +137,7 @@ type ChatDocumentArtifact struct {
 	CanUseAsBaseDocument      bool                             `json:"can_use_as_base,omitempty" gorm:"-"`
 	CanViewDocument           bool                             `json:"can_view,omitempty" gorm:"-"`
 	CanIndexDocument          bool                             `json:"can_index,omitempty" gorm:"-"`
+	LongDocumentEnabled       bool                             `json:"long_document_enabled,omitempty" gorm:"-"`
 	ContinuationContextMode   string                           `json:"continuation_context_mode,omitempty" gorm:"-"`
 	QualityIssues             []string                         `json:"quality_issues,omitempty" gorm:"-"`
 	QualityIssueDetails       []ChatDocumentQualityIssueDetail `json:"quality_issue_details,omitempty" gorm:"-"`

@@ -32,11 +32,12 @@ interface LastError {
 
 interface SpansResponse {
   knowledge_id: string
-  attempt: number
-  latest_attempt: number
+  attempt?: number
+  latest_attempt?: number
   current_attempt?: number
   parse_status: string
   current_stage?: string
+  trace_recorded?: boolean
   trace: SpanNode
   last_error?: LastError | null
 }
@@ -164,7 +165,10 @@ const stages = computed<SpanNode[]>(() => {
   return STAGES.map((n) => byName.get(n) || ({ name: n, kind: 'stage', status: 'pending' } as SpanNode))
 })
 
+const hasRecordedTrace = computed(() => knowledgeSpansPayloadHasTrace(data.value))
+
 const currentStageLabel = computed(() => {
+  if (!hasRecordedTrace.value) return ''
   const running = stages.value.find((s) => s.status === 'running')
   const failed = stages.value.find((s) => s.status === 'failed')
   const target = failed || running || stages.value.find((s) => s.status === 'pending') || stages.value[stages.value.length - 1]
@@ -172,6 +176,7 @@ const currentStageLabel = computed(() => {
 })
 
 const currentStageIndex = computed(() => {
+  if (!hasRecordedTrace.value) return 0
   const idx = stages.value.findIndex((s) => s.status === 'running' || s.status === 'failed')
   if (idx >= 0) return idx + 1
   const done = stages.value.filter((s) => s.status === 'done').length
@@ -347,7 +352,7 @@ async function fetchSpans(opts: { manual?: boolean } = {}) {
       data.value = res.data as SpansResponse
       attemptOk = true
       if (selectedAttempt.value === undefined) {
-        selectedAttempt.value = data.value.attempt
+        selectedAttempt.value = data.value.current_attempt
       }
       // Auto-expand rule, applied on EVERY fetch and walked over
       // EVERY level of the tree (stage + subspan + sub-subspan, …):
@@ -374,7 +379,9 @@ async function fetchSpans(opts: { manual?: boolean } = {}) {
       for (const stage of data.value.trace?.children || []) autoExpand(stage)
       expandedRows.value = expanded
       const traceStatus = data.value.trace?.status || data.value.parse_status || 'running'
-      attemptStatuses.set(data.value.attempt, traceStatus)
+      if (data.value.current_attempt) {
+        attemptStatuses.set(data.value.current_attempt, traceStatus)
+      }
       ensureAttemptStatuses()
       emit('update:hasSpans', knowledgeSpansPayloadHasTrace(data.value))
     } else {
@@ -1183,6 +1190,12 @@ const headerStatusTheme = computed(() => {
 })
 
 const stagesStatDisplay = computed(() => {
+  if (!hasRecordedTrace.value) {
+    return {
+      label: t('knowledgeStages.head.status'),
+      value: headerStatusText.value || t('knowledgeStages.detail.empty'),
+    }
+  }
   const total = stages.value.length
   const doneCount = stages.value.filter((s) => s.status === 'done').length
   const inProgress = stages.value.some(
@@ -1221,6 +1234,11 @@ const headMetaParts = computed(() => {
   return parts
 })
 
+const showPlaceholderOnlyState = computed(() => {
+  if (!data.value) return false
+  return !hasRecordedTrace.value && isHardTerminal(data.value.parse_status)
+})
+
 const primaryHeadTitle = computed(() => props.docTitle || t('knowledgeStages.title'))
 
 // Emit summary upstream so the doc-content drawer can show a one-line
@@ -1236,9 +1254,9 @@ watch(
     emit('update:summary', {
       totalMs: totalMs.value,
       status: data.value?.trace?.status || data.value?.parse_status || '',
-      stageIndex: currentStageIndex.value,
-      stageTotal: stages.value.length,
-      stageLabel: currentStageLabel.value,
+      stageIndex: hasRecordedTrace.value ? currentStageIndex.value : 0,
+      stageTotal: hasRecordedTrace.value ? stages.value.length : 0,
+      stageLabel: hasRecordedTrace.value ? currentStageLabel.value : '',
     })
   },
   { immediate: true },
@@ -1495,6 +1513,10 @@ const processConfigLines = computed<string[]>(() => {
           </div>
           <div v-else-if="!data && !loading" class="kp-state kp-state-empty">
             <span>{{ t('knowledgeStages.noActivity') }}</span>
+          </div>
+
+          <div v-else-if="showPlaceholderOnlyState" class="kp-state kp-state-empty">
+            <span>{{ t('knowledgeStages.detail.placeholderHint') }}</span>
           </div>
 
           <template v-else-if="data">

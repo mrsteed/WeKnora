@@ -189,17 +189,18 @@ func TestHandleThought_PropagatesReplaceSyntheticAndOutlineMetadata(t *testing.T
 	require.NoError(t, handler.handleThought(context.Background(), event.Event{
 		ID: "document-edit-progress",
 		Data: event.AgentThoughtData{
-			Content:        "仍在等待模型输出首个修订片段",
-			Iteration:      0,
-			Replace:        true,
-			Synthetic:      true,
-			Stage:          "generating",
-			SectionCurrent: 2,
-			SectionTotal:   8,
-			SectionTitle:   "AR眼镜智能作业系统",
-			QueryCurrent:   1,
-			QueryTotal:     3,
-			ProgressLabel:  "第 2/8 章：AR眼镜智能作业系统 · 检索 1/3",
+			Content:             "仍在等待模型输出首个修订片段",
+			Iteration:           0,
+			LongDocumentEnabled: true,
+			Replace:             true,
+			Synthetic:           true,
+			Stage:               "generating",
+			SectionCurrent:      2,
+			SectionTotal:        8,
+			SectionTitle:        "AR眼镜智能作业系统",
+			QueryCurrent:        1,
+			QueryTotal:          3,
+			ProgressLabel:       "第 2/8 章：AR眼镜智能作业系统 · 检索 1/3",
 			Outline: map[string]interface{}{
 				"title":    "智慧运行建设方案",
 				"sections": []string{"建设目标", "平台架构", "实施保障"},
@@ -212,6 +213,7 @@ func TestHandleThought_PropagatesReplaceSyntheticAndOutlineMetadata(t *testing.T
 	assert.Equal(t, types.ResponseTypeThinking, thoughtEvent.Type)
 	assert.Equal(t, "仍在等待模型输出首个修订片段", thoughtEvent.Content)
 	assert.Equal(t, "document-edit-progress", thoughtEvent.Data["event_id"])
+	assert.Equal(t, true, thoughtEvent.Data["long_document_enabled"])
 	assert.Equal(t, true, thoughtEvent.Data["replace"])
 	assert.Equal(t, true, thoughtEvent.Data["synthetic"])
 	assert.Equal(t, "generating", thoughtEvent.Data["stage"])

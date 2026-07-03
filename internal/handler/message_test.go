@@ -78,7 +78,10 @@ func (s *messageHandlerMessageServiceStub) GetChatHistoryKBStats(context.Context
 	return nil, nil
 }
 
-type messageHandlerSessionServiceStub struct{}
+type messageHandlerSessionServiceStub struct {
+	replayExtra map[string]interface{}
+	replayErr   error
+}
 
 func (s *messageHandlerSessionServiceStub) CreateSession(context.Context, *types.Session) (*types.Session, error) {
 	return nil, nil
@@ -86,6 +89,14 @@ func (s *messageHandlerSessionServiceStub) CreateSession(context.Context, *types
 
 func (s *messageHandlerSessionServiceStub) GetSession(context.Context, string) (*types.Session, error) {
 	return &types.Session{ID: "sess-1"}, nil
+}
+
+func (s *messageHandlerSessionServiceStub) GetSessionByID(context.Context, uint64, string) (*types.Session, error) {
+	return &types.Session{ID: "sess-1"}, nil
+}
+
+func (s *messageHandlerSessionServiceStub) SetSessionOwnerID(context.Context, uint64, string, string) error {
+	return nil
 }
 
 func (s *messageHandlerSessionServiceStub) GetSessionsByTenant(context.Context) ([]*types.Session, error) {
@@ -116,6 +127,10 @@ func (s *messageHandlerSessionServiceStub) SetSessionPinned(context.Context, str
 	return 0, nil
 }
 
+func (s *messageHandlerSessionServiceStub) UpdateSessionLastRequestState(context.Context, string, *types.SessionLastRequestState) error {
+	return nil
+}
+
 func (s *messageHandlerSessionServiceStub) GenerateTitle(context.Context, *types.Session, []types.Message, string) (string, error) {
 	return "", nil
 }
@@ -141,8 +156,54 @@ func (s *messageHandlerSessionServiceStub) AgentQA(context.Context, *types.QAReq
 
 func (s *messageHandlerSessionServiceStub) ClearContext(context.Context, string) error { return nil }
 
+func (s *messageHandlerSessionServiceStub) BuildHistoricalLongDocumentReplayExtra(
+	context.Context,
+	*types.Message,
+	*types.ChatDocumentArtifact,
+	string,
+) (map[string]interface{}, error) {
+	return s.replayExtra, s.replayErr
+}
+
 type messageHandlerStreamManagerStub struct {
 	eventsByMessageID map[string][]interfaces.StreamEvent
+}
+
+type messageHandlerChatDocumentArtifactServiceStub struct {
+	artifactsByMessageID map[string]*types.ChatDocumentArtifact
+	artifactsByID        map[string]*types.ChatDocumentArtifact
+}
+
+func (s *messageHandlerChatDocumentArtifactServiceStub) DetectIntent(context.Context, string, string, string) (*types.DocumentIntentResult, error) {
+	return nil, nil
+}
+
+func (s *messageHandlerChatDocumentArtifactServiceStub) GetLatestArtifact(context.Context, string) (*types.ChatDocumentArtifact, error) {
+	return nil, nil
+}
+
+func (s *messageHandlerChatDocumentArtifactServiceStub) GetArtifact(_ context.Context, artifactID string) (*types.ChatDocumentArtifact, error) {
+	return s.artifactsByID[artifactID], nil
+}
+
+func (s *messageHandlerChatDocumentArtifactServiceStub) GetArtifactBySourceMessageID(_ context.Context, sourceMessageID string) (*types.ChatDocumentArtifact, error) {
+	return s.artifactsByMessageID[sourceMessageID], nil
+}
+
+func (s *messageHandlerChatDocumentArtifactServiceStub) BuildQuotedContext(context.Context, *types.ChatDocumentArtifact, string, string, string, string, string) (string, error) {
+	return "", nil
+}
+
+func (s *messageHandlerChatDocumentArtifactServiceStub) RegisterFromAssistantMessage(context.Context, *types.Message, types.RegisterChatDocumentArtifactOptions) (*types.ChatDocumentArtifact, error) {
+	return nil, nil
+}
+
+func (s *messageHandlerChatDocumentArtifactServiceStub) ListBySession(context.Context, string, int) ([]*types.ChatDocumentArtifact, error) {
+	return nil, nil
+}
+
+func (s *messageHandlerChatDocumentArtifactServiceStub) ListRevisions(context.Context, string) ([]*types.ChatDocumentArtifact, error) {
+	return nil, nil
 }
 
 func (s *messageHandlerStreamManagerStub) AppendEvent(context.Context, string, string, interfaces.StreamEvent) error {
@@ -180,6 +241,7 @@ func TestLoadMessages_ReconcilesCompletedAssistantFromStream(t *testing.T) {
 				}},
 			},
 		}},
+		nil,
 	)
 
 	recorder := httptest.NewRecorder()
@@ -221,6 +283,7 @@ func TestLoadMessages_MarksMissingStreamAsFailed(t *testing.T) {
 		messageService,
 		&messageHandlerSessionServiceStub{},
 		&messageHandlerStreamManagerStub{eventsByMessageID: map[string][]interfaces.StreamEvent{}},
+		nil,
 	)
 
 	recorder := httptest.NewRecorder()
@@ -284,6 +347,7 @@ func TestLoadMessages_ReconcilesCompletedAssistantMissingAgentStepsFromStream(t 
 				}},
 			},
 		}},
+		nil,
 	)
 
 	recorder := httptest.NewRecorder()
@@ -329,6 +393,7 @@ func TestLoadMessages_DoesNotPromoteAgentAnswerDoneWithoutCompleteToCompleted(t 
 				{Type: types.ResponseTypeAnswer, Content: "还在处理中", Done: true},
 			},
 		}},
+		nil,
 	)
 
 	recorder := httptest.NewRecorder()
@@ -367,6 +432,7 @@ func TestLoadMessages_ReconcilesAgentStopEventAsCancelled(t *testing.T) {
 				}},
 			},
 		}},
+		nil,
 	)
 
 	recorder := httptest.NewRecorder()
@@ -384,6 +450,71 @@ func TestLoadMessages_ReconcilesAgentStopEventAsCancelled(t *testing.T) {
 	assert.Equal(t, "user_requested", messageService.updatedMessages[0].FailureReason)
 }
 
+func TestLoadMessages_HydratesHistoricalLongDocumentReplayExtra(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	messageService := &messageHandlerMessageServiceStub{recentMessages: []*types.Message{{
+		ID:               "assistant-doc-1",
+		SessionID:        "sess-1",
+		RequestID:        "req-doc-1",
+		Role:             "assistant",
+		Content:          "# 北海电厂方案\n\n## 第1章 项目背景",
+		CompletionStatus: types.MessageCompletionStatusCompleted,
+		IsCompleted:      true,
+	}}}
+	planningOutline := map[string]interface{}{
+		"title": "北海电厂二期智慧电厂项目技术方案",
+		"sections": []interface{}{
+			map[string]interface{}{"title": "第1章 项目背景与建设目标"},
+			map[string]interface{}{"title": "第2章 总体架构设计"},
+		},
+	}
+	handler := NewMessageHandler(
+		messageService,
+		&messageHandlerSessionServiceStub{replayExtra: map[string]interface{}{
+			"generation_run_id":          "run-1",
+			"planning_outline":           planningOutline,
+			"outline_role":               "generated_plan",
+			"outline_source":             "generation_run",
+			"document_generation_status": types.ChatDocumentGenerationStatusCompleted,
+			"long_document_enabled":      true,
+		}},
+		&messageHandlerStreamManagerStub{},
+		&messageHandlerChatDocumentArtifactServiceStub{artifactsByMessageID: map[string]*types.ChatDocumentArtifact{
+			"assistant-doc-1": {
+				ID:                       "artifact-1",
+				SessionID:                "sess-1",
+				SourceMessageID:          "assistant-doc-1",
+				Status:                   types.ChatDocumentArtifactStatusAvailable,
+				DocumentGenerationStatus: types.ChatDocumentGenerationStatusCompleted,
+				ContentSnapshot:          "# 北海电厂方案\n\n## 第1章 项目背景",
+			},
+		}},
+	)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/messages/sess-1/load?limit=20", nil)
+	ctx.Params = gin.Params{{Key: "session_id", Value: "sess-1"}}
+
+	handler.LoadMessages(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Success bool             `json:"success"`
+		Data    []*types.Message `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Len(t, response.Data, 1)
+	assert.True(t, response.Data[0].LongDocumentEnabled)
+	assert.Equal(t, "run-1", response.Data[0].GenerationRunID)
+	assert.Equal(t, types.ChatDocumentGenerationStatusCompleted, response.Data[0].DocumentGenerationStatus)
+	assert.Equal(t, "generated_plan", response.Data[0].OutlineRole)
+	assert.Equal(t, "generation_run", response.Data[0].OutlineSource)
+	assert.Equal(t, planningOutline, response.Data[0].PlanningOutline)
+}
+
 var _ interfaces.MessageService = (*messageHandlerMessageServiceStub)(nil)
 var _ interfaces.SessionService = (*messageHandlerSessionServiceStub)(nil)
 var _ interfaces.StreamManager = (*messageHandlerStreamManagerStub)(nil)
+var _ interfaces.ChatDocumentArtifactService = (*messageHandlerChatDocumentArtifactServiceStub)(nil)

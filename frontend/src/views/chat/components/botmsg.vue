@@ -14,6 +14,18 @@
                     <span class="tag_name">{{ item.name }}</span>
                 </span>
             </div>
+            <LongDocumentMessageEnhancements
+                :session="session"
+                :content="content || session?.content || ''"
+                :selected-artifact-id="selectedArtifactId"
+                :export-api-base="publicExportApiBase"
+                :show-planning="true"
+                :show-artifact="false"
+                @view-artifact-revisions="emit('view-artifact-revisions', $event)"
+                @use-artifact-as-base="emit('use-artifact-as-base', $event)"
+                @clear-artifact-base="emit('clear-artifact-base', $event)"
+                @artifact-display-update="emit('artifact-display-update', $event)"
+            />
             <div v-if="session.isRagMode" class="rag-answer-stack">
                 <RagPipelineProgress :session="session" :embedded-mode="embeddedMode" />
                 <AgentStreamDisplay v-if="session.isAgentMode" :session="session" :session-id="sessionId"
@@ -64,6 +76,18 @@
             <div v-if="isImgLoading" class="img_loading"><t-loading size="small"></t-loading><span>{{
                 $t('common.loading') }}</span></div>
         </div>
+        <LongDocumentMessageEnhancements
+            :session="session"
+            :content="content || session?.content || ''"
+            :selected-artifact-id="selectedArtifactId"
+            :export-api-base="publicExportApiBase"
+            :show-planning="false"
+            :show-artifact="true"
+            @view-artifact-revisions="emit('view-artifact-revisions', $event)"
+            @use-artifact-as-base="emit('use-artifact-as-base', $event)"
+            @clear-artifact-base="emit('clear-artifact-base', $event)"
+            @artifact-display-update="emit('artifact-display-update', $event)"
+        />
         <picturePreview :reviewImg="reviewImg" :reviewUrl="reviewUrl" @closePreImg="closePreImg"></picturePreview>
         <Teleport to="body">
             <ChatCitationFloat :float="citationFloat" :on-enter="cancelCitationClose"
@@ -86,6 +110,7 @@ import { useI18n } from 'vue-i18n';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useUIStore } from '@/stores/ui';
 import ExportDropdown from './ExportDropdown.vue';
+import LongDocumentMessageEnhancements from '../long-document/components/LongDocumentMessageEnhancements.vue';
 import {
     buildManualMarkdown,
     copyTextToClipboard,
@@ -121,7 +146,13 @@ const mentionTagIcon = (item) => {
     return 'file';
 };
 
-const emit = defineEmits(['scroll-bottom'])
+const emit = defineEmits([
+    'scroll-bottom',
+    'view-artifact-revisions',
+    'use-artifact-as-base',
+    'clear-artifact-base',
+    'artifact-display-update'
+])
 const { t } = useI18n()
 const uiStore = useUIStore();
 let parentMd = ref()
@@ -162,6 +193,14 @@ const props = defineProps({
     publicExportApiBase: {
         type: String,
         default: ''
+    },
+    selectedArtifactId: {
+        type: String,
+        default: ''
+    },
+    isSharePageMode: {
+        type: Boolean,
+        default: false
     }
 });
 

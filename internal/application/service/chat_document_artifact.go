@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -14,33 +15,35 @@ import (
 )
 
 var (
-	chatDocumentContinueIntentRE    = regexp.MustCompile(`(?i)(继续生成|接着写|续写|从上次中断处继续|补全剩余|继续输出|继续补齐|继续补充|接着补齐|接着补充|补齐剩余|补充剩余|继续完善|继续扩写)`)
-	chatDocumentReviseIntentRE      = regexp.MustCompile(`(?i)(修改上一版|基于上一个文档修改|把上一份改成|调整上一版|完善上一版)`)
-	chatDocumentRegenerateIntentRE  = regexp.MustCompile(`(?i)(重新生成|从头生成|重写一版|不要基于上一版)`)
-	chatDocumentScopedTargetRE      = regexp.MustCompile(`(?i)(章节|小节|段落|标题|模块|部分|第[0-9一二三四五六七八九十百零]+(?:章|节|部分)|[0-9]+(?:\.[0-9]+)+|智慧运行|智慧安防|数据湖|算力平台|应急中心|AR眼镜)`)
-	chatDocumentTailContinueRE      = regexp.MustCompile(`(?i)(剩余内容|剩余章节|后续章节|余下章节|从上次中断|文档末尾|继续剩余|当前文档为基准|自动续写)`)
-	chatDocumentQuotedTargetRE      = regexp.MustCompile(`["“'‘]([^"”'’\n]{1,40})["”'’](?:章节|小节|模块|部分)?`)
-	chatDocumentScopedPhraseRE      = regexp.MustCompile(`(?:在|对|把|将|就)?\s*(?:第[0-9一二三四五六七八九十百零]+(?:章|节|部分)|[0-9]+(?:\.[0-9]+)+|[\p{Han}A-Za-z0-9_-]{2,40})(?:章节|小节|模块|部分)`)
-	chatDocumentTargetLeadTrimRE    = regexp.MustCompile(`^(?:(?:请|帮我|麻烦|再)\s*)*(?:(?:继续|接着|续写|补充|扩写|完善|细化|补齐|补全|修改|调整|重写|生成)\s*)+`)
-	chatDocumentHeadingMarkerTrimRE = regexp.MustCompile(`^#{1,6}\s*`)
-	chatDocumentHeadingNumberTrimRE = regexp.MustCompile(`^(?:(?:[0-9]+(?:\.[0-9]+)*)|(?:第[0-9一二三四五六七八九十百零]+(?:章|节|部分)?)|(?:[一二三四五六七八九十百零]+))[、.．\s-]*`)
-	chatDocumentHeadingRE           = regexp.MustCompile(`(?m)^(#{1,6})\s+(.+)$`)
-	chatDocumentCodeFenceRE         = regexp.MustCompile("(?m)^```")
-	chatDocumentListRE              = regexp.MustCompile(`(?m)^\s*(?:[-*+]\s+|\d+\.\s+)`)
-	chatDocumentTableRE             = regexp.MustCompile(`(?m)^\|.+\|\s*$`)
-	chatDocumentPatchEnvelopeRE     = regexp.MustCompile(`(?s)^\s*<document_patch>\s*(.*?)\s*</document_patch>\s*$`)
-	chatDocumentPatchOperationRE    = regexp.MustCompile(`(?s)<(replace|append|insert_after)\s+heading=(?:"([^"]+)"|'([^']+)')\s*>(.*?)</(replace|append|insert_after)>`)
-	chatDocumentQueryHintRE         = regexp.MustCompile(`(?i)(方案|文档|报告|markdown|技术方案|设计方案|plan|report|document)`)
-	chatDocumentDuplicatePhraseRE   = regexp.MustCompile(`(?i)^(我已修改|下面是修改建议|已根据你的要求修改)`)
-	chatDocumentRevisionLeadRE      = regexp.MustCompile(`(?i)^(我已修改|下面是修改|以下是修改|已根据你的要求修改|根据你的要求|我已经根据|已按要求)`)
-	chatDocumentMoveIntentRE        = regexp.MustCompile(`(?i)(合并到|并入|移动到|移到|放到|放入|追加到|补充到|归并到|整合到|纳入)`)
-	chatDocumentDestinationLeadRE   = regexp.MustCompile(`(?i)(?:合并到|并入|移动到|移到|放到|放入|追加到|补充到|归并到|整合到|纳入)\s*([^，。；\n]+)`)
-	chatDocumentSourceTailRE        = regexp.MustCompile(`(?i)(?:把|将)\s*([^，。；\n]+?)\s*(?:后续的内容|之后的内容|后面的内容|后续内容|之后内容|后面内容|章节内容|小节内容)`)
-	chatDocumentSourceMoveRE        = regexp.MustCompile(`(?i)(?:把|将)\s*([^，。；\n]+?)\s*(?:合并到|并入|移动到|移到|放到|放入|追加到|补充到|归并到|整合到|纳入)`)
-	chatDocumentResetLeadRE         = regexp.MustCompile(`(?m)^\s*(?:#{1,6}\s*)?(?:一[、.．]|1[、.．]|一、|1\.\s*)`)
-	chatDocumentLateSectionRE       = regexp.MustCompile(`(?m)^\s*(?:#{1,6}\s*)?(?:[3-9]\.|[1-9][0-9]+\.|[三四五六七八九十][、.．])`)
-	chatDocumentTerminalHeadingRE   = regexp.MustCompile(`(?i)(实施方能力保障|保障措施|结束语|总结|附录|结论|交付保障|实施保障)`)
-	chatDocumentCompletionNoticeRE  = regexp.MustCompile(`(?i)^\s*(?:文档|全文|整篇文档|本篇文档)?(?:已完成|已经完成|已全部输出|已完整输出|无需继续|无须继续|没有新增内容|无新增内容)(?:[。.!！\s]*)$`)
+	chatDocumentContinueIntentRE          = regexp.MustCompile(`(?i)(继续生成|接着写|续写|从上次中断处继续|补全剩余|继续输出|继续补齐|继续补充|接着补齐|接着补充|补齐剩余|补充剩余|继续完善|继续扩写)`)
+	chatDocumentReviseIntentRE            = regexp.MustCompile(`(?i)(修改上一版|基于上一个文档修改|把上一份改成|调整上一版|完善上一版)`)
+	chatDocumentRegenerateIntentRE        = regexp.MustCompile(`(?i)(重新生成|从头生成|重写一版|不要基于上一版)`)
+	chatDocumentScopedTargetRE            = regexp.MustCompile(`(?i)(章节|小节|段落|标题|模块|部分|第[0-9一二三四五六七八九十百零]+(?:章|节|部分)|[0-9]+(?:\.[0-9]+)+|智慧运行|智慧安防|数据湖|算力平台|应急中心|AR眼镜)`)
+	chatDocumentTailContinueRE            = regexp.MustCompile(`(?i)(剩余内容|剩余章节|后续章节|余下章节|从上次中断|文档末尾|继续剩余|当前文档为基准|自动续写)`)
+	chatDocumentQuotedTargetRE            = regexp.MustCompile(`["“'‘]([^"”'’\n]{1,40})["”'’](?:章节|小节|模块|部分)?`)
+	chatDocumentScopedPhraseRE            = regexp.MustCompile(`(?:在|对|把|将|就)?\s*(?:第[0-9一二三四五六七八九十百零]+(?:章|节|部分)|[0-9]+(?:\.[0-9]+)+|[\p{Han}A-Za-z0-9_-]{2,40})(?:章节|小节|模块|部分)`)
+	chatDocumentStandaloneOrdinalTargetRE = regexp.MustCompile(`第[0-9一二三四五六七八九十百零]+(?:章|节|部分)`)
+	chatDocumentScopedRevisionVerbRE      = regexp.MustCompile(`(?i)(继续|接着|续写|补充|扩写|完善|细化|补齐|补全|插入|新增|添加)`)
+	chatDocumentTargetLeadTrimRE          = regexp.MustCompile(`^(?:(?:请|帮我|麻烦|再)\s*)*(?:(?:继续|接着|续写|补充|扩写|完善|细化|补齐|补全|修改|调整|重写|生成)\s*)+`)
+	chatDocumentHeadingMarkerTrimRE       = regexp.MustCompile(`^#{1,6}\s*`)
+	chatDocumentHeadingNumberTrimRE       = regexp.MustCompile(`^(?:(?:[0-9]+(?:\.[0-9]+)*)|(?:第[0-9一二三四五六七八九十百零]+(?:章|节|部分)?)|(?:[一二三四五六七八九十百零]+))[、.．\s-]*`)
+	chatDocumentHeadingRE                 = regexp.MustCompile(`(?m)^(#{1,6})\s+(.+)$`)
+	chatDocumentCodeFenceRE               = regexp.MustCompile("(?m)^```")
+	chatDocumentListRE                    = regexp.MustCompile(`(?m)^\s*(?:[-*+]\s+|\d+\.\s+)`)
+	chatDocumentTableRE                   = regexp.MustCompile(`(?m)^\|.+\|\s*$`)
+	chatDocumentPatchEnvelopeRE           = regexp.MustCompile(`(?s)^\s*<document_patch>\s*(.*?)\s*</document_patch>\s*$`)
+	chatDocumentPatchOperationRE          = regexp.MustCompile(`(?s)<(replace|append|insert_after)\s+heading=(?:"([^"]+)"|'([^']+)')\s*>(.*?)</(replace|append|insert_after)>`)
+	chatDocumentQueryHintRE               = regexp.MustCompile(`(?i)(方案|文档|报告|markdown|技术方案|设计方案|plan|report|document)`)
+	chatDocumentDuplicatePhraseRE         = regexp.MustCompile(`(?i)^(我已修改|下面是修改建议|已根据你的要求修改)`)
+	chatDocumentRevisionLeadRE            = regexp.MustCompile(`(?i)^(我已修改|下面是修改|以下是修改|已根据你的要求修改|根据你的要求|我已经根据|已按要求)`)
+	chatDocumentMoveIntentRE              = regexp.MustCompile(`(?i)(合并到|并入|移动到|移到|放到|放入|追加到|补充到|归并到|整合到|纳入)`)
+	chatDocumentDestinationLeadRE         = regexp.MustCompile(`(?i)(?:合并到|并入|移动到|移到|放到|放入|追加到|补充到|归并到|整合到|纳入)\s*([^，。；\n]+)`)
+	chatDocumentSourceTailRE              = regexp.MustCompile(`(?i)(?:把|将)\s*([^，。；\n]+?)\s*(?:后续的内容|之后的内容|后面的内容|后续内容|之后内容|后面内容|章节内容|小节内容)`)
+	chatDocumentSourceMoveRE              = regexp.MustCompile(`(?i)(?:把|将)\s*([^，。；\n]+?)\s*(?:合并到|并入|移动到|移到|放到|放入|追加到|补充到|归并到|整合到|纳入)`)
+	chatDocumentResetLeadRE               = regexp.MustCompile(`(?m)^\s*(?:#{1,6}\s*)?(?:一[、.．]|1[、.．]|一、|1\.\s*)`)
+	chatDocumentLateSectionRE             = regexp.MustCompile(`(?m)^\s*(?:#{1,6}\s*)?(?:[3-9]\.|[1-9][0-9]+\.|[三四五六七八九十][、.．])`)
+	chatDocumentTerminalHeadingRE         = regexp.MustCompile(`(?i)(实施方能力保障|保障措施|结束语|总结|附录|结论|交付保障|实施保障)`)
+	chatDocumentCompletionNoticeRE        = regexp.MustCompile(`(?i)^\s*(?:文档|全文|整篇文档|本篇文档)?(?:已完成|已经完成|已全部输出|已完整输出|无需继续|无须继续|没有新增内容|无新增内容)(?:[。.!！\s]*)$`)
 )
 
 type chatDocumentEditPlan struct {
@@ -94,7 +97,7 @@ func shouldTreatContinueAsScopedRevision(query string) bool {
 	if trimmedQuery == "" {
 		return false
 	}
-	return chatDocumentContinueIntentRE.MatchString(trimmedQuery) &&
+	return chatDocumentScopedRevisionVerbRE.MatchString(trimmedQuery) &&
 		chatDocumentScopedTargetRE.MatchString(trimmedQuery) &&
 		!chatDocumentTailContinueRE.MatchString(trimmedQuery)
 }
@@ -853,44 +856,39 @@ func (s *chatDocumentArtifactService) ListRevisions(ctx context.Context, artifac
 	if err != nil || artifact == nil {
 		return nil, err
 	}
-	artifacts, err := s.ListBySession(ctx, artifact.SessionID, 200)
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("tenant context is required")
+	}
+	rootArtifactID := artifact.ID
+	for current := artifact; current != nil && current.ParentArtifactID != ""; {
+		parent, parentErr := s.repo.GetArtifactByID(ctx, tenantID, current.ParentArtifactID)
+		if parentErr != nil {
+			return nil, parentErr
+		}
+		if parent == nil {
+			break
+		}
+		rootArtifactID = parent.ID
+		current = parent
+	}
+	artifacts, err := s.repo.ListArtifactsByRootArtifact(ctx, tenantID, rootArtifactID)
 	if err != nil {
 		return nil, err
 	}
-	allowed := make(map[string]*types.ChatDocumentArtifact, len(artifacts))
+	if err := s.attachEvidenceRefs(ctx, artifacts...); err != nil {
+		return nil, err
+	}
 	for _, item := range artifacts {
-		allowed[item.ID] = item
+		hydrateChatDocumentArtifactDerivedFields(item)
 	}
-	chainRootID := artifact.ID
-	for current := artifact; current != nil && current.ParentArtifactID != ""; current = allowed[current.ParentArtifactID] {
-		chainRootID = current.ParentArtifactID
-	}
-
-	chain := make([]*types.ChatDocumentArtifact, 0)
-	for _, item := range artifacts {
-		if belongsToArtifactChain(item, chainRootID, allowed) {
-			chain = append(chain, item)
+	sort.Slice(artifacts, func(i, j int) bool {
+		if artifacts[i].RevisionNo == artifacts[j].RevisionNo {
+			return artifacts[i].CreatedAt.Before(artifacts[j].CreatedAt)
 		}
-	}
-	sort.Slice(chain, func(i, j int) bool {
-		if chain[i].RevisionNo == chain[j].RevisionNo {
-			return chain[i].CreatedAt.Before(chain[j].CreatedAt)
-		}
-		return chain[i].RevisionNo < chain[j].RevisionNo
+		return artifacts[i].RevisionNo < artifacts[j].RevisionNo
 	})
-	return chain, nil
-}
-
-func belongsToArtifactChain(artifact *types.ChatDocumentArtifact, rootID string, all map[string]*types.ChatDocumentArtifact) bool {
-	for current := artifact; current != nil; current = all[current.ParentArtifactID] {
-		if current.ID == rootID {
-			return true
-		}
-		if current.ParentArtifactID == "" {
-			return false
-		}
-	}
-	return false
+	return artifacts, nil
 }
 
 func resolveChatDocumentArtifactTitle(snapshot string, options types.RegisterChatDocumentArtifactOptions) string {
@@ -1293,6 +1291,7 @@ func hydrateChatDocumentArtifactDerivedFields(artifact *types.ChatDocumentArtifa
 	artifact.CanUseAsBaseDocument = artifact.CanUseAsBase()
 	artifact.CanViewDocument = artifact.CanView()
 	artifact.CanIndexDocument = artifact.CanIndex()
+	artifact.LongDocumentEnabled = true
 	artifact.ContinuationContextMode = artifact.ContinuationMode()
 	artifact.UserHint = chatDocumentUserHintForIssues(artifact.QualityIssues, artifact.Operation)
 	return artifact
@@ -1625,6 +1624,10 @@ func findMarkdownSectionRangeBySelector(content string, selector string) (int, i
 		selectorLevel = level
 	}
 	selectorNorm := normalizeHeadingForMatch(selectorHeading)
+	selectorOrdinalKey := extractSectionOrdinalKey(selectorHeading)
+	if selectorOrdinalKey == "" {
+		selectorOrdinalKey = extractSectionOrdinalKey(trimmedSelector)
+	}
 	bestScore := 0
 	candidates := make([]sectionCandidate, 0, 2)
 
@@ -1654,8 +1657,11 @@ func findMarkdownSectionRangeBySelector(content string, selector string) (int, i
 			score = 4
 		default:
 			currentNorm := normalizeHeadingForMatch(currentHeading)
+			currentOrdinalKey := extractSectionOrdinalKey(currentHeading)
 			switch {
 			case currentHeading == selectorHeading:
+				score = 2
+			case selectorOrdinalKey != "" && selectorOrdinalKey == currentOrdinalKey:
 				score = 2
 			case selectorNorm != "" && currentNorm == selectorNorm:
 				score = 2
@@ -1700,6 +1706,53 @@ func normalizeHeadingForMatch(title string) string {
 	return strings.ToLower(trimmed)
 }
 
+func parseChineseOrdinalNumber(value string) (int, bool) {
+	if value == "" {
+		return 0, false
+	}
+	if matched, _ := regexp.MatchString(`^[0-9]+$`, value); matched {
+		parsed, err := strconv.Atoi(value)
+		return parsed, err == nil
+	}
+	numerals := map[rune]int{'零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
+	units := map[rune]int{'十': 10, '百': 100, '千': 1000}
+	total := 0
+	current := 0
+	for _, r := range value {
+		if digit, ok := numerals[r]; ok {
+			current = digit
+			continue
+		}
+		if unit, ok := units[r]; ok {
+			if current == 0 {
+				current = 1
+			}
+			total += current * unit
+			current = 0
+			continue
+		}
+		return 0, false
+	}
+	return total + current, true
+}
+
+func extractSectionOrdinalKey(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	ordinalRE := regexp.MustCompile(`第([0-9一二三四五六七八九十百零]+)(章|节|部分)`)
+	matches := ordinalRE.FindStringSubmatch(trimmed)
+	if len(matches) != 3 {
+		return ""
+	}
+	number, ok := parseChineseOrdinalNumber(strings.TrimSpace(matches[1]))
+	if !ok || number <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d:%s", number, strings.TrimSpace(matches[2]))
+}
+
 func inferSectionTargetFromQuery(query string) string {
 	trimmedQuery := strings.TrimSpace(query)
 	if trimmedQuery == "" {
@@ -1719,6 +1772,9 @@ func inferSectionTargetFromQuery(query string) string {
 		}
 		cleaned = chatDocumentTargetLeadTrimRE.ReplaceAllString(cleaned, "")
 		return strings.TrimSpace(cleaned)
+	}
+	if match := chatDocumentStandaloneOrdinalTargetRE.FindString(trimmedQuery); match != "" {
+		return strings.TrimSpace(match)
 	}
 	for _, keyword := range []string{"智慧运行", "智慧安防", "数据湖", "算力平台", "智能安全监控应急中心", "应急中心", "AR眼镜"} {
 		if strings.Contains(trimmedQuery, keyword) {

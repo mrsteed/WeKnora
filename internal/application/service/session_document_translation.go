@@ -766,19 +766,20 @@ func (s *sessionService) BuildChatDocumentTerminalReplayExtra(
 	if err != nil || run == nil {
 		return nil, err
 	}
+	extra := buildHistoricalLongDocumentReplayExtraFromRun(run, artifact)
 
 	var outline longDocumentTranslationRunOutline
 	if err := json.Unmarshal(run.OutlineJSON, &outline); err != nil {
-		return nil, nil
+		return extra, nil
 	}
 	if strings.TrimSpace(outline.TaskKind) != types.ChatDocumentTaskKindTranslation {
-		return nil, nil
+		return extra, nil
 	}
 	completedSegments, err := decodeLongDocumentTranslationCompletedSegments(run.CompletedSectionsJSON)
 	if err != nil {
 		return nil, err
 	}
-	return buildLongDocumentTranslationExtra(run, outline, completedSegments), nil
+	return mergeReplayExtra(extra, buildLongDocumentTranslationExtra(run, outline, completedSegments)), nil
 }
 
 func (s *sessionService) finalizeLongDocumentTranslationFailure(

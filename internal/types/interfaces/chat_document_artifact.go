@@ -12,6 +12,7 @@ type ChatDocumentArtifactRepository interface {
 	GetArtifactBySourceMessageID(ctx context.Context, tenantID uint64, sourceMessageID string) (*types.ChatDocumentArtifact, error)
 	GetLatestArtifactBySession(ctx context.Context, tenantID uint64, sessionID string) (*types.ChatDocumentArtifact, error)
 	ListArtifactsBySession(ctx context.Context, tenantID uint64, sessionID string, limit int) ([]*types.ChatDocumentArtifact, error)
+	ListArtifactsByRootArtifact(ctx context.Context, tenantID uint64, rootArtifactID string) ([]*types.ChatDocumentArtifact, error)
 }
 
 type ChatDocumentArtifactService interface {

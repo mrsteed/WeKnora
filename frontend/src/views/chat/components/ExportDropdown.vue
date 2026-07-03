@@ -76,11 +76,16 @@ const exportCapabilities = ref<ExportCapabilities>({
 });
 const canExport = computed(() => Boolean(props.content || props.contentResolver));
 
+const translateExportText = (key: string, fallback: string) => {
+  const translated = t(key);
+  return translated === key ? fallback : translated;
+};
+
 const exportFormats = computed(() => [
-  buildFormatItem('pdf', 'file-pdf', t('chatExport.pdf'), exportCapabilities.value.pdf),
-  buildFormatItem('markdown', 'file', t('chatExport.markdown'), exportCapabilities.value.markdown),
-  buildFormatItem('docx', 'file-word', t('chatExport.word'), exportCapabilities.value.docx),
-  buildFormatItem('xlsx', 'file-excel', t('chatExport.xlsx'), exportCapabilities.value.xlsx),
+  buildFormatItem('pdf', 'file-pdf', translateExportText('chatExport.pdf', '导出为 PDF'), exportCapabilities.value.pdf),
+  buildFormatItem('markdown', 'file', translateExportText('chatExport.markdown', '导出为 Markdown'), exportCapabilities.value.markdown),
+  buildFormatItem('docx', 'file-word', translateExportText('chatExport.word', '导出为 Word'), exportCapabilities.value.docx),
+  buildFormatItem('xlsx', 'file-excel', translateExportText('chatExport.xlsx', '导出为 Excel'), exportCapabilities.value.xlsx),
 ]);
 
 const loadCapabilities = async () => {

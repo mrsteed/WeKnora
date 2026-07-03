@@ -75,17 +75,13 @@
             </div>
         </transition>
         <div class="input-container" :class="{ 'is-embedded': effectiveEmbeddedMode }">
-            <div v-if="displayedBaseArtifact" class="document-baseline-banner">
-                <div class="document-baseline-text">
-                    <span class="document-baseline-label">{{ baselineBannerLabel }}</span>
-                    <span class="document-baseline-title">{{ displayedBaseArtifact?.title || '未命名文档' }}</span>
-                    <span class="document-baseline-version">V{{ displayedBaseArtifact?.revision_no || 1 }}</span>
-                    <span v-if="newerArtifactAvailableForLockedBase" class="document-baseline-latest-hint">
-                        已锁定手动基线，最新版本为 V{{ newerArtifactAvailableForLockedBase.revision_no || 1 }}
-                    </span>
-                </div>
-                <t-button v-if="selectedBaseArtifactDisplayLocked" size="small" variant="text" theme="default" @click="clearSelectedBaseArtifact()">取消</t-button>
-            </div>
+            <LongDocumentBaselineBanner
+                v-if="displayedBaseArtifact"
+                :artifact="displayedBaseArtifact"
+                :locked="selectedBaseArtifactDisplayLocked"
+                :newer-artifact="newerArtifactAvailableForLockedBase"
+                @clear="clearSelectedBaseArtifact()"
+            />
             <div v-if="autoContinueState.enabled || autoContinueState.stoppedReason" class="auto-continue-banner" :class="{ 'is-stopped': !autoContinueState.enabled }">
                 <span v-if="autoContinueState.enabled">
                     {{ autoContinueState.round > 0 ? `正在自动续写：第 ${autoContinueState.round} 轮，当前基线 V${displayedBaseArtifact?.revision_no || selectedBaseArtifact?.revision_no || 1}` : '已开启自动续写，等待当前轮完成' }}
@@ -106,40 +102,16 @@
             ></InputField>
         </div>
     </div>
-    <t-drawer v-model:visible="artifactRevisionDrawerVisible" header="文档版本链" size="520px" placement="right">
-        <div class="artifact-drawer-body">
-            <div v-if="artifactRevisionLoading" class="artifact-drawer-loading">
-                <t-loading size="small" />
-                <span>正在加载版本链...</span>
-            </div>
-            <div v-else-if="artifactRevisionList.length === 0" class="artifact-drawer-empty">
-                暂无可展示的历史版本
-            </div>
-            <div v-else class="artifact-drawer-list">
-                <div
-                    v-for="artifact in artifactRevisionList"
-                    :key="artifact.id"
-                    class="artifact-drawer-item"
-                    :class="{ 'is-selected': manuallySelectedBaseArtifactId === artifact.id, 'is-current': artifactRevisionAnchor?.id === artifact.id }"
-                >
-                    <div class="artifact-drawer-item-top">
-                        <div class="artifact-drawer-item-title">{{ artifact.title || '未命名文档' }}</div>
-                        <div class="artifact-drawer-item-tags">
-                            <t-tag size="small" theme="primary" variant="light">V{{ artifact.revision_no || 1 }}</t-tag>
-                            <t-tag size="small" :theme="getArtifactStatusTheme(artifact)" variant="light">
-                                {{ getArtifactStatusText(artifact) }}
-                            </t-tag>
-                        </div>
-                    </div>
-                    <div class="artifact-drawer-item-meta">{{ artifact.operation || 'create' }} · {{ artifact.updated_at || artifact.created_at || '-' }}</div>
-                    <div v-if="artifact.user_hint" class="artifact-drawer-item-hint">{{ artifact.user_hint }}</div>
-                    <div class="artifact-drawer-item-actions">
-                        <t-button size="small" variant="text" theme="primary" @click="useArtifactAsBase(artifact)">设为基线</t-button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </t-drawer>
+    <LongDocumentRevisionDrawer
+        v-model:visible="artifactRevisionDrawerVisible"
+        :loading="artifactRevisionLoading"
+        :artifacts="artifactRevisionList"
+        :anchor-artifact="artifactRevisionAnchor"
+        :selected-artifact-id="manuallySelectedBaseArtifactId"
+        :export-api-base="publicExportApiBase"
+        @use-as-base="useArtifactAsBase"
+        @view-artifact="handleRevisionArtifactView"
+    />
     <KnowledgeBaseEditorModal 
         :visible="uiStore.showKBEditorModal"
         :mode="uiStore.kbEditorMode"
@@ -171,6 +143,8 @@ import { useStickyBottomOnResize } from '@/composables/useStickyBottomOnResize';
 import { upsertThinkingEvent } from './utils/thinkingEvent';
 import { extractStructuredPlanningOutlineFromText } from './utils/planningOutline';
 import { createPlatformChatRuntimeContext, isAgentSharePageRuntimeContext } from '@/types/chat-runtime';
+import LongDocumentBaselineBanner from './long-document/components/LongDocumentBaselineBanner.vue';
+import LongDocumentRevisionDrawer from './long-document/components/LongDocumentRevisionDrawer.vue';
 
 const props = defineProps({
   session_id: { type: String, default: '' },
@@ -199,7 +173,11 @@ const getEffectiveAgentEnabled = () => {
     if (effectiveEmbeddedMode.value) {
         return Boolean(effectiveAgentId.value && effectiveAgentId.value !== 'builtin-quick-answer');
     }
-    return useSettingsStoreInstance.isAgentEnabled;
+    // The settings store already reconciles builtin quick-answer vs.
+    // smart-reasoning drift. Chat routing must follow that authoritative
+    // getter instead of the raw persisted boolean, otherwise a stale
+    // isAgentEnabled flag can send normal QA into the agent pipeline.
+    return useSettingsStoreInstance.isAgentStreamMode;
 };
 
 const getEffectiveWebSearchEnabled = () => {
@@ -582,6 +560,9 @@ const syncMessageCompletionState = (message, payload = {}) => {
     if (completePayload?.document_generation_status !== undefined) {
         message.document_generation_status = completePayload.document_generation_status;
     }
+    if (completePayload?.long_document_enabled !== undefined) {
+        message.long_document_enabled = completePayload.long_document_enabled === true;
+    }
     if (completePayload?.auto_continue_next !== undefined) {
         message.auto_continue_next = completePayload.auto_continue_next;
     }
@@ -626,6 +607,9 @@ const rehydrateHistoricalDocumentContinuationState = (message = {}) => {
     }
 
     const artifact = message.chat_document_artifact;
+    if (artifact?.long_document_enabled === true) {
+        message.long_document_enabled = true;
+    }
     if (artifact?.document_generation_status && !message.document_generation_status) {
         message.document_generation_status = artifact.document_generation_status;
     }
@@ -702,6 +686,7 @@ const upsertAgentCompleteEvent = (message, payload = {}) => {
         quality_issue_details: Array.isArray(completePayload?.quality_issue_details)
             ? [...completePayload.quality_issue_details]
             : (Array.isArray(completeExtra?.quality_issue_details) ? [...completeExtra.quality_issue_details] : []),
+        long_document_enabled: completePayload?.long_document_enabled === true,
         document_patch_metadata: completePayload?.document_patch_metadata && typeof completePayload.document_patch_metadata === 'object'
             ? completePayload.document_patch_metadata
             : (completeExtra?.document_patch_metadata && typeof completeExtra.document_patch_metadata === 'object'
@@ -813,6 +798,39 @@ const normalizeChatDocumentArtifact = (artifact) => {
     };
 };
 
+const deriveDocumentTitleFromContent = (...candidates) => {
+    for (const candidate of candidates) {
+        const text = typeof candidate === 'string' ? candidate.trim() : '';
+        if (!text) {
+            continue;
+        }
+        const headingMatch = text.match(/^#\s+(.+)$/m);
+        if (headingMatch?.[1]?.trim()) {
+            return headingMatch[1].trim();
+        }
+        const firstLine = text.split('\n').map((line) => line.trim()).find(Boolean);
+        if (firstLine) {
+            return firstLine.replace(/^#+\s*/, '').trim();
+        }
+    }
+    return '';
+};
+
+const hydrateArtifactTitleFromMessage = (artifact, message = null) => {
+    if (!artifact || (typeof artifact.title === 'string' && artifact.title.trim())) {
+        return artifact;
+    }
+    const title = deriveDocumentTitleFromContent(
+        message?.final_document_content,
+        artifact?.content_snapshot,
+        message?.content,
+    );
+    if (title) {
+        artifact.title = title;
+    }
+    return artifact;
+};
+
 const compareArtifactRevision = (left, right) => {
     const revisionDiff = Number(right?.revision_no || 0) - Number(left?.revision_no || 0);
     if (revisionDiff !== 0) {
@@ -876,7 +894,10 @@ const applyChatDocumentArtifactsToMessages = (artifacts = chatDocumentArtifacts.
         }
         const artifact = artifactByMessageId.get(message.id);
         if (artifact) {
-            message.chat_document_artifact = artifact;
+            message.chat_document_artifact = hydrateArtifactTitleFromMessage(artifact, message);
+            if (artifact.long_document_enabled === true) {
+                message.long_document_enabled = true;
+            }
             rehydrateHistoricalDocumentContinuationState(message);
         }
     });
@@ -908,7 +929,11 @@ const upsertChatDocumentArtifact = (artifact) => {
 const assignChatDocumentArtifactToMessage = (message, artifact) => {
     const normalized = upsertChatDocumentArtifact(artifact);
     if (message && normalized) {
+        hydrateArtifactTitleFromMessage(normalized, message);
         message.chat_document_artifact = normalized;
+        if (normalized.long_document_enabled === true) {
+            message.long_document_enabled = true;
+        }
         rehydrateHistoricalDocumentContinuationState(message);
     }
     return normalized;
@@ -1071,7 +1096,9 @@ const promoteCompletedArtifactAsBase = (message, artifact) => {
 const resolveMessageForArtifactDisplay = (payload = {}) => {
     const messageId = typeof payload?.messageId === 'string' ? payload.messageId : '';
     const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
-    if (!messageId && !requestId) {
+    const artifactId = typeof payload?.artifact?.id === 'string' ? payload.artifact.id : '';
+    const sourceMessageId = typeof payload?.artifact?.source_message_id === 'string' ? payload.artifact.source_message_id : '';
+    if (!messageId && !requestId && !artifactId && !sourceMessageId) {
         return null;
     }
     return messagesList.findLast((item) => {
@@ -1081,7 +1108,13 @@ const resolveMessageForArtifactDisplay = (payload = {}) => {
         if (messageId && item.id === messageId) {
             return true;
         }
-        return Boolean(requestId) && item.request_id === requestId;
+        if (requestId && item.request_id === requestId) {
+            return true;
+        }
+        if (sourceMessageId && item.id === sourceMessageId) {
+            return true;
+        }
+        return Boolean(artifactId) && item.chat_document_artifact?.id === artifactId;
     }) || null;
 };
 
@@ -1510,7 +1543,7 @@ const hasSectionContinuationTarget = (query = '') => {
     if (!text) {
         return false;
     }
-    const hasContinueVerb = /(继续|接着|续写|补充|扩写|完善|细化|补齐)/.test(text);
+    const hasContinueVerb = /(继续|接着|续写|补充|扩写|完善|细化|补齐|插入|新增|添加)/.test(text);
     if (!hasContinueVerb) {
         return false;
     }
@@ -1535,6 +1568,11 @@ const inferDocumentTargetHeading = (query = '') => {
     const scopedTarget = text.match(/(?:在|对|把|将|就)?\s*(第[0-9一二三四五六七八九十百零]+(?:章|节|部分)|[0-9]+(?:\.[0-9]+)+|[\u4e00-\u9fa5A-Za-z0-9_-]{2,40})(章节|小节|模块|部分)/);
     if (scopedTarget?.[1]) {
         return scopedTarget[1].trim();
+    }
+
+    const ordinalTarget = text.match(/第[0-9一二三四五六七八九十百零]+(?:章|节|部分)/);
+    if (ordinalTarget?.[0]) {
+        return ordinalTarget[0].trim();
     }
 
     for (const keyword of ['智慧运行', '智慧安防', '数据湖', '算力平台', '智能安全监控应急中心', '应急中心', 'AR眼镜']) {
@@ -1694,6 +1732,10 @@ const openArtifactRevisionDrawer = async (artifact) => {
     } finally {
         artifactRevisionLoading.value = false;
     }
+};
+
+const handleRevisionArtifactView = (artifact) => {
+    handleArtifactDisplayUpdate({ artifact, mode: 'full', messageId: artifact?.source_message_id || '' });
 };
 
 const getAgentStreamSignals = (message) => {
@@ -2221,7 +2263,10 @@ const reconstructEventStreamFromSteps = (
     completionStatus = '',
     finishReason = '',
     failureReason = '',
-    outline = null
+    planningOutline = null,
+    outlineRole = '',
+    outlineSource = '',
+    baseOutline = null,
 ) => {
     const events = [];
     const normalizedCompletionStatus = normalizeCompletionStatus({
@@ -2247,6 +2292,9 @@ const reconstructEventStreamFromSteps = (
             : (step.reasoning_content && step.reasoning_content.trim())
                 ? step.reasoning_content
                 : '';
+        const recoveredPlanningOutline = (typeof step.stage === 'string' && step.stage.trim() === 'planning')
+            ? (planningOutline || extractStructuredPlanningOutlineFromText(thoughtText))
+            : null;
         if (thoughtText) {
             events.push({
                 type: 'thinking',
@@ -2256,6 +2304,11 @@ const reconstructEventStreamFromSteps = (
                 thinking: false,
                 synthetic: typeof step.stage === 'string' && step.stage.trim().length > 0,
                 stage: typeof step.stage === 'string' ? step.stage : '',
+                outline: recoveredPlanningOutline,
+                planning_outline: recoveredPlanningOutline,
+                outline_role: recoveredPlanningOutline ? (outlineRole || 'generated_plan') : '',
+                outline_source: recoveredPlanningOutline ? (outlineSource || 'agent_step') : '',
+                base_outline: outlineRole === 'base_document' ? (baseOutline || null) : null,
                 timestamp: stepTimestamp || undefined,
                 // Extract duration from step if available
                 duration_ms: step.duration || undefined,
@@ -2298,7 +2351,11 @@ const reconstructEventStreamFromSteps = (
             finish_reason: finishReason,
             failure_reason: failureReason,
             is_partial: normalizedCompletionStatus === 'partial',
-            outline,
+            outline: planningOutline || null,
+            planning_outline: planningOutline || null,
+            outline_role: outlineRole || (planningOutline ? 'generated_plan' : ''),
+            outline_source: outlineSource || (planningOutline ? 'history_replay' : ''),
+            base_outline: baseOutline || null,
         });
     }
 
@@ -2347,9 +2404,13 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
         // agent event stream during refresh/reload.
         if (isHistoricalAgentMessage(item)) {
             item.isAgentMode = true;
-            const reconstructedOutline = extractStructuredPlanningOutlineFromText(
-                item.final_document_content || item.chat_document_artifact?.content_snapshot || item.content || ''
-            );
+            const reconstructedPlanningOutline = (item.planning_outline && typeof item.planning_outline === 'object')
+                ? item.planning_outline
+                : (item.outline && typeof item.outline === 'object')
+                    ? item.outline
+                    : extractStructuredPlanningOutlineFromText(
+                        item.final_document_content || item.chat_document_artifact?.content_snapshot || item.content || ''
+                    );
             item.agentEventStream = reconstructEventStreamFromSteps(
                 item.agent_steps,
                 item.content,
@@ -2359,7 +2420,10 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
                 item.completion_status,
                 item.finish_reason,
                 item.failure_reason,
-                reconstructedOutline
+                reconstructedPlanningOutline,
+                typeof item.outline_role === 'string' ? item.outline_role : '',
+                typeof item.outline_source === 'string' ? item.outline_source : '',
+                item.base_outline && typeof item.base_outline === 'object' ? item.base_outline : null,
             );
             // 隐藏最终答案内容，因为它已经包含在 agentEventStream 的 answer 事件中
             item.hideContent = true;
@@ -2658,8 +2722,12 @@ onChunk((data) => {
     // 处理会话标题更新事件 - 不关闭 loading
     if (data.response_type === 'session_title') {
         const title = data.content || data.data?.title;
-        if (title && data.data?.session_id) {
-            usemenuStore.updatasessionTitle(data.data.session_id, title);
+        const sessionId = data.data?.session_id;
+        if (title && sessionId) {
+            usemenuStore.updatasessionTitle(sessionId, title);
+            window.dispatchEvent(new CustomEvent('session-title-updated', {
+                detail: { sessionId, title }
+            }));
             usemenuStore.changeIsFirstSession(false);
             isNeedTitle.value = false;
         }
@@ -2872,6 +2940,9 @@ const handleAgentChunk = (data) => {
     }
     
     message.isAgentMode = true;
+    if (data.data?.long_document_enabled !== undefined) {
+        message.long_document_enabled = data.data.long_document_enabled === true;
+    }
     
     // 确保在继续流式传输时（刷新页面场景），一旦接收到实际内容就关闭 loading
     // 这是一个保护措施，防止任何边缘情况导致 loading 残留

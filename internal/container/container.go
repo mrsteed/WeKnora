@@ -582,6 +582,9 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		}
 
 		// Post-migration: resolve __pending_env__ storage provider markers for historical KBs.
+		ensureKnowledgeProcessingSpanSchema(db)
+
+		// Post-migration: resolve __pending_env__ storage provider markers for historical KBs.
 		// The SQL migration marks KBs that have documents but no provider with "__pending_env__";
 		// we replace that with the actual STORAGE_TYPE from the environment.
 		resolveStorageProviderPending(db)
@@ -636,6 +639,42 @@ func resolveStorageProviderPending(db *gorm.DB) {
 
 	// Reset any pending tasks left over from previous aborted runs (Lite App mode)
 	resetPendingTasks(db)
+}
+
+// ensureKnowledgeProcessingSpanSchema self-heals historical databases that
+// report a modern migration version yet still miss the knowledge processing
+// span table or its indexes. This drift can happen when an older environment
+// was force-advanced past the migration that first introduced the table; the
+// timeline UI then falls back to synthetic stage placeholders forever because
+// no real span rows can be written.
+func ensureKnowledgeProcessingSpanSchema(db *gorm.DB) {
+	if db == nil {
+		return
+	}
+	m := db.Migrator()
+	if !m.HasTable(&types.KnowledgeProcessingSpan{}) {
+		logger.Warnf(context.Background(), "knowledge_processing_spans table missing; attempting self-heal via AutoMigrate")
+		if err := db.AutoMigrate(&types.KnowledgeProcessingSpan{}); err != nil {
+			logger.Warnf(context.Background(), "Failed to self-heal knowledge_processing_spans schema: %v", err)
+			return
+		}
+		logger.Infof(context.Background(), "Self-healed missing knowledge_processing_spans table")
+	}
+	for _, indexName := range []string{
+		"uq_kpspan_attempt_span",
+		"idx_kpspan_knowledge_attempt",
+		"idx_kpspan_status_started",
+		"idx_kpspan_parent",
+	} {
+		if m.HasIndex(&types.KnowledgeProcessingSpan{}, indexName) {
+			continue
+		}
+		if err := m.CreateIndex(&types.KnowledgeProcessingSpan{}, indexName); err != nil {
+			logger.Warnf(context.Background(), "Failed to create knowledge processing span index %s: %v", indexName, err)
+			continue
+		}
+		logger.Infof(context.Background(), "Created missing knowledge processing span index %s", indexName)
+	}
 }
 
 // syncSequences ensures PostgreSQL sequences for auto-increment columns (seq_id)

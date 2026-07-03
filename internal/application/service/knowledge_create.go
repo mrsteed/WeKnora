@@ -23,6 +23,30 @@ import (
 	"github.com/hibiken/asynq"
 )
 
+func (s *knowledgeService) reserveInitialParseAttempt(ctx context.Context, knowledgeID, langfuseTraceID string) int {
+	if knowledgeID == "" {
+		return 0
+	}
+	if root, n, err := s.tracker().OpenAttempt(ctx, knowledgeID, langfuseTraceID); err == nil && root != nil {
+		return n
+	} else if err != nil {
+		logger.Warnf(ctx, "[InitialParse] OpenAttempt failed for %s: %v (worker will fall back)", knowledgeID, err)
+	}
+	return 0
+}
+
+func (s *knowledgeService) failReservedParseAttempt(ctx context.Context, knowledgeID string, attempt int, message string) {
+	if knowledgeID == "" || attempt <= 0 {
+		return
+	}
+	s.tracker().FinalizeAttempt(ctx, knowledgeID, attempt,
+		types.SpanStatusFailed,
+		types.JSONMap{"enqueue_failed": true},
+		"TASK_ENQUEUE_FAILED",
+		message,
+	)
+}
+
 // CreateKnowledgeFromFile creates a knowledge entry from an uploaded file
 func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	kbID string, file *multipart.FileHeader, metadata map[string]string, enableMultimodel *bool, customFileName string, tagIDs []string, channel string,
@@ -261,9 +285,12 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	}
 
 	langfuse.InjectTracing(ctx, &taskPayload)
+	taskPayload.Attempt = s.reserveInitialParseAttempt(ctx, knowledge.ID, taskPayload.LangfuseTraceID)
 	payloadBytes, err := json.Marshal(taskPayload)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to marshal document process task payload: %v", err)
+		s.failReservedParseAttempt(ctx, knowledge.ID, taskPayload.Attempt,
+			fmt.Sprintf("failed to marshal document process task payload: %v", err))
 		// 即使入队失败，也返回knowledge，因为文件已保存
 		return knowledge, nil
 	}
@@ -276,6 +303,8 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	info, err := s.task.Enqueue(task)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to enqueue document process task: %v", err)
+		s.failReservedParseAttempt(ctx, knowledge.ID, taskPayload.Attempt,
+			fmt.Sprintf("failed to enqueue document process task: %v", err))
 		// 即使入队失败，也返回knowledge，因为文件已保存
 		return knowledge, nil
 	}
@@ -443,9 +472,12 @@ func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
 	}
 
 	langfuse.InjectTracing(ctx, &taskPayload)
+	taskPayload.Attempt = s.reserveInitialParseAttempt(ctx, knowledge.ID, taskPayload.LangfuseTraceID)
 	payloadBytes, err := json.Marshal(taskPayload)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to marshal URL process task payload: %v", err)
+		s.failReservedParseAttempt(ctx, knowledge.ID, taskPayload.Attempt,
+			fmt.Sprintf("failed to marshal URL process task payload: %v", err))
 		return knowledge, nil
 	}
 
@@ -457,6 +489,8 @@ func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
 	info, err := s.task.Enqueue(task)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to enqueue URL process task: %v", err)
+		s.failReservedParseAttempt(ctx, knowledge.ID, taskPayload.Attempt,
+			fmt.Sprintf("failed to enqueue URL process task: %v", err))
 		return knowledge, nil
 	}
 	logger.Infof(ctx, "Enqueued URL process task: id=%s queue=%s knowledge_id=%s", info.ID, info.Queue, knowledge.ID)
@@ -682,9 +716,12 @@ func (s *knowledgeService) createKnowledgeFromFileURL(
 	}
 
 	langfuse.InjectTracing(ctx, &taskPayload)
+	taskPayload.Attempt = s.reserveInitialParseAttempt(ctx, knowledge.ID, taskPayload.LangfuseTraceID)
 	payloadBytes, err := json.Marshal(taskPayload)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to marshal file URL process task payload: %v", err)
+		s.failReservedParseAttempt(ctx, knowledge.ID, taskPayload.Attempt,
+			fmt.Sprintf("failed to marshal file URL process task payload: %v", err))
 		return knowledge, nil
 	}
 
@@ -696,6 +733,8 @@ func (s *knowledgeService) createKnowledgeFromFileURL(
 	info, err := s.task.Enqueue(task)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to enqueue file URL process task: %v", err)
+		s.failReservedParseAttempt(ctx, knowledge.ID, taskPayload.Attempt,
+			fmt.Sprintf("failed to enqueue file URL process task: %v", err))
 		return knowledge, nil
 	}
 	logger.Infof(ctx, "Enqueued file URL process task: id=%s queue=%s knowledge_id=%s", info.ID, info.Queue, knowledge.ID)
@@ -886,7 +925,8 @@ func (s *knowledgeService) createKnowledgeFromPassageInternal(ctx context.Contex
 	// Process passages
 	if syncMode {
 		logger.Info(ctx, "Processing passage synchronously")
-		s.processDocumentFromPassage(ctx, kb, knowledge, safePassages)
+		attempt := s.reserveInitialParseAttempt(ctx, knowledge.ID, "")
+		s.processDocumentFromPassage(withAttempt(ctx, attempt), kb, knowledge, safePassages)
 		logger.Infof(ctx, "Knowledge from passage created successfully (sync), ID: %s", knowledge.ID)
 	} else {
 		// Enqueue passage processing task to Asynq
@@ -916,9 +956,12 @@ func (s *knowledgeService) createKnowledgeFromPassageInternal(ctx context.Contex
 		}
 
 		langfuse.InjectTracing(ctx, &taskPayload)
+		taskPayload.Attempt = s.reserveInitialParseAttempt(ctx, knowledge.ID, taskPayload.LangfuseTraceID)
 		payloadBytes, err := json.Marshal(taskPayload)
 		if err != nil {
 			logger.Errorf(ctx, "Failed to marshal passage process task payload: %v", err)
+			s.failReservedParseAttempt(ctx, knowledge.ID, taskPayload.Attempt,
+				fmt.Sprintf("failed to marshal passage process task payload: %v", err))
 			// 即使入队失败，也返回knowledge
 			return knowledge, nil
 		}
@@ -931,6 +974,8 @@ func (s *knowledgeService) createKnowledgeFromPassageInternal(ctx context.Contex
 		info, err := s.task.Enqueue(task)
 		if err != nil {
 			logger.Errorf(ctx, "Failed to enqueue passage process task: %v", err)
+			s.failReservedParseAttempt(ctx, knowledge.ID, taskPayload.Attempt,
+				fmt.Sprintf("failed to enqueue passage process task: %v", err))
 			return knowledge, nil
 		}
 		logger.Infof(ctx, "Enqueued passage process task: id=%s queue=%s knowledge_id=%s", info.ID, info.Queue, knowledge.ID)

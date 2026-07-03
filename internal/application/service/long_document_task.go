@@ -122,10 +122,11 @@ func (s *sessionService) DispatchLongDocumentTask(ctx context.Context, req *type
 		Done:      true,
 		Timestamp: time.Now(),
 		Data: map[string]interface{}{
-			"event_id":       generateEventID("document-queued-meta"),
-			"synthetic":      true,
-			"stage":          "queued",
-			"progress_label": "queued",
+			"event_id":              generateEventID("document-queued-meta"),
+			"synthetic":             true,
+			"stage":                 "queued",
+			"progress_label":        "queued",
+			"long_document_enabled": true,
 		},
 	}
 	if err := s.streamManager.AppendEvent(ctx, req.Session.ID, req.AssistantMessageID, queuedEvent); err != nil {
@@ -227,6 +228,7 @@ func (f *longDocumentStreamForwarder) handleThought(ctx context.Context, evt eve
 		return nil
 	}
 	metadata := map[string]interface{}{"event_id": evt.ID}
+	metadata["long_document_enabled"] = true
 	if data.Replace {
 		metadata["replace"] = true
 	}
@@ -238,6 +240,9 @@ func (f *longDocumentStreamForwarder) handleThought(ctx context.Context, evt eve
 	}
 	if len(data.Outline) > 0 {
 		metadata["outline"] = data.Outline
+		metadata["planning_outline"] = data.Outline
+		metadata["outline_role"] = "generated_plan"
+		metadata["outline_source"] = "long_document_task"
 	}
 	if data.SectionCurrent > 0 {
 		metadata["section_current"] = data.SectionCurrent
@@ -273,6 +278,7 @@ func (f *longDocumentStreamForwarder) handleFinalAnswer(ctx context.Context, evt
 		return nil
 	}
 	metadata := map[string]interface{}{"event_id": evt.ID}
+	metadata["long_document_enabled"] = true
 	if data.IsFallback {
 		metadata["is_fallback"] = true
 	}
@@ -543,17 +549,18 @@ func (c *longDocumentTaskCollector) buildCompletePayload(
 	finishReason := strings.TrimSpace(completion.FinishReason)
 	failureReason := strings.TrimSpace(completion.FailureReason)
 	payload := map[string]interface{}{
-		"final_answer":      message.Content,
-		"agent_steps":       message.AgentSteps,
-		"agent_duration_ms": completion.TotalDurationMs,
-		"total_steps":       len(message.AgentSteps),
-		"total_duration_ms": completion.TotalDurationMs,
-		"completion_status": status,
-		"finish_reason":     finishReason,
-		"is_partial":        status == types.MessageCompletionStatusPartial,
-		"allow_indexing":    completion.AllowIndexing,
-		"allow_complete":    completion.AllowComplete,
-		"failure_reason":    failureReason,
+		"final_answer":          message.Content,
+		"agent_steps":           message.AgentSteps,
+		"agent_duration_ms":     completion.TotalDurationMs,
+		"total_steps":           len(message.AgentSteps),
+		"total_duration_ms":     completion.TotalDurationMs,
+		"completion_status":     status,
+		"finish_reason":         finishReason,
+		"is_partial":            status == types.MessageCompletionStatusPartial,
+		"allow_indexing":        completion.AllowIndexing,
+		"allow_complete":        completion.AllowComplete,
+		"failure_reason":        failureReason,
+		"long_document_enabled": true,
 	}
 	if documentStatus := types.NormalizeChatDocumentGenerationStatus(firstNonEmptyString(completion.DocumentGenerationStatus, completedArtifactStatus(artifact))); documentStatus != "" {
 		payload["document_generation_status"] = documentStatus
@@ -886,6 +893,7 @@ func longDocumentArtifactMetadata(artifact *types.ChatDocumentArtifact) map[stri
 		"can_use_as_base":            artifact.CanUseAsBase(),
 		"can_view":                   artifact.CanView(),
 		"can_index":                  artifact.CanIndex(),
+		"long_document_enabled":      true,
 		"continuation_context_mode":  continuationContextMode,
 		"quality_issues":             artifact.QualityIssues,
 		"quality_issue_details":      qualityIssueDetails,

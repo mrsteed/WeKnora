@@ -19,14 +19,14 @@
     <div v-if="artifactHintText" class="artifact-card-hint">{{ artifactHintText }}</div>
     <div v-if="qualityIssueSummary" class="artifact-card-hint">{{ qualityIssueSummary }}</div>
     <div class="artifact-card-actions">
-      <ExportDropdown v-if="canExport" :content="previewContent" :filename-prefix="exportFilenamePrefix" :export-api-base="exportApiBase" />
+      <ExportDropdown v-if="canExport" :content="normalizedExportContent" :filename-prefix="exportFilenamePrefix" :export-api-base="exportApiBase" />
       <t-button size="small" variant="text" theme="primary" @click="$emit('view-revisions', artifact)">查看版本链</t-button>
       <t-button
         v-if="canToggleDocumentDisplay"
         size="small"
         variant="text"
         theme="primary"
-        @click="$emit('toggle-document-display', artifact)"
+        @click="handleToggleDocumentDisplay"
       >{{ documentDisplayToggleText }}</t-button>
       <t-button
         v-else-if="canViewDocument"
@@ -62,7 +62,7 @@
 
 <script setup>
 import { marked } from 'marked';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { safeMarkdownToHTML, sanitizeHTML } from '@/utils/security';
 import { getDocumentQualityIssueMessages } from '../utils/documentCompletion';
 import ExportDropdown from './ExportDropdown.vue';
@@ -92,6 +92,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  exportContent: {
+    type: String,
+    default: '',
+  },
   canToggleDocumentDisplay: {
     type: Boolean,
     default: false,
@@ -106,13 +110,42 @@ const emit = defineEmits(['view-revisions', 'use-as-base', 'clear-base', 'toggle
 
 const previewExpanded = ref(false);
 
-const artifactTitle = computed(() => props.artifact?.title || '未命名文档');
+const deriveTitleFromMarkdown = (value) => {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) {
+    return '';
+  }
+  const headingMatch = text.match(/^#\s+(.+)$/m);
+  if (headingMatch?.[1]?.trim()) {
+    return headingMatch[1].trim();
+  }
+  const firstLine = text.split('\n').map((line) => line.trim()).find(Boolean);
+  return firstLine ? firstLine.replace(/^#+\s*/, '').trim() : '';
+};
+
+const artifactTitle = computed(() => {
+  const explicitTitle = typeof props.artifact?.title === 'string' ? props.artifact.title.trim() : '';
+  if (explicitTitle) {
+    return explicitTitle;
+  }
+  const fallbackTitle = deriveTitleFromMarkdown(props.previewContent) || deriveTitleFromMarkdown(props.exportContent);
+  return fallbackTitle || '未命名文档';
+});
 
 const isTranslationArtifact = computed(() => props.artifact?.document_task_kind === 'translation');
 
 const isSelected = computed(() => Boolean(props.artifact?.id) && props.artifact?.id === props.selectedArtifactId);
 
 const hasPreviewContent = computed(() => typeof props.previewContent === 'string' && props.previewContent.trim().length > 0);
+
+const normalizedExportContent = computed(() => {
+  if (typeof props.exportContent === 'string' && props.exportContent.trim().length > 0) {
+    return props.exportContent;
+  }
+  return props.previewContent;
+});
+
+const hasExportContent = computed(() => typeof normalizedExportContent.value === 'string' && normalizedExportContent.value.trim().length > 0);
 
 const canViewDocument = computed(() => {
   if (!props.artifact || typeof props.artifact !== 'object') {
@@ -147,7 +180,7 @@ const renderedPreviewHTML = computed(() => {
   return sanitizeHTML(typeof html === 'string' ? html : '');
 });
 
-const canExport = computed(() => props.allowExport && ['available', 'partial'].includes(props.artifact?.status) && hasPreviewContent.value);
+const canExport = computed(() => props.allowExport && ['available', 'partial'].includes(props.artifact?.status) && hasExportContent.value);
 
 const canUseAsBase = computed(() => {
   if (!props.artifact || typeof props.artifact !== 'object') {
@@ -199,13 +232,44 @@ const togglePreview = () => {
   previewExpanded.value = !previewExpanded.value;
 };
 
+const expandPreview = () => {
+  previewExpanded.value = true;
+};
+
+const collapsePreview = () => {
+  previewExpanded.value = false;
+};
+
 const handleViewDocument = () => {
   if (hasPreviewContent.value) {
-    togglePreview()
-    return
+    expandPreview();
+    return;
   }
-  emit('toggle-document-display', props.artifact)
+  emit('toggle-document-display', props.artifact);
 };
+
+const handleToggleDocumentDisplay = () => {
+  if (props.documentDisplayMode === 'full') {
+    collapsePreview();
+  }
+  emit('toggle-document-display', props.artifact);
+};
+
+watch(() => props.documentDisplayMode, (mode) => {
+  if (mode === 'full' && hasPreviewContent.value) {
+    expandPreview();
+    return;
+  }
+  if (mode !== 'full') {
+    collapsePreview();
+  }
+});
+
+watch(hasPreviewContent, (value) => {
+  if (value && props.documentDisplayMode === 'full') {
+    expandPreview();
+  }
+});
 
 const statusTheme = computed(() => {
   const generationStatus = typeof props.artifact?.document_generation_status === 'string'
