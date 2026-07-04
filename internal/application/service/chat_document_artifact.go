@@ -1291,7 +1291,7 @@ func hydrateChatDocumentArtifactDerivedFields(artifact *types.ChatDocumentArtifa
 	artifact.CanUseAsBaseDocument = artifact.CanUseAsBase()
 	artifact.CanViewDocument = artifact.CanView()
 	artifact.CanIndexDocument = artifact.CanIndex()
-	artifact.LongDocumentEnabled = true
+	artifact.LongDocumentEnabled = artifact.IsLongDocument()
 	artifact.ContinuationContextMode = artifact.ContinuationMode()
 	artifact.UserHint = chatDocumentUserHintForIssues(artifact.QualityIssues, artifact.Operation)
 	return artifact

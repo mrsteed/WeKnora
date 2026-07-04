@@ -219,6 +219,24 @@ func (a *ChatDocumentArtifact) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+func (a *ChatDocumentArtifact) IsLongDocument() bool {
+	if a == nil {
+		return false
+	}
+	if NormalizeOptionalChatDocumentGenerationStatus(a.DocumentGenerationStatus) != "" {
+		return true
+	}
+	if strings.TrimSpace(a.ParentArtifactID) != "" || a.RevisionNo > 1 {
+		return true
+	}
+	switch strings.TrimSpace(a.Operation) {
+	case ChatDocumentOperationContinue, ChatDocumentOperationRevise, ChatDocumentOperationRegenerate:
+		return true
+	default:
+		return false
+	}
+}
+
 func (a *ChatDocumentArtifact) CanContinue() bool {
 	return a.CanManualContinue()
 }

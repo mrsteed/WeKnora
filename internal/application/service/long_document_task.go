@@ -562,7 +562,7 @@ func (c *longDocumentTaskCollector) buildCompletePayload(
 		"failure_reason":        failureReason,
 		"long_document_enabled": true,
 	}
-	if documentStatus := types.NormalizeChatDocumentGenerationStatus(firstNonEmptyString(completion.DocumentGenerationStatus, completedArtifactStatus(artifact))); documentStatus != "" {
+	if documentStatus := types.NormalizeOptionalChatDocumentGenerationStatus(firstNonEmptyString(completion.DocumentGenerationStatus, completedArtifactStatus(artifact))); documentStatus != "" {
 		payload["document_generation_status"] = documentStatus
 	}
 	if completion.AutoContinueNext != nil {
@@ -878,7 +878,7 @@ func longDocumentArtifactMetadata(artifact *types.ChatDocumentArtifact) map[stri
 		"content_type":               artifact.ContentType,
 		"status":                     artifact.Status,
 		"completion_status":          artifact.CompletionStatus,
-		"document_generation_status": types.NormalizeChatDocumentGenerationStatus(artifact.DocumentGenerationStatus),
+		"document_generation_status": types.NormalizeOptionalChatDocumentGenerationStatus(artifact.DocumentGenerationStatus),
 		"document_task_kind":         artifact.DocumentTaskKind,
 		"source_title":               artifact.SourceTitle,
 		"target_language":            artifact.TargetLanguage,
@@ -893,7 +893,7 @@ func longDocumentArtifactMetadata(artifact *types.ChatDocumentArtifact) map[stri
 		"can_use_as_base":            artifact.CanUseAsBase(),
 		"can_view":                   artifact.CanView(),
 		"can_index":                  artifact.CanIndex(),
-		"long_document_enabled":      true,
+		"long_document_enabled":      artifact.IsLongDocument(),
 		"continuation_context_mode":  continuationContextMode,
 		"quality_issues":             artifact.QualityIssues,
 		"quality_issue_details":      qualityIssueDetails,

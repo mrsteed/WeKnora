@@ -514,6 +514,56 @@ func TestLoadMessages_HydratesHistoricalLongDocumentReplayExtra(t *testing.T) {
 	assert.Equal(t, planningOutline, response.Data[0].PlanningOutline)
 }
 
+func TestLoadMessages_IgnoresStaleLongDocumentFlagForShortArtifact(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	messageService := &messageHandlerMessageServiceStub{recentMessages: []*types.Message{{
+		ID:               "assistant-short-1",
+		SessionID:        "sess-1",
+		RequestID:        "req-short-1",
+		Role:             "assistant",
+		Content:          "# 当前文档总结\n\n## 一、接处警核心业务流程",
+		CompletionStatus: types.MessageCompletionStatusCompleted,
+		IsCompleted:      true,
+	}}}
+	handler := NewMessageHandler(
+		messageService,
+		&messageHandlerSessionServiceStub{replayExtra: map[string]interface{}{
+			"long_document_enabled": true,
+		}},
+		&messageHandlerStreamManagerStub{},
+		&messageHandlerChatDocumentArtifactServiceStub{artifactsByMessageID: map[string]*types.ChatDocumentArtifact{
+			"assistant-short-1": {
+				ID:              "artifact-short-1",
+				SessionID:       "sess-1",
+				SourceMessageID: "assistant-short-1",
+				Status:          types.ChatDocumentArtifactStatusAvailable,
+				Operation:       types.ChatDocumentOperationCreate,
+				ContentSnapshot: "# 当前文档总结\n\n## 一、接处警核心业务流程",
+			},
+		}},
+	)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/messages/sess-1/load?limit=20", nil)
+	ctx.Params = gin.Params{{Key: "session_id", Value: "sess-1"}}
+
+	handler.LoadMessages(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Success bool             `json:"success"`
+		Data    []*types.Message `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Len(t, response.Data, 1)
+	assert.False(t, response.Data[0].LongDocumentEnabled)
+	assert.Empty(t, response.Data[0].DocumentGenerationStatus)
+	assert.Empty(t, response.Data[0].GenerationRunID)
+	assert.Nil(t, response.Data[0].PlanningOutline)
+}
+
 var _ interfaces.MessageService = (*messageHandlerMessageServiceStub)(nil)
 var _ interfaces.SessionService = (*messageHandlerSessionServiceStub)(nil)
 var _ interfaces.StreamManager = (*messageHandlerStreamManagerStub)(nil)

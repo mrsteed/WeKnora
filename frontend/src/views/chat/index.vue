@@ -76,7 +76,7 @@
         </transition>
         <div class="input-container" :class="{ 'is-embedded': effectiveEmbeddedMode }">
             <LongDocumentBaselineBanner
-                v-if="displayedBaseArtifact"
+                v-if="shouldShowBaselineBanner"
                 :artifact="displayedBaseArtifact"
                 :locked="selectedBaseArtifactDisplayLocked"
                 :newer-artifact="newerArtifactAvailableForLockedBase"
@@ -141,6 +141,10 @@ import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
 import { useStickyBottomOnResize } from '@/composables/useStickyBottomOnResize';
 import { upsertThinkingEvent } from './utils/thinkingEvent';
+import {
+    buildUserDocumentRequestContext,
+    resolveExplicitBaseArtifact,
+} from './utils/documentRequestContext';
 import { extractStructuredPlanningOutlineFromText } from './utils/planningOutline';
 import { createPlatformChatRuntimeContext, isAgentSharePageRuntimeContext } from '@/types/chat-runtime';
 import LongDocumentBaselineBanner from './long-document/components/LongDocumentBaselineBanner.vue';
@@ -856,6 +860,14 @@ const displayedBaseArtifact = computed(() => {
     return selectedBaseArtifact.value || latestArtifactForDisplay.value;
 });
 
+const hasLongDocumentContext = computed(() => messagesList.some((message) => (
+    message?.role === 'assistant' && message.long_document_enabled === true
+)));
+
+const shouldShowBaselineBanner = computed(() => (
+    Boolean(displayedBaseArtifact.value) && hasLongDocumentContext.value
+));
+
 const manuallySelectedBaseArtifactId = computed(() => {
     if (!selectedBaseArtifactDisplayLocked.value) {
         return '';
@@ -1521,13 +1533,6 @@ const inferDocumentContinuationIntent = (query = '') => {
     if (hasSectionContinuationTarget(query)) return 'revise_document';
     if (/(继续生成|接着写|续写|从上次中断处继续|补全剩余|继续输出|请继续补齐|继续补齐|继续补充|继续完善|接着补齐|补齐剩余|补充剩余|继续扩写)/.test(text)) return 'continue_document';
     return 'normal';
-};
-
-const inferDocumentOutputMode = (intentHint = 'normal') => {
-    if (intentHint === 'continue_document' || intentHint === 'revise_document') {
-        return 'delta_only';
-    }
-    return '';
 };
 
 const hasScopedRevisionTarget = (query = '') => {
@@ -2579,19 +2584,25 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     // Use agent-chat endpoint when agent is enabled, otherwise use knowledge-chat
     const endpoint = agentEnabled ? '/api/v1/agent-chat' : '/api/v1/knowledge-chat';
 
-    const explicitBaseArtifact = selectedBaseArtifact.value?.id && selectedBaseArtifact.value?.session_id === session_id.value
-        ? selectedBaseArtifact.value
-        : null;
+    const explicitBaseArtifact = resolveExplicitBaseArtifact(
+        selectedBaseArtifact.value,
+        selectedBaseArtifactDisplayLocked.value,
+        session_id.value,
+    );
     let intentHint = inferDocumentContinuationIntent(value);
-    if (explicitBaseArtifact && intentHint === 'normal') {
-        intentHint = 'revise_document';
-    }
-    const documentOutputMode = inferDocumentOutputMode(intentHint);
     const documentTargetHeading = inferDocumentTargetHeading(value);
     const documentMergeMode = inferDocumentMergeMode(intentHint, documentTargetHeading);
-    const isDocumentEditIntent = intentHint === 'continue_document' || intentHint === 'revise_document';
-    const requestIntentHint = intentHint === 'normal' ? undefined : intentHint;
     const latestArtifact = await resolveLatestArtifactIfNeeded(intentHint);
+    const {
+        isDocumentEditIntent,
+        requestIntentHint,
+        baseArtifactId,
+        documentOutputMode,
+    } = buildUserDocumentRequestContext({
+        inferredIntentHint: intentHint,
+        explicitBaseArtifact,
+        latestArtifact,
+    });
     if ((intentHint === 'continue_document' || intentHint === 'revise_document') && latestArtifact && !canUseChatDocumentArtifactForIntent(latestArtifact, intentHint)) {
         resetReplyState();
         MessagePlugin.warning(latestArtifact.user_hint || '当前文档无法作为本轮修订或续写基线，请检查完整文档后再尝试。');
@@ -2602,10 +2613,6 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         MessagePlugin.warning('当前文档较长。修改上一版时请尽量指定章节或段落范围，或先让模型生成精简版后再修改。');
         return;
     }
-    const baseArtifactId = (intentHint === 'continue_document' || intentHint === 'revise_document') && latestArtifact?.id
-        ? latestArtifact.id
-        : undefined;
-    
     // Get selected MCP services from settings store (if available)
     const mcpServiceIds = getEffectiveMCPServiceIDs();
 

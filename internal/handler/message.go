@@ -326,42 +326,49 @@ func applyHistoricalLongDocumentExtra(message *types.Message, artifact *types.Ch
 	if message == nil {
 		return
 	}
+	longDocumentEnabled := message.LongDocumentEnabled
 	if artifact != nil {
-		message.LongDocumentEnabled = true
+		if artifact.IsLongDocument() {
+			longDocumentEnabled = true
+		}
 		message.DocumentGenerationStatus = strings.TrimSpace(artifact.DocumentGenerationStatus)
 		if taskKind := strings.TrimSpace(artifact.DocumentTaskKind); taskKind != "" {
 			message.DocumentTaskKind = taskKind
 		}
 	}
 	if len(extra) == 0 {
+		message.LongDocumentEnabled = longDocumentEnabled
 		return
-	}
-	if enabled, ok := extra["long_document_enabled"].(bool); ok && enabled {
-		message.LongDocumentEnabled = true
 	}
 	if generationStatus, ok := extra["document_generation_status"].(string); ok && strings.TrimSpace(generationStatus) != "" {
 		message.DocumentGenerationStatus = strings.TrimSpace(generationStatus)
+		longDocumentEnabled = true
 	}
 	if generationRunID, ok := extra["generation_run_id"].(string); ok && strings.TrimSpace(generationRunID) != "" {
 		message.GenerationRunID = strings.TrimSpace(generationRunID)
-		message.LongDocumentEnabled = true
+		longDocumentEnabled = true
 	}
 	if taskKind, ok := extra["document_task_kind"].(string); ok && strings.TrimSpace(taskKind) != "" {
 		message.DocumentTaskKind = strings.TrimSpace(taskKind)
 	}
 	if planningOutline, ok := extra["planning_outline"].(map[string]interface{}); ok && planningOutline != nil {
 		message.PlanningOutline = planningOutline
-		message.LongDocumentEnabled = true
+		longDocumentEnabled = true
 	}
 	if outlineRole, ok := extra["outline_role"].(string); ok {
 		message.OutlineRole = strings.TrimSpace(outlineRole)
+		if message.OutlineRole != "" {
+			longDocumentEnabled = true
+		}
 	}
 	if outlineSource, ok := extra["outline_source"].(string); ok {
 		message.OutlineSource = strings.TrimSpace(outlineSource)
 	}
 	if baseOutline, ok := extra["base_outline"].(map[string]interface{}); ok && baseOutline != nil {
 		message.BaseOutline = baseOutline
+		longDocumentEnabled = true
 	}
+	message.LongDocumentEnabled = longDocumentEnabled
 }
 
 func (h *MessageHandler) hydrateHistoricalChatDocumentMessages(ctx context.Context, messages []*types.Message) {

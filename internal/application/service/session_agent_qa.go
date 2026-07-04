@@ -270,6 +270,9 @@ func agentDocumentContextFromQARequest(req *types.QARequest) *types.AgentDocumen
 	if req == nil {
 		return nil
 	}
+	if !routeDecisionAllowsDocumentContext(req) {
+		return nil
+	}
 	if req.DocumentIntent == "" && req.DocumentOperation == "" && req.DocumentOutputMode == "" && req.BaseArtifactID == "" && !req.AutoContinue {
 		return nil
 	}
@@ -286,6 +289,56 @@ func agentDocumentContextFromQARequest(req *types.QARequest) *types.AgentDocumen
 		AutoContinueRound: req.AutoContinueRound,
 		CompletionMarker:  types.ChatDocumentCompletionMarker,
 	}
+}
+
+func routeDecisionAllowsDocumentContext(req *types.QARequest) bool {
+	if req == nil {
+		return false
+	}
+	if req.AutoContinue || strings.TrimSpace(req.GenerationRunID) != "" {
+		return true
+	}
+	if strings.TrimSpace(req.DocumentTaskKind) == types.ChatDocumentTaskKindTranslation && strings.TrimSpace(req.DocumentOutputMode) != "" {
+		return true
+	}
+	if req.RouteDecision == nil {
+		return true
+	}
+	switch req.RouteDecision.Kind {
+	case types.ChatRouteShortDocument,
+		types.ChatRouteFullDocument,
+		types.ChatRouteKnowledgeGroundedFullDoc,
+		types.ChatRouteDocumentEdit,
+		types.ChatRouteKnowledgeGroundedContinue:
+		return true
+	default:
+		return req.RouteDecision.UseLongDocument || req.RouteDecision.NeedArtifact
+	}
+}
+
+func routeDecisionAllowsDedicatedDocumentEditPath(req *types.QARequest) bool {
+	if req == nil {
+		return false
+	}
+	if req.RouteDecision == nil {
+		return true
+	}
+	switch req.RouteDecision.Kind {
+	case types.ChatRouteDocumentEdit, types.ChatRouteKnowledgeGroundedContinue:
+		return true
+	default:
+		return false
+	}
+}
+
+func isDocumentQuotedContext(quotedContext string) bool {
+	trimmed := strings.TrimSpace(quotedContext)
+	if trimmed == "" {
+		return false
+	}
+	return strings.Contains(trimmed, "<document_revision_context>") ||
+		strings.Contains(trimmed, "<document_continuation_context>") ||
+		strings.Contains(trimmed, "<document_edit_target>")
 }
 
 func ensureRetrievalTenantContext(
@@ -315,6 +368,9 @@ func shouldApplyDocumentStopgap(req *types.QARequest) bool {
 	if req == nil || req.BaseArtifactID == "" {
 		return false
 	}
+	if !routeDecisionAllowsDocumentContext(req) {
+		return false
+	}
 
 	switch req.DocumentIntent {
 	case types.ChatDocumentIntentContinue, types.ChatDocumentIntentRevise:
@@ -330,11 +386,20 @@ func shouldApplyDocumentStopgap(req *types.QARequest) bool {
 }
 
 func shouldInlineQuotedContext(req *types.QARequest) bool {
-	return req != nil && req.QuotedContext != "" && !shouldApplyDocumentStopgap(req)
+	if req == nil || strings.TrimSpace(req.QuotedContext) == "" {
+		return false
+	}
+	if isDocumentQuotedContext(req.QuotedContext) && !routeDecisionAllowsDocumentContext(req) {
+		return false
+	}
+	return !shouldApplyDocumentStopgap(req)
 }
 
 func shouldUseDedicatedDocumentEditPath(req *types.QARequest) bool {
 	if req == nil || strings.TrimSpace(req.BaseArtifactID) == "" {
+		return false
+	}
+	if !routeDecisionAllowsDedicatedDocumentEditPath(req) {
 		return false
 	}
 	if req.DocumentOutputMode == types.ChatDocumentOutputModeFull {

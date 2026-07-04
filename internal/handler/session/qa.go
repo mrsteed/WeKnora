@@ -664,15 +664,20 @@ func emitAssistantCompleteEvent(eventBus *event.EventBus, sessionID string, mess
 	}
 	if artifact != nil {
 		completeData.FinalDocumentMode, completeData.FinalDocument, completeData.FinalDocumentArtifactID = buildFinalDocumentDelivery(artifact)
-		completeData.DocumentGenerationStatus = types.NormalizeChatDocumentGenerationStatus(artifact.DocumentGenerationStatus)
-		completeData.AutoContinueNext = chatDocumentAutoContinueNext(completeData.DocumentGenerationStatus, options.FinishReason, options.FailureReason, options.AutoContinueRound)
-		completeData.AutoContinueReason = chatDocumentAutoContinueReason(completeData.DocumentGenerationStatus, options.FinishReason, options.FailureReason, options.AutoContinueRound, artifact)
-		completeData.AutoContinueReasonMessage = chatDocumentContinuationReasonMessage(completeData.AutoContinueReason, completeData.FailureReason, completeData.FinishReason)
+		artifactStatus := types.NormalizeOptionalChatDocumentGenerationStatus(artifact.DocumentGenerationStatus)
+		if artifactStatus != "" {
+			completeData.DocumentGenerationStatus = artifactStatus
+			completeData.AutoContinueNext = chatDocumentAutoContinueNext(completeData.DocumentGenerationStatus, options.FinishReason, options.FailureReason, options.AutoContinueRound)
+			completeData.AutoContinueReason = chatDocumentAutoContinueReason(completeData.DocumentGenerationStatus, options.FinishReason, options.FailureReason, options.AutoContinueRound, artifact)
+			completeData.AutoContinueReasonMessage = chatDocumentContinuationReasonMessage(completeData.AutoContinueReason, completeData.FailureReason, completeData.FinishReason)
+		}
 		if completeData.Extra == nil {
 			completeData.Extra = map[string]interface{}{}
 		}
 		completeData.Extra["chat_document_artifact"] = chatDocumentArtifactMetadata(artifact)
-		applyChatDocumentContinuationDecision(&completeData, artifact, options.AutoContinueRound)
+		if artifactStatus != "" {
+			applyChatDocumentContinuationDecision(&completeData, artifact, options.AutoContinueRound)
+		}
 	}
 	if completeData.Extra == nil && longDocumentEnabled {
 		completeData.Extra = map[string]interface{}{}
@@ -711,7 +716,7 @@ func extraLongDocumentEnabled(extra map[string]interface{}) bool {
 }
 
 func shouldEnableLongDocumentUI(artifact *types.ChatDocumentArtifact, documentGenerationStatus string, generationRunID string, extra map[string]interface{}) bool {
-	if artifact != nil {
+	if artifact != nil && artifact.IsLongDocument() {
 		return true
 	}
 	if strings.TrimSpace(documentGenerationStatus) != "" {
@@ -1076,8 +1081,11 @@ func addChatDocumentGenerationPayload(data map[string]interface{}, artifact *typ
 	if data == nil || artifact == nil {
 		return
 	}
-	data[longDocumentEnabledField] = true
-	status := types.NormalizeChatDocumentGenerationStatus(artifact.DocumentGenerationStatus)
+	data[longDocumentEnabledField] = artifact.IsLongDocument()
+	status := types.NormalizeOptionalChatDocumentGenerationStatus(artifact.DocumentGenerationStatus)
+	if status == "" {
+		return
+	}
 	finishReason, _ := data["finish_reason"].(string)
 	failureReason, _ := data["failure_reason"].(string)
 	data["document_generation_status"] = status
@@ -1169,7 +1177,7 @@ func chatDocumentArtifactMetadata(artifact *types.ChatDocumentArtifact) map[stri
 		"content_type":               artifact.ContentType,
 		"status":                     artifact.Status,
 		"completion_status":          artifact.CompletionStatus,
-		"document_generation_status": types.NormalizeChatDocumentGenerationStatus(artifact.DocumentGenerationStatus),
+		"document_generation_status": types.NormalizeOptionalChatDocumentGenerationStatus(artifact.DocumentGenerationStatus),
 		"document_task_kind":         artifact.DocumentTaskKind,
 		"source_title":               artifact.SourceTitle,
 		"target_language":            artifact.TargetLanguage,
@@ -1184,7 +1192,7 @@ func chatDocumentArtifactMetadata(artifact *types.ChatDocumentArtifact) map[stri
 		"can_use_as_base":            artifact.CanUseAsBase(),
 		"can_view":                   artifact.CanView(),
 		"can_index":                  artifact.CanIndex(),
-		"long_document_enabled":      artifact.LongDocumentEnabled,
+		"long_document_enabled":      artifact.IsLongDocument(),
 		"continuation_context_mode":  continuationContextMode,
 		"quality_issues":             artifact.QualityIssues,
 		"quality_issue_details":      qualityIssueDetails,
@@ -1534,6 +1542,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 	inferNaturalLanguageFullTranslationRequest(reqCtx, &request)
 	reqCtx.titleSeedQuery = h.buildSessionTitleSeed(ctx, reqCtx)
 	h.detectChatRouteDecision(ctx, logPrefix, reqCtx, &request)
+	normalizeResolvedDocumentRequestContext(reqCtx)
 
 	return reqCtx, &request, nil
 }

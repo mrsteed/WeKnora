@@ -918,6 +918,48 @@ func TestEmitAssistantCompleteEvent_IncludesArtifactFinalDocumentMetadata(t *tes
 	assert.Equal(t, types.ChatDocumentQualityIssueUnclosedCodeFence, qualityIssueDetails[0].Code)
 }
 
+func TestEmitAssistantCompleteEvent_DoesNotEnableLongDocumentUIForShortArtifact(t *testing.T) {
+	eventBus := event.NewEventBus()
+	message := &types.Message{
+		ID:        "msg-short-1",
+		SessionID: "sess-1",
+		Role:      "assistant",
+		Content:   "# 当前文档总结\n\n## 一、接处警核心业务流程\n\n" + strings.Repeat("这是一段结构化总结内容。", 120),
+	}
+	artifact := &types.ChatDocumentArtifact{
+		ID:              "artifact-short-1",
+		SessionID:       "sess-1",
+		SourceMessageID: "msg-short-1",
+		RevisionNo:      1,
+		Operation:       types.ChatDocumentOperationCreate,
+		Status:          types.ChatDocumentArtifactStatusAvailable,
+		ArtifactKind:    types.ChatDocumentArtifactKindMarkdown,
+		ContentSnapshot: message.Content,
+	}
+
+	var captured event.AgentCompleteData
+	eventBus.On(event.EventAgentComplete, func(ctx context.Context, evt event.Event) error {
+		data, ok := evt.Data.(event.AgentCompleteData)
+		require.True(t, ok)
+		captured = data
+		return nil
+	})
+
+	emitAssistantCompleteEvent(eventBus, "sess-1", message, assistantCompletionOptions{
+		CompletionStatus: types.MessageCompletionStatusCompleted,
+		FinishReason:     "stop",
+		AllowIndexing:    true,
+		AllowComplete:    true,
+	}, artifact)
+
+	assert.False(t, captured.LongDocumentEnabled)
+	assert.Empty(t, captured.DocumentGenerationStatus)
+	require.NotNil(t, captured.Extra)
+	metadata, ok := captured.Extra["chat_document_artifact"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, false, metadata["long_document_enabled"])
+}
+
 func TestEmitAssistantCompleteEvent_AutoContinueNextOnlyForStableContinuingState(t *testing.T) {
 	tests := []struct {
 		name                   string

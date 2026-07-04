@@ -142,6 +142,45 @@ func chatRouteBypassReason(reqCtx *qaRequestContext) string {
 	return "database_tool_only_agent_bypass"
 }
 
+func shouldRetainResolvedDocumentRequestContext(reqCtx *qaRequestContext) bool {
+	if reqCtx == nil {
+		return false
+	}
+	if reqCtx.autoContinue || strings.TrimSpace(reqCtx.generationRunID) != "" {
+		return true
+	}
+	if reqCtx.routeDecisionApplied {
+		return true
+	}
+	if strings.TrimSpace(reqCtx.documentTaskKind) == types.ChatDocumentTaskKindTranslation && strings.TrimSpace(reqCtx.documentOutputMode) != "" {
+		return true
+	}
+	return reqCtx.routeDecision == nil
+}
+
+func clearResolvedDocumentRequestContext(reqCtx *qaRequestContext) {
+	if reqCtx == nil {
+		return
+	}
+	reqCtx.documentIntent = ""
+	reqCtx.documentOperation = ""
+	reqCtx.documentOutputMode = ""
+	reqCtx.documentTaskKind = ""
+	reqCtx.translationOptions = nil
+	reqCtx.documentTargetHeading = ""
+	reqCtx.documentMergeMode = ""
+	reqCtx.baseArtifact = nil
+	reqCtx.baseArtifactID = ""
+	reqCtx.documentQuotedContext = ""
+}
+
+func normalizeResolvedDocumentRequestContext(reqCtx *qaRequestContext) {
+	if shouldRetainResolvedDocumentRequestContext(reqCtx) {
+		return
+	}
+	clearResolvedDocumentRequestContext(reqCtx)
+}
+
 func (h *Handler) applyDocumentRouteDecision(ctx context.Context, reqCtx *qaRequestContext, request *CreateKnowledgeQARequest, decision *types.ChatRouteDecision, hasEffectiveAgentKB bool) bool {
 	applied, _ := h.applyDocumentRouteDecisionWithReason(ctx, reqCtx, request, decision, hasEffectiveAgentKB)
 	return applied

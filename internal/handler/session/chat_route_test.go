@@ -273,6 +273,53 @@ func TestDetectChatRouteDecision_SkipsExplicitTranslationTaskKind(t *testing.T) 
 	assert.Empty(t, reqCtx.routeModelID)
 }
 
+func TestNormalizeResolvedDocumentRequestContext_ClearsStaleDocumentEditStateForNonDocumentRoute(t *testing.T) {
+	reqCtx := &qaRequestContext{
+		routeDecision:         &types.ChatRouteDecision{Kind: types.ChatRouteAgentQA},
+		routeDecisionApplied:  false,
+		documentIntent:        types.ChatDocumentIntentRevise,
+		documentOperation:     types.ChatDocumentOperationRevise,
+		documentOutputMode:    types.ChatDocumentOutputModeDelta,
+		documentTaskKind:      types.ChatDocumentTaskKindWriting,
+		translationOptions:    &types.ChatDocumentTranslationOptions{TargetLanguage: "中文"},
+		documentTargetHeading: "第二章",
+		documentMergeMode:     types.ChatDocumentMergeModeAppendToSection,
+		baseArtifactID:        "artifact-1",
+		baseArtifact:          &types.ChatDocumentArtifact{ID: "artifact-1"},
+		documentQuotedContext: "quoted-context",
+	}
+
+	normalizeResolvedDocumentRequestContext(reqCtx)
+
+	assert.Empty(t, reqCtx.documentIntent)
+	assert.Empty(t, reqCtx.documentOperation)
+	assert.Empty(t, reqCtx.documentOutputMode)
+	assert.Empty(t, reqCtx.documentTaskKind)
+	assert.Nil(t, reqCtx.translationOptions)
+	assert.Empty(t, reqCtx.documentTargetHeading)
+	assert.Empty(t, reqCtx.documentMergeMode)
+	assert.Empty(t, reqCtx.baseArtifactID)
+	assert.Nil(t, reqCtx.baseArtifact)
+	assert.Empty(t, reqCtx.documentQuotedContext)
+}
+
+func TestNormalizeResolvedDocumentRequestContext_PreservesExplicitTranslationBypass(t *testing.T) {
+	reqCtx := &qaRequestContext{
+		routeDecision:        &types.ChatRouteDecision{Kind: types.ChatRouteAgentQA, UseLongDocument: true, NeedArtifact: true},
+		routeDecisionApplied: false,
+		documentOutputMode:   types.ChatDocumentOutputModeFull,
+		documentTaskKind:     types.ChatDocumentTaskKindTranslation,
+		translationOptions:   &types.ChatDocumentTranslationOptions{TargetLanguage: "中文"},
+	}
+
+	normalizeResolvedDocumentRequestContext(reqCtx)
+
+	assert.Equal(t, types.ChatDocumentOutputModeFull, reqCtx.documentOutputMode)
+	assert.Equal(t, types.ChatDocumentTaskKindTranslation, reqCtx.documentTaskKind)
+	require.NotNil(t, reqCtx.translationOptions)
+	assert.Equal(t, "中文", reqCtx.translationOptions.TargetLanguage)
+}
+
 func TestInferNaturalLanguageFullTranslationRequest_PromotesSingleKnowledgeQuery(t *testing.T) {
 	reqCtx := &qaRequestContext{
 		query:             "请把这篇文档完整翻译成中文 Markdown",

@@ -889,6 +889,18 @@ func TestShouldInlineQuotedContext(t *testing.T) {
 
 		assert.True(t, shouldInlineQuotedContext(req))
 	})
+
+	t.Run("non-document route suppresses document quoted context", func(t *testing.T) {
+		req := &types.QARequest{
+			QuotedContext:      "<document_revision_context>...</document_revision_context>",
+			DocumentIntent:     types.ChatDocumentIntentRevise,
+			DocumentOutputMode: types.ChatDocumentOutputModeDelta,
+			BaseArtifactID:     "artifact-1",
+			RouteDecision:      &types.ChatRouteDecision{Kind: types.ChatRouteAgentQA},
+		}
+
+		assert.False(t, shouldInlineQuotedContext(req))
+	})
 }
 
 func TestAgentDocumentContextFromQARequestCarriesUserGoal(t *testing.T) {
@@ -907,6 +919,20 @@ func TestAgentDocumentContextFromQARequestCarriesUserGoal(t *testing.T) {
 	assert.Equal(t, req.QuotedContext, documentContext.QuotedContext)
 }
 
+func TestAgentDocumentContextFromQARequest_IgnoresStaleDocumentFieldsForNonDocumentRoute(t *testing.T) {
+	req := &types.QARequest{
+		Query:              "查询一下今天天气",
+		DocumentIntent:     types.ChatDocumentIntentRevise,
+		DocumentOperation:  types.ChatDocumentOperationRevise,
+		DocumentOutputMode: types.ChatDocumentOutputModeDelta,
+		BaseArtifactID:     "artifact-1",
+		QuotedContext:      "<document_revision_context>...</document_revision_context>",
+		RouteDecision:      &types.ChatRouteDecision{Kind: types.ChatRouteAgentQA},
+	}
+
+	assert.Nil(t, agentDocumentContextFromQARequest(req))
+}
+
 func TestShouldUseDedicatedDocumentEditPath(t *testing.T) {
 	t.Run("pure document revise request uses dedicated path", func(t *testing.T) {
 		req := &types.QARequest{
@@ -917,6 +943,19 @@ func TestShouldUseDedicatedDocumentEditPath(t *testing.T) {
 		}
 
 		assert.True(t, shouldUseDedicatedDocumentEditPath(req))
+	})
+
+	t.Run("non-document route blocks dedicated edit path even with stale document fields", func(t *testing.T) {
+		req := &types.QARequest{
+			Query:              "查询一下今天天气",
+			DocumentIntent:     types.ChatDocumentIntentRevise,
+			DocumentOutputMode: types.ChatDocumentOutputModeDelta,
+			BaseArtifactID:     "artifact-1",
+			QuotedContext:      "<document_revision_context>...</document_revision_context>",
+			RouteDecision:      &types.ChatRouteDecision{Kind: types.ChatRouteAgentQA},
+		}
+
+		assert.False(t, shouldUseDedicatedDocumentEditPath(req))
 	})
 
 	t.Run("request with retrieval dependencies stays on generic agent path", func(t *testing.T) {

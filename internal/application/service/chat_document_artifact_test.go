@@ -1242,6 +1242,7 @@ func TestChatDocumentArtifactRegisterFromAssistantMessageCreatesShortDocumentArt
 	require.NotNil(t, artifact)
 	assert.Empty(t, artifact.DocumentGenerationStatus)
 	assert.Equal(t, types.ChatDocumentArtifactStatusAvailable, artifact.Status)
+	assert.False(t, artifact.LongDocumentEnabled)
 }
 
 func TestRegisterChatDocumentArtifact_PersistsEvidenceRefs(t *testing.T) {
