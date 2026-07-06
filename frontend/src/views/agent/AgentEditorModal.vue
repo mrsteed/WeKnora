@@ -1711,12 +1711,20 @@ const showRerankModelField = computed(() => {
 
 // 当前配置下进入到智能体作用域的知识库列表
 // 注意：用户可能选了 knowledge_bases（按库级），也可能选了 knowledge_ids（按文档级）
-// 这里仅用于 UI 上的工具可用性判定，按库级来计算
+// 这里仅用于 UI 上的工具可用性判定，按库级来计算。
+// 关键点：作用域必须先经过 preset / mode 的兼容性过滤，
+// 否则 database-analysis 这类预设会把租户下所有 RAG/Wiki KB
+// 也算进来，导致工具被错误点亮。
 const kbsInScope = computed(() => {
   if (kbSelectionMode.value === 'none') return [];
-  if (kbSelectionMode.value === 'all') return kbOptions.value;
+  const compatibleKbOptions = kbOptions.value.filter((kb) => {
+    const presetResult = kbSatisfiesPresetFilter(kb, activeAgentTypePreset.value);
+    const modeResult = kbSatisfiesQuickAnswerMode(kb);
+    return presetResult.ok && modeResult.ok;
+  });
+  if (kbSelectionMode.value === 'all') return compatibleKbOptions;
   const selectedIds = formData.value.config.knowledge_bases || [];
-  return kbOptions.value.filter(kb => selectedIds.includes(kb.value));
+  return compatibleKbOptions.filter(kb => selectedIds.includes(kb.value));
 });
 
 // 是否存在至少一个启用了 RAG 能力的知识库（向量 or 关键词）
@@ -1749,14 +1757,7 @@ const shouldShowRetrievalSection = computed(() => {
 
 // 检测选择的知识库中是否包含 FAQ 类型
 const hasFaqKnowledgeBase = computed(() => {
-  if (kbSelectionMode.value === 'none') return false;
-  if (kbSelectionMode.value === 'all') {
-    // 全部知识库模式，检查是否有任何 FAQ 类型的知识库
-    return kbOptions.value.some(kb => kb.type === 'faq');
-  }
-  // 指定知识库模式，检查选中的知识库中是否有 FAQ 类型
-  const selectedKbIds = formData.value.config.knowledge_bases || [];
-  return kbOptions.value.some(kb => selectedKbIds.includes(kb.value) && kb.type === 'faq');
+  return kbsInScope.value.some(kb => !!kb.capabilities?.faq || kb.type === 'faq');
 });
 
 // 把"作用域内 KB 能力"聚合成一个 ScopeCapabilities 对象，交给

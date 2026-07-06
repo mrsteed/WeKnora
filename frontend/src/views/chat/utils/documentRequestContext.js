@@ -1,7 +1,5 @@
 export function resolveExplicitBaseArtifact(selectedBaseArtifact, selectedBaseArtifactDisplayLocked, sessionId) {
-  if (!selectedBaseArtifactDisplayLocked) {
-    return null;
-  }
+  void selectedBaseArtifactDisplayLocked;
   if (!selectedBaseArtifact?.id) {
     return null;
   }

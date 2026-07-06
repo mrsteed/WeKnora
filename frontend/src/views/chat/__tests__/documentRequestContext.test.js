@@ -6,13 +6,25 @@ import {
   resolveExplicitBaseArtifact,
 } from '../utils/documentRequestContext.js';
 
-test('auto-selected baseline does not become an explicit base artifact', () => {
-  const artifact = resolveExplicitBaseArtifact({
+test('auto-selected baseline is preserved as routing context without forcing document intent', () => {
+  const explicitBaseArtifact = resolveExplicitBaseArtifact({
     id: 'artifact-1',
     session_id: 'session-1',
   }, false, 'session-1');
 
-  assert.equal(artifact, null);
+  const request = buildUserDocumentRequestContext({
+    inferredIntentHint: 'normal',
+    explicitBaseArtifact,
+    latestArtifact: null,
+  });
+
+  assert.deepEqual(request, {
+    intentHint: 'normal',
+    isDocumentEditIntent: false,
+    requestIntentHint: undefined,
+    baseArtifactId: 'artifact-1',
+    documentOutputMode: '',
+  });
 });
 
 test('locked baseline is preserved as routing context without forcing document intent', () => {
@@ -62,4 +74,13 @@ test('locked baseline takes precedence over an automatically discovered artifact
   assert.equal(request.baseArtifactId, 'artifact-locked');
   assert.equal(request.documentOutputMode, 'delta_only');
   assert.equal(request.requestIntentHint, 'continue_document');
+});
+
+test('baseline from another session is ignored', () => {
+  const explicitBaseArtifact = resolveExplicitBaseArtifact({
+    id: 'artifact-1',
+    session_id: 'session-2',
+  }, false, 'session-1');
+
+  assert.equal(explicitBaseArtifact, null);
 });
