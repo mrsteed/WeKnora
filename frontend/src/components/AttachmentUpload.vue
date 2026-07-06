@@ -40,7 +40,7 @@ const SUPPORTED_TYPES = [
 ];
 
 const maxFiles = computed(() => props.maxFiles || 5);
-const maxSize = computed(() => (props.maxSize || 20) * 1024 * 1024); // Convert MB to bytes
+const maxSize = computed(() => (props.maxSize || 50) * 1024 * 1024); // Convert MB to bytes
 const allowedTypes = computed(() => {
   if (!Array.isArray(props.supportedTypes)) {
     return SUPPORTED_TYPES;
@@ -89,7 +89,7 @@ const addFiles = async (files: File[]) => {
     
     // Check file size
     if (file.size > maxSize.value) {
-      MessagePlugin.warning(t('chat.attachmentTooLarge', { name: file.name, max: props.maxSize || 20 }));
+      MessagePlugin.warning(t('chat.attachmentTooLarge', { name: file.name, max: props.maxSize || 50 }));
       continue;
     }
     

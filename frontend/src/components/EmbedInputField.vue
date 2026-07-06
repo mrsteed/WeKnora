@@ -202,7 +202,7 @@ const handleImageSelect = (event: Event) => {
 }
 
 const addAttachmentFiles = (files: File[]) => {
-  const maxSize = 20 * 1024 * 1024
+  const maxSize = 50 * 1024 * 1024;
   for (const file of files) {
     if (isEmbedImageFile(file)) continue
     if (uploadedAttachments.value.length >= 5) {

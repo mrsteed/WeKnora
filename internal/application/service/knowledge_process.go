@@ -151,6 +151,75 @@ func (s *knowledgeService) processDocumentFromPassage(ctx context.Context,
 	s.processChunks(ctx, kb, knowledge, chunks, opts)
 }
 
+func (s *knowledgeService) processKnowledgeFromReadResult(
+	ctx context.Context,
+	kb *types.KnowledgeBase,
+	knowledge *types.Knowledge,
+	readResult *types.ReadResult,
+	eff types.EffectiveProcessConfig,
+	enableQuestionGeneration bool,
+	questionCount int,
+	storedImages []docparser.StoredImage,
+) error {
+	if readResult == nil {
+		return fmt.Errorf("read result is required")
+	}
+	knowledge.ParseStatus = "processing"
+	knowledge.UpdatedAt = time.Now()
+	if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
+		return err
+	}
+
+	chunkCfg := buildSplitterConfigFromChunking(eff.ChunkingConfig)
+	processOpts := ProcessChunksOptions{
+		EnableQuestionGeneration: enableQuestionGeneration,
+		QuestionCount:            questionCount,
+		EnableMultimodel:         eff.EnableMultimodel,
+		StoredImages:             storedImages,
+		Metadata:                 readResult.Metadata,
+	}
+
+	var chunks []types.ParsedChunk
+	if eff.ChunkingConfig.EnableParentChild {
+		parentCfg, childCfg := buildParentChildConfigs(eff.ChunkingConfig, chunkCfg)
+		pcResult := chunker.SplitParentChild(readResult.MarkdownContent, parentCfg, childCfg)
+		chunks = make([]types.ParsedChunk, len(pcResult.Children))
+		for i, c := range pcResult.Children {
+			chunks[i] = types.ParsedChunk{
+				Content:       c.Content,
+				ContextHeader: c.ContextHeader,
+				Seq:           c.Seq,
+				Start:         c.Start,
+				End:           c.End,
+				ParentIndex:   c.ParentIndex,
+			}
+		}
+		parentChunks := make([]types.ParsedParentChunk, len(pcResult.Parents))
+		for i, p := range pcResult.Parents {
+			parentChunks[i] = types.ParsedParentChunk{Content: p.Content, Seq: p.Seq, Start: p.Start, End: p.End}
+		}
+		processOpts.ParentChunks = parentChunks
+		logger.Infof(ctx, "Split parsed attachment into %d parent + %d child chunks for knowledge %s",
+			len(pcResult.Parents), len(pcResult.Children), knowledge.ID)
+	} else {
+		splitChunks := chunker.Split(readResult.MarkdownContent, chunkCfg)
+		chunks = make([]types.ParsedChunk, len(splitChunks))
+		for i, c := range splitChunks {
+			chunks[i] = types.ParsedChunk{
+				Content:       c.Content,
+				ContextHeader: c.ContextHeader,
+				Seq:           c.Seq,
+				Start:         c.Start,
+				End:           c.End,
+			}
+		}
+		logger.Infof(ctx, "Split parsed attachment into %d chunks for knowledge %s", len(chunks), knowledge.ID)
+	}
+
+	s.processChunks(ctx, kb, knowledge, chunks, processOpts)
+	return nil
+}
+
 // ProcessChunksOptions contains options for processing chunks
 type ProcessChunksOptions struct {
 	EnableQuestionGeneration bool

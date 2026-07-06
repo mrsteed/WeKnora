@@ -47,6 +47,19 @@ func (s *sessionService) resolveKnowledgeBases(
 	} else if customAgent != nil {
 		kbIDs = s.resolveKnowledgeBasesFromAgent(ctx, customAgent, req.Session.TenantID)
 	}
+	if tempKBID := strings.TrimSpace(req.AttachmentTempKBID); tempKBID != "" {
+		alreadyIncluded := false
+		for _, kbID := range kbIDs {
+			if kbID == tempKBID {
+				alreadyIncluded = true
+				break
+			}
+		}
+		if !alreadyIncluded {
+			kbIDs = append(kbIDs, tempKBID)
+			logger.Infof(ctx, "Attachment temporary KB appended to retrieval scope: %s", tempKBID)
+		}
+	}
 	return kbIDs, knowledgeIDs
 }
 

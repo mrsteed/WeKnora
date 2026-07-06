@@ -116,7 +116,7 @@ func hasEffectiveKnowledgeScopeForBypass(reqCtx *qaRequestContext) bool {
 	if reqCtx == nil {
 		return false
 	}
-	if len(reqCtx.knowledgeBaseIDs) > 0 || len(reqCtx.knowledgeIDs) > 0 {
+	if len(reqCtx.knowledgeBaseIDs) > 0 || len(reqCtx.knowledgeIDs) > 0 || strings.TrimSpace(reqCtx.attachmentTempKBID) != "" {
 		return true
 	}
 	if reqCtx.customAgent == nil {
@@ -192,7 +192,7 @@ func (h *Handler) applyDocumentRouteDecisionWithReason(ctx context.Context, reqC
 	}
 
 	if decision.Kind == types.ChatRouteFullDocument {
-		hasKnowledgeScope := hasEffectiveAgentKB || len(reqCtx.knowledgeBaseIDs) > 0 || len(reqCtx.knowledgeIDs) > 0
+		hasKnowledgeScope := hasEffectiveAgentKB || len(reqCtx.knowledgeBaseIDs) > 0 || len(reqCtx.knowledgeIDs) > 0 || strings.TrimSpace(reqCtx.attachmentTempKBID) != ""
 		if hasKnowledgeScope {
 			promoted := *decision
 			promoted.Kind = types.ChatRouteKnowledgeGroundedFullDoc
@@ -295,10 +295,14 @@ func canApplyFullDocumentRouteDecisionWithReason(reqCtx *qaRequestContext, hasEf
 	if reqCtx.autoContinue || strings.TrimSpace(reqCtx.baseArtifactID) != "" {
 		return false, documentRouteBlockedReason(reqCtx.autoContinue, strings.TrimSpace(reqCtx.baseArtifactID) != "", false, false, false)
 	}
-	if len(reqCtx.attachments) > 0 || len(reqCtx.images) > 0 {
-		return false, documentRouteBlockedReason(false, false, len(reqCtx.attachments) > 0, len(reqCtx.images) > 0, false)
+	attachmentKnowledgeReady := strings.TrimSpace(reqCtx.attachmentTempKBID) != ""
+	if len(reqCtx.images) > 0 {
+		return false, documentRouteBlockedReason(false, false, false, true, false)
 	}
-	hasKnowledgeScope := hasEffectiveAgentKB || len(reqCtx.knowledgeBaseIDs) > 0 || len(reqCtx.knowledgeIDs) > 0
+	if len(reqCtx.attachments) > 0 && !attachmentKnowledgeReady {
+		return false, documentRouteBlockedReason(false, false, true, false, false)
+	}
+	hasKnowledgeScope := hasEffectiveAgentKB || len(reqCtx.knowledgeBaseIDs) > 0 || len(reqCtx.knowledgeIDs) > 0 || attachmentKnowledgeReady
 	if requireKnowledge {
 		if !hasKnowledgeScope {
 			return false, "missing_knowledge_scope"
@@ -484,7 +488,7 @@ func (h *Handler) buildChatRouteInput(logPrefix string, reqCtx *qaRequestContext
 		ModelID:                  routeModelID,
 		AgentConfigured:          reqCtx.customAgent != nil,
 		AgentModeEnabledByConfig: agentModeEnabled,
-		HasSelectedKnowledge:     len(reqCtx.knowledgeBaseIDs) > 0 || len(reqCtx.knowledgeIDs) > 0,
+		HasSelectedKnowledge:     len(reqCtx.knowledgeBaseIDs) > 0 || len(reqCtx.knowledgeIDs) > 0 || strings.TrimSpace(reqCtx.attachmentTempKBID) != "",
 		HasEffectiveAgentKB:      hasEffectiveAgentKB,
 		WebSearchEnabled:         reqCtx.webSearchEnabled,
 		HasAttachments:           len(reqCtx.attachments) > 0,
@@ -592,5 +596,39 @@ func buildChatRouteCompletionExtra(decision *types.ChatRouteDecision, modelID st
 			"model_id":    strings.TrimSpace(modelID),
 			"decision":    decision,
 		},
+	}
+}
+
+func buildAttachmentKnowledgeCompletionExtra(reqCtx *qaRequestContext) map[string]interface{} {
+	if reqCtx == nil || len(reqCtx.attachments) == 0 {
+		return nil
+	}
+	attachmentProcessing := make([]map[string]interface{}, 0, len(reqCtx.attachments))
+	readyAny := false
+	failedAny := false
+	for _, attachment := range reqCtx.attachments {
+		status := strings.TrimSpace(attachment.KnowledgeizationStatus)
+		if status == "" {
+			status = "failed"
+		}
+		if status == "ready" {
+			readyAny = true
+		} else if status == "failed" {
+			failedAny = true
+		}
+		attachmentProcessing = append(attachmentProcessing, map[string]interface{}{
+			"file_name":               attachment.FileName,
+			"file_size":               attachment.FileSize,
+			"file_type":               attachment.FileType,
+			"knowledgeization_status": status,
+			"temp_knowledge_id":       strings.TrimSpace(attachment.TempKnowledgeID),
+			"temp_knowledge_base_id":  strings.TrimSpace(attachment.TempKnowledgeBaseID),
+		})
+	}
+	return map[string]interface{}{
+		"attachment_temp_kb_id":       strings.TrimSpace(reqCtx.attachmentTempKBID),
+		"attachment_knowledge_ready":  readyAny,
+		"attachment_knowledge_failed": failedAny && !readyAny,
+		"attachment_processing":       attachmentProcessing,
 	}
 }

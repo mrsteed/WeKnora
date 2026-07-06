@@ -1237,6 +1237,7 @@ type qaRequestContext struct {
 	customAgent               *types.CustomAgent
 	assistantMessage          *types.Message
 	knowledgeBaseIDs          []string
+	attachmentTempKBID        string
 	knowledgeIDs              []string
 	tagScopes                 []types.TagScope
 	tagIDs                    []string
@@ -1270,6 +1271,7 @@ func (rc *qaRequestContext) buildQARequest() *types.QARequest {
 		SummaryModelID:            rc.summaryModelID,
 		CustomAgent:               rc.customAgent,
 		KnowledgeBaseIDs:          rc.knowledgeBaseIDs,
+		AttachmentTempKBID:        rc.attachmentTempKBID,
 		KnowledgeIDs:              rc.knowledgeIDs,
 		TagScopes:                 rc.tagScopes,
 		MCPServiceIDs:             rc.mcpServiceIDs,
@@ -1369,6 +1371,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 
 	// Merge @mentioned items into knowledge_base_ids and knowledge_ids
 	kbIDs, knowledgeIDs := mergeKnowledgeTargets(request.KnowledgeBaseIDs, request.KnowledgeIds, request.MentionedItems)
+	attachmentTempState := h.getAttachmentTempKBState(ctx, sessionID)
 
 	// Log merge results for debugging
 	logger.Infof(ctx, "[%s] @mention merge: request.KnowledgeBaseIDs=%v, request.MentionedItems=%d, merged kbIDs=%v, merged knowledgeIDs=%v",
@@ -1397,6 +1400,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 
 	// Process file attachments: decode and save to storage, extract content
 	var processedAttachments types.MessageAttachments
+	var processedAttachmentResults []*AttachmentProcessResult
 	if len(request.AttachmentUploads) > 0 {
 		logger.Infof(ctx, "[%s] processing %d attachment(s)", logPrefix, len(request.AttachmentUploads))
 
@@ -1418,6 +1422,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 
 		// Process all attachments concurrently.
 		processedAttachments = make(types.MessageAttachments, len(request.AttachmentUploads))
+		processedAttachmentResults = make([]*AttachmentProcessResult, len(request.AttachmentUploads))
 		var wg sync.WaitGroup
 		errChan := make(chan error, len(request.AttachmentUploads))
 
@@ -1432,7 +1437,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 					return
 				}
 
-				processed, err := h.attachmentProcessor.ProcessAttachment(
+				processed, err := h.attachmentProcessor.ProcessAttachmentDetailed(
 					ctx, data, att.FileName, att.FileSize, tenantID, asrModelID,
 				)
 				if err != nil {
@@ -1440,7 +1445,8 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 					return
 				}
 
-				processedAttachments[idx] = *processed
+				processedAttachments[idx] = *processed.Attachment
+				processedAttachmentResults[idx] = processed
 			}(i, upload)
 		}
 
@@ -1455,6 +1461,15 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 
 		logger.Infof(ctx, "[%s] all attachments processed", logPrefix)
 	}
+	attachmentTempState = h.materializeAttachmentsForSession(ctx, session, &request, customAgent, kbIDs, knowledgeIDs, processedAttachmentResults)
+	attachmentTempKBID := ""
+	if attachmentTempState != nil {
+		attachmentTempKBID = strings.TrimSpace(attachmentTempState.KBID)
+		if attachmentTempKBID != "" && h.attachmentTempKBStateRepo != nil {
+			h.attachmentTempKBStateRepo.SaveAttachmentTempKBState(ctx, sessionID, attachmentTempState)
+		}
+	}
+	annotateAttachmentKnowledgeization(processedAttachments, attachmentTempState)
 
 	// Resolve enable_memory:
 	//   1. Explicit value in request → honour it. Used by embedded mode
@@ -1506,22 +1521,23 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 			CompletionStatus: types.MessageCompletionStatusPending,
 			Channel:          request.Channel,
 		},
-		knowledgeBaseIDs:  secutils.SanitizeForLogArray(kbIDs),
-		knowledgeIDs:      secutils.SanitizeForLogArray(knowledgeIDs),
-		tagScopes:         tagScopes,
-		tagIDs:            secutils.SanitizeForLogArray(tagIDs),
-		mcpServiceIDs:     secutils.SanitizeForLogArray(mcpServiceIDs),
-		skillNames:        secutils.SanitizeForLogArray(skillNames),
-		summaryModelID:    secutils.SanitizeForLog(request.SummaryModelID),
-		webSearchEnabled:  request.WebSearchEnabled,
-		enableMemory:      enableMemory,
-		mentionedItems:    convertMentionedItems(request.MentionedItems),
-		effectiveTenantID: effectiveTenantID,
-		images:            request.Images,
-		channel:           request.Channel,
-		attachments:       processedAttachments,
-		reqAgentEnabled:   request.AgentEnabled,
-		reqAgentID:        secutils.SanitizeForLog(request.AgentID),
+		knowledgeBaseIDs:   secutils.SanitizeForLogArray(kbIDs),
+		attachmentTempKBID: secutils.SanitizeForLog(attachmentTempKBID),
+		knowledgeIDs:       secutils.SanitizeForLogArray(knowledgeIDs),
+		tagScopes:          tagScopes,
+		tagIDs:             secutils.SanitizeForLogArray(tagIDs),
+		mcpServiceIDs:      secutils.SanitizeForLogArray(mcpServiceIDs),
+		skillNames:         secutils.SanitizeForLogArray(skillNames),
+		summaryModelID:     secutils.SanitizeForLog(request.SummaryModelID),
+		webSearchEnabled:   request.WebSearchEnabled,
+		enableMemory:       enableMemory,
+		mentionedItems:     convertMentionedItems(request.MentionedItems),
+		effectiveTenantID:  effectiveTenantID,
+		images:             request.Images,
+		channel:            request.Channel,
+		attachments:        processedAttachments,
+		reqAgentEnabled:    request.AgentEnabled,
+		reqAgentID:         secutils.SanitizeForLog(request.AgentID),
 	}
 
 	documentContextQuery := reqCtx.query
@@ -1561,6 +1577,36 @@ func sanitizeTranslationOptions(options *types.ChatDocumentTranslationOptions) *
 
 var naturalLanguageFullTranslationQueryRE = regexp.MustCompile(`(?i)((全文|整篇|全篇|整个文档|整份文档|完整文档|完整译文|文档全文|full\s*document|whole\s*document|entire\s*document).{0,24}(翻译|译成|translate))|((翻译|译成|translate).{0,24}(全文|整篇|全篇|整个文档|整份文档|完整文档|完整译文|文档全文|full\s*document|whole\s*document|entire\s*document))|((文档|markdown).{0,12}(完整|全文|整篇|全篇).{0,12}(翻译|译成))|((翻译|译成).{0,12}(完整|全文|整篇|全篇).{0,12}(文档|markdown))`)
 
+func currentAttachmentTranslationKnowledgeIDs(reqCtx *qaRequestContext) []string {
+	if reqCtx == nil || len(reqCtx.attachments) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(reqCtx.attachments))
+	for _, attachment := range reqCtx.attachments {
+		if knowledgeID := strings.TrimSpace(attachment.TempKnowledgeID); knowledgeID != "" {
+			ids = appendUniqueStrings(ids, knowledgeID)
+		}
+	}
+	return ids
+}
+
+func resolveNaturalLanguageFullTranslationSourceKnowledgeID(reqCtx *qaRequestContext) string {
+	if reqCtx == nil || len(reqCtx.knowledgeBaseIDs) > 0 {
+		return ""
+	}
+	// Resolve against the current request's attachments instead of the
+	// session-wide temp KB cache, otherwise older uploads in the same session
+	// can make a single-file translation request look ambiguous.
+	attachmentKnowledgeIDs := currentAttachmentTranslationKnowledgeIDs(reqCtx)
+	if len(reqCtx.knowledgeIDs) == 1 && len(attachmentKnowledgeIDs) == 0 {
+		return strings.TrimSpace(reqCtx.knowledgeIDs[0])
+	}
+	if len(reqCtx.knowledgeIDs) == 0 && strings.TrimSpace(reqCtx.attachmentTempKBID) != "" && len(attachmentKnowledgeIDs) == 1 {
+		return strings.TrimSpace(attachmentKnowledgeIDs[0])
+	}
+	return ""
+}
+
 func inferNaturalLanguageFullTranslationRequest(reqCtx *qaRequestContext, request *CreateKnowledgeQARequest) {
 	if reqCtx == nil || request == nil {
 		return
@@ -1571,15 +1617,20 @@ func inferNaturalLanguageFullTranslationRequest(reqCtx *qaRequestContext, reques
 	if strings.TrimSpace(reqCtx.baseArtifactID) != "" || reqCtx.autoContinue {
 		return
 	}
-	if len(reqCtx.knowledgeIDs) != 1 || len(reqCtx.knowledgeBaseIDs) > 0 {
+	sourceKnowledgeID := resolveNaturalLanguageFullTranslationSourceKnowledgeID(reqCtx)
+	if sourceKnowledgeID == "" {
 		return
 	}
-	if len(reqCtx.images) > 0 || len(reqCtx.attachments) > 0 {
+	if len(reqCtx.images) > 0 {
+		return
+	}
+	if len(reqCtx.attachments) > 0 && strings.TrimSpace(reqCtx.attachmentTempKBID) == "" {
 		return
 	}
 	if !naturalLanguageFullTranslationQueryRE.MatchString(strings.TrimSpace(reqCtx.query)) {
 		return
 	}
+	reqCtx.knowledgeIDs = []string{sourceKnowledgeID}
 	reqCtx.documentTaskKind = types.ChatDocumentTaskKindTranslation
 	reqCtx.documentOutputMode = types.ChatDocumentOutputModeFull
 	if strings.TrimSpace(reqCtx.documentIntent) == "" {
@@ -1588,6 +1639,7 @@ func inferNaturalLanguageFullTranslationRequest(reqCtx *qaRequestContext, reques
 	if strings.TrimSpace(reqCtx.documentOperation) == "" {
 		reqCtx.documentOperation = types.ChatDocumentOperationCreate
 	}
+	request.KnowledgeIds = []string{sourceKnowledgeID}
 	request.DocumentTaskKind = types.ChatDocumentTaskKindTranslation
 	request.DocumentOutputMode = types.ChatDocumentOutputModeFull
 }
@@ -2055,6 +2107,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 		MergeMode:               reqCtx.documentMergeMode,
 		BaseArtifact:            reqCtx.baseArtifact,
 	}
+	attachmentCompletionExtra := buildAttachmentKnowledgeCompletionExtra(reqCtx)
 
 	// Normal mode: register completion handler on EventAgentFinalAnswer
 	// (Agent mode handles completion in the defer block instead)
@@ -2065,6 +2118,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 		completionOptions.RegisterArtifactOptions = artifactOptions
 		completionOptions.ArtifactObserver = setCompletedArtifact
 		completionOptions.Extra = mergeCompletionExtra(completionOptions.Extra, buildChatRouteCompletionExtra(reqCtx.routeDecision, reqCtx.routeModelID, reqCtx.routeDecisionApplied))
+		completionOptions.Extra = mergeCompletionExtra(completionOptions.Extra, attachmentCompletionExtra)
 		streamCtx.eventBus.On(event.EventAgentFinalAnswer, func(ctx context.Context, evt event.Event) error {
 			data, ok := evt.Data.(event.AgentFinalAnswerData)
 			if !ok {
@@ -2117,6 +2171,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 	agentCompletionOptions.RegisterArtifactOptions = artifactOptions
 	agentCompletionOptions.ArtifactObserver = setCompletedArtifact
 	agentCompletionOptions.Extra = mergeCompletionExtra(agentCompletionOptions.Extra, buildChatRouteCompletionExtra(reqCtx.routeDecision, reqCtx.routeModelID, reqCtx.routeDecisionApplied))
+	agentCompletionOptions.Extra = mergeCompletionExtra(agentCompletionOptions.Extra, attachmentCompletionExtra)
 	if mode == qaModeAgent {
 		agentCompletionObserved := false
 		streamCtx.eventBus.On(event.EventAgentComplete, func(ctx context.Context, evt event.Event) error {

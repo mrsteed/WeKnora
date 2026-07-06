@@ -275,7 +275,7 @@ func TestChatRouteServiceDecide_RegexFallbackSelectsKnowledgeGroundedFullDocumen
 	assert.Equal(t, "route_model_load_failed; regex_full_document_fallback", decision.Reason)
 }
 
-func TestChatRouteServiceDecide_RegexFallbackRespectsAttachmentGuard(t *testing.T) {
+func TestChatRouteServiceDecide_RegexFallbackAllowsAttachmentWhenKnowledgeScopeExists(t *testing.T) {
 	svc := NewChatRouteService(&chatRouteModelServiceStub{err: errors.New("boom")}, &config.Config{Agent: &config.AgentConfig{LLMCallTimeout: 120}})
 
 	decision, err := svc.Decide(context.Background(), types.ChatRouteInput{
@@ -284,6 +284,24 @@ func TestChatRouteServiceDecide_RegexFallbackRespectsAttachmentGuard(t *testing.
 		EndpointMode:             "agent_qa",
 		AgentModeEnabledByConfig: true,
 		HasSelectedKnowledge:     true,
+		HasAttachments:           true,
+	})
+
+	require.Error(t, err)
+	require.NotNil(t, decision)
+	assert.Equal(t, types.ChatRouteKnowledgeGroundedFullDoc, decision.Kind)
+	assert.True(t, decision.UseLongDocument)
+	assert.True(t, decision.NeedArtifact)
+}
+
+func TestChatRouteServiceDecide_RegexFallbackStillGuardsAttachmentWithoutKnowledgeScope(t *testing.T) {
+	svc := NewChatRouteService(&chatRouteModelServiceStub{err: errors.New("boom")}, &config.Config{Agent: &config.AgentConfig{LLMCallTimeout: 120}})
+
+	decision, err := svc.Decide(context.Background(), types.ChatRouteInput{
+		Query:                    "请输出北海电厂的技术方案",
+		ModelID:                  "model-1",
+		EndpointMode:             "agent_qa",
+		AgentModeEnabledByConfig: true,
 		HasAttachments:           true,
 	})
 

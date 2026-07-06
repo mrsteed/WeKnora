@@ -166,6 +166,23 @@ func TestApplyDocumentRouteDecisionWithReason_PromotesFullDocumentWhenKnowledgeS
 	assert.Empty(t, reqCtx.documentQuotedContext)
 }
 
+func TestApplyDocumentRouteDecisionWithReason_AllowsAttachmentWhenAttachmentTempKBReady(t *testing.T) {
+	handler := &Handler{}
+	reqCtx := &qaRequestContext{
+		query:              "根据附件内容，生成完整技术方案",
+		attachments:        types.MessageAttachments{{FileName: "资料.md", FileType: ".md"}},
+		attachmentTempKBID: "temp-kb-1",
+	}
+
+	applied, reason := handler.applyDocumentRouteDecisionWithReason(context.Background(), reqCtx, &CreateKnowledgeQARequest{}, &types.ChatRouteDecision{Kind: types.ChatRouteKnowledgeGroundedFullDoc}, false)
+
+	require.True(t, applied)
+	assert.Empty(t, reason)
+	assert.Equal(t, types.ChatDocumentOutputModeFull, reqCtx.documentOutputMode)
+	assert.Equal(t, types.ChatDocumentIntentNormal, reqCtx.documentIntent)
+	assert.Equal(t, types.ChatDocumentOperationCreate, reqCtx.documentOperation)
+}
+
 func TestDetectChatRouteDecision_SkipsDatabaseAnalysisAgent(t *testing.T) {
 	routeService := &handlerChatRouteServiceStub{}
 	handler := &Handler{chatRouteService: routeService}
@@ -333,6 +350,26 @@ func TestInferNaturalLanguageFullTranslationRequest_PromotesSingleKnowledgeQuery
 
 	assert.Equal(t, types.ChatDocumentTaskKindTranslation, reqCtx.documentTaskKind)
 	assert.Equal(t, types.ChatDocumentOutputModeFull, reqCtx.documentOutputMode)
+	assert.Equal(t, types.ChatDocumentTaskKindTranslation, request.DocumentTaskKind)
+	assert.Equal(t, types.ChatDocumentOutputModeFull, request.DocumentOutputMode)
+}
+
+func TestInferNaturalLanguageFullTranslationRequest_PromotesSingleAttachmentKnowledgeQuery(t *testing.T) {
+	reqCtx := &qaRequestContext{
+		query:              "对附件全文进行翻译。",
+		attachmentTempKBID: "temp-kb-1",
+		attachments: types.MessageAttachments{
+			{FileName: "source.pdf", TempKnowledgeID: "attachment-knowledge-1", TempKnowledgeBaseID: "temp-kb-1"},
+		},
+	}
+	request := &CreateKnowledgeQARequest{}
+
+	inferNaturalLanguageFullTranslationRequest(reqCtx, request)
+
+	assert.Equal(t, []string{"attachment-knowledge-1"}, reqCtx.knowledgeIDs)
+	assert.Equal(t, types.ChatDocumentTaskKindTranslation, reqCtx.documentTaskKind)
+	assert.Equal(t, types.ChatDocumentOutputModeFull, reqCtx.documentOutputMode)
+	assert.Equal(t, []string{"attachment-knowledge-1"}, request.KnowledgeIds)
 	assert.Equal(t, types.ChatDocumentTaskKindTranslation, request.DocumentTaskKind)
 	assert.Equal(t, types.ChatDocumentOutputModeFull, request.DocumentOutputMode)
 }

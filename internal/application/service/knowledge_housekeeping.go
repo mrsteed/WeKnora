@@ -44,7 +44,8 @@ type HousekeepingService struct {
 	// queue (no span heartbeat yet because no worker has picked them up).
 	// nil-safe — a nil inspector disables the queue check and the sweep
 	// falls back to the span/updated_at heuristics alone.
-	inspector interfaces.TaskInspector
+	inspector            interfaces.TaskInspector
+	attachmentTempKBRepo interfaces.AttachmentTempKBStateService
 
 	mu      sync.Mutex
 	started bool
@@ -54,12 +55,13 @@ type HousekeepingService struct {
 // the cron — call Start in the application bootstrap so a misconfigured
 // cron schedule cannot prevent the rest of the service from coming up.
 func NewHousekeepingService(
-	db *gorm.DB, cfg *config.Config, inspector interfaces.TaskInspector,
+	db *gorm.DB, cfg *config.Config, inspector interfaces.TaskInspector, attachmentTempKBRepo interfaces.AttachmentTempKBStateService,
 ) *HousekeepingService {
 	return &HousekeepingService{
-		db:        db,
-		cfg:       cfg,
-		inspector: inspector,
+		db:                   db,
+		cfg:                  cfg,
+		inspector:            inspector,
+		attachmentTempKBRepo: attachmentTempKBRepo,
 		cron: cron.New(cron.WithSeconds(), cron.WithChain(
 			cron.Recover(cron.DefaultLogger),
 		)),
@@ -206,6 +208,23 @@ func (h *HousekeepingService) runSweep(ctx context.Context) {
 	} else if resSummary.RowsAffected > 0 {
 		logger.Infof(ctx, "[Housekeeping] recovered %d stuck summary rows", resSummary.RowsAffected)
 	}
+
+	if h.attachmentTempKBRepo != nil {
+		if cleaned, err := h.attachmentTempKBRepo.CleanupExpiredAttachmentTempKBStates(ctx, attachmentTempKBTTL()); err != nil {
+			logger.Warnf(ctx, "[Housekeeping] attachment temp KB sweep failed: %v", err)
+		} else if cleaned > 0 {
+			logger.Infof(ctx, "[Housekeeping] cleaned %d expired attachment temp KB state(s)", cleaned)
+		}
+	}
+}
+
+func attachmentTempKBTTL() time.Duration {
+	if raw := strings.TrimSpace(os.Getenv("WEKNORA_ATTACHMENT_TEMP_KB_TTL")); raw != "" {
+		if ttl, err := time.ParseDuration(raw); err == nil && ttl > 0 {
+			return ttl
+		}
+	}
+	return 24 * time.Hour
 }
 
 // filterByLastSpanActivity returns the subset of candidates whose most

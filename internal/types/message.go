@@ -73,13 +73,45 @@ func (m *MessageImages) Scan(value interface{}) error {
 
 // MessageAttachment represents a file attachment in a chat message
 type MessageAttachment struct {
-	URL         string `json:"url"`                    // Storage URL (provider://path)
-	FileName    string `json:"file_name"`              // Original filename
-	FileType    string `json:"file_type"`              // File extension (e.g., ".pdf", ".docx")
-	FileSize    int64  `json:"file_size"`              // File size in bytes
-	Content     string `json:"content,omitempty"`      // Extracted text content (for small text files)
-	IsTruncated bool   `json:"is_truncated,omitempty"` // Whether content was truncated
-	LineCount   int    `json:"line_count,omitempty"`   // Total line count (for text files)
+	URL                    string `json:"url"`                               // Storage URL (provider://path)
+	FileName               string `json:"file_name"`                         // Original filename
+	FileType               string `json:"file_type"`                         // File extension (e.g., ".pdf", ".docx")
+	FileSize               int64  `json:"file_size"`                         // File size in bytes
+	Content                string `json:"content,omitempty"`                 // Extracted text content (for small text files)
+	IsTruncated            bool   `json:"is_truncated,omitempty"`            // Whether content was truncated
+	LineCount              int    `json:"line_count,omitempty"`              // Total line count (for text files)
+	KnowledgeizationStatus string `json:"knowledgeization_status,omitempty"` // uploaded/parsing/indexing/ready/failed
+	TempKnowledgeID        string `json:"temp_knowledge_id,omitempty"`
+	TempKnowledgeBaseID    string `json:"temp_knowledge_base_id,omitempty"`
+}
+
+// BuildPromptMetadataOnly returns a compact attachment prompt that exposes only
+// metadata and retrieval guidance, used once attachment contents have already
+// been materialized into a retrievable temporary knowledge base.
+func (attachments MessageAttachments) BuildPromptMetadataOnly() string {
+	if len(attachments) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n\n<attachments>\n")
+	for i, att := range attachments {
+		sb.WriteString(fmt.Sprintf("<attachment index=\"%d\" name=\"%s\">\n", i+1, att.FileName))
+		sb.WriteString("<metadata>\n")
+		sb.WriteString(fmt.Sprintf("<type>%s</type>\n", att.FileType))
+		sb.WriteString(fmt.Sprintf("<size_kb>%.2f</size_kb>\n", float64(att.FileSize)/1024))
+		if att.TempKnowledgeID != "" {
+			sb.WriteString(fmt.Sprintf("<temp_knowledge_id>%s</temp_knowledge_id>\n", att.TempKnowledgeID))
+		}
+		if att.TempKnowledgeBaseID != "" {
+			sb.WriteString(fmt.Sprintf("<temp_knowledge_base_id>%s</temp_knowledge_base_id>\n", att.TempKnowledgeBaseID))
+		}
+		sb.WriteString("</metadata>\n")
+		sb.WriteString("<note>Attachment content has been materialized into temporary retrievable knowledge. Use retrieval results as the source of truth instead of relying on this metadata block alone.</note>\n")
+		sb.WriteString("</attachment>\n")
+	}
+	sb.WriteString("</attachments>\n\n")
+	return sb.String()
 }
 
 // MessageAttachments is a slice of MessageAttachment for database storage

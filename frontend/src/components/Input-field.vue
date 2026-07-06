@@ -2464,7 +2464,7 @@ defineExpose({
       </div>
 
       <!-- 附件列表区域 (由 AttachmentUpload 组件渲染) -->
-      <AttachmentUpload ref="attachmentUploadRef" :max-files="5" :max-size="20"
+      <AttachmentUpload ref="attachmentUploadRef" :max-files="5" :max-size="50"
         :disabled="!isAttachmentUploadEnabledByAgent" :supported-types="effectiveAttachmentSupportedTypes"
         @update:files="uploadedAttachments = $event" />
 

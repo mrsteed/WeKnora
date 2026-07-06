@@ -34,6 +34,10 @@
                     <div class="attachment_card_name">{{ att.file_name }}</div>
                     <div class="attachment_card_meta">{{ getFileExt(att.file_name) }}<span
                             v-if="att.file_size">&nbsp;·&nbsp;{{ formatFileSize(att.file_size) }}</span></div>
+                    <div v-if="getAttachmentKnowledgeStatus(att)" class="attachment_card_status"
+                        :class="`status-${getAttachmentKnowledgeStatus(att)}`">
+                        {{ getAttachmentKnowledgeStatusLabel(att) }}
+                    </div>
                 </div>
             </div>
         </div>
@@ -137,6 +141,30 @@ const formatFileSize = (bytes) => {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+};
+
+const getAttachmentKnowledgeStatus = (attachment = {}) => {
+    const status = typeof attachment.knowledgeization_status === 'string'
+        ? attachment.knowledgeization_status.trim()
+        : '';
+    return status || '';
+};
+
+const getAttachmentKnowledgeStatusLabel = (attachment = {}) => {
+    switch (getAttachmentKnowledgeStatus(attachment)) {
+        case 'uploaded':
+            return '已上传';
+        case 'parsing':
+            return '解析中';
+        case 'indexing':
+            return '建索引中';
+        case 'ready':
+            return '可用于问答';
+        case 'failed':
+            return '解析失败';
+        default:
+            return '';
+    }
 };
 
 const hydrateImages = async () => {
@@ -284,6 +312,36 @@ const closePreImg = () => {
         color: var(--td-text-color-secondary, #999);
         white-space: nowrap;
         box-sizing: border-box;
+    }
+
+    .attachment_card_status {
+        margin-top: 4px;
+        align-self: flex-start;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        line-height: 1.4;
+        border: 1px solid transparent;
+
+        &.status-uploaded,
+        &.status-parsing,
+        &.status-indexing {
+            color: var(--td-text-color-secondary, #666);
+            background: var(--td-bg-color-secondarycontainer, #f5f5f5);
+            border-color: var(--td-component-stroke, #e7e7e7);
+        }
+
+        &.status-ready {
+            color: var(--td-success-color, #059669);
+            background: rgba(5, 150, 105, 0.08);
+            border-color: rgba(5, 150, 105, 0.18);
+        }
+
+        &.status-failed {
+            color: var(--td-error-color, #d9485f);
+            background: rgba(217, 72, 95, 0.08);
+            border-color: rgba(217, 72, 95, 0.18);
+        }
     }
 }
 

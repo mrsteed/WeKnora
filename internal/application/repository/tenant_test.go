@@ -15,12 +15,35 @@ import (
 
 const testAESKey = "01234567890123456789012345678901" // 32 bytes
 
+const legacyTenantTestDDL = `
+CREATE TABLE IF NOT EXISTS tenants (
+	id INTEGER PRIMARY KEY,
+	name TEXT,
+	description TEXT,
+	api_key TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'active',
+	storage_quota BIGINT NOT NULL DEFAULT 10737418240,
+	storage_used BIGINT NOT NULL DEFAULT 0,
+	created_at DATETIME,
+	updated_at DATETIME,
+	deleted_at DATETIME
+);
+`
+
 // setupTestDB creates an in-memory SQLite database with tenant table.
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&types.Tenant{}, &types.TenantMember{}))
+	return db
+}
+
+func setupLegacyTenantTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.Exec(legacyTenantTestDDL).Error)
 	return db
 }
 
@@ -201,4 +224,21 @@ func TestDeleteTenant_SoftDeletesMemberships(t *testing.T) {
 	var rawMemberCount int64
 	require.NoError(t, db.Unscoped().Model(&types.TenantMember{}).Count(&rawMemberCount).Error)
 	assert.Equal(t, int64(1), rawMemberCount)
+}
+
+func TestAdjustStorageUsed_LegacySchemaUpdatesStorageUsedOnly(t *testing.T) {
+	db := setupLegacyTenantTestDB(t)
+	repo := NewTenantRepository(db)
+	now := time.Now()
+
+	require.NoError(t, db.Exec(
+		"INSERT INTO tenants (id, name, api_key, status, storage_used, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		uint64(1), "legacy-tenant", "", "active", int64(256), now, now,
+	).Error)
+
+	require.NoError(t, repo.AdjustStorageUsed(context.Background(), 1, -64))
+
+	var storageUsed int64
+	require.NoError(t, db.Raw("SELECT storage_used FROM tenants WHERE id = ?", 1).Scan(&storageUsed).Error)
+	assert.Equal(t, int64(192), storageUsed)
 }

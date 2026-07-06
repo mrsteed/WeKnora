@@ -433,7 +433,7 @@ const messages = {
         "label": "上传附件",
         "tooltip": "上传文档等附件",
         "tooMany": "最多上传 5 个附件",
-        "tooLarge": "附件超过 20MB 限制"
+        "tooLarge": "附件超过 50MB 限制"
       },
       "messages": {
         "enterContent": "请先输入内容!",
@@ -898,7 +898,7 @@ const messages = {
         "label": "Upload file",
         "tooltip": "Upload document attachments",
         "tooMany": "Maximum 5 attachments",
-        "tooLarge": "Attachment exceeds 20MB limit"
+        "tooLarge": "Attachment exceeds 50MB limit"
       },
       "messages": {
         "enterContent": "Please enter content first!",

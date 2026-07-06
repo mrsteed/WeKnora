@@ -105,6 +105,28 @@ type fakeTaskInspector struct {
 	err    error
 }
 
+type fakeAttachmentTempKBStateService struct {
+	called bool
+	count  int
+	err    error
+}
+
+func (f *fakeAttachmentTempKBStateService) GetAttachmentTempKBState(context.Context, string) *types.AttachmentTempKBState {
+	return &types.AttachmentTempKBState{}
+}
+
+func (f *fakeAttachmentTempKBStateService) SaveAttachmentTempKBState(context.Context, string, *types.AttachmentTempKBState) {
+}
+
+func (f *fakeAttachmentTempKBStateService) DeleteAttachmentTempKBState(context.Context, string) error {
+	return nil
+}
+
+func (f *fakeAttachmentTempKBStateService) CleanupExpiredAttachmentTempKBStates(context.Context, time.Duration) (int, error) {
+	f.called = true
+	return f.count, f.err
+}
+
 func (f fakeTaskInspector) CancelTasksForKnowledge(
 	_ context.Context, _ string,
 ) (int, int, error) {
@@ -121,17 +143,17 @@ func (f fakeTaskInspector) HasQueuedTasksForKnowledge(
 }
 
 func newHousekeepingSvcForTest(db *gorm.DB) *HousekeepingService {
-	return newHousekeepingSvcWithInspector(db, fakeTaskInspector{})
+	return newHousekeepingSvcWithInspector(db, fakeTaskInspector{}, nil)
 }
 
-func newHousekeepingSvcWithInspector(db *gorm.DB, inspector interfaces.TaskInspector) *HousekeepingService {
+func newHousekeepingSvcWithInspector(db *gorm.DB, inspector interfaces.TaskInspector, attachmentRepo interfaces.AttachmentTempKBStateService) *HousekeepingService {
 	cfg := &config.Config{KnowledgeBase: &config.KnowledgeBaseConfig{
 		// 1h floor + 10min buffer = 70min cutoff. Tight enough to keep
 		// the test's relative timestamps in seconds; the production
 		// default of 2h+10min is just a constant scale factor.
 		DocumentProcessTimeout: 1 * time.Hour,
 	}}
-	return NewHousekeepingService(db, cfg, inspector)
+	return NewHousekeepingService(db, cfg, inspector, attachmentRepo)
 }
 
 // TestHousekeeping_RecoversAbandoned exercises the happy path: a
@@ -207,7 +229,7 @@ func TestHousekeeping_NoFalseKill_TasksStillQueued(t *testing.T) {
 	db := setupHousekeepingDB(t)
 	svc := newHousekeepingSvcWithInspector(db, fakeTaskInspector{
 		queued: map[string]bool{"kid-backlogged": true},
-	})
+	}, nil)
 	stale := time.Now().Add(-3 * time.Hour)
 	// finalizing + stale knowledge + stale span: span-only heuristics
 	// would flag this as stuck, but the queue still holds its subtasks.
@@ -231,7 +253,7 @@ func TestHousekeeping_QueueProbeError_FailsSafe(t *testing.T) {
 	db := setupHousekeepingDB(t)
 	svc := newHousekeepingSvcWithInspector(db, fakeTaskInspector{
 		err: errors.New("redis unavailable"),
-	})
+	}, nil)
 	stale := time.Now().Add(-3 * time.Hour)
 	insertKnowledge(t, db, "kid-probeerr", types.ParseStatusProcessing, stale)
 
@@ -261,4 +283,14 @@ func TestHousekeeping_PreservesRecentlyTouched(t *testing.T) {
 	).Row().Scan(&status))
 	assert.Equal(t, types.ParseStatusProcessing, status,
 		"knowledge updated within the cutoff must be left alone")
+}
+
+func TestHousekeeping_CleansExpiredAttachmentTempKBStates(t *testing.T) {
+	db := setupHousekeepingDB(t)
+	attachmentRepo := &fakeAttachmentTempKBStateService{count: 2}
+	svc := newHousekeepingSvcWithInspector(db, fakeTaskInspector{}, attachmentRepo)
+
+	svc.runSweep(context.Background())
+
+	assert.True(t, attachmentRepo.called)
 }

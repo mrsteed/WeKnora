@@ -167,7 +167,14 @@ func (r *tenantRepository) AdjustStorageUsed(ctx context.Context, tenantID uint6
 			tenant.StorageUsed = 0
 		}
 
-		return tx.Save(&tenant).Error
+		// Only persist storage_used here. Cleanup and ingest paths should not
+		// fail just because a deployment has not yet applied newer optional
+		// tenant columns; a full-row Save would try to write every mapped field
+		// back, including schema-optional JSONB columns unrelated to quota
+		// accounting.
+		return tx.Model(&types.Tenant{}).
+			Where("id = ?", tenant.ID).
+			Update("storage_used", tenant.StorageUsed).Error
 	})
 }
 

@@ -40,12 +40,13 @@ type sessionService struct {
 	generationRunRepo     interfaces.ChatDocumentGenerationRunRepository
 	taskEnqueuer          interfaces.TaskEnqueuer
 	streamManager         interfaces.StreamManager
-	knowledgeBaseService  interfaces.KnowledgeBaseService        // Service for knowledge base operations
-	modelService          interfaces.ModelService                // Service for model operations
-	tenantService         interfaces.TenantService               // Service for tenant operations
-	eventManager          *chatpipeline.EventManager             // Event manager for chat pipeline
-	agentService          interfaces.AgentService                // Service for agent operations
-	knowledgeService      interfaces.KnowledgeService            // Service for knowledge operations
+	knowledgeBaseService  interfaces.KnowledgeBaseService // Service for knowledge base operations
+	modelService          interfaces.ModelService         // Service for model operations
+	tenantService         interfaces.TenantService        // Service for tenant operations
+	eventManager          *chatpipeline.EventManager      // Event manager for chat pipeline
+	agentService          interfaces.AgentService         // Service for agent operations
+	knowledgeService      interfaces.KnowledgeService     // Service for knowledge operations
+	attachmentTempKBRepo  interfaces.AttachmentTempKBStateService
 	chunkService          interfaces.ChunkService                // Service for chunk operations
 	webSearchStateRepo    interfaces.WebSearchStateService       // Service for web search state
 	webSearchProviderRepo interfaces.WebSearchProviderRepository // Repository for web search provider entities
@@ -62,6 +63,7 @@ func NewSessionService(cfg *config.Config,
 	streamManager interfaces.StreamManager,
 	knowledgeBaseService interfaces.KnowledgeBaseService,
 	knowledgeService interfaces.KnowledgeService,
+	attachmentTempKBRepo interfaces.AttachmentTempKBStateService,
 	chunkService interfaces.ChunkService,
 	modelService interfaces.ModelService,
 	tenantService interfaces.TenantService,
@@ -81,6 +83,7 @@ func NewSessionService(cfg *config.Config,
 		streamManager:         streamManager,
 		knowledgeBaseService:  knowledgeBaseService,
 		knowledgeService:      knowledgeService,
+		attachmentTempKBRepo:  attachmentTempKBRepo,
 		chunkService:          chunkService,
 		modelService:          modelService,
 		tenantService:         tenantService,
@@ -359,6 +362,11 @@ func (s *sessionService) DeleteSession(ctx context.Context, id string) error {
 	if err := s.webSearchStateRepo.DeleteWebSearchTempKBState(ctx, id); err != nil {
 		logger.Warnf(ctx, "Failed to cleanup temporary KB for session %s: %v", id, err)
 	}
+	if s.attachmentTempKBRepo != nil {
+		if err := s.attachmentTempKBRepo.DeleteAttachmentTempKBState(ctx, id); err != nil {
+			logger.Warnf(ctx, "Failed to cleanup attachment temporary KB for session %s: %v", id, err)
+		}
+	}
 
 	// Delete session from repository (filtered by user ownership)
 	_, err := s.sessionRepo.Delete(ctx, tenantID, userID, id)
@@ -405,6 +413,11 @@ func (s *sessionService) BatchDeleteSessions(ctx context.Context, ids []string) 
 		if err := s.webSearchStateRepo.DeleteWebSearchTempKBState(ctx, id); err != nil {
 			logger.Warnf(ctx, "Failed to cleanup temporary KB for session %s: %v", id, err)
 		}
+		if s.attachmentTempKBRepo != nil {
+			if err := s.attachmentTempKBRepo.DeleteAttachmentTempKBState(ctx, id); err != nil {
+				logger.Warnf(ctx, "Failed to cleanup attachment temporary KB for session %s: %v", id, err)
+			}
+		}
 	}
 
 	// Batch delete sessions from repository
@@ -448,6 +461,11 @@ func (s *sessionService) DeleteAllSessions(ctx context.Context) error {
 
 			if err := s.webSearchStateRepo.DeleteWebSearchTempKBState(ctx, session.ID); err != nil {
 				logger.Warnf(ctx, "Failed to cleanup temporary KB for session %s: %v", session.ID, err)
+			}
+			if s.attachmentTempKBRepo != nil {
+				if err := s.attachmentTempKBRepo.DeleteAttachmentTempKBState(ctx, session.ID); err != nil {
+					logger.Warnf(ctx, "Failed to cleanup attachment temporary KB for session %s: %v", session.ID, err)
+				}
 			}
 		}
 	}

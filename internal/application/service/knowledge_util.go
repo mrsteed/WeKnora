@@ -302,6 +302,33 @@ func (s *knowledgeService) resolveFileServiceForPath(ctx context.Context, kb *ty
 	return svc
 }
 
+// resolveFileServiceForExternalPath resolves a file service from the provider://
+// file path itself instead of a KB config. It is used for chat attachments that
+// were already uploaded to storage before they are promoted into a temporary KB.
+// Falls back to the globally configured default file service when the tenant
+// does not expose a usable config for the inferred provider.
+func (s *knowledgeService) resolveFileServiceForExternalPath(ctx context.Context, filePath string) interfaces.FileService {
+	provider := types.InferStorageFromFilePath(filePath)
+	if provider == "" {
+		return s.fileSvc
+	}
+
+	tenant, _ := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
+	if tenant == nil || tenant.StorageEngineConfig == nil {
+		return s.fileSvc
+	}
+
+	baseDir := strings.TrimSpace(os.Getenv("LOCAL_STORAGE_BASE_DIR"))
+	svc, resolvedProvider, err := filesvc.NewFileServiceFromStorageConfig(provider, tenant.StorageEngineConfig, baseDir)
+	if err != nil {
+		logger.Warnf(ctx, "[storage] resolveFileServiceForExternalPath failed: provider=%s filePath=%s err=%v, falling back to default",
+			provider, filePath, err)
+		return s.fileSvc
+	}
+	logger.Infof(ctx, "[storage] resolveFileServiceForExternalPath selected: provider=%s filePath=%s", resolvedProvider, filePath)
+	return svc
+}
+
 func IsImageType(fileType string) bool {
 	switch fileType {
 	case "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "tiff":

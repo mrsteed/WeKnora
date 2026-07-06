@@ -96,7 +96,11 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 		}
 		// Inject attachment content (documents, audio transcripts, etc.)
 		if len(chatManage.Attachments) > 0 {
-			userContent += chatManage.Attachments.BuildPrompt()
+			if strings.TrimSpace(chatManage.AttachmentTempKBID) != "" {
+				userContent += chatManage.Attachments.BuildPromptMetadataOnly()
+			} else {
+				userContent += chatManage.Attachments.BuildPrompt()
+			}
 		}
 
 		if tpl := chatManage.SummaryConfig.ContextTemplate; tpl != "" {
@@ -180,7 +184,11 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 	}
 	// Inject attachment content (documents, audio transcripts, etc.)
 	if len(chatManage.Attachments) > 0 {
-		userContent += chatManage.Attachments.BuildPrompt()
+		if strings.TrimSpace(chatManage.AttachmentTempKBID) != "" {
+			userContent += chatManage.Attachments.BuildPromptMetadataOnly()
+		} else {
+			userContent += chatManage.Attachments.BuildPrompt()
+		}
 	}
 
 	// Set formatted content back to chat management

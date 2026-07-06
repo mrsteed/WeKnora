@@ -26,6 +26,14 @@ type ReadResult struct {
 	AudioData       []byte // raw audio bytes for ASR processing
 }
 
+// StoredImageReference is the transport-safe representation of an image already
+// saved to storage during document parsing.
+type StoredImageReference struct {
+	OriginalRef string
+	ServingURL  string
+	MimeType    string
+}
+
 // ImageRef represents an image reference extracted from the document.
 type ImageRef struct {
 	Filename    string

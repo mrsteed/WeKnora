@@ -22,12 +22,14 @@ type Handler struct {
 	config                      *config.Config                          // Application configuration
 	knowledgebaseService        interfaces.KnowledgeBaseService         // Service for managing knowledge bases
 	knowledgeService            interfaces.KnowledgeService             // Service for loading knowledge items during route shadowing
+	attachmentKnowledgeService  interfaces.AttachmentKnowledgeService   // Service for promoting stored attachments into temporary KB knowledge
 	customAgentService          interfaces.CustomAgentService           // Service for managing custom agents
 	tenantService               interfaces.TenantService                // Service for loading tenant (shared agent context)
 	kbShareService              interfaces.KBShareService               // Service for resolving shared KB tenant scope
 	agentShareService           interfaces.AgentShareService            // Service for resolving shared agents (KB scope in retrieval)
 	chatDocumentArtifactService interfaces.ChatDocumentArtifactService  // Service for session document artifact persistence and lookup
 	chatRouteService            interfaces.ChatRouteService             // Service for shadow route decision logging
+	attachmentTempKBStateRepo   interfaces.AttachmentTempKBStateService // Session-scoped hidden KB state for chat attachments
 	fileService                 interfaces.FileService                  // Service for file storage (image uploads)
 	modelService                interfaces.ModelService                 // Service for model management (VLM access)
 	attachmentProcessor         *AttachmentProcessor                    // Processor for file attachments
@@ -42,12 +44,14 @@ func NewHandler(
 	config *config.Config,
 	knowledgebaseService interfaces.KnowledgeBaseService,
 	knowledgeService interfaces.KnowledgeService,
+	attachmentKnowledgeService interfaces.AttachmentKnowledgeService,
 	customAgentService interfaces.CustomAgentService,
 	tenantService interfaces.TenantService,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
 	chatDocumentArtifactService interfaces.ChatDocumentArtifactService,
 	chatRouteService interfaces.ChatRouteService,
+	attachmentTempKBStateRepo interfaces.AttachmentTempKBStateService,
 	fileService interfaces.FileService,
 	modelService interfaces.ModelService,
 	documentReader interfaces.DocumentReader,
@@ -61,12 +65,14 @@ func NewHandler(
 		config:                      config,
 		knowledgebaseService:        knowledgebaseService,
 		knowledgeService:            knowledgeService,
+		attachmentKnowledgeService:  attachmentKnowledgeService,
 		customAgentService:          customAgentService,
 		tenantService:               tenantService,
 		kbShareService:              kbShareService,
 		agentShareService:           agentShareService,
 		chatDocumentArtifactService: chatDocumentArtifactService,
 		chatRouteService:            chatRouteService,
+		attachmentTempKBStateRepo:   attachmentTempKBStateRepo,
 		fileService:                 fileService,
 		modelService:                modelService,
 		attachmentProcessor: NewAttachmentProcessor(

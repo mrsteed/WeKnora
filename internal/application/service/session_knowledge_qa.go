@@ -164,6 +164,7 @@ func (s *sessionService) KnowledgeQA(
 			VLMModelID:              vlmModelID,
 			ChatModelSupportsVision: chatModelSupportsVision,
 			Attachments:             req.Attachments,
+			AttachmentTempKBID:      req.AttachmentTempKBID,
 			Language:                types.LanguageNameFromContext(ctx),
 		},
 		PipelineState: types.PipelineState{
@@ -199,7 +200,11 @@ func (s *sessionService) KnowledgeQA(
 		}
 		// Inject attachment content for pure-chat path (RAG path handles this in INTO_CHAT_MESSAGE).
 		if len(req.Attachments) > 0 {
-			userContent += req.Attachments.BuildPrompt()
+			if strings.TrimSpace(req.AttachmentTempKBID) != "" {
+				userContent += req.Attachments.BuildPromptMetadataOnly()
+			} else {
+				userContent += req.Attachments.BuildPrompt()
+			}
 		}
 		chatManage.UserContent = userContent
 

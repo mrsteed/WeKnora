@@ -59,8 +59,8 @@
                             @artifact-display-update="handleArtifactDisplayUpdate"></botmsg>
                     </div>
                 </div>
-                <div v-if="showGlobalTypingIndicator"
-                    style="height: 41px;display: flex;align-items: center;padding-left: 4px;">
+                <div v-if="showGlobalTypingIndicator" class="chat-loading-indicator">
+                    <div v-if="attachmentProcessingLoadingLabel" class="chat-loading-indicator__label">{{ attachmentProcessingLoadingLabel }}</div>
                     <div class="loading-typing">
                         <span></span>
                         <span></span>
@@ -1796,6 +1796,165 @@ const showGlobalTypingIndicator = computed(() => {
     return true;
 });
 
+let attachmentProcessingStageTimer = null;
+
+const getAttachmentStatusKey = (attachment = {}) => {
+    return [
+        String(attachment.file_name || attachment.name || '').trim(),
+        String(attachment.file_size || attachment.size || ''),
+        String(attachment.file_type || attachment.type || '').trim(),
+    ].join('::');
+};
+
+const normalizeAttachmentKnowledgeStatus = (value = '') => {
+    const status = typeof value === 'string' ? value.trim() : '';
+    return status || 'uploaded';
+};
+
+const buildLocalAttachmentDisplay = (attachments = []) => {
+    return (attachments || []).map((attachment) => ({
+        ...attachment,
+        knowledgeization_status: normalizeAttachmentKnowledgeStatus(attachment.knowledgeization_status),
+    }));
+};
+
+const findLatestUserAttachmentMessage = () => {
+    for (let index = messagesList.length - 1; index >= 0; index -= 1) {
+        const message = messagesList[index];
+        if (message?.role !== 'user') {
+            continue;
+        }
+        if (Array.isArray(message.attachments) && message.attachments.length > 0) {
+            return message;
+        }
+    }
+    return null;
+};
+
+const hasPendingAttachmentKnowledgeization = (message = null) => {
+    if (!message || !Array.isArray(message.attachments) || message.attachments.length === 0) {
+        return false;
+    }
+    return message.attachments.some((attachment) => {
+        const status = normalizeAttachmentKnowledgeStatus(attachment?.knowledgeization_status);
+        return status === 'uploaded' || status === 'parsing' || status === 'indexing';
+    });
+};
+
+const updateUserAttachmentStatuses = (message, updater) => {
+    if (!message || !Array.isArray(message.attachments)) {
+        return;
+    }
+    message.attachments = message.attachments.map((attachment) => ({
+        ...attachment,
+        ...updater(attachment),
+    }));
+};
+
+const clearAttachmentProcessingTimer = () => {
+    if (attachmentProcessingStageTimer) {
+        window.clearTimeout(attachmentProcessingStageTimer);
+        attachmentProcessingStageTimer = null;
+    }
+};
+
+const startAttachmentProcessingTracking = (message) => {
+    if (!message || !Array.isArray(message.attachments) || message.attachments.length === 0) {
+        return;
+    }
+    clearAttachmentProcessingTimer();
+    updateUserAttachmentStatuses(message, (attachment) => {
+        const status = normalizeAttachmentKnowledgeStatus(attachment?.knowledgeization_status);
+        if (status === 'ready' || status === 'failed') {
+            return {};
+        }
+        return { knowledgeization_status: 'parsing' };
+    });
+    attachmentProcessingStageTimer = window.setTimeout(() => {
+        if (!loading.value) {
+            return;
+        }
+        const latestMessage = findLatestUserAttachmentMessage();
+        if (!latestMessage || !hasPendingAttachmentKnowledgeization(latestMessage)) {
+            return;
+        }
+        updateUserAttachmentStatuses(latestMessage, (attachment) => {
+            const status = normalizeAttachmentKnowledgeStatus(attachment?.knowledgeization_status);
+            if (status === 'ready' || status === 'failed') {
+                return {};
+            }
+            return { knowledgeization_status: 'indexing' };
+        });
+    }, 1800);
+};
+
+const applyAttachmentProcessingExtraToUserMessage = (payload = {}) => {
+    const completePayload = payload?.data || payload;
+    const completeExtra = completePayload?.extra && typeof completePayload.extra === 'object'
+        ? completePayload.extra
+        : {};
+    const attachmentProcessing = Array.isArray(completeExtra?.attachment_processing)
+        ? completeExtra.attachment_processing
+        : [];
+    if (!attachmentProcessing.length) {
+        return;
+    }
+    const message = findLatestUserAttachmentMessage();
+    if (!message || !Array.isArray(message.attachments) || message.attachments.length === 0) {
+        return;
+    }
+    clearAttachmentProcessingTimer();
+    const processingMap = new Map();
+    for (const item of attachmentProcessing) {
+        processingMap.set(getAttachmentStatusKey(item), item);
+    }
+    message.attachments = message.attachments.map((attachment) => {
+        const matched = processingMap.get(getAttachmentStatusKey(attachment));
+        if (!matched) {
+            return attachment;
+        }
+        return {
+            ...attachment,
+            knowledgeization_status: normalizeAttachmentKnowledgeStatus(matched.knowledgeization_status),
+            temp_knowledge_id: matched.temp_knowledge_id || '',
+            temp_knowledge_base_id: matched.temp_knowledge_base_id || '',
+        };
+    });
+};
+
+const markPendingUserAttachmentsFailed = () => {
+    clearAttachmentProcessingTimer();
+    const message = findLatestUserAttachmentMessage();
+    if (!message || !hasPendingAttachmentKnowledgeization(message)) {
+        return;
+    }
+    updateUserAttachmentStatuses(message, (attachment) => {
+        const status = normalizeAttachmentKnowledgeStatus(attachment?.knowledgeization_status);
+        if (status === 'ready' || status === 'failed') {
+            return {};
+        }
+        return { knowledgeization_status: 'failed' };
+    });
+};
+
+const attachmentProcessingLoadingLabel = computed(() => {
+    if (!loading.value) {
+        return '';
+    }
+    const message = findLatestUserAttachmentMessage();
+    if (!message || !hasPendingAttachmentKnowledgeization(message)) {
+        return '';
+    }
+    const statuses = (message.attachments || []).map((attachment) => normalizeAttachmentKnowledgeStatus(attachment?.knowledgeization_status));
+    if (statuses.some((status) => status === 'indexing')) {
+        return '正在解析附件并建立检索索引';
+    }
+    if (statuses.some((status) => status === 'parsing' || status === 'uploaded')) {
+        return '正在解析附件';
+    }
+    return '';
+});
+
 const recomposeAgentAnswer = (message) => {
     const stream = Array.isArray(message?.agentEventStream) ? message.agentEventStream : [];
     let output = '';
@@ -1850,6 +2009,10 @@ const finalizeActiveAssistantOnStreamClose = () => {
         }
     }
 
+    if (message?.is_failed) {
+        markPendingUserAttachmentsFailed();
+    }
+
     resetReplyState();
 };
 
@@ -1882,6 +2045,7 @@ const markAssistantFailed = (errorMessage) => {
         message.content = normalizedError;
     }
 
+    markPendingUserAttachmentsFailed();
     resetReplyState();
     scrollToBottom(true);
 };
@@ -2548,7 +2712,12 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         }
     }
 
-    const attachmentDisplay = attachmentFiles.map(a => ({ file_name: a.name, file_size: a.size, file_type: '.' + a.name.split('.').pop()?.toLowerCase() }));
+    const attachmentDisplay = buildLocalAttachmentDisplay(attachmentFiles.map((attachment) => ({
+        file_name: attachment.name,
+        file_size: attachment.size,
+        file_type: '.' + attachment.name.split('.').pop()?.toLowerCase(),
+        knowledgeization_status: 'uploaded',
+    })));
     
     // Get agent mode status from settings store
     const agentEnabled = getEffectiveAgentEnabled();
@@ -2649,6 +2818,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         channel: 'web',
         created_at: new Date().toISOString()
     });
+    startAttachmentProcessingTracking(messagesList[messagesList.length - 1]);
     userHasScrolledUp.value = false;
     scrollToBottom(true);
 
@@ -2907,6 +3077,7 @@ onChunk((data) => {
     
     if (data.done) {
         syncMessageCompletionState(obj, data.data?.completion_status ? data : { ...data, completion_status: 'completed' });
+        applyAttachmentProcessingExtraToUserMessage(data.data || data);
         // 标题生成已改为异步事件推送，不再需要在这里手动调用
         // 如果标题还未生成，前端会通过 SSE 事件接收
         isReplying.value = false;
@@ -3238,6 +3409,7 @@ const handleAgentChunk = (data) => {
                         }
                     }
                 }
+                applyAttachmentProcessingExtraToUserMessage(completePayload);
                 resetReplyState();
                 // 将 total_duration_ms 存入事件流供 AgentStreamDisplay 使用
                 if (completePayload) {
@@ -3564,6 +3736,22 @@ onBeforeRouteUpdate((to, from, next) => {
     flex-direction: column;
     gap: 8px;
     padding-left: 4px;
+}
+
+.chat-loading-indicator {
+    min-height: 41px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding-left: 4px;
+    gap: 6px;
+}
+
+.chat-loading-indicator__label {
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--td-text-color-secondary);
 }
 
 .input-container {

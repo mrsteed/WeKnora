@@ -117,7 +117,7 @@ func (s *chatRouteService) Decide(ctx context.Context, input types.ChatRouteInpu
 	return normalized, nil
 }
 
-const chatRouteSystemPrompt = "你是对话任务路由器，只能输出 JSON。不要回答用户问题，不要生成正文。请根据用户问题、知识范围、是否启用 Agent、是否存在可续写文档、是否有附件/图片等上下文，判断最合适的执行路线。只有用户明确要求撰写完整方案、完整报告、完整标书、完整长篇 Markdown，或明确要求输出完整译文、全文翻译、整篇翻译、完整文档翻译时，才能选择 full_document 或 knowledge_grounded_full_document。普通事实问答、字段问答、解释型问答默认选择 normal_qa 或 agent_qa。若不确定，请优先保持当前智能体/接口模式，不要升级成长文档。"
+const chatRouteSystemPrompt = "你是对话任务路由器，只能输出 JSON。不要回答用户问题，不要生成正文。请根据用户问题、知识范围、是否启用 Agent、是否存在可续写文档、是否有附件/图片等上下文，判断最合适的执行路线。只有用户明确要求撰写完整方案、完整报告、完整标书、完整长篇 Markdown，或明确要求输出完整译文、全文翻译、整篇翻译、完整文档翻译时，才能选择 full_document 或 knowledge_grounded_full_document。普通事实问答、字段问答、解释型问答默认选择 normal_qa 或 agent_qa。若用户明确要求基于已上传附件生成完整文档，附件本身不是降级条件；只要没有 auto_continue 或 base artifact 约束，应优先保留长文档路线。若不确定，请优先保持当前智能体/接口模式，不要升级成长文档。"
 
 func buildChatRoutePrompt(input types.ChatRouteInput) string {
 	payload, _ := json.MarshalIndent(input, "", "  ")
@@ -128,7 +128,7 @@ func buildChatRoutePrompt(input types.ChatRouteInput) string {
 2. “技术方案”“实施方案”“投标方案”“设计方案”“完整报告”“完整标书”“长篇 Markdown”属于正式长文档类型；“完整译文”“全文翻译”“整篇翻译”“完整文档翻译”也属于长文档创建请求。
 3. 若存在有效知识库范围，应选择 knowledge_grounded_full_document；若没有知识库范围，选择 full_document。
 4. 若只是询问已有方案的风险、章节、字段、含义、摘要或对比，或者只是要求翻译一句话、一小段内容、某个字段，不要选择长文档，保持 normal_qa 或 agent_qa。
-5. 有附件/图片、自动续写、已有 base artifact 时，不要将新建长文档作为首选路线。
+5. 自动续写、已有 base artifact 时，不要将新建长文档作为首选路线；但如果用户明确要求基于已上传附件生成完整方案、完整报告、完整长文档，附件本身不是降级条件。
 
 正例：
 - “请输出北海电厂的技术方案” => knowledge_grounded_full_document 或 full_document
@@ -214,7 +214,10 @@ func canRegexFallbackToFullDocument(input types.ChatRouteInput) bool {
 	if input.AutoContinue || strings.TrimSpace(input.ExplicitBaseArtifactID) != "" {
 		return false
 	}
-	if input.HasAttachments || input.HasImages {
+	if input.HasImages {
+		return false
+	}
+	if input.HasAttachments && !(input.HasSelectedKnowledge || input.HasEffectiveAgentKB) {
 		return false
 	}
 	return explicitRouteFullDocumentIntentRE.MatchString(input.Query) || explicitRouteFullTranslationIntentRE.MatchString(input.Query)

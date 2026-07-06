@@ -57,7 +57,8 @@ type PipelineRequest struct {
 	ChatModelSupportsVision bool     `json:"-"`
 
 	// File attachments support
-	Attachments MessageAttachments `json:"-"`
+	Attachments        MessageAttachments `json:"-"`
+	AttachmentTempKBID string             `json:"-"`
 
 	// IntentPromptOverrides holds agent-level intent prompt overrides for the
 	// query-understanding stage. Empty values fall back to tenant/global defaults.
@@ -222,6 +223,7 @@ func (c *ChatManage) Clone() *ChatManage {
 			VLMModelID:               c.VLMModelID,
 			ChatModelSupportsVision:  c.ChatModelSupportsVision,
 			Attachments:              append(MessageAttachments(nil), c.Attachments...),
+			AttachmentTempKBID:       c.AttachmentTempKBID,
 			TenantID:                 c.TenantID,
 			WebSearchEnabled:         c.WebSearchEnabled,
 			WebSearchProviderID:      c.WebSearchProviderID,

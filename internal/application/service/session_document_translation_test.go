@@ -86,7 +86,11 @@ func TestShouldUseLongDocumentTranslationPath(t *testing.T) {
 	req.Attachments = types.MessageAttachments{{FileName: "appendix.txt"}}
 	assert.False(t, shouldUseLongDocumentTranslationPath(req))
 
+	req.AttachmentTempKBID = "temp-kb-1"
+	assert.True(t, shouldUseLongDocumentTranslationPath(req))
+
 	req.Attachments = nil
+	req.AttachmentTempKBID = ""
 	req.ImageURLs = []string{"https://example.com/image.png"}
 	assert.False(t, shouldUseLongDocumentTranslationPath(req))
 }

@@ -35,6 +35,19 @@ type AttachmentProcessor struct {
 	modelService   interfaces.ModelService // used to obtain the ASR model
 }
 
+// AttachmentProcessResult carries both the legacy preview attachment payload and
+// the richer parse output needed when a chat attachment should be promoted into
+// retrievable session-scoped knowledge.
+type AttachmentProcessResult struct {
+	Attachment         *types.MessageAttachment
+	FullText           string
+	MarkdownContent    string
+	Metadata           map[string]string
+	StoredImages       []types.StoredImageReference
+	IsTextLike         bool
+	CanFastMaterialize bool
+}
+
 // NewAttachmentProcessor creates an AttachmentProcessor with the given dependencies.
 func NewAttachmentProcessor(
 	fileService interfaces.FileService,
@@ -50,16 +63,34 @@ func NewAttachmentProcessor(
 	}
 }
 
-// ProcessAttachment validates, saves, and extracts content from a single uploaded file.
-// Content extraction is attempted for all supported types; errors are non-fatal (logged as warnings).
+// ProcessAttachment preserves the historical preview-oriented behavior while
+// delegating the real work to ProcessAttachmentDetailed.
 func (p *AttachmentProcessor) ProcessAttachment(
 	ctx context.Context,
 	data []byte,
 	fileName string,
 	fileSize int64,
 	tenantID uint64,
-	asrModelID string, // optional; enables audio transcription when set
+	asrModelID string,
 ) (*types.MessageAttachment, error) {
+	result, err := p.ProcessAttachmentDetailed(ctx, data, fileName, fileSize, tenantID, asrModelID)
+	if err != nil {
+		return nil, err
+	}
+	return result.Attachment, nil
+}
+
+// ProcessAttachmentDetailed validates, saves, and extracts content from a single uploaded file.
+// In addition to the legacy preview attachment payload it also returns the full
+// parsed content so chat attachments can be promoted into temporary KB knowledge.
+func (p *AttachmentProcessor) ProcessAttachmentDetailed(
+	ctx context.Context,
+	data []byte,
+	fileName string,
+	fileSize int64,
+	tenantID uint64,
+	asrModelID string, // optional; enables audio transcription when set
+) (*AttachmentProcessResult, error) {
 	logger.Infof(ctx, "processing attachment: fileName=%s, fileSize=%d", secutils.SanitizeForLog(fileName), fileSize)
 
 	// Validate filename (injection / path-traversal checks)
@@ -96,36 +127,62 @@ func (p *AttachmentProcessor) ProcessAttachment(
 		FileType: ext,
 		FileSize: fileSize,
 	}
+	result := &AttachmentProcessResult{Attachment: attachment}
 
 	// Extract text content based on file type; errors are non-fatal.
 	if p.isTextFile(ext) {
-		if err := p.processTextFile(ctx, data, attachment); err != nil {
+		fullText, err := p.processTextFile(ctx, data, attachment)
+		if err != nil {
 			logger.Warnf(ctx, "text file processing failed: %v", err)
 			attachment.Content = fmt.Sprintf("<error><message>Failed to process text file</message><details>%v</details></error>", err)
+		} else {
+			result.FullText = fullText
+			result.MarkdownContent = fullText
+			result.IsTextLike = true
+			result.CanFastMaterialize = true
 		}
 	} else if docparser.IsAudioFormat(ext) {
-		if err := p.processAudioFile(ctx, data, baseName, attachment, asrModelID); err != nil {
+		fullText, err := p.processAudioFile(ctx, data, baseName, attachment, asrModelID)
+		if err != nil {
 			logger.Warnf(ctx, "audio transcription failed: %v, keeping placeholder", err)
 			attachment.Content = fmt.Sprintf("<error><message>Failed to transcribe audio file</message><details>%v</details></error>", err)
+		} else {
+			result.FullText = fullText
+			result.MarkdownContent = fullText
+			result.IsTextLike = true
 		}
 	} else if docparser.IsSimpleFormat(ext) {
-		if err := p.processWithDocParser(ctx, data, baseName, ext, attachment, tenantID, fileSvc); err != nil {
+		readResult, storedImages, err := p.processWithDocParserDetailed(ctx, data, baseName, ext, attachment, tenantID, fileSvc)
+		if err != nil {
 			logger.Warnf(ctx, "SimpleFormatReader failed: %v", err)
 			attachment.Content = fmt.Sprintf("<error><message>Failed to parse document</message><details>%v</details></error>", err)
+		} else {
+			result.FullText = readResult.MarkdownContent
+			result.MarkdownContent = readResult.MarkdownContent
+			result.Metadata = readResult.Metadata
+			result.StoredImages = toStoredImageReferences(storedImages)
 		}
 	} else {
-		if err := p.processWithDocumentReader(ctx, data, baseName, ext, attachment, tenantID, fileSvc); err != nil {
+		readResult, storedImages, err := p.processWithDocumentReaderDetailed(ctx, data, baseName, ext, attachment, tenantID, fileSvc)
+		if err != nil {
 			logger.Warnf(ctx, "DocumentReader failed: %v, keeping metadata only", err)
 			attachment.Content = fmt.Sprintf("<error><message>Failed to read document</message><details>%v</details></error>", err)
+		} else {
+			result.FullText = readResult.MarkdownContent
+			result.MarkdownContent = readResult.MarkdownContent
+			result.Metadata = readResult.Metadata
+			result.StoredImages = toStoredImageReferences(storedImages)
 		}
 	}
 
 	attachment.Content = common.CleanInvalidUTF8(attachment.Content)
+	result.FullText = common.CleanInvalidUTF8(result.FullText)
+	result.MarkdownContent = common.CleanInvalidUTF8(result.MarkdownContent)
 
 	logger.Infof(ctx, "attachment processed: fileName=%s, truncated=%v, contentLen=%d",
 		secutils.SanitizeForLog(baseName), attachment.IsTruncated, len(attachment.Content))
 
-	return attachment, nil
+	return result, nil
 }
 
 // isTextFile reports whether ext is a plain-text extension handled line-by-line.
@@ -133,32 +190,25 @@ func (p *AttachmentProcessor) isTextFile(ext string) bool {
 	return strings.Contains(textFileExtensions, ext)
 }
 
-// processTextFile reads plain-text content line by line, truncating at maxTextFileLines.
-func (p *AttachmentProcessor) processTextFile(ctx context.Context, data []byte, attachment *types.MessageAttachment) error {
+// processTextFile reads plain-text content line by line, stores a preview in the
+// attachment payload, and returns the full text for optional KB materialization.
+func (p *AttachmentProcessor) processTextFile(ctx context.Context, data []byte, attachment *types.MessageAttachment) (string, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	var lines []string
 	lineCount := 0
 
 	for scanner.Scan() {
 		lineCount++
-		if lineCount <= maxTextFileLines {
-			lines = append(lines, scanner.Text())
-		}
+		lines = append(lines, scanner.Text())
 	}
 
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("failed to read file content: %w", err)
+		return "", fmt.Errorf("failed to read file content: %w", err)
 	}
 
-	attachment.LineCount = lineCount
-	attachment.Content = strings.Join(lines, "\n")
-
-	if lineCount > maxTextFileLines {
-		attachment.IsTruncated = true
-		logger.Infof(ctx, "text file truncated: total=%d, kept=%d", lineCount, maxTextFileLines)
-	}
-
-	return nil
+	fullText := strings.Join(lines, "\n")
+	p.applyLineTruncation(ctx, fullText, attachment)
+	return fullText, nil
 }
 
 // processWithDocParser extracts content via SimpleFormatReader (md, csv, json, images, etc.).
@@ -171,6 +221,19 @@ func (p *AttachmentProcessor) processWithDocParser(
 	tenantID uint64,
 	fileSvc interfaces.FileService,
 ) error {
+	_, _, err := p.processWithDocParserDetailed(ctx, data, fileName, fileType, attachment, tenantID, fileSvc)
+	return err
+}
+
+func (p *AttachmentProcessor) processWithDocParserDetailed(
+	ctx context.Context,
+	data []byte,
+	fileName string,
+	fileType string,
+	attachment *types.MessageAttachment,
+	tenantID uint64,
+	fileSvc interfaces.FileService,
+) (*types.ReadResult, []docparser.StoredImage, error) {
 	reader := &docparser.SimpleFormatReader{}
 	result, err := reader.Read(ctx, &types.ReadRequest{
 		FileContent: data,
@@ -178,52 +241,69 @@ func (p *AttachmentProcessor) processWithDocParser(
 		FileType:    fileType,
 	})
 	if err != nil {
-		return fmt.Errorf("SimpleFormatReader failed: %w", err)
+		return nil, nil, fmt.Errorf("SimpleFormatReader failed: %w", err)
 	}
+	var storedImages []docparser.StoredImage
 
 	// Resolve embedded image refs to storage URLs.
 	if len(result.ImageRefs) > 0 && p.imageResolver != nil {
-		updatedMarkdown, _, err := p.imageResolver.ResolveAndStore(ctx, result, fileSvc, tenantID)
+		updatedMarkdown, images, err := p.imageResolver.ResolveAndStore(ctx, result, fileSvc, tenantID)
 		if err != nil {
 			logger.Warnf(ctx, "image resolution failed: %v", err)
 		} else {
 			result.MarkdownContent = updatedMarkdown
+			storedImages = append(storedImages, images...)
 		}
+	}
+	if p.imageResolver != nil {
+		updatedContent, remoteImages, remoteErr := p.imageResolver.ResolveRemoteImages(ctx, result.MarkdownContent, fileSvc, tenantID)
+		if remoteErr != nil {
+			logger.Warnf(ctx, "remote image resolution partially failed: %v", remoteErr)
+		}
+		if len(remoteImages) > 0 {
+			result.MarkdownContent = updatedContent
+			storedImages = append(storedImages, remoteImages...)
+			result.Metadata = ensureAttachmentMetadata(result.Metadata, "image_source_type", "remote")
+		}
+	}
+	if len(storedImages) > 0 {
+		result.Metadata = ensureAttachmentMetadata(result.Metadata, "image_source_type", "embedded")
 	}
 
 	p.applyLineTruncation(ctx, result.MarkdownContent, attachment)
-	return nil
+	return result, storedImages, nil
 }
 
-// processAudioFile transcribes audio via ASR. Falls back to a placeholder when no ASR model is configured.
+// processAudioFile transcribes audio via ASR. It stores a preview in the
+// attachment payload and returns the full transcript when available.
 func (p *AttachmentProcessor) processAudioFile(
 	ctx context.Context,
 	data []byte,
 	fileName string,
 	attachment *types.MessageAttachment,
 	asrModelID string,
-) error {
+) (string, error) {
 	if asrModelID == "" || p.modelService == nil {
 		attachment.Content = fmt.Sprintf("<audio_file name=\"%s\" transcription=\"unsupported\" />", fileName)
 		logger.Infof(ctx, "no ASR model configured, keeping audio placeholder")
-		return nil
+		return "", nil
 	}
 
 	asrInstance, err := p.modelService.GetASRModel(ctx, asrModelID)
 	if err != nil {
-		return fmt.Errorf("failed to get ASR model: %w", err)
+		return "", fmt.Errorf("failed to get ASR model: %w", err)
 	}
 
 	logger.Infof(ctx, "starting audio transcription: fileName=%s, size=%d", fileName, len(data))
 	res, err := asrInstance.Transcribe(ctx, data, fileName)
 	if err != nil {
-		return fmt.Errorf("audio transcription failed: %w", err)
+		return "", fmt.Errorf("audio transcription failed: %w", err)
 	}
 	transcript := res.Text
 
 	p.applyLineTruncation(ctx, transcript, attachment)
 	logger.Infof(ctx, "audio transcription done: textLen=%d", len(transcript))
-	return nil
+	return transcript, nil
 }
 
 // processWithDocumentReader extracts content from complex formats (pdf, docx, xlsx, etc.).
@@ -236,8 +316,21 @@ func (p *AttachmentProcessor) processWithDocumentReader(
 	tenantID uint64,
 	fileSvc interfaces.FileService,
 ) error {
+	_, _, err := p.processWithDocumentReaderDetailed(ctx, data, fileName, fileType, attachment, tenantID, fileSvc)
+	return err
+}
+
+func (p *AttachmentProcessor) processWithDocumentReaderDetailed(
+	ctx context.Context,
+	data []byte,
+	fileName string,
+	fileType string,
+	attachment *types.MessageAttachment,
+	tenantID uint64,
+	fileSvc interfaces.FileService,
+) (*types.ReadResult, []docparser.StoredImage, error) {
 	if p.documentReader == nil {
-		return fmt.Errorf("DocumentReader not configured")
+		return nil, nil, fmt.Errorf("DocumentReader not configured")
 	}
 
 	normalizedType := strings.TrimPrefix(fileType, ".")
@@ -249,21 +342,62 @@ func (p *AttachmentProcessor) processWithDocumentReader(
 		ParserEngineOverrides: getParserEngineOverridesFromContext(ctx),
 	})
 	if err != nil {
-		return fmt.Errorf("DocumentReader failed: %w", err)
+		return nil, nil, fmt.Errorf("DocumentReader failed: %w", err)
 	}
+	var storedImages []docparser.StoredImage
 
 	// Resolve embedded image refs to storage URLs.
 	if len(result.ImageRefs) > 0 && p.imageResolver != nil {
-		updatedMarkdown, _, err := p.imageResolver.ResolveAndStore(ctx, result, fileSvc, tenantID)
+		updatedMarkdown, images, err := p.imageResolver.ResolveAndStore(ctx, result, fileSvc, tenantID)
 		if err != nil {
 			logger.Warnf(ctx, "image resolution failed: %v", err)
 		} else {
 			result.MarkdownContent = updatedMarkdown
+			storedImages = append(storedImages, images...)
 		}
+	}
+	if p.imageResolver != nil {
+		updatedContent, remoteImages, remoteErr := p.imageResolver.ResolveRemoteImages(ctx, result.MarkdownContent, fileSvc, tenantID)
+		if remoteErr != nil {
+			logger.Warnf(ctx, "remote image resolution partially failed: %v", remoteErr)
+		}
+		if len(remoteImages) > 0 {
+			result.MarkdownContent = updatedContent
+			storedImages = append(storedImages, remoteImages...)
+			result.Metadata = ensureAttachmentMetadata(result.Metadata, "image_source_type", "remote")
+		}
+	}
+	if len(storedImages) > 0 {
+		result.Metadata = ensureAttachmentMetadata(result.Metadata, "image_source_type", "embedded")
 	}
 
 	p.applyLineTruncation(ctx, result.MarkdownContent, attachment)
-	return nil
+	return result, storedImages, nil
+}
+
+func toStoredImageReferences(images []docparser.StoredImage) []types.StoredImageReference {
+	if len(images) == 0 {
+		return nil
+	}
+	refs := make([]types.StoredImageReference, 0, len(images))
+	for _, image := range images {
+		refs = append(refs, types.StoredImageReference{
+			OriginalRef: image.OriginalRef,
+			ServingURL:  image.ServingURL,
+			MimeType:    image.MimeType,
+		})
+	}
+	return refs
+}
+
+func ensureAttachmentMetadata(metadata map[string]string, key, value string) map[string]string {
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+	if strings.TrimSpace(metadata[key]) == "" {
+		metadata[key] = value
+	}
+	return metadata
 }
 
 // resolveAttachmentFileService prefers the active tenant's configured storage

@@ -3,15 +3,19 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/url"
 	"os"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	filesvc "github.com/Tencent/WeKnora/internal/application/service/file"
 	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/infrastructure/chunker"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
@@ -45,6 +49,344 @@ func (s *knowledgeService) failReservedParseAttempt(ctx context.Context, knowled
 		"TASK_ENQUEUE_FAILED",
 		message,
 	)
+}
+
+func toDocparserStoredImages(images []types.StoredImageReference) []docparser.StoredImage {
+	if len(images) == 0 {
+		return nil
+	}
+	stored := make([]docparser.StoredImage, 0, len(images))
+	for _, image := range images {
+		stored = append(stored, docparser.StoredImage{
+			OriginalRef: image.OriginalRef,
+			ServingURL:  image.ServingURL,
+			MimeType:    image.MimeType,
+		})
+	}
+	return stored
+}
+
+// CreateKnowledgeFromReadResult promotes an already-uploaded provider:// file
+// into a normal Knowledge record while reusing an existing parse result. This
+// avoids a second docreader round-trip for chat attachments that were already
+// parsed during upload handling.
+func (s *knowledgeService) CreateKnowledgeFromReadResult(
+	ctx context.Context,
+	kbID string,
+	filePath string,
+	fileName string,
+	fileType string,
+	fileSize int64,
+	channel string,
+	readResult *types.ReadResult,
+	storedImages []types.StoredImageReference,
+	processOverrides *types.KnowledgeProcessOverrides,
+) (*types.Knowledge, error) {
+	logger.Info(ctx, "Start creating knowledge from read result")
+	if readResult == nil {
+		return nil, werrors.NewBadRequestError("read result is required")
+	}
+	if strings.TrimSpace(kbID) == "" {
+		return nil, werrors.NewBadRequestError("knowledge base id is required")
+	}
+	if strings.TrimSpace(filePath) == "" {
+		return nil, werrors.NewBadRequestError("file path is required")
+	}
+
+	safeFilename, isValid := secutils.ValidateInput(fileName)
+	if !isValid {
+		return nil, werrors.NewValidationError("文件名包含非法字符")
+	}
+	if strings.TrimSpace(safeFilename) == "" {
+		safeFilename = fmt.Sprintf("attachment-%d", time.Now().UnixNano())
+	}
+	if !isValidFileType(safeFilename) {
+		return nil, ErrInvalidFileType
+	}
+
+	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get knowledge base: %v", err)
+		return nil, err
+	}
+	if kb.Type == types.KnowledgeBaseTypeFAQ {
+		return nil, werrors.NewBadRequestError("FAQ 知识库不支持文件上传")
+	}
+	if err := s.checkStorageEngineConfigured(ctx, kb); err != nil {
+		return nil, err
+	}
+
+	normalizedType := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(fileType)), ".")
+	if normalizedType == "" || normalizedType == "unknown" {
+		normalizedType = getFileType(safeFilename)
+	}
+	if IsVideoType(normalizedType) {
+		return nil, werrors.NewBadRequestError("暂不支持上传视频文件")
+	}
+
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+	now := time.Now()
+	knowledge := &types.Knowledge{
+		ID:               uuid.New().String(),
+		TenantID:         tenantID,
+		KnowledgeBaseID:  kbID,
+		Type:             "file",
+		Channel:          defaultChannel(channel),
+		Title:            safeFilename,
+		FileName:         safeFilename,
+		FileType:         normalizedType,
+		FileSize:         fileSize,
+		FileHash:         calculateStr(filePath, safeFilename, strconv.FormatInt(fileSize, 10)),
+		ParseStatus:      "pending",
+		EnableStatus:     "disabled",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		EmbeddingModelID: kb.EmbeddingModelID,
+	}
+	if len(readResult.Metadata) > 0 {
+		if metadataBytes, marshalErr := json.Marshal(readResult.Metadata); marshalErr == nil {
+			knowledge.Metadata = types.JSON(metadataBytes)
+		}
+	}
+
+	if processOverrides != nil {
+		if err := ValidateProcessOverrides(ctx, kb, processOverrides, []string{normalizedType}); err != nil {
+			return nil, err
+		}
+		if err := knowledge.SetProcessOverrides(processOverrides); err != nil {
+			return nil, err
+		}
+	}
+
+	eff, err := ApplyKnowledgeProcessOverrides(ctx, kb, knowledge, processOverrides, []string{normalizedType}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	srcSvc := s.resolveFileServiceForExternalPath(ctx, filePath)
+	dstSvc := s.resolveFileService(ctx, kb)
+	storedPath, err := dstSvc.CopyFile(ctx, filePath, tenantID, knowledge.ID)
+	if err != nil {
+		if errors.Is(err, filesvc.ErrCrossBackendCopy) {
+			reader, readErr := srcSvc.GetFile(ctx, filePath)
+			if readErr != nil {
+				return nil, fmt.Errorf("failed to read source attachment: %w", readErr)
+			}
+			defer reader.Close()
+			data, readAllErr := io.ReadAll(reader)
+			if readAllErr != nil {
+				return nil, fmt.Errorf("failed to read source attachment bytes: %w", readAllErr)
+			}
+			storedPath, err = dstSvc.SaveBytes(ctx, data, tenantID, safeFilename, false)
+			if err != nil {
+				return nil, fmt.Errorf("failed to copy attachment into knowledge storage: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to copy attachment into knowledge storage: %w", err)
+		}
+	}
+	knowledge.FilePath = storedPath
+
+	if err := s.repo.CreateKnowledge(ctx, knowledge); err != nil {
+		if deleteErr := dstSvc.DeleteFile(ctx, storedPath); deleteErr != nil {
+			logger.Warnf(ctx, "Failed to delete copied file after read-result knowledge creation failure: %v", deleteErr)
+		}
+		return nil, err
+	}
+
+	questionCount := eff.QuestionGenerationConfig.QuestionCount
+	if questionCount <= 0 {
+		questionCount = 3
+	}
+	attempt := s.reserveInitialParseAttempt(ctx, knowledge.ID, "")
+	if err := s.processKnowledgeFromReadResult(
+		withAttempt(ctx, attempt),
+		kb,
+		knowledge,
+		readResult,
+		eff,
+		eff.QuestionGenerationConfig.Enabled,
+		questionCount,
+		toDocparserStoredImages(storedImages),
+	); err != nil {
+		s.failReservedParseAttempt(ctx, knowledge.ID, attempt, fmt.Sprintf("failed to process stored attachment read result: %v", err))
+		return knowledge, err
+	}
+
+	updated, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledge.ID)
+	if err != nil || updated == nil {
+		return knowledge, err
+	}
+	if updated.EnableStatus != "enabled" {
+		if strings.TrimSpace(updated.ErrorMessage) != "" {
+			return updated, fmt.Errorf("read-result knowledge processing failed: %s", updated.ErrorMessage)
+		}
+		return updated, fmt.Errorf("read-result knowledge processing did not finish indexing")
+	}
+	return updated, nil
+}
+
+// CreateKnowledgeFromStoredFile promotes an already-uploaded provider:// file
+// into a normal Knowledge record and synchronously runs the standard document
+// process pipeline so the resulting temporary KB can participate in the current
+// turn's retrieval immediately.
+func (s *knowledgeService) CreateKnowledgeFromStoredFile(
+	ctx context.Context,
+	kbID string,
+	filePath string,
+	fileName string,
+	fileType string,
+	fileSize int64,
+	channel string,
+	processOverrides *types.KnowledgeProcessOverrides,
+) (*types.Knowledge, error) {
+	logger.Info(ctx, "Start creating knowledge from stored file")
+
+	if strings.TrimSpace(kbID) == "" {
+		return nil, werrors.NewBadRequestError("knowledge base id is required")
+	}
+	if strings.TrimSpace(filePath) == "" {
+		return nil, werrors.NewBadRequestError("file path is required")
+	}
+
+	safeFilename, isValid := secutils.ValidateInput(fileName)
+	if !isValid {
+		return nil, werrors.NewValidationError("文件名包含非法字符")
+	}
+	if strings.TrimSpace(safeFilename) == "" {
+		safeFilename = fmt.Sprintf("attachment-%d", time.Now().UnixNano())
+	}
+	if !isValidFileType(safeFilename) {
+		return nil, ErrInvalidFileType
+	}
+
+	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get knowledge base: %v", err)
+		return nil, err
+	}
+	if kb.Type == types.KnowledgeBaseTypeFAQ {
+		return nil, werrors.NewBadRequestError("FAQ 知识库不支持文件上传")
+	}
+	if err := s.checkStorageEngineConfigured(ctx, kb); err != nil {
+		return nil, err
+	}
+
+	normalizedType := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(fileType)), ".")
+	if normalizedType == "" || normalizedType == "unknown" {
+		normalizedType = getFileType(safeFilename)
+	}
+	if IsVideoType(normalizedType) {
+		return nil, werrors.NewBadRequestError("暂不支持上传视频文件")
+	}
+
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+	now := time.Now()
+	knowledge := &types.Knowledge{
+		ID:               uuid.New().String(),
+		TenantID:         tenantID,
+		KnowledgeBaseID:  kbID,
+		Type:             "file",
+		Channel:          defaultChannel(channel),
+		Title:            safeFilename,
+		FileName:         safeFilename,
+		FileType:         normalizedType,
+		FileSize:         fileSize,
+		FileHash:         calculateStr(filePath, safeFilename, strconv.FormatInt(fileSize, 10)),
+		ParseStatus:      "pending",
+		EnableStatus:     "disabled",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		EmbeddingModelID: kb.EmbeddingModelID,
+	}
+
+	if processOverrides != nil {
+		if err := ValidateProcessOverrides(ctx, kb, processOverrides, []string{normalizedType}); err != nil {
+			return nil, err
+		}
+		if err := knowledge.SetProcessOverrides(processOverrides); err != nil {
+			return nil, err
+		}
+	}
+
+	eff, err := ApplyKnowledgeProcessOverrides(ctx, kb, knowledge, processOverrides, []string{normalizedType}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	srcSvc := s.resolveFileServiceForExternalPath(ctx, filePath)
+	dstSvc := s.resolveFileService(ctx, kb)
+
+	storedPath, err := dstSvc.CopyFile(ctx, filePath, tenantID, knowledge.ID)
+	if err != nil {
+		if errors.Is(err, filesvc.ErrCrossBackendCopy) {
+			reader, readErr := srcSvc.GetFile(ctx, filePath)
+			if readErr != nil {
+				return nil, fmt.Errorf("failed to read source attachment: %w", readErr)
+			}
+			defer reader.Close()
+			data, readAllErr := io.ReadAll(reader)
+			if readAllErr != nil {
+				return nil, fmt.Errorf("failed to read source attachment bytes: %w", readAllErr)
+			}
+			storedPath, err = dstSvc.SaveBytes(ctx, data, tenantID, safeFilename, false)
+			if err != nil {
+				return nil, fmt.Errorf("failed to copy attachment into knowledge storage: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to copy attachment into knowledge storage: %w", err)
+		}
+	}
+	knowledge.FilePath = storedPath
+
+	if err := s.repo.CreateKnowledge(ctx, knowledge); err != nil {
+		logger.Errorf(ctx, "Failed to create knowledge record for stored file: %v", err)
+		if deleteErr := dstSvc.DeleteFile(ctx, storedPath); deleteErr != nil {
+			logger.Warnf(ctx, "Failed to delete copied file after stored-file knowledge creation failure: %v", deleteErr)
+		}
+		return nil, err
+	}
+
+	questionCount := eff.QuestionGenerationConfig.QuestionCount
+	if questionCount <= 0 {
+		questionCount = 3
+	}
+	attempt := s.reserveInitialParseAttempt(ctx, knowledge.ID, "")
+	lang, _ := types.LanguageFromContext(ctx)
+	taskPayload := types.DocumentProcessPayload{
+		TenantID:                 tenantID,
+		KnowledgeID:              knowledge.ID,
+		KnowledgeBaseID:          kbID,
+		FilePath:                 storedPath,
+		FileName:                 safeFilename,
+		FileType:                 normalizedType,
+		EnableMultimodel:         eff.EnableMultimodel,
+		EnableQuestionGeneration: eff.QuestionGenerationConfig.Enabled,
+		QuestionCount:            questionCount,
+		Language:                 lang,
+		Attempt:                  attempt,
+	}
+	payloadBytes, err := json.Marshal(taskPayload)
+	if err != nil {
+		s.failReservedParseAttempt(ctx, knowledge.ID, attempt, fmt.Sprintf("failed to marshal stored file document process payload: %v", err))
+		return knowledge, err
+	}
+	task := asynq.NewTask(types.TypeDocumentProcess, payloadBytes)
+	if err := s.ProcessDocument(withAttempt(ctx, attempt), task); err != nil {
+		return knowledge, err
+	}
+
+	updated, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledge.ID)
+	if err != nil || updated == nil {
+		return knowledge, err
+	}
+	if updated.EnableStatus != "enabled" {
+		if strings.TrimSpace(updated.ErrorMessage) != "" {
+			return updated, fmt.Errorf("stored file knowledge processing failed: %s", updated.ErrorMessage)
+		}
+		return updated, fmt.Errorf("stored file knowledge processing did not finish indexing")
+	}
+	return updated, nil
 }
 
 // CreateKnowledgeFromFile creates a knowledge entry from an uploaded file

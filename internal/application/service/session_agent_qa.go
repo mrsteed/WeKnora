@@ -238,7 +238,11 @@ func (s *sessionService) AgentQA(
 	// can see uploaded files. Mirrors the behavior of the KnowledgeQA pipeline
 	// (see chat_pipeline/into_chat_message.go).
 	if len(req.Attachments) > 0 {
-		agentQuery += req.Attachments.BuildPrompt()
+		if strings.TrimSpace(req.AttachmentTempKBID) != "" {
+			agentQuery += req.Attachments.BuildPromptMetadataOnly()
+		} else {
+			agentQuery += req.Attachments.BuildPrompt()
+		}
 		logger.Infof(ctx, "Appended %d attachment(s) to agent query", len(req.Attachments))
 	}
 
@@ -477,14 +481,17 @@ func shouldUseKnowledgeGroundedFullDocumentGenerationPath(req *types.QARequest, 
 	if !hasEffectiveLocalKnowledgeScope(req, agentConfig) {
 		return false
 	}
-	if len(req.Attachments) > 0 || len(req.ImageURLs) > 0 || strings.TrimSpace(req.ImageDescription) != "" {
+	if len(req.ImageURLs) > 0 || strings.TrimSpace(req.ImageDescription) != "" {
+		return false
+	}
+	if len(req.Attachments) > 0 && strings.TrimSpace(req.AttachmentTempKBID) == "" {
 		return false
 	}
 	return true
 }
 
 func hasEffectiveLocalKnowledgeScope(req *types.QARequest, agentConfig *types.AgentConfig) bool {
-	if req != nil && (len(req.KnowledgeBaseIDs) > 0 || len(req.KnowledgeIDs) > 0) {
+	if req != nil && (len(req.KnowledgeBaseIDs) > 0 || len(req.KnowledgeIDs) > 0 || strings.TrimSpace(req.AttachmentTempKBID) != "") {
 		return true
 	}
 	if agentConfig == nil {

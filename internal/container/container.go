@@ -242,6 +242,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewVectorStoreRepository))
 	must(container.Provide(retriever.NewVectorStoreRepoOwnership))
 	must(container.Provide(service.NewWebSearchService))
+	must(container.Provide(service.NewAttachmentTempKBStateService))
 	must(container.Provide(service.NewWebSearchProviderService))
 	must(container.Provide(NewEngineFactory))
 	// StoreRegistry: same instance as RetrieveEngineRegistry, exposed as StoreRegistry interface.
@@ -265,6 +266,13 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// Expose Gate as MCPApproval interface so AgentService and others can depend on the abstraction.
 	must(container.Provide(func(g *approval.Gate) approval.MCPApproval { return g }))
 	must(container.Provide(service.NewAgentService))
+	must(container.Provide(func(svc interfaces.KnowledgeService) (interfaces.AttachmentKnowledgeService, error) {
+		attachmentSvc, ok := svc.(interfaces.AttachmentKnowledgeService)
+		if !ok {
+			return nil, fmt.Errorf("knowledge service does not implement AttachmentKnowledgeService")
+		}
+		return attachmentSvc, nil
+	}))
 
 	logger.Debugf(ctx, "[Container] Registering task enqueuer...")
 	redisAvailable := os.Getenv("REDIS_ADDR") != ""
@@ -597,6 +605,9 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validatePrincipalModelSchemaCompatibility(sqlDB, db.Dialector.Name()); err != nil {
+		return nil, err
+	}
 
 	// Configure connection pool parameters
 	if os.Getenv("DB_DRIVER") == "sqlite" {
@@ -610,6 +621,111 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(time.Duration(10) * time.Minute)
 
 	return db, nil
+}
+
+// validatePrincipalModelSchemaCompatibility fails fast when the running code
+// expects the principal-model schema introduced in migration 000064, but the
+// live PostgreSQL schema is still missing those columns or keeps narrower
+// varchar widths. Without this check, the service can boot and only explode on
+// unrelated business paths later when GORM writes back a full row.
+func validatePrincipalModelSchemaCompatibility(sqlDB *sql.DB, dialect string) error {
+	if sqlDB == nil || dialect != "postgres" {
+		return nil
+	}
+
+	issues := make([]string, 0, 4)
+	ctx := context.Background()
+	checks := []struct {
+		table  string
+		column string
+	}{
+		{table: "tenants", column: "api_principal_config"},
+		{table: "mcp_oauth_tokens", column: "principal_type"},
+		{table: "mcp_oauth_tokens", column: "principal_id"},
+	}
+	for _, check := range checks {
+		exists, err := postgresColumnExists(ctx, sqlDB, check.table, check.column)
+		if err != nil {
+			return fmt.Errorf("validate principal-model schema column %s.%s: %w", check.table, check.column, err)
+		}
+		if !exists {
+			issues = append(issues, fmt.Sprintf("missing %s.%s", check.table, check.column))
+		}
+	}
+
+	widthChecks := []struct {
+		table     string
+		column    string
+		minLength int64
+	}{
+		{table: "sessions", column: "user_id", minLength: 512},
+		{table: "mcp_oauth_tokens", column: "user_id", minLength: 512},
+		{table: "mcp_oauth_tokens", column: "principal_id", minLength: 512},
+		{table: "mcp_oauth_tokens", column: "principal_type", minLength: 32},
+	}
+	for _, check := range widthChecks {
+		length, exists, err := postgresVarcharLength(ctx, sqlDB, check.table, check.column)
+		if err != nil {
+			return fmt.Errorf("validate principal-model schema width %s.%s: %w", check.table, check.column, err)
+		}
+		if exists && length > 0 && length < check.minLength {
+			issues = append(issues, fmt.Sprintf("%s.%s length=%d < %d", check.table, check.column, length, check.minLength))
+		}
+	}
+
+	if len(issues) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"database schema is incompatible with the current principal-model code path: %s. Run scripts/migrate.sh up or enable AUTO_MIGRATE to apply migration 000083_principal_model_schema_repair",
+		strings.Join(issues, "; "),
+	)
+}
+
+func postgresColumnExists(ctx context.Context, sqlDB *sql.DB, tableName, columnName string) (bool, error) {
+	var exists bool
+	err := sqlDB.QueryRowContext(
+		ctx,
+		`SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = $1
+			  AND column_name = $2
+		)`,
+		tableName,
+		columnName,
+	).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func postgresVarcharLength(ctx context.Context, sqlDB *sql.DB, tableName, columnName string) (int64, bool, error) {
+	var length sql.NullInt64
+	err := sqlDB.QueryRowContext(
+		ctx,
+		`SELECT character_maximum_length
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = $1
+		  AND column_name = $2
+		LIMIT 1`,
+		tableName,
+		columnName,
+	).Scan(&length)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	if !length.Valid {
+		return 0, true, nil
+	}
+	return length.Int64, true, nil
 }
 
 // resolveStorageProviderPending replaces the "__pending_env__" sentinel in

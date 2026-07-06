@@ -66,7 +66,10 @@ func shouldUseLongDocumentTranslationPath(req *types.QARequest) bool {
 	if req.AutoContinue {
 		return false
 	}
-	if len(req.ImageURLs) > 0 || len(req.Attachments) > 0 {
+	if len(req.ImageURLs) > 0 {
+		return false
+	}
+	if len(req.Attachments) > 0 && strings.TrimSpace(req.AttachmentTempKBID) == "" {
 		return false
 	}
 	return true

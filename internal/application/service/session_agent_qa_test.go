@@ -1098,6 +1098,18 @@ func TestShouldUseKnowledgeGroundedFullDocumentGenerationPath(t *testing.T) {
 		assert.False(t, shouldUseKnowledgeGroundedFullDocumentGenerationPath(req, agentConfig))
 	})
 
+	t.Run("request with attachments and temp kb selects grounded path", func(t *testing.T) {
+		req := &types.QARequest{
+			Query:              "请输出完整的投标技术方案",
+			DocumentOutputMode: types.ChatDocumentOutputModeFull,
+			Attachments:        types.MessageAttachments{{FileName: "资料.pdf", FileType: ".pdf"}},
+			AttachmentTempKBID: "temp-kb-1",
+		}
+		agentConfig := &types.AgentConfig{KnowledgeBases: []string{"temp-kb-1"}}
+
+		assert.True(t, shouldUseKnowledgeGroundedFullDocumentGenerationPath(req, agentConfig))
+	})
+
 	t.Run("translation task stays off grounded full document path", func(t *testing.T) {
 		req := &types.QARequest{
 			Query:              "请把这篇文档完整翻译成中文 Markdown",

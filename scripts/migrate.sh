@@ -70,11 +70,11 @@ case "$1" in
         echo "DB_PORT: ${DB_PORT}"
         echo "DB_NAME: ${DB_NAME}"
         echo "MIGRATIONS_DIR: ${MIGRATIONS_DIR}"
-        migrate -path ${MIGRATIONS_DIR} -database ${DB_URL} up
+        migrate -path "${PROJECT_ROOT}/${MIGRATIONS_DIR}" -database ${DB_URL} up
         ;;
     down)
         echo "Running migrations down..."
-        migrate -path ${MIGRATIONS_DIR} -database ${DB_URL} down
+        migrate -path "${PROJECT_ROOT}/${MIGRATIONS_DIR}" -database ${DB_URL} down
         ;;
     create)
         if [ -z "$2" ]; then
@@ -90,7 +90,7 @@ case "$1" in
         ;;
     version)
         echo "Checking current migration version..."
-        migrate -path ${MIGRATIONS_DIR} -database ${DB_URL} version
+        migrate -path "${PROJECT_ROOT}/${MIGRATIONS_DIR}" -database ${DB_URL} version
         ;;
     force)
         if [ -z "$2" ]; then
@@ -102,7 +102,7 @@ case "$1" in
         VERSION="$2"
         echo "Forcing migration version to $VERSION..."
         # Use env to pass the command, avoiding shell flag parsing issues with negative numbers
-        env migrate -path "${MIGRATIONS_DIR}" -database "${DB_URL}" force -- "$VERSION"
+        env migrate -path "${PROJECT_ROOT}/${MIGRATIONS_DIR}" -database "${DB_URL}" force -- "$VERSION"
         ;;
     goto)
         if [ -z "$2" ]; then
@@ -111,7 +111,7 @@ case "$1" in
             exit 1
         fi
         echo "Migrating to version $2..."
-        migrate -path ${MIGRATIONS_DIR} -database ${DB_URL} goto $2
+        migrate -path "${PROJECT_ROOT}/${MIGRATIONS_DIR}" -database ${DB_URL} goto $2
         ;;
     *)
         echo "Usage: $0 {up|down|create <migration_name>|version|force <version>|goto <version>}"

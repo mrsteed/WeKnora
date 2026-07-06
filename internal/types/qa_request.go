@@ -22,6 +22,7 @@ type QARequest struct {
 	SummaryModelID            string       // Optional model override; empty = use agent/KB default
 	CustomAgent               *CustomAgent // Optional custom agent for config override
 	KnowledgeBaseIDs          []string     // Knowledge base IDs to search (from request + @mentions)
+	AttachmentTempKBID        string       // Session-scoped temporary KB created from chat attachments
 	KnowledgeIDs              []string     // Specific knowledge (file) IDs to search
 	TagScopes                 []TagScope   // Tag-constrained KB scopes from @mentions
 	MCPServiceIDs             []string     // Per-request MCP service IDs from @mentions

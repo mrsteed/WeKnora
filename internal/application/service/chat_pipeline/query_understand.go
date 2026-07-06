@@ -299,7 +299,11 @@ func (p *PluginQueryUnderstand) buildPrompts(chatManage *types.ChatManage, histo
 		queryContent += "\n\n<no_image_attached />"
 	}
 	if len(chatManage.Attachments) > 0 {
-		queryContent += chatManage.Attachments.BuildPrompt()
+		if strings.TrimSpace(chatManage.AttachmentTempKBID) != "" {
+			queryContent += chatManage.Attachments.BuildPromptMetadataOnly()
+		} else {
+			queryContent += chatManage.Attachments.BuildPrompt()
+		}
 	} else {
 		queryContent += "\n<no_document_attached />"
 	}
