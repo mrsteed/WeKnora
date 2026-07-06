@@ -571,10 +571,12 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		}
 	}
 
+	autoMigrateEnabled := os.Getenv("AUTO_MIGRATE") != "false"
+
 	// Run database migrations automatically (optional, can be disabled via env var)
 	// To disable auto-migration, set AUTO_MIGRATE=false
 	// To enable auto-recovery from dirty state, set AUTO_RECOVER_DIRTY=true
-	if os.Getenv("AUTO_MIGRATE") != "false" {
+	if autoMigrateEnabled {
 		logger.Infof(context.Background(), "Running database migrations...")
 
 		autoRecover := os.Getenv("AUTO_RECOVER_DIRTY") != "false"
@@ -629,24 +631,62 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 // varchar widths. Without this check, the service can boot and only explode on
 // unrelated business paths later when GORM writes back a full row.
 func validatePrincipalModelSchemaCompatibility(sqlDB *sql.DB, dialect string) error {
-	if sqlDB == nil || dialect != "postgres" {
+	issues, err := principalModelSchemaCompatibilityIssues(sqlDB, dialect)
+	if err != nil {
+		return err
+	}
+	if len(issues) == 0 {
 		return nil
+	}
+	return principalModelSchemaCompatibilityError(issues)
+}
+
+func principalModelSchemaCompatibilityIssues(sqlDB *sql.DB, dialect string) ([]string, error) {
+	if sqlDB == nil || dialect != "postgres" {
+		return nil, nil
 	}
 
 	issues := make([]string, 0, 4)
 	ctx := context.Background()
+	tableChecks := []string{
+		"mcp_oauth_clients",
+		"mcp_oauth_tokens",
+	}
+	tableExists := make(map[string]bool, len(tableChecks))
+	for _, tableName := range tableChecks {
+		exists, err := postgresTableExists(ctx, sqlDB, tableName)
+		if err != nil {
+			return nil, fmt.Errorf("validate principal-model schema table %s: %w", tableName, err)
+		}
+		tableExists[tableName] = exists
+		if !exists {
+			issues = append(issues, fmt.Sprintf("missing table %s", tableName))
+		}
+	}
+
 	checks := []struct {
 		table  string
 		column string
 	}{
 		{table: "tenants", column: "api_principal_config"},
-		{table: "mcp_oauth_tokens", column: "principal_type"},
-		{table: "mcp_oauth_tokens", column: "principal_id"},
+	}
+	if tableExists["mcp_oauth_tokens"] {
+		checks = append(
+			checks,
+			struct {
+				table  string
+				column string
+			}{table: "mcp_oauth_tokens", column: "principal_type"},
+			struct {
+				table  string
+				column string
+			}{table: "mcp_oauth_tokens", column: "principal_id"},
+		)
 	}
 	for _, check := range checks {
 		exists, err := postgresColumnExists(ctx, sqlDB, check.table, check.column)
 		if err != nil {
-			return fmt.Errorf("validate principal-model schema column %s.%s: %w", check.table, check.column, err)
+			return nil, fmt.Errorf("validate principal-model schema column %s.%s: %w", check.table, check.column, err)
 		}
 		if !exists {
 			issues = append(issues, fmt.Sprintf("missing %s.%s", check.table, check.column))
@@ -659,26 +699,43 @@ func validatePrincipalModelSchemaCompatibility(sqlDB *sql.DB, dialect string) er
 		minLength int64
 	}{
 		{table: "sessions", column: "user_id", minLength: 512},
-		{table: "mcp_oauth_tokens", column: "user_id", minLength: 512},
-		{table: "mcp_oauth_tokens", column: "principal_id", minLength: 512},
-		{table: "mcp_oauth_tokens", column: "principal_type", minLength: 32},
+	}
+	if tableExists["mcp_oauth_tokens"] {
+		widthChecks = append(
+			widthChecks,
+			struct {
+				table     string
+				column    string
+				minLength int64
+			}{table: "mcp_oauth_tokens", column: "user_id", minLength: 512},
+			struct {
+				table     string
+				column    string
+				minLength int64
+			}{table: "mcp_oauth_tokens", column: "principal_id", minLength: 512},
+			struct {
+				table     string
+				column    string
+				minLength int64
+			}{table: "mcp_oauth_tokens", column: "principal_type", minLength: 32},
+		)
 	}
 	for _, check := range widthChecks {
 		length, exists, err := postgresVarcharLength(ctx, sqlDB, check.table, check.column)
 		if err != nil {
-			return fmt.Errorf("validate principal-model schema width %s.%s: %w", check.table, check.column, err)
+			return nil, fmt.Errorf("validate principal-model schema width %s.%s: %w", check.table, check.column, err)
 		}
 		if exists && length > 0 && length < check.minLength {
 			issues = append(issues, fmt.Sprintf("%s.%s length=%d < %d", check.table, check.column, length, check.minLength))
 		}
 	}
 
-	if len(issues) == 0 {
-		return nil
-	}
+	return issues, nil
+}
 
+func principalModelSchemaCompatibilityError(issues []string) error {
 	return fmt.Errorf(
-		"database schema is incompatible with the current principal-model code path: %s. Run scripts/migrate.sh up or enable AUTO_MIGRATE to apply migration 000083_principal_model_schema_repair",
+		"database schema is incompatible with the current principal-model code path: %s. Run ./scripts/repair_principal_model_schema.sh or manually replay migrations/versioned/000062_mcp_oauth.up.sql, migrations/versioned/000064_principal_model.up.sql, and migrations/versioned/000083_principal_model_schema_repair.up.sql against the target database",
 		strings.Join(issues, "; "),
 	)
 }
@@ -696,6 +753,24 @@ func postgresColumnExists(ctx context.Context, sqlDB *sql.DB, tableName, columnN
 		)`,
 		tableName,
 		columnName,
+	).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func postgresTableExists(ctx context.Context, sqlDB *sql.DB, tableName string) (bool, error) {
+	var exists bool
+	err := sqlDB.QueryRowContext(
+		ctx,
+		`SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.tables
+			WHERE table_schema = current_schema()
+			  AND table_name = $1
+		)`,
+		tableName,
 	).Scan(&exists)
 	if err != nil {
 		return false, err
