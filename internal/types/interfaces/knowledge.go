@@ -166,6 +166,9 @@ type KnowledgeService interface {
 	ProcessManualUpdate(ctx context.Context, t *asynq.Task) error
 	// ProcessDocument handles Asynq document processing tasks
 	ProcessDocument(ctx context.Context, t *asynq.Task) error
+	// ProcessKnowledgeFileDispatch admits pending file uploads into the normal
+	// document processing queue up to the knowledge base's concurrency limit.
+	ProcessKnowledgeFileDispatch(ctx context.Context, t *asynq.Task) error
 	// ProcessFAQImport handles Asynq FAQ import tasks
 	ProcessFAQImport(ctx context.Context, t *asynq.Task) error
 	// ProcessQuestionGeneration handles Asynq question generation tasks
@@ -254,6 +257,15 @@ type KnowledgeRepository interface {
 	CountKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) (int64, error)
 	// CountKnowledgeByStatus counts the number of knowledge items with the specified parse status.
 	CountKnowledgeByStatus(ctx context.Context, tenantID uint64, kbID string, parseStatuses []string) (int64, error)
+	// ListPendingFileKnowledgeForDispatch lists oldest pending file knowledge rows
+	// under the KB that have not started parsing yet.
+	ListPendingFileKnowledgeForDispatch(ctx context.Context, tenantID uint64, kbID string, limit int) ([]*types.Knowledge, error)
+	// CountPendingFileKnowledgeForDispatch returns how many file knowledge rows
+	// remain pending under the KB.
+	CountPendingFileKnowledgeForDispatch(ctx context.Context, tenantID uint64, kbID string) (int64, error)
+	// PromoteKnowledgePendingForDispatch atomically transitions one knowledge row
+	// from pending to processing so only one dispatcher can claim it.
+	PromoteKnowledgePendingForDispatch(ctx context.Context, id string) (bool, error)
 	// SearchKnowledge searches knowledge items by keyword across the tenant.
 	// fileTypes: optional list of file extensions to filter by (e.g., ["csv", "xlsx"])
 	SearchKnowledge(ctx context.Context, tenantID uint64, keyword string, offset, limit int, fileTypes []string) ([]*types.Knowledge, bool, error)

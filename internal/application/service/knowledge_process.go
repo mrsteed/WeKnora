@@ -888,8 +888,9 @@ func (s *knowledgeService) getSummary(ctx context.Context,
 
 	// Generate summary using AI model
 	summaryPrompt := types.RenderPromptPlaceholders(s.config.Conversation.GenerateSummaryPrompt, types.PlaceholderValues{
-		"language": types.LanguageNameFromContext(ctx),
+		"language": types.KnowledgeDerivedContentLanguageName(),
 	})
+	summaryPrompt = strings.TrimSpace(summaryPrompt) + "\n\nIMPORTANT: Output the final summary in Chinese (Simplified). If the source document is in another language, translate the summary into Chinese (Simplified) instead of preserving the original language."
 	thinking := false
 	summary, err := summaryModel.Chat(ctx, []chat.Message{
 		{
@@ -2401,6 +2402,9 @@ func (s *knowledgeService) CancelKnowledgeParse(
 	// at isWikiKnowledgeAborted anyway, but scrubbing avoids waking the
 	// batch in the first place.
 	s.scrubWikiPendingIngest(ctx, existing.KnowledgeBaseID, knowledgeID, "cancel")
+	if err := EnqueueKnowledgeFileDispatchTask(ctx, s.task, existing.TenantID, existing.KnowledgeBaseID, 0); err != nil {
+		logger.Warnf(ctx, "CancelKnowledgeParse: failed to enqueue knowledge file dispatch refill for %s: %v", knowledgeID, err)
+	}
 	return existing, nil
 }
 
@@ -2833,6 +2837,18 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		logger.Errorf(ctx, "failed to update knowledge status to processing: %v", err)
 		return nil
 	}
+	defer func() {
+		latest, err := s.repo.GetKnowledgeByID(ctx, payload.TenantID, payload.KnowledgeID)
+		if err != nil || latest == nil {
+			return
+		}
+		if latest.ParseStatus == types.ParseStatusProcessing {
+			return
+		}
+		if err := EnqueueKnowledgeFileDispatchTask(ctx, s.task, latest.TenantID, latest.KnowledgeBaseID, 0); err != nil {
+			logger.Warnf(ctx, "Failed to enqueue knowledge file dispatch refill after parse exit for %s: %v", latest.ID, err)
+		}
+	}()
 
 	// Resolve the attempt for span tracking. The enqueue site sets
 	// payload.Attempt to a fresh number for the initial parse and to

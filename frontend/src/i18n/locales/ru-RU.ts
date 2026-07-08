@@ -529,7 +529,7 @@ export default {
     statusCompleted: 'Завершено',
     statusProcessing: 'Обработка',
     statusFinalizing: 'Оптимизация',
-    statusPending: 'Ожидание',
+    statusPending: 'Не запущено',
     statusFailed: 'Ошибка',
     statusCancelled: 'Отменено',
     statusDraft: 'Черновик',
@@ -573,7 +573,7 @@ export default {
     allTags: 'Все теги',
     parseStatusFilter: 'Статус',
     allParseStatuses: 'Все статусы',
-    parseStatusPending: 'Ожидание',
+    parseStatusPending: 'Не запущено',
     parseStatusProcessing: 'Обработка',
     parseStatusCompleted: 'Завершено',
     parseStatusFailed: 'Ошибка',
@@ -3317,6 +3317,10 @@ export default {
         description: 'Генерация связанных вопросов для каждого фрагмента с помощью LLM при парсинге документа для улучшения полноты поиска. Включение увеличит время парсинга документа.',
         countLabel: 'Количество вопросов',
         countDescription: 'Количество вопросов для генерации на фрагмент документа (1-10)'
+      },
+      maxConcurrentParseTasks: {
+        label: 'Число одновременных задач',
+        description: 'Максимальное число документов этой базы знаний, которые одновременно переходят в разбор при массовой загрузке. Остальные остаются в статусе «не запущено» и стартуют автоматически после освобождения слота.'
       },
       multimodal: {
         label: 'Мультимодальная функция',

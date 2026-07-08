@@ -321,7 +321,7 @@ func EnqueueWikiIngest(
 		return false, fmt.Errorf("wiki ingest: task enqueuer unavailable for knowledge %s", knowledgeID)
 	}
 
-	lang, _ := types.LanguageFromContext(ctx)
+	lang := types.KnowledgeDerivedContentLocale
 	rollbackPending := func(cause error) (bool, error) {
 		if err := pendingRepo.DeleteByDedupKey(ctx, wikiTaskType, wikiTaskScope, kbID, knowledgeID, WikiOpIngest); err != nil {
 			logger.Warnf(ctx, "wiki ingest: failed to scrub pending op after enqueue failure for %s: %v", knowledgeID, err)

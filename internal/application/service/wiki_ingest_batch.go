@@ -218,14 +218,18 @@ func (s *wikiIngestService) ProcessWikiIngest(ctx context.Context, t *asynq.Task
 	// more concurrent LLM calls) without a code deploy. Zero falls back
 	// to the historical defaults so existing KBs see no behaviour
 	// change until they opt in.
-	batchSize := kb.WikiConfig.IngestBatchSizeOrDefault(wikiMaxDocsPerBatch)
+	batchSizeFallback := kb.MaxConcurrentParseTasks
+	if batchSizeFallback <= 0 {
+		batchSizeFallback = wikiMaxDocsPerBatch
+	}
+	batchSize := kb.WikiConfig.IngestBatchSizeOrDefault(batchSizeFallback)
 	mapParallel := kb.WikiConfig.IngestMapParallelOrDefault(10)
 	reduceParallel := kb.WikiConfig.IngestReduceParallelOrDefault(10)
 	loggedBatchSize = batchSize
 	loggedMapPar = mapParallel
 	loggedReducePar = reduceParallel
 
-	lang := types.LanguageNameFromContext(ctx)
+	lang := types.KnowledgeDerivedContentLanguageName()
 
 	pendingOps, peekedIDs := s.peekPendingList(ctx, payload.KnowledgeBaseID, batchSize)
 	pendingOpsCount = len(pendingOps)
@@ -425,7 +429,7 @@ func (s *wikiIngestService) ProcessWikiIngest(ctx context.Context, t *asynq.Task
 						RetractDocContent: op.DocSummary,
 						DocTitle:          op.DocTitle,
 						KnowledgeID:       op.KnowledgeID,
-						Language:          types.LanguageLocaleName(op.Language),
+						Language:          types.KnowledgeDerivedContentLanguageName(),
 					})
 				}
 				mapMu.Unlock()
@@ -778,7 +782,7 @@ func (s *wikiIngestService) mapOneDocument(
 ) (*docIngestResult, []SlugUpdate, error) {
 	docStartedAt := time.Now()
 	knowledgeID := op.KnowledgeID
-	lang := types.LanguageLocaleName(op.Language)
+	lang := types.KnowledgeDerivedContentLanguageName()
 
 	// Open a postprocess.wiki subspan under the parent attempt's
 	// postprocess stage so the actual per-doc work (LLM extraction +

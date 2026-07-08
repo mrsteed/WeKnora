@@ -6,6 +6,24 @@
     </div>
 
     <div class="settings-group">
+      <div class="setting-row">
+        <div class="setting-info">
+          <label>{{ $t('knowledgeEditor.advanced.maxConcurrentParseTasks.label') }}</label>
+          <p class="desc">{{ $t('knowledgeEditor.advanced.maxConcurrentParseTasks.description') }}</p>
+        </div>
+        <div class="setting-control">
+          <t-input-number
+            v-model="localMaxConcurrentParseTasks"
+            :min="1"
+            :max="20"
+            :step="1"
+            theme="normal"
+            @change="handleMaxConcurrentParseTasksChange"
+            style="width: 120px;"
+          />
+        </div>
+      </div>
+
       <!-- Question Generation feature (only useful for RAG indexing) -->
       <template v-if="ragEnabled !== false">
       <div class="setting-row">
@@ -58,6 +76,7 @@ interface QuestionGenerationConfig {
 
 interface Props {
   questionGeneration?: QuestionGenerationConfig
+  maxConcurrentParseTasks?: number
   ragEnabled?: boolean
   allModels?: any[]
   embedded?: boolean
@@ -69,17 +88,25 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   'update:questionGeneration': [value: QuestionGenerationConfig]
+  'update:maxConcurrentParseTasks': [value: number]
 }>()
 
 const localQuestionGeneration = ref<QuestionGenerationConfig>(
   props.questionGeneration || { enabled: false, questionCount: 3 }
 )
+const localMaxConcurrentParseTasks = ref<number>(props.maxConcurrentParseTasks || 5)
 
 watch(() => props.questionGeneration, (newVal) => {
   if (newVal) {
     localQuestionGeneration.value = { ...newVal }
   }
 }, { deep: true })
+
+watch(() => props.maxConcurrentParseTasks, (newVal) => {
+  if (typeof newVal === 'number' && newVal > 0) {
+    localMaxConcurrentParseTasks.value = newVal
+  }
+})
 
 const handleQuestionGenerationToggle = () => {
   if (!localQuestionGeneration.value.enabled) {
@@ -90,6 +117,13 @@ const handleQuestionGenerationToggle = () => {
 
 const handleQuestionGenerationChange = () => {
   emit('update:questionGeneration', localQuestionGeneration.value)
+}
+
+const handleMaxConcurrentParseTasksChange = () => {
+  if (!localMaxConcurrentParseTasks.value || localMaxConcurrentParseTasks.value <= 0) {
+    localMaxConcurrentParseTasks.value = 5
+  }
+  emit('update:maxConcurrentParseTasks', localMaxConcurrentParseTasks.value)
 }
 </script>
 

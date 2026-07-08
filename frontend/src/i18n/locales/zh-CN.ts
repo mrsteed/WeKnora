@@ -614,7 +614,7 @@ export default {
     statusCompleted: "已完成",
     statusProcessing: "解析中",
     statusFinalizing: "优化中",
-    statusPending: "等待中",
+    statusPending: "未开始",
     statusFailed: "失败",
     statusCancelled: "已取消",
     statusDraft: "草稿",
@@ -662,7 +662,7 @@ export default {
     allTags: "全部标签",
     parseStatusFilter: "解析状态",
     allParseStatuses: "全部状态",
-    parseStatusPending: "等待中",
+    parseStatusPending: "未开始",
     parseStatusProcessing: "处理中",
     parseStatusCompleted: "已完成",
     parseStatusFailed: "失败",
@@ -3975,6 +3975,10 @@ export default {
         description: "解析文档时调用大模型为每个分块生成相关问题，提高检索召回率。启用后会增加文档解析耗时。",
         countLabel: "生成问题数量",
         countDescription: "每个文档分块生成的问题数量（1-10）",
+      },
+      maxConcurrentParseTasks: {
+        label: "同时执行任务数",
+        description: "同一知识库批量上传时，同时进入解析流程的最大文档数。超过上限的文件保持未开始，待已有任务结束后自动补位。",
       },
       multimodal: {
         label: "多模态功能",

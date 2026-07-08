@@ -95,7 +95,10 @@ interface StatusInfo {
   spin?: boolean;
 }
 const computeStatus = (item: KnowledgeItem): StatusInfo => {
-  if (item.parse_status === 'pending' || item.parse_status === 'processing') {
+  if (item.parse_status === 'pending') {
+    return { label: t('knowledgeBase.statusPending'), theme: 'default', icon: 'time' };
+  }
+  if (item.parse_status === 'processing') {
     return { label: t('knowledgeBase.statusProcessing'), theme: 'primary', icon: 'loading', spin: true };
   }
   // finalizing = primary parse done, enrichment subtasks still running.
@@ -154,6 +157,10 @@ const onHeaderCheckboxChange = (checked: boolean) => {
 const onRowCheckboxChange = (item: KnowledgeItem, checked: boolean, ctx?: { e?: Event }) => {
   const me = ctx?.e as MouseEvent | undefined;
   emit('toggle-row', item.id, checked, !!me?.shiftKey);
+};
+
+const makeRowCheckboxChangeHandler = (item: KnowledgeItem) => {
+  return (checked: boolean, ctx?: { e?: Event }) => onRowCheckboxChange(item, checked, ctx);
 };
 
 const moreOpen = ref<string | null>(null);
@@ -220,7 +227,7 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
         role="row" @click="emit('open', item)">
         <div class="cell cell-check" @click.stop>
           <t-checkbox class="doc-list-check" size="small" :checked="selectedIds.has(item.id)" :title="item.file_name"
-            @change="(c, ctx) => onRowCheckboxChange(item, c, ctx)" />
+            @change="makeRowCheckboxChangeHandler(item)" />
         </div>
 
         <div class="cell cell-name">
@@ -238,7 +245,7 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
           <template v-if="item.tags && item.tags.length > 0">
             <t-tooltip v-if="hasTagOverflow(item.id, item.tags.length)"
               :content="item.tags.map((t: any) => t.name).join(', ')" placement="top">
-              <div class="row-tag-chips" :ref="(el: any) => setupTagChipsObserver(el, item.id, item.tags.length)"
+              <div class="row-tag-chips" :ref="(el: any) => setupTagChipsObserver(el, item.id, (item.tags || []).length)"
                 :class="{ 'is-clickable': canEdit }" @click.stop="canEdit && emit('tag-edit', item)">
                 <t-tag v-for="tag in item.tags.slice(0, getTagLimit(item.id))" :key="tag.id" size="small"
                   variant="light-outline" class="row-tag">
@@ -247,7 +254,7 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
                 <span class="row-tag-overflow">+{{ getOverflowCount(item.id, item.tags.length) }}</span>
               </div>
             </t-tooltip>
-            <div v-else class="row-tag-chips" :ref="(el: any) => setupTagChipsObserver(el, item.id, item.tags.length)"
+            <div v-else class="row-tag-chips" :ref="(el: any) => setupTagChipsObserver(el, item.id, (item.tags || []).length)"
               :class="{ 'is-clickable': canEdit }" @click.stop="canEdit && emit('tag-edit', item)">
               <t-tag v-for="tag in item.tags.slice(0, getTagLimit(item.id))" :key="tag.id" size="small"
                 variant="light-outline" class="row-tag">

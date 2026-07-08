@@ -20,6 +20,18 @@ func DefaultLanguage() string {
 	return "zh-CN"
 }
 
+// KnowledgeDerivedContentLocale is the fixed default locale used for
+// knowledge-base generated artifacts such as document summaries and wiki
+// pages. These outputs should default to simplified Chinese regardless of the
+// source document language.
+const KnowledgeDerivedContentLocale = "zh-CN"
+
+// KnowledgeDerivedContentLanguageName returns the prompt-friendly language name
+// for knowledge-base generated artifacts.
+func KnowledgeDerivedContentLanguageName() string {
+	return LanguageLocaleName(KnowledgeDerivedContentLocale)
+}
+
 // TenantIDFromContext extracts the tenant ID from ctx.
 // Returns (0, false) when the key is absent or the value is not uint64.
 func TenantIDFromContext(ctx context.Context) (uint64, bool) {

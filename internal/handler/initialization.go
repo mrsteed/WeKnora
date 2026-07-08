@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/application/service"
 	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
 	"github.com/Tencent/WeKnora/internal/assets"
 	"github.com/Tencent/WeKnora/internal/config"
@@ -59,6 +60,7 @@ type InitializationHandler struct {
 	kbService        interfaces.KnowledgeBaseService
 	kbRepository     interfaces.KnowledgeBaseRepository
 	knowledgeService interfaces.KnowledgeService
+	asynqClient       interfaces.TaskEnqueuer
 	ollamaService    *ollama.OllamaService
 	documentReader   interfaces.DocumentReader
 	pooler           embedding.EmbedderPooler
@@ -72,6 +74,7 @@ func NewInitializationHandler(
 	kbService interfaces.KnowledgeBaseService,
 	kbRepository interfaces.KnowledgeBaseRepository,
 	knowledgeService interfaces.KnowledgeService,
+	asynqClient interfaces.TaskEnqueuer,
 	ollamaService *ollama.OllamaService,
 	documentReader interfaces.DocumentReader,
 	pooler embedding.EmbedderPooler,
@@ -83,6 +86,7 @@ func NewInitializationHandler(
 		kbService:        kbService,
 		kbRepository:     kbRepository,
 		knowledgeService: knowledgeService,
+		asynqClient:      asynqClient,
 		ollamaService:    ollamaService,
 		documentReader:   documentReader,
 		pooler:           pooler,
@@ -137,6 +141,8 @@ type KBModelConfigRequest struct {
 		Enabled       bool `json:"enabled"`
 		QuestionCount int  `json:"questionCount"`
 	} `json:"questionGeneration"`
+
+	MaxConcurrentParseTasks int `json:"maxConcurrentParseTasks"`
 }
 
 // InitializationRequest 初始化请求结构
@@ -245,6 +251,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		c.Error(errors.NewNotFoundError("知识库不存在"))
 		return
 	}
+	oldMaxConcurrentParseTasks := kb.MaxConcurrentParseTasks
 
 	// 检查Embedding模型是否可以修改
 	if kb.EmbeddingModelID != "" && req.EmbeddingModelID != "" && kb.EmbeddingModelID != req.EmbeddingModelID {
@@ -417,12 +424,21 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 	} else {
 		kb.QuestionGenerationConfig = &types.QuestionGenerationConfig{Enabled: false}
 	}
+	if req.MaxConcurrentParseTasks > 0 {
+		kb.MaxConcurrentParseTasks = req.MaxConcurrentParseTasks
+	}
+	kb.EnsureDefaults()
 
 	// 保存更新后的知识库
 	if err := h.kbRepository.UpdateKnowledgeBase(ctx, kb); err != nil {
 		logger.Error(ctx, "Failed to update knowledge base", err)
 		c.Error(errors.NewInternalServerError("更新知识库失败: " + err.Error()))
 		return
+	}
+	if kb.MaxConcurrentParseTasks != oldMaxConcurrentParseTasks {
+		if err := service.EnqueueKnowledgeFileDispatchTask(ctx, h.asynqClient, kb.TenantID, kb.ID, 0); err != nil {
+			logger.Warnf(ctx, "Failed to enqueue knowledge file dispatch after KB config update: %v", err)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

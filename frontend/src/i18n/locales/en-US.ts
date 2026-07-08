@@ -3064,6 +3064,10 @@ export default {
         countLabel: 'Question Count',
         countDescription: 'Number of questions to generate per document chunk (1-10)',
       },
+      maxConcurrentParseTasks: {
+        label: 'Concurrent Parse Tasks',
+        description: 'Maximum number of documents in this knowledge base that may enter parsing at the same time during bulk upload. Extra files stay pending until a running task finishes.',
+      },
       multimodal: {
         label: 'Multimodal Feature',
         description: 'Enable understanding of multimodal content such as images',

@@ -340,6 +340,9 @@ function isParseInFlight(status?: string): boolean {
 
 // Status line shown on the card body while parse is still in flight.
 function inFlightCardStatusText(item: KnowledgeCard): string {
+  if (item.parse_status === 'pending') {
+    return t('knowledgeBase.statusPending');
+  }
   if (item.parse_status === 'finalizing') {
     if (item.summary_status === 'pending' || item.summary_status === 'processing') {
       return t('knowledgeBase.generatingSummary');
@@ -351,6 +354,9 @@ function inFlightCardStatusText(item: KnowledgeCard): string {
 
 function isTraceMenuVisible(item: KnowledgeCard): boolean {
   if (!item?.id) return false;
+  if (item.parse_status === 'pending') {
+    return false;
+  }
   if (isParseInFlight(item.parse_status)) {
     return true;
   }
@@ -360,6 +366,10 @@ function isTraceMenuVisible(item: KnowledgeCard): boolean {
 async function probeTraceAvailable(item: KnowledgeCard) {
   const id = item.id;
   if (!id || traceProbeInflight.has(id)) return;
+  if (item.parse_status === 'pending') {
+    traceAvailableById[id] = false;
+    return;
+  }
   if (isParseInFlight(item.parse_status)) {
     traceAvailableById[id] = true;
     return;
@@ -2551,7 +2561,11 @@ async function createNewSession(value: string): Promise<void> {
                             </template>
                           </t-popup>
                         </div>
-                        <div v-if="isParseInFlight(item.parse_status)" class="card-analyze card-analyze-trace">
+                        <div v-if="item.parse_status === 'pending'" class="card-analyze">
+                          <t-icon name="time" class="card-analyze-loading"></t-icon>
+                          <span class="card-analyze-txt">{{ t('knowledgeBase.statusPending') }}</span>
+                        </div>
+                        <div v-else-if="isParseInFlight(item.parse_status)" class="card-analyze card-analyze-trace">
                           <t-icon name="loading" class="card-analyze-loading"></t-icon>
                           <span class="card-analyze-txt card-analyze-trace-link" role="button" tabindex="0"
                             :title="t('knowledgeStages.viewTrace')" @click.stop="handleViewTrace(index, item)"

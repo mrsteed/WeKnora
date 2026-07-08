@@ -98,6 +98,15 @@ func TestLanguageLocaleName(t *testing.T) {
 	}
 }
 
+func TestKnowledgeDerivedContentLanguageName(t *testing.T) {
+	if got := KnowledgeDerivedContentLanguageName(); got != "Chinese (Simplified)" {
+		t.Fatalf("KnowledgeDerivedContentLanguageName() = %q, want %q", got, "Chinese (Simplified)")
+	}
+	if KnowledgeDerivedContentLocale != "zh-CN" {
+		t.Fatalf("KnowledgeDerivedContentLocale = %q, want %q", KnowledgeDerivedContentLocale, "zh-CN")
+	}
+}
+
 func TestLanguageFromContext(t *testing.T) {
 	tests := []struct {
 		name        string

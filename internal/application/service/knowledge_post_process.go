@@ -90,6 +90,12 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 	}
 
 	postSpan := s.tracker().BeginStage(ctx, payload.KnowledgeID, attempt, types.StagePostProcess, nil)
+	enqueueParseRefill := func() {
+		if err := EnqueueKnowledgeFileDispatchTask(ctx, s.taskEnqueuer, payload.TenantID, payload.KnowledgeBaseID, 0); err != nil {
+			logger.Warnf(ctx, "[KnowledgePostProcess] Failed to enqueue knowledge file dispatch refill for %s: %v",
+				payload.KnowledgeID, err)
+		}
+	}
 
 	// 1. Fetch Knowledge and KB
 	knowledge, err := s.knowledgeRepo.GetKnowledgeByIDOnly(ctx, payload.KnowledgeID)
@@ -240,6 +246,7 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 		} else {
 			logger.Infof(ctx, "[KnowledgePostProcess] Knowledge %s marked completed (no enrichment subtasks).",
 				payload.KnowledgeID)
+			enqueueParseRefill()
 		}
 	default:
 		// Flip processing → finalizing in one statement so a parallel
@@ -251,6 +258,7 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 		}
 		if promoted {
 			enteredFinalizing = true
+			enqueueParseRefill()
 			// Reflect summary status separately so the UI shows the
 			// summary as queued for users who already had it visible.
 			summaryStatus := types.SummaryStatusNone

@@ -116,7 +116,8 @@ func (s *createKnowledgeFileServiceStub) CopyFile(ctx context.Context, srcPath s
 }
 
 type createKnowledgeTaskEnqueuerStub struct {
-	calls int
+	calls     int
+	taskTypes []string
 }
 
 func (s *createKnowledgeTaskEnqueuerStub) Enqueue(
@@ -124,6 +125,7 @@ func (s *createKnowledgeTaskEnqueuerStub) Enqueue(
 	opts ...asynq.Option,
 ) (*asynq.TaskInfo, error) {
 	s.calls++
+	s.taskTypes = append(s.taskTypes, task.Type())
 	return &asynq.TaskInfo{ID: "task-1", Queue: "default"}, nil
 }
 
@@ -190,6 +192,7 @@ func TestCreateKnowledgeFromFilePersistsStoredFilePathOnCreate(t *testing.T) {
 	require.NotNil(t, repo.createdKnowledge)
 	require.Equal(t, "stored/"+knowledge.ID, repo.createdKnowledge.FilePath)
 	require.Equal(t, 1, task.calls)
+	require.Equal(t, []string{types.TypeKnowledgeFileDispatch}, task.taskTypes)
 }
 
 func TestCreateKnowledgeFromFileDeletesStoredFileWhenCreateFails(t *testing.T) {

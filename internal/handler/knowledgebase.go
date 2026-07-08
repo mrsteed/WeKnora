@@ -888,6 +888,11 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		c.Error(apperrors.NewInternalServerError(err.Error()))
 		return
 	}
+	if updatedKb != nil && kb != nil && updatedKb.MaxConcurrentParseTasks != kb.MaxConcurrentParseTasks {
+		if err := service.EnqueueKnowledgeFileDispatchTask(ctx, h.asynqClient, updatedKb.TenantID, updatedKb.ID, 0); err != nil {
+			logger.Warnf(ctx, "Failed to enqueue knowledge file dispatch after KB update: %v", err)
+		}
+	}
 
 	logger.Infof(ctx, "Knowledge base updated successfully, ID: %s",
 		secutils.SanitizeForLog(id))

@@ -112,14 +112,9 @@ func asynqRetryDelayFunc(n int, e error, t *asynq.Task) time.Duration {
 }
 
 // defaultAsynqConcurrency is the worker pool size used when
-// WEKNORA_ASYNQ_CONCURRENCY is unset. The asynq library defaults to
-// runtime.NumCPU(), which under-provisions during batch document uploads:
-// a single 4-core container can only process 4 documents in parallel even
-// when 100 are queued, so the queue wait time eats into each task's
-// DocumentProcessTimeout budget. 32 is a safer default for the I/O-bound
-// nature of doc parsing (most time is spent in DocReader / embedding RPCs,
-// not on local CPU).
-const defaultAsynqConcurrency = 32
+// WEKNORA_ASYNQ_CONCURRENCY is unset. Keep this conservative by default so
+// local deployments do not fan out too many parsing tasks at once.
+const defaultAsynqConcurrency = 5
 
 func NewAsynqServer(svc interfaces.SystemSettingService) *asynq.Server {
 	opt := getAsynqRedisClientOpt()
@@ -184,6 +179,7 @@ func RunAsynqServer(params AsynqTaskParams) *asynq.ServeMux {
 
 	// Register document processing handler
 	mux.HandleFunc(types.TypeDocumentProcess, params.KnowledgeService.ProcessDocument)
+	mux.HandleFunc(types.TypeKnowledgeFileDispatch, params.KnowledgeService.ProcessKnowledgeFileDispatch)
 
 	// Register manual knowledge processing handler (cleanup + re-indexing)
 	mux.HandleFunc(types.TypeManualProcess, params.KnowledgeService.ProcessManualUpdate)

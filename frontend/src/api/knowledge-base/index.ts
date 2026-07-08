@@ -57,6 +57,7 @@ export function createKnowledgeBase(data: {
   name: string;
   description?: string;
   type?: 'document' | 'faq';
+  max_concurrent_parse_tasks?: number;
   visibility?: string;
   organization_id?: string;
   chunking_config?: any;

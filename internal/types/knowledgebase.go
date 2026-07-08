@@ -99,6 +99,10 @@ type KnowledgeBase struct {
 	FAQConfig *FAQConfig `yaml:"faq_config"              json:"faq_config"              gorm:"column:faq_config;type:json"`
 	// QuestionGenerationConfig stores question generation configuration for document knowledge bases
 	QuestionGenerationConfig *QuestionGenerationConfig `yaml:"question_generation_config" json:"question_generation_config" gorm:"column:question_generation_config;type:json"`
+	// MaxConcurrentParseTasks caps how many file documents in this knowledge base
+	// may be actively parsed at the same time. Pending uploads beyond this limit
+	// stay in parse_status=pending until the lightweight dispatcher admits them.
+	MaxConcurrentParseTasks int `yaml:"max_concurrent_parse_tasks" json:"max_concurrent_parse_tasks" gorm:"column:max_concurrent_parse_tasks;not null;default:5"`
 	// WikiConfig stores wiki-specific configuration (only for wiki type knowledge bases)
 	WikiConfig *WikiConfig `yaml:"wiki_config"             json:"wiki_config"             gorm:"column:wiki_config;type:json"`
 	// IndexingStrategy controls which indexing pipelines are active for this knowledge base.
@@ -137,6 +141,8 @@ type KnowledgeBaseConfig struct {
 	ChunkingConfig ChunkingConfig `yaml:"chunking_config"         json:"chunking_config"`
 	// Image processing configuration
 	ImageProcessingConfig ImageProcessingConfig `yaml:"image_processing_config" json:"image_processing_config"`
+	// MaxConcurrentParseTasks caps concurrent file parses for this knowledge base.
+	MaxConcurrentParseTasks int `yaml:"max_concurrent_parse_tasks" json:"max_concurrent_parse_tasks"`
 	// FAQ configuration (only for FAQ type knowledge bases)
 	FAQConfig *FAQConfig `yaml:"faq_config"              json:"faq_config"`
 	// Wiki configuration (only for wiki-enabled knowledge bases)
@@ -532,6 +538,9 @@ func (f *FAQConfig) Scan(value interface{}) error {
 func (kb *KnowledgeBase) EnsureDefaults() {
 	if kb == nil {
 		return
+	}
+	if kb.MaxConcurrentParseTasks <= 0 {
+		kb.MaxConcurrentParseTasks = 5
 	}
 	if kb.Type == "" {
 		kb.Type = KnowledgeBaseTypeDocument

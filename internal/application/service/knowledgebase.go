@@ -240,7 +240,6 @@ func (s *knowledgeBaseService) GetKnowledgeBaseByID(ctx context.Context, id stri
 		})
 		return nil, err
 	}
-
 	kb.EnsureDefaults()
 	return kb, nil
 }
@@ -381,6 +380,8 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 		})
 		return nil, err
 	}
+	kb.EnsureDefaults()
+	previousMaxConcurrentParseTasks := kb.MaxConcurrentParseTasks
 
 	// Update the knowledge base properties
 	kb.Name = name
@@ -407,6 +408,9 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	if config != nil {
 		kb.ChunkingConfig = config.ChunkingConfig
 		kb.ImageProcessingConfig = config.ImageProcessingConfig
+		if config.MaxConcurrentParseTasks > 0 {
+			kb.MaxConcurrentParseTasks = config.MaxConcurrentParseTasks
+		}
 		if config.FAQConfig != nil {
 			kb.FAQConfig = config.FAQConfig
 		}
@@ -441,6 +445,11 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 			"knowledge_base_id": id,
 		})
 		return nil, err
+	}
+	if s.asynqClient != nil && kb.MaxConcurrentParseTasks != previousMaxConcurrentParseTasks {
+		if err := EnqueueKnowledgeFileDispatchTask(ctx, s.asynqClient, kb.TenantID, kb.ID, 0); err != nil {
+			logger.Warnf(ctx, "Failed to enqueue knowledge file dispatch after max_concurrent_parse_tasks update for %s: %v", kb.ID, err)
+		}
 	}
 
 	logger.Infof(ctx, "Knowledge base updated successfully, ID: %s, name: %s", kb.ID, kb.Name)

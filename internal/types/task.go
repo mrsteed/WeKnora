@@ -36,6 +36,7 @@ const (
 	TypeKnowledgeListDelete   = "knowledge:list_delete"   // 批量删除知识任务
 	TypeKnowledgeListReparse  = "knowledge:list_reparse"  // 批量重解析知识任务
 	TypeKnowledgeMove         = "knowledge:move"          // 知识移动任务
+	TypeKnowledgeFileDispatch = "knowledge:file_dispatch" // 知识库文件补位派发任务
 	TypeDataTableSummary      = "datatable:summary"       // 表格摘要任务
 	TypeImageMultimodal       = "image:multimodal"        // 图片多模态处理任务（OCR + VLM Caption）
 	TypeKnowledgePostProcess  = "knowledge:post_process"  // 知识后处理任务（统一调度）
@@ -104,6 +105,15 @@ type DocumentProcessPayload struct {
 	// retried spans overwrite the previous attempt's row rather than
 	// fan out into a new attempt for every retry.
 	Attempt int `json:"attempt,omitempty"`
+}
+
+// KnowledgeFileDispatchPayload schedules a lightweight dispatcher that admits
+// pending file uploads into the normal document:process queue up to the
+// knowledge base's configured concurrency limit.
+type KnowledgeFileDispatchPayload struct {
+	TracingContext
+	TenantID        uint64 `json:"tenant_id"`
+	KnowledgeBaseID string `json:"knowledge_base_id"`
 }
 
 // FAQImportPayload represents the FAQ import task payload (including dry run mode)

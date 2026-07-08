@@ -481,6 +481,57 @@ func (r *knowledgeRepository) CountKnowledgeByStatus(
 	return count, nil
 }
 
+func (r *knowledgeRepository) ListPendingFileKnowledgeForDispatch(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+	limit int,
+) ([]*types.Knowledge, error) {
+	if limit <= 0 {
+		return []*types.Knowledge{}, nil
+	}
+	var knowledges []*types.Knowledge
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND knowledge_base_id = ? AND type = ? AND parse_status = ?", tenantID, kbID, "file", types.ParseStatusPending).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&knowledges).Error
+	if err != nil {
+		return nil, err
+	}
+	return knowledges, nil
+}
+
+func (r *knowledgeRepository) CountPendingFileKnowledgeForDispatch(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&types.Knowledge{}).
+		Where("tenant_id = ? AND knowledge_base_id = ? AND type = ? AND parse_status = ?", tenantID, kbID, "file", types.ParseStatusPending).
+		Count(&count).Error
+	return count, err
+}
+
+func (r *knowledgeRepository) PromoteKnowledgePendingForDispatch(
+	ctx context.Context,
+	id string,
+) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&types.Knowledge{}).
+		Where("id = ? AND parse_status = ?", id, types.ParseStatusPending).
+		Updates(map[string]interface{}{
+			"parse_status":   types.ParseStatusProcessing,
+			"error_message":  "",
+			"updated_at":     time.Now(),
+			"enable_status":  "disabled",
+		})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
 // SearchKnowledge searches knowledge items by keyword across the tenant
 // If keyword is empty, returns recent files
 // Only returns documents from document-type knowledge bases (excludes FAQ)

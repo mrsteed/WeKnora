@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -602,64 +601,9 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 		return nil, err
 	}
 
-	// Enqueue document processing task to Asynq
-	logger.Info(ctx, "Enqueuing document processing task to Asynq")
-	enableMultimodelValue := eff.EnableMultimodel
-
-	enableQuestionGeneration := eff.QuestionGenerationConfig.Enabled
-	questionCount := eff.QuestionGenerationConfig.QuestionCount
-	if questionCount <= 0 {
-		questionCount = 3
-	}
-
-	lang, _ := types.LanguageFromContext(ctx)
-	taskPayload := types.DocumentProcessPayload{
-		TenantID:                 tenantID,
-		KnowledgeID:              knowledge.ID,
-		KnowledgeBaseID:          kbID,
-		FilePath:                 filePath,
-		FileName:                 safeFilename,
-		FileType:                 getFileType(safeFilename),
-		EnableMultimodel:         enableMultimodelValue,
-		EnableQuestionGeneration: enableQuestionGeneration,
-		QuestionCount:            questionCount,
-		Language:                 lang,
-	}
-
-	langfuse.InjectTracing(ctx, &taskPayload)
-	taskPayload.Attempt = s.reserveInitialParseAttempt(ctx, knowledge.ID, taskPayload.LangfuseTraceID)
-	payloadBytes, err := json.Marshal(taskPayload)
-	if err != nil {
-		logger.Errorf(ctx, "Failed to marshal document process task payload: %v", err)
-		s.failReservedParseAttempt(ctx, knowledge.ID, taskPayload.Attempt,
-			fmt.Sprintf("failed to marshal document process task payload: %v", err))
-		// 即使入队失败，也返回knowledge，因为文件已保存
+	if err := EnqueueKnowledgeFileDispatchTask(ctx, s.task, tenantID, kbID, 0); err != nil {
+		logger.Errorf(ctx, "Failed to enqueue knowledge file dispatch task: %v", err)
 		return knowledge, nil
-	}
-
-	task := asynq.NewTask(
-		types.TypeDocumentProcess,
-		payloadBytes,
-		documentProcessTaskOptions(s.config, asynq.MaxRetry(3))...,
-	)
-	info, err := s.task.Enqueue(task)
-	if err != nil {
-		logger.Errorf(ctx, "Failed to enqueue document process task: %v", err)
-		s.failReservedParseAttempt(ctx, knowledge.ID, taskPayload.Attempt,
-			fmt.Sprintf("failed to enqueue document process task: %v", err))
-		// 即使入队失败，也返回knowledge，因为文件已保存
-		return knowledge, nil
-	}
-	logger.Infof(
-		ctx,
-		"Enqueued document process task: id=%s queue=%s knowledge_id=%s",
-		info.ID,
-		info.Queue,
-		knowledge.ID,
-	)
-
-	if slices.Contains([]string{"csv", "xlsx", "xls"}, getFileType(safeFilename)) {
-		NewDataTableSummaryTask(ctx, s.task, tenantID, knowledge.ID, kb.SummaryModelID, kb.EmbeddingModelID)
 	}
 
 	logger.Infof(ctx, "Knowledge from file created successfully, ID: %s", knowledge.ID)

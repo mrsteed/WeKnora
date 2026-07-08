@@ -493,9 +493,11 @@
                     ref="advancedSettingsRef"
                     v-if="formData"
                     :question-generation="formData.questionGenerationConfig"
+                    :max-concurrent-parse-tasks="formData.maxConcurrentParseTasks"
                     :rag-enabled="formData.indexingStrategy?.vectorEnabled || formData.indexingStrategy?.keywordEnabled"
                     :all-models="allModels"
                     @update:question-generation="handleQuestionGenerationUpdate"
+                    @update:max-concurrent-parse-tasks="handleMaxConcurrentParseTasksUpdate"
                   />
                 </div>
 
@@ -890,6 +892,7 @@ const initFormData = (type: 'document' | 'faq' | 'database' = 'document', visibi
       enabled: !isDatabaseType,
       questionCount: 3
     },
+    maxConcurrentParseTasks: 5,
     wikiConfig: {
       synthesisModelId: '',
       maxPagesPerIngest: 0,
@@ -992,6 +995,7 @@ const loadKBData = async () => {
         enabled: kb.question_generation_config?.enabled || false,
         questionCount: kb.question_generation_config?.question_count || 3
       },
+      maxConcurrentParseTasks: kb.max_concurrent_parse_tasks || 5,
       wikiConfig: {
         synthesisModelId: kb.wiki_config?.synthesis_model_id || '',
         maxPagesPerIngest: kb.wiki_config?.max_pages_per_ingest || 0,
@@ -1229,6 +1233,12 @@ const handleQuestionGenerationUpdate = (config: any) => {
   }
 }
 
+const handleMaxConcurrentParseTasksUpdate = (value: number) => {
+  if (formData.value) {
+    formData.value.maxConcurrentParseTasks = value > 0 ? value : 5
+  }
+}
+
 const handleNodeExtractUpdate = (config: any) => {
   if (formData.value) {
     formData.value.nodeExtractConfig = { ...config }
@@ -1325,6 +1335,7 @@ const buildSubmitData = () => {
     name: formData.value.name,
     description: formData.value.description,
     type: formData.value.type,
+    max_concurrent_parse_tasks: formData.value.maxConcurrentParseTasks || 5,
     visibility: formData.value.visibility || 'private',
     organization_id: formData.value.visibility !== 'private' ? formData.value.organization_id : undefined,
     chunking_config: {
@@ -1542,6 +1553,7 @@ const doSubmit = async () => {
       const config: KBModelConfigRequest = {
         llmModelId: data.summary_model_id,
         embeddingModelId: data.embedding_model_id,
+        maxConcurrentParseTasks: formData.value?.maxConcurrentParseTasks || 5,
         vlm_config: data.vlm_config,
         asr_config: data.asr_config,
         documentSplitting: {

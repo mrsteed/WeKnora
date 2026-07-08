@@ -607,7 +607,7 @@ export default {
     statusCompleted: "완료",
     statusProcessing: "처리 중",
     statusFinalizing: "최적화 중",
-    statusPending: "대기 중",
+    statusPending: "미시작",
     statusFailed: "실패",
     statusCancelled: "취소됨",
     statusDraft: "초안",
@@ -655,7 +655,7 @@ export default {
     allTags: "모든 태그",
     parseStatusFilter: "상태",
     allParseStatuses: "모든 상태",
-    parseStatusPending: "대기 중",
+    parseStatusPending: "미시작",
     parseStatusProcessing: "처리 중",
     parseStatusCompleted: "완료됨",
     parseStatusFailed: "실패",
@@ -3836,6 +3836,10 @@ export default {
           "문서 파싱 시 대규모 모델을 호출하여 각 청크에 대한 관련 질문을 생성하여 검색 재현율을 향상시킵니다. 활성화하면 문서 파싱 시간이 증가합니다.",
         countLabel: "생성 질문 수",
         countDescription: "각 문서 청크에서 생성할 질문 수 (1-10)",
+      },
+      maxConcurrentParseTasks: {
+        label: "동시 실행 작업 수",
+        description: "대량 업로드 시 이 지식베이스에서 동시에 파싱에 들어갈 최대 문서 수입니다. 초과 문서는 미시작 상태로 대기하며, 진행 중 작업이 끝나면 자동으로 이어서 시작합니다.",
       },
       multimodal: {
         label: "멀티모달 기능",
