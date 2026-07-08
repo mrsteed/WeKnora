@@ -52,6 +52,13 @@ import (
 // authorised for cross-tenant access at this moment. Both the user
 // attribute and the cluster-wide flag must be true; either alone is
 // not enough.
+func hasCrossTenantSuperuserCapability(u *types.User) bool {
+	if u == nil {
+		return false
+	}
+	return u.CanAccessAllTenants || u.IsSystemAdmin || u.IsSuperAdmin
+}
+
 func IsCrossTenantSuperuser(ctx context.Context, cfg *config.Config) bool {
 	if cfg == nil || cfg.Tenant == nil || !cfg.Tenant.EnableCrossTenantAccess {
 		return false
@@ -60,7 +67,7 @@ func IsCrossTenantSuperuser(ctx context.Context, cfg *config.Config) bool {
 	if !ok || u == nil {
 		return false
 	}
-	return u.CanAccessAllTenants
+	return hasCrossTenantSuperuserCapability(u)
 }
 
 // IsTenantAccessible reports whether `user` is allowed to operate inside
@@ -87,7 +94,7 @@ func IsTenantAccessible(
 	if user.TenantID == targetTenantID {
 		return true
 	}
-	if cfg != nil && cfg.Tenant != nil && cfg.Tenant.EnableCrossTenantAccess && user.CanAccessAllTenants {
+	if cfg != nil && cfg.Tenant != nil && cfg.Tenant.EnableCrossTenantAccess && hasCrossTenantSuperuserCapability(user) {
 		return true
 	}
 	if memberService == nil {

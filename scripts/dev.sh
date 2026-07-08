@@ -70,7 +70,7 @@ show_help() {
     echo "用法: $0 [命令] [选项]"
     echo ""
     echo "命令:"
-    echo "  start      按 .env 启动基础设施服务（postgres、redis、docreader、minio）"
+    echo "  start      按 .env 启动基础设施服务（postgres、redis、docreader、mineru-api、minio）"
     echo "  stop       停止所有服务"
     echo "  restart    重启所有服务"
     echo "  logs       查看服务日志"
@@ -154,6 +154,11 @@ auto_detect_profiles_from_env() {
     if [[ "$enable_graph_rag" == "true" || "$neo4j_enable" == "true" ]]; then
         append_profile "neo4j"
     fi
+
+    local enable_mineru="${WEKNORA_DEV_ENABLE_MINERU:-false}"
+    if [[ "$enable_mineru" == "true" || "$enable_mineru" == "1" || "$enable_mineru" == "yes" || "$enable_mineru" == "on" ]]; then
+        append_profile "mineru"
+    fi
 }
 
 # 检查 Docker
@@ -222,6 +227,7 @@ configure_dev_data_mounts() {
         unset WEKNORA_DEV_POSTGRES_VOLUME \
             WEKNORA_DEV_REDIS_VOLUME \
             WEKNORA_DEV_MINIO_VOLUME \
+            WEKNORA_DEV_MINERU_DATA_VOLUME \
             WEKNORA_DEV_QDRANT_VOLUME \
             WEKNORA_DEV_OPENSEARCH_VOLUME \
             WEKNORA_DEV_MILVUS_VOLUME \
@@ -261,6 +267,7 @@ configure_dev_data_mounts() {
     export WEKNORA_DEV_POSTGRES_VOLUME="$postgres_path"
     export WEKNORA_DEV_REDIS_VOLUME="$WEKNORA_DEV_DATA_BASE/redis"
     export WEKNORA_DEV_MINIO_VOLUME="$WEKNORA_DEV_DATA_BASE/minio"
+    export WEKNORA_DEV_MINERU_DATA_VOLUME="$WEKNORA_DEV_DATA_BASE/mineru"
     export WEKNORA_DEV_QDRANT_VOLUME="$WEKNORA_DEV_DATA_BASE/qdrant"
     export WEKNORA_DEV_OPENSEARCH_VOLUME="$WEKNORA_DEV_DATA_BASE/opensearch"
     export WEKNORA_DEV_MILVUS_VOLUME="$WEKNORA_DEV_DATA_BASE/milvus"
@@ -290,6 +297,7 @@ prepare_dev_data_dirs() {
         "$WEKNORA_DEV_POSTGRES_VOLUME"
         "$WEKNORA_DEV_REDIS_VOLUME"
         "$WEKNORA_DEV_MINIO_VOLUME"
+        "$WEKNORA_DEV_MINERU_DATA_VOLUME"
         "$WEKNORA_DEV_QDRANT_VOLUME"
         "$WEKNORA_DEV_OPENSEARCH_VOLUME"
         "$WEKNORA_DEV_MILVUS_VOLUME"
@@ -508,7 +516,7 @@ start_services() {
     if [ -n "$ENABLED_SERVICES" ]; then
         log_info "按 .env/命令参数启用的可选服务:${ENABLED_SERVICES}"
     else
-        log_info "按 .env 配置仅启动基础服务: postgres, redis, docreader"
+        log_info "按 .env 配置仅启动基础服务: postgres, redis, docreader, mineru-api"
     fi
 
     if cleanup_stale_dev_containers; then
@@ -525,6 +533,7 @@ start_services() {
         echo "  - PostgreSQL:    localhost:5432"
         echo "  - Redis:         localhost:6379"
         echo "  - DocReader:     localhost:50051"
+        echo "  - MinerU API:    localhost:${MINERU_PORT:-18000}"
         
         # 根据启用的 profile 显示额外服务
         if [[ "$ENABLED_SERVICES" == *"minio"* ]]; then

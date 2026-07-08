@@ -4,6 +4,8 @@
 
 组织（Organization，又称"空间"）是 WeKnora 的多租户协作单元。一个用户可以创建/加入多个组织，并以 owner / admin / editor / viewer 的角色参与；知识库与智能体可以共享到组织内，组织成员根据角色获得相应的访问权限。
 
+> 注意：本页中的 `owner / admin / editor / viewer` 指的是**协作空间角色（collaboration role）**，不是租户 `tenant_members.role`，也不是组织树 `org-tree role`。统一术语与 API 边界请参考 [../权限角色与API边界统一说明.md](../权限角色与API边界统一说明.md)。
+
 本页文档覆盖以下六类接口：
 
 - 组织管理：组织 CRUD、邀请码、搜索、加入与离开
@@ -17,7 +19,7 @@
 - 所有路径前缀为 `/api/v1`
 - 鉴权头：`X-API-Key: sk-xxxxx`（或 `Authorization: Bearer ...`）
 - 错误响应统一为 `{ "success": false, "error": "..." }`，HTTP 状态码遵循 RESTful 语义
-- 角色 (`OrgMemberRole`) 取值：`owner` / `admin` / `editor` / `viewer`
+- 角色 (`OrgMemberRole`) 取值：`owner` / `admin` / `editor` / `viewer`，含义仅限协作空间成员关系
 - 共享权限 (`permission`) 取值：`viewer` / `editor`（创建时通常只允许这两个）
 
 ## 路由总览

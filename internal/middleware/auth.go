@@ -541,7 +541,7 @@ func resolveTenantRole(
 	// 2. 跨租户超管直通：CanAccessAllTenants 用户切到别的租户时不强制要求 membership。
 	//    注意：这里只授予临时 Admin 角色，不写入 tenant_members，避免"看一眼别人租户"
 	//    意外升级为持久化所有权。
-	if crossTenantSwitch && user.CanAccessAllTenants {
+	if crossTenantSwitch && hasCrossTenantSuperuserCapability(user) {
 		logger.Infof(ctx,
 			"[auth] resolveTenantRole step2 (cross-tenant superuser) -> Admin: user=%s tenant=%d",
 			user.ID, targetTenantID)

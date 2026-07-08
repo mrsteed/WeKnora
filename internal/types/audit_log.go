@@ -116,6 +116,10 @@ const (
 	// reader can distinguish a real revoke from a noop attempt.
 	// TenantID=0 because the change is system-scope.
 	AuditActionSystemAdminRevoked AuditAction = "system.admin_revoked"
+	// AuditActionBuiltinAgentConfigUpdated fires when a tenant-scoped override of
+	// a built-in agent's config is created or updated. The actor is the tenant
+	// admin (or system admin) making the change; TargetID is the built-in agent ID.
+	AuditActionBuiltinAgentConfigUpdated AuditAction = "agent.builtin_config_updated"
 )
 
 // AuditOutcome distinguishes successful mutations from middleware-level

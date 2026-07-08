@@ -224,6 +224,7 @@ func RequireKBAccess(
 	resolveKBID KBIDResolver,
 	requiredPermission types.OrgMemberRole,
 	kbService KBLookup,
+	kbVisibility interfaces.KBVisibilityService,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
 	cfg *config.Config,
@@ -246,7 +247,7 @@ func RequireKBAccess(
 		// regardless of whether RBAC enforcement is active.
 		enforcing := rbacEnforcementEnabled(cfg)
 
-		access, err := resolveKBAccessOnce(ctx, c, kbID, requiredPermission, kbService, kbShareService, agentShareService)
+		access, err := resolveKBAccessOnce(ctx, c, kbID, requiredPermission, kbService, kbVisibility, kbShareService, agentShareService)
 		switch {
 		case stderrors.Is(err, errKBAccessUnauthorized):
 			if !enforcing {
@@ -311,6 +312,7 @@ func resolveKBAccessOnce(
 	kbID string,
 	requiredPermission types.OrgMemberRole,
 	kbService KBLookup,
+	kbVisibility interfaces.KBVisibilityService,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
 ) (*KBAccess, error) {
@@ -319,6 +321,8 @@ func resolveKBAccessOnce(
 		return nil, errKBAccessUnauthorized
 	}
 	callerTenantRole := types.TenantRoleFromContext(ctx)
+	callerUserID, _ := types.UserIDFromContext(ctx)
+	isPrivilegedOperator := kbAccessPrivilegedOperatorFromContext(c)
 
 	kb, err := kbService.GetKnowledgeBaseByID(ctx, kbID)
 	if err != nil {
@@ -333,6 +337,41 @@ func resolveKBAccessOnce(
 
 	// 1. Own KB.
 	if kb.TenantID == tenantID {
+		if callerTenantRole.HasPermission(types.TenantRoleAdmin) || isPrivilegedOperator {
+			return &KBAccess{
+				KnowledgeBase:     kb,
+				EffectiveTenantID: tenantID,
+				Permission:        types.OrgRoleAdmin,
+			}, nil
+		}
+		if kbVisibility != nil {
+			if requiredPermission == types.OrgRoleViewer {
+				canRead, err := kbVisibility.CanAccessKB(ctx, callerUserID, tenantID, kbID, isPrivilegedOperator)
+				if err != nil {
+					return nil, err
+				}
+				if !canRead {
+					return nil, errKBAccessForbidden
+				}
+				permission := types.OrgRoleViewer
+				if canManage, err := kbVisibility.CanManageKB(ctx, callerUserID, tenantID, kbID, isPrivilegedOperator); err == nil && canManage {
+					permission = types.OrgRoleAdmin
+				}
+				return &KBAccess{
+					KnowledgeBase:     kb,
+					EffectiveTenantID: tenantID,
+					Permission:        permission,
+				}, nil
+			}
+
+			canManage, err := kbVisibility.CanManageKB(ctx, callerUserID, tenantID, kbID, isPrivilegedOperator)
+			if err != nil {
+				return nil, err
+			}
+			if !canManage {
+				return nil, errKBAccessForbidden
+			}
+		}
 		return &KBAccess{
 			KnowledgeBase:     kb,
 			EffectiveTenantID: tenantID,
@@ -442,3 +481,18 @@ var (
 	errKBAccessNotFound     = stderrors.New("kb_access: not found")
 	errKBAccessForbidden    = stderrors.New("kb_access: forbidden")
 )
+
+func kbAccessPrivilegedOperatorFromContext(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	userVal, ok := c.Get(types.UserContextKey.String())
+	if !ok {
+		return types.IsSystemAdminFromContext(c.Request.Context())
+	}
+	user, ok := userVal.(*types.User)
+	if !ok || user == nil {
+		return types.IsSystemAdminFromContext(c.Request.Context())
+	}
+	return user.IsSystemAdmin || user.IsSuperAdmin || user.CanAccessAllTenants
+}

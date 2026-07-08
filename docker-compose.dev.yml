@@ -278,6 +278,40 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  mineru-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mineru-cpu
+    image: weknora-mineru-cpu:local
+    container_name: WeKnora-mineru-api-dev
+    profiles:
+      - mineru
+    ports:
+      - "${MINERU_PORT:-18000}:8000"
+    environment:
+      - MINERU_MODEL_SOURCE=${MINERU_MODEL_SOURCE:-modelscope}
+      - MINERU_API_OUTPUT_ROOT=/data/output
+      - MINERU_TOOLS_CONFIG_JSON=/data/config/mineru.json
+      - HF_HOME=/data/huggingface
+      - MODELSCOPE_CACHE=/data/modelscope
+      - MINERU_API_ENABLE_FASTAPI_DOCS=${MINERU_API_ENABLE_FASTAPI_DOCS:-true}
+      - MINERU_API_MAX_CONCURRENT_REQUESTS=${MINERU_API_MAX_CONCURRENT_REQUESTS:-1}
+      - MINERU_PDF_RENDER_THREADS=${MINERU_PDF_RENDER_THREADS:-1}
+      - MINERU_PROCESSING_WINDOW_SIZE=${MINERU_PROCESSING_WINDOW_SIZE:-32}
+      - MINERU_INTRA_OP_NUM_THREADS=${MINERU_INTRA_OP_NUM_THREADS:--1}
+      - MINERU_INTER_OP_NUM_THREADS=${MINERU_INTER_OP_NUM_THREADS:--1}
+    volumes:
+      - ${WEKNORA_DEV_MINERU_DATA_VOLUME:-mineru-data-dev}:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - WeKnora-network-dev
+    restart: unless-stopped
+
   # OpenDataLoader hybrid backend (optional). Enable profile "odl-hybrid" and set
   # DOCREADER_ODL_HYBRID=docling-fast on docreader. Default --no-ocr (no EasyOCR).
   # Local build only — not published to Docker Hub.

@@ -216,6 +216,8 @@ func (r *userRepository) RevokeSystemAdmin(ctx context.Context, userID, actorID 
 		}
 
 		user.IsSystemAdmin = false
+		user.IsSuperAdmin = false
+		user.CanAccessAllTenants = false
 		if err := tx.Save(&user).Error; err != nil {
 			return err
 		}

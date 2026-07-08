@@ -28,6 +28,26 @@ type stubKBService struct {
 	get func(ctx context.Context, id string) (*types.KnowledgeBase, error)
 }
 
+type stubKBVisibilityService struct {
+	interfaces.KBVisibilityService
+	canAccess func(ctx context.Context, userID string, tenantID uint64, kbID string, isSuperAdmin bool) (bool, error)
+	canManage func(ctx context.Context, userID string, tenantID uint64, kbID string, isSuperAdmin bool) (bool, error)
+}
+
+func (s *stubKBVisibilityService) CanAccessKB(ctx context.Context, userID string, tenantID uint64, kbID string, isSuperAdmin bool) (bool, error) {
+	if s.canAccess == nil {
+		return false, nil
+	}
+	return s.canAccess(ctx, userID, tenantID, kbID, isSuperAdmin)
+}
+
+func (s *stubKBVisibilityService) CanManageKB(ctx context.Context, userID string, tenantID uint64, kbID string, isSuperAdmin bool) (bool, error) {
+	if s.canManage == nil {
+		return false, nil
+	}
+	return s.canManage(ctx, userID, tenantID, kbID, isSuperAdmin)
+}
+
 func (s *stubKBService) GetKnowledgeBaseByID(ctx context.Context, id string) (*types.KnowledgeBase, error) {
 	return s.get(ctx, id)
 }
@@ -38,7 +58,9 @@ func newKBLookupCtx(t *testing.T, tenantID uint64, paramID string) *gin.Context 
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodGet, "/x", nil)
 	ctx := context.WithValue(c.Request.Context(), types.TenantIDContextKey, tenantID)
+	ctx = context.WithValue(ctx, types.UserIDContextKey, "u-current")
 	c.Request = c.Request.WithContext(ctx)
+	c.Set(types.UserContextKey.String(), &types.User{ID: "u-current"})
 	c.Params = gin.Params{{Key: "id", Value: paramID}}
 	return c
 }
@@ -86,6 +108,28 @@ func TestKBCreatorLookup_OwnerMatchReturnsCreatorID(t *testing.T) {
 	}
 }
 
+func TestKBCreatorLookup_OrgAdminActsAsOwner(t *testing.T) {
+	h := &KnowledgeBaseHandler{
+		service: &stubKBService{
+			get: func(_ context.Context, _ string) (*types.KnowledgeBase, error) {
+				return &types.KnowledgeBase{ID: "kb-1", TenantID: 1, CreatorID: "u-creator"}, nil
+			},
+		},
+		kbVisibility: &stubKBVisibilityService{
+			canManage: func(_ context.Context, userID string, tenantID uint64, kbID string, _ bool) (bool, error) {
+				return userID == "u-current" && tenantID == 1 && kbID == "kb-1", nil
+			},
+		},
+	}
+	creator, err := h.KBCreatorLookup(newKBLookupCtx(t, 1, "kb-1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if creator != "u-current" {
+		t.Fatalf("expected current user to act as owner, got %q", creator)
+	}
+}
+
 func TestKBCreatorLookup_MissingTenantContext(t *testing.T) {
 	// Without tenant context, the lookup can't decide scope. Surfacing
 	// a real error (which middleware turns into 503) is safer than
@@ -114,6 +158,18 @@ func TestKBCreatorLookup_MissingTenantContext(t *testing.T) {
 type stubAgentService struct {
 	interfaces.CustomAgentService
 	get func(ctx context.Context, id string) (*types.CustomAgent, error)
+}
+
+type stubAgentVisibilityService struct {
+	interfaces.AgentVisibilityService
+	canManage func(ctx context.Context, userID string, tenantID uint64, agentID string, isSuperAdmin bool) (bool, error)
+}
+
+func (s *stubAgentVisibilityService) CanManageAgent(ctx context.Context, userID string, tenantID uint64, agentID string, isSuperAdmin bool) (bool, error) {
+	if s.canManage == nil {
+		return false, nil
+	}
+	return s.canManage(ctx, userID, tenantID, agentID, isSuperAdmin)
 }
 
 func (s *stubAgentService) GetAgentByID(ctx context.Context, id string) (*types.CustomAgent, error) {
@@ -170,6 +226,28 @@ func TestAgentCreatorLookup_CrossTenantIsHiddenAsNotFound(t *testing.T) {
 	}
 }
 
+func TestAgentCreatorLookup_OrgAdminActsAsOwner(t *testing.T) {
+	h := &CustomAgentHandler{
+		service: &stubAgentService{
+			get: func(_ context.Context, _ string) (*types.CustomAgent, error) {
+				return &types.CustomAgent{ID: "agent-1", TenantID: 1, CreatedBy: "u-creator"}, nil
+			},
+		},
+		visibilityService: &stubAgentVisibilityService{
+			canManage: func(_ context.Context, userID string, tenantID uint64, agentID string, _ bool) (bool, error) {
+				return userID == "u-current" && tenantID == 1 && agentID == "agent-1", nil
+			},
+		},
+	}
+	creator, err := h.AgentCreatorLookup(newKBLookupCtx(t, 1, "agent-1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if creator != "u-current" {
+		t.Fatalf("expected current user to act as owner, got %q", creator)
+	}
+}
+
 // PR 5 (#1303) per-KB ownership lookups. The chain helper lives in the
 // service layer; the lookups here are pure adapters that translate the
 // repository sentinels into middleware.ErrResourceNotFound. Tests focus
@@ -183,10 +261,18 @@ func TestAgentCreatorLookup_CrossTenantIsHiddenAsNotFound(t *testing.T) {
 type stubKgService struct {
 	interfaces.KnowledgeService
 	getOwningKBCreatorID func(ctx context.Context, knowledgeID string) (string, error)
+	getKnowledgeByIDOnly  func(ctx context.Context, knowledgeID string) (*types.Knowledge, error)
 }
 
 func (s *stubKgService) GetOwningKBCreatorID(ctx context.Context, knowledgeID string) (string, error) {
 	return s.getOwningKBCreatorID(ctx, knowledgeID)
+}
+
+func (s *stubKgService) GetKnowledgeByIDOnly(ctx context.Context, knowledgeID string) (*types.Knowledge, error) {
+	if s.getKnowledgeByIDOnly == nil {
+		return nil, apprepo.ErrKnowledgeNotFound
+	}
+	return s.getKnowledgeByIDOnly(ctx, knowledgeID)
 }
 
 // newKnowledgeLookupCtx builds a gin.Context shaped like the
@@ -204,7 +290,9 @@ func newChunkLookupCtx(t *testing.T, tenantID uint64, knowledgeID string) *gin.C
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodGet, "/x", nil)
 	ctx := context.WithValue(c.Request.Context(), types.TenantIDContextKey, tenantID)
+	ctx = context.WithValue(ctx, types.UserIDContextKey, "u-current")
 	c.Request = c.Request.WithContext(ctx)
+	c.Set(types.UserContextKey.String(), &types.User{ID: "u-current"})
 	c.Params = gin.Params{{Key: "knowledge_id", Value: knowledgeID}}
 	return c
 }
@@ -217,7 +305,9 @@ func newWikiLookupCtx(t *testing.T, tenantID uint64, kbID string) *gin.Context {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodGet, "/x", nil)
 	ctx := context.WithValue(c.Request.Context(), types.TenantIDContextKey, tenantID)
+	ctx = context.WithValue(ctx, types.UserIDContextKey, "u-current")
 	c.Request = c.Request.WithContext(ctx)
+	c.Set(types.UserContextKey.String(), &types.User{ID: "u-current"})
 	c.Params = gin.Params{{Key: "kb_id", Value: kbID}}
 	return c
 }
@@ -249,6 +339,9 @@ func TestKBCreatorLookupFromKnowledgeID_NotFoundMapsToSentinel(t *testing.T) {
 
 func TestKBCreatorLookupFromKnowledgeID_OwnerMatchReturnsCreatorID(t *testing.T) {
 	h := &KnowledgeHandler{kgService: &stubKgService{
+		getKnowledgeByIDOnly: func(_ context.Context, _ string) (*types.Knowledge, error) {
+			return &types.Knowledge{ID: "kn-1", TenantID: 1, KnowledgeBaseID: "kb-1"}, nil
+		},
 		getOwningKBCreatorID: func(_ context.Context, _ string) (string, error) {
 			return "u-kb-creator", nil
 		},
@@ -259,6 +352,31 @@ func TestKBCreatorLookupFromKnowledgeID_OwnerMatchReturnsCreatorID(t *testing.T)
 	}
 	if creator != "u-kb-creator" {
 		t.Fatalf("expected creator=u-kb-creator, got %q", creator)
+	}
+}
+
+func TestKBCreatorLookupFromKnowledgeID_OrgAdminActsAsOwner(t *testing.T) {
+	h := &KnowledgeHandler{
+		kgService: &stubKgService{
+			getKnowledgeByIDOnly: func(_ context.Context, _ string) (*types.Knowledge, error) {
+				return &types.Knowledge{ID: "kn-1", TenantID: 1, KnowledgeBaseID: "kb-1"}, nil
+			},
+			getOwningKBCreatorID: func(_ context.Context, _ string) (string, error) {
+				return "u-kb-creator", nil
+			},
+		},
+		kbVisibility: &stubKBVisibilityService{
+			canManage: func(_ context.Context, userID string, tenantID uint64, kbID string, _ bool) (bool, error) {
+				return userID == "u-current" && tenantID == 1 && kbID == "kb-1", nil
+			},
+		},
+	}
+	creator, err := h.KBCreatorLookupFromKnowledgeID(newKnowledgeLookupCtx(t, 1, "kn-1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if creator != "u-current" {
+		t.Fatalf("expected current user to act as owner, got %q", creator)
 	}
 }
 
@@ -291,6 +409,9 @@ func TestKBCreatorLookupFromKnowledgeIDParam_ChunkRouteShape(t *testing.T) {
 	// read from the right param name. A bug here would silently break
 	// chunk delete/update on rollout.
 	h := &ChunkHandler{kgService: &stubKgService{
+		getKnowledgeByIDOnly: func(_ context.Context, knowledgeID string) (*types.Knowledge, error) {
+			return &types.Knowledge{ID: knowledgeID, TenantID: 1, KnowledgeBaseID: "kb-1"}, nil
+		},
 		getOwningKBCreatorID: func(_ context.Context, knowledgeID string) (string, error) {
 			if knowledgeID != "kn-from-chunk-route" {
 				t.Fatalf("lookup must read :knowledge_id, got %q", knowledgeID)
@@ -314,10 +435,38 @@ func TestKBCreatorLookupFromKnowledgeIDParam_NotFoundMapsToSentinel(t *testing.T
 		getOwningKBCreatorID: func(_ context.Context, _ string) (string, error) {
 			return "", apprepo.ErrKnowledgeNotFound
 		},
+		getKnowledgeByIDOnly: func(_ context.Context, _ string) (*types.Knowledge, error) {
+			return nil, apprepo.ErrKnowledgeNotFound
+		},
 	}}
 	_, err := h.KBCreatorLookupFromKnowledgeIDParam(newChunkLookupCtx(t, 1, "kn-1"))
 	if !errors.Is(err, middleware.ErrResourceNotFound) {
 		t.Fatalf("expected ErrResourceNotFound, got %v", err)
+	}
+}
+
+func TestKBCreatorLookupFromKnowledgeIDParam_OrgAdminActsAsOwner(t *testing.T) {
+	h := &ChunkHandler{
+		kgService: &stubKgService{
+			getKnowledgeByIDOnly: func(_ context.Context, _ string) (*types.Knowledge, error) {
+				return &types.Knowledge{ID: "kn-1", TenantID: 1, KnowledgeBaseID: "kb-1"}, nil
+			},
+			getOwningKBCreatorID: func(_ context.Context, _ string) (string, error) {
+				return "u-kb-creator", nil
+			},
+		},
+		kbVisible: &stubKBVisibilityService{
+			canManage: func(_ context.Context, userID string, tenantID uint64, kbID string, _ bool) (bool, error) {
+				return userID == "u-current" && tenantID == 1 && kbID == "kb-1", nil
+			},
+		},
+	}
+	creator, err := h.KBCreatorLookupFromKnowledgeIDParam(newChunkLookupCtx(t, 1, "kn-1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if creator != "u-current" {
+		t.Fatalf("expected current user to act as owner, got %q", creator)
 	}
 }
 
@@ -367,6 +516,28 @@ func TestKBCreatorLookupFromKBPath_OwnerMatchReturnsCreatorID(t *testing.T) {
 	}
 }
 
+func TestKBCreatorLookupFromKBPath_OrgAdminActsAsOwner(t *testing.T) {
+	h := &WikiPageHandler{
+		kbService: &stubKBService{
+			get: func(_ context.Context, _ string) (*types.KnowledgeBase, error) {
+				return &types.KnowledgeBase{ID: "kb-1", TenantID: 1, CreatorID: "u-creator"}, nil
+			},
+		},
+		kbVisibility: &stubKBVisibilityService{
+			canManage: func(_ context.Context, userID string, tenantID uint64, kbID string, _ bool) (bool, error) {
+				return userID == "u-current" && tenantID == 1 && kbID == "kb-1", nil
+			},
+		},
+	}
+	creator, err := h.KBCreatorLookupFromKBPath(newWikiLookupCtx(t, 1, "kb-1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if creator != "u-current" {
+		t.Fatalf("expected current user to act as owner, got %q", creator)
+	}
+}
+
 // stubChunkService stands in for interfaces.ChunkService for the
 // chunk-id-driven lookup. Only GetChunkByIDOnly is stubbed; everything
 // else panics on contact so a future refactor that broadens the
@@ -388,7 +559,9 @@ func newChunkIDLookupCtx(t *testing.T, tenantID uint64, chunkID string) *gin.Con
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodGet, "/x", nil)
 	ctx := context.WithValue(c.Request.Context(), types.TenantIDContextKey, tenantID)
+	ctx = context.WithValue(ctx, types.UserIDContextKey, "u-current")
 	c.Request = c.Request.WithContext(ctx)
+	c.Set(types.UserContextKey.String(), &types.User{ID: "u-current"})
 	c.Params = gin.Params{{Key: "id", Value: chunkID}}
 	return c
 }
@@ -404,6 +577,9 @@ func TestKBCreatorLookupFromChunkIDParam_HappyPath(t *testing.T) {
 			},
 		},
 		kgService: &stubKgService{
+			getKnowledgeByIDOnly: func(_ context.Context, knowledgeID string) (*types.Knowledge, error) {
+				return &types.Knowledge{ID: knowledgeID, TenantID: 1, KnowledgeBaseID: "kb-1"}, nil
+			},
 			getOwningKBCreatorID: func(_ context.Context, knowledgeID string) (string, error) {
 				if knowledgeID != "kn-1" {
 					t.Fatalf("expected knowledge id=kn-1, got %q", knowledgeID)
@@ -432,6 +608,36 @@ func TestKBCreatorLookupFromChunkIDParam_ChunkNotFoundMapsToSentinel(t *testing.
 	_, err := h.KBCreatorLookupFromChunkIDParam(newChunkIDLookupCtx(t, 1, "ch-1"))
 	if !errors.Is(err, middleware.ErrResourceNotFound) {
 		t.Fatalf("expected ErrResourceNotFound, got %v", err)
+	}
+}
+
+func TestKBCreatorLookupFromChunkIDParam_OrgAdminActsAsOwner(t *testing.T) {
+	h := &ChunkHandler{
+		service: &stubChunkService{
+			getByIDOnly: func(_ context.Context, _ string) (*types.Chunk, error) {
+				return &types.Chunk{ID: "ch-1", TenantID: 1, KnowledgeID: "kn-1", KnowledgeBaseID: "kb-1"}, nil
+			},
+		},
+		kgService: &stubKgService{
+			getKnowledgeByIDOnly: func(_ context.Context, _ string) (*types.Knowledge, error) {
+				return &types.Knowledge{ID: "kn-1", TenantID: 1, KnowledgeBaseID: "kb-1"}, nil
+			},
+			getOwningKBCreatorID: func(_ context.Context, _ string) (string, error) {
+				return "u-kb-creator", nil
+			},
+		},
+		kbVisible: &stubKBVisibilityService{
+			canManage: func(_ context.Context, userID string, tenantID uint64, kbID string, _ bool) (bool, error) {
+				return userID == "u-current" && tenantID == 1 && kbID == "kb-1", nil
+			},
+		},
+	}
+	creator, err := h.KBCreatorLookupFromChunkIDParam(newChunkIDLookupCtx(t, 1, "ch-1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if creator != "u-current" {
+		t.Fatalf("expected current user to act as owner, got %q", creator)
 	}
 }
 

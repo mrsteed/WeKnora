@@ -11,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
@@ -21,6 +22,7 @@ import (
 type WikiPageHandler struct {
 	wikiService     interfaces.WikiPageService
 	kbService       interfaces.KnowledgeBaseService
+	kbVisibility    interfaces.KBVisibilityService
 	lintService     *service.WikiLintService
 	logEntryService interfaces.WikiLogEntryService
 }
@@ -29,12 +31,14 @@ type WikiPageHandler struct {
 func NewWikiPageHandler(
 	wikiService interfaces.WikiPageService,
 	kbService interfaces.KnowledgeBaseService,
+	kbVisibility interfaces.KBVisibilityService,
 	lintService *service.WikiLintService,
 	logEntryService interfaces.WikiLogEntryService,
 ) *WikiPageHandler {
 	return &WikiPageHandler{
 		wikiService:     wikiService,
 		kbService:       kbService,
+		kbVisibility:    kbVisibility,
 		lintService:     lintService,
 		logEntryService: logEntryService,
 	}
@@ -44,10 +48,17 @@ func NewWikiPageHandler(
 func (h *WikiPageHandler) validateWikiKB(c *gin.Context) (string, uint64, error) {
 	ctx := c.Request.Context()
 	kbID := secutils.SanitizeForLog(c.Param("kb_id"))
-	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	tenantID, _ := types.TenantIDFromContext(ctx)
 
 	if kbID == "" {
 		return "", 0, errors.NewBadRequestError("Knowledge base ID is required")
+	}
+
+	if access, ok := middleware.KBAccessFromContext(c); ok && access != nil && access.KnowledgeBase != nil {
+		if !access.KnowledgeBase.IsWikiEnabled() {
+			return "", 0, errors.NewBadRequestError("Wiki feature is not enabled for this knowledge base")
+		}
+		return access.KnowledgeBase.ID, access.EffectiveTenantID, nil
 	}
 
 	kb, err := h.kbService.GetKnowledgeBaseByID(ctx, kbID)

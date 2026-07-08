@@ -2,6 +2,8 @@
 
 本文档介绍 WeKnora **租户内权限控制（Tenant RBAC）** 的设计、角色矩阵、资源归属模型、配置方式，以及它与 [共享空间](./共享空间说明.md) 之间的关系。
 
+> 最新的术语统一与 API 权限边界，请同时参考 [权限角色与API边界统一说明.md](./权限角色与API边界统一说明.md)。
+
 > 状态：已随 #1303 发布，由配置项 `tenant.enable_rbac` 控制，默认 `true`（强制鉴权）。可临时切到 `false` 进入「仅记录不拦截」的灰度窗口。
 
 ## 一、为什么需要 RBAC
@@ -32,6 +34,13 @@ RBAC 在原有 JWT / API Key 认证之上，叠加了一层**租户内角色矩�
 - **跨租户超管**：`User.CanAccessAllTenants=true` 且 `enable_cross_tenant_access=true` 时，通过 `X-Tenant-ID` 切换到目标租户后等同 Admin，不需要在目标租户里有 `tenant_members` 行。用于多租户运营方。
 - **API Key 调用**：`X-API-Key` 合成的虚拟用户在其所属租户内固定为 Admin（仅删除租户仍需 Owner）。脚本集成无需迁移。
 - **孤儿租户自愈**：若一个租户在 `tenant_members` 表里没有任何活跃成员（典型场景：仅 API Key 使用过该租户），首位通过认证的真人会被自动晋升为 Owner，避免锁死。
+
+## 二点五、术语对齐
+
+- **空间管理员**：`tenant_members.role >= admin`，负责当前空间成员与基础设施。
+- **部门管理员**：组织树 `admin`，负责同租户内本部门及其子树作用域的资源管理。
+- **协作空间管理员**：`organization_tenant_members.role=admin`，负责跨租户共享空间成员与共享关系。
+- **超级管理员**：系统管理员 + 跨空间运营能力；可以切入任意空间，但不默认等于目标空间 Owner。
 
 ## 三、资源归属模型
 

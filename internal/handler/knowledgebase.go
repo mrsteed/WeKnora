@@ -15,6 +15,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/errors"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -430,6 +431,9 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 // For shared KBs, effectiveTenantID is the source tenant ID (owner's tenant)
 func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(c *gin.Context) (*types.KnowledgeBase, string, uint64, types.OrgMemberRole, error) {
 	ctx := c.Request.Context()
+	if access, ok := middleware.KBAccessFromContext(c); ok && access != nil && access.KnowledgeBase != nil {
+		return access.KnowledgeBase, access.KnowledgeBase.ID, access.EffectiveTenantID, access.Permission, nil
+	}
 
 	// Get tenant ID from context
 	tenantID, exists := c.Get(types.TenantIDContextKey.String())
@@ -683,11 +687,12 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 		return
 	}
 
-	// Check if user is super admin
-	var isSuperAdmin bool
+	// Tenant Admin/Owner and platform operators bypass same-tenant visibility
+	// filtering and can see all KBs in the active tenant.
+	var bypassVisibility bool
 	if userVal, ok := c.Get(types.UserContextKey.String()); ok {
 		if user, ok := userVal.(*types.User); ok && user != nil {
-			isSuperAdmin = user.IsSuperAdmin
+			bypassVisibility = canBypassSameTenantResourceVisibility(ctx, user)
 		}
 	}
 
@@ -695,7 +700,7 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 	var kbs []*types.KnowledgeBase
 	if h.kbVisibility != nil {
 		var err error
-		kbs, err = h.kbVisibility.ListAccessibleKBs(ctx, userID, currentTenantID, isSuperAdmin)
+		kbs, err = h.kbVisibility.ListAccessibleKBs(ctx, userID, currentTenantID, bypassVisibility)
 		if err != nil {
 			logger.ErrorWithFields(ctx, err, nil)
 			c.Error(apperrors.NewInternalServerError(err.Error()))

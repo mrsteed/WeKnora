@@ -29,11 +29,12 @@ import (
 type ChunkHandler struct {
 	service   interfaces.ChunkService
 	kgService interfaces.KnowledgeService
+	kbVisible interfaces.KBVisibilityService
 }
 
 // NewChunkHandler creates a new chunk handler.
-func NewChunkHandler(service interfaces.ChunkService, kgService interfaces.KnowledgeService) *ChunkHandler {
-	return &ChunkHandler{service: service, kgService: kgService}
+func NewChunkHandler(service interfaces.ChunkService, kgService interfaces.KnowledgeService, kbVisible interfaces.KBVisibilityService) *ChunkHandler {
+	return &ChunkHandler{service: service, kgService: kgService, kbVisible: kbVisible}
 }
 
 // GetChunkByIDOnly godoc

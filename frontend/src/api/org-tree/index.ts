@@ -53,6 +53,7 @@ export interface CreateUserInOrgRequest {
   phone?: string
   password: string
   role: 'admin' | 'editor' | 'viewer'
+  tenant_role?: 'owner' | 'admin' | 'contributor' | 'viewer'
 }
 
 export interface UpdateUserInOrgRequest {

@@ -18,6 +18,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -31,6 +32,7 @@ import (
 type KnowledgeHandler struct {
 	kgService         interfaces.KnowledgeService
 	kbService         interfaces.KnowledgeBaseService
+	kbVisibility      interfaces.KBVisibilityService
 	kbShareService    interfaces.KBShareService
 	agentShareService interfaces.AgentShareService
 	asynqClient       interfaces.TaskEnqueuer
@@ -41,6 +43,7 @@ type KnowledgeHandler struct {
 func NewKnowledgeHandler(
 	kgService interfaces.KnowledgeService,
 	kbService interfaces.KnowledgeBaseService,
+	kbVisibility interfaces.KBVisibilityService,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
 	asynqClient interfaces.TaskEnqueuer,
@@ -49,6 +52,7 @@ func NewKnowledgeHandler(
 	return &KnowledgeHandler{
 		kgService:         kgService,
 		kbService:         kbService,
+		kbVisibility:      kbVisibility,
 		kbShareService:    kbShareService,
 		agentShareService: agentShareService,
 		asynqClient:       asynqClient,
@@ -67,8 +71,13 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccess(c *gin.Context) (*types.K
 // Returns the knowledge base, kbID, effective tenant ID, permission, and error.
 func (h *KnowledgeHandler) validateKnowledgeBaseAccessWithKBID(c *gin.Context, kbID string) (*types.KnowledgeBase, string, uint64, types.OrgMemberRole, error) {
 	ctx := c.Request.Context()
-	tenantID := c.GetUint64(types.TenantIDContextKey.String())
-	if tenantID == 0 {
+	if access, ok := middleware.KBAccessFromContext(c); ok && access != nil && access.KnowledgeBase != nil {
+		if strings.TrimSpace(kbID) == "" || access.KnowledgeBase.ID == strings.TrimSpace(kbID) {
+			return access.KnowledgeBase, access.KnowledgeBase.ID, access.EffectiveTenantID, access.Permission, nil
+		}
+	}
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok || tenantID == 0 {
 		logger.Error(ctx, "Failed to get tenant ID")
 		return nil, "", 0, "", errors.NewUnauthorizedError("Unauthorized")
 	}
@@ -91,6 +100,29 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccessWithKBID(c *gin.Context, k
 		return nil, kbID, 0, "", errors.NewInternalServerError(err.Error())
 	}
 	if kb.TenantID == tenantID {
+		if canBypassSameTenantResourceVisibilityFromContext(c) {
+			return kb, kbID, tenantID, types.OrgRoleAdmin, nil
+		}
+		if h.kbVisibility != nil {
+			userIDStr, _ := types.UserIDFromContext(ctx)
+			canManage, manageErr := h.kbVisibility.CanManageKB(ctx, userIDStr, tenantID, kbID, false)
+			if manageErr != nil {
+				logger.ErrorWithFields(ctx, manageErr, nil)
+				return nil, kbID, 0, "", errors.NewInternalServerError(manageErr.Error())
+			}
+			if canManage {
+				return kb, kbID, tenantID, types.OrgRoleAdmin, nil
+			}
+			canAccess, accessErr := h.kbVisibility.CanAccessKB(ctx, userIDStr, tenantID, kbID, false)
+			if accessErr != nil {
+				logger.ErrorWithFields(ctx, accessErr, nil)
+				return nil, kbID, 0, "", errors.NewInternalServerError(accessErr.Error())
+			}
+			if canAccess {
+				return kb, kbID, tenantID, types.OrgRoleViewer, nil
+			}
+			return nil, kbID, 0, "", errors.NewForbiddenError("Permission denied to access this knowledge base")
+		}
 		return kb, kbID, tenantID, types.OrgRoleAdmin, nil
 	}
 	if h.kbShareService != nil {
@@ -121,8 +153,8 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccessWithKBID(c *gin.Context, k
 // Returns the knowledge, context with effectiveTenantID set for downstream service calls, and error.
 func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(c *gin.Context, knowledgeID string, requiredPermission types.OrgMemberRole) (*types.Knowledge, context.Context, error) {
 	ctx := c.Request.Context()
-	tenantID := c.GetUint64(types.TenantIDContextKey.String())
-	if tenantID == 0 {
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok || tenantID == 0 {
 		return nil, ctx, errors.NewUnauthorizedError("Unauthorized")
 	}
 	userID, userExists := c.Get(types.UserIDContextKey.String())
@@ -133,8 +165,35 @@ func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(c *gin.Context, k
 		return nil, ctx, errors.NewNotFoundError("Knowledge not found")
 	}
 
-	// Owner: knowledge belongs to caller's tenant
+	// Same-tenant knowledge must still respect KB visibility. Tenant
+	// Admin/Owner keep full access; everyone else falls back to the KB
+	// visibility decision.
 	if knowledge.TenantID == tenantID {
+		if canBypassSameTenantResourceVisibilityFromContext(c) {
+			return knowledge, context.WithValue(ctx, types.TenantIDContextKey, tenantID), nil
+		}
+		if h.kbVisibility != nil {
+			userIDStr, _ := types.UserIDFromContext(ctx)
+			if requiredPermission == types.OrgRoleViewer {
+				canAccess, accessErr := h.kbVisibility.CanAccessKB(ctx, userIDStr, tenantID, knowledge.KnowledgeBaseID, false)
+				if accessErr != nil {
+					return nil, ctx, errors.NewInternalServerError(accessErr.Error())
+				}
+				if !canAccess {
+					return nil, ctx, errors.NewForbiddenError("Permission denied to access this knowledge")
+				}
+				return knowledge, context.WithValue(ctx, types.TenantIDContextKey, tenantID), nil
+			}
+
+			canManage, manageErr := h.kbVisibility.CanManageKB(ctx, userIDStr, tenantID, knowledge.KnowledgeBaseID, false)
+			if manageErr != nil {
+				return nil, ctx, errors.NewInternalServerError(manageErr.Error())
+			}
+			if !canManage {
+				return nil, ctx, errors.NewForbiddenError("Permission denied to access this knowledge")
+			}
+			return knowledge, context.WithValue(ctx, types.TenantIDContextKey, tenantID), nil
+		}
 		return knowledge, context.WithValue(ctx, types.TenantIDContextKey, tenantID), nil
 	}
 

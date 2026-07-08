@@ -17,17 +17,72 @@ import (
 type OrgTreeHandler struct {
 	orgTreeService interfaces.OrgTreeService
 	userService    interfaces.UserService
+	memberService  interfaces.TenantMemberService
 }
 
 // NewOrgTreeHandler creates a new org-tree handler
 func NewOrgTreeHandler(
 	orgTreeService interfaces.OrgTreeService,
 	userService interfaces.UserService,
+	memberService interfaces.TenantMemberService,
 ) *OrgTreeHandler {
 	return &OrgTreeHandler{
 		orgTreeService: orgTreeService,
 		userService:    userService,
+		memberService:  memberService,
 	}
+}
+
+func normalizeOrgRole(raw string) (types.OrgMemberRole, error) {
+	role := types.OrgMemberRole(strings.TrimSpace(raw))
+	if role == "" {
+		return "", apperrors.NewValidationError("organization role is required")
+	}
+	if !role.IsValid() {
+		return "", apperrors.NewValidationError("invalid organization role")
+	}
+	return role, nil
+}
+
+func isPrivilegedOrgTreeOperator(user *types.User) bool {
+	if user == nil {
+		return false
+	}
+	return user.IsSystemAdmin || user.IsSuperAdmin || user.CanAccessAllTenants
+}
+
+func canBootstrapRootOrg(user *types.User, currentRole types.TenantRole, orgCount int) bool {
+	if isPrivilegedOrgTreeOperator(user) {
+		return true
+	}
+	if orgCount != 0 {
+		return false
+	}
+	return currentRole.HasPermission(types.TenantRoleAdmin)
+}
+
+func canAssignTenantRole(user *types.User, currentRole types.TenantRole, requested types.TenantRole) bool {
+	if isPrivilegedOrgTreeOperator(user) {
+		return true
+	}
+	if requested == "" {
+		return true
+	}
+	return currentRole.HasPermission(types.TenantRoleOwner)
+}
+
+func resolveTenantRoleForProvision(user *types.User, callerTenantRole types.TenantRole, req *types.CreateUserInOrgRequest) (types.TenantRole, error) {
+	requested := types.TenantRole(strings.TrimSpace(req.TenantRole))
+	if requested == "" {
+		return types.TenantRoleViewer, nil
+	}
+	if !requested.IsValid() {
+		return "", apperrors.NewValidationError("tenant_role must be one of owner/admin/contributor/viewer")
+	}
+	if !canAssignTenantRole(user, callerTenantRole, requested) {
+		return "", apperrors.NewForbiddenError("You do not have permission to assign the requested tenant role")
+	}
+	return requested, nil
 }
 
 // getUserFromContext extracts the current user from the Gin context.
@@ -50,7 +105,7 @@ func (h *OrgTreeHandler) getUserFromContext(c *gin.Context) (*types.User, bool) 
 // or any of its ancestor organizations (permission inheritance via materialized path).
 // Super admins are always considered admin of any org.
 func (h *OrgTreeHandler) isOrgAdminOf(c *gin.Context, user *types.User, orgID string, tenantID uint64) bool {
-	if user.IsSuperAdmin {
+	if isPrivilegedOrgTreeOperator(user) {
 		return true
 	}
 	ctx := c.Request.Context()
@@ -95,7 +150,7 @@ func parseAncestorIDs(path string, selfID string) []string {
 
 // isOrgAdminOfAny checks if the user is a super admin or admin of any org-tree organization.
 func (h *OrgTreeHandler) isOrgAdminOfAny(c *gin.Context, user *types.User, tenantID uint64) bool {
-	if user.IsSuperAdmin {
+	if isPrivilegedOrgTreeOperator(user) {
 		return true
 	}
 	ctx := c.Request.Context()
@@ -129,14 +184,30 @@ func (h *OrgTreeHandler) GetOrgTree(c *gin.Context) {
 	if !ok {
 		return
 	}
+	callerTenantRole := types.TenantRoleFromContext(ctx)
 
-	// Permission gate: must be super admin or org admin
+	// Permission gate: privileged operators see the full tree; org admins see
+	// their managed subtrees. Tenant admins/owners bootstrapping a brand-new
+	// workspace may read an empty tree so they can create the first root org.
 	if !h.isOrgAdminOfAny(c, user, tenantID) {
-		c.Error(apperrors.NewForbiddenError("You do not have permission to access the organization tree"))
+		tree, err := h.orgTreeService.GetTree(ctx, tenantID)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to get org tree during bootstrap check: %v", err)
+			c.Error(apperrors.NewInternalServerError("Failed to get organization tree").WithDetails(err.Error()))
+			return
+		}
+		if !canBootstrapRootOrg(user, callerTenantRole, len(tree)) {
+			c.Error(apperrors.NewForbiddenError("You do not have permission to access the organization tree"))
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    tree,
+		})
 		return
 	}
 
-	tree, err := h.orgTreeService.GetTreeForUser(ctx, user.ID, tenantID, user.IsSuperAdmin)
+	tree, err := h.orgTreeService.GetTreeForUser(ctx, user.ID, tenantID, isPrivilegedOrgTreeOperator(user))
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get org tree: %v", err)
 		c.Error(apperrors.NewInternalServerError("Failed to get organization tree").WithDetails(err.Error()))
@@ -164,6 +235,7 @@ func (h *OrgTreeHandler) CreateOrgNode(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := c.GetString(types.UserIDContextKey.String())
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	callerTenantRole := types.TenantRoleFromContext(ctx)
 
 	var req types.CreateOrgTreeNodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -177,13 +249,22 @@ func (h *OrgTreeHandler) CreateOrgNode(c *gin.Context) {
 		return
 	}
 
-	// 如果不是超级管理员，需要进行权限检查
-	if !user.IsSuperAdmin {
+	// Privileged operators can create any root or child org. Tenant admins and
+	// owners may bootstrap exactly the first root org in an empty workspace.
+	if !isPrivilegedOrgTreeOperator(user) {
 		// 不允许创建根组织（parent_id为空或空字符串）
 		if req.ParentID == nil || *req.ParentID == "" {
-			logger.Warnf(ctx, "Non-super-admin user %s attempted to create root organization", userID)
-			c.Error(apperrors.NewForbiddenError("Only super administrators can create root organizations"))
-			return
+			tree, err := h.orgTreeService.GetTree(ctx, tenantID)
+			if err != nil {
+				logger.Errorf(ctx, "Failed to get org tree during bootstrap check: %v", err)
+				c.Error(apperrors.NewInternalServerError("Failed to create organization tree node").WithDetails(err.Error()))
+				return
+			}
+			if !canBootstrapRootOrg(user, callerTenantRole, len(tree)) {
+				logger.Warnf(ctx, "User %s attempted to create root organization without bootstrap permission", userID)
+				c.Error(apperrors.NewForbiddenError("Only super administrators or tenant admins bootstrapping an empty organization tree can create root organizations"))
+				return
+			}
 		}
 
 		// 检查用户是否是父组织的管理员
@@ -467,11 +548,27 @@ func (h *OrgTreeHandler) CreateUserInOrg(c *gin.Context) {
 	if !ok {
 		return
 	}
+	callerTenantRole := types.TenantRoleFromContext(ctx)
 
 	// Permission: must be admin of this org
 	if !h.isOrgAdminOf(c, user, orgID, tenantID) {
 		logger.Warnf(ctx, "User %s is not an admin of organization %s", user.ID, orgID)
 		c.Error(apperrors.NewForbiddenError("Only organization administrators can create users in this organization"))
+		return
+	}
+
+	orgRole, err := normalizeOrgRole(req.Role)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	tenantRole, err := resolveTenantRoleForProvision(user, callerTenantRole, &req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	if h.memberService == nil {
+		c.Error(apperrors.NewInternalServerError("tenant member service unavailable"))
 		return
 	}
 
@@ -483,17 +580,26 @@ func (h *OrgTreeHandler) CreateUserInOrg(c *gin.Context) {
 		return
 	}
 
-	// Step 2: Assign the newly created user to org
+	// Step 2: Bootstrap tenant membership so the new user can actually log into
+	// this workspace. Org-tree membership alone is not enough for RBAC.
+	if _, err := h.memberService.AddMember(ctx, newUser.ID, tenantID, tenantRole, nil); err != nil {
+		logger.Errorf(ctx, "User created but failed to create tenant membership: %v", err)
+		_ = h.userService.DeleteUser(ctx, newUser.ID)
+		c.Error(apperrors.NewInternalServerError("Failed to create tenant membership").WithDetails(err.Error()))
+		return
+	}
+
+	// Step 3: Assign the newly created user to org
 	assignReq := &types.AssignUserToOrgRequest{
 		UserID: newUser.ID,
-		Role:   types.OrgMemberRole(req.Role),
+		Role:   orgRole,
 	}
 	if err := h.orgTreeService.AssignUserToOrg(ctx, orgID, tenantID, assignReq); err != nil {
 		logger.Errorf(ctx, "User created but failed to assign to org: %v", err)
 		// User is created but assignment failed — return partial success
 		c.JSON(http.StatusOK, types.CreateUserInOrgResponse{
 			Success: true,
-			Message: "User created but failed to assign to organization: " + err.Error(),
+			Message: "User created and added to workspace, but failed to assign to organization: " + err.Error(),
 			User:    newUser.ToUserInfo(),
 		})
 		return
@@ -501,7 +607,7 @@ func (h *OrgTreeHandler) CreateUserInOrg(c *gin.Context) {
 
 	c.JSON(http.StatusOK, types.CreateUserInOrgResponse{
 		Success: true,
-		Message: "User created and assigned to organization successfully",
+		Message: "User created, added to workspace, and assigned to organization successfully",
 		User:    newUser.ToUserInfo(),
 	})
 }

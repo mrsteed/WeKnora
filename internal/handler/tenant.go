@@ -169,6 +169,11 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 		c.Error(errors.NewUnauthorizedError("authentication required"))
 		return
 	}
+	if !caller.IsSuperAdmin && !caller.IsSystemAdmin {
+		logger.Warnf(ctx, "Non-super-admin user %s attempted to create tenant", caller.ID)
+		c.Error(errors.NewForbiddenError("only super administrators can create tenants"))
+		return
+	}
 
 	var tenantData types.Tenant
 

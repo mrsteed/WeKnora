@@ -53,9 +53,14 @@ instance.interceptors.request.use(
     // 后端 IsTenantAccessible 已经允许 header 指向 home 租户（自家），
     // 所以无脑附不会引入新风险。
     if (!isEmbedAuth && !isEmbedPath) {
-      const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
-      if (selectedTenantId) {
-        config.headers["X-Tenant-ID"] = selectedTenantId;
+      const existingTenantHeader =
+        config.headers?.['X-Tenant-ID'] ??
+        config.headers?.['x-tenant-id'];
+      if (!existingTenantHeader) {
+        const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
+        if (selectedTenantId) {
+          config.headers["X-Tenant-ID"] = selectedTenantId;
+        }
       }
     }
     

@@ -62,8 +62,13 @@ export const useAuthStore = defineStore('auth', () => {
     return !!tenant.value && !!tenant.value.api_key
   })
 
+  // currentTenantId must follow the *active* tenant, not the home tenant.
+  // After a tenant switch the request layer always sends X-Tenant-ID from
+  // selectedTenantId; if this getter stayed pinned to tenant.value.id (home
+  // tenant), URL paths like /tenants/:id/members would target the wrong tenant
+  // and hit RequirePathTenantMatch() with a mismatched path-vs-context pair.
   const currentTenantId = computed(() => {
-    return tenant.value?.id || ''
+    return selectedTenantId.value || (tenant.value?.id ? Number(tenant.value.id) : null)
   })
 
   // currentTenantName resolves the active tenant's display name across the

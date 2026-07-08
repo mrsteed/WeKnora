@@ -31,6 +31,26 @@ func (s *stubKBLookup) GetKnowledgeBaseByID(_ context.Context, id string) (*type
 	return nil, apprepo.ErrKnowledgeBaseNotFound
 }
 
+type stubKBVisibilityForGuard struct {
+	interfaces.KBVisibilityService
+	canAccess func(ctx context.Context, userID string, tenantID uint64, kbID string, isSuperAdmin bool) (bool, error)
+	canManage func(ctx context.Context, userID string, tenantID uint64, kbID string, isSuperAdmin bool) (bool, error)
+}
+
+func (s *stubKBVisibilityForGuard) CanAccessKB(ctx context.Context, userID string, tenantID uint64, kbID string, isSuperAdmin bool) (bool, error) {
+	if s.canAccess == nil {
+		return true, nil
+	}
+	return s.canAccess(ctx, userID, tenantID, kbID, isSuperAdmin)
+}
+
+func (s *stubKBVisibilityForGuard) CanManageKB(ctx context.Context, userID string, tenantID uint64, kbID string, isSuperAdmin bool) (bool, error) {
+	if s.canManage == nil {
+		return false, nil
+	}
+	return s.canManage(ctx, userID, tenantID, kbID, isSuperAdmin)
+}
+
 // stubKBShareForGuard implements just the methods the guard touches —
 // CheckTenantKBPermission and GetKBSourceTenant. The other methods on
 // the interface panic so any unintended new dependency surfaces
@@ -172,8 +192,10 @@ func (s *stubAgentShareForGuard) CountByOrganizations(context.Context, []string)
 // guardOpts collects optional knobs for runGuard. Keeps the call site
 // readable when most tests only care about a couple of dimensions.
 type guardOpts struct {
-	agentID    string                  // ?agent_id query param
-	agentShare *stubAgentShareForGuard // nil means "no agent-share service"
+	agentID      string                    // ?agent_id query param
+	agentShare   *stubAgentShareForGuard   // nil means "no agent-share service"
+	kbVisibility *stubKBVisibilityForGuard // nil means legacy own-tenant fallback
+	tenantRole   types.TenantRole
 }
 
 // runGuard fires a single request through the guard and returns the
@@ -201,7 +223,12 @@ func runGuard(
 	}
 	req := httptest.NewRequest("GET", url, nil)
 	ctx := context.WithValue(req.Context(), types.TenantIDContextKey, tenantID)
+	ctx = context.WithValue(ctx, types.UserIDContextKey, "u-current")
+	if opts.tenantRole != "" {
+		ctx = context.WithValue(ctx, types.TenantRoleContextKey, opts.tenantRole)
+	}
 	c.Request = req.WithContext(ctx)
+	c.Set(types.UserContextKey.String(), &types.User{ID: "u-current"})
 
 	kbsvc := &stubKBLookup{kbs: map[string]*types.KnowledgeBase{}}
 	if kb != nil {
@@ -216,6 +243,10 @@ func runGuard(
 	if share != nil {
 		shareSvc = share
 	}
+	var kbVisible interfaces.KBVisibilityService
+	if opts.kbVisibility != nil {
+		kbVisible = opts.kbVisibility
+	}
 	var agentSvc interfaces.AgentShareService
 	if opts.agentShare != nil {
 		agentSvc = opts.agentShare
@@ -225,6 +256,7 @@ func runGuard(
 		KBIDFromParam("id"),
 		requiredPerm,
 		kbsvc,
+		kbVisible,
 		shareSvc,
 		agentSvc,
 		cfgRBAC(true),
@@ -258,6 +290,36 @@ func TestRequireKBAccess_NotFound_Aborts(t *testing.T) {
 	require.NotEmpty(t, c.Errors)
 	_, ok := KBAccessFromContext(c)
 	require.False(t, ok, "no access should be stashed on failure")
+}
+
+func TestRequireKBAccess_OwnTenantVisibilityCanDenyRead(t *testing.T) {
+	_, c := runGuard(t, 100, "kb-private", types.OrgRoleViewer,
+		&types.KnowledgeBase{ID: "kb-private", TenantID: 100, Visibility: types.KBVisibilityPrivate, CreatedBy: "u-owner"},
+		nil,
+		guardOpts{kbVisibility: &stubKBVisibilityForGuard{
+			canAccess: func(_ context.Context, userID string, tenantID uint64, kbID string, _ bool) (bool, error) {
+				return userID == "u-owner" && tenantID == 100 && kbID == "kb-private", nil
+			},
+		}},
+	)
+	require.True(t, c.IsAborted(), "same-tenant read should respect KB visibility rules")
+}
+
+func TestRequireKBAccess_OwnTenantAdminBypassesVisibility(t *testing.T) {
+	rec, c := runGuard(t, 100, "kb-private", types.OrgRoleViewer,
+		&types.KnowledgeBase{ID: "kb-private", TenantID: 100, Visibility: types.KBVisibilityPrivate, CreatedBy: "u-owner"},
+		nil,
+		guardOpts{
+			tenantRole: types.TenantRoleAdmin,
+			kbVisibility: &stubKBVisibilityForGuard{
+				canAccess: func(_ context.Context, _ string, _ uint64, _ string, _ bool) (bool, error) {
+					return false, nil
+				},
+			},
+		},
+	)
+	require.False(t, c.IsAborted(), "tenant admin should bypass same-tenant visibility filtering")
+	require.Equal(t, 200, rec.Code)
 }
 
 func TestIsResourceNotFound_ChunkNotFound(t *testing.T) {
@@ -309,6 +371,7 @@ func TestRequireKBAccess_NoTenant_Aborts(t *testing.T) {
 		KBIDFromParam("id"),
 		types.OrgRoleViewer,
 		&stubKBLookup{},
+		nil,
 		nil,
 		nil,
 		cfgRBAC(true),
@@ -500,7 +563,7 @@ func TestRequireKBAccess_Forbidden_FailOpenWhenRBACDisabled(t *testing.T) {
 	guard := RequireKBAccess(
 		KBIDFromParam("id"),
 		types.OrgRoleEditor, // would-deny
-		kbsvc, share, nil,
+		kbsvc, nil, share, nil,
 		cfgRBAC(false), // enforcement off
 	)
 	guard(c)
@@ -523,6 +586,7 @@ func TestRequireKBAccess_NotFound_FiresEvenWhenRBACDisabled(t *testing.T) {
 		KBIDFromParam("id"),
 		types.OrgRoleViewer,
 		&stubKBLookup{kbs: map[string]*types.KnowledgeBase{}},
+		nil,
 		nil, nil,
 		cfgRBAC(false),
 	)

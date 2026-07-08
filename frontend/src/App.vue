@@ -5,8 +5,10 @@ import { useI18n } from 'vue-i18n'
 import { MessagePlugin, NotifyPlugin } from 'tdesign-vue-next'
 import ManualKnowledgeEditor from '@/components/manual-knowledge-editor.vue'
 import UploadConfirmHost from '@/components/UploadConfirmHost.vue'
+import WorkspaceSetupWizard from '@/components/WorkspaceSetupWizard.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
+import { useWorkspaceSetupStore } from '@/stores/workspaceSetup'
 import { getCurrentUser, userInfoFromApi } from '@/api/auth'
 import { consumePendingTenantSwitchToast } from '@/utils/tenantSwitch'
 import { useRoleLabel } from '@/composables/useRoleLabel'
@@ -24,6 +26,7 @@ const { formatRole, roleIcon } = useRoleLabel()
 const router = useRouter()
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
+const workspaceSetupStore = useWorkspaceSetupStore()
 
 const tdLocaleMap: Record<string, object> = {
   'en-US': enUSConfig,
@@ -221,6 +224,7 @@ const showPendingTenantSwitchToast = () => {
 
 onMounted(() => {
   handleGlobalOIDCCallback()
+  workspaceSetupStore.hydratePending()
   showPendingTenantSwitchToast()
 
   // Auto check for updates on startup
@@ -258,6 +262,7 @@ onUnmounted(() => {
   <t-config-provider :globalConfig="tdGlobalConfig">
     <div id="app">
       <RouterView />
+      <WorkspaceSetupWizard />
       <ManualKnowledgeEditor />
       <UploadConfirmHost />
     </div>

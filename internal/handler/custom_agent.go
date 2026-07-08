@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ type CustomAgentHandler struct {
 	service           interfaces.CustomAgentService
 	pageShareService  interfaces.AgentPageShareService
 	visibilityService interfaces.AgentVisibilityService
+	auditSvc          interfaces.AuditLogService
 	imService         *im.Service
 	disabledRepo      interfaces.TenantDisabledSharedAgentRepository
 }
@@ -30,6 +32,7 @@ func NewCustomAgentHandler(
 	service interfaces.CustomAgentService,
 	pageShareService interfaces.AgentPageShareService,
 	visibilityService interfaces.AgentVisibilityService,
+	auditSvc interfaces.AuditLogService,
 	imService *im.Service,
 	disabledRepo interfaces.TenantDisabledSharedAgentRepository,
 ) *CustomAgentHandler {
@@ -37,9 +40,116 @@ func NewCustomAgentHandler(
 		service:           service,
 		pageShareService:  pageShareService,
 		visibilityService: visibilityService,
+		auditSvc:          auditSvc,
 		imService:         imService,
 		disabledRepo:      disabledRepo,
 	}
+}
+
+func canMutateAgent(ctx context.Context, user *types.User, agent *types.CustomAgent) bool {
+	if user == nil || agent == nil {
+		return false
+	}
+	if user.IsSuperAdmin {
+		return true
+	}
+	role := types.TenantRoleFromContext(ctx)
+	if types.IsBuiltinAgentID(agent.ID) {
+		return role.HasPermission(types.TenantRoleAdmin)
+	}
+	if agent.CreatedBy != "" && user.ID != "" && agent.CreatedBy == user.ID {
+		return true
+	}
+	return role.HasPermission(types.TenantRoleAdmin)
+}
+
+func (h *CustomAgentHandler) getReadableAgent(c *gin.Context) (context.Context, *types.CustomAgent, *types.User, uint64, bool) {
+	ctx := c.Request.Context()
+	id := secutils.SanitizeForLog(c.Param("id"))
+	if id == "" {
+		c.Error(errors.NewBadRequestError("Agent ID cannot be empty"))
+		return nil, nil, nil, 0, false
+	}
+
+	tenantID, ok := getTenantIDFromGin(c)
+	if !ok {
+		c.Error(errors.NewUnauthorizedError("Missing tenant context"))
+		return nil, nil, nil, 0, false
+	}
+
+	userVal, ok := c.Get(types.UserContextKey.String())
+	if !ok {
+		c.Error(errors.NewUnauthorizedError("User context not found"))
+		return nil, nil, nil, 0, false
+	}
+	user, ok := userVal.(*types.User)
+	if !ok || user == nil {
+		c.Error(errors.NewUnauthorizedError("Invalid user context"))
+		return nil, nil, nil, 0, false
+	}
+
+	if h.visibilityService != nil {
+		canAccess, err := h.visibilityService.CanAccessAgent(ctx, user.ID, tenantID, id, canBypassSameTenantResourceVisibility(ctx, user))
+		if err != nil {
+			logger.ErrorWithFields(ctx, err, map[string]interface{}{"agent_id": id})
+			if err == service.ErrAgentNotFound {
+				c.Error(errors.NewNotFoundError("Agent not found"))
+			} else {
+				c.Error(errors.NewInternalServerError(err.Error()))
+			}
+			return nil, nil, nil, 0, false
+		}
+		if !canAccess {
+			c.Error(errors.NewForbiddenError("Permission denied to access this agent"))
+			return nil, nil, nil, 0, false
+		}
+	}
+
+	agent, err := h.service.GetAgentByID(ctx, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"agent_id": id})
+		if err == service.ErrAgentNotFound {
+			c.Error(errors.NewNotFoundError("Agent not found"))
+		} else {
+			c.Error(errors.NewInternalServerError(err.Error()))
+		}
+		return nil, nil, nil, 0, false
+	}
+
+	return ctx, agent, user, tenantID, true
+}
+
+func (h *CustomAgentHandler) auditBuiltinAgentConfigUpdate(c *gin.Context, agentID string) {
+	if h.auditSvc == nil {
+		return
+	}
+	ctx := c.Request.Context()
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok || tenantID == 0 {
+		return
+	}
+	user, _ := c.Get(types.UserContextKey.String())
+	actorUser, _ := user.(*types.User)
+	actorUserID := ""
+	if actorUser != nil {
+		actorUserID = actorUser.ID
+	}
+	details, _ := json.Marshal(map[string]any{
+		"builtin":     true,
+		"config_only": true,
+	})
+	_ = h.auditSvc.Log(ctx, &types.AuditLog{
+		TenantID:     tenantID,
+		ActorUserID:  actorUserID,
+		ActorRole:    string(types.TenantRoleFromContext(ctx)),
+		Action:       types.AuditActionBuiltinAgentConfigUpdated,
+		TargetType:   "custom_agent",
+		TargetID:     agentID,
+		RequestPath:  c.FullPath(),
+		RequestMethod: c.Request.Method,
+		Outcome:      types.AuditOutcomeSuccess,
+		Details:      types.JSON(details),
+	})
 }
 
 // CreateAgentRequest defines the request body for creating an agent
@@ -152,26 +262,8 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 // @Security     ApiKeyAuth
 // @Router       /agents/{id} [get]
 func (h *CustomAgentHandler) GetAgent(c *gin.Context) {
-	ctx := c.Request.Context()
-
-	// Get agent ID from URL parameter
-	id := secutils.SanitizeForLog(c.Param("id"))
-	if id == "" {
-		logger.Error(ctx, "Agent ID is empty")
-		c.Error(errors.NewBadRequestError("Agent ID cannot be empty"))
-		return
-	}
-
-	agent, err := h.service.GetAgentByID(ctx, id)
-	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{
-			"agent_id": id,
-		})
-		if err == service.ErrAgentNotFound {
-			c.Error(errors.NewNotFoundError("Agent not found"))
-			return
-		}
-		c.Error(errors.NewInternalServerError(err.Error()))
+	_, agent, _, _, ok := h.getReadableAgent(c)
+	if !ok {
 		return
 	}
 
@@ -210,15 +302,15 @@ func (h *CustomAgentHandler) ListAgents(c *gin.Context) {
 		return
 	}
 	user, exists := c.Get(types.UserContextKey.String())
-	isSuperAdmin := false
+	bypassVisibility := false
 	if exists {
 		if u, ok := user.(*types.User); ok {
-			isSuperAdmin = u.IsSuperAdmin
+			bypassVisibility = canBypassSameTenantResourceVisibility(ctx, u)
 		}
 	}
 
 	// Get agents filtered by visibility
-	agents, err := h.visibilityService.ListAccessibleAgents(ctx, userID, tenantID, isSuperAdmin)
+	agents, err := h.visibilityService.ListAccessibleAgents(ctx, userID, tenantID, bypassVisibility)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))
@@ -297,19 +389,13 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 	logger.Infof(ctx, "Permission check - Agent ID: %s, CreatedBy: %s, User ID: %s, IsSuperAdmin: %v",
 		existingAgent.ID, existingAgent.CreatedBy, user.ID, user.IsSuperAdmin)
 
-	// Check if this is a built-in agent - only super admin can update
-	if types.IsBuiltinAgentID(id) {
-		if !user.IsSuperAdmin {
-			c.Error(errors.NewForbiddenError("Only super admins can update built-in agents"))
+	if !canMutateAgent(ctx, user, existingAgent) {
+		if types.IsBuiltinAgentID(id) {
+			c.Error(errors.NewForbiddenError("Only tenant admins or super admins can update built-in agent configuration"))
 			return
 		}
-	} else {
-		// For custom agents - only creator or super admin can update
-		// If CreatedBy is empty, allow update (for backward compatibility with old data)
-		if existingAgent.CreatedBy != "" && existingAgent.CreatedBy != user.ID && !user.IsSuperAdmin {
-			c.Error(errors.NewForbiddenError("Only the creator or super admin can update this agent"))
-			return
-		}
+		c.Error(errors.NewForbiddenError("Only the creator, tenant admins, or super admins can update this agent"))
+		return
 	}
 
 	// Parse request body
@@ -367,6 +453,9 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Custom agent updated successfully, ID: %s", secutils.SanitizeForLog(id))
+	if types.IsBuiltinAgentID(id) {
+		h.auditBuiltinAgentConfigUpdate(c, id)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    updatedAgent,
@@ -428,10 +517,13 @@ func (h *CustomAgentHandler) DeleteAgent(c *gin.Context) {
 	logger.Infof(ctx, "Permission check - Agent ID: %s, CreatedBy: %s, User ID: %s, IsSuperAdmin: %v",
 		existingAgent.ID, existingAgent.CreatedBy, user.ID, user.IsSuperAdmin)
 
-	// Check permissions - only creator or super admin can delete
-	// If CreatedBy is empty, allow delete (for backward compatibility with old data)
-	if existingAgent.CreatedBy != "" && existingAgent.CreatedBy != user.ID && !user.IsSuperAdmin {
-		c.Error(errors.NewForbiddenError("Only the creator or super admin can delete this agent"))
+	if types.IsBuiltinAgentID(id) {
+		c.Error(errors.NewForbiddenError("Built-in agents cannot be deleted"))
+		return
+	}
+
+	if !canMutateAgent(ctx, user, existingAgent) {
+		c.Error(errors.NewForbiddenError("Only the creator, tenant admins, or super admins can delete this agent"))
 		return
 	}
 
@@ -502,6 +594,9 @@ func (h *CustomAgentHandler) CopyAgent(c *gin.Context) {
 	}
 
 	logger.Infof(ctx, "Copying custom agent, ID: %s", secutils.SanitizeForLog(id))
+	if _, _, _, _, ok := h.getReadableAgent(c); !ok {
+		return
+	}
 
 	// Copy the agent
 	copiedAgent, err := h.service.CopyAgent(ctx, id)
@@ -595,6 +690,9 @@ func (h *CustomAgentHandler) GetSuggestedQuestions(c *gin.Context) {
 	if id == "" {
 		logger.Error(ctx, "Agent ID is empty")
 		c.Error(errors.NewBadRequestError("Agent ID cannot be empty"))
+		return
+	}
+	if _, _, _, _, ok := h.getReadableAgent(c); !ok {
 		return
 	}
 

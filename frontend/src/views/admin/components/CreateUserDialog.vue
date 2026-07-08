@@ -49,6 +49,7 @@
           <t-radio value="admin">{{ $t('admin.member.roleAdmin') }}</t-radio>
         </t-radio-group>
       </t-form-item>
+
     </t-form>
   </t-dialog>
 </template>
@@ -135,6 +136,7 @@ const handleSubmit = async () => {
       phone: formData.phone || undefined,
       password: formData.password,
       role: formData.role,
+      tenant_role: 'admin',
     })
     if (res.success) {
       MessagePlugin.success(t('admin.member.createUserSuccess'))

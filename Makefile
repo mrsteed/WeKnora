@@ -49,7 +49,7 @@ help:
 	@echo "  show-platform     显示当前构建平台"
 	@echo ""
 	@echo "开发模式（推荐）:"
-	@echo "  dev-start         启动开发环境基础设施（仅启动依赖服务；普通启动未设置 WEKNORA_DEV_DATA_ROOT 时沿用 Docker named volume）"
+	@echo "  dev-start         启动开发环境基础设施（含 MinerU CPU 解析服务；普通启动未设置 WEKNORA_DEV_DATA_ROOT 时沿用 Docker named volume）"
 	@echo "                    可选: make dev-start DEV_ARGS=--odl-hybrid"
 	@echo "                    宿主机目录模式默认值: $(WEKNORA_DEV_DATA_ROOT_DEFAULT)"
 	@echo "                    宿主机目录模式: make dev-start WEKNORA_DEV_DATA_ROOT=$(WEKNORA_DEV_DATA_ROOT_DEFAULT)"

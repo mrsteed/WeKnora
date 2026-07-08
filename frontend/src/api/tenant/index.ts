@@ -145,7 +145,11 @@ export async function deleteTenant(
   tenantId: number,
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const response = await del(`/api/v1/tenants/${tenantId}`)
+    const response = await del(`/api/v1/tenants/${tenantId}`, undefined, {
+      headers: {
+        'X-Tenant-ID': String(tenantId),
+      },
+    })
     return response as unknown as { success: boolean; message?: string }
   } catch (error: any) {
     return {
@@ -156,10 +160,9 @@ export async function deleteTenant(
 }
 
 /**
- * 创建新工作区（任意已登录用户均可调用）。
+ * 创建新工作区（仅超级管理员可调用）。
  * 后端会自动把调用者写成新租户的 Owner，并生成 api_key、默认 storage_quota
  * 等服务端字段，所以这里只暴露 name + description。
- * 路由：POST /api/v1/tenants（router 上不挂 g.CrossTenant()，自助场景使用）。
  */
 export async function createTenant(
   payload: { name: string; description?: string },

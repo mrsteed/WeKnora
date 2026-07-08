@@ -1,7 +1,6 @@
 <template>
-  <!-- 自助创建新工作区弹窗。任意已登录用户均可调用 POST /api/v1/tenants
-       （后端 router 已去掉 g.CrossTenant() 守卫），handler 会自动把当前
-       用户 EnsureOwner 成新租户的 Owner。 -->
+    <!-- 创建新工作区弹窗。当前仅超级管理员可见；后端仍会再次校验并自动
+      将创建者写成新租户 Owner。 -->
   <t-dialog :visible="visible" width="480px" :on-confirm="handleSubmit" :on-close="handleClose"
     :confirm-btn="{ content: $t('tenant.create.submit'), loading: submitting, theme: 'primary' }"
     :cancel-btn="{ content: $t('tenant.create.cancel') }" :close-on-overlay-click="!submitting"

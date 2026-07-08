@@ -13,4 +13,8 @@ type AgentVisibilityService interface {
 	// considering visibility rules: global agents + org agents (user's orgs) + private agents (own)
 	// Super admins can see all agents
 	ListAccessibleAgents(ctx context.Context, userID string, tenantID uint64, isSuperAdmin bool) ([]*types.CustomAgent, error)
+	// CanAccessAgent checks whether a user can read an agent in the current tenant
+	CanAccessAgent(ctx context.Context, userID string, tenantID uint64, agentID string, isSuperAdmin bool) (bool, error)
+	// CanManageAgent checks whether a user can manage an agent in the current tenant
+	CanManageAgent(ctx context.Context, userID string, tenantID uint64, agentID string, isSuperAdmin bool) (bool, error)
 }

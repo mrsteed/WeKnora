@@ -65,6 +65,22 @@ func TestIsCrossTenantSuperuser_BothAllow(t *testing.T) {
 	}
 }
 
+func TestIsCrossTenantSuperuser_SystemAdminAllows(t *testing.T) {
+	ctx := context.WithValue(context.Background(), types.UserContextKey,
+		&types.User{ID: "u1", IsSystemAdmin: true})
+	if !IsCrossTenantSuperuser(ctx, cfgCrossTenant(true)) {
+		t.Fatalf("system admin should be treated as cross-tenant superuser when flag is on")
+	}
+}
+
+func TestIsCrossTenantSuperuser_LocalSuperAdminAllows(t *testing.T) {
+	ctx := context.WithValue(context.Background(), types.UserContextKey,
+		&types.User{ID: "u1", IsSuperAdmin: true})
+	if !IsCrossTenantSuperuser(ctx, cfgCrossTenant(true)) {
+		t.Fatalf("legacy local super admin should be treated as cross-tenant superuser when flag is on")
+	}
+}
+
 func TestIsCrossTenantSuperuser_NoUserInCtxRejects(t *testing.T) {
 	// Defensive: a context lacking UserContextKey should never be
 	// promoted. Returning false rather than panicking keeps the caller

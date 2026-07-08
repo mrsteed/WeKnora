@@ -17,6 +17,7 @@ type kbVisibilityService struct {
 	chunkRepo      interfaces.ChunkRepository
 	schemaRepo     interfaces.DatabaseSchemaRepository
 	userRepo       interfaces.UserRepository
+	authorizer     *sameTenantResourceAuthorizer
 }
 
 // NewKBVisibilityService creates a new knowledge base visibility service
@@ -35,6 +36,7 @@ func NewKBVisibilityService(
 		chunkRepo:      chunkRepo,
 		schemaRepo:     schemaRepo,
 		userRepo:       userRepo,
+		authorizer:     newSameTenantResourceAuthorizer(orgTreeService),
 	}
 }
 
@@ -56,50 +58,14 @@ func (s *kbVisibilityService) ListAccessibleKBs(ctx context.Context, userID stri
 		return kbs, nil
 	}
 
-	// Get user's organizations within this tenant
-	userOrgs, err := s.orgTreeService.GetUserOrganizations(ctx, userID, tenantID)
+	scope, err := s.authorizer.resolveScope(ctx, userID, tenantID)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get user organizations: %v", err)
-		return nil, fmt.Errorf("failed to get user organizations: %w", err)
-	}
-
-	// Collect all related org IDs:
-	// 1. User's orgs themselves
-	// 2. Ancestors of user's orgs (kb in parent org should be visible to child org members)
-	// 3. Descendants of user's orgs (for future sub-org scenarios)
-	orgIDSet := make(map[string]bool)
-	pathPrefixes := make([]string, 0, len(userOrgs))
-	for _, org := range userOrgs {
-		orgIDSet[org.ID] = true
-		pathPrefixes = append(pathPrefixes, org.Path)
-	}
-
-	// Extract ancestor org IDs from paths (no DB query needed)
-	ancestorIDs := s.orgTreeService.GetAncestorIDsFromPaths(pathPrefixes)
-	for _, id := range ancestorIDs {
-		orgIDSet[id] = true
-	}
-
-	// Single batch call to get all descendants for all user orgs
-	if len(pathPrefixes) > 0 {
-		allDescendants, err := s.orgTreeService.GetDescendantIDsByPaths(ctx, pathPrefixes, tenantID)
-		if err != nil {
-			logger.Errorf(ctx, "Failed to batch get descendant org IDs: %v", err)
-			// Fallback silently — orgIDSet already has user's direct orgs + ancestors
-		} else {
-			for _, id := range allDescendants {
-				orgIDSet[id] = true
-			}
-		}
-	}
-
-	orgIDs := make([]string, 0, len(orgIDSet))
-	for id := range orgIDSet {
-		orgIDs = append(orgIDs, id)
+		logger.Errorf(ctx, "Failed to resolve KB visibility scope: %v", err)
+		return nil, fmt.Errorf("failed to resolve knowledge-base visibility scope: %w", err)
 	}
 
 	// Query KBs with visibility rules
-	kbs, err := s.kbRepo.ListAccessibleKBs(ctx, userID, tenantID, orgIDs)
+	kbs, err := s.kbRepo.ListAccessibleKBs(ctx, userID, tenantID, scope.readOrgList)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to list accessible KBs: %v", err)
 		return nil, fmt.Errorf("failed to list accessible KBs: %w", err)
@@ -146,39 +112,15 @@ func (s *kbVisibilityService) CanAccessKB(ctx context.Context, userID string, te
 	if err != nil {
 		return false, fmt.Errorf("failed to get knowledge base: %w", err)
 	}
-
-	switch kb.Visibility {
-	case types.KBVisibilityGlobal, "":
-		// Global or legacy KBs are accessible to everyone in the tenant
-		return true, nil
-	case types.KBVisibilityPrivate:
-		// Private KBs are only accessible to the creator
-		return kb.CreatedBy == userID, nil
-	case types.KBVisibilityOrg:
-		// Check if user is in the KB's organization or any of its ancestors
-		if kb.OrganizationID == "" {
-			return false, nil
-		}
-		userOrgs, err := s.orgTreeService.GetUserOrganizations(ctx, userID, tenantID)
-		if err != nil {
-			return false, fmt.Errorf("failed to check user organizations: %w", err)
-		}
-		// Build set of all org IDs user can see through
-		for _, org := range userOrgs {
-			descendantIDs, err := s.orgTreeService.GetOrgAndDescendantIDs(ctx, org.ID, tenantID)
-			if err != nil {
-				continue
-			}
-			for _, id := range descendantIDs {
-				if id == kb.OrganizationID {
-					return true, nil
-				}
-			}
-		}
-		return false, nil
-	default:
-		return false, nil
+	scope, err := s.authorizer.resolveScope(ctx, userID, tenantID)
+	if err != nil {
+		return false, fmt.Errorf("failed to resolve knowledge-base visibility scope: %w", err)
 	}
+	return s.authorizer.canReadResource(sameTenantResourceRule{
+		Visibility:     kb.Visibility,
+		OrganizationID: kb.OrganizationID,
+		CreatedBy:      kb.CreatedBy,
+	}, userID, isSuperAdmin, scope), nil
 }
 
 // CanManageKB checks whether a user can manage (edit/delete) a specific knowledge base
@@ -192,33 +134,15 @@ func (s *kbVisibilityService) CanManageKB(ctx context.Context, userID string, te
 	if err != nil {
 		return false, fmt.Errorf("failed to get knowledge base: %w", err)
 	}
-
-	// Creator can always manage
-	if kb.CreatedBy == userID {
-		return true, nil
+	scope, err := s.authorizer.resolveScope(ctx, userID, tenantID)
+	if err != nil {
+		return false, fmt.Errorf("failed to resolve knowledge-base visibility scope: %w", err)
 	}
-
-	// For global KBs, only the creator can manage (non-super-admin users cannot manage global KBs they didn't create)
-	if kb.Visibility == types.KBVisibilityGlobal || kb.Visibility == "" {
-		return kb.CreatedBy == userID, nil
-	}
-
-	// For org KBs, check if user is admin of the organization
-	if kb.Visibility == types.KBVisibilityOrg && kb.OrganizationID != "" {
-		userOrgs, err := s.orgTreeService.GetUserOrganizations(ctx, userID, tenantID)
-		if err != nil {
-			return false, fmt.Errorf("failed to check user organizations: %w", err)
-		}
-		for _, org := range userOrgs {
-			if org.ID == kb.OrganizationID {
-				// User is a member of the KB's organization — check if admin/editor
-				// For now, any member of the org can manage org KBs
-				return true, nil
-			}
-		}
-	}
-
-	return false, nil
+	return s.authorizer.canManageResource(sameTenantResourceRule{
+		Visibility:     kb.Visibility,
+		OrganizationID: kb.OrganizationID,
+		CreatedBy:      kb.CreatedBy,
+	}, userID, isSuperAdmin, scope), nil
 }
 
 // fillCreatorNicknames fills the CreatedByNickname field for each knowledge base.

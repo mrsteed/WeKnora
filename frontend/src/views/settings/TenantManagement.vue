@@ -5,7 +5,7 @@
         <h2>{{ t('tenant.management.title') }}</h2>
         <p class="section-description">{{ t('tenant.management.description') }}</p>
       </div>
-      <t-button theme="primary" @click="createTenantVisible = true">
+      <t-button v-if="canCreateTenant" theme="primary" @click="createTenantVisible = true">
         <template #icon>
           <t-icon name="add" />
         </template>
@@ -85,22 +85,55 @@
             <span class="tenant-card-hint">
               {{ isCurrentTenant(tenant.tenant_id) ? t('tenant.management.currentHint') : t('tenant.management.switchHint') }}
             </span>
-            <t-button
-              theme="primary"
-              variant="outline"
-              size="small"
-              :disabled="isCurrentTenant(tenant.tenant_id)"
-              :loading="switchingTenantId === tenant.tenant_id"
-              @click="switchTenant(tenant.tenant_id)"
-            >
-              {{ isCurrentTenant(tenant.tenant_id) ? t('tenant.management.currentAction') : t('tenant.management.switchAction') }}
-            </t-button>
+            <div class="tenant-card-actions">
+              <t-button
+                v-if="canDeleteTenant(tenant)"
+                theme="danger"
+                variant="text"
+                size="small"
+                :loading="deletingTenantId === tenant.tenant_id"
+                @click="confirmDeleteTenant(tenant)"
+              >
+                {{ t('tenant.deleteDangerZone.button') }}
+              </t-button>
+              <t-button
+                theme="primary"
+                variant="outline"
+                size="small"
+                :disabled="isCurrentTenant(tenant.tenant_id)"
+                :loading="switchingTenantId === tenant.tenant_id"
+                @click="switchTenant(tenant.tenant_id)"
+              >
+                {{ isCurrentTenant(tenant.tenant_id) ? t('tenant.management.currentAction') : t('tenant.management.switchAction') }}
+              </t-button>
+            </div>
           </div>
         </article>
       </div>
     </div>
 
     <CreateTenantDialog v-model:visible="createTenantVisible" @created="handleTenantCreated" />
+
+    <t-dialog
+      v-model:visible="deleteTenantVisible"
+      :header="t('tenant.deleteDangerZone.confirmTitle')"
+      :confirm-btn="{
+        content: t('tenant.deleteDangerZone.confirm'),
+        theme: 'danger',
+        disabled: deleteConfirmName.trim() !== deleteTenantName,
+        loading: deletingTenantId !== null,
+      }"
+      :cancel-btn="t('common.cancel')"
+      @confirm="handleDeleteTenant"
+    >
+      <div class="tenant-delete-confirm">
+        <p>{{ t('tenant.deleteDangerZone.confirmBody', { name: deleteTenantName }) }}</p>
+        <p class="tenant-delete-confirm__hint">
+          {{ t('tenant.deleteDangerZone.confirmHint', { name: deleteTenantName }) }}
+        </p>
+        <t-input v-model="deleteConfirmName" :placeholder="deleteTenantName" clearable />
+      </div>
+    </t-dialog>
   </div>
 </template>
 
@@ -109,8 +142,14 @@ import { computed, onMounted, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import CreateTenantDialog from '@/components/CreateTenantDialog.vue'
-import type { TenantInfo } from '@/api/tenant'
+import { deleteTenant as deleteTenantApi, type TenantInfo } from '@/api/tenant'
 import { useAuthStore } from '@/stores/auth'
+import { useWorkspaceSetupStore } from '@/stores/workspaceSetup'
+import {
+  navigateAfterTenantSwitch,
+  persistLastActiveTenantPreference,
+  stashTenantSwitchToast,
+} from '@/utils/tenantSwitch'
 
 type TenantMembership = {
   tenant_id: number
@@ -120,11 +159,18 @@ type TenantMembership = {
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+const workspaceSetupStore = useWorkspaceSetupStore()
 
 const loading = ref(false)
 const error = ref('')
 const createTenantVisible = ref(false)
 const switchingTenantId = ref<number | null>(null)
+const deletingTenantId = ref<number | null>(null)
+const deleteTenantVisible = ref(false)
+const deleteConfirmName = ref('')
+const deleteTarget = ref<TenantMembership | null>(null)
+
+const canCreateTenant = computed(() => authStore.isSuperAdmin)
 
 const homeTenantId = computed(() => {
   const raw = authStore.tenant?.id
@@ -167,6 +213,11 @@ const tenantOptions = computed<TenantMembership[]>(() => {
   })
 })
 
+const deleteTenantName = computed(() => {
+  if (!deleteTarget.value) return ''
+  return deleteTarget.value.tenant_name || formatTenantFallbackName(deleteTarget.value.tenant_id)
+})
+
 const loadMemberships = async () => {
   loading.value = true
   error.value = ''
@@ -185,6 +236,8 @@ const loadMemberships = async () => {
 const isCurrentTenant = (tenantId: number) => Number(activeTenantId.value) === Number(tenantId)
 
 const isHomeTenant = (tenantId: number) => Number(homeTenantId.value) === Number(tenantId)
+
+const canDeleteTenant = (tenant: TenantMembership) => authStore.isSuperAdmin || tenant.role === 'owner'
 
 const roleTheme = (role: string) => {
   switch (role) {
@@ -236,6 +289,71 @@ const switchTenant = (tenantId: number) => {
   reloadAfterSwitch()
 }
 
+const confirmDeleteTenant = (tenant: TenantMembership) => {
+  deleteTarget.value = tenant
+  deleteConfirmName.value = ''
+  deleteTenantVisible.value = true
+}
+
+const handleDeleteTenant = async () => {
+  const target = deleteTarget.value
+  if (!target) return
+  if (deleteConfirmName.value.trim() !== deleteTenantName.value) {
+    MessagePlugin.warning(t('tenant.deleteDangerZone.nameMismatch'))
+    return
+  }
+
+  deletingTenantId.value = target.tenant_id
+  try {
+    const resp = await deleteTenantApi(target.tenant_id)
+    if (!resp.success) {
+      MessagePlugin.error(resp.message || t('tenant.deleteDangerZone.failed'))
+      return
+    }
+
+    MessagePlugin.success(t('tenant.deleteDangerZone.success'))
+    authStore.setMemberships((authStore.memberships ?? []).filter((item) => Number(item.tenant_id) !== Number(target.tenant_id)))
+      authStore.setAllTenants((authStore.allTenants ?? []).filter((item) => Number(item.id) !== Number(target.tenant_id)))
+
+    if (!isCurrentTenant(target.tenant_id)) {
+        await authStore.refreshFromAuthMe()
+      deleteTenantVisible.value = false
+      deleteTarget.value = null
+      deleteConfirmName.value = ''
+      return
+    }
+
+    await authStore.refreshFromAuthMe()
+    const next = authStore.memberships.find((item) => Number(item.tenant_id) === Number(homeTenantId.value)) ?? authStore.memberships[0]
+    if (!next) {
+      authStore.logout()
+      window.location.href = '/login'
+      return
+    }
+
+    const nextName = next.tenant_name?.trim() || `#${next.tenant_id}`
+    const switchingToHome = homeTenantId.value !== null && Number(homeTenantId.value) === Number(next.tenant_id)
+    authStore.setSelectedTenant(next.tenant_id, nextName)
+    stashTenantSwitchToast({
+      name: nextName,
+      role: roleLabel(next.role),
+      roleEnum: next.role,
+    })
+    await Promise.race([
+      persistLastActiveTenantPreference(switchingToHome ? null : next.tenant_id),
+      new Promise((resolve) => setTimeout(resolve, 400)),
+    ])
+    navigateAfterTenantSwitch()
+  } catch (err: any) {
+    MessagePlugin.error(err?.message || t('tenant.deleteDangerZone.failed'))
+  } finally {
+    deletingTenantId.value = null
+    deleteTenantVisible.value = false
+    deleteTarget.value = null
+    deleteConfirmName.value = ''
+  }
+}
+
 const handleTenantCreated = (tenant: TenantInfo) => {
   const nextMemberships = [...authStore.memberships]
   if (!nextMemberships.some((item) => Number(item.tenant_id) === Number(tenant.id))) {
@@ -253,7 +371,9 @@ const handleTenantCreated = (tenant: TenantInfo) => {
 
   switchingTenantId.value = tenant.id
   authStore.setSelectedTenant(tenant.id, tenant.name)
-  reloadAfterSwitch()
+  workspaceSetupStore.start(tenant)
+  void persistLastActiveTenantPreference(tenant.id)
+  switchingTenantId.value = null
 }
 
 onMounted(() => {
@@ -453,10 +573,28 @@ onMounted(() => {
   gap: 12px;
 }
 
+.tenant-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .tenant-card-hint {
   min-width: 0;
   font-size: 13px;
   line-height: 1.55;
+  color: var(--td-text-color-secondary);
+}
+
+.tenant-delete-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tenant-delete-confirm__hint {
+  margin: 0;
+  font-size: 13px;
   color: var(--td-text-color-secondary);
 }
 

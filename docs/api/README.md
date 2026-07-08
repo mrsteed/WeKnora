@@ -19,6 +19,8 @@ WeKnora 同时提供基于 OpenAPI 的 Swagger 文档。默认后端端口为 80
 
 本目录下的 markdown 文档提供更易读的示例与场景说明，与 swagger 同步维护；当二者出现差异时，以 swagger 为准。
 
+权限边界、术语统一与角色来源请参考：[../权限角色与API边界统一说明.md](../权限角色与API边界统一说明.md)。
+
 > Swagger UI 默认在非生产环境启用；当 `APP_ENV` 或 `ENV` 为 `prod` / `production` 时默认关闭，也可通过 `WEKNORA_SWAGGER_ENABLED=true|false` 显式覆盖。
 
 ## 基础信息
@@ -86,6 +88,7 @@ WeKnora API 按功能分为以下几类：
 | 系统管理 | 系统信息、解析引擎、存储引擎 | [system.md](./system.md) |
 | MCP 服务 | MCP 工具服务管理 | [mcp-service.md](./mcp-service.md) |
 | 组织管理 | 组织、成员、知识库/智能体共享 | [organization.md](./organization.md) |
+| 权限边界 | 角色术语、API 维度、跨空间越权边界 | [../权限角色与API边界统一说明.md](../权限角色与API边界统一说明.md) |
 | Skills | 预装智能体技能 | [skill.md](./skill.md) |
 | 网络搜索 | 网络搜索服务商 | [web-search.md](./web-search.md) |
 | 向量存储 | 向量数据库连接管理 | [vector-store.md](./vector-store.md) |

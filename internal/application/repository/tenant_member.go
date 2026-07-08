@@ -100,7 +100,9 @@ func (r *tenantMemberRepository) CountFilteredByTenant(
 ) (int64, error) {
 	search = strings.TrimSpace(search)
 	q := r.db.WithContext(ctx).Model(&types.TenantMember{}).
-		Where("tenant_members.tenant_id = ?", tenantID)
+		Joins(`LEFT JOIN users ON users.id = tenant_members.user_id AND users.deleted_at IS NULL`).
+		Where("tenant_members.tenant_id = ?", tenantID).
+		Where(`(users.id IS NULL OR (COALESCE(users.is_super_admin, FALSE) = FALSE AND COALESCE(users.is_system_admin, FALSE) = FALSE))`)
 	var total int64
 	var err error
 	if search == "" {
@@ -108,8 +110,7 @@ func (r *tenantMemberRepository) CountFilteredByTenant(
 	} else {
 		like := "%" + escapeLikePattern(search) + "%"
 		err = q.
-			Joins(`INNER JOIN users ON users.id = tenant_members.user_id AND users.deleted_at IS NULL`).
-			Where(`(LOWER(users.email) LIKE LOWER(?) OR LOWER(users.username) LIKE LOWER(?))`, like, like).
+			Where(`users.id IS NOT NULL AND (LOWER(users.email) LIKE LOWER(?) OR LOWER(users.username) LIKE LOWER(?))`, like, like).
 			Count(&total).Error
 	}
 	return total, err
@@ -122,7 +123,9 @@ func (r *tenantMemberRepository) ListPagedByTenant(
 	search = strings.TrimSpace(search)
 	var members []*types.TenantMember
 	q := r.db.WithContext(ctx).Model(&types.TenantMember{}).
+		Joins(`LEFT JOIN users ON users.id = tenant_members.user_id AND users.deleted_at IS NULL`).
 		Where("tenant_members.tenant_id = ?", tenantID).
+		Where(`(users.id IS NULL OR (COALESCE(users.is_super_admin, FALSE) = FALSE AND COALESCE(users.is_system_admin, FALSE) = FALSE))`).
 		Order("tenant_members.joined_at ASC, tenant_members.id ASC").
 		Offset(offset).
 		Limit(limit)
@@ -133,8 +136,7 @@ func (r *tenantMemberRepository) ListPagedByTenant(
 	} else {
 		like := "%" + escapeLikePattern(search) + "%"
 		err = q.
-			Joins(`INNER JOIN users ON users.id = tenant_members.user_id AND users.deleted_at IS NULL`).
-			Where(`(LOWER(users.email) LIKE LOWER(?) OR LOWER(users.username) LIKE LOWER(?))`, like, like).
+			Where(`users.id IS NOT NULL AND (LOWER(users.email) LIKE LOWER(?) OR LOWER(users.username) LIKE LOWER(?))`, like, like).
 			Find(&members).Error
 	}
 	if err != nil {

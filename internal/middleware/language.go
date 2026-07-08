@@ -23,10 +23,21 @@ func Language() gin.HandlerFunc {
 	envLang := types.EnvLanguage()
 
 	return func(c *gin.Context) {
+		uiLang := ""
+		if acceptLang := c.GetHeader("Accept-Language"); acceptLang != "" {
+			uiLang = parseFirstLanguageTag(acceptLang)
+		}
+		if uiLang == "" {
+			uiLang = types.DefaultLanguage()
+		}
+
+		c.Set(types.UILocaleContextKey.String(), uiLang)
+		baseCtx := context.WithValue(c.Request.Context(), types.UILocaleContextKey, uiLang)
+
 		// 1. WEKNORA_LANGUAGE env takes precedence (deployment-level document language)
 		if envLang != "" {
 			c.Set(types.LanguageContextKey.String(), envLang)
-			ctx := context.WithValue(c.Request.Context(), types.LanguageContextKey, envLang)
+			ctx := context.WithValue(baseCtx, types.LanguageContextKey, envLang)
 			c.Request = c.Request.WithContext(ctx)
 			c.Next()
 			return
@@ -46,7 +57,7 @@ func Language() gin.HandlerFunc {
 
 		// Inject into context
 		c.Set(types.LanguageContextKey.String(), lang)
-		ctx := context.WithValue(c.Request.Context(), types.LanguageContextKey, lang)
+		ctx := context.WithValue(baseCtx, types.LanguageContextKey, lang)
 		c.Request = c.Request.WithContext(ctx)
 
 		c.Next()

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 
 	apprepo "github.com/Tencent/WeKnora/internal/application/repository"
@@ -59,6 +60,11 @@ func (h *KnowledgeBaseHandler) KBCreatorLookup(c *gin.Context) (string, error) {
 	if kb.TenantID != tenantID {
 		return "", middleware.ErrResourceNotFound
 	}
+	if principal, ok, err := currentKBManagePrincipal(c, h.kbVisibility, kb.ID, tenantID); err != nil {
+		return "", err
+	} else if ok {
+		return principal, nil
+	}
 	return kb.CreatorID, nil
 }
 
@@ -91,6 +97,11 @@ func (h *KnowledgeBaseHandler) KBCreatorLookupFromKbIDParam(c *gin.Context) (str
 	}
 	if kb.TenantID != tenantID {
 		return "", middleware.ErrResourceNotFound
+	}
+	if principal, ok, err := currentKBManagePrincipal(c, h.kbVisibility, kb.ID, tenantID); err != nil {
+		return "", err
+	} else if ok {
+		return principal, nil
 	}
 	return kb.CreatorID, nil
 }
@@ -128,10 +139,77 @@ func (h *CustomAgentHandler) AgentCreatorLookup(c *gin.Context) (string, error) 
 	if agent.TenantID != tenantID {
 		return "", middleware.ErrResourceNotFound
 	}
+	if h.visibilityService != nil {
+		uid, _ := types.UserIDFromContext(ctx)
+		if uid != "" {
+			canManage, err := h.visibilityService.CanManageAgent(ctx, uid, tenantID, id, isPrivilegedResourceOperatorFromContext(c))
+			if err != nil {
+				return "", err
+			}
+			if canManage {
+				return uid, nil
+			}
+		}
+	}
 	if agent.IsBuiltin {
 		return "", nil
 	}
 	return agent.CreatedBy, nil
+}
+
+func isPrivilegedResourceOperator(user *types.User) bool {
+	if user == nil {
+		return false
+	}
+	return user.IsSystemAdmin || user.IsSuperAdmin || user.CanAccessAllTenants
+}
+
+func isPrivilegedResourceOperatorFromContext(c *gin.Context) bool {
+	userVal, ok := c.Get(types.UserContextKey.String())
+	if !ok {
+		return false
+	}
+	user, _ := userVal.(*types.User)
+	return isPrivilegedResourceOperator(user)
+}
+
+func canBypassSameTenantResourceVisibility(ctx context.Context, user *types.User) bool {
+	if types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleAdmin) {
+		return true
+	}
+	return isPrivilegedResourceOperator(user)
+}
+
+func canBypassSameTenantResourceVisibilityFromContext(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	userVal, _ := c.Get(types.UserContextKey.String())
+	user, _ := userVal.(*types.User)
+	return canBypassSameTenantResourceVisibility(c.Request.Context(), user)
+}
+
+func currentKBManagePrincipal(
+	c *gin.Context,
+	kbVisibility interfaces.KBVisibilityService,
+	kbID string,
+	tenantID uint64,
+) (string, bool, error) {
+	if kbVisibility == nil || tenantID == 0 {
+		return "", false, nil
+	}
+	uid, ok := types.UserIDFromContext(c.Request.Context())
+	if !ok || uid == "" {
+		return "", false, nil
+	}
+	canManage, err := kbVisibility.CanManageKB(c.Request.Context(), uid, tenantID, kbID, isPrivilegedResourceOperatorFromContext(c))
+	if err != nil {
+		return "", false, err
+	}
+	if !canManage {
+		return "", false, nil
+	}
+	return uid, true, nil
 }
 
 // Compile-time guards: the methods must satisfy middleware.CreatorLookup
@@ -161,7 +239,7 @@ func (h *KnowledgeHandler) KBCreatorLookupFromKnowledgeID(c *gin.Context) (strin
 	if knowledgeID == "" {
 		return "", errors.New("missing :id param for knowledge owner lookup")
 	}
-	return resolveKBCreatorByKnowledgeID(c, h.kgService, knowledgeID)
+	return resolveKBCreatorByKnowledgeID(c, h.kgService, h.kbVisibility, knowledgeID)
 }
 
 // KBCreatorLookupFromKnowledgeIDParam mirrors KBCreatorLookupFromKnowledgeID
@@ -173,7 +251,7 @@ func (h *ChunkHandler) KBCreatorLookupFromKnowledgeIDParam(c *gin.Context) (stri
 	if knowledgeID == "" {
 		return "", errors.New("missing :knowledge_id param for chunk owner lookup")
 	}
-	return resolveKBCreatorByKnowledgeID(c, h.kgService, knowledgeID)
+	return resolveKBCreatorByKnowledgeID(c, h.kgService, h.kbVisible, knowledgeID)
 }
 
 // KBCreatorLookupFromChunkIDParam resolves :id (a chunk ID) to the
@@ -212,7 +290,12 @@ func (h *ChunkHandler) KBCreatorLookupFromChunkIDParam(c *gin.Context) (string, 
 	if chunk.TenantID != tenantID {
 		return "", middleware.ErrResourceNotFound
 	}
-	return resolveKBCreatorByKnowledgeID(c, h.kgService, chunk.KnowledgeID)
+	if principal, ok, err := currentKBManagePrincipal(c, h.kbVisible, chunk.KnowledgeBaseID, tenantID); err != nil {
+		return "", err
+	} else if ok {
+		return principal, nil
+	}
+	return resolveKBCreatorByKnowledgeID(c, h.kgService, h.kbVisible, chunk.KnowledgeID)
 }
 
 // KBCreatorLookupFromKBPath resolves :kb_id (used by wiki routes) to
@@ -244,6 +327,11 @@ func (h *WikiPageHandler) KBCreatorLookupFromKBPath(c *gin.Context) (string, err
 	if kb.TenantID != tenantID {
 		return "", middleware.ErrResourceNotFound
 	}
+	if principal, ok, err := currentKBManagePrincipal(c, h.kbVisibility, kbID, tenantID); err != nil {
+		return "", err
+	} else if ok {
+		return principal, nil
+	}
 	return kb.CreatorID, nil
 }
 
@@ -255,14 +343,34 @@ func (h *WikiPageHandler) KBCreatorLookupFromKBPath(c *gin.Context) (string, err
 func resolveKBCreatorByKnowledgeID(
 	c *gin.Context,
 	kgService interfaces.KnowledgeService,
+	kbVisibility interfaces.KBVisibilityService,
 	knowledgeID string,
 ) (string, error) {
 	ctx := c.Request.Context()
-	if _, ok := types.TenantIDFromContext(ctx); !ok {
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
 		// Same fail-closed reasoning as KBCreatorLookup: no tenant
 		// context means auth didn't complete, and we'd rather have the
 		// caller see a 503 than a silent fail-open.
 		return "", errors.New("tenant context missing")
+	}
+	knowledge, err := kgService.GetKnowledgeByIDOnly(ctx, knowledgeID)
+	if err != nil {
+		if errors.Is(err, apprepo.ErrKnowledgeNotFound) {
+			return "", middleware.ErrResourceNotFound
+		}
+		return "", err
+	}
+	if knowledge == nil {
+		return "", middleware.ErrResourceNotFound
+	}
+	if knowledge.TenantID != tenantID {
+		return "", middleware.ErrResourceNotFound
+	}
+	if principal, ok, err := currentKBManagePrincipal(c, kbVisibility, knowledge.KnowledgeBaseID, tenantID); err != nil {
+		return "", err
+	} else if ok {
+		return principal, nil
 	}
 	creatorID, err := kgService.GetOwningKBCreatorID(ctx, knowledgeID)
 	if err != nil {

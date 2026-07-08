@@ -131,8 +131,9 @@ func (s *customAgentService) GetAgentByID(ctx context.Context, id string) (*type
 		// Try to get from database first (for customized config)
 		agent, err := s.repo.GetAgentByID(ctx, id, tenantID)
 		if err == nil {
-			// Found in database, return with customized config
-			return agent, nil
+			// Found in database, but built-in display metadata must always come
+			// from YAML/i18n rather than the persisted snapshot.
+			return types.ApplyBuiltinAgentLocalizedMetadata(ctx, agent), nil
 		}
 		// Not in database, return default built-in agent from registry (i18n-aware)
 		if builtinAgent := types.GetBuiltinAgentWithContext(ctx, id, tenantID); builtinAgent != nil {
@@ -188,10 +189,10 @@ func (s *customAgentService) ListAgents(ctx context.Context) ([]*types.CustomAge
 	}
 
 	// Track which built-in agents exist in database
-	builtinInDB := make(map[string]bool)
+	builtinInDB := make(map[string]*types.CustomAgent)
 	for _, agent := range allAgents {
 		if types.IsBuiltinAgentID(agent.ID) {
-			builtinInDB[agent.ID] = true
+			builtinInDB[agent.ID] = agent
 		}
 	}
 
@@ -201,14 +202,8 @@ func (s *customAgentService) ListAgents(ctx context.Context) ([]*types.CustomAge
 
 	// Add built-in agents in order
 	for _, builtinID := range builtinIDs {
-		if builtinInDB[builtinID] {
-			// Use customized config from database
-			for _, agent := range allAgents {
-				if agent.ID == builtinID {
-					result = append(result, agent)
-					break
-				}
-			}
+		if override, ok := builtinInDB[builtinID]; ok {
+			result = append(result, types.ApplyBuiltinAgentLocalizedMetadata(ctx, override))
 		} else {
 			// Use default built-in agent (i18n-aware)
 			if agent := types.GetBuiltinAgentWithContext(ctx, builtinID, tenantID); agent != nil {
@@ -309,6 +304,9 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 
 	if existingAgent != nil {
 		// Update existing record - only update config, keep basic info unchanged
+		existingAgent.Name = defaultAgent.Name
+		existingAgent.Description = defaultAgent.Description
+		existingAgent.Avatar = defaultAgent.Avatar
 		existingAgent.Config = agent.Config
 		existingAgent.UpdatedAt = time.Now()
 		existingAgent.EnsureDefaults()
@@ -323,7 +321,7 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 		}
 
 		logger.Infof(ctx, "Built-in agent config updated successfully, ID: %s", agent.ID)
-		return existingAgent, nil
+		return types.ApplyBuiltinAgentLocalizedMetadata(ctx, existingAgent), nil
 	}
 
 	// Create new record for built-in agent with customized config
@@ -351,7 +349,7 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 	}
 
 	logger.Infof(ctx, "Built-in agent config record created successfully, ID: %s", agent.ID)
-	return newAgent, nil
+	return types.ApplyBuiltinAgentLocalizedMetadata(ctx, newAgent), nil
 }
 
 // DeleteAgent deletes an agent

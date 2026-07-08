@@ -125,6 +125,26 @@ func GetBuiltinAgentWithContext(ctx context.Context, id string, tenantID uint64)
 	return buildAgentFromEntry(id, tenantID, locale)
 }
 
+// ApplyBuiltinAgentLocalizedMetadata overlays YAML-defined built-in agent
+// metadata (name / description / avatar) onto a tenant override row while
+// preserving the DB-backed config override.
+func ApplyBuiltinAgentLocalizedMetadata(ctx context.Context, agent *CustomAgent) *CustomAgent {
+	if agent == nil || !IsBuiltinAgentID(agent.ID) {
+		return agent
+	}
+	base := GetBuiltinAgentWithContext(ctx, agent.ID, agent.TenantID)
+	if base == nil {
+		return agent
+	}
+	clone := *agent
+	clone.Name = base.Name
+	clone.Description = base.Description
+	clone.Avatar = base.Avatar
+	clone.IsBuiltin = true
+	clone.EnsureDefaults()
+	return &clone
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -197,6 +217,9 @@ func resolveI18n(m map[string]BuiltinAgentI18n, locale string) BuiltinAgentI18n 
 func localeFromCtx(ctx context.Context) string {
 	if ctx == nil {
 		return ""
+	}
+	if locale, ok := UILocaleFromContext(ctx); ok {
+		return locale
 	}
 	lang, _ := LanguageFromContext(ctx)
 	return lang

@@ -98,12 +98,13 @@ func (h *DataSourceHandler) getAuthorizedKnowledgeBase(
 	if h.kbVisible != nil {
 		userID, isSuperAdmin := h.getCurrentUser(c)
 		if userID != "" || isSuperAdmin {
+			bypassVisibility := isSuperAdmin || types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleAdmin)
 			var allowed bool
 			var permErr error
 			if requireManage {
-				allowed, permErr = h.kbVisible.CanManageKB(ctx, userID, tenantID, kbID, isSuperAdmin)
+				allowed, permErr = h.kbVisible.CanManageKB(ctx, userID, tenantID, kbID, bypassVisibility)
 			} else {
-				allowed, permErr = h.kbVisible.CanAccessKB(ctx, userID, tenantID, kbID, isSuperAdmin)
+				allowed, permErr = h.kbVisible.CanAccessKB(ctx, userID, tenantID, kbID, bypassVisibility)
 			}
 			if permErr != nil || !allowed {
 				return nil, http.StatusForbidden, "access denied"

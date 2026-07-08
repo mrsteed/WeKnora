@@ -180,7 +180,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	if response.User != nil {
 		crossTenantEnabled := h.configInfo != nil && h.configInfo.Tenant != nil && h.configInfo.Tenant.EnableCrossTenantAccess
-		response.User.CanAccessAllTenants = response.User.CanAccessAllTenants && crossTenantEnabled
+		response.User.CanAccessAllTenants = (response.User.CanAccessAllTenants || response.User.IsSystemAdmin || response.User.IsSuperAdmin) && crossTenantEnabled
 	}
 
 	// User is already in the correct format from service
@@ -291,6 +291,10 @@ func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 	if !resp.Success {
 		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("login_failed")+"&oidc_error_description="+urlQueryEscape(resp.Message))
 		return
+	}
+	if resp.User != nil {
+		crossTenantEnabled := h.configInfo != nil && h.configInfo.Tenant != nil && h.configInfo.Tenant.EnableCrossTenantAccess
+		resp.User.CanAccessAllTenants = (resp.User.CanAccessAllTenants || resp.User.IsSystemAdmin || resp.User.IsSuperAdmin) && crossTenantEnabled
 	}
 
 	payload, err := encodeOIDCCallbackPayload(resp)
@@ -471,7 +475,8 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		}
 	}
 	userInfo := user.ToUserInfo()
-	userInfo.CanAccessAllTenants = user.CanAccessAllTenants && h.configInfo.Tenant.EnableCrossTenantAccess
+	crossTenantEnabled := h.configInfo != nil && h.configInfo.Tenant != nil && h.configInfo.Tenant.EnableCrossTenantAccess
+	userInfo.CanAccessAllTenants = (user.CanAccessAllTenants || user.IsSystemAdmin || user.IsSuperAdmin) && crossTenantEnabled
 	memberships := make([]types.Membership, 0)
 	if h.memberService != nil {
 		memberRows, listErr := h.memberService.ListByUser(ctx, user.ID)

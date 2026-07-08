@@ -13,25 +13,29 @@ import (
 // ==============================================================
 //
 // The four role-only guards (Viewer / Contributor / Admin / Owner) ask
-// "what is the caller's role in this tenant?". The two ownership
+// "what is the caller's role in this tenant?". The ownership-flavoured
 // guards (OwnedKBOrAdmin / OwnedAgentOrAdmin and the per-sub-resource
-// variants) ask "is the caller the creator of THIS resource OR at
-// least Admin+?".
+// variants) ask "is the caller the creator of THIS resource, OR a
+// same-tenant org-tree admin whose management scope covers it, OR at
+// least tenant Admin+?".
 //
 // Picking the wrong one is the single most common source of RBAC
 // bugs in this repo (we caught FAQ/Tag, agent share, KB share, and
 // shared-agents/disabled all wired against the wrong axis). Two
 // questions decide it:
 //
-// Q1. Does the resource have a creator?
+// Q1. Does the resource have a creator / same-tenant org scope?
 //
 //	YES — KB, Agent, Knowledge document, Chunk, WikiPage, FAQ entry,
-//	      KB tag, anything stamped with creator_id / created_by.
+//	      KB tag, anything stamped with creator_id / created_by or bound
+//	      to an org-scoped KB / Agent.
 //	      => Mutating routes use OwnedXxxOrAdmin.
-//	      The creator passes regardless of role; everyone else needs
-//	      Admin+. This is what makes "Contributor in my own KB acts
-//	      like Owner; Contributor in someone else's KB acts like
-//	      Viewer" hold uniformly.
+//	      The creator passes regardless of role; same-tenant org-tree
+//	      admins whose management subtree covers the resource also pass;
+//	      everyone else needs tenant Admin+. This is what makes
+//	      "Contributor in my own KB acts like Owner; org admin in the
+//	      scoped subtree acts like manager; Contributor elsewhere acts
+//	      like Viewer" hold uniformly.
 //
 //	NO  — Tenant-wide infrastructure: Model, VectorStore, IM channel,
 //	      WebSearchProvider, DataSource, MCPService, WeKnoraCloud
@@ -87,9 +91,10 @@ import (
 // ------------------------------------------
 // Chunks/wiki pages/FAQ entries/tags inherit their parent KB's gate.
 // The KBCreatorLookupFromKnowledgeID / KBCreatorLookupFromKBPath /
-// etc. lookups walk the URL param up to the KB and reuse its
-// creator_id. Don't add a new sub-resource with a freshly-invented
-// gate (a recurring source of "Contributor everywhere" drift).
+// etc. lookups walk the URL param up to the KB and then reuse the same
+// CanManageKB decision the top-level KB routes use. Don't add a new
+// sub-resource with a freshly-invented gate (a recurring source of
+// "Contributor everywhere" drift).
 //
 // rbacGuards is the centralised role-matrix bundle for tenant-level RBAC
 // (issue #1303 PR 2). NewRouter constructs it once and threads it into
@@ -122,16 +127,17 @@ type rbacGuards struct {
 	// Contributor who owns the KB can edit/delete its sub-resources
 	// (documents, chunks, wiki pages); a Contributor who merely belongs
 	// to the tenant gets 403 unless they're also Admin+.
-	knowledgeKBCreator    middleware.CreatorLookup
-	chunkKBCreator        middleware.CreatorLookup
-	chunkKBCreatorFromID  middleware.CreatorLookup // chunk routes that address chunks by :id (no knowledge id in URL)
-	wikiKBCreator         middleware.CreatorLookup
+	knowledgeKBCreator   middleware.CreatorLookup
+	chunkKBCreator       middleware.CreatorLookup
+	chunkKBCreatorFromID middleware.CreatorLookup // chunk routes that address chunks by :id (no knowledge id in URL)
+	wikiKBCreator        middleware.CreatorLookup
 
 	// Services for the KB-access guard (own / org-shared / via shared
 	// agent). Captured here so route lines can reference g.KBAccess()
 	// without having to plumb the services through every Register*
 	// function.
 	kbService         middleware.KBLookup
+	kbVisibility      interfaces.KBVisibilityService
 	knowledgeService  middleware.KnowledgeLookup
 	chunkService      middleware.ChunkLookup
 	kbShareService    interfaces.KBShareService
@@ -150,6 +156,7 @@ func newRBACGuards(
 	kbService interfaces.KnowledgeBaseService,
 	knowledgeService interfaces.KnowledgeService,
 	chunkService interfaces.ChunkService,
+	kbVisibility interfaces.KBVisibilityService,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
 ) *rbacGuards {
@@ -172,6 +179,7 @@ func newRBACGuards(
 		g.wikiKBCreator = wikiHandler.KBCreatorLookupFromKBPath
 	}
 	g.kbService = kbService
+	g.kbVisibility = kbVisibility
 	g.knowledgeService = knowledgeService
 	g.chunkService = chunkService
 	g.kbShareService = kbShareService
@@ -196,6 +204,28 @@ func (g *rbacGuards) Admin() gin.HandlerFunc {
 
 func (g *rbacGuards) Owner() gin.HandlerFunc {
 	return middleware.RequireRole(types.TenantRoleOwner, g.cfg)
+}
+
+// OwnerOrSystemAdminDelete is a narrow delete-tenant guard: keep the
+// normal Owner rule for ordinary members, but allow platform
+// super-admins to delete a tenant even when the cluster-wide
+// cross-tenant role bypass is disabled. This is intentionally NOT used
+// for generic owner-only routes.
+func (g *rbacGuards) OwnerOrSystemAdminDelete() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		if types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleOwner) {
+			c.Next()
+			return
+		}
+		if user, ok := ctx.Value(types.UserContextKey).(*types.User); ok && user != nil {
+			if user.IsSystemAdmin || user.IsSuperAdmin {
+				c.Next()
+				return
+			}
+		}
+		middleware.RequireRole(types.TenantRoleOwner, g.cfg)(c)
+	}
 }
 
 func (g *rbacGuards) SystemAdmin() gin.HandlerFunc {
@@ -322,6 +352,7 @@ func (g *rbacGuards) KBAccessRead(param string) gin.HandlerFunc {
 		middleware.KBIDFromParam(param),
 		types.OrgRoleViewer,
 		g.kbService,
+		g.kbVisibility,
 		g.kbShareService,
 		g.agentShareService,
 		g.cfg,
@@ -336,6 +367,7 @@ func (g *rbacGuards) KBAccessWrite(param string) gin.HandlerFunc {
 		middleware.KBIDFromParam(param),
 		types.OrgRoleEditor,
 		g.kbService,
+		g.kbVisibility,
 		g.kbShareService,
 		g.agentShareService,
 		g.cfg,
@@ -351,6 +383,7 @@ func (g *rbacGuards) KBAccessReadFromKnowledgeIDParam(param string) gin.HandlerF
 		middleware.KBIDFromKnowledgeIDParam(param, g.knowledgeService),
 		types.OrgRoleViewer,
 		g.kbService,
+		g.kbVisibility,
 		g.kbShareService,
 		g.agentShareService,
 		g.cfg,
@@ -364,6 +397,7 @@ func (g *rbacGuards) KBAccessWriteFromKnowledgeIDParam(param string) gin.Handler
 		middleware.KBIDFromKnowledgeIDParam(param, g.knowledgeService),
 		types.OrgRoleEditor,
 		g.kbService,
+		g.kbVisibility,
 		g.kbShareService,
 		g.agentShareService,
 		g.cfg,
@@ -378,6 +412,7 @@ func (g *rbacGuards) KBAccessReadFromChunkIDParam(param string) gin.HandlerFunc 
 		middleware.KBIDFromChunkIDParam(param, g.chunkService),
 		types.OrgRoleViewer,
 		g.kbService,
+		g.kbVisibility,
 		g.kbShareService,
 		g.agentShareService,
 		g.cfg,
@@ -392,6 +427,7 @@ func (g *rbacGuards) KBAccessWriteFromChunkIDParam(param string) gin.HandlerFunc
 		middleware.KBIDFromChunkIDParam(param, g.chunkService),
 		types.OrgRoleEditor,
 		g.kbService,
+		g.kbVisibility,
 		g.kbShareService,
 		g.agentShareService,
 		g.cfg,

@@ -1722,7 +1722,7 @@ export default {
     title: "가입 완료",
     subtitle: "「{tenant}」에 초대되었습니다",
     email: "이메일",
-    emailPlaceholder: "your@example.com",
+    emailPlaceholder: "your{'@'}example.com",
     emailHint: "본인이 사용하는 이메일이면 됩니다.",
     emailInvalid: "유효한 이메일을 입력해 주세요",
     username: "표시 이름",

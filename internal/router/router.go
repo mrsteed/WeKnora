@@ -39,6 +39,7 @@ type RouterParams struct {
 	FileService                  interfaces.FileService
 	UserService                  interfaces.UserService
 	KBService                    interfaces.KnowledgeBaseService
+	KBVisibility                 interfaces.KBVisibilityService
 	KnowledgeService             interfaces.KnowledgeService
 	ChunkService                 interfaces.ChunkService
 	SessionService               interfaces.SessionService
@@ -190,6 +191,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		params.KBService,
 		params.KnowledgeService,
 		params.ChunkService,
+		params.KBVisibility,
 		params.KBShareService,
 		params.AgentShareService,
 	)
@@ -469,7 +471,7 @@ func RegisterTenantRoutes(
 		{
 			tenantByID.GET("", g.Viewer(), handler.GetTenant)
 			tenantByID.PUT("", g.Owner(), handler.UpdateTenant)
-			tenantByID.DELETE("", g.Owner(), handler.DeleteTenant)
+			tenantByID.DELETE("", g.OwnerOrSystemAdminDelete(), handler.DeleteTenant)
 			tenantByID.POST("/api-key", g.Owner(), handler.ResetAPIKey)
 			tenantByID.GET("/api-principal-config", g.Owner(), handler.GetAPIPrincipalConfig)
 			tenantByID.PUT("/api-principal-config", g.Owner(), handler.UpdateAPIPrincipalConfig)
@@ -1434,34 +1436,34 @@ func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHan
 	wiki := r.Group("/knowledgebase/:kb_id/wiki")
 	{
 		// Page CRUD
-		wiki.GET("/pages", g.Viewer(), wikiHandler.ListPages)
-		wiki.POST("/pages", g.OwnedWikiKBOrAdmin(), wikiHandler.CreatePage)
-		wiki.PUT("/move-page", g.OwnedWikiKBOrAdmin(), wikiHandler.MovePage)
-		wiki.GET("/pages/*slug", g.Viewer(), wikiHandler.GetPage)
-		wiki.PUT("/pages/*slug", g.OwnedWikiKBOrAdmin(), wikiHandler.UpdatePage)
-		wiki.DELETE("/pages/*slug", g.OwnedWikiKBOrAdmin(), wikiHandler.DeletePage)
+		wiki.GET("/pages", g.Viewer(), g.KBAccessRead("kb_id"), wikiHandler.ListPages)
+		wiki.POST("/pages", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.CreatePage)
+		wiki.PUT("/move-page", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.MovePage)
+		wiki.GET("/pages/*slug", g.Viewer(), g.KBAccessRead("kb_id"), wikiHandler.GetPage)
+		wiki.PUT("/pages/*slug", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.UpdatePage)
+		wiki.DELETE("/pages/*slug", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.DeletePage)
 
 		// Folder tree (directory nodes)
-		wiki.GET("/folders", g.Viewer(), wikiHandler.ListFolders)
-		wiki.POST("/folders", g.OwnedWikiKBOrAdmin(), wikiHandler.CreateFolder)
-		wiki.PUT("/folders/:folder_id", g.OwnedWikiKBOrAdmin(), wikiHandler.UpdateFolder)
-		wiki.DELETE("/folders/:folder_id", g.OwnedWikiKBOrAdmin(), wikiHandler.DeleteFolder)
+		wiki.GET("/folders", g.Viewer(), g.KBAccessRead("kb_id"), wikiHandler.ListFolders)
+		wiki.POST("/folders", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.CreateFolder)
+		wiki.PUT("/folders/:folder_id", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.UpdateFolder)
+		wiki.DELETE("/folders/:folder_id", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.DeleteFolder)
 
 		// Special pages
-		wiki.GET("/index", g.Viewer(), wikiHandler.GetIndex)
-		wiki.GET("/log", g.Viewer(), wikiHandler.GetLog)
-		wiki.GET("/graph", g.Viewer(), wikiHandler.GetGraph)
-		wiki.GET("/stats", g.Viewer(), wikiHandler.GetStats)
+		wiki.GET("/index", g.Viewer(), g.KBAccessRead("kb_id"), wikiHandler.GetIndex)
+		wiki.GET("/log", g.Viewer(), g.KBAccessRead("kb_id"), wikiHandler.GetLog)
+		wiki.GET("/graph", g.Viewer(), g.KBAccessRead("kb_id"), wikiHandler.GetGraph)
+		wiki.GET("/stats", g.Viewer(), g.KBAccessRead("kb_id"), wikiHandler.GetStats)
 
 		// Search and maintenance
-		wiki.GET("/search", g.Viewer(), wikiHandler.SearchPages)
-		wiki.POST("/rebuild-links", g.OwnedWikiKBOrAdmin(), wikiHandler.RebuildLinks)
-		wiki.GET("/lint", g.Viewer(), wikiHandler.Lint)
-		wiki.POST("/auto-fix", g.OwnedWikiKBOrAdmin(), wikiHandler.AutoFix)
+		wiki.GET("/search", g.Viewer(), g.KBAccessRead("kb_id"), wikiHandler.SearchPages)
+		wiki.POST("/rebuild-links", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.RebuildLinks)
+		wiki.GET("/lint", g.Viewer(), g.KBAccessRead("kb_id"), wikiHandler.Lint)
+		wiki.POST("/auto-fix", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.AutoFix)
 
 		// Issues
-		wiki.GET("/issues", g.Viewer(), wikiHandler.ListIssues)
-		wiki.PUT("/issues/:issue_id/status", g.OwnedWikiKBOrAdmin(), wikiHandler.UpdateIssueStatus)
+		wiki.GET("/issues", g.Viewer(), g.KBAccessRead("kb_id"), wikiHandler.ListIssues)
+		wiki.PUT("/issues/:issue_id/status", g.OwnedWikiKBOrAdmin(), g.KBAccessWrite("kb_id"), wikiHandler.UpdateIssueStatus)
 	}
 }
 

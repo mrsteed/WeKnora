@@ -120,6 +120,13 @@ func LanguageFromContext(ctx context.Context) (string, bool) {
 	return v, ok && v != ""
 }
 
+// UILocaleFromContext extracts the UI/display locale string from ctx (e.g.
+// "zh-CN", "en-US"). Returns ("", false) when absent.
+func UILocaleFromContext(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(UILocaleContextKey).(string)
+	return v, ok && v != ""
+}
+
 // LanguageNameFromContext returns the human-readable language name for use in prompts.
 // e.g. "zh-CN" -> "Chinese (Simplified)", "en-US" -> "English", "ko-KR" -> "Korean"
 // Falls back to DefaultLanguage() (WEKNORA_LANGUAGE env, then "zh-CN").

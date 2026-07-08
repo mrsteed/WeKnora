@@ -1152,6 +1152,15 @@ func (h *SystemHandler) PromoteUserToSystemAdmin(c *gin.Context) {
 	}
 
 	if user.IsSystemAdmin {
+		if !user.IsSuperAdmin || !user.CanAccessAllTenants {
+			user.IsSuperAdmin = true
+			user.CanAccessAllTenants = true
+			if err := h.userSvc.UpdateUser(ctx, user); err != nil {
+				logger.Errorf(ctx, "Error healing system admin flags for user %s: %v", user.ID, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to promote user"})
+				return
+			}
+		}
 		// Idempotent: re-promoting an existing system admin is a no-op
 		// success. We still emit an audit row so probing the endpoint
 		// leaves a forensic trail (idempotent=true marks it as noop).
@@ -1164,6 +1173,8 @@ func (h *SystemHandler) PromoteUserToSystemAdmin(c *gin.Context) {
 		return
 	}
 	user.IsSystemAdmin = true
+	user.IsSuperAdmin = true
+	user.CanAccessAllTenants = true
 	if err := h.userSvc.UpdateUser(ctx, user); err != nil {
 		logger.Errorf(ctx, "Error promoting user %s to system admin: %v", req.UserID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to promote user"})

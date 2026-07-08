@@ -14,6 +14,7 @@ type agentVisibilityService struct {
 	agentRepo      interfaces.CustomAgentRepository
 	agentService   interfaces.CustomAgentService
 	orgTreeService interfaces.OrgTreeService
+	authorizer     *sameTenantResourceAuthorizer
 }
 
 // NewAgentVisibilityService creates a new agent visibility service
@@ -26,6 +27,7 @@ func NewAgentVisibilityService(
 		agentRepo:      agentRepo,
 		agentService:   agentService,
 		orgTreeService: orgTreeService,
+		authorizer:     newSameTenantResourceAuthorizer(orgTreeService),
 	}
 }
 
@@ -41,49 +43,14 @@ func (s *agentVisibilityService) ListAccessibleAgents(ctx context.Context, userI
 		return s.agentService.ListAgents(ctx)
 	}
 
-	// Get user's organizations within this tenant
-	userOrgs, err := s.orgTreeService.GetUserOrganizations(ctx, userID, tenantID)
+	scope, err := s.authorizer.resolveScope(ctx, userID, tenantID)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get user organizations: %v", err)
-		return nil, fmt.Errorf("failed to get user organizations: %w", err)
-	}
-
-	// Collect all related org IDs (same logic as kb_visibility.go):
-	// 1. User's orgs themselves
-	// 2. Ancestors of user's orgs
-	// 3. Descendants of user's orgs
-	orgIDSet := make(map[string]bool)
-	pathPrefixes := make([]string, 0, len(userOrgs))
-	for _, org := range userOrgs {
-		orgIDSet[org.ID] = true
-		pathPrefixes = append(pathPrefixes, org.Path)
-	}
-
-	// Extract ancestor org IDs from paths (no DB query needed)
-	ancestorIDs := s.orgTreeService.GetAncestorIDsFromPaths(pathPrefixes)
-	for _, id := range ancestorIDs {
-		orgIDSet[id] = true
-	}
-
-	// Batch get all descendants
-	if len(pathPrefixes) > 0 {
-		allDescendants, err := s.orgTreeService.GetDescendantIDsByPaths(ctx, pathPrefixes, tenantID)
-		if err != nil {
-			logger.Errorf(ctx, "Failed to batch get descendant org IDs: %v", err)
-		} else {
-			for _, id := range allDescendants {
-				orgIDSet[id] = true
-			}
-		}
-	}
-
-	orgIDs := make([]string, 0, len(orgIDSet))
-	for id := range orgIDSet {
-		orgIDs = append(orgIDs, id)
+		logger.Errorf(ctx, "Failed to resolve agent visibility scope: %v", err)
+		return nil, fmt.Errorf("failed to resolve agent visibility scope: %w", err)
 	}
 
 	// Query custom agents with visibility rules
-	customAgents, err := s.agentRepo.ListAccessibleAgents(ctx, userID, tenantID, orgIDs)
+	customAgents, err := s.agentRepo.ListAccessibleAgents(ctx, userID, tenantID, scope.readOrgList)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to list accessible agents: %v", err)
 		return nil, fmt.Errorf("failed to list accessible agents: %w", err)
@@ -105,9 +72,9 @@ func (s *agentVisibilityService) ListAccessibleAgents(ctx context.Context, userI
 	// Add built-in agents in order
 	for _, builtinID := range builtinIDs {
 		if override, ok := builtinInDB[builtinID]; ok {
-			result = append(result, override)
+			result = append(result, types.ApplyBuiltinAgentLocalizedMetadata(ctx, override))
 		} else {
-			if agent := types.GetBuiltinAgent(builtinID, tenantID); agent != nil {
+			if agent := types.GetBuiltinAgentWithContext(ctx, builtinID, tenantID); agent != nil {
 				result = append(result, agent)
 			}
 		}
@@ -117,4 +84,42 @@ func (s *agentVisibilityService) ListAccessibleAgents(ctx context.Context, userI
 	result = append(result, customAgents...)
 
 	return result, nil
+}
+
+func (s *agentVisibilityService) CanAccessAgent(ctx context.Context, userID string, tenantID uint64, agentID string, isSuperAdmin bool) (bool, error) {
+	if isSuperAdmin {
+		return true, nil
+	}
+	agent, err := s.agentService.GetAgentByID(ctx, agentID)
+	if err != nil {
+		return false, err
+	}
+	scope, err := s.authorizer.resolveScope(ctx, userID, tenantID)
+	if err != nil {
+		return false, fmt.Errorf("failed to resolve agent visibility scope: %w", err)
+	}
+	return s.authorizer.canReadResource(sameTenantResourceRule{
+		Visibility:     agent.Visibility,
+		OrganizationID: agent.OrganizationID,
+		CreatedBy:      agent.CreatedBy,
+	}, userID, isSuperAdmin, scope), nil
+}
+
+func (s *agentVisibilityService) CanManageAgent(ctx context.Context, userID string, tenantID uint64, agentID string, isSuperAdmin bool) (bool, error) {
+	if isSuperAdmin {
+		return true, nil
+	}
+	agent, err := s.agentService.GetAgentByID(ctx, agentID)
+	if err != nil {
+		return false, err
+	}
+	scope, err := s.authorizer.resolveScope(ctx, userID, tenantID)
+	if err != nil {
+		return false, fmt.Errorf("failed to resolve agent visibility scope: %w", err)
+	}
+	return s.authorizer.canManageResource(sameTenantResourceRule{
+		Visibility:     agent.Visibility,
+		OrganizationID: agent.OrganizationID,
+		CreatedBy:      agent.CreatedBy,
+	}, userID, isSuperAdmin, scope), nil
 }

@@ -29,6 +29,11 @@ const (
 	EmbedQueryContextKey ContextKey = "EmbedQuery"
 	// LanguageContextKey is the context key for user language preference (e.g. "zh-CN", "en-US")
 	LanguageContextKey ContextKey = "Language"
+	// UILocaleContextKey is the context key for UI/display locale derived from
+	// Accept-Language. Unlike LanguageContextKey, it must not be overridden by
+	// WEKNORA_LANGUAGE because UI copy (e.g. built-in agent names) should follow
+	// the user's interface locale rather than document-processing language.
+	UILocaleContextKey ContextKey = "UILocale"
 	// EmbedVisitorContextKey is the anonymous visitor id for embed OAuth isolation.
 	EmbedVisitorContextKey ContextKey = "EmbedVisitorID"
 	// LangfuseTraceContextKey carries the active Langfuse *Trace across the

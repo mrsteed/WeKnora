@@ -168,6 +168,19 @@
                   $t('tenant.switcher.currentBadge') }}</span>
               </div>
             </div>
+            <t-tooltip v-if="canDeleteTenant(m)" :content="$t('tenant.deleteDangerZone.button')" placement="top">
+              <t-button
+                theme="danger"
+                shape="square"
+                variant="text"
+                size="small"
+                class="tenant-submenu-item-delete"
+                :loading="deletingTenantId === m.tenant_id"
+                @click.stop="openDeleteDialog(m)"
+              >
+                <template #icon><t-icon name="delete" /></template>
+              </t-button>
+            </t-tooltip>
           </div>
           <div v-if="switchableMemberships.length === 0" class="tenant-submenu-empty">
             {{ $t('tenant.switcher.empty') }}
@@ -177,7 +190,7 @@
              子菜单的用户都能看到（包括单租户用户）。后端 router 已对
              POST /api/v1/tenants 去掉跨租户超管守卫，handler 内部会把
              当前用户 EnsureOwner 成新租户的 Owner。 -->
-        <div class="tenant-submenu-create" @click="openCreateTenantDialog">
+        <div v-if="canCreateTenant" class="tenant-submenu-create" @click="openCreateTenantDialog">
           <t-icon name="add" class="tenant-submenu-create-icon" />
           <span class="tenant-submenu-create-label">{{ $t('tenant.create.action') }}</span>
         </div>
@@ -186,6 +199,42 @@
 
     <!-- 创建工作区弹窗 -->
     <CreateTenantDialog v-model:visible="createTenantDialogVisible" @created="onTenantCreated" />
+
+    <!-- 切空间浮层内置的删除二次确认弹框。打开时冻结浮层里的
+         mouseleave 自动隐藏，并要求输入名称 + 与浮层隔离的遮罩，
+         避免“鼠标一动就消失”。 -->
+    <t-dialog
+      v-model:visible="deleteDialogVisible"
+      :header="deleteDialogTarget
+        ? $t('tenant.deleteDangerZone.confirmTitle')
+        : ''"
+      :confirm-btn="{
+        content: $t('tenant.deleteDangerZone.confirm'),
+        theme: 'danger',
+        disabled: deleteConfirmName.trim() !== deleteDialogName,
+        loading: deletingTenantId !== null,
+      }"
+      :cancel-btn="$t('common.cancel')"
+      :close-on-overlay-click="false"
+      :close-on-esc-keydown="false"
+      width="480px"
+      destroy-on-close
+      @confirm="handleDeleteTenant"
+      @close="closeDeleteDialog"
+    >
+      <div class="tenant-delete-confirm">
+        <p>{{ $t('tenant.deleteDangerZone.confirmBody', { name: deleteDialogName }) }}</p>
+        <p class="tenant-delete-confirm__hint">
+          {{ $t('tenant.deleteDangerZone.confirmHint', { name: deleteDialogName }) }}
+        </p>
+        <t-input
+          v-model="deleteConfirmName"
+          :placeholder="deleteDialogName"
+          :disabled="deletingTenantId !== null"
+          clearable
+        />
+      </div>
+    </t-dialog>
   </div>
 </template>
 
@@ -194,10 +243,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
+import { useWorkspaceSetupStore } from '@/stores/workspaceSetup'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { getCurrentUser, logout as logoutApi, userInfoFromApi } from '@/api/auth'
 import { useI18n } from 'vue-i18n'
 import CreateTenantDialog from '@/components/CreateTenantDialog.vue'
+import { deleteTenant as deleteTenantApi } from '@/api/tenant'
 import {
   navigateAfterTenantSwitch,
   persistLastActiveTenantPreference,
@@ -213,6 +264,7 @@ const { t } = useI18n()
 const router = useRouter()
 const uiStore = useUIStore()
 const authStore = useAuthStore()
+const workspaceSetupStore = useWorkspaceSetupStore()
 const { formatRole, roleIcon } = useRoleLabel()
 const { homeTenantId, isHomeTenantActive, isHomeTenant } = useHomeTenant()
 
@@ -320,13 +372,19 @@ const closeAll = () => {
 }
 
 // ---------- Create new tenant ----------
-// 普通用户在租户子菜单底部点 "+ 创建新工作区" → 弹 CreateTenantDialog →
+// 超级管理员在租户子菜单底部点 "+ 创建新工作区" → 弹 CreateTenantDialog →
 // 后端写一行 owner 的 tenant_members → 直接切到新租户。复用 switchToTenant
 // 同款的 setSelectedTenant + navigateAfterTenantSwitch 链路，避免 token
 // 依然指向旧租户带来的 SSE / store 不一致。
 const createTenantDialogVisible = ref(false)
+const deletingTenantId = ref<number | null>(null)
+const deleteDialogVisible = ref(false)
+const deleteDialogTarget = ref<Membership | null>(null)
+const deleteConfirmName = ref('')
+const canCreateTenant = computed(() => authStore.isSuperAdmin)
 
 const openCreateTenantDialog = () => {
+  if (!canCreateTenant.value) return
   closeAll()
   createTenantDialogVisible.value = true
 }
@@ -334,9 +392,9 @@ const openCreateTenantDialog = () => {
 const onTenantCreated = async (newTenant: TenantInfo) => {
   await authStore.refreshFromAuthMe()
   authStore.setSelectedTenant(newTenant.id, newTenant.name)
+  workspaceSetupStore.start(newTenant)
   const persist = persistLastActiveTenantPreference(newTenant.id)
-  Promise.race([persist, new Promise((r) => setTimeout(r, 300))])
-    .finally(() => navigateAfterTenantSwitch())
+  void Promise.race([persist, new Promise((r) => setTimeout(r, 300))])
 }
 
 // ---------- Tenant switcher submenu ----------
@@ -369,6 +427,33 @@ const switchableMemberships = computed<Membership[]>(() => {
 // double-show that here.
 const showTenantSwitcher = computed(() => {
   return switchableMemberships.value.length >= 1
+})
+
+const canDeleteTenant = (m: Membership) => authStore.isSuperAdmin || m.role === 'owner'
+
+// 打开删除确认弹框：与原 hover 触发的浮层解耦，避免鼠标从浮层
+// 移到弹框上时 mousing out 导致租户列表消失。
+const openDeleteDialog = (m: Membership) => {
+  deleteDialogTarget.value = m
+  deleteConfirmName.value = ''
+  // 拽住浮层避免 hover 状态被后续 destroy-on-close 关闭后立刻
+  // 重新触发隐藏；schedule 时给一个远超鼠标自然浮动间隔的延迟。
+  if (tenantSubmenuHideTimer) {
+    clearTimeout(tenantSubmenuHideTimer)
+    tenantSubmenuHideTimer = null
+  }
+  deleteDialogVisible.value = true
+}
+
+const closeDeleteDialog = () => {
+  deleteDialogVisible.value = false
+  deleteDialogTarget.value = null
+  deleteConfirmName.value = ''
+}
+
+const deleteDialogName = computed(() => {
+  if (!deleteDialogTarget.value) return ''
+  return tenantDisplayName(deleteDialogTarget.value)
 })
 
 const isCurrentTenant = (id: number) => {
@@ -414,6 +499,61 @@ const switchToTenant = (m: Membership) => {
   const persist = persistLastActiveTenantPreference(switchingToHome ? null : m.tenant_id)
   Promise.race([persist, new Promise((r) => setTimeout(r, 400))])
     .finally(() => navigateAfterTenantSwitch())
+}
+
+const handleDeleteTenant = async () => {
+  const target = deleteDialogTarget.value
+  if (!target) return
+  if (deleteConfirmName.value.trim() !== deleteDialogName.value) {
+    MessagePlugin.warning(t('tenant.deleteDangerZone.nameMismatch'))
+    return
+  }
+  if (deletingTenantId.value !== null) return
+
+  deletingTenantId.value = target.tenant_id
+  try {
+    const resp = await deleteTenantApi(target.tenant_id)
+    if (!resp.success) {
+      MessagePlugin.error(resp.message || t('tenant.deleteDangerZone.failed'))
+      return
+    }
+
+    MessagePlugin.success(t('tenant.deleteDangerZone.success'))
+    authStore.setMemberships((authStore.memberships ?? []).filter((item) => Number(item.tenant_id) !== Number(target.tenant_id)))
+      authStore.setAllTenants((authStore.allTenants ?? []).filter((item) => Number(item.id) !== Number(target.tenant_id)))
+
+    closeDeleteDialog()
+
+    if (!isCurrentTenant(target.tenant_id)) {
+      await authStore.refreshFromAuthMe()
+      scheduleHideTenantSubmenu()
+      return
+    }
+
+    await authStore.refreshFromAuthMe()
+    const next = authStore.memberships.find((item) => Number(item.tenant_id) === Number(homeTenantId.value)) ?? authStore.memberships[0]
+    if (!next) {
+      authStore.logout()
+      window.location.href = '/login'
+      return
+    }
+
+    const nextName = next.tenant_name?.trim() || `#${next.tenant_id}`
+    const switchingToHome = homeTenantId.value !== null && homeTenantId.value === next.tenant_id
+    authStore.setSelectedTenant(next.tenant_id, nextName)
+    stashTenantSwitchToast({
+      name: nextName,
+      role: formatRole(next.role) || undefined,
+      roleEnum: next.role || undefined,
+    })
+    const persist = persistLastActiveTenantPreference(switchingToHome ? null : next.tenant_id)
+    Promise.race([persist, new Promise((r) => setTimeout(r, 400))])
+      .finally(() => navigateAfterTenantSwitch())
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('tenant.deleteDangerZone.failed'))
+  } finally {
+    deletingTenantId.value = null
+  }
 }
 
 let lastTenantSubmenuMembershipRefresh = 0
@@ -1133,6 +1273,11 @@ onUnmounted(() => {
     gap: 2px;
   }
 
+  .tenant-submenu-item-delete {
+    flex-shrink: 0;
+    margin-left: 4px;
+  }
+
   .tenant-submenu-item-name {
     font-size: 13px;
     color: var(--td-text-color-primary);
@@ -1238,5 +1383,20 @@ onUnmounted(() => {
       font-size: 12px;
     }
   }
+}
+
+/* 删除空间二次确认弹框：保持在浮层之上，跟浮层内的样式解耦。
+   TDesign 的 t-dialog 默认 z-index 较高，但在自定义 Teleport 浮层里
+   仍可能和浮层抢层，需给一个不低的位置。 */
+.tenant-delete-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tenant-delete-confirm__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--td-text-color-secondary);
 }
 </style>

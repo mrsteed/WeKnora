@@ -146,6 +146,7 @@ func (h *TenantMemberHandler) ListMembers(c *gin.Context) {
 			row.Email = u.Email
 			row.Username = u.Username
 			row.Avatar = u.Avatar
+			row.IsSuperAdmin = u.IsSuperAdmin || u.IsSystemAdmin
 		}
 		resp = append(resp, row)
 	}
