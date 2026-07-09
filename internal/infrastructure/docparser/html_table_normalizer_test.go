@@ -38,22 +38,21 @@ func TestNormalizeHTMLTables_ConvertsStyledTableToMarkdown(t *testing.T) {
 }
 
 func TestNormalizeHTMLTables_StripsAttrsOnSpanTables(t *testing.T) {
-	// rowspan/colspan cannot be expressed in Markdown, so the table stays HTML
-	// but its presentational attributes are stripped.
+	// 合并单元格会被展开成普通 Markdown 网格，保证后续 Pandoc/分块逻辑都能识别。
 	input := `<table><tr><td colspan="2" style="text-align:center;" class="hdr">合计</td></tr>` +
 		`<tr><td style="text-align:left;">A</td><td width="80">B</td></tr></table>`
 
 	got := normalizeHTMLTables(input)
 
-	if !strings.Contains(got, "<table") {
-		t.Fatalf("expected span table to remain HTML, got:\n%s", got)
+	if strings.Contains(got, "<table") {
+		t.Fatalf("expected span table to be converted to markdown, got:\n%s", got)
 	}
-	if !strings.Contains(got, `colspan="2"`) {
-		t.Fatalf("expected colspan to be preserved, got:\n%s", got)
+	if !markdownTableSeparatorPattern.MatchString(got) {
+		t.Fatalf("expected markdown table separator row, got:\n%s", got)
 	}
-	for _, banned := range []string{"text-align", "class=", "width="} {
-		if strings.Contains(got, banned) {
-			t.Fatalf("expected %q to be stripped, got:\n%s", banned, got)
+	for _, want := range []string{"合计", "A", "B"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected expanded markdown table to retain %q, got:\n%s", want, got)
 		}
 	}
 }

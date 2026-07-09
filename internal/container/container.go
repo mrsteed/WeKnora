@@ -87,6 +87,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
+	exportutils "github.com/Tencent/WeKnora/internal/utils/export"
 	"github.com/tencent/vectordatabase-sdk-go/tcvectordb"
 	"github.com/weaviate/weaviate-go-client/v5/weaviate"
 	"github.com/weaviate/weaviate-go-client/v5/weaviate/auth"
@@ -388,6 +389,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// local:// images that live under a tenant's configured storage PathPrefix
 	// (which is not encoded in the local:// URL).
 	must(container.Invoke(registerChatLocalImageResolver))
+	must(container.Invoke(registerExportStorageImageResolver))
 
 	// Router configuration
 	logger.Debugf(ctx, "[Container] Registering router and starting task server...")
@@ -433,6 +435,53 @@ func registerChatLocalImageResolver(tenantRepo interfaces.TenantRepository) {
 		if err != nil {
 			return nil, false
 		}
+		return data, true
+	}
+}
+
+func registerExportStorageImageResolver(tenantRepo interfaces.TenantRepository) {
+	exportutils.StorageImageResolver = func(ctx context.Context, storageURL string) ([]byte, bool) {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+
+		tenantID := secutils.ParseTenantIDFromStoragePath(storageURL)
+		if tenantID == 0 {
+			if tenant, ok := types.TenantInfoFromContext(ctx); ok {
+				tenantID = tenant.ID
+			}
+		}
+		if tenantID == 0 {
+			return nil, false
+		}
+
+		tenant, err := tenantRepo.GetTenantByID(ctx, tenantID)
+		if err != nil || tenant == nil || tenant.StorageEngineConfig == nil {
+			return nil, false
+		}
+
+		provider, _, ok := strings.Cut(storageURL, "://")
+		if !ok {
+			return nil, false
+		}
+
+		baseDir := strings.TrimSpace(os.Getenv("LOCAL_STORAGE_BASE_DIR"))
+		fileSvc, _, err := file.NewFileServiceFromStorageConfig(provider, tenant.StorageEngineConfig, baseDir)
+		if err != nil {
+			return nil, false
+		}
+
+		rc, err := fileSvc.GetFile(ctx, storageURL)
+		if err != nil {
+			return nil, false
+		}
+		defer rc.Close()
+
+		data, err := io.ReadAll(rc)
+		if err != nil {
+			return nil, false
+		}
+
 		return data, true
 	}
 }

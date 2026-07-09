@@ -45,10 +45,11 @@ func PolicyForFormat(format string) Policy {
 			Timeout:         5 * time.Second,
 		}
 	case FormatPDF:
-		available := IsChromiumAvailable()
+		err := validatePDFRuntime()
+		available := err == nil
 		reason := ""
 		if !available {
-			reason = "chromium is not installed on the server"
+			reason = err.Error()
 		}
 		return Policy{
 			Format:          FormatPDF,
@@ -59,10 +60,11 @@ func PolicyForFormat(format string) Policy {
 			Timeout:         45 * time.Second,
 		}
 	case FormatDocx:
-		available := IsPandocAvailable()
+		err := validateDocxRuntime()
+		available := err == nil
 		reason := ""
 		if !available {
-			reason = "pandoc is not installed on the server"
+			reason = err.Error()
 		}
 		return Policy{
 			Format:          FormatDocx,

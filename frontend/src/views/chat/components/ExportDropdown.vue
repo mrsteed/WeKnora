@@ -11,7 +11,7 @@
       shape="round"
       :loading="exporting"
       :disabled="disabled || !canExport"
-      :title="$t('chatExport.title')"
+      :title="translateExportText('chatExport.title', '导出文档')"
       @click.stop="toggleMenu"
     >
       <t-icon name="download" />

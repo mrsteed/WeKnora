@@ -72,7 +72,8 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         libsqlite3-0 \
         python3 python3-pip python3-dev libffi-dev libssl-dev \
         nodejs npm \
-        chromium pandoc \
+            chromium pandoc \
+            texlive-xetex texlive-lang-chinese texlive-fonts-recommended \
         libfontconfig1 fonts-noto-cjk fonts-noto-cjk-extra fonts-noto-color-emoji fonts-liberation \
         gosu \
         ffmpeg && \

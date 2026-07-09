@@ -11,6 +11,23 @@ type markdownImageTargetSpan struct {
 	TargetEnd   int
 }
 
+type MarkdownImageTargetSpan struct {
+	TargetStart int
+	TargetEnd   int
+}
+
+func ScanMarkdownImageTargets(markdown string) []MarkdownImageTargetSpan {
+	raw := scanMarkdownImageTargets(markdown)
+	spans := make([]MarkdownImageTargetSpan, 0, len(raw))
+	for _, span := range raw {
+		spans = append(spans, MarkdownImageTargetSpan{
+			TargetStart: span.TargetStart,
+			TargetEnd:   span.TargetEnd,
+		})
+	}
+	return spans
+}
+
 func scanMarkdownImageTargets(markdown string) []markdownImageTargetSpan {
 	var spans []markdownImageTargetSpan
 	for i := 0; i+1 < len(markdown); i++ {
