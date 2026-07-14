@@ -65,6 +65,10 @@ export const useMenuStore = defineStore('menuStore', () => {
   // 共享空间 (organizations) 仅对当前租户的 admin / owner 暴露入口。
   // viewer / contributor 即便在共享空间里拥有资源，也无需自行管理共享关系，
   // 入口在侧栏只会徒增噪音；后端 RBAC 才是权限的最终来源（见 middleware/rbac.go）。
+  //
+  // 发布集成入口现在按「最宽可见 tab」放开：IM 渠道允许 contributor+
+  // 进入并直接编辑/绑定；embed / api 仍保持 owner-only，并在集成页内部
+  // 继续按 tab 细分。viewer 不显示入口。
   const visibleMenuArr = computed(() => {
     const authStore = useAuthStore()
     return menuArr.filter(item => {
@@ -74,7 +78,7 @@ export const useMenuStore = defineStore('menuStore', () => {
       if (item.path === 'organizations' && !authStore.hasRole('admin')) {
         return false
       }
-      if (item.path === 'integrations' && !authStore.hasRole('owner')) {
+      if (item.path === 'integrations' && !authStore.hasRole('contributor')) {
         return false
       }
       if (item.path === 'admin' && !authStore.isSuperAdmin && !authStore.isOrgAdmin) {

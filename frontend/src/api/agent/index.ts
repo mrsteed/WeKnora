@@ -258,6 +258,7 @@ export interface IMChannel {
   id: string;
   tenant_id?: number;
   agent_id: string;
+  created_by?: string;
   platform: 'wecom' | 'feishu' | 'slack' | 'telegram' | 'dingtalk' | 'mattermost' | 'wechat' | 'qqbot';
   name: string;
   enabled: boolean;
@@ -274,7 +275,7 @@ export function listIMChannels(agentId: string) {
   return get<{ data: IMChannel[] }>(`/api/v1/agents/${agentId}/im-channels`);
 }
 
-// Tenant-wide overview row. Credentials are intentionally omitted — use
+// Current-user overview row. Credentials are intentionally omitted — use
 // listIMChannels(agentId) when you need to edit a specific channel.
 export interface IMChannelOverview {
   id: string;

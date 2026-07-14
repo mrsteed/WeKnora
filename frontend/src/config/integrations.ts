@@ -2,11 +2,11 @@ export type IntegrationTab = 'im' | 'embed' | 'api'
 
 export const INTEGRATION_TABS: IntegrationTab[] = ['im', 'embed', 'api']
 
-/** Aligns with router.go: publish/integration management is Owner-only. */
+/** Aligns with router.go: IM is contributor+, embed/api stay owner-only. */
 export type IntegrationTabRole = 'viewer' | 'contributor' | 'admin' | 'owner'
 
 export const INTEGRATION_TAB_MIN_ROLE: Partial<Record<IntegrationTab, IntegrationTabRole>> = {
-  im: 'owner',
+  im: 'contributor',
   embed: 'owner',
   api: 'owner',
 }

@@ -8,7 +8,7 @@
       </div>
 
       <t-loading :loading="loading" size="small" class="channels-loading-wrap">
-        <div v-if="!loading && channels.length === 0 && !authStore.hasRole('admin')" class="channels-empty">
+        <div v-if="!loading && channels.length === 0 && !authStore.hasRole('contributor')" class="channels-empty">
           <t-empty :description="$t('agentEditor.im.empty')" />
         </div>
 
@@ -31,7 +31,7 @@
                 {{ agentDisplayName(channel) }}
               </span>
             </div>
-            <div v-if="authStore.hasRole('admin')" class="channel-card__actions" @click.stop>
+            <div v-if="authStore.hasRole('contributor')" class="channel-card__actions" @click.stop>
               <t-dropdown trigger="click" placement="bottom-right" attach="body" :options="channelMenuOptions(channel)"
                 @click="(data: { value?: string }) => handleChannelMenuClick(data, channel)">
                 <t-button variant="text" shape="square" size="small" class="channel-card__action-btn channel-card__more"
@@ -53,7 +53,7 @@
             </div>
           </button>
 
-          <button v-if="authStore.hasRole('admin')" type="button" class="channel-card channel-card--add"
+          <button v-if="authStore.hasRole('contributor')" type="button" class="channel-card channel-card--add"
             @click="openCreate">
             <span class="channel-card__badge" aria-hidden="true">
               <t-icon name="add" />
@@ -71,7 +71,7 @@
 
     <SettingDrawer v-model:visible="showCreateDialog" class="im-channel-drawer" :title="drawerTitle"
       :description="drawerStepDescription" storage-key="setting-drawer:im-channel" width="560px"
-      :confirm-loading="saving" :confirm-text="drawerConfirmText" :hide-footer="!authStore.hasRole('admin')"
+      :confirm-loading="saving" :confirm-text="drawerConfirmText" :hide-footer="!authStore.hasRole('contributor')"
       @confirm="handleDrawerConfirm" @cancel="resetForm">
       <template #headerIcon>
         <img v-if="platformLogo(formData.platform)" :src="platformLogo(formData.platform)"
@@ -133,7 +133,7 @@
             <p v-if="!editingChannel" class="form-desc">{{ $t('agentEditor.im.channelNameDefaultHint') }}</p>
           </div>
 
-          <div v-if="editingChannel && authStore.hasRole('admin')" class="setting-row setting-row--last">
+          <div v-if="editingChannel && authStore.hasRole('contributor')" class="setting-row setting-row--last">
             <div class="setting-info">
               <label>{{ $t('agentEditor.im.enabled') }}</label>
             </div>
@@ -477,7 +477,7 @@
               <p class="form-desc">{{ $t('agentEditor.im.wechatHint') }}</p>
 
               <!-- Already bound state -->
-              <div v-if="wechatBound" class="wechat-bound-status">
+              <div v-if="wechatBound && !wechatBindingFlowVisible" class="wechat-bound-status">
                 <t-icon name="check-circle-filled" class="bound-icon" />
                 <span>{{ $t('agentEditor.im.wechatBindSuccess') }}</span>
                 <t-button size="small" variant="outline" theme="default" @click="startWeChatBinding">
@@ -645,6 +645,7 @@ const wechatQRImgUrl = ref('');   // generated QR image URL
 const wechatQRCode = ref('');     // opaque token for polling status
 const wechatQRStatus = ref<string>('');
 const wechatLoading = ref(false);
+const wechatBindingFlowVisible = ref(false);
 let wechatPollActive = false;
 let wechatPollTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -737,6 +738,7 @@ function onPlatformChange(val: string | number | boolean) {
   if (editingChannel.value) return;
   formData.value.credentials = defaultCredentials();
   stopWeChatPolling();
+  wechatBindingFlowVisible.value = false;
   wechatQRContent.value = '';
   wechatQRImgUrl.value = '';
   wechatQRCode.value = '';
@@ -756,6 +758,8 @@ function onPlatformChange(val: string | number | boolean) {
 
 async function startWeChatBinding() {
   stopWeChatPolling();
+  const wasBound = wechatBound.value;
+  wechatBindingFlowVisible.value = true;
   wechatLoading.value = true;
   wechatQRContent.value = '';
   wechatQRImgUrl.value = '';
@@ -774,6 +778,9 @@ async function startWeChatBinding() {
     // Start long-polling for scan status
     startStatusPolling();
   } catch (e: any) {
+    if (wasBound) {
+      wechatBindingFlowVisible.value = false;
+    }
     MessagePlugin.error(e?.message || 'Failed to generate QR code');
   } finally {
     wechatLoading.value = false;
@@ -799,6 +806,7 @@ async function pollOnce() {
         ilink_user_id: statusRes.data.credentials.ilink_user_id,
       };
       stopWeChatPolling();
+      wechatBindingFlowVisible.value = false;
       wechatQRContent.value = '';
       wechatQRImgUrl.value = '';
       MessagePlugin.success(t('agentEditor.im.wechatBindSuccess'));
@@ -903,6 +911,7 @@ async function editChannel(channel: IMChannel | IMChannelOverview) {
   editingChannel.value = fullChannel;
   editingEnabled.value = fullChannel.enabled;
   channelNameTouched.value = true;
+  wechatBindingFlowVisible.value = false;
   formData.value = {
     target_agent_id: fullChannel.agent_id,
     platform: fullChannel.platform,
@@ -922,6 +931,7 @@ function resetForm() {
   wizardStep.value = 0;
   channelNameTouched.value = false;
   stopWeChatPolling();
+  wechatBindingFlowVisible.value = false;
   wechatQRContent.value = '';
   wechatQRImgUrl.value = '';
   wechatQRCode.value = '';

@@ -119,6 +119,7 @@ type rbacGuards struct {
 	// to be exported into every Register* function as well.
 	kbCreator    middleware.CreatorLookup
 	agentCreator middleware.CreatorLookup
+	imChannelCreator middleware.CreatorLookup
 	// kbCreatorFromKbIDParam reads :kbId (not :id) for the
 	// /initialization/* routes whose KB is addressed by :kbId.
 	kbCreatorFromKbIDParam middleware.CreatorLookup
@@ -150,6 +151,7 @@ func newRBACGuards(
 	cfg *config.Config,
 	kbHandler *handler.KnowledgeBaseHandler,
 	agentHandler *handler.CustomAgentHandler,
+	imHandler *handler.IMHandler,
 	knowledgeHandler *handler.KnowledgeHandler,
 	chunkHandler *handler.ChunkHandler,
 	wikiHandler *handler.WikiPageHandler,
@@ -167,6 +169,9 @@ func newRBACGuards(
 	}
 	if agentHandler != nil {
 		g.agentCreator = agentHandler.AgentCreatorLookup
+	}
+	if imHandler != nil {
+		g.imChannelCreator = imHandler.IMChannelCreatorLookup
 	}
 	if knowledgeHandler != nil {
 		g.knowledgeKBCreator = knowledgeHandler.KBCreatorLookupFromKnowledgeID
@@ -257,6 +262,13 @@ func (g *rbacGuards) OwnedKBOrAdminFromKbIDParam() gin.HandlerFunc {
 // lookup returns "" and only Admin+ may mutate them.
 func (g *rbacGuards) OwnedAgentOrAdmin() gin.HandlerFunc {
 	return middleware.RequireOwnershipOrRole(types.TenantRoleAdmin, g.agentCreator, g.cfg)
+}
+
+// OwnedIMChannelOnly is stricter than OwnedAgentOrAdmin: IM channels are
+// user-private tenant resources, so even tenant Admin / Owner do not bypass the
+// creator check.
+func (g *rbacGuards) OwnedIMChannelOnly() gin.HandlerFunc {
+	return middleware.RequireOwnershipOnly(g.imChannelCreator, g.cfg)
 }
 
 // OwnedKnowledgeKBOrAdmin: per-knowledge mutations (update / delete /

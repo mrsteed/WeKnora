@@ -15,8 +15,9 @@ import (
 // Each channel binds to an agent and contains platform-specific credentials.
 type IMChannel struct {
 	ID              string         `json:"id"          gorm:"type:varchar(36);primaryKey;default:uuid_generate_v4()"`
-	TenantID        uint64         `json:"tenant_id"   gorm:"not null;index:idx_im_channels_tenant"`
-	AgentID         string         `json:"agent_id"    gorm:"type:varchar(36);not null;index:idx_im_channels_agent"`
+	TenantID        uint64         `json:"tenant_id"   gorm:"not null;index:idx_im_channels_tenant;index:idx_im_channels_tenant_created_by,priority:1;index:idx_im_channels_tenant_agent_created_by,priority:1"`
+	AgentID         string         `json:"agent_id"    gorm:"type:varchar(36);not null;index:idx_im_channels_agent;index:idx_im_channels_tenant_agent_created_by,priority:2"`
+	CreatedBy       string         `json:"created_by"  gorm:"type:varchar(36);not null;default:'';index:idx_im_channels_tenant_created_by,priority:2;index:idx_im_channels_tenant_agent_created_by,priority:3"`
 	Platform        string         `json:"platform"    gorm:"type:varchar(20);not null"`
 	Name            string         `json:"name"        gorm:"type:varchar(255);not null;default:''"`
 	Enabled         bool           `json:"enabled"     gorm:"not null;default:true"`

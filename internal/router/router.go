@@ -186,6 +186,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		params.Config,
 		params.KBHandler,
 		params.CustomAgentHandler,
+		params.IMHandler,
 		params.KnowledgeHandler,
 		params.ChunkHandler,
 		params.WikiPageHandler,
@@ -904,24 +905,24 @@ func RegisterIMChannelRoutes(r *gin.RouterGroup, imHandler *handler.IMHandler, g
 	// Channel CRUD under agents
 	agentChannels := r.Group("/agents/:id/im-channels")
 	{
-		agentChannels.POST("", g.Owner(), imHandler.CreateIMChannel)
-		agentChannels.GET("", g.Owner(), imHandler.ListIMChannels)
+		agentChannels.POST("", g.Contributor(), imHandler.CreateIMChannel)
+		agentChannels.GET("", g.Contributor(), imHandler.ListIMChannels)
 	}
 
 	// Channel operations by channel ID
 	channels := r.Group("/im-channels")
 	{
-		channels.GET("", g.Viewer(), imHandler.ListAllIMChannels)
-		channels.PUT("/:id", g.Owner(), imHandler.UpdateIMChannel)
-		channels.DELETE("/:id", g.Owner(), imHandler.DeleteIMChannel)
-		channels.POST("/:id/toggle", g.Owner(), imHandler.ToggleIMChannel)
+		channels.GET("", g.Contributor(), imHandler.ListAllIMChannels)
+		channels.PUT("/:id", g.Contributor(), g.OwnedIMChannelOnly(), imHandler.UpdateIMChannel)
+		channels.DELETE("/:id", g.Contributor(), g.OwnedIMChannelOnly(), imHandler.DeleteIMChannel)
+		channels.POST("/:id/toggle", g.Contributor(), g.OwnedIMChannelOnly(), imHandler.ToggleIMChannel)
 	}
 
 	// WeChat QR code login (requires authentication)
 	wechatGroup := r.Group("/wechat")
 	{
-		wechatGroup.POST("/qrcode", g.Owner(), imHandler.WeChatGetQRCode)
-		wechatGroup.POST("/qrcode/status", g.Owner(), imHandler.WeChatPollQRCodeStatus)
+		wechatGroup.POST("/qrcode", g.Contributor(), imHandler.WeChatGetQRCode)
+		wechatGroup.POST("/qrcode/status", g.Contributor(), imHandler.WeChatPollQRCodeStatus)
 	}
 }
 

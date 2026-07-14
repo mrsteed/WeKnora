@@ -44,6 +44,11 @@ func (h *IMHandler) CreateIMChannel(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	userID := c.GetString(types.UserIDContextKey.String())
+	if strings.TrimSpace(userID) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 
 	var req struct {
 		Platform        string     `json:"platform" binding:"required"`
@@ -67,6 +72,7 @@ func (h *IMHandler) CreateIMChannel(c *gin.Context) {
 	channel := &im.IMChannel{
 		TenantID:        tenantID,
 		AgentID:         agentID,
+		CreatedBy:       userID,
 		Platform:        req.Platform,
 		Name:            req.Name,
 		Mode:            req.Mode,
@@ -125,7 +131,13 @@ func (h *IMHandler) ListIMChannels(c *gin.Context) {
 		return
 	}
 
-	channels, err := h.imService.ListChannelsByAgent(agentID, tenantID)
+	userID := c.GetString(types.UserIDContextKey.String())
+	if strings.TrimSpace(userID) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	channels, err := h.imService.ListChannelsByAgent(agentID, tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list channels"})
 		return
@@ -134,8 +146,8 @@ func (h *IMHandler) ListIMChannels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": channels})
 }
 
-// ListAllIMChannels lists every IM channel in the current tenant, across
-// agents, for the cross-agent overview page. Credentials are intentionally
+// ListAllIMChannels lists every IM channel created by the current user in the
+// current tenant, across agents. Credentials are intentionally
 // NOT included in the response — callers that need credentials must use the
 // per-agent endpoint (GET /agents/:id/im-channels).
 func (h *IMHandler) ListAllIMChannels(c *gin.Context) {
@@ -144,8 +156,13 @@ func (h *IMHandler) ListAllIMChannels(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	userID := c.GetString(types.UserIDContextKey.String())
+	if strings.TrimSpace(userID) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 
-	channels, err := h.imService.ListChannelsByTenant(tenantID)
+	channels, err := h.imService.ListChannelsByTenant(tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list channels"})
 		return
@@ -182,8 +199,13 @@ func (h *IMHandler) UpdateIMChannel(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	userID := c.GetString(types.UserIDContextKey.String())
+	if strings.TrimSpace(userID) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 
-	channel, err := h.imService.GetChannelByIDAndTenant(channelID, tenantID)
+	channel, err := h.imService.GetChannelByIDAndTenantAndCreator(channelID, tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
 		return
@@ -271,8 +293,13 @@ func (h *IMHandler) DeleteIMChannel(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	userID := c.GetString(types.UserIDContextKey.String())
+	if strings.TrimSpace(userID) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 
-	if err := h.imService.DeleteChannel(channelID, tenantID); err != nil {
+	if err := h.imService.DeleteChannel(channelID, tenantID, userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete channel"})
 		return
 	}
@@ -306,8 +333,13 @@ func (h *IMHandler) ToggleIMChannel(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	userID := c.GetString(types.UserIDContextKey.String())
+	if strings.TrimSpace(userID) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 
-	channel, err := h.imService.ToggleChannel(channelID, tenantID)
+	channel, err := h.imService.ToggleChannel(channelID, tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to toggle channel"})
 		return

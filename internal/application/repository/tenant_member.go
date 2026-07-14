@@ -53,14 +53,15 @@ func (r *tenantMemberRepository) Create(ctx context.Context, member *types.Tenan
 // if no such row exists. Errors are propagated unchanged for any other case.
 func (r *tenantMemberRepository) Get(ctx context.Context, userID string, tenantID uint64) (*types.TenantMember, error) {
 	var member types.TenantMember
-	err := r.db.WithContext(ctx).
+	result := r.db.WithContext(ctx).
 		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
-		First(&member).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
+		Limit(1).
+		Find(&member)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
 	}
 	return &member, nil
 }

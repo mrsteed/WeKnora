@@ -1100,8 +1100,12 @@ func (s *Service) GetChannelAdapter(channelID string) (Adapter, *IMChannel, bool
 // GetChannelByID loads a channel from the database.
 func (s *Service) GetChannelByID(channelID string) (*IMChannel, error) {
 	var ch IMChannel
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", channelID).First(&ch).Error; err != nil {
-		return nil, err
+	result := s.db.Where("id = ? AND deleted_at IS NULL", channelID).Limit(1).Find(&ch)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, gorm.ErrRecordNotFound
 	}
 	return &ch, nil
 }
@@ -1109,8 +1113,26 @@ func (s *Service) GetChannelByID(channelID string) (*IMChannel, error) {
 // GetChannelByIDAndTenant loads a channel from the database, scoped to a specific tenant.
 func (s *Service) GetChannelByIDAndTenant(channelID string, tenantID uint64) (*IMChannel, error) {
 	var ch IMChannel
-	if err := s.db.Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", channelID, tenantID).First(&ch).Error; err != nil {
-		return nil, err
+	result := s.db.Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", channelID, tenantID).Limit(1).Find(&ch)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &ch, nil
+}
+
+// GetChannelByIDAndTenantAndCreator loads a channel scoped to a specific tenant
+// and creator.
+func (s *Service) GetChannelByIDAndTenantAndCreator(channelID string, tenantID uint64, createdBy string) (*IMChannel, error) {
+	var ch IMChannel
+	result := s.db.Where("id = ? AND tenant_id = ? AND created_by = ? AND deleted_at IS NULL", channelID, tenantID, createdBy).Limit(1).Find(&ch)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, gorm.ErrRecordNotFound
 	}
 	return &ch, nil
 }
@@ -2428,10 +2450,11 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 
 // ── CRUD operations for IM channels ──
 
-// ListChannelsByAgent returns all channels for a given agent within a tenant.
-func (s *Service) ListChannelsByAgent(agentID string, tenantID uint64) ([]IMChannel, error) {
+// ListChannelsByAgent returns channels for a given agent within a tenant,
+// limited to those created by the requesting user.
+func (s *Service) ListChannelsByAgent(agentID string, tenantID uint64, createdBy string) ([]IMChannel, error) {
 	var channels []IMChannel
-	if err := s.db.Where("agent_id = ? AND tenant_id = ? AND deleted_at IS NULL", agentID, tenantID).
+	if err := s.db.Where("agent_id = ? AND tenant_id = ? AND created_by = ? AND deleted_at IS NULL", agentID, tenantID, createdBy).
 		Order("created_at DESC").Find(&channels).Error; err != nil {
 		return nil, err
 	}
@@ -2458,12 +2481,13 @@ type ChannelWithAgent struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// ListChannelsByTenant returns all non-deleted IM channels in the given tenant,
+// ListChannelsByTenant returns all non-deleted IM channels created by the
+// requesting user in the given tenant,
 // joined with custom_agents.name. Built-in agent IDs (whose rows may not exist
 // in custom_agents) produce an empty AgentName — the frontend can substitute a
 // localized "builtin agent" label in that case. Channels whose custom agent was
 // soft-deleted are excluded so overview lists stay consistent after agent removal.
-func (s *Service) ListChannelsByTenant(tenantID uint64) ([]ChannelWithAgent, error) {
+func (s *Service) ListChannelsByTenant(tenantID uint64, createdBy string) ([]ChannelWithAgent, error) {
 	builtinIDs := types.GetBuiltinAgentIDs()
 	var rows []ChannelWithAgent
 	q := s.db.Table("im_channels AS c").
@@ -2473,7 +2497,7 @@ func (s *Service) ListChannelsByTenant(tenantID uint64) ([]ChannelWithAgent, err
                 c.session_mode, c.bot_identity, c.created_at, c.updated_at`).
 		Joins(`LEFT JOIN custom_agents AS a
                ON a.id = c.agent_id AND a.tenant_id = c.tenant_id AND a.deleted_at IS NULL`).
-		Where("c.tenant_id = ? AND c.deleted_at IS NULL", tenantID)
+		Where("c.tenant_id = ? AND c.created_by = ? AND c.deleted_at IS NULL", tenantID, createdBy)
 	if len(builtinIDs) > 0 {
 		q = q.Where("a.id IS NOT NULL OR c.agent_id IN ?", builtinIDs)
 	} else {
@@ -2558,10 +2582,10 @@ func (s *Service) DeleteChannelsByAgent(agentID string, tenantID uint64) error {
 		Delete(&IMChannel{}).Error
 }
 
-// DeleteChannel soft-deletes a channel and stops it. Only deletes if the channel belongs to the given tenant.
-func (s *Service) DeleteChannel(channelID string, tenantID uint64) error {
+// DeleteChannel soft-deletes a channel and stops it. Only deletes if the channel belongs to the given tenant and creator.
+func (s *Service) DeleteChannel(channelID string, tenantID uint64, createdBy string) error {
 	s.StopChannel(channelID)
-	result := s.db.Where("id = ? AND tenant_id = ?", channelID, tenantID).Delete(&IMChannel{})
+	result := s.db.Where("id = ? AND tenant_id = ? AND created_by = ?", channelID, tenantID, createdBy).Delete(&IMChannel{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -2571,11 +2595,15 @@ func (s *Service) DeleteChannel(channelID string, tenantID uint64) error {
 	return nil
 }
 
-// ToggleChannel enables or disables a channel. Only toggles if the channel belongs to the given tenant.
-func (s *Service) ToggleChannel(channelID string, tenantID uint64) (*IMChannel, error) {
+// ToggleChannel enables or disables a channel. Only toggles if the channel belongs to the given tenant and creator.
+func (s *Service) ToggleChannel(channelID string, tenantID uint64, createdBy string) (*IMChannel, error) {
 	var ch IMChannel
-	if err := s.db.Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", channelID, tenantID).First(&ch).Error; err != nil {
-		return nil, err
+	result := s.db.Where("id = ? AND tenant_id = ? AND created_by = ? AND deleted_at IS NULL", channelID, tenantID, createdBy).Limit(1).Find(&ch)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, gorm.ErrRecordNotFound
 	}
 	ch.Enabled = !ch.Enabled
 	if err := s.db.Save(&ch).Error; err != nil {

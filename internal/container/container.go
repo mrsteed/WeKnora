@@ -642,6 +642,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 		// Post-migration: resolve __pending_env__ storage provider markers for historical KBs.
 		ensureKnowledgeProcessingSpanSchema(db)
+		ensureEmbedChannelSchema(db)
 
 		// Post-migration: resolve __pending_env__ storage provider markers for historical KBs.
 		// The SQL migration marks KBs that have documents but no provider with "__pending_env__";
@@ -915,6 +916,52 @@ func ensureKnowledgeProcessingSpanSchema(db *gorm.DB) {
 		}
 		logger.Infof(context.Background(), "Created missing knowledge processing span index %s", indexName)
 	}
+}
+
+// ensureEmbedChannelSchema self-heals historical databases that skipped the
+// embed channel migration but now run code paths that query embed_channels.
+// This drift shows up as runtime 500s on /api/v1/embed-channels even though
+// the feature is already wired in router/container layers.
+func ensureEmbedChannelSchema(db *gorm.DB) {
+	if db == nil {
+		return
+	}
+	m := db.Migrator()
+	if !m.HasTable(&types.EmbedChannel{}) {
+		logger.Warnf(context.Background(), "embed_channels table missing; attempting self-heal via AutoMigrate")
+		if err := db.AutoMigrate(&types.EmbedChannel{}); err != nil {
+			logger.Warnf(context.Background(), "Failed to self-heal embed_channels schema: %v", err)
+			return
+		}
+		logger.Infof(context.Background(), "Self-healed missing embed_channels table")
+	}
+
+	for _, indexName := range []string{
+		"idx_embed_channels_tenant",
+		"idx_embed_channels_agent",
+	} {
+		if m.HasIndex(&types.EmbedChannel{}, indexName) {
+			continue
+		}
+		if err := m.CreateIndex(&types.EmbedChannel{}, indexName); err != nil {
+			logger.Warnf(context.Background(), "Failed to create embed channel index %s: %v", indexName, err)
+			continue
+		}
+		logger.Infof(context.Background(), "Created missing embed channel index %s", indexName)
+	}
+
+	if m.HasIndex(&types.EmbedChannel{}, "idx_embed_channels_publish_token") {
+		return
+	}
+
+	const createPublishTokenIndexSQL = `CREATE UNIQUE INDEX IF NOT EXISTS idx_embed_channels_publish_token
+		ON embed_channels (publish_token)
+		WHERE publish_token <> '' AND deleted_at IS NULL`
+	if err := db.Exec(createPublishTokenIndexSQL).Error; err != nil {
+		logger.Warnf(context.Background(), "Failed to create embed channel publish token index: %v", err)
+		return
+	}
+	logger.Infof(context.Background(), "Created missing embed channel publish token index")
 }
 
 // syncSequences ensures PostgreSQL sequences for auto-increment columns (seq_id)

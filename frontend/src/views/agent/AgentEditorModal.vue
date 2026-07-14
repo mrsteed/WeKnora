@@ -53,7 +53,7 @@
 
                   <div class="settings-group">
                     <!-- 智能体 ID（用于 API 集成） -->
-                    <div v-if="editorMode === 'edit' && editorAgent?.id && canManageIntegrations" class="setting-row">
+                    <div v-if="editorMode === 'edit' && editorAgent?.id && canManageApiIntegrations" class="setting-row">
                       <div class="setting-info">
                         <label>{{ $t('agent.editor.agentId') }}</label>
                         <p class="desc">{{ $t('agent.editor.agentIdDesc') }}</p>
@@ -72,19 +72,19 @@
                     </div>
 
                     <!-- 集成渠道状态（编辑模式，配置在集成中心） -->
-                    <div v-if="editorMode === 'edit' && editorAgent?.id" class="setting-row">
+                    <div v-if="editorMode === 'edit' && editorAgent?.id && (canManageIMIntegrations || canManageEmbedIntegrations)" class="setting-row">
                       <div class="setting-info">
                         <label>{{ $t('integrations.agentEditor.label') }}</label>
                         <p class="desc">{{ $t('integrations.agentEditor.desc') }}</p>
                       </div>
                       <div class="setting-control">
                         <div class="integration-inline">
-                          <button type="button" class="integration-inline__stat integration-inline__link" @click="gotoIntegrations('im')">
+                          <button v-if="canManageIMIntegrations" type="button" class="integration-inline__stat integration-inline__link" @click="gotoIntegrations('im')">
                             <span>{{ $t('integrations.tabs.im') }} · {{ agentIMChannelCount }}</span>
                             <t-icon name="chevron-right" size="14px" />
                           </button>
-                          <span class="integration-inline__sep" aria-hidden="true">|</span>
-                          <button type="button" class="integration-inline__stat integration-inline__link" @click="gotoIntegrations('embed')">
+                          <span v-if="canManageIMIntegrations && canManageEmbedIntegrations" class="integration-inline__sep" aria-hidden="true">|</span>
+                          <button v-if="canManageEmbedIntegrations" type="button" class="integration-inline__stat integration-inline__link" @click="gotoIntegrations('embed')">
                             <span>{{ $t('integrations.tabs.embed') }} · {{ agentEmbedChannelCount }}</span>
                             <t-icon name="chevron-right" size="14px" />
                           </button>
@@ -2232,7 +2232,9 @@ watch(currentSection, (section) => {
 
 const agentIMChannelCount = ref(0);
 const agentEmbedChannelCount = ref(0);
-const canManageIntegrations = computed(() => authStore.hasRole('owner'));
+const canManageApiIntegrations = computed(() => authStore.hasRole('owner'));
+const canManageIMIntegrations = computed(() => authStore.hasRole('contributor'));
+const canManageEmbedIntegrations = computed(() => authStore.hasRole('owner'));
 
 async function loadAgentIntegrationCounts(agentId: string) {
   try {
