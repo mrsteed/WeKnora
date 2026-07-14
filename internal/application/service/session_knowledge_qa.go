@@ -362,6 +362,46 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 		return nil
 	}
 
+	if scopedKBs, ok, err := ResolveAgentKnowledgeBasesForCurrentUser(
+		ctx,
+		customAgent,
+		sessionTenantID,
+		s.kbVisibility,
+		s.kbShareService,
+	); ok {
+		if err != nil {
+			logger.Warnf(ctx, "Failed to resolve same-tenant agent KB scope: %v", err)
+			return nil
+		}
+		capFilter := tools.DeriveKBFilterForAgent(customAgent.Config.AgentMode, customAgent.Config.AllowedTools)
+		if customAgent.Config.KBSelectionMode == "all" && !capFilter.IsEmpty() {
+			kbIDs := make([]string, 0, len(scopedKBs))
+			skipped := 0
+			for _, kb := range scopedKBs {
+				if !tools.KBSatisfiesAgentRequirements(kb.Capabilities(), customAgent.Config.AgentMode, customAgent.Config.AllowedTools) {
+					skipped++
+					continue
+				}
+				kbIDs = append(kbIDs, kb.ID)
+			}
+			if skipped > 0 {
+				logger.Infof(ctx,
+					"KBSelectionMode=all: current-user scope capability filter removed %d KBs (agent=%s, tools=%v)",
+					skipped, customAgent.ID, customAgent.Config.AllowedTools)
+			}
+			logger.Infof(ctx, "KBSelectionMode=all: loaded %d accessible knowledge bases for current user", len(kbIDs))
+			return kbIDs
+		}
+		kbIDs := make([]string, 0, len(scopedKBs))
+		for _, kb := range scopedKBs {
+			if kb != nil && kb.ID != "" {
+				kbIDs = append(kbIDs, kb.ID)
+			}
+		}
+		logger.Infof(ctx, "Resolved %d accessible knowledge bases for current user (mode=%s)", len(kbIDs), customAgent.Config.KBSelectionMode)
+		return kbIDs
+	}
+
 	switch customAgent.Config.KBSelectionMode {
 	case "all":
 		// Authoritative capability filter for the runtime path. The frontend

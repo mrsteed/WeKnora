@@ -28,6 +28,7 @@ type customAgentService struct {
 	repo           interfaces.CustomAgentRepository
 	chunkRepo      interfaces.ChunkRepository
 	kbService      interfaces.KnowledgeBaseService
+	kbVisibility   interfaces.KBVisibilityService
 	kbShareService interfaces.KBShareService
 	wikiPageRepo   interfaces.WikiPageRepository
 	tagRepo        interfaces.KnowledgeTagRepository
@@ -39,6 +40,7 @@ func NewCustomAgentService(
 	repo interfaces.CustomAgentRepository,
 	chunkRepo interfaces.ChunkRepository,
 	kbService interfaces.KnowledgeBaseService,
+	kbVisibility interfaces.KBVisibilityService,
 	kbShareService interfaces.KBShareService,
 	wikiPageRepo interfaces.WikiPageRepository,
 	tagRepo interfaces.KnowledgeTagRepository,
@@ -48,6 +50,7 @@ func NewCustomAgentService(
 		repo:           repo,
 		chunkRepo:      chunkRepo,
 		kbService:      kbService,
+		kbVisibility:   kbVisibility,
 		kbShareService: kbShareService,
 		wikiPageRepo:   wikiPageRepo,
 		tagRepo:        tagRepo,
@@ -552,69 +555,110 @@ func (s *customAgentService) GetSuggestedQuestions(
 	// 2. Determine knowledge base scope
 	effectiveKBIDs := kbIDs
 	if len(effectiveKBIDs) == 0 && len(knowledgeIDs) == 0 {
-		// Use agent's KB configuration
-		switch agent.Config.KBSelectionMode {
-		case "all":
-			kbs, err := s.kbService.ListKnowledgeBases(ctx)
+		if scopedKBs, scoped, err := ResolveAgentKnowledgeBasesForCurrentUser(
+			ctx,
+			agent,
+			tenantID,
+			s.kbVisibility,
+			s.kbShareService,
+		); scoped {
 			if err != nil {
 				logger.ErrorWithFields(ctx, err, map[string]interface{}{
 					"agent_id": agentID,
 				})
-				// Return what we have so far (agent_config suggestions)
 				return s.truncateQuestions(result, limit), nil
 			}
-			// Honor the agent's implicit/explicit capability requirements so
-			// e.g. a quick-answer (RAG-only) agent doesn't surface wiki-only
-			// KBs whose wiki pages it could never answer from. Same filter
-			// the @ mention dropdown applies on the frontend.
-			capFilter := tools.DeriveKBFilterForAgent(agent.Config.AgentMode, agent.Config.AllowedTools)
-			var skipped int
-			for _, kb := range kbs {
-				if !capFilter.IsEmpty() &&
-					!tools.KBSatisfiesAgentRequirements(kb.Capabilities(), agent.Config.AgentMode, agent.Config.AllowedTools) {
-					skipped++
-					continue
+			switch agent.Config.KBSelectionMode {
+			case "all":
+				capFilter := tools.DeriveKBFilterForAgent(agent.Config.AgentMode, agent.Config.AllowedTools)
+				skipped := 0
+				for _, kb := range scopedKBs {
+					if !capFilter.IsEmpty() &&
+						!tools.KBSatisfiesAgentRequirements(kb.Capabilities(), agent.Config.AgentMode, agent.Config.AllowedTools) {
+						skipped++
+						continue
+					}
+					effectiveKBIDs = append(effectiveKBIDs, kb.ID)
 				}
-				effectiveKBIDs = append(effectiveKBIDs, kb.ID)
-			}
-			if s.kbShareService != nil {
-				seen := make(map[string]bool, len(effectiveKBIDs))
-				for _, id := range effectiveKBIDs {
-					seen[id] = true
+				if skipped > 0 {
+					logger.Infof(ctx,
+						"Suggested questions(agent=%s, mode=all): current-user scope capability filter removed %d KBs",
+						agentID, skipped)
 				}
-				if userID, ok := types.UserIDFromContext(ctx); ok {
-					sharedList, err := s.kbShareService.ListSharedKnowledgeBases(ctx, userID, tenantID)
-					if err != nil {
-						logger.Warnf(ctx, "List shared knowledge bases for suggested questions failed: %v", err)
-					} else {
-						for _, info := range sharedList {
-							if info == nil || info.KnowledgeBase == nil || seen[info.KnowledgeBase.ID] {
-								continue
-							}
-							if !capFilter.IsEmpty() &&
-								!tools.KBSatisfiesAgentRequirements(info.KnowledgeBase.Capabilities(), agent.Config.AgentMode, agent.Config.AllowedTools) {
-								skipped++
-								continue
-							}
-							effectiveKBIDs = append(effectiveKBIDs, info.KnowledgeBase.ID)
-							seen[info.KnowledgeBase.ID] = true
-						}
+			case "none":
+				return s.truncateQuestions(result, limit), nil
+			default:
+				for _, kb := range scopedKBs {
+					if kb != nil && kb.ID != "" {
+						effectiveKBIDs = append(effectiveKBIDs, kb.ID)
 					}
 				}
 			}
-			if skipped > 0 {
-				logger.Infof(ctx,
-					"Suggested questions(agent=%s, mode=all): tool-capability filter removed %d KBs",
-					agentID, skipped)
+		} else {
+		// Use agent's KB configuration
+			switch agent.Config.KBSelectionMode {
+			case "all":
+				kbs, err := s.kbService.ListKnowledgeBases(ctx)
+				if err != nil {
+					logger.ErrorWithFields(ctx, err, map[string]interface{}{
+						"agent_id": agentID,
+					})
+					// Return what we have so far (agent_config suggestions)
+					return s.truncateQuestions(result, limit), nil
+				}
+				// Honor the agent's implicit/explicit capability requirements so
+				// e.g. a quick-answer (RAG-only) agent doesn't surface wiki-only
+				// KBs whose wiki pages it could never answer from. Same filter
+				// the @ mention dropdown applies on the frontend.
+				capFilter := tools.DeriveKBFilterForAgent(agent.Config.AgentMode, agent.Config.AllowedTools)
+				var skipped int
+				for _, kb := range kbs {
+					if !capFilter.IsEmpty() &&
+						!tools.KBSatisfiesAgentRequirements(kb.Capabilities(), agent.Config.AgentMode, agent.Config.AllowedTools) {
+						skipped++
+						continue
+					}
+					effectiveKBIDs = append(effectiveKBIDs, kb.ID)
+				}
+				if s.kbShareService != nil {
+					seen := make(map[string]bool, len(effectiveKBIDs))
+					for _, id := range effectiveKBIDs {
+						seen[id] = true
+					}
+					if userID, ok := types.UserIDFromContext(ctx); ok {
+						sharedList, err := s.kbShareService.ListSharedKnowledgeBases(ctx, userID, tenantID)
+						if err != nil {
+							logger.Warnf(ctx, "List shared knowledge bases for suggested questions failed: %v", err)
+						} else {
+							for _, info := range sharedList {
+								if info == nil || info.KnowledgeBase == nil || seen[info.KnowledgeBase.ID] {
+									continue
+								}
+								if !capFilter.IsEmpty() &&
+									!tools.KBSatisfiesAgentRequirements(info.KnowledgeBase.Capabilities(), agent.Config.AgentMode, agent.Config.AllowedTools) {
+									skipped++
+									continue
+								}
+								effectiveKBIDs = append(effectiveKBIDs, info.KnowledgeBase.ID)
+								seen[info.KnowledgeBase.ID] = true
+							}
+						}
+					}
+				}
+				if skipped > 0 {
+					logger.Infof(ctx,
+						"Suggested questions(agent=%s, mode=all): tool-capability filter removed %d KBs",
+						agentID, skipped)
+				}
+			case "selected":
+				effectiveKBIDs = agent.Config.KnowledgeBases
+			case "none":
+				// No KB access, return agent_config suggestions only
+				return s.truncateQuestions(result, limit), nil
+			default:
+				// Default to agent's configured KBs
+				effectiveKBIDs = agent.Config.KnowledgeBases
 			}
-		case "selected":
-			effectiveKBIDs = agent.Config.KnowledgeBases
-		case "none":
-			// No KB access, return agent_config suggestions only
-			return s.truncateQuestions(result, limit), nil
-		default:
-			// Default to agent's configured KBs
-			effectiveKBIDs = agent.Config.KnowledgeBases
 		}
 	}
 

@@ -48,7 +48,7 @@ func setupIMHandlerTestDB(t *testing.T) *gorm.DB {
 func TestCreateIMChannelWritesCreatedBy(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupIMHandlerTestDB(t)
-	svc := imsvc.NewService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := imsvc.NewService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	defer svc.Stop()
 	h := NewIMHandler(svc)
 
@@ -85,7 +85,7 @@ func TestUpdateIMChannelRejectsOtherCreator(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupIMHandlerTestDB(t)
 	require.NoError(t, db.Exec(`INSERT INTO im_channels (id, tenant_id, agent_id, created_by, platform, name, enabled, mode, output_mode, knowledge_base_id, bot_identity, session_mode, credentials) VALUES ('ch-1', 10008, 'builtin-smart-reasoning', 'creator-a', 'wechat', 'A', 0, 'longpoll', 'full', '', 'wechat:bot-a', 'user', '{}')`).Error)
-	svc := imsvc.NewService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := imsvc.NewService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	defer svc.Stop()
 	h := NewIMHandler(svc)
 

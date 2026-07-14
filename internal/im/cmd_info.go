@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	appservice "github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
@@ -12,11 +13,21 @@ import (
 // It shows the bound agent's profile and capabilities so IM users can
 // understand what the bot can do without leaving the chat.
 type InfoCommand struct {
-	kbService interfaces.KnowledgeBaseService
+	kbService      interfaces.KnowledgeBaseService
+	kbVisibility   interfaces.KBVisibilityService
+	kbShareService interfaces.KBShareService
 }
 
-func newInfoCommand(kbService interfaces.KnowledgeBaseService) *InfoCommand {
-	return &InfoCommand{kbService: kbService}
+func newInfoCommand(
+	kbService interfaces.KnowledgeBaseService,
+	kbVisibility interfaces.KBVisibilityService,
+	kbShareService interfaces.KBShareService,
+) *InfoCommand {
+	return &InfoCommand{
+		kbService:      kbService,
+		kbVisibility:   kbVisibility,
+		kbShareService: kbShareService,
+	}
 }
 
 func (c *InfoCommand) Name() string        { return "info" }
@@ -59,7 +70,38 @@ func (c *InfoCommand) Execute(ctx context.Context, cmdCtx *CommandContext, _ []s
 	// KBSelectionMode: "all" uses every KB under the tenant (IDs list is empty),
 	// "selected" uses the explicit KnowledgeBases list, "none"/empty means disabled.
 	sb.WriteString("\n📚 **知识库**\n")
-	if cfg.KBSelectionMode == "all" {
+	if scopedKBs, scoped, err := appservice.ResolveAgentKnowledgeBasesForCurrentUser(
+		ctx,
+		cmdCtx.CustomAgent,
+		cmdCtx.TenantID,
+		c.kbVisibility,
+		c.kbShareService,
+	); scoped {
+		if err == nil {
+			if cfg.KBSelectionMode == "all" {
+				if len(scopedKBs) > 0 {
+					for _, kb := range scopedKBs {
+						sb.WriteString(fmt.Sprintf("  · %s\n", kb.Name))
+					}
+					sb.WriteString(fmt.Sprintf("  共 %d 个（全部可访问）\n", len(scopedKBs)))
+				} else {
+					sb.WriteString("  全部可访问知识库为空\n")
+				}
+			} else if len(scopedKBs) > 0 {
+				for _, kb := range scopedKBs {
+					sb.WriteString(fmt.Sprintf("  · %s\n", kb.Name))
+				}
+			} else {
+				sb.WriteString("  未配置\n")
+			}
+		} else if cfg.KBSelectionMode == "all" {
+			sb.WriteString("  全部可访问知识库\n")
+		} else if len(cfg.KnowledgeBases) > 0 {
+			sb.WriteString(fmt.Sprintf("  已选择 %d 个\n", len(cfg.KnowledgeBases)))
+		} else {
+			sb.WriteString("  未配置\n")
+		}
+	} else if cfg.KBSelectionMode == "all" {
 		kbs, err := c.kbService.ListKnowledgeBasesByTenantID(ctx, cmdCtx.TenantID)
 		if err == nil && len(kbs) > 0 {
 			for _, kb := range kbs {

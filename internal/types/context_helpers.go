@@ -66,6 +66,45 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 	return v, ok && v != ""
 }
 
+// ResourceAuthUserIDFromContext extracts the internal user ID that should be
+// used for same-tenant resource visibility checks when it differs from the
+// session owner identity.
+func ResourceAuthUserIDFromContext(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(ResourceAuthUserIDContextKey).(string)
+	return v, ok && strings.TrimSpace(v) != ""
+}
+
+// ResourceAuthUserFromContext extracts the internal user entity that should be
+// used for same-tenant resource visibility checks.
+func ResourceAuthUserFromContext(ctx context.Context) (*User, bool) {
+	v, ok := ctx.Value(ResourceAuthUserContextKey).(*User)
+	return v, ok && v != nil
+}
+
+// WithResourceAuthUserID annotates ctx with the internal user ID that should
+// be used for same-tenant resource visibility checks.
+func WithResourceAuthUserID(ctx context.Context, userID string) context.Context {
+	trimmed := strings.TrimSpace(userID)
+	if trimmed == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, ResourceAuthUserIDContextKey, trimmed)
+}
+
+// WithResourceAuthUser annotates ctx with the internal user that should be
+// used for same-tenant resource visibility checks. The user ID is mirrored so
+// ID-only callers do not need the full entity.
+func WithResourceAuthUser(ctx context.Context, user *User) context.Context {
+	if user == nil {
+		return ctx
+	}
+	ctx = context.WithValue(ctx, ResourceAuthUserContextKey, user)
+	if strings.TrimSpace(user.ID) != "" {
+		ctx = context.WithValue(ctx, ResourceAuthUserIDContextKey, strings.TrimSpace(user.ID))
+	}
+	return ctx
+}
+
 // IsSyntheticUserID reports whether id refers to the synthetic system
 // user that the X-API-Key auth path attaches to each tenant
 // (User.ID = "system-<tenantID>"). These users have no real human

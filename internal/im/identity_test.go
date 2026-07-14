@@ -5,7 +5,18 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
+
+type stubIMUserService struct {
+	interfaces.UserService
+	user *types.User
+	err  error
+}
+
+func (s *stubIMUserService) GetUserByID(context.Context, string) (*types.User, error) {
+	return s.user, s.err
+}
 
 func TestWithIMIdentity(t *testing.T) {
 	const tenantID uint64 = 42
@@ -43,5 +54,37 @@ func TestWithIMIdentity(t *testing.T) {
 	}
 	if principal.Type != types.PrincipalIMUser || principal.ID != "42:channel-1:feishu:open-id-1" {
 		t.Fatalf("Principal = %#v, want im_user for the external IM user", principal)
+	}
+}
+
+func TestResourceAuthUserDoesNotChangeIMSessionOwner(t *testing.T) {
+	ctx := withIMIdentity(context.Background(), 42, "channel-1", &IncomingMessage{Platform: PlatformFeishu, UserID: "open-id-1"})
+	ctx = types.WithResourceAuthUserID(ctx, "creator-1")
+	ctx = types.WithResourceAuthUser(ctx, &types.User{ID: "creator-1"})
+
+	if got := types.SessionOwnerIDFromContext(ctx); got != "system-42" {
+		t.Fatalf("SessionOwnerIDFromContext() = %q, want %q", got, "system-42")
+	}
+	if got, ok := types.ResourceAuthUserIDFromContext(ctx); !ok || got != "creator-1" {
+		t.Fatalf("ResourceAuthUserIDFromContext() = %q (ok=%v), want creator-1", got, ok)
+	}
+	if user, ok := types.ResourceAuthUserFromContext(ctx); !ok || user == nil || user.ID != "creator-1" {
+		t.Fatalf("ResourceAuthUserFromContext() = %#v (ok=%v), want creator-1", user, ok)
+	}
+}
+
+func TestWithIMResourceAuthContextLoadsChannelCreator(t *testing.T) {
+	svc := &Service{userService: &stubIMUserService{user: &types.User{ID: "creator-1"}}}
+	ctx := withIMIdentity(context.Background(), 42, "channel-1", &IncomingMessage{Platform: PlatformFeishu, UserID: "open-id-1"})
+	ctx = svc.withIMResourceAuthContext(ctx, &IMChannel{ID: "ch-1", CreatedBy: "creator-1"})
+
+	if got := types.SessionOwnerIDFromContext(ctx); got != "system-42" {
+		t.Fatalf("SessionOwnerIDFromContext() = %q, want %q", got, "system-42")
+	}
+	if got, ok := types.ResourceAuthUserIDFromContext(ctx); !ok || got != "creator-1" {
+		t.Fatalf("ResourceAuthUserIDFromContext() = %q (ok=%v), want creator-1", got, ok)
+	}
+	if user, ok := types.ResourceAuthUserFromContext(ctx); !ok || user == nil || user.ID != "creator-1" {
+		t.Fatalf("ResourceAuthUserFromContext() = %#v (ok=%v), want creator-1", user, ok)
 	}
 }

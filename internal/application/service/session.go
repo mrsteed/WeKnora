@@ -50,6 +50,7 @@ type sessionService struct {
 	chunkService          interfaces.ChunkService                // Service for chunk operations
 	webSearchStateRepo    interfaces.WebSearchStateService       // Service for web search state
 	webSearchProviderRepo interfaces.WebSearchProviderRepository // Repository for web search provider entities
+	kbVisibility          interfaces.KBVisibilityService         // Service for KB visibility filtering
 	kbShareService        interfaces.KBShareService              // Service for KB sharing operations
 	memoryService         interfaces.MemoryService               // Service for memory operations
 }
@@ -71,6 +72,7 @@ func NewSessionService(cfg *config.Config,
 	agentService interfaces.AgentService,
 	webSearchStateRepo interfaces.WebSearchStateService,
 	webSearchProviderRepo interfaces.WebSearchProviderRepository,
+	kbVisibility interfaces.KBVisibilityService,
 	kbShareService interfaces.KBShareService,
 	memoryService interfaces.MemoryService,
 ) interfaces.SessionService {
@@ -91,6 +93,7 @@ func NewSessionService(cfg *config.Config,
 		agentService:          agentService,
 		webSearchStateRepo:    webSearchStateRepo,
 		webSearchProviderRepo: webSearchProviderRepo,
+		kbVisibility:          kbVisibility,
 		kbShareService:        kbShareService,
 		memoryService:         memoryService,
 	}

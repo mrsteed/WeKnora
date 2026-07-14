@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	appservice "github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -24,10 +25,22 @@ const (
 type SearchCommand struct {
 	sessionService interfaces.SessionService
 	kbService      interfaces.KnowledgeBaseService
+	kbVisibility   interfaces.KBVisibilityService
+	kbShareService interfaces.KBShareService
 }
 
-func newSearchCommand(sessionService interfaces.SessionService, kbService interfaces.KnowledgeBaseService) *SearchCommand {
-	return &SearchCommand{sessionService: sessionService, kbService: kbService}
+func newSearchCommand(
+	sessionService interfaces.SessionService,
+	kbService interfaces.KnowledgeBaseService,
+	kbVisibility interfaces.KBVisibilityService,
+	kbShareService interfaces.KBShareService,
+) *SearchCommand {
+	return &SearchCommand{
+		sessionService: sessionService,
+		kbService:      kbService,
+		kbVisibility:   kbVisibility,
+		kbShareService: kbShareService,
+	}
 }
 
 func (c *SearchCommand) Name() string { return "search" }
@@ -48,19 +61,22 @@ func (c *SearchCommand) Execute(ctx context.Context, cmdCtx *CommandContext, arg
 	// resolveKnowledgeBasesFromAgent so that /search covers the same scope.
 	var kbIDs []string
 	if cmdCtx.CustomAgent != nil {
-		switch cmdCtx.CustomAgent.Config.KBSelectionMode {
-		case "all":
-			allKBs, err := c.kbService.ListKnowledgeBases(ctx)
-			if err == nil {
-				// Same capability filter as the QA pipeline's
-				// resolveKnowledgeBasesFromAgent (`all` branch) so `/search`
-				// agrees with what the agent's tools can actually reach.
-				// Agent-mode aware: quick-answer enforces RAG-only KBs.
+		if scopedKBs, scoped, err := appservice.ResolveAgentKnowledgeBasesForCurrentUser(
+			ctx,
+			cmdCtx.CustomAgent,
+			cmdCtx.TenantID,
+			c.kbVisibility,
+			c.kbShareService,
+		); scoped {
+			if err != nil {
+				return nil, fmt.Errorf("resolve agent knowledge scope: %w", err)
+			}
+			if cmdCtx.CustomAgent.Config.KBSelectionMode == "all" {
 				agentMode := cmdCtx.CustomAgent.Config.AgentMode
 				allowed := cmdCtx.CustomAgent.Config.AllowedTools
 				filter := tools.DeriveKBFilterForAgent(agentMode, allowed)
 				skipped := 0
-				for _, kb := range allKBs {
+				for _, kb := range scopedKBs {
 					if !filter.IsEmpty() &&
 						!tools.KBSatisfiesAgentRequirements(kb.Capabilities(), agentMode, allowed) {
 						skipped++
@@ -70,17 +86,51 @@ func (c *SearchCommand) Execute(ctx context.Context, cmdCtx *CommandContext, arg
 				}
 				if skipped > 0 {
 					logger.Infof(ctx,
-						"/search(agent=%s, mode=all): capability filter removed %d of %d KBs",
-						cmdCtx.CustomAgent.ID, skipped, len(allKBs))
+						"/search(agent=%s, mode=all): current-user scope capability filter removed %d KBs",
+						cmdCtx.CustomAgent.ID, skipped)
+				}
+			} else {
+				for _, kb := range scopedKBs {
+					if kb != nil && kb.ID != "" {
+						kbIDs = append(kbIDs, kb.ID)
+					}
 				}
 			}
-		case "none":
-			// No knowledge bases configured — will return empty results.
-		case "selected":
-			kbIDs = cmdCtx.CustomAgent.Config.KnowledgeBases
-		default:
-			// Backward compatibility: fall back to configured list.
-			kbIDs = cmdCtx.CustomAgent.Config.KnowledgeBases
+		} else {
+			switch cmdCtx.CustomAgent.Config.KBSelectionMode {
+			case "all":
+				allKBs, err := c.kbService.ListKnowledgeBases(ctx)
+				if err == nil {
+					// Same capability filter as the QA pipeline's
+					// resolveKnowledgeBasesFromAgent (`all` branch) so `/search`
+					// agrees with what the agent's tools can actually reach.
+					// Agent-mode aware: quick-answer enforces RAG-only KBs.
+					agentMode := cmdCtx.CustomAgent.Config.AgentMode
+					allowed := cmdCtx.CustomAgent.Config.AllowedTools
+					filter := tools.DeriveKBFilterForAgent(agentMode, allowed)
+					skipped := 0
+					for _, kb := range allKBs {
+						if !filter.IsEmpty() &&
+							!tools.KBSatisfiesAgentRequirements(kb.Capabilities(), agentMode, allowed) {
+							skipped++
+							continue
+						}
+						kbIDs = append(kbIDs, kb.ID)
+					}
+					if skipped > 0 {
+						logger.Infof(ctx,
+							"/search(agent=%s, mode=all): capability filter removed %d of %d KBs",
+							cmdCtx.CustomAgent.ID, skipped, len(allKBs))
+					}
+				}
+			case "none":
+				// No knowledge bases configured — will return empty results.
+			case "selected":
+				kbIDs = cmdCtx.CustomAgent.Config.KnowledgeBases
+			default:
+				// Backward compatibility: fall back to configured list.
+				kbIDs = cmdCtx.CustomAgent.Config.KnowledgeBases
+			}
 		}
 	}
 

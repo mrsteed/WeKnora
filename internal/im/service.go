@@ -332,6 +332,7 @@ type Service struct {
 	sessionService interfaces.SessionService
 	messageService interfaces.MessageService
 	tenantService  interfaces.TenantService
+	userService    interfaces.UserService
 	agentService   interfaces.CustomAgentService
 
 	// knowledgeService is used for saving IM file messages to knowledge bases.
@@ -447,6 +448,27 @@ func withIMIdentity(ctx context.Context, tenantID uint64, channelID string, msg 
 	}
 	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
 	return ctx
+}
+
+func (s *Service) withIMResourceAuthContext(ctx context.Context, channel *IMChannel) context.Context {
+	if channel == nil || strings.TrimSpace(channel.CreatedBy) == "" {
+		return ctx
+	}
+	creatorID := strings.TrimSpace(channel.CreatedBy)
+	ctx = types.WithResourceAuthUserID(ctx, creatorID)
+	if s.userService == nil {
+		return ctx
+	}
+	user, err := s.userService.GetUserByID(ctx, creatorID)
+	if err != nil {
+		logger.Warnf(ctx, "[IM] Failed to load resource auth user %s for channel %s: %v", creatorID, channel.ID, err)
+		return ctx
+	}
+	if user == nil {
+		logger.Warnf(ctx, "[IM] Resource auth user %s for channel %s not found", creatorID, channel.ID)
+		return ctx
+	}
+	return types.WithResourceAuthUser(ctx, user)
 }
 
 func buildIMQARequest(
@@ -650,9 +672,12 @@ func NewService(
 	sessionService interfaces.SessionService,
 	messageService interfaces.MessageService,
 	tenantService interfaces.TenantService,
+	userService interfaces.UserService,
 	agentService interfaces.CustomAgentService,
 	knowledgeService interfaces.KnowledgeService,
 	kbService interfaces.KnowledgeBaseService,
+	kbVisibility interfaces.KBVisibilityService,
+	kbShareService interfaces.KBShareService,
 	modelService interfaces.ModelService,
 	streamManager interfaces.StreamManager,
 	redisClient *redis.Client,
@@ -664,8 +689,8 @@ func NewService(
 	// Build command registry.
 	registry := NewCommandRegistry()
 	registry.Register(newHelpCommand(registry))
-	registry.Register(newInfoCommand(kbService))
-	registry.Register(newSearchCommand(sessionService, kbService))
+	registry.Register(newInfoCommand(kbService, kbVisibility, kbShareService))
+	registry.Register(newSearchCommand(sessionService, kbService, kbVisibility, kbShareService))
 	registry.Register(newStopCommand())
 	registry.Register(newClearCommand())
 
@@ -675,6 +700,7 @@ func NewService(
 		sessionService:   sessionService,
 		messageService:   messageService,
 		tenantService:    tenantService,
+		userService:      userService,
 		agentService:     agentService,
 		knowledgeService: knowledgeService,
 		kbService:        kbService,
@@ -1257,6 +1283,7 @@ func (s *Service) HandleMessage(ctx context.Context, msg *IncomingMessage, chann
 		return fmt.Errorf("get tenant: %w", err)
 	}
 	sessionCtx := withIMIdentity(ctx, tenantID, channelID, msg)
+	sessionCtx = s.withIMResourceAuthContext(sessionCtx, channel)
 	sessionCtx = context.WithValue(sessionCtx, types.TenantInfoContextKey, tenant)
 
 	// 2. Resolve or create a WeKnora session

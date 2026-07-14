@@ -2,6 +2,7 @@ package wechat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Tencent/WeKnora/internal/im"
@@ -30,6 +31,9 @@ func NewFactory() im.AdapterFactory {
 		pollCtx, pollCancel := context.WithCancel(context.Background())
 		go func() {
 			if err := client.Start(pollCtx); err != nil && pollCtx.Err() == nil {
+				if errors.Is(err, ErrTokenExpired) {
+					return
+				}
 				logger.Errorf(context.Background(), "[IM] WeChat long-poll stopped for channel %s: %v", channel.ID, err)
 			}
 		}()

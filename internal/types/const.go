@@ -16,6 +16,14 @@ const (
 	UserContextKey ContextKey = "User"
 	// UserIDContextKey is the context key for user ID
 	UserIDContextKey ContextKey = "UserID"
+	// ResourceAuthUserContextKey stores the internal user entity that should be
+	// used for same-tenant resource visibility checks when the session owner is a
+	// synthetic or channel-scoped identity.
+	ResourceAuthUserContextKey ContextKey = "ResourceAuthUser"
+	// ResourceAuthUserIDContextKey stores the internal user ID that should be
+	// used for same-tenant resource visibility checks when it differs from the
+	// request/session owner identity.
+	ResourceAuthUserIDContextKey ContextKey = "ResourceAuthUserID"
 	// PrincipalContextKey is the context key for the terminal caller principal.
 	PrincipalContextKey ContextKey = "Principal"
 	// TenantRoleContextKey is the context key for the caller's TenantRole

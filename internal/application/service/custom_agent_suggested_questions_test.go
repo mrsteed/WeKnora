@@ -141,3 +141,42 @@ func TestGetSuggestedQuestionsIncludesCompatibleSharedKnowledgeBasesInAllMode(t 
 	assert.Equal(t, []string{"kb-shared-database"}, chunkRepo.faqKBIDs)
 	assert.Equal(t, []string{"kb-shared-database"}, chunkRepo.docKBIDs)
 }
+
+func TestGetSuggestedQuestionsUsesCurrentUserScopeForSameTenantAllMode(t *testing.T) {
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(9))
+	ctx = context.WithValue(ctx, types.UserIDContextKey, "user-1")
+	ctx = context.WithValue(ctx, types.UserContextKey, &types.User{ID: "user-1"})
+
+	repo := &stubSuggestedQuestionsAgentRepo{agent: &types.CustomAgent{
+		ID:       "agent-db",
+		TenantID: 9,
+		Config: types.CustomAgentConfig{
+			KBSelectionMode: "all",
+			AllowedTools:    []string{"external_database_schema", "external_database_query"},
+		},
+	}}
+	kbService := &stubSuggestedQuestionsKBService{kbs: []*types.KnowledgeBase{{
+		ID: "kb-hidden-database", Type: types.KnowledgeBaseTypeDatabase,
+	}}}
+	chunkRepo := &stubSuggestedQuestionsChunkRepo{}
+	kbShareService := &stubSuggestedQuestionsKBShareService{shared: []*types.SharedKnowledgeBaseInfo{
+		{KnowledgeBase: &types.KnowledgeBase{ID: "kb-shared-database", Type: types.KnowledgeBaseTypeDatabase}},
+	}}
+	visibility := &stubAgentScopeKBVisibility{list: func(context.Context, string, uint64, bool) ([]*types.KnowledgeBase, error) {
+		return []*types.KnowledgeBase{{ID: "kb-visible-database", Type: types.KnowledgeBaseTypeDatabase}}, nil
+	}}
+	svc := &customAgentService{
+		repo:           repo,
+		chunkRepo:      chunkRepo,
+		kbService:      kbService,
+		kbVisibility:   visibility,
+		kbShareService: kbShareService,
+		wikiPageRepo:   &stubSuggestedQuestionsWikiRepo{},
+	}
+
+	questions, err := svc.GetSuggestedQuestions(ctx, "agent-db", nil, nil, nil, 6)
+	require.NoError(t, err)
+	assert.Empty(t, questions)
+	assert.Equal(t, []string{"kb-visible-database", "kb-shared-database"}, chunkRepo.faqKBIDs)
+	assert.Equal(t, []string{"kb-visible-database", "kb-shared-database"}, chunkRepo.docKBIDs)
+}

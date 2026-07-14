@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"errors"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -30,12 +29,12 @@ func NewSystemSettingRepository(db *gorm.DB) interfaces.SystemSettingRepository 
 // not an error. Real DB errors (connection lost, etc.) surface up.
 func (r *systemSettingRepository) Get(ctx context.Context, key string) (*types.SystemSetting, error) {
 	var s types.SystemSetting
-	err := r.db.WithContext(ctx).Where("key = ?", key).First(&s).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
+	res := r.db.WithContext(ctx).Where("key = ?", key).Limit(1).Find(&s)
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil, nil
 	}
 	return &s, nil
 }
