@@ -274,9 +274,9 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 	// 知识库下的知识路由组
 	kb := r.Group("/knowledge-bases/:id/knowledge")
 	{
-		kb.POST("/file", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.CreateKnowledgeFromFile)
-		kb.POST("/url", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.CreateKnowledgeFromURL)
-		kb.POST("/manual", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.CreateManualKnowledge)
+		kb.POST("/file", g.Viewer(), g.KBAccessRead("id"), handler.CreateKnowledgeFromFile)
+		kb.POST("/url", g.Viewer(), g.KBAccessRead("id"), handler.CreateKnowledgeFromURL)
+		kb.POST("/manual", g.Viewer(), g.KBAccessRead("id"), handler.CreateManualKnowledge)
 		kb.GET("", g.Viewer(), g.KBAccessRead("id"), handler.ListKnowledge)
 		kb.DELETE("", g.Admin(), g.KBAccessWrite("id"), handler.ClearKnowledgeBaseContents)
 	}

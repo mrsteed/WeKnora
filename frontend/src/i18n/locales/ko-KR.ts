@@ -585,6 +585,7 @@ export default {
     viewModeToggle: "보기 전환",
     columnName: "파일 이름",
     columnTag: "태그",
+    columnUploader: "업로드한 사람",
     columnSize: "크기",
     columnType: "유형",
     columnSource: "소스",

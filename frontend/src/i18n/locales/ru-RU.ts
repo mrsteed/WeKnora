@@ -507,6 +507,7 @@ export default {
     viewModeToggle: 'Переключить вид',
     columnName: 'Имя',
     columnTag: 'Тег',
+    columnUploader: 'Кто загрузил',
     columnSize: 'Размер',
     columnType: 'Тип',
     columnSource: 'Источник',

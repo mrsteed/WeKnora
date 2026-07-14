@@ -774,6 +774,7 @@ func (s *knowledgeService) getOrCreateFAQKnowledge(ctx context.Context, kb *type
 		KnowledgeBaseID:  kb.ID,
 		Type:             types.KnowledgeTypeFAQ,
 		Channel:          types.ChannelWeb,
+		CreatedBy:        srcKnowledge.CreatedBy,
 		Title:            "FAQ",
 		ParseStatus:      "completed",
 		EnableStatus:     "enabled",
@@ -786,6 +787,7 @@ func (s *knowledgeService) getOrCreateFAQKnowledge(ctx context.Context, kb *type
 		knowledge.Description = srcKnowledge.Description
 		knowledge.Source = srcKnowledge.Source
 		knowledge.Channel = srcKnowledge.Channel
+		knowledge.CreatedBy = srcKnowledge.CreatedBy
 		knowledge.Metadata = srcKnowledge.Metadata
 	}
 

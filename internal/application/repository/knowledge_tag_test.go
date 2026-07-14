@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS knowledges (
     id VARCHAR(36) PRIMARY KEY,
     tenant_id INTEGER NOT NULL,
     knowledge_base_id VARCHAR(36) NOT NULL,
+	created_by VARCHAR(36) NOT NULL DEFAULT '',
     type VARCHAR(50) NOT NULL DEFAULT 'file',
     title VARCHAR(255) NOT NULL DEFAULT '',
     parse_status VARCHAR(50) NOT NULL DEFAULT 'completed',

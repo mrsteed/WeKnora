@@ -592,6 +592,7 @@ export default {
     viewModeToggle: "切换视图",
     columnName: "文件名",
     columnTag: "标签",
+    columnUploader: "上传人",
     columnSize: "大小",
     columnType: "类型",
     columnSource: "来源",

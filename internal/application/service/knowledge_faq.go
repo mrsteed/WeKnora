@@ -1566,6 +1566,7 @@ func (s *knowledgeService) ensureFAQKnowledge(
 		KnowledgeBaseID:  kb.ID,
 		Type:             types.KnowledgeTypeFAQ,
 		Channel:          types.ChannelWeb,
+		CreatedBy:        resolveKnowledgeCreatorIDFromContext(ctx),
 		Title:            buildFAQKnowledgeTitle(kb.Name),
 		Description:      "FAQ 条目容器",
 		Source:           types.KnowledgeTypeFAQ,

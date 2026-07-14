@@ -42,6 +42,8 @@ type Knowledge struct {
 	FilePath         string          `json:"file_path"`
 	StorageSize      int64           `json:"storage_size"`
 	Metadata         json.RawMessage `json:"metadata"` // Extensible metadata for storing machine information, paths, etc.
+	CreatedBy        string          `json:"created_by,omitempty"`
+	CreatedByNickname string         `json:"created_by_nickname,omitempty"`
 	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt        time.Time       `json:"updated_at"`
 	ProcessedAt      *time.Time      `json:"processed_at"`

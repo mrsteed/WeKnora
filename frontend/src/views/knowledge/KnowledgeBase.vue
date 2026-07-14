@@ -298,6 +298,15 @@ const canMutateKnowledge = computed(() => {
   return authStore.hasRole('contributor');
 });
 
+// Upload permission follows KB visibility instead of KB management.
+// If the current page is readable, the user may upload/import/manual-create
+// documents into it; edit/delete/settings remain controlled by canEdit/canManage.
+const canUpload = computed(() => {
+  if (!kbInfo.value) return false;
+  if (isFAQ.value || isDatabase.value) return false;
+  return true;
+});
+
 // Effective permission: from direct org share list or from GET /knowledge-bases/:id (e.g. agent-visible KB)
 const effectiveKBPermission = computed(() => orgStore.getKBPermission(kbId.value) || kbInfo.value?.my_permission || '');
 
@@ -308,7 +317,7 @@ const showKbDetailContextualGuide = computed(() => {
   return Boolean(kbId.value)
     && !isFAQ.value
     && !isDatabase.value
-    && canEdit.value
+    && canUpload.value
     && !docListLoading.value
     && cardList.value.length === 0;
 });
@@ -1042,7 +1051,7 @@ const handleOpenURLImportDialog = (event: CustomEvent) => {
   const eventKbId = event.detail.kbId;
   console.log('接收到URL导入对话框打开事件，知识库ID:', eventKbId, '当前知识库ID:', kbId.value);
   if (eventKbId && eventKbId === kbId.value && !isFAQ.value && !isDatabase.value) {
-    if (ensureDocumentKbReady()) {
+    if (canUpload.value && ensureDocumentKbReady()) {
       uploadSourceRef.value?.openUrlDialog();
     }
   }
@@ -1727,7 +1736,7 @@ const handleUploadConfirmResult = async (result: UploadConfirmResult) => {
 };
 
 const openUploadConfirmDialog = async (files: File[], urls: string[] = []) => {
-  if (!kbInfo.value) return;
+  if (!kbInfo.value || !canUpload.value) return;
   if (files.length === 0 && urls.length === 0) return;
   try {
     const result = await uploadConfirmStore.open({
@@ -1745,17 +1754,20 @@ const openUploadConfirmDialog = async (files: File[], urls: string[] = []) => {
 };
 
 const handleUploadSourceFiles = (files: File[]) => {
+  if (!canUpload.value) return;
   if (!ensureDocumentKbReady()) return;
   if (files.length === 0) return;
   openUploadConfirmDialog(files);
 };
 
 const handleUploadSourceUrl = (url: string) => {
+  if (!canUpload.value) return;
   if (!ensureDocumentKbReady()) return;
   openUploadConfirmDialog([], [url]);
 };
 
 const handleManualCreate = () => {
+  if (!canUpload.value) return;
   if (!ensureDocumentKbReady()) return;
   uiStore.openManualEditor({
     mode: 'create',
@@ -2391,7 +2403,7 @@ async function createNewSession(value: string): Promise<void> {
                     </button>
                   </t-tooltip>
                 </div>
-                <div v-if="canEdit" class="doc-filter-actions">
+                <div v-if="canUpload" class="doc-filter-actions">
                   <KbUploadSourceDropdown ref="uploadSourceRef" :accept-file-types="acceptFileTypes"
                     :supported-file-types="[...supportedFileTypes]" include-manual trigger-icon="file-add"
                     trigger-class="content-bar-icon-btn" data-guide="kb-detail-add-doc"

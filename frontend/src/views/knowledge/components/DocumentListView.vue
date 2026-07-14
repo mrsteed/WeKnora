@@ -15,6 +15,8 @@ interface KnowledgeItem {
   file_name: string;
   file_type?: string;
   file_size?: number | string;
+  created_by?: string;
+  created_by_nickname?: string;
   type?: string;
   tags?: Tag[];
   parse_status?: string;
@@ -71,6 +73,14 @@ const formatTime = (time?: string) => {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${yy}-${MM}-${dd} ${hh}:${mm}`;
+};
+
+const getUploaderLabel = (item: KnowledgeItem) => {
+  const nickname = item.created_by_nickname?.trim();
+  if (nickname) return nickname;
+  const createdBy = item.created_by?.trim();
+  if (createdBy) return createdBy;
+  return '--';
 };
 
 const getSourceInfo = (item: KnowledgeItem): { icon: string; label: string } => {
@@ -214,6 +224,7 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
       </div>
       <div class="cell cell-name" role="columnheader">{{ t('knowledgeBase.columnName') }}</div>
       <div class="cell cell-tag" role="columnheader">{{ t('knowledgeBase.columnTag') }}</div>
+      <div class="cell cell-uploader" role="columnheader">{{ t('knowledgeBase.columnUploader') }}</div>
       <div class="cell cell-source" role="columnheader">{{ t('knowledgeBase.columnSource') }}</div>
       <div class="cell cell-size" role="columnheader">{{ t('knowledgeBase.columnSize') }}</div>
       <div class="cell cell-status" role="columnheader">{{ t('knowledgeBase.columnStatus') }}</div>
@@ -265,6 +276,10 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
           <span v-else class="row-tag-chips is-clickable" @click.stop="canEdit && emit('tag-edit', item)">
             <span class="row-tag-add">+ {{ t('knowledgeBase.tagLabel') }}</span>
           </span>
+        </div>
+
+        <div class="cell cell-uploader">
+          <span class="row-uploader" :title="getUploaderLabel(item)">{{ getUploaderLabel(item) }}</span>
         </div>
 
         <div class="cell cell-source">
@@ -385,8 +400,9 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
   display: grid;
   grid-template-columns:
     44px // checkbox
-    minmax(260px, 2.6fr) // name
+    minmax(260px, 2.3fr) // name
     minmax(100px, 0.9fr) // tag
+    minmax(120px, 0.9fr) // uploader
     minmax(96px, 0.8fr) // source
     96px // size
     minmax(96px, 0.7fr) // status
@@ -563,6 +579,10 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
   min-width: 0;
 }
 
+.cell-uploader {
+  min-width: 0;
+}
+
 .row-source-icon {
   flex-shrink: 0;
   font-size: 14px;
@@ -570,6 +590,15 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
 }
 
 .row-source-label {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+
+.row-uploader {
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;

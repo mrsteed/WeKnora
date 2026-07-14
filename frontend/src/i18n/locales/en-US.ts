@@ -582,6 +582,7 @@ export default {
     viewModeToggle: 'Toggle view',
     columnName: 'Name',
     columnTag: 'Tag',
+    columnUploader: 'Uploader',
     columnSize: 'Size',
     columnType: 'Type',
     columnSource: 'Source',

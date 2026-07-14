@@ -78,6 +78,7 @@ CREATE TABLE knowledges (
     file_hash VARCHAR(64),
     storage_size BIGINT NOT NULL DEFAULT 0,
     metadata JSON,
+    created_by VARCHAR(36) NOT NULL DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL,
@@ -86,6 +87,7 @@ CREATE TABLE knowledges (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE INDEX idx_knowledges_tenant_id ON knowledges(tenant_id, knowledge_base_id);
+CREATE INDEX idx_knowledges_tenant_created_by ON knowledges(tenant_id, created_by);
 
 CREATE TABLE sessions (
     id VARCHAR(36) PRIMARY KEY,

@@ -309,6 +309,8 @@ curl --location 'http://localhost:8080/api/v1/knowledge-bases/kb-00000001/knowle
             "file_path": "",
             "storage_size": 0,
             "metadata": null,
+            "created_by": "user-00000001",
+            "created_by_nickname": "alice",
             "created_at": "2025-08-12T11:55:05.709266+08:00",
             "updated_at": "2025-08-12T11:55:05.709266+08:00",
             "processed_at": null,

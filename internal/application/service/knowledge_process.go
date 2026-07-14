@@ -43,6 +43,7 @@ func (s *knowledgeService) cloneKnowledge(
 		KnowledgeBaseID:  targetKB.ID,
 		Type:             src.Type,
 		Channel:          src.Channel,
+		CreatedBy:        src.CreatedBy,
 		Title:            src.Title,
 		Description:      src.Description,
 		Source:           src.Source,

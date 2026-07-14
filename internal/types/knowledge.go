@@ -154,6 +154,10 @@ type Knowledge struct {
 	StorageSize int64 `json:"storage_size"`
 	// Metadata of the knowledge
 	Metadata JSON `json:"metadata"           gorm:"type:json"`
+	// CreatedBy stores the internal user ID that uploaded or created the knowledge entry.
+	CreatedBy string `json:"created_by"         gorm:"type:varchar(36);default:'';index"`
+	// CreatedByNickname stores the resolved display name of CreatedBy (not stored in database, filled at query time)
+	CreatedByNickname string `json:"created_by_nickname" gorm:"-"`
 	// Last FAQ import result (for FAQ type knowledge only)
 	LastFAQImportResult JSON `json:"last_faq_import_result" gorm:"type:json"`
 	// Creation time of the knowledge

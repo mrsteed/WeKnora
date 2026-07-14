@@ -332,19 +332,14 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger.Info(ctx, "Start creating knowledge from file")
 
-	// Validate access to the knowledge base (only owner or admin/editor can create)
-	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccess(c)
+	// Validate access to the knowledge base. Upload permission intentionally
+	// follows read visibility: anyone who can access the KB can add content.
+	_, kbID, effectiveTenantID, _, err := h.validateKnowledgeBaseAccess(c)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, effectiveTenantID)
-
-	// Check write permission
-	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
-		c.Error(errors.NewForbiddenError("No permission to create knowledge"))
-		return
-	}
 
 	// Get the uploaded file
 	file, err := c.FormFile("file")
@@ -471,19 +466,14 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger.Info(ctx, "Start creating knowledge from URL")
 
-	// Validate access to the knowledge base (only owner or admin/editor can create)
-	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccess(c)
+	// Validate access to the knowledge base. URL import follows the same
+	// rule as file upload: read access is sufficient to add content.
+	_, kbID, effectiveTenantID, _, err := h.validateKnowledgeBaseAccess(c)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, effectiveTenantID)
-
-	// Check write permission
-	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
-		c.Error(errors.NewForbiddenError("No permission to create knowledge"))
-		return
-	}
 
 	// Parse URL from request body
 	var req struct {
@@ -568,19 +558,14 @@ func (h *KnowledgeHandler) CreateManualKnowledge(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger.Info(ctx, "Start creating manual knowledge")
 
-	// Validate access to the knowledge base (only owner or admin/editor can create)
-	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccess(c)
+	// Validate access to the knowledge base. Manual document creation is
+	// aligned with upload visibility, so read access is enough.
+	_, kbID, effectiveTenantID, _, err := h.validateKnowledgeBaseAccess(c)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, effectiveTenantID)
-
-	// Check write permission
-	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
-		c.Error(errors.NewForbiddenError("No permission to create knowledge"))
-		return
-	}
 
 	var req types.ManualKnowledgePayload
 	if err := c.ShouldBindJSON(&req); err != nil {

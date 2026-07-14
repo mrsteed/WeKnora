@@ -24,6 +24,7 @@ func TestKnowledgeSourceSchemaAllowsObjectStorageURLs(t *testing.T) {
 	}
 
 	var sourceType string
+	var hasCreatedBy bool
 	rows, err := db.Raw("PRAGMA table_info(knowledges)").Rows()
 	if err != nil {
 		t.Fatalf("inspect knowledge schema: %v", err)
@@ -40,7 +41,9 @@ func TestKnowledgeSourceSchemaAllowsObjectStorageURLs(t *testing.T) {
 		}
 		if name == "source" {
 			sourceType = strings.ToLower(typ)
-			break
+		}
+		if name == "created_by" {
+			hasCreatedBy = true
 		}
 	}
 	if err := rows.Close(); err != nil {
@@ -48,6 +51,9 @@ func TestKnowledgeSourceSchemaAllowsObjectStorageURLs(t *testing.T) {
 	}
 	if sourceType != "varchar(2048)" {
 		t.Fatalf("knowledge source column type = %q, want varchar(2048)", sourceType)
+	}
+	if !hasCreatedBy {
+		t.Fatal("knowledge schema missing created_by column")
 	}
 
 	longURL := "https://example-bucket.cos.ap-beijing.myqcloud.com/test/" +

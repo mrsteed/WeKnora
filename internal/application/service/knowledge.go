@@ -46,6 +46,7 @@ type knowledgeService struct {
 	kbService       interfaces.KnowledgeBaseService
 	tenantRepo      interfaces.TenantRepository
 	tenantService   interfaces.TenantService
+	userRepo        interfaces.UserRepository
 	documentReader  interfaces.DocumentReader
 	chunkService    interfaces.ChunkService
 	chunkRepo       interfaces.ChunkRepository
@@ -89,6 +90,7 @@ func NewKnowledgeService(
 	kbService interfaces.KnowledgeBaseService,
 	tenantRepo interfaces.TenantRepository,
 	tenantService interfaces.TenantService,
+	userRepo interfaces.UserRepository,
 	chunkService interfaces.ChunkService,
 	chunkRepo interfaces.ChunkRepository,
 	tagRepo interfaces.KnowledgeTagRepository,
@@ -113,6 +115,7 @@ func NewKnowledgeService(
 		kbService:       kbService,
 		tenantRepo:      tenantRepo,
 		tenantService:   tenantService,
+		userRepo:        userRepo,
 		documentReader:  documentReader,
 		chunkService:    chunkService,
 		chunkRepo:       chunkRepo,
@@ -547,6 +550,7 @@ func (s *knowledgeService) ListPagedKnowledgeByKnowledgeBaseID(ctx context.Conte
 			}
 		}
 	}
+	fillKnowledgeCreatorNicknames(ctx, s.userRepo, knowledges)
 
 	return types.NewPageResult(total, page, knowledges), nil
 }
