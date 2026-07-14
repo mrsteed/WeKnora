@@ -27,6 +27,7 @@ import (
 type stubMemberService struct {
 	interfaces.TenantMemberService
 	add             func(ctx context.Context, userID string, tenantID uint64, role types.TenantRole, invitedBy *string) (*types.TenantMember, error)
+	getMembership   func(ctx context.Context, userID string, tenantID uint64) (*types.TenantMember, error)
 	listTenant      func(ctx context.Context, tenantID uint64) ([]*types.TenantMember, error)
 	listMembersPage func(ctx context.Context, tenantID uint64, query string, page, pageSize int) ([]*types.TenantMember, int64, error)
 	updateRole      func(ctx context.Context, userID string, tenantID uint64, newRole types.TenantRole) error
@@ -70,6 +71,29 @@ func (s *stubMemberService) ListMembersPage(
 
 func (s *stubMemberService) AddMember(ctx context.Context, userID string, tenantID uint64, role types.TenantRole, invitedBy *string) (*types.TenantMember, error) {
 	return s.add(ctx, userID, tenantID, role, invitedBy)
+}
+
+func (s *stubMemberService) GetMembership(ctx context.Context, userID string, tenantID uint64) (*types.TenantMember, error) {
+	if s.getMembership != nil {
+		return s.getMembership(ctx, userID, tenantID)
+	}
+	if s.listTenant != nil {
+		members, err := s.listTenant(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		for _, member := range members {
+			if member != nil && member.UserID == userID {
+				return member, nil
+			}
+		}
+	}
+	return &types.TenantMember{
+		UserID:   userID,
+		TenantID: tenantID,
+		Role:     types.TenantRoleContributor,
+		Status:   types.TenantMemberStatusActive,
+	}, nil
 }
 
 func (s *stubMemberService) ListByTenant(ctx context.Context, tenantID uint64) ([]*types.TenantMember, error) {
@@ -126,7 +150,7 @@ func (s *stubMemberUserService) GetUsersByIDs(ctx context.Context, ids []string)
 // middleware via memberTestRouter rather than threading a cfg through
 // the handler.
 func newTestMemberHandler(ms interfaces.TenantMemberService, us interfaces.UserService) *TenantMemberHandler {
-	return NewTenantMemberHandler(ms, us)
+	return NewTenantMemberHandler(ms, us, nil)
 }
 
 // memberTestRouter wires the handler with the same errorCapture middleware
@@ -168,6 +192,7 @@ const defaultTestTenantID uint64 = 1
 type memberCtxOpts struct {
 	callerID    string
 	tenantID    uint64
+	tenantRole  types.TenantRole
 	user        *types.User
 	skipTenant  bool // when true, do NOT set TenantIDContextKey at all
 }
@@ -188,6 +213,11 @@ func withMemberCtx(req *http.Request, opts memberCtxOpts) *http.Request {
 		}
 		ctx = context.WithValue(ctx, types.TenantIDContextKey, tid)
 	}
+	role := opts.tenantRole
+	if role == "" {
+		role = types.TenantRoleOwner
+	}
+	ctx = context.WithValue(ctx, types.TenantRoleContextKey, role)
 	if opts.user != nil {
 		ctx = context.WithValue(ctx, types.UserContextKey, opts.user)
 	}
@@ -307,7 +337,7 @@ func TestTenantMember_ListMembers_RejectsInvalidPage(t *testing.T) {
 // ---------- AddMember ----------
 
 func TestTenantMember_AddMember_HappyPath(t *testing.T) {
-	caller := "u-owner"
+	caller := "u-admin"
 	now := time.Now()
 	ms := &stubMemberService{
 		add: func(_ context.Context, userID string, tenantID uint64, role types.TenantRole, invitedBy *string) (*types.TenantMember, error) {
@@ -324,10 +354,32 @@ func TestTenantMember_AddMember_HappyPath(t *testing.T) {
 	}
 	h := newTestMemberHandler(ms, us)
 
-	body := map[string]any{"email": "bob@x.com", "role": "contributor"}
-	w := doJSON(t, memberTestRouter(h), http.MethodPost, "/tenants/1/members", body, caller)
+	body := map[string]any{"email": "bob@x.com", "role": "admin"}
+	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodPost, "/tenants/1/members", body,
+		memberCtxOpts{callerID: caller, tenantRole: types.TenantRoleAdmin})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestTenantMember_AddMember_AdminCannotGrantOwner(t *testing.T) {
+	called := false
+	us := &stubMemberUserService{
+		getByEmail: func(_ context.Context, _ string) (*types.User, error) {
+			called = true
+			return &types.User{ID: "u-bob"}, nil
+		},
+	}
+	h := newTestMemberHandler(&stubMemberService{}, us)
+
+	body := map[string]any{"email": "bob@x.com", "role": "owner"}
+	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodPost, "/tenants/1/members", body,
+		memberCtxOpts{callerID: "u-admin", tenantRole: types.TenantRoleAdmin})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("admin granting owner must 403, got %d body=%s", w.Code, w.Body.String())
+	}
+	if called {
+		t.Fatalf("user lookup must not run when tenant-role authorization fails")
 	}
 }
 
@@ -394,6 +446,9 @@ func TestTenantMember_AddMember_InvalidRoleRejectedUpfront(t *testing.T) {
 
 func TestTenantMember_UpdateRole_HappyPath(t *testing.T) {
 	ms := &stubMemberService{
+		getMembership: func(_ context.Context, userID string, tenantID uint64) (*types.TenantMember, error) {
+			return &types.TenantMember{UserID: userID, TenantID: tenantID, Role: types.TenantRoleContributor, Status: types.TenantMemberStatusActive}, nil
+		},
 		updateRole: func(_ context.Context, userID string, tenantID uint64, newRole types.TenantRole) error {
 			if userID != "u-bob" || tenantID != 1 || newRole != types.TenantRoleAdmin {
 				t.Fatalf("unexpected args: user=%s tenant=%d role=%s", userID, tenantID, newRole)
@@ -407,6 +462,46 @@ func TestTenantMember_UpdateRole_HappyPath(t *testing.T) {
 	w := doJSON(t, memberTestRouter(h), http.MethodPut, "/tenants/1/members/u-bob", body, "u-owner")
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestTenantMember_UpdateRole_AdminCannotPromoteToOwner(t *testing.T) {
+	ms := &stubMemberService{
+		getMembership: func(_ context.Context, userID string, tenantID uint64) (*types.TenantMember, error) {
+			return &types.TenantMember{UserID: userID, TenantID: tenantID, Role: types.TenantRoleContributor, Status: types.TenantMemberStatusActive}, nil
+		},
+		updateRole: func(context.Context, string, uint64, types.TenantRole) error {
+			t.Fatalf("UpdateRole must not be reached")
+			return nil
+		},
+	}
+	h := newTestMemberHandler(ms, &stubMemberUserService{})
+
+	body := map[string]any{"role": "owner"}
+	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodPut, "/tenants/1/members/u-bob", body,
+		memberCtxOpts{callerID: "u-admin", tenantRole: types.TenantRoleAdmin})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("admin promoting owner must 403, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestTenantMember_UpdateRole_AdminCannotModifyOwner(t *testing.T) {
+	ms := &stubMemberService{
+		getMembership: func(_ context.Context, userID string, tenantID uint64) (*types.TenantMember, error) {
+			return &types.TenantMember{UserID: userID, TenantID: tenantID, Role: types.TenantRoleOwner, Status: types.TenantMemberStatusActive}, nil
+		},
+		updateRole: func(context.Context, string, uint64, types.TenantRole) error {
+			t.Fatalf("UpdateRole must not be reached")
+			return nil
+		},
+	}
+	h := newTestMemberHandler(ms, &stubMemberUserService{})
+
+	body := map[string]any{"role": "admin"}
+	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodPut, "/tenants/1/members/u-owner", body,
+		memberCtxOpts{callerID: "u-admin", tenantRole: types.TenantRoleAdmin})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("admin modifying owner must 403, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -447,6 +542,9 @@ func TestTenantMember_UpdateRole_UnknownMembershipMaps404(t *testing.T) {
 
 func TestTenantMember_RemoveMember_HappyPath(t *testing.T) {
 	ms := &stubMemberService{
+		getMembership: func(_ context.Context, userID string, tenantID uint64) (*types.TenantMember, error) {
+			return &types.TenantMember{UserID: userID, TenantID: tenantID, Role: types.TenantRoleContributor, Status: types.TenantMemberStatusActive}, nil
+		},
 		remove: func(_ context.Context, userID string, tenantID uint64) error {
 			if userID != "u-bob" || tenantID != 1 {
 				t.Fatalf("unexpected args: user=%s tenant=%d", userID, tenantID)
@@ -459,6 +557,25 @@ func TestTenantMember_RemoveMember_HappyPath(t *testing.T) {
 	w := doJSON(t, memberTestRouter(h), http.MethodDelete, "/tenants/1/members/u-bob", nil, "u-owner")
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestTenantMember_RemoveMember_AdminCannotRemoveOwner(t *testing.T) {
+	ms := &stubMemberService{
+		getMembership: func(_ context.Context, userID string, tenantID uint64) (*types.TenantMember, error) {
+			return &types.TenantMember{UserID: userID, TenantID: tenantID, Role: types.TenantRoleOwner, Status: types.TenantMemberStatusActive}, nil
+		},
+		remove: func(context.Context, string, uint64) error {
+			t.Fatalf("RemoveMember must not be reached")
+			return nil
+		},
+	}
+	h := newTestMemberHandler(ms, &stubMemberUserService{})
+
+	w := doJSONWithCtx(t, memberTestRouter(h), http.MethodDelete, "/tenants/1/members/u-owner", nil,
+		memberCtxOpts{callerID: "u-admin", tenantRole: types.TenantRoleAdmin})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("admin removing owner must 403, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -660,7 +777,7 @@ func TestTenantMember_CrossTenantSuperuserBypassesURLCheck(t *testing.T) {
 		memberCtxOpts{
 			callerID: "u-superuser",
 			tenantID: 1,
-			user:     &types.User{ID: "u-superuser", CanAccessAllTenants: true},
+			user:     &types.User{ID: "u-superuser", IsSuperAdmin: true},
 		})
 	if w.Code != http.StatusOK {
 		t.Fatalf("superuser bypass must reach service, got %d body=%s", w.Code, w.Body.String())
@@ -670,11 +787,9 @@ func TestTenantMember_CrossTenantSuperuserBypassesURLCheck(t *testing.T) {
 	}
 }
 
-func TestTenantMember_SuperuserBypassRequiresFeatureFlag(t *testing.T) {
-	// Just having user.CanAccessAllTenants on the User struct is not
-	// enough — the cluster operator must also have flipped
-	// cfg.Tenant.EnableCrossTenantAccess. Otherwise a stale token
-	// claim couldn't be revoked operationally.
+func TestTenantMember_SuperuserBypassIgnoresLegacyFeatureFlag(t *testing.T) {
+	// Platform super admins should still bypass path-tenant checks even if
+	// the legacy cross-tenant feature flag is off.
 	called := false
 	ms := &stubMemberService{
 		listTenant: func(_ context.Context, _ uint64) ([]*types.TenantMember, error) {
@@ -682,10 +797,8 @@ func TestTenantMember_SuperuserBypassRequiresFeatureFlag(t *testing.T) {
 			return nil, nil
 		},
 	}
-	// Build the router with the flag explicitly off — the carve-out
-	// now lives in middleware.RequirePathTenantMatch, which the router
-	// helper mounts.
-	h := NewTenantMemberHandler(ms, &stubMemberUserService{})
+	// Build the router with the legacy flag explicitly off.
+	h := NewTenantMemberHandler(ms, &stubMemberUserService{}, nil)
 	router := memberTestRouterWithCfg(h, &config.Config{
 		Tenant: &config.TenantConfig{EnableCrossTenantAccess: false},
 	})
@@ -693,13 +806,13 @@ func TestTenantMember_SuperuserBypassRequiresFeatureFlag(t *testing.T) {
 		memberCtxOpts{
 			callerID: "u-superuser",
 			tenantID: 1,
-			user:     &types.User{ID: "u-superuser", CanAccessAllTenants: true},
+			user:     &types.User{ID: "u-superuser", IsSuperAdmin: true},
 		})
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 when feature flag is off, got %d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected platform super admin bypass when feature flag is off, got %d body=%s", w.Code, w.Body.String())
 	}
-	if called {
-		t.Fatalf("service must not be reached without the feature flag")
+	if !called {
+		t.Fatalf("service must be reached for the platform super admin bypass")
 	}
 }
 

@@ -44,9 +44,9 @@
 
       <t-form-item :label="$t('admin.member.role')" name="role">
         <t-radio-group v-model="formData.role">
-          <t-radio value="viewer">{{ $t('admin.member.roleViewer') }}</t-radio>
-          <t-radio value="editor">{{ $t('admin.member.roleEditor') }}</t-radio>
-          <t-radio value="admin">{{ $t('admin.member.roleAdmin') }}</t-radio>
+          <t-radio v-for="option in orgRoleOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </t-radio>
         </t-radio-group>
       </t-form-item>
 
@@ -55,7 +55,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { createUserInOrg } from '@/api/org-tree'
 import { useI18n } from 'vue-i18n'
@@ -83,6 +83,12 @@ const formData = reactive({
   password: '',
   role: 'viewer' as 'admin' | 'editor' | 'viewer',
 })
+
+const orgRoleOptions = computed(() => ([
+  { value: 'viewer' as const, label: t('admin.member.roleViewer') },
+  { value: 'editor' as const, label: t('admin.member.roleEditor') },
+  { value: 'admin' as const, label: t('admin.member.roleSubOrgAdmin') },
+]))
 
 const formRules = {
   username: [
@@ -136,7 +142,6 @@ const handleSubmit = async () => {
       phone: formData.phone || undefined,
       password: formData.password,
       role: formData.role,
-      tenant_role: 'admin',
     })
     if (res.success) {
       MessagePlugin.success(t('admin.member.createUserSuccess'))

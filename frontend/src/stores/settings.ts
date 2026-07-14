@@ -116,7 +116,7 @@ function loadAndReconcileSettings(): Settings {
   ) as Settings;
   loaded.selectedTags ||= [];
   loaded.selectedMCPServices ||= [];
-  loaded.selectedSkills ||= loaded.selectedTools || [];
+  loaded.selectedSkills ||= [];
   loaded.selectedFileKbMap ||= {};
   if (reconcileBuiltinAgentMode(loaded)) {
     localStorage.setItem("WeKnora_settings", JSON.stringify(loaded));

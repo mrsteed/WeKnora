@@ -53,6 +53,7 @@ type RouterParams struct {
 	TenantHandler                *handler.TenantHandler
 	TenantService                interfaces.TenantService
 	TenantMemberService          interfaces.TenantMemberService
+	OrgTreeService               interfaces.OrgTreeService
 	TenantMemberHandler          *handler.TenantMemberHandler
 	TenantInvitationHandler      *handler.TenantInvitationHandler
 	AuditLogHandler              *handler.AuditLogHandler
@@ -167,7 +168,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 	RegisterEmbedPublicRoutes(r, params.EmbedChannelHandler, params.EmbedChannelService, params.TenantService, params.RedisClient, params.FileService)
 
 	// 认证中间件
-	r.Use(middleware.Auth(params.TenantService, params.UserService, params.TenantMemberService, params.Config))
+	r.Use(middleware.Auth(params.TenantService, params.UserService, params.TenantMemberService, params.OrgTreeService, params.Config))
 
 	// 文件服务：统一代理本地/MinIO/COS/TOS存储后端（需要认证）
 	serveFiles(r, params.FileService)
@@ -478,17 +479,17 @@ func RegisterTenantRoutes(
 
 			if memberHandler != nil {
 				tenantByID.GET("/members", g.Viewer(), memberHandler.ListMembers)
-				tenantByID.POST("/members", g.Owner(), memberHandler.AddMember)
-				tenantByID.PUT("/members/:user_id", g.Owner(), memberHandler.UpdateMemberRole)
-				tenantByID.DELETE("/members/:user_id", g.Owner(), memberHandler.RemoveMember)
+				tenantByID.POST("/members", g.Admin(), memberHandler.AddMember)
+				tenantByID.PUT("/members/:user_id", g.Admin(), memberHandler.UpdateMemberRole)
+				tenantByID.DELETE("/members/:user_id", g.Admin(), memberHandler.RemoveMember)
 				tenantByID.POST("/leave", g.Viewer(), memberHandler.LeaveTenant)
 			}
 
 			if invitationHandler != nil {
 				tenantByID.GET("/invitations", g.Viewer(), invitationHandler.ListTenantInvitations)
-				tenantByID.POST("/invitations", g.Owner(), invitationHandler.CreateInvitation)
-				tenantByID.DELETE("/invitations/:inv_id", g.Owner(), invitationHandler.RevokeInvitation)
-				tenantByID.POST("/invite-links", g.Owner(), invitationHandler.CreateInviteLink)
+				tenantByID.POST("/invitations", g.Admin(), invitationHandler.CreateInvitation)
+				tenantByID.DELETE("/invitations/:inv_id", g.Admin(), invitationHandler.RevokeInvitation)
+				tenantByID.POST("/invite-links", g.Admin(), invitationHandler.CreateInviteLink)
 			}
 
 			if auditLogHandler != nil {
@@ -873,18 +874,18 @@ func RegisterEmbedChannelRoutes(r *gin.RouterGroup, embedHandler *handler.EmbedC
 	}
 	agentEmbed := r.Group("/agents/:id/embed-channels")
 	{
-		agentEmbed.POST("", g.Admin(), embedHandler.CreateEmbedChannel)
-		agentEmbed.GET("", g.Viewer(), embedHandler.ListEmbedChannels)
+		agentEmbed.POST("", g.Owner(), embedHandler.CreateEmbedChannel)
+		agentEmbed.GET("", g.Owner(), embedHandler.ListEmbedChannels)
 	}
 	channels := r.Group("/embed-channels")
 	{
 		channels.GET("", g.Viewer(), embedHandler.ListAllEmbedChannels)
-		channels.GET("/:channel_id", g.Viewer(), embedHandler.GetEmbedChannel)
-		channels.PUT("/:channel_id", g.Admin(), embedHandler.UpdateEmbedChannel)
-		channels.DELETE("/:channel_id", g.Admin(), embedHandler.DeleteEmbedChannel)
-		channels.POST("/:channel_id/rotate-token", g.Admin(), embedHandler.RotateEmbedToken)
-		channels.POST("/:channel_id/preview-session", g.Viewer(), embedHandler.IssuePreviewSession)
-		channels.GET("/:channel_id/stats", g.Viewer(), embedHandler.GetEmbedChannelStats)
+		channels.GET("/:channel_id", g.Owner(), embedHandler.GetEmbedChannel)
+		channels.PUT("/:channel_id", g.Owner(), embedHandler.UpdateEmbedChannel)
+		channels.DELETE("/:channel_id", g.Owner(), embedHandler.DeleteEmbedChannel)
+		channels.POST("/:channel_id/rotate-token", g.Owner(), embedHandler.RotateEmbedToken)
+		channels.POST("/:channel_id/preview-session", g.Owner(), embedHandler.IssuePreviewSession)
+		channels.GET("/:channel_id/stats", g.Owner(), embedHandler.GetEmbedChannelStats)
 	}
 }
 
@@ -903,24 +904,24 @@ func RegisterIMChannelRoutes(r *gin.RouterGroup, imHandler *handler.IMHandler, g
 	// Channel CRUD under agents
 	agentChannels := r.Group("/agents/:id/im-channels")
 	{
-		agentChannels.POST("", g.Admin(), imHandler.CreateIMChannel)
-		agentChannels.GET("", g.Viewer(), imHandler.ListIMChannels)
+		agentChannels.POST("", g.Owner(), imHandler.CreateIMChannel)
+		agentChannels.GET("", g.Owner(), imHandler.ListIMChannels)
 	}
 
 	// Channel operations by channel ID
 	channels := r.Group("/im-channels")
 	{
 		channels.GET("", g.Viewer(), imHandler.ListAllIMChannels)
-		channels.PUT("/:id", g.Admin(), imHandler.UpdateIMChannel)
-		channels.DELETE("/:id", g.Admin(), imHandler.DeleteIMChannel)
-		channels.POST("/:id/toggle", g.Admin(), imHandler.ToggleIMChannel)
+		channels.PUT("/:id", g.Owner(), imHandler.UpdateIMChannel)
+		channels.DELETE("/:id", g.Owner(), imHandler.DeleteIMChannel)
+		channels.POST("/:id/toggle", g.Owner(), imHandler.ToggleIMChannel)
 	}
 
 	// WeChat QR code login (requires authentication)
 	wechatGroup := r.Group("/wechat")
 	{
-		wechatGroup.POST("/qrcode", g.Admin(), imHandler.WeChatGetQRCode)
-		wechatGroup.POST("/qrcode/status", g.Admin(), imHandler.WeChatPollQRCodeStatus)
+		wechatGroup.POST("/qrcode", g.Owner(), imHandler.WeChatGetQRCode)
+		wechatGroup.POST("/qrcode/status", g.Owner(), imHandler.WeChatPollQRCodeStatus)
 	}
 }
 

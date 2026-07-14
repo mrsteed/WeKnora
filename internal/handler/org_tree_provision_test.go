@@ -7,8 +7,81 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
+func TestSelectProvisionUserCandidate_RejectsConflictingMatches(t *testing.T) {
+	candidate := selectProvisionUserCandidate(
+		&types.User{ID: "u-1"},
+		&types.User{ID: "u-2"},
+	)
+	if candidate != nil {
+		t.Fatal("expected conflicting matches to be rejected")
+	}
+}
+
+func TestSelectProvisionUserCandidate_AllowsSameUserAcrossIdentifiers(t *testing.T) {
+	candidate := selectProvisionUserCandidate(
+		&types.User{ID: "u-1"},
+		&types.User{ID: "u-1"},
+		nil,
+	)
+	if candidate == nil || candidate.ID != "u-1" {
+		t.Fatalf("candidate=%v, want user u-1", candidate)
+	}
+}
+
+func TestIsReusableProvisionedUser_AcceptsOrphanedExactMatch(t *testing.T) {
+	user := &types.User{
+		ID:       "u-1",
+		TenantID: 42,
+		Username: "吴晓栋",
+		Email:    "wxd@hlsa.com",
+		Phone:    "13663861111",
+	}
+	matchedCount := countProvisionUserMatches(user, user, user, nil)
+	if !isReusableProvisionedUser(user, 42, 0, matchedCount) {
+		t.Fatal("expected exact-match orphaned user to be reusable")
+	}
+}
+
+func TestIsReusableProvisionedUser_RejectsUsersStillInOrg(t *testing.T) {
+	user := &types.User{
+		ID:       "u-1",
+		TenantID: 42,
+		Username: "吴晓栋",
+		Email:    "wxd@hlsa.com",
+		Phone:    "13663861111",
+	}
+	matchedCount := countProvisionUserMatches(user, user, user, nil)
+	if isReusableProvisionedUser(user, 42, 1, matchedCount) {
+		t.Fatal("expected users still bound to orgs to be rejected")
+	}
+}
+
+func TestIsReusableProvisionedUser_AcceptsPhoneChangeAfterDeletion(t *testing.T) {
+	user := &types.User{
+		ID:       "u-1",
+		TenantID: 42,
+		Username: "吴晓栋",
+		Email:    "wxd@hlsa.com",
+		Phone:    "13661111111",
+	}
+	matchedCount := countProvisionUserMatches(user, user, user, nil)
+	if !isReusableProvisionedUser(user, 42, 0, matchedCount) {
+		t.Fatal("expected username+email match to allow restoring with a new phone")
+	}
+}
+
 func TestResolveTenantRoleForProvision_DefaultsViewer(t *testing.T) {
-	role, err := resolveTenantRoleForProvision(&types.User{ID: "u1"}, types.TenantRoleViewer, &types.CreateUserInOrgRequest{})
+	_, err := resolveTenantRoleForProvision(types.TenantRoleViewer, &types.CreateUserInOrgRequest{})
+	if err == nil {
+		t.Fatal("expected forbidden error for non-admin tenant role")
+	}
+	if _, ok := err.(*apperrors.AppError); !ok {
+		t.Fatalf("expected AppError, got %T", err)
+	}
+}
+
+func TestResolveTenantRoleForProvision_DefaultsViewerForTenantAdmin(t *testing.T) {
+	role, err := resolveTenantRoleForProvision(types.TenantRoleAdmin, &types.CreateUserInOrgRequest{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -18,7 +91,7 @@ func TestResolveTenantRoleForProvision_DefaultsViewer(t *testing.T) {
 }
 
 func TestResolveTenantRoleForProvision_RequiresTenantAdminForAdminRole(t *testing.T) {
-	_, err := resolveTenantRoleForProvision(&types.User{ID: "u1"}, types.TenantRoleViewer, &types.CreateUserInOrgRequest{TenantRole: "admin"})
+	_, err := resolveTenantRoleForProvision(types.TenantRoleViewer, &types.CreateUserInOrgRequest{TenantRole: "admin"})
 	if err == nil {
 		t.Fatal("expected forbidden error")
 	}
@@ -28,19 +101,60 @@ func TestResolveTenantRoleForProvision_RequiresTenantAdminForAdminRole(t *testin
 }
 
 func TestResolveTenantRoleForProvision_RejectsTenantAdminForExplicitTenantRole(t *testing.T) {
-	_, err := resolveTenantRoleForProvision(&types.User{ID: "u1"}, types.TenantRoleAdmin, &types.CreateUserInOrgRequest{TenantRole: "admin"})
-	if err == nil {
-		t.Fatal("expected forbidden error for tenant admin assigning explicit tenant role")
+	role, err := resolveTenantRoleForProvision(types.TenantRoleAdmin, &types.CreateUserInOrgRequest{TenantRole: "admin"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if role != types.TenantRoleAdmin {
+		t.Fatalf("role=%s want admin", role)
 	}
 }
 
-func TestResolveTenantRoleForProvision_AllowsSuperAdminForOwnerRole(t *testing.T) {
-	role, err := resolveTenantRoleForProvision(&types.User{ID: "u1", IsSystemAdmin: true}, types.TenantRoleAdmin, &types.CreateUserInOrgRequest{TenantRole: "owner"})
+func TestResolveTenantRoleForProvision_RejectsTenantAdminForOwnerRole(t *testing.T) {
+	_, err := resolveTenantRoleForProvision(types.TenantRoleAdmin, &types.CreateUserInOrgRequest{TenantRole: "owner"})
+	if err == nil {
+		t.Fatal("expected forbidden error for tenant admin assigning owner")
+	}
+}
+
+func TestResolveTenantRoleForProvision_AllowsTenantOwnerForOwnerRole(t *testing.T) {
+	role, err := resolveTenantRoleForProvision(types.TenantRoleOwner, &types.CreateUserInOrgRequest{TenantRole: "owner"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if role != types.TenantRoleOwner {
 		t.Fatalf("role=%s want owner", role)
+	}
+}
+
+func TestResolveTenantRoleForOrgScopedProvision_MapsAdminOrgRoleToTenantAdmin(t *testing.T) {
+	role, err := resolveTenantRoleForOrgScopedProvision(types.TenantRoleContributor, true, &types.CreateUserInOrgRequest{Role: "admin"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if role != types.TenantRoleAdmin {
+		t.Fatalf("role=%s want admin", role)
+	}
+}
+
+func TestResolveTenantRoleForOrgScopedProvision_MapsEditorOrgRoleToContributor(t *testing.T) {
+	role, err := resolveTenantRoleForOrgScopedProvision(types.TenantRoleViewer, true, &types.CreateUserInOrgRequest{Role: "editor"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if role != types.TenantRoleContributor {
+		t.Fatalf("role=%s want contributor", role)
+	}
+}
+
+
+func TestResolveTenantRoleForOrgScopedProvision_MapsViewerOrgRoleToViewer(t *testing.T) {
+	role, err := resolveTenantRoleForOrgScopedProvision(types.TenantRoleContributor, true, &types.CreateUserInOrgRequest{Role: "viewer"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if role != types.TenantRoleViewer {
+		t.Fatalf("role=%s want viewer", role)
 	}
 }
 
@@ -62,8 +176,8 @@ func TestCanBootstrapRootOrg_DeniesTenantAdminWhenTreeExists(t *testing.T) {
 	}
 }
 
-func TestCanBootstrapRootOrg_AllowsCrossTenantSuperuser(t *testing.T) {
-	if !canBootstrapRootOrg(&types.User{ID: "u1", CanAccessAllTenants: true}, types.TenantRoleViewer, 3) {
-		t.Fatal("expected cross-tenant superuser to bypass bootstrap restriction")
+func TestCanBootstrapRootOrg_AllowsPlatformSuperAdmin(t *testing.T) {
+	if !canBootstrapRootOrg(&types.User{ID: "u1", IsSuperAdmin: true}, types.TenantRoleViewer, 3) {
+		t.Fatal("expected platform super admin to bypass bootstrap restriction")
 	}
 }

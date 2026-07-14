@@ -121,7 +121,7 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccessWithKBID(c *gin.Context, k
 			if canAccess {
 				return kb, kbID, tenantID, types.OrgRoleViewer, nil
 			}
-			return nil, kbID, 0, "", errors.NewForbiddenError("Permission denied to access this knowledge base")
+			return nil, kbID, 0, "", errors.NewForbiddenError("当前用户无权访问此知识库")
 		}
 		return kb, kbID, tenantID, types.OrgRoleAdmin, nil
 	}
@@ -146,7 +146,7 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccessWithKBID(c *gin.Context, k
 	_ = userID
 	_ = userExists
 	logger.Warnf(ctx, "Permission denied to access KB %s, tenant ID: %d, KB tenant: %d", kbID, tenantID, kb.TenantID)
-	return nil, kbID, 0, "", errors.NewForbiddenError("Permission denied to access this knowledge base")
+	return nil, kbID, 0, "", errors.NewForbiddenError("当前用户无权访问此知识库")
 }
 
 // resolveKnowledgeAndValidateKBAccess resolves knowledge by ID and validates KB access (owner or shared with required permission).
@@ -165,9 +165,9 @@ func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(c *gin.Context, k
 		return nil, ctx, errors.NewNotFoundError("Knowledge not found")
 	}
 
-	// Same-tenant knowledge must still respect KB visibility. Tenant
-	// Admin/Owner keep full access; everyone else falls back to the KB
-	// visibility decision.
+	// Same-tenant knowledge must still respect KB visibility. Only
+	// platform-level privileged operators bypass the KB visibility
+	// decision.
 	if knowledge.TenantID == tenantID {
 		if canBypassSameTenantResourceVisibilityFromContext(c) {
 			return knowledge, context.WithValue(ctx, types.TenantIDContextKey, tenantID), nil

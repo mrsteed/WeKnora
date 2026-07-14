@@ -32,7 +32,7 @@ func TestValidateKnowledgeBaseAccessWithKBID_SameTenantVisibilityApplies(t *test
 	}
 }
 
-func TestValidateKnowledgeBaseAccessWithKBID_TenantAdminBypassesVisibility(t *testing.T) {
+func TestValidateKnowledgeBaseAccessWithKBID_TenantAdminStillRespectsVisibility(t *testing.T) {
 	c := newKBLookupCtx(t, 1, "kb-1")
 	ctx := context.WithValue(c.Request.Context(), types.TenantRoleContextKey, types.TenantRoleAdmin)
 	c.Request = c.Request.WithContext(ctx)
@@ -50,11 +50,12 @@ func TestValidateKnowledgeBaseAccessWithKBID_TenantAdminBypassesVisibility(t *te
 		},
 	}
 
-	_, _, _, permission, err := h.validateKnowledgeBaseAccessWithKBID(c, "kb-1")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, _, _, _, err := h.validateKnowledgeBaseAccessWithKBID(c, "kb-1")
+	if err == nil {
+		t.Fatal("expected forbidden error")
 	}
-	if permission != types.OrgRoleAdmin {
-		t.Fatalf("expected admin permission, got %s", permission)
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok || appErr.Code != apperrors.ErrForbidden {
+		t.Fatalf("expected forbidden AppError, got %T %v", err, err)
 	}
 }

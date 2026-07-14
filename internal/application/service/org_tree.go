@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -16,16 +17,57 @@ import (
 type orgTreeService struct {
 	orgTreeRepo interfaces.OrgTreeRepository
 	orgRepo     interfaces.OrganizationRepository
+	tenantMemberService interfaces.TenantMemberService
+	userService         interfaces.UserService
+}
+
+func tenantRoleGrantsRootOrgProjection(ctx context.Context) bool {
+	return types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleAdmin)
+}
+
+func isRootOrganization(org *types.Organization) bool {
+	if org == nil {
+		return false
+	}
+	if org.ParentID == nil {
+		return true
+	}
+	return strings.TrimSpace(*org.ParentID) == "" || org.Level <= 1
+}
+
+func buildProjectedRootOrgNode(org *types.Organization) *types.OrgTreeNode {
+	if org == nil {
+		return nil
+	}
+	return &types.OrgTreeNode{
+		ID:                org.ID,
+		Name:              org.Name,
+		Description:       org.Description,
+		ParentID:          org.ParentID,
+		Path:              org.Path,
+		Level:             org.Level,
+		SortOrder:         org.SortOrder,
+		DirectMemberCount: 0,
+		MemberCount:       0,
+		TotalMemberCount:  0,
+		MyIsAdmin:         true,
+		CreatedAt:         org.CreatedAt,
+		UpdatedAt:         org.UpdatedAt,
+	}
 }
 
 // NewOrgTreeService creates a new organization tree service
 func NewOrgTreeService(
 	orgTreeRepo interfaces.OrgTreeRepository,
 	orgRepo interfaces.OrganizationRepository,
+	tenantMemberService interfaces.TenantMemberService,
+	userService interfaces.UserService,
 ) interfaces.OrgTreeService {
 	return &orgTreeService{
-		orgTreeRepo: orgTreeRepo,
-		orgRepo:     orgRepo,
+		orgTreeRepo:        orgTreeRepo,
+		orgRepo:            orgRepo,
+		tenantMemberService: tenantMemberService,
+		userService:         userService,
 	}
 }
 
@@ -291,8 +333,8 @@ func (s *orgTreeService) computeSubtreeMemberCount(node *types.OrgTreeNode, memb
 func (s *orgTreeService) GetTreeForUser(ctx context.Context, userID string, tenantID uint64, isSuperAdmin bool) ([]*types.OrgTreeNode, error) {
 	logger.Infof(ctx, "Getting org tree for user %s in tenant %d (isSuperAdmin=%v)", userID, tenantID, isSuperAdmin)
 
-	// Super admins see the full tree
-	if isSuperAdmin {
+	// Super admins and tenant owner/admin see the full tree.
+	if isSuperAdmin || tenantRoleGrantsRootOrgProjection(ctx) {
 		return s.GetTree(ctx, tenantID)
 	}
 
@@ -551,8 +593,70 @@ func (s *orgTreeService) RemoveUserFromOrg(ctx context.Context, orgID string, te
 		return fmt.Errorf("cannot remove organization owner")
 	}
 
+	remainingSameTenantOrgCount := 0
+	if s.tenantMemberService != nil {
+		userOrgs, err := s.orgRepo.ListOrgTreeOrganizationsByUserID(ctx, req.UserID)
+		if err != nil {
+			return fmt.Errorf("failed to list user organizations: %w", err)
+		}
+		for _, userOrg := range userOrgs {
+			if userOrg == nil || userOrg.ID == orgID || userOrg.OrgTenantID == nil {
+				continue
+			}
+			if *userOrg.OrgTenantID == tenantID {
+				remainingSameTenantOrgCount++
+			}
+		}
+
+		if remainingSameTenantOrgCount == 0 {
+			membership, err := s.tenantMemberService.GetMembership(ctx, req.UserID, tenantID)
+			if err != nil {
+				return fmt.Errorf("failed to get tenant membership: %w", err)
+			}
+			if membership != nil && membership.Role == types.TenantRoleOwner {
+				members, err := s.tenantMemberService.ListByTenant(ctx, tenantID)
+				if err != nil {
+					return fmt.Errorf("failed to list tenant members: %w", err)
+				}
+				ownerCount := 0
+				for _, member := range members {
+					if member != nil && member.Role == types.TenantRoleOwner {
+						ownerCount++
+					}
+				}
+				if ownerCount <= 1 {
+					return ErrLastOwner
+				}
+			}
+		}
+	}
+
 	if err := s.orgRepo.RemoveOrgTreeMember(ctx, orgID, req.UserID); err != nil {
 		return fmt.Errorf("failed to remove member: %w", err)
+	}
+
+	if s.tenantMemberService == nil || remainingSameTenantOrgCount > 0 {
+		return nil
+	}
+
+	if err := s.tenantMemberService.RemoveMember(ctx, req.UserID, tenantID); err != nil && !errors.Is(err, ErrMembershipNotFound) {
+		return fmt.Errorf("failed to remove tenant membership: %w", err)
+	}
+
+	if s.userService == nil {
+		return nil
+	}
+
+	memberships, err := s.tenantMemberService.ListByUser(ctx, req.UserID)
+	if err != nil {
+		return fmt.Errorf("failed to list user tenant memberships: %w", err)
+	}
+	if len(memberships) > 0 {
+		return nil
+	}
+
+	if err := s.userService.DeleteUser(ctx, req.UserID); err != nil {
+		return fmt.Errorf("failed to soft delete user: %w", err)
 	}
 	return nil
 }
@@ -595,6 +699,7 @@ func (s *orgTreeService) GetUserOrganizations(ctx context.Context, userID string
 
 	// Filter to only those belonging to the tenant and convert to OrgTreeNode
 	var result []*types.OrgTreeNode
+	nodesByID := make(map[string]*types.OrgTreeNode)
 	for _, org := range allOrgs {
 		if org.OrgTenantID != nil && *org.OrgTenantID == tenantID {
 			// Check if user is admin in this org
@@ -606,7 +711,7 @@ func (s *orgTreeService) GetUserOrganizations(ctx context.Context, userID string
 
 			isAdmin := false
 			for _, member := range members {
-				if member.UserID == userID && (member.Role == types.OrgRoleAdmin || member.IsOwner) {
+				if member.UserID == userID && member.Role == types.OrgRoleAdmin {
 					isAdmin = true
 					break
 				}
@@ -628,6 +733,32 @@ func (s *orgTreeService) GetUserOrganizations(ctx context.Context, userID string
 				UpdatedAt:         org.UpdatedAt,
 			}
 			result = append(result, node)
+			nodesByID[node.ID] = node
+		}
+	}
+
+	if tenantRoleGrantsRootOrgProjection(ctx) {
+		tenantOrgs, err := s.orgTreeRepo.ListByTenantID(ctx, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list tenant org tree for root projection: %w", err)
+		}
+
+		projectedRoots := make([]*types.OrgTreeNode, 0)
+		for _, org := range tenantOrgs {
+			if !isRootOrganization(org) {
+				continue
+			}
+			if existing, ok := nodesByID[org.ID]; ok {
+				existing.MyIsAdmin = true
+				continue
+			}
+			if projected := buildProjectedRootOrgNode(org); projected != nil {
+				projectedRoots = append(projectedRoots, projected)
+				nodesByID[projected.ID] = projected
+			}
+		}
+		if len(projectedRoots) > 0 {
+			result = append(projectedRoots, result...)
 		}
 	}
 

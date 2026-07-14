@@ -50,7 +50,7 @@
               <t-radio-group v-model="selectedRole">
                 <t-radio value="viewer">{{ $t('admin.member.roleViewer') }}</t-radio>
                 <t-radio value="editor">{{ $t('admin.member.roleEditor') }}</t-radio>
-                <t-radio value="admin">{{ $t('admin.member.roleAdmin') }}</t-radio>
+                <t-radio value="admin">{{ $t('admin.member.roleSubOrgAdmin') }}</t-radio>
               </t-radio-group>
             </div>
           </div>

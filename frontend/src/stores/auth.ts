@@ -29,6 +29,7 @@ function reloadUserPreferences() {
 }
 
 export const useAuthStore = defineStore('auth', () => {
+  const organizationStore = useOrganizationStore()
   // 状态
   const user = ref<UserInfo | null>(null)
   const tenant = ref<TenantInfo | null>(null)
@@ -182,7 +183,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const isOrgAdmin = computed(() => {
-    return hasRole('admin')
+    if (hasRole('admin')) return true
+    return organizationStore.myOrgTreeOrgs.some(org => org.my_is_admin === true)
   })
 
   const effectiveTenantId = computed(() => {

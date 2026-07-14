@@ -22,6 +22,8 @@ type Agent struct {
 	IsBuiltin   bool         `json:"is_builtin"`
 	TenantID    uint64       `json:"tenant_id"`
 	CreatedBy   string       `json:"created_by"`
+	Visibility  string       `json:"visibility,omitempty"`
+	OrganizationID string    `json:"organization_id,omitempty"`
 	Config      *AgentConfig `json:"config"`
 	CreatedAt   time.Time    `json:"created_at"`
 	UpdatedAt   time.Time    `json:"updated_at"`
@@ -92,6 +94,8 @@ type CreateAgentRequest struct {
 	Name        string       `json:"name"`
 	Description string       `json:"description"`
 	Avatar      string       `json:"avatar"`
+	Visibility  string       `json:"visibility,omitempty"`
+	OrganizationID string    `json:"organization_id,omitempty"`
 	Config      *AgentConfig `json:"config"`
 }
 
@@ -101,6 +105,8 @@ type UpdateAgentRequest struct {
 	Name        string       `json:"name"`
 	Description string       `json:"description"`
 	Avatar      string       `json:"avatar"`
+	Visibility  string       `json:"visibility,omitempty"`
+	OrganizationID string    `json:"organization_id,omitempty"`
 	Config      *AgentConfig `json:"config"`
 }
 

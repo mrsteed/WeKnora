@@ -16,13 +16,27 @@ type sameTenantResourceRule struct {
 }
 
 type sameTenantOrgScope struct {
-	readOrgIDs   map[string]struct{}
-	manageOrgIDs map[string]struct{}
-	readOrgList  []string
+	readOrgIDs             map[string]struct{}
+	personnelManageOrgIDs  map[string]struct{}
+	resourceManageOrgIDs   map[string]struct{}
+	readOrgList            []string
+	isTenantAdminOrOwner   bool
 }
 
 type sameTenantResourceAuthorizer struct {
 	orgTreeService interfaces.OrgTreeService
+}
+
+func userHasExplicitRootAdminMembership(userOrgs []*types.OrgTreeNode) bool {
+	for _, org := range userOrgs {
+		if org == nil || !org.MyIsAdmin {
+			continue
+		}
+		if org.Level <= 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func newSameTenantResourceAuthorizer(orgTreeService interfaces.OrgTreeService) *sameTenantResourceAuthorizer {
@@ -32,9 +46,10 @@ func newSameTenantResourceAuthorizer(orgTreeService interfaces.OrgTreeService) *
 func (a *sameTenantResourceAuthorizer) resolveScope(ctx context.Context, userID string, tenantID uint64) (*sameTenantOrgScope, error) {
 	if a == nil || a.orgTreeService == nil || strings.TrimSpace(userID) == "" || tenantID == 0 {
 		return &sameTenantOrgScope{
-			readOrgIDs:   map[string]struct{}{},
-			manageOrgIDs: map[string]struct{}{},
-			readOrgList:  []string{},
+			readOrgIDs:            map[string]struct{}{},
+			personnelManageOrgIDs: map[string]struct{}{},
+			resourceManageOrgIDs:  map[string]struct{}{},
+			readOrgList:           []string{},
 		}, nil
 	}
 
@@ -64,8 +79,6 @@ func (a *sameTenantResourceAuthorizer) resolveScope(ctx context.Context, userID 
 		}
 	}
 
-	ancestorIDs := a.orgTreeService.GetAncestorIDsFromPaths(allPathPrefixes)
-
 	allDescendantIDs := make([]string, 0)
 	if len(allPathPrefixes) > 0 {
 		ids, err := a.orgTreeService.GetDescendantIDsByPaths(ctx, allPathPrefixes, tenantID)
@@ -84,25 +97,31 @@ func (a *sameTenantResourceAuthorizer) resolveScope(ctx context.Context, userID 
 		adminDescendantIDs = ids
 	}
 
-	return buildSameTenantOrgScope(readBaseIDs, ancestorIDs, allDescendantIDs, manageBaseIDs, adminDescendantIDs), nil
+	return buildSameTenantOrgScope(
+		readBaseIDs,
+		allDescendantIDs,
+		manageBaseIDs,
+		adminDescendantIDs,
+		manageBaseIDs,
+		adminDescendantIDs,
+		types.TenantRoleFromContext(ctx) == types.TenantRoleOwner || userHasExplicitRootAdminMembership(userOrgs),
+	), nil
 }
 
 func buildSameTenantOrgScope(
 	readBaseIDs []string,
-	ancestorIDs []string,
 	allDescendantIDs []string,
-	manageBaseIDs []string,
-	adminDescendantIDs []string,
+	personnelManageBaseIDs []string,
+	personnelDescendantIDs []string,
+	resourceManageBaseIDs []string,
+	resourceDescendantIDs []string,
+	isTenantAdminOrOwner bool,
 ) *sameTenantOrgScope {
 	readSet := make(map[string]struct{})
-	manageSet := make(map[string]struct{})
+	personnelManageSet := make(map[string]struct{})
+	resourceManageSet := make(map[string]struct{})
 
 	for _, id := range readBaseIDs {
-		if id = strings.TrimSpace(id); id != "" {
-			readSet[id] = struct{}{}
-		}
-	}
-	for _, id := range ancestorIDs {
 		if id = strings.TrimSpace(id); id != "" {
 			readSet[id] = struct{}{}
 		}
@@ -113,14 +132,25 @@ func buildSameTenantOrgScope(
 		}
 	}
 
-	for _, id := range manageBaseIDs {
+	for _, id := range personnelManageBaseIDs {
 		if id = strings.TrimSpace(id); id != "" {
-			manageSet[id] = struct{}{}
+			personnelManageSet[id] = struct{}{}
 		}
 	}
-	for _, id := range adminDescendantIDs {
+	for _, id := range personnelDescendantIDs {
 		if id = strings.TrimSpace(id); id != "" {
-			manageSet[id] = struct{}{}
+			personnelManageSet[id] = struct{}{}
+		}
+	}
+
+	for _, id := range resourceManageBaseIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			resourceManageSet[id] = struct{}{}
+		}
+	}
+	for _, id := range resourceDescendantIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			resourceManageSet[id] = struct{}{}
 		}
 	}
 
@@ -131,9 +161,11 @@ func buildSameTenantOrgScope(
 	sort.Strings(readList)
 
 	return &sameTenantOrgScope{
-		readOrgIDs:   readSet,
-		manageOrgIDs: manageSet,
-		readOrgList:  readList,
+		readOrgIDs:            readSet,
+		personnelManageOrgIDs: personnelManageSet,
+		resourceManageOrgIDs:  resourceManageSet,
+		readOrgList:           readList,
+		isTenantAdminOrOwner:  isTenantAdminOrOwner,
 	}
 }
 
@@ -148,8 +180,9 @@ func (a *sameTenantResourceAuthorizer) canReadResource(
 	}
 	if scope == nil {
 		scope = &sameTenantOrgScope{
-			readOrgIDs:   map[string]struct{}{},
-			manageOrgIDs: map[string]struct{}{},
+			readOrgIDs:            map[string]struct{}{},
+			personnelManageOrgIDs: map[string]struct{}{},
+			resourceManageOrgIDs:  map[string]struct{}{},
 		}
 	}
 	visibility := normalizeScopedResourceVisibility(rule.Visibility)
@@ -180,15 +213,19 @@ func (a *sameTenantResourceAuthorizer) canManageResource(
 	}
 	if scope == nil {
 		scope = &sameTenantOrgScope{
-			readOrgIDs:   map[string]struct{}{},
-			manageOrgIDs: map[string]struct{}{},
+			readOrgIDs:            map[string]struct{}{},
+			personnelManageOrgIDs: map[string]struct{}{},
+			resourceManageOrgIDs:  map[string]struct{}{},
 		}
+	}
+	if scope.isTenantAdminOrOwner {
+		return true
 	}
 	visibility := normalizeScopedResourceVisibility(rule.Visibility)
 	if visibility != types.KBVisibilityOrg {
 		return false
 	}
-	_, ok := scope.manageOrgIDs[strings.TrimSpace(rule.OrganizationID)]
+	_, ok := scope.resourceManageOrgIDs[strings.TrimSpace(rule.OrganizationID)]
 	return ok
 }
 

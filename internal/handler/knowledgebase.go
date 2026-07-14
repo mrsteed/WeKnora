@@ -369,16 +369,7 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 	}
 	switch kbReq.Visibility {
 	case types.KBVisibilityGlobal:
-		// Global visibility requires super admin
-		userVal, ok := c.Get(types.UserContextKey.String())
-		if !ok {
-			c.Error(apperrors.NewUnauthorizedError("User context not found"))
-			return
-		}
-		if user, ok := userVal.(*types.User); ok && user != nil && !user.IsSuperAdmin {
-			c.Error(apperrors.NewForbiddenError("Only super admins can create global knowledge bases"))
-			return
-		}
+		// Global visibility is tenant-scoped; no extra privilege required.
 	case types.KBVisibilityOrg:
 		// Org visibility requires organization_id
 		if kbReq.OrganizationID == "" {
@@ -462,8 +453,35 @@ func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(c *gin.Context) (*typ
 		return nil, id, 0, "", apperrors.NewInternalServerError(err.Error())
 	}
 
-	// Check 1: Verify tenant ownership (owner has full access)
+	// Check 1: Same-tenant access still respects KB visibility. Only
+	// platform-level privileged operators bypass same-tenant visibility.
 	if kb.TenantID == tenantID.(uint64) {
+		if userExists && h.kbVisibility != nil {
+			userIDStr, _ := userID.(string)
+			isPrivilegedOperator := false
+			if userVal, ok := c.Get(types.UserContextKey.String()); ok {
+				if currentUser, ok := userVal.(*types.User); ok {
+					isPrivilegedOperator = isPrivilegedResourceOperator(currentUser)
+				}
+			}
+
+			canManage, manageErr := h.kbVisibility.CanManageKB(ctx, userIDStr, tenantID.(uint64), id, isPrivilegedOperator)
+			if manageErr != nil {
+				return nil, id, 0, "", apperrors.NewInternalServerError(manageErr.Error())
+			}
+			if canManage {
+				return kb, id, tenantID.(uint64), types.OrgRoleAdmin, nil
+			}
+
+			canAccess, accessErr := h.kbVisibility.CanAccessKB(ctx, userIDStr, tenantID.(uint64), id, isPrivilegedOperator)
+			if accessErr != nil {
+				return nil, id, 0, "", apperrors.NewInternalServerError(accessErr.Error())
+			}
+			if canAccess {
+				return kb, id, tenantID.(uint64), types.OrgRoleViewer, nil
+			}
+			return nil, id, 0, "", apperrors.NewForbiddenError("No permission to operate")
+		}
 		return kb, id, tenantID.(uint64), types.OrgRoleAdmin, nil
 	}
 
@@ -828,19 +846,24 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 	logger.Infof(ctx, "Permission check - KB ID: %s, CreatedBy: %s, User ID: %s, IsSuperAdmin: %v, Visibility: %s",
 		kb.ID, kb.CreatedBy, user.ID, user.IsSuperAdmin, kb.Visibility)
 
-	// Check if this is a global knowledge base - only super admin can update
-	if kb.Visibility == types.KBVisibilityGlobal {
-		if !user.IsSuperAdmin {
-			c.Error(apperrors.NewForbiddenError("Only super admins can update global knowledge bases"))
+	if h.kbVisibility != nil {
+		tenantID, ok := types.TenantIDFromContext(ctx)
+		if !ok {
+			c.Error(apperrors.NewUnauthorizedError("Unauthorized"))
 			return
 		}
-	} else {
-		// For non-global knowledge bases - only creator or super admin can update
-		// If CreatedBy is empty, allow update (for backward compatibility with old data)
-		if kb.CreatedBy != "" && kb.CreatedBy != user.ID && !user.IsSuperAdmin {
-			c.Error(apperrors.NewForbiddenError("Only the creator or super admin can update this knowledge base"))
+		canManage, manageErr := h.kbVisibility.CanManageKB(ctx, user.ID, tenantID, kb.ID, canBypassSameTenantResourceVisibility(ctx, user))
+		if manageErr != nil {
+			c.Error(apperrors.NewInternalServerError(manageErr.Error()))
 			return
 		}
+		if !canManage {
+			c.Error(apperrors.NewForbiddenError("当前用户无权更新此知识库"))
+			return
+		}
+	} else if kb.CreatedBy != "" && kb.CreatedBy != user.ID && !user.IsSuperAdmin {
+		c.Error(apperrors.NewForbiddenError("当前用户无权更新此知识库"))
+		return
 	}
 
 	// Parse request body
@@ -854,10 +877,6 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 	if req.Visibility != "" {
 		switch req.Visibility {
 		case types.KBVisibilityGlobal:
-			if !user.IsSuperAdmin {
-				c.Error(apperrors.NewForbiddenError("Only super admins can set global knowledge base visibility"))
-				return
-			}
 		case types.KBVisibilityOrg:
 			if strings.TrimSpace(req.OrganizationID) == "" {
 				c.Error(apperrors.NewBadRequestError("organization_id is required when visibility is 'org'"))
@@ -941,19 +960,24 @@ func (h *KnowledgeBaseHandler) DeleteKnowledgeBase(c *gin.Context) {
 	logger.Infof(ctx, "Permission check - KB ID: %s, CreatedBy: %s, User ID: %s, IsSuperAdmin: %v, Visibility: %s",
 		kb.ID, kb.CreatedBy, user.ID, user.IsSuperAdmin, kb.Visibility)
 
-	// Check if this is a global knowledge base - only super admin can delete
-	if kb.Visibility == types.KBVisibilityGlobal {
-		if !user.IsSuperAdmin {
-			c.Error(apperrors.NewForbiddenError("Only super admins can delete global knowledge bases"))
+	if h.kbVisibility != nil {
+		tenantID, ok := types.TenantIDFromContext(ctx)
+		if !ok {
+			c.Error(apperrors.NewUnauthorizedError("Unauthorized"))
 			return
 		}
-	} else {
-		// For non-global knowledge bases - only creator or super admin can delete
-		// If CreatedBy is empty, allow delete (for backward compatibility with old data)
-		if kb.CreatedBy != "" && kb.CreatedBy != user.ID && !user.IsSuperAdmin {
-			c.Error(apperrors.NewForbiddenError("Only the creator or super admin can delete this knowledge base"))
+		canManage, manageErr := h.kbVisibility.CanManageKB(ctx, user.ID, tenantID, kb.ID, canBypassSameTenantResourceVisibility(ctx, user))
+		if manageErr != nil {
+			c.Error(apperrors.NewInternalServerError(manageErr.Error()))
 			return
 		}
+		if !canManage {
+			c.Error(apperrors.NewForbiddenError("当前用户无权删除此知识库"))
+			return
+		}
+	} else if kb.CreatedBy != "" && kb.CreatedBy != user.ID && !user.IsSuperAdmin {
+		c.Error(apperrors.NewForbiddenError("当前用户无权删除此知识库"))
+		return
 	}
 
 	logger.Infof(ctx, "Deleting knowledge base, ID: %s, name: %s",

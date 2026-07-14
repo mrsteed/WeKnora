@@ -10,6 +10,15 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
+type fakeAuthOrgTreeService struct {
+	interfaces.OrgTreeService
+	orgs []*types.OrgTreeNode
+}
+
+func (f *fakeAuthOrgTreeService) GetUserOrganizations(context.Context, string, uint64) ([]*types.OrgTreeNode, error) {
+	return f.orgs, nil
+}
+
 // fakeMemberService is a hand-rolled stand-in for
 // interfaces.TenantMemberService. It backs Get/HasAnyMembers/AddMember
 // with two in-memory maps and lets each test seed exactly the rows it
@@ -142,7 +151,7 @@ func TestResolveTenantRole_ActiveMembershipWins(t *testing.T) {
 	svc := newFakeMemberService()
 	svc.seedActive("u1", 10, types.TenantRoleContributor)
 
-	got, ok := resolveTenantRole(context.Background(), svc,
+	got, ok := resolveTenantRole(context.Background(), svc, nil,
 		&types.User{ID: "u1", TenantID: 10}, 10, false, cfgWithRBAC(true))
 	if !ok || got != types.TenantRoleContributor {
 		t.Fatalf("got (%v, %v), want (contributor, true)", got, ok)
@@ -157,7 +166,7 @@ func TestResolveTenantRole_CrossTenantSuperuserGetsAdmin_NoAutoPromote(t *testin
 	svc := newFakeMemberService()
 	user := &types.User{ID: "super", TenantID: 1, CanAccessAllTenants: true}
 
-	got, ok := resolveTenantRole(context.Background(), svc, user, 99, true, cfgWithRBAC(true))
+	got, ok := resolveTenantRole(context.Background(), svc, nil, user, 99, true, cfgWithRBAC(true))
 	if !ok || got != types.TenantRoleAdmin {
 		t.Fatalf("got (%v, %v), want (admin, true)", got, ok)
 	}
@@ -172,7 +181,7 @@ func TestResolveTenantRole_AutoPromoteRequiresHomeTenant(t *testing.T) {
 	svc := newFakeMemberService() // 空 — 任何租户都是孤儿
 	user := &types.User{ID: "u1", TenantID: 1, CanAccessAllTenants: true}
 
-	got, ok := resolveTenantRole(context.Background(), svc, user, 42, true, cfgWithRBAC(true))
+	got, ok := resolveTenantRole(context.Background(), svc, nil, user, 42, true, cfgWithRBAC(true))
 	if !ok || got != types.TenantRoleAdmin {
 		t.Fatalf("cross-tenant superuser should still get visitor Admin, got (%v, %v)", got, ok)
 	}
@@ -186,7 +195,7 @@ func TestResolveTenantRole_AutoPromoteHomeTenant(t *testing.T) {
 	svc := newFakeMemberService()
 	user := &types.User{ID: "u1", TenantID: 7}
 
-	got, ok := resolveTenantRole(context.Background(), svc, user, 7, false, cfgWithRBAC(true))
+	got, ok := resolveTenantRole(context.Background(), svc, nil, user, 7, false, cfgWithRBAC(true))
 	if !ok || got != types.TenantRoleOwner {
 		t.Fatalf("got (%v, %v), want (owner, true)", got, ok)
 	}
@@ -201,7 +210,7 @@ func TestResolveTenantRole_AutoPromoteSkippedIfTenantHasMembers(t *testing.T) {
 	svc.seedActive("other", 7, types.TenantRoleOwner)
 	user := &types.User{ID: "u1", TenantID: 7}
 
-	got, ok := resolveTenantRole(context.Background(), svc, user, 7, false, cfgWithRBAC(true))
+	got, ok := resolveTenantRole(context.Background(), svc, nil, user, 7, false, cfgWithRBAC(true))
 	if ok {
 		t.Fatalf("RBAC enabled + no membership for u1 should be rejected, got role=%v", got)
 	}
@@ -214,7 +223,7 @@ func TestResolveTenantRole_FailOpenAdminWhenRBACDisabled(t *testing.T) {
 	svc := newFakeMemberService()
 	user := &types.User{ID: "u1", TenantID: 7}
 	// targetTenantID != home，所以不进 auto-promote 分支。
-	got, ok := resolveTenantRole(context.Background(), svc, user, 8, false, cfgWithRBAC(false))
+	got, ok := resolveTenantRole(context.Background(), svc, nil, user, 8, false, cfgWithRBAC(false))
 	if !ok || got != types.TenantRoleAdmin {
 		t.Fatalf("EnableRBAC=false should fail open Admin, got (%v, %v)", got, ok)
 	}
@@ -225,7 +234,7 @@ func TestResolveTenantRole_FailClosedWhenRBACEnabled(t *testing.T) {
 	// 已有其它成员，自动晋升路径关闭；RBAC 启用 → 必须 403。
 	svc.seedActive("other", 8, types.TenantRoleOwner)
 	user := &types.User{ID: "u1", TenantID: 7}
-	if _, ok := resolveTenantRole(context.Background(), svc, user, 8, false, cfgWithRBAC(true)); ok {
+	if _, ok := resolveTenantRole(context.Background(), svc, nil, user, 8, false, cfgWithRBAC(true)); ok {
 		t.Fatalf("EnableRBAC=true + no membership should be rejected")
 	}
 }
@@ -239,7 +248,7 @@ func TestResolveTenantRole_LookupErrorFailsOpenWhenRBACDisabled(t *testing.T) {
 	svc.seedActive("placeholder", 8, types.TenantRoleAdmin)
 	user := &types.User{ID: "u1", TenantID: 7}
 
-	got, ok := resolveTenantRole(context.Background(), svc, user, 8, false, cfgWithRBAC(false))
+	got, ok := resolveTenantRole(context.Background(), svc, nil, user, 8, false, cfgWithRBAC(false))
 	if !ok || got != types.TenantRoleAdmin {
 		t.Fatalf("transient lookup error under RBAC=false should fail open Admin, got (%v, %v)", got, ok)
 	}
@@ -252,8 +261,30 @@ func TestResolveTenantRole_DemotedUserCannotReclaimViaOrphan(t *testing.T) {
 	// 路径加锁，未来如果收紧策略需要同步更新。
 	svc := newFakeMemberService()
 	user := &types.User{ID: "demoted", TenantID: 5}
-	got, ok := resolveTenantRole(context.Background(), svc, user, 5, false, cfgWithRBAC(true))
+	got, ok := resolveTenantRole(context.Background(), svc, nil, user, 5, false, cfgWithRBAC(true))
 	if !ok || got != types.TenantRoleOwner {
 		t.Fatalf("current policy allows orphan-tenant self-heal on home tenant, got (%v, %v)", got, ok)
+	}
+}
+
+func TestResolveTenantRole_RawAdminWithoutRootAdminDowngradesToContributor(t *testing.T) {
+	svc := newFakeMemberService()
+	svc.seedActive("u-admin", 10, types.TenantRoleAdmin)
+
+	got, ok := resolveTenantRole(context.Background(), svc, &fakeAuthOrgTreeService{orgs: []*types.OrgTreeNode{{ID: "child", Level: 2, MyIsAdmin: true}}},
+		&types.User{ID: "u-admin", TenantID: 10}, 10, false, cfgWithRBAC(true))
+	if !ok || got != types.TenantRoleContributor {
+		t.Fatalf("got (%v, %v), want (contributor, true)", got, ok)
+	}
+}
+
+func TestResolveTenantRole_RawAdminWithRootAdminStaysAdmin(t *testing.T) {
+	svc := newFakeMemberService()
+	svc.seedActive("u-admin", 10, types.TenantRoleAdmin)
+
+	got, ok := resolveTenantRole(context.Background(), svc, &fakeAuthOrgTreeService{orgs: []*types.OrgTreeNode{{ID: "root", Level: 1, MyIsAdmin: true}}},
+		&types.User{ID: "u-admin", TenantID: 10}, 10, false, cfgWithRBAC(true))
+	if !ok || got != types.TenantRoleAdmin {
+		t.Fatalf("got (%v, %v), want (admin, true)", got, ok)
 	}
 }

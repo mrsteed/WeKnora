@@ -220,7 +220,7 @@ func (r *knowledgeBaseRepository) CountByVectorStoreID(
 
 // ListAccessibleKBs returns knowledge bases accessible to a user considering visibility rules:
 // - global: all global KBs within the tenant
-// - org: KBs belonging to any of the user's organizations
+// - org: org-visible KBs belonging to the user's readable organizations
 // - private: only the user's own KBs
 func (r *knowledgeBaseRepository) ListAccessibleKBs(
 	ctx context.Context, userID string, tenantID uint64, orgIDs []string,

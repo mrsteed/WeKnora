@@ -85,9 +85,18 @@ export interface OrgMember {
   email: string
   phone?: string
   role: string
+  display_role?: 'owner' | 'admin' | 'suborg_admin' | 'collaborator' | 'readonly'
+  role_scope?: string
+  tenant_role?: string
+  org_role?: string
+  source?: 'tenant_projection' | 'org_direct' | 'org_inherited'
+  is_projected_root_admin?: boolean
+  can_manage_personnel?: boolean
+  can_manage_resources?: boolean
   is_owner?: boolean
   is_admin: boolean
   is_super_admin?: boolean
+  is_system_admin?: boolean
   is_direct?: boolean
   joined_at: string
 }
@@ -99,6 +108,14 @@ export interface InheritedAdmin {
   from_org_id: string
   from_org_name: string
   role: string
+  display_role?: 'owner' | 'admin' | 'suborg_admin' | 'collaborator' | 'readonly'
+  role_scope?: string
+  tenant_role?: string
+  org_role?: string
+  source?: 'tenant_projection' | 'org_direct' | 'org_inherited'
+  is_projected_root_admin?: boolean
+  can_manage_personnel?: boolean
+  can_manage_resources?: boolean
   is_inherited: boolean
 }
 

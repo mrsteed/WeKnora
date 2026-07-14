@@ -414,7 +414,7 @@ const previewHTML = computed(() => {
     return `<p class="empty-preview">${t('manualEditor.preview.empty')}</p>`
   }
   const safeMarkdown = safeMarkdownToHTML(form.content)
-  const html = marked.parse(safeMarkdown)
+  const html = String(marked.parse(safeMarkdown))
   return sanitizeHTML(html)
 })
 

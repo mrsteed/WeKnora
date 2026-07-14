@@ -26,6 +26,7 @@ type AuthHandler struct {
 	userService      interfaces.UserService
 	tenantService    interfaces.TenantService
 	memberService    interfaces.TenantMemberService
+	orgTreeService   interfaces.OrgTreeService
 	configInfo       *config.Config
 	systemSettingSvc interfaces.SystemSettingService
 	// invitationSvc is required for the share-link registration path
@@ -44,6 +45,7 @@ type AuthHandler struct {
 func NewAuthHandler(configInfo *config.Config,
 	userService interfaces.UserService, tenantService interfaces.TenantService,
 	memberService interfaces.TenantMemberService,
+	orgTreeService interfaces.OrgTreeService,
 	systemSettingSvc interfaces.SystemSettingService,
 	invitationSvc interfaces.TenantInvitationService,
 ) *AuthHandler {
@@ -62,6 +64,7 @@ func NewAuthHandler(configInfo *config.Config,
 		userService:      userService,
 		tenantService:    tenantService,
 		memberService:    memberService,
+		orgTreeService:   orgTreeService,
 		systemSettingSvc: systemSettingSvc,
 		invitationSvc:    invitationSvc,
 	}
@@ -180,7 +183,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	if response.User != nil {
 		crossTenantEnabled := h.configInfo != nil && h.configInfo.Tenant != nil && h.configInfo.Tenant.EnableCrossTenantAccess
-		response.User.CanAccessAllTenants = (response.User.CanAccessAllTenants || response.User.IsSystemAdmin || response.User.IsSuperAdmin) && crossTenantEnabled
+		response.User.CanAccessAllTenants = response.User.IsSystemAdmin || response.User.IsSuperAdmin || (response.User.CanAccessAllTenants && crossTenantEnabled)
 	}
 
 	// User is already in the correct format from service
@@ -294,7 +297,7 @@ func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 	}
 	if resp.User != nil {
 		crossTenantEnabled := h.configInfo != nil && h.configInfo.Tenant != nil && h.configInfo.Tenant.EnableCrossTenantAccess
-		resp.User.CanAccessAllTenants = (resp.User.CanAccessAllTenants || resp.User.IsSystemAdmin || resp.User.IsSuperAdmin) && crossTenantEnabled
+		resp.User.CanAccessAllTenants = resp.User.IsSystemAdmin || resp.User.IsSuperAdmin || (resp.User.CanAccessAllTenants && crossTenantEnabled)
 	}
 
 	payload, err := encodeOIDCCallbackPayload(resp)
@@ -476,7 +479,7 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	}
 	userInfo := user.ToUserInfo()
 	crossTenantEnabled := h.configInfo != nil && h.configInfo.Tenant != nil && h.configInfo.Tenant.EnableCrossTenantAccess
-	userInfo.CanAccessAllTenants = (user.CanAccessAllTenants || user.IsSystemAdmin || user.IsSuperAdmin) && crossTenantEnabled
+	userInfo.CanAccessAllTenants = user.IsSystemAdmin || user.IsSuperAdmin || (user.CanAccessAllTenants && crossTenantEnabled)
 	memberships := make([]types.Membership, 0)
 	if h.memberService != nil {
 		memberRows, listErr := h.memberService.ListByUser(ctx, user.ID)
@@ -503,7 +506,7 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 				memberships = append(memberships, types.Membership{
 					TenantID:   member.TenantID,
 					TenantName: tenantName,
-					Role:       member.Role,
+					Role:       effectiveTenantRoleForUser(ctx, member.Role, member.UserID, member.TenantID, h.orgTreeService),
 				})
 			}
 		}

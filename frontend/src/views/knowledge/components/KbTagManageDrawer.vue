@@ -68,7 +68,7 @@
                   class="tag-tile__input"
                   :placeholder="$t('knowledgeBase.tagNamePlaceholder')"
                   @enter="submitCreateTag"
-                  @keydown="(_v, ctx) => onEditKeydown(ctx, cancelCreateTag)"
+                  @keydown="(_v: unknown, ctx: { e?: KeyboardEvent }) => onEditKeydown(ctx, cancelCreateTag)"
                 />
               </div>
               <div class="tag-tile__actions">
@@ -116,7 +116,7 @@
                     class="tag-tile__input"
                     :placeholder="$t('knowledgeBase.tagNamePlaceholder')"
                     @enter="submitEditTag"
-                    @keydown="(_v, ctx) => onEditKeydown(ctx, cancelEditTag)"
+                    @keydown="(_v: unknown, ctx: { e?: KeyboardEvent }) => onEditKeydown(ctx, cancelEditTag)"
                   />
                 </div>
                 <div class="tag-tile__actions">

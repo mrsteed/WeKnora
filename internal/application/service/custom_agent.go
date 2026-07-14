@@ -61,6 +61,12 @@ func (s *customAgentService) CreateAgent(ctx context.Context, agent *types.Custo
 	if strings.TrimSpace(agent.Name) == "" {
 		return nil, ErrAgentNameRequired
 	}
+	visibility, organizationID, err := normalizeCustomAgentVisibility(agent.Visibility, agent.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	agent.Visibility = visibility
+	agent.OrganizationID = organizationID
 
 	// Generate UUID and set creation timestamps
 	if agent.ID == "" {
@@ -268,8 +274,12 @@ func (s *customAgentService) UpdateAgent(ctx context.Context, agent *types.Custo
 
 	// Update visibility if provided
 	if agent.Visibility != "" {
-		existingAgent.Visibility = agent.Visibility
-		existingAgent.OrganizationID = agent.OrganizationID
+		visibility, organizationID, err := normalizeCustomAgentVisibility(agent.Visibility, agent.OrganizationID)
+		if err != nil {
+			return nil, err
+		}
+		existingAgent.Visibility = visibility
+		existingAgent.OrganizationID = organizationID
 	}
 
 	// Ensure defaults
@@ -286,6 +296,28 @@ func (s *customAgentService) UpdateAgent(ctx context.Context, agent *types.Custo
 
 	logger.Infof(ctx, "Custom agent updated successfully, ID: %s", agent.ID)
 	return existingAgent, nil
+}
+
+func normalizeCustomAgentVisibility(visibility string, organizationID string) (string, string, error) {
+	visibility = strings.TrimSpace(visibility)
+	if visibility == "" {
+		visibility = types.AgentVisibilityPrivate
+	}
+
+	switch visibility {
+	case types.AgentVisibilityGlobal:
+		return visibility, "", nil
+	case types.AgentVisibilityOrg:
+		organizationID = strings.TrimSpace(organizationID)
+		if organizationID == "" {
+			return "", "", errors.New("organization_id is required when visibility is org")
+		}
+		return visibility, organizationID, nil
+	case types.AgentVisibilityPrivate:
+		return visibility, "", nil
+	default:
+		return "", "", errors.New("invalid agent visibility")
+	}
 }
 
 // updateBuiltinAgent updates a built-in agent's configuration (but not basic info)

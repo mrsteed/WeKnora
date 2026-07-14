@@ -196,21 +196,38 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("Invalid request parameters").WithDetails(err.Error()))
 		return
 	}
+	userVal, ok := c.Get(types.UserContextKey.String())
+	if !ok {
+		c.Error(errors.NewUnauthorizedError("User context not found"))
+		return
+	}
+	user, ok := userVal.(*types.User)
+	if !ok || user == nil {
+		c.Error(errors.NewUnauthorizedError("Invalid user context"))
+		return
+	}
 
 	// Get user from context for created_by
 	userID := c.GetString(types.UserIDContextKey.String())
 
 	// Validate and default visibility
-	visibility := req.Visibility
+	visibility := strings.TrimSpace(req.Visibility)
 	if visibility == "" {
 		visibility = types.AgentVisibilityPrivate
 	}
-	if visibility != types.AgentVisibilityGlobal && visibility != types.AgentVisibilityOrg && visibility != types.AgentVisibilityPrivate {
+	organizationID := strings.TrimSpace(req.OrganizationID)
+	switch visibility {
+	case types.AgentVisibilityGlobal:
+		organizationID = ""
+	case types.AgentVisibilityOrg:
+		if organizationID == "" {
+			c.Error(errors.NewBadRequestError("organization_id is required when visibility is 'org'"))
+			return
+		}
+	case types.AgentVisibilityPrivate:
+		organizationID = ""
+	default:
 		c.Error(errors.NewBadRequestError("Invalid visibility value, must be one of: global, org, private"))
-		return
-	}
-	if visibility == types.AgentVisibilityOrg && req.OrganizationID == "" {
-		c.Error(errors.NewBadRequestError("organization_id is required when visibility is 'org'"))
 		return
 	}
 
@@ -222,7 +239,7 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 		Config:         req.Config,
 		CreatedBy:      userID,
 		Visibility:     visibility,
-		OrganizationID: req.OrganizationID,
+		OrganizationID: organizationID,
 	}
 
 	logger.Infof(ctx, "Creating custom agent, name: %s, agent_mode: %s",
@@ -389,12 +406,31 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 	logger.Infof(ctx, "Permission check - Agent ID: %s, CreatedBy: %s, User ID: %s, IsSuperAdmin: %v",
 		existingAgent.ID, existingAgent.CreatedBy, user.ID, user.IsSuperAdmin)
 
-	if !canMutateAgent(ctx, user, existingAgent) {
-		if types.IsBuiltinAgentID(id) {
-			c.Error(errors.NewForbiddenError("Only tenant admins or super admins can update built-in agent configuration"))
+	if h.visibilityService != nil {
+		tenantID, ok := getTenantIDFromGin(c)
+		if !ok {
+			c.Error(errors.NewUnauthorizedError("Missing tenant context"))
 			return
 		}
-		c.Error(errors.NewForbiddenError("Only the creator, tenant admins, or super admins can update this agent"))
+		canManage, permErr := h.visibilityService.CanManageAgent(ctx, user.ID, tenantID, id, canBypassSameTenantResourceVisibility(ctx, user))
+		if permErr != nil {
+			c.Error(errors.NewInternalServerError(permErr.Error()))
+			return
+		}
+		if !canManage {
+			if types.IsBuiltinAgentID(id) {
+				c.Error(errors.NewForbiddenError("当前用户无权修改内置智能体配置"))
+				return
+			}
+			c.Error(errors.NewForbiddenError("当前用户无权修改此智能体"))
+			return
+		}
+	} else if !canMutateAgent(ctx, user, existingAgent) {
+		if types.IsBuiltinAgentID(id) {
+			c.Error(errors.NewForbiddenError("当前用户无权修改内置智能体配置"))
+			return
+		}
+		c.Error(errors.NewForbiddenError("当前用户无权修改此智能体"))
 		return
 	}
 
@@ -416,18 +452,25 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 	}
 
 	// Handle visibility update
-	visibility := req.Visibility
+	visibility := strings.TrimSpace(req.Visibility)
 	if visibility != "" {
-		if visibility != types.AgentVisibilityGlobal && visibility != types.AgentVisibilityOrg && visibility != types.AgentVisibilityPrivate {
+		organizationID := strings.TrimSpace(req.OrganizationID)
+		switch visibility {
+		case types.AgentVisibilityGlobal:
+			organizationID = ""
+		case types.AgentVisibilityOrg:
+			if organizationID == "" {
+				c.Error(errors.NewBadRequestError("organization_id is required when visibility is org"))
+				return
+			}
+		case types.AgentVisibilityPrivate:
+			organizationID = ""
+		default:
 			c.Error(errors.NewBadRequestError("Invalid visibility value, must be one of: global, org, private"))
 			return
 		}
-		if visibility == types.AgentVisibilityOrg && req.OrganizationID == "" {
-			c.Error(errors.NewBadRequestError("organization_id is required when visibility is org"))
-			return
-		}
 		agent.Visibility = visibility
-		agent.OrganizationID = req.OrganizationID
+		agent.OrganizationID = organizationID
 	}
 
 	logger.Infof(ctx, "Updating custom agent, ID: %s, name: %s",
@@ -522,8 +565,23 @@ func (h *CustomAgentHandler) DeleteAgent(c *gin.Context) {
 		return
 	}
 
-	if !canMutateAgent(ctx, user, existingAgent) {
-		c.Error(errors.NewForbiddenError("Only the creator, tenant admins, or super admins can delete this agent"))
+	if h.visibilityService != nil {
+		tenantID, ok := getTenantIDFromGin(c)
+		if !ok {
+			c.Error(errors.NewUnauthorizedError("Missing tenant context"))
+			return
+		}
+		canManage, permErr := h.visibilityService.CanManageAgent(ctx, user.ID, tenantID, id, canBypassSameTenantResourceVisibility(ctx, user))
+		if permErr != nil {
+			c.Error(errors.NewInternalServerError(permErr.Error()))
+			return
+		}
+		if !canManage {
+			c.Error(errors.NewForbiddenError("当前用户无权删除此智能体"))
+			return
+		}
+	} else if !canMutateAgent(ctx, user, existingAgent) {
+		c.Error(errors.NewForbiddenError("当前用户无权删除此智能体"))
 		return
 	}
 

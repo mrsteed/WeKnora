@@ -82,7 +82,7 @@ const authorizing = ref(false)
 const canceling = ref(false)
 const now = ref(Date.now())
 let clock: ReturnType<typeof setInterval> | null = null
-let poll: ReturnType<typeof setInterval> | null = null
+let poll: number | null = null
 
 const deadline = computed(() => {
   const base = (props.requestedAt || 0) * 1000

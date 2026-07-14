@@ -9,6 +9,7 @@ import WorkspaceSetupWizard from '@/components/WorkspaceSetupWizard.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { useWorkspaceSetupStore } from '@/stores/workspaceSetup'
+import { useOrganizationStore } from '@/stores/organization'
 import { getCurrentUser, userInfoFromApi } from '@/api/auth'
 import { consumePendingTenantSwitchToast } from '@/utils/tenantSwitch'
 import { useRoleLabel } from '@/composables/useRoleLabel'
@@ -27,6 +28,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 const workspaceSetupStore = useWorkspaceSetupStore()
+const organizationStore = useOrganizationStore()
 
 const tdLocaleMap: Record<string, object> = {
   'en-US': enUSConfig,
@@ -79,6 +81,7 @@ const syncOIDCUserContext = async () => {
   if (Array.isArray(memberships)) {
     authStore.setMemberships(memberships)
   }
+  await organizationStore.fetchMyOrgTreeOrganizations()
   // Same active-vs-home reconciliation as Login.vue: if the OIDC login
   // landed us in a non-home tenant (because the backend honoured a
   // remembered last-active-tenant preference) make sure X-Tenant-ID
@@ -249,6 +252,15 @@ onMounted(() => {
     }
   }, 4 * 60 * 60 * 1000)
 })
+
+watch(
+  () => [authStore.isLoggedIn, authStore.effectiveTenantId],
+  async ([loggedIn, tenantId]) => {
+    if (!loggedIn || !tenantId) return
+    await organizationStore.fetchMyOrgTreeOrganizations()
+  },
+  { immediate: true },
+)
 
 onUnmounted(() => {
   if (updateCheckTimer) {

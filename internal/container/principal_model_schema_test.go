@@ -22,6 +22,17 @@ func expectColumnExists(mock sqlmock.Sqlmock, tableName, columnName string, exis
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(exists))
 }
 
+func expectTableExists(mock sqlmock.Sqlmock, tableName string, exists bool) {
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.tables
+			WHERE table_schema = current_schema()
+			  AND table_name = $1
+		)`)).
+		WithArgs(tableName).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(exists))
+}
+
 func expectVarcharLength(mock sqlmock.Sqlmock, tableName, columnName string, length interface{}) {
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT character_maximum_length
 		FROM information_schema.columns
@@ -38,6 +49,8 @@ func TestValidatePrincipalModelSchemaCompatibility_RejectsDriftedPostgresSchema(
 	require.NoError(t, err)
 	defer sqlDB.Close()
 
+	expectTableExists(mock, "mcp_oauth_clients", true)
+	expectTableExists(mock, "mcp_oauth_tokens", true)
 	expectColumnExists(mock, "tenants", "api_principal_config", false)
 	expectColumnExists(mock, "mcp_oauth_tokens", "principal_type", true)
 	expectColumnExists(mock, "mcp_oauth_tokens", "principal_id", true)
@@ -58,6 +71,8 @@ func TestValidatePrincipalModelSchemaCompatibility_AcceptsRepairedPostgresSchema
 	require.NoError(t, err)
 	defer sqlDB.Close()
 
+	expectTableExists(mock, "mcp_oauth_clients", true)
+	expectTableExists(mock, "mcp_oauth_tokens", true)
 	expectColumnExists(mock, "tenants", "api_principal_config", true)
 	expectColumnExists(mock, "mcp_oauth_tokens", "principal_type", true)
 	expectColumnExists(mock, "mcp_oauth_tokens", "principal_id", true)

@@ -24,8 +24,8 @@
             <span class="col-email">{{ admin.email }}</span>
             <span class="col-phone">-</span>
             <span class="col-role">
-              <t-tag theme="warning" variant="light" size="small">
-                {{ $t('admin.member.inheritedAdmin') }}
+              <t-tag :theme="memberRoleTheme(admin)" variant="light" size="small">
+                {{ displayRoleLabel(admin) }}
               </t-tag>
               <t-tag theme="default" variant="light" size="small" style="margin-left: 4px">
                 {{ $t('admin.member.inheritedFrom') }}: {{ admin.from_org_name }}
@@ -55,14 +55,11 @@
           <t-tag v-if="member.is_super_admin" theme="warning" variant="light" size="small">
             {{ $t('admin.member.superAdmin') }}
           </t-tag>
-          <t-tag v-else-if="member.is_owner" theme="primary" variant="light" size="small">
-            {{ $t('organization.owner') }}
+          <t-tag v-else-if="member.is_system_admin" theme="warning" variant="light" size="small">
+          {{ $t('admin.member.systemAdmin') }}
           </t-tag>
-          <t-tag v-else-if="member.is_admin" theme="primary" variant="light" size="small">
-            {{ $t('admin.member.admin') }}
-          </t-tag>
-          <t-tag v-else theme="default" variant="light" size="small">
-            {{ roleLabel(member.role) }}
+          <t-tag v-else :theme="memberRoleTheme(member)" variant="light" size="small">
+            {{ displayRoleLabel(member) }}
           </t-tag>
         </span>
         <span class="col-actions">
@@ -70,6 +67,8 @@
             size="small"
             variant="text"
             theme="primary"
+            :disabled="isProjectedRootAdmin(member)"
+            :title="isProjectedRootAdmin(member) ? $t('admin.member.adjustInTenantMembers') : ''"
             @click="$emit('edit', member)"
           >
             {{ $t('common.edit') }}
@@ -87,7 +86,8 @@
             size="small"
             variant="text"
             :theme="member.is_admin ? 'default' : 'primary'"
-            :disabled="member.is_owner === true"
+            :disabled="member.is_owner === true || isProjectedRootAdmin(member)"
+            :title="isProjectedRootAdmin(member) ? $t('admin.member.adjustInTenantMembers') : ''"
             @click="$emit('setAdmin', member.user_id, !member.is_admin)"
           >
             {{ member.is_admin ? $t('admin.member.revokeAdmin') : $t('admin.member.setAdmin') }}
@@ -100,8 +100,8 @@
               size="small"
               variant="text"
               theme="danger"
-              :disabled="member.user_id === authStore.currentUserId || member.is_owner === true"
-              :title="member.user_id === authStore.currentUserId ? $t('admin.member.cannotModifySelf') : (member.is_owner === true ? $t('organization.owner') : '')"
+              :disabled="member.user_id === authStore.currentUserId || member.is_owner === true || isProjectedRootAdmin(member)"
+              :title="actionBlockedTitle(member)"
             >
               {{ $t('admin.member.remove') }}
             </t-button>
@@ -121,11 +121,55 @@ import { useAuthStore } from '@/stores/auth'
 const { t } = useI18n()
 const authStore = useAuthStore()
 
-function roleLabel(role?: string) {
-  if (!role) return t('admin.member.member')
-  const key = `admin.member.role${role.charAt(0).toUpperCase()}${role.slice(1)}`
-  const translated = t(key)
-  return translated === key ? role : translated
+function displayRoleLabel(member: Pick<OrgMember, 'display_role' | 'is_owner' | 'is_admin' | 'role'> | Pick<InheritedAdmin, 'display_role' | 'role'>) {
+  switch (member.display_role) {
+    case 'owner':
+      return t('tenantMember.role.owner')
+    case 'admin':
+      return t('tenantMember.role.admin')
+    case 'suborg_admin':
+      return t('admin.member.roleSubOrgAdmin')
+    case 'collaborator':
+      return t('tenantMember.role.contributor')
+    case 'readonly':
+      return t('tenantMember.role.viewer')
+    default:
+      break
+  }
+
+  if ('is_owner' in member && member.is_owner) return t('tenantMember.role.owner')
+  if ('is_admin' in member && member.is_admin) return t('admin.member.roleSubOrgAdmin')
+  if (!member.role) return t('admin.member.member')
+
+  switch (member.role) {
+    case 'admin':
+      return t('admin.member.roleSubOrgAdmin')
+    case 'editor':
+      return t('tenantMember.role.contributor')
+    case 'viewer':
+      return t('tenantMember.role.viewer')
+    default:
+      return member.role
+  }
+}
+
+function isProjectedRootAdmin(member: OrgMember) {
+  return member.is_projected_root_admin === true || member.source === 'tenant_projection'
+}
+
+function memberRoleTheme(member: Pick<OrgMember, 'display_role' | 'is_owner' | 'is_admin'> | Pick<InheritedAdmin, 'display_role'>) {
+  if (member.display_role === 'owner' || ('is_owner' in member && member.is_owner)) return 'primary'
+  if (member.display_role === 'admin') return 'primary'
+  if (member.display_role === 'suborg_admin' || ('is_admin' in member && member.is_admin)) return 'warning'
+  if (member.display_role === 'collaborator') return 'success'
+  return 'default'
+}
+
+function actionBlockedTitle(member: OrgMember) {
+  if (member.user_id === authStore.currentUserId) return t('admin.member.cannotModifySelf')
+  if (isProjectedRootAdmin(member)) return t('admin.member.adjustInTenantMembers')
+  if (member.is_owner === true) return t('tenantMember.role.owner')
+  return ''
 }
 
 const props = defineProps<{

@@ -32,7 +32,7 @@ func NewAgentVisibilityService(
 }
 
 // ListAccessibleAgents returns all agents accessible to a user within a tenant,
-// considering visibility rules: global agents + org agents (user's orgs) + private agents (own)
+// considering visibility rules: global agents + org agents (user's orgs and descendants) + private agents (own)
 // Super admins bypass visibility rules and see all agents.
 // Built-in agents are always included.
 func (s *agentVisibilityService) ListAccessibleAgents(ctx context.Context, userID string, tenantID uint64, isSuperAdmin bool) ([]*types.CustomAgent, error) {

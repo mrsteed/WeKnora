@@ -272,7 +272,7 @@ func RequireKBAccess(
 				c.Next()
 				return
 			}
-			_ = c.Error(apperrors.NewForbiddenError("Permission denied to access this knowledge base"))
+			_ = c.Error(apperrors.NewForbiddenError("当前用户无权访问此知识库"))
 			c.Abort()
 			return
 		case err != nil:
@@ -337,7 +337,7 @@ func resolveKBAccessOnce(
 
 	// 1. Own KB.
 	if kb.TenantID == tenantID {
-		if callerTenantRole.HasPermission(types.TenantRoleAdmin) || isPrivilegedOperator {
+		if isPrivilegedOperator {
 			return &KBAccess{
 				KnowledgeBase:     kb,
 				EffectiveTenantID: tenantID,
@@ -494,5 +494,5 @@ func kbAccessPrivilegedOperatorFromContext(c *gin.Context) bool {
 	if !ok || user == nil {
 		return types.IsSystemAdminFromContext(c.Request.Context())
 	}
-	return user.IsSystemAdmin || user.IsSuperAdmin || user.CanAccessAllTenants
+	return types.IsPlatformPrivilegedUser(user)
 }

@@ -28,11 +28,14 @@
       <ListSpaceSidebar
         v-if="!authStore.isLiteMode"
         v-model="spaceSelection"
+        :resource-mine-label="$t('listSpaceSidebar.mine')"
+        :show-favorites="false"
+        :show-recents="false"
         :enable-visibility-group="true"
         :count-all="allKnowledgeBases"
         :count-global="countGlobalKbs"
         :count-org="countOrgKbs"
-        :count-mine="kbs.length"
+        :count-mine="mineKnowledgeBases.length"
         :count-shared="sharedKbs.length"
         :count-by-org="effectiveSharedCountByOrg"
       >
@@ -477,17 +480,17 @@
       </div>
     </div>
 
-    <div v-if="spaceSelection === 'mine' && kbs.length > 0" class="kb-card-wrap">
+    <div v-if="spaceSelection === 'mine' && mineKnowledgeBases.length > 0" class="kb-card-wrap">
       <!-- 置顶分组标题 -->
-      <div v-if="kbs[0] && kbs[0].is_pinned" class="kb-section-header kb-section-header-pinned">
+      <div v-if="mineKnowledgeBases[0] && mineKnowledgeBases[0].is_pinned" class="kb-section-header kb-section-header-pinned">
         <t-icon name="pin-filled" size="14px" />
         <span>{{ $t('knowledgeList.sections.pinned') }}</span>
       </div>
       <!-- 我的知识库 -->
-      <template v-for="(kb, index) in kbs" :key="kb.id">
+      <template v-for="(kb, index) in mineKnowledgeBases" :key="kb.id">
         <!-- 「其他」分组标题：从置顶过渡到非置顶时插入 -->
         <div
-          v-if="index > 0 && kbs[index - 1].is_pinned && !kb.is_pinned"
+          v-if="index > 0 && mineKnowledgeBases[index - 1].is_pinned && !kb.is_pinned"
           class="kb-section-header"
         >
           <span>{{ $t('knowledgeList.sections.others') }}</span>
@@ -721,7 +724,7 @@
     </div>
 
     <!-- 我的知识库空状态 -->
-    <div v-if="spaceSelection === 'mine' && kbs.length === 0 && !loading" class="empty-state">
+    <div v-if="spaceSelection === 'mine' && mineKnowledgeBases.length === 0 && !loading" class="empty-state">
       <img class="empty-img" src="@/assets/img/upload.svg" alt="">
       <span class="empty-txt">{{ $t('knowledgeList.empty.title') }}</span>
       <span class="empty-desc">{{ $t('knowledgeList.empty.description') }}</span>
@@ -792,6 +795,7 @@
       :kb-id="uiStore.currentKBId || undefined"
       :initial-type="uiStore.kbEditorType"
       :initial-visibility="uiStore.kbEditorInitialVisibility || undefined"
+      :initial-organization-id="uiStore.kbEditorInitialOrganizationId || undefined"
       @update:visible="(val) => val ? null : uiStore.closeKBEditor()"
       @success="handleKBEditorSuccess"
     />
@@ -947,13 +951,16 @@ const getKnowledgeBaseTypeTheme = (type?: string) => {
   }
 }
 
-// 左侧空间选择：我的 / 空间 ID（已去掉「全部」）
-const spaceSelection = ref<'all' | 'mine' | 'shared' | string>('mine')
+// 左侧空间选择：默认全部，可以看到自己的 + 共享给自己的知识库，
+// 避免之前默认 'mine' 时创作者视角之外的用户一进入就只看到空状态。
+const spaceSelection = ref<'all' | 'mine' | 'shared' | string>('all')
 
 interface KB { 
   id: string; 
   name: string; 
   description?: string; 
+  created_by?: string;
+  creator_id?: string;
   created_by_nickname?: string;
   updated_at?: string;
   embedding_model_id?: string;
@@ -974,6 +981,12 @@ interface KB {
   share_count?: number;
   is_pinned?: boolean;
   cos_config?: { provider?: string; bucket_name?: string };
+}
+
+const isMyKnowledgeBase = (kb: Pick<KB, 'creator_id' | 'created_by'>) => {
+  const uid = authStore.user?.id || ''
+  if (!uid) return false
+  return kb.creator_id === uid || kb.created_by === uid
 }
 
 const kbs = ref<KB[]>([])
@@ -998,6 +1011,7 @@ const sharedKbs = computed<SharedKnowledgeBase[]>(() => orgStore.sharedKnowledge
 
 // All knowledge bases (mine + shared to me)
 const allKnowledgeBases = computed(() => kbs.value.length + sharedKbs.value.length)
+const mineKnowledgeBases = computed(() => kbs.value.filter(isMyKnowledgeBase))
 
 // 按可见性分组计数
 const countGlobalKbs = computed(() => kbs.value.filter(kb => kb.visibility === 'global').length)
@@ -1047,7 +1061,7 @@ const effectiveSharedCountByOrg = computed<Record<string, number>>(() => {
 // Filtered knowledge bases: 全部 = 我的 + 全部共享；我的 = 仅我的；全局/组织 = 按可见性筛选
 const filteredKnowledgeBases = computed(() => {
   if (spaceSelection.value === 'mine') {
-    return kbs.value.filter(kb => kb.visibility === 'private' || !kb.visibility).map(kb => ({ ...kb, isMine: true as const }))
+    return mineKnowledgeBases.value.map(kb => ({ ...kb, isMine: true as const }))
   }
   if (spaceSelection.value === 'global') {
     return kbs.value.filter(kb => kb.visibility === 'global').map(kb => ({ ...kb, isMine: true as const }))
@@ -1460,6 +1474,7 @@ const goSettings = (id: string) => {
 const handleCreateKnowledgeBase = () => {
   // 根据当前选中的空间设置默认的 visibility
   let visibility: 'private' | 'org' | 'global' = 'private'
+  let organizationId: string | undefined
   if (spaceSelection.value === 'global') {
     visibility = 'global'
   } else if (spaceSelection.value === 'org') {
@@ -1469,11 +1484,16 @@ const handleCreateKnowledgeBase = () => {
   } else if (spaceSelection.value !== 'all' && spaceSelection.value !== 'shared') {
     // 选中了具体的组织，设置为组织可见
     visibility = 'org'
+    organizationId = spaceSelection.value
   }
-  uiStore.openCreateKB('document', visibility)
+  uiStore.openCreateKB('document', visibility, undefined, organizationId)
 }
 
-type KnowledgeBaseOperationSuccess = string | (Partial<KB> & { id: string })
+type KnowledgeBaseOperationSuccess = string | (Partial<KB> & {
+  id: string
+  visibility?: 'private' | 'org' | 'global'
+  organization_id?: string
+})
 
 // 知识库编辑器成功回调（创建或编辑成功）
 const handleKBEditorSuccess = (payload: KnowledgeBaseOperationSuccess) => {
@@ -1484,7 +1504,7 @@ const handleKBEditorSuccess = (payload: KnowledgeBaseOperationSuccess) => {
     if (payload.visibility === 'global') {
       spaceSelection.value = 'global'
     } else if (payload.visibility === 'org') {
-      spaceSelection.value = 'org'
+      spaceSelection.value = payload.organization_id || 'org'
     } else {
       spaceSelection.value = 'mine'
     }

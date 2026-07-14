@@ -70,14 +70,10 @@
             :title="$t('tenant.switcher.menuLabel')" />
         </div>
         <div class="menu-divider"></div>
-        <!-- QuickNav 入口与 Settings 的最低角色对齐：members/models/websearch/mcp/api
-             分别对应 viewer/viewer/admin/admin/owner（详情见 Settings.vue 的
-             SECTION_MIN_ROLE）。低角色用户看到这些入口点进去也只能看到
-             role-denied 兜底页，索性藏起来。 -->
-        <div v-if="canSeeQuickNav('members')" class="menu-item" @click="handleQuickNav('members')">
-          <t-icon name="usergroup" class="menu-icon" />
-          <span>{{ $t('tenantMember.title') }}</span>
-        </div>
+        <!-- QuickNav 入口与 Settings 的最低角色对齐：models/websearch/mcp/api
+             分别对应 viewer/admin/admin/owner（详情见 Settings.vue 的
+             SECTION_MIN_ROLE）。成员管理已隐藏：原“设置 > 成员管理”按租户角色
+             展示，与组织树角色不一致，继续暴露会造成用户认知冲突。 -->
         <div v-if="canSeeQuickNav('models')" class="menu-item" @click="handleQuickNav('models')">
           <t-icon name="control-platform" class="menu-icon" />
           <span>{{ $t('settings.modelManagement') }}</span>
@@ -109,12 +105,11 @@
           <span>{{ $t('general.allSettings') }}</span>
         </div>
         <!--
-          System administration entry — visible only to users with the
-          platform-wide is_system_admin flag. Hidden for everyone else,
-          including tenant Owners. Real authorisation lives server-side
-          (RequireSystemAdmin middleware); this is UI gating only.
+          Platform administration entry — visible only to super admins.
+          Hidden for everyone else, including tenant Owners. Real
+          authorisation lives server-side; this is UI gating only.
         -->
-        <div v-if="authStore.isSystemAdmin" class="menu-item" @click="handleSystemAdmin">
+        <div v-if="authStore.isSuperAdmin" class="menu-item" @click="handleSystemAdmin">
           <t-icon name="server" class="menu-icon" />
           <span>{{ $t('settings.system') }}</span>
         </div>
@@ -248,7 +243,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { getCurrentUser, logout as logoutApi, userInfoFromApi } from '@/api/auth'
 import { useI18n } from 'vue-i18n'
 import CreateTenantDialog from '@/components/CreateTenantDialog.vue'
-import { deleteTenant as deleteTenantApi } from '@/api/tenant'
+import { deleteTenant as deleteTenantApi, listAllTenants } from '@/api/tenant'
 import {
   navigateAfterTenantSwitch,
   persistLastActiveTenantPreference,
@@ -293,7 +288,7 @@ const showTenantIdentityLine = computed(() => {
 // 与 Settings.vue 的 SECTION_MIN_ROLE 同步；这里只挂 quickNav 直接跳转的
 // 那 4 项。改这张表前请同步 Settings.vue 的对照注释。
 const QUICKNAV_MIN_ROLE: Record<string, 'viewer' | 'contributor' | 'admin' | 'owner'> = {
-  members: 'viewer',
+  // 成员管理已隐藏（见上方模板说明）。
   models: 'viewer',
   websearch: 'admin',
   mcp: 'admin',
@@ -381,6 +376,8 @@ const deletingTenantId = ref<number | null>(null)
 const deleteDialogVisible = ref(false)
 const deleteDialogTarget = ref<Membership | null>(null)
 const deleteConfirmName = ref('')
+// 创建空间入口应与后端 POST /tenants 的平台管理员判定保持一致，
+// 不再单独绑定 canAccessAllTenants 这个跨空间能力字段。
 const canCreateTenant = computed(() => authStore.isSuperAdmin)
 
 const openCreateTenantDialog = () => {
@@ -416,7 +413,30 @@ type Membership = {
 // single place to glance at "where am I right now"; clicking the current
 // row is a no-op (handled in switchToTenant).
 const switchableMemberships = computed<Membership[]>(() => {
-  return authStore.memberships ?? []
+  const memberships = authStore.memberships ?? []
+  if (!authStore.canAccessAllTenants) {
+    return memberships
+  }
+
+  const membershipByTenant = new Map<number, Membership>()
+  memberships.forEach((m) => {
+    membershipByTenant.set(Number(m.tenant_id), m)
+  })
+
+  const catalog = authStore.allTenants ?? []
+  if (catalog.length === 0) {
+    return memberships
+  }
+
+  return catalog.map((tenant) => {
+    const tid = Number(tenant.id)
+    const member = membershipByTenant.get(tid)
+    return {
+      tenant_id: tid,
+      tenant_name: tenant.name,
+      role: member?.role || 'admin',
+    }
+  })
 })
 
 // Rendered whenever the user has at least one membership — even single-
@@ -558,6 +578,21 @@ const handleDeleteTenant = async () => {
 
 let lastTenantSubmenuMembershipRefresh = 0
 const TENANT_SUBMENU_MEMBERSHIP_REFRESH_MS = 2000
+let loadingTenantCatalog = false
+
+const ensureTenantCatalog = async () => {
+  if (!authStore.canAccessAllTenants) return
+  if (loadingTenantCatalog) return
+  loadingTenantCatalog = true
+  try {
+    const response = await listAllTenants()
+    if (response.success && response.data?.items) {
+      authStore.setAllTenants(response.data.items)
+    }
+  } finally {
+    loadingTenantCatalog = false
+  }
+}
 
 const showTenantSubmenu = () => {
   if (tenantSubmenuHideTimer) {
@@ -572,6 +607,7 @@ const showTenantSubmenu = () => {
     lastTenantSubmenuMembershipRefresh = now
     void authStore.refreshFromAuthMe()
   }
+  void ensureTenantCatalog()
 }
 
 const scheduleHideTenantSubmenu = () => {
@@ -666,9 +702,9 @@ const loadUserInfo = async () => {
         avatar: user.avatar || ''
       }
       // 同时更新 authStore 中的用户信息，确保包含 can_access_all_tenants /
-      // is_system_admin 等所有字段。MUST 走 userInfoFromApi 工厂——历史
+      // 平台管理员等所有字段。MUST 走 userInfoFromApi 工厂——历史
       // 上这里手写字段白名单，每加一个 user 字段都要在 5 个 setUser 调用
-      // 点同步，is_system_admin 就因为漏了这一处导致进入 platform 后
+      // 点同步，平台管理员字段就因为漏了这一处导致进入 platform 后
       // user.value 的字段被 mount 时的 loadUserInfo 静默覆盖回 undefined
       // （同时污染 localStorage），系统管理入口在 hover 工作空间触发
       // refreshFromAuthMe 后才出现。新增字段请只改 userInfoFromApi。

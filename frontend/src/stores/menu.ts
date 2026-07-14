@@ -74,6 +74,9 @@ export const useMenuStore = defineStore('menuStore', () => {
       if (item.path === 'organizations' && !authStore.hasRole('admin')) {
         return false
       }
+      if (item.path === 'integrations' && !authStore.hasRole('owner')) {
+        return false
+      }
       if (item.path === 'admin' && !authStore.isSuperAdmin && !authStore.isOrgAdmin) {
         return false
       }

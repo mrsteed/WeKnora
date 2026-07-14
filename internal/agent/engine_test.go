@@ -291,6 +291,94 @@ func TestStreamThinkingToEventBus_PropagatesFinishReason(t *testing.T) {
 	}
 }
 
+func TestStreamThinkingToEventBus_FirstRoundWithToolsRequiresToolChoice(t *testing.T) {
+	mock := &mockChat{
+		responses: []mockResponse{{chunks: []types.StreamResponse{{
+			Content:      "searching",
+			Done:         true,
+			FinishReason: "stop",
+		}}}},
+	}
+
+	engine := newTestEngine(t, mock)
+	tools := []chat.Tool{{
+		Type: "function",
+		Function: chat.FunctionDef{
+			Name:        "knowledge_search",
+			Description: "search",
+		},
+	}}
+
+	_, err := engine.streamThinkingToEventBus(context.Background(), emptyMessages(), tools, 0, "sess-1")
+	require.NoError(t, err)
+	require.NotNil(t, mock.lastOptions)
+	assert.Equal(t, "required", mock.lastOptions.ToolChoice)
+}
+
+func TestStreamThinkingToEventBus_LaterRoundsDoNotForceToolChoice(t *testing.T) {
+	mock := &mockChat{
+		responses: []mockResponse{{chunks: []types.StreamResponse{{
+			Content:      "final answer",
+			Done:         true,
+			FinishReason: "stop",
+		}}}},
+	}
+
+	engine := newTestEngine(t, mock)
+	tools := []chat.Tool{{
+		Type: "function",
+		Function: chat.FunctionDef{
+			Name:        "knowledge_search",
+			Description: "search",
+		},
+	}}
+
+	_, err := engine.streamThinkingToEventBus(context.Background(), emptyMessages(), tools, 1, "sess-1")
+	require.NoError(t, err)
+	require.NotNil(t, mock.lastOptions)
+	assert.Empty(t, mock.lastOptions.ToolChoice)
+}
+
+func TestStreamThinkingToEventBus_FirstRoundWithToolHistoryDoesNotForceToolChoice(t *testing.T) {
+	mock := &mockChat{
+		responses: []mockResponse{{chunks: []types.StreamResponse{{
+			Content:      "follow-up answer",
+			Done:         true,
+			FinishReason: "stop",
+		}}}},
+	}
+
+	engine := newTestEngine(t, mock)
+	tools := []chat.Tool{{
+		Type: "function",
+		Function: chat.FunctionDef{
+			Name:        "knowledge_search",
+			Description: "search",
+		},
+	}}
+	messages := []chat.Message{
+		{Role: "user", Content: "previous question"},
+		{
+			Role: "assistant",
+			ToolCalls: []chat.ToolCall{{
+				ID:   "call-1",
+				Type: "function",
+				Function: chat.FunctionCall{
+					Name:      "grep_chunks",
+					Arguments: `{"query":"foo"}`,
+				},
+			}},
+		},
+		{Role: "tool", Name: "grep_chunks", ToolCallID: "call-1", Content: "tool result"},
+		{Role: "user", Content: "new question"},
+	}
+
+	_, err := engine.streamThinkingToEventBus(context.Background(), messages, tools, 0, "sess-1")
+	require.NoError(t, err)
+	require.NotNil(t, mock.lastOptions)
+	assert.Empty(t, mock.lastOptions.ToolChoice)
+}
+
 // TestStreamThinkingToEventBus_RoutesReasoningAndAnswerSeparately is the
 // regression guard for the "answer first shows under Thinking, then jumps to
 // the answer area" UX bug. A natural-stop response that carries reasoning in

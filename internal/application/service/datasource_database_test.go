@@ -123,11 +123,20 @@ func TestIsDatabaseDataSourceType(t *testing.T) {
 
 type stubLifecycleDataSourceRepo struct {
 	byID      map[string]*types.DataSource
+	created   *types.DataSource
 	updated   *types.DataSource
 	deletedID string
 }
 
-func (s *stubLifecycleDataSourceRepo) Create(context.Context, *types.DataSource) error { return nil }
+func (s *stubLifecycleDataSourceRepo) Create(_ context.Context, ds *types.DataSource) error {
+	clone := *ds
+	s.created = &clone
+	if s.byID == nil {
+		s.byID = make(map[string]*types.DataSource)
+	}
+	s.byID[ds.ID] = &clone
+	return nil
+}
 func (s *stubLifecycleDataSourceRepo) FindByID(_ context.Context, id string) (*types.DataSource, error) {
 	ds, ok := s.byID[id]
 	if !ok {
@@ -289,6 +298,64 @@ func buildLifecycleDatabaseDataSource(t *testing.T, id string, host string, allo
 		},
 	}))
 	return ds
+}
+
+type createDatabaseKnowledgeBaseService struct {
+	processSyncKBService
+	kb  *types.KnowledgeBase
+	err error
+}
+
+func (s *createDatabaseKnowledgeBaseService) GetKnowledgeBaseByID(context.Context, string) (*types.KnowledgeBase, error) {
+	return s.kb, s.err
+}
+
+func (s *createDatabaseKnowledgeBaseService) GetKnowledgeBaseByIDOnly(context.Context, string) (*types.KnowledgeBase, error) {
+	return s.kb, s.err
+}
+
+func TestDataSourceServiceCreateDataSourcePreservesDatabaseUsername(t *testing.T) {
+	t.Setenv("SYSTEM_AES_KEY", testAESKey)
+	t.Setenv("APP_ENV", "development")
+
+	dsRepo := &stubLifecycleDataSourceRepo{}
+	connectorRegistry := datasource.NewConnectorRegistry()
+	require.NoError(t, connectorRegistry.Register(&stubLifecycleConnector{}))
+
+	svc := &DataSourceService{
+		dsRepo:            dsRepo,
+		syncLogRepo:       &stubLifecycleSyncLogRepo{},
+		kbService:         &createDatabaseKnowledgeBaseService{kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 1}},
+		connectorRegistry: connectorRegistry,
+	}
+
+	input := &types.DataSource{
+		KnowledgeBaseID: "kb-1",
+		TenantID:        1,
+		Name:            "north-db",
+		Type:            types.DatabaseTypeMySQL,
+		Status:          types.DataSourceStatusActive,
+		Config: types.JSON(`{
+			"type":"mysql",
+			"credentials":{"username":"root","password":"secret-pass"},
+			"settings":{"host":"127.0.0.1","database":"crm","port":3306}
+		}`),
+	}
+
+	created, err := svc.CreateDataSource(context.Background(), input)
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.NotNil(t, dsRepo.created)
+
+	rawConfig := string(dsRepo.created.Config)
+	assert.Contains(t, rawConfig, `"username":"root"`)
+	assert.NotContains(t, rawConfig, `"username":"enc:v1:`)
+	assert.NotContains(t, rawConfig, `secret-pass`)
+
+	parsed, parseErr := dsRepo.created.ParseDatabaseConnectionConfig()
+	require.NoError(t, parseErr)
+	assert.Equal(t, "root", parsed.Credentials.Username)
+	assert.Equal(t, "secret-pass", parsed.Credentials.Password)
 }
 
 func TestDataSourceServiceUpdateDataSourceRefreshesSchemaForDatabaseChanges(t *testing.T) {

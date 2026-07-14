@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     extract_config TEXT NULL DEFAULT NULL,
     faq_config TEXT,
     question_generation_config TEXT NULL,
+	max_concurrent_parse_tasks INTEGER NOT NULL DEFAULT 5,
     is_temporary BOOLEAN NOT NULL DEFAULT 0,
     is_pinned INTEGER NOT NULL DEFAULT 0,
     pinned_at DATETIME NULL,
@@ -309,4 +310,56 @@ func TestCountByVectorStoreID(t *testing.T) {
 		})
 		require.NoError(t, err)
 	})
+}
+
+func TestListAccessibleKBs_RestrictsOrgVisibleKBsToReadableOrganizations(t *testing.T) {
+	db := setupKBTestDB(t)
+	repo := &knowledgeBaseRepository{db: db}
+	ctx := t.Context()
+
+	globalKB := makeKB(nil)
+	globalKB.Name = "global-kb"
+	globalKB.Visibility = types.KBVisibilityGlobal
+	globalKB.CreatedBy = "owner-1"
+
+	orgKB := makeKB(nil)
+	orgKB.Name = "org-kb-readable"
+	orgKB.Visibility = types.KBVisibilityOrg
+	orgKB.OrganizationID = "org-readable"
+	orgKB.CreatedBy = "owner-1"
+
+	orgKBOther := makeKB(nil)
+	orgKBOther.Name = "org-kb-other"
+	orgKBOther.Visibility = types.KBVisibilityOrg
+	orgKBOther.OrganizationID = "org-other"
+	orgKB.CreatedBy = "owner-1"
+	orgKBOther.CreatedBy = "owner-1"
+
+	privateMine := makeKB(nil)
+	privateMine.Name = "private-mine"
+	privateMine.Visibility = types.KBVisibilityPrivate
+	privateMine.CreatedBy = "viewer-1"
+
+	privateOther := makeKB(nil)
+	privateOther.Name = "private-other"
+	privateOther.Visibility = types.KBVisibilityPrivate
+	privateOther.CreatedBy = "owner-1"
+
+	for _, kb := range []*types.KnowledgeBase{globalKB, orgKB, orgKBOther, privateMine, privateOther} {
+		require.NoError(t, db.Create(kb).Error)
+	}
+
+	kbs, err := repo.ListAccessibleKBs(ctx, "viewer-1", 1, []string{"org-readable"})
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(kbs))
+	for _, kb := range kbs {
+		names = append(names, kb.Name)
+	}
+
+	assert.Contains(t, names, "global-kb")
+	assert.Contains(t, names, "org-kb-readable")
+	assert.NotContains(t, names, "org-kb-other")
+	assert.Contains(t, names, "private-mine")
+	assert.NotContains(t, names, "private-other")
 }

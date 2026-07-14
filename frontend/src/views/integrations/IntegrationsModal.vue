@@ -117,6 +117,10 @@ const navItems = computed(() =>
 );
 
 function applyRouteQuery() {
+  if (navItems.value.length === 0) {
+    handleClose();
+    return;
+  }
   const tab = route.query.tab as string;
   if (INTEGRATION_TABS.includes(tab as IntegrationTab) && canSeeTab(tab as IntegrationTab)) {
     currentSection.value = tab as IntegrationTab;

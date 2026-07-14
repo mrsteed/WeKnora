@@ -429,7 +429,7 @@ const loadInfo = async () => {
     
     if ((userResponse as any).success && userResponse.data) {
       userInfo.value = userResponse.data.user
-      tenantInfo.value = userResponse.data.tenant
+      tenantInfo.value = userResponse.data.tenant ?? null
     } else {
       error.value = userResponse.message || t('tenant.messages.fetchFailed')
     }
@@ -473,7 +473,7 @@ const performResetApiKey = async () => {
   if (!tenantInfo.value?.id) return
   resetting.value = true
   try {
-    const resp = await resetTenantApiKey(tenantInfo.value.id)
+    const resp = await resetTenantApiKey(Number(tenantInfo.value.id))
     if (resp.success && resp.data?.api_key) {
       tenantInfo.value = { ...tenantInfo.value, api_key: resp.data.api_key }
       showApiKey.value = true

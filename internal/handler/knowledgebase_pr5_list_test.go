@@ -35,6 +35,18 @@ func (s *stubListKBService) ListKnowledgeBases(context.Context) ([]*types.Knowle
 	return s.kbs, nil
 }
 
+type stubListKBVisibility struct {
+	interfaces.KBVisibilityService
+	list func(context.Context, string, uint64, bool) ([]*types.KnowledgeBase, error)
+}
+
+func (s *stubListKBVisibility) ListAccessibleKBs(ctx context.Context, userID string, tenantID uint64, isSuperAdmin bool) ([]*types.KnowledgeBase, error) {
+	if s.list == nil {
+		return nil, nil
+	}
+	return s.list(ctx, userID, tenantID, isSuperAdmin)
+}
+
 // stubVectorStoreService satisfies the two service methods the list
 // path depends on: BatchResolveStoreView for bound KBs and
 // EnvDefaultStoreView for env-fallback KBs. ResolveStoreView is
@@ -89,6 +101,29 @@ func newListKBRouter(
 		c.Next()
 	})
 	h := &KnowledgeBaseHandler{service: svc, vectorStoreService: vss}
+	r.GET("/knowledge-bases", h.ListKnowledgeBases)
+	return r
+}
+
+func newListKBRouterWithVisibility(
+	t *testing.T,
+	visibility interfaces.KBVisibilityService,
+	tenantRole types.TenantRole,
+	user *types.User,
+) *gin.Engine {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(middleware.ErrorHandler())
+	r.Use(func(c *gin.Context) {
+		ctx := context.WithValue(c.Request.Context(), types.TenantRoleContextKey, tenantRole)
+		c.Request = c.Request.WithContext(ctx)
+		c.Set(types.TenantIDContextKey.String(), uint64(1))
+		c.Set(types.UserIDContextKey.String(), "u-test")
+		c.Set(types.UserContextKey.String(), user)
+		c.Next()
+	})
+	h := &KnowledgeBaseHandler{kbVisibility: visibility}
 	r.GET("/knowledge-bases", h.ListKnowledgeBases)
 	return r
 }
@@ -240,5 +275,41 @@ func TestListKB_GracefullyDegradesWhenBatchResolveFails(t *testing.T) {
 	}
 	if envelope.Data[0]["vector_store_source"] != string(types.StoreSourceUnavailable) {
 		t.Errorf("expected fallback source=unavailable, got %v", envelope.Data[0]["vector_store_source"])
+	}
+}
+
+func TestListKB_TenantAdminStillRespectsPrivateVisibility(t *testing.T) {
+	visibility := &stubListKBVisibility{
+		list: func(_ context.Context, userID string, tenantID uint64, isSuperAdmin bool) ([]*types.KnowledgeBase, error) {
+			if userID != "u-test" || tenantID != 1 {
+				t.Fatalf("unexpected list args user=%s tenant=%d", userID, tenantID)
+			}
+			if isSuperAdmin {
+				return []*types.KnowledgeBase{{ID: "kb-private", Name: "private"}}, nil
+			}
+			return []*types.KnowledgeBase{}, nil
+		},
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/knowledge-bases", nil)
+	user := &types.User{ID: "u-test"}
+	newListKBRouterWithVisibility(t, visibility, types.TenantRoleAdmin, user).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var envelope struct {
+		Success bool                     `json:"success"`
+		Data    []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode: %v body=%s", err, w.Body.String())
+	}
+	if !envelope.Success {
+		t.Fatalf("expected success=true body=%s", w.Body.String())
+	}
+	if len(envelope.Data) != 0 {
+		t.Fatalf("tenant admin must not bypass private visibility, got %d rows", len(envelope.Data))
 	}
 }

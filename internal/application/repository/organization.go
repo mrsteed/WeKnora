@@ -308,7 +308,7 @@ func (r *organizationRepository) ListMembers(ctx context.Context, orgID string) 
 		Select("otm.id, otm.organization_id, otm.tenant_id, otm.role, COALESCE(otm.joined_at, otm.created_at) AS joined_at, otm.updated_at, u.id AS user_id, u.username, u.email, u.avatar").
 		Joins("LEFT JOIN users u ON u.id = otm.representative_user_id").
 		Where("otm.organization_id = ?", orgID).
-		Where(`(u.id IS NULL OR (COALESCE(u.is_super_admin, FALSE) = FALSE AND COALESCE(u.is_system_admin, FALSE) = FALSE))`).
+		Where(`(u.id IS NULL OR COALESCE(u.is_super_admin, FALSE) = FALSE)`).
 		Order("COALESCE(otm.joined_at, otm.created_at) ASC, otm.id ASC").
 		Scan(&rows).Error
 
@@ -521,7 +521,7 @@ func (r *organizationRepository) ListOrgTreeMembers(ctx context.Context, orgID s
 		Joins("JOIN organizations o ON o.id = omp.organization_id").
 		Joins("LEFT JOIN users u ON u.id = omp.user_id").
 		Where("omp.organization_id = ?", orgID).
-		Where(`(u.id IS NULL OR (COALESCE(u.is_super_admin, FALSE) = FALSE AND COALESCE(u.is_system_admin, FALSE) = FALSE))`).
+		Where(`(u.id IS NULL OR COALESCE(u.is_super_admin, FALSE) = FALSE)`).
 		Order("omp.created_at ASC, omp.id ASC").
 		Scan(&rows).Error
 	if err != nil {
@@ -605,8 +605,7 @@ func (r *organizationRepository) IsAdminOfAnyOrgTree(ctx context.Context, userID
 	var count int64
 	err := r.db.WithContext(ctx).
 		Table("organization_members_pre_plan3 omp").
-		Joins("JOIN organizations o ON o.id = omp.organization_id").
-		Where("omp.user_id = ? AND omp.organization_id IN ? AND omp.tenant_id = ? AND (omp.role = ? OR o.owner_id = ?)", userID, orgIDs, tenantID, types.OrgRoleAdmin, userID).
+		Where("omp.user_id = ? AND omp.organization_id IN ? AND omp.tenant_id = ? AND omp.role = ?", userID, orgIDs, tenantID, types.OrgRoleAdmin).
 		Limit(1).
 		Count(&count).Error
 	if err != nil {

@@ -37,10 +37,10 @@ type TenantInvitationService interface {
 	// rule as Accept: only the invitee themselves.
 	Decline(ctx context.Context, invID uint64, callerUserID string) error
 
-	// Revoke transitions the pending row into revoked. Callable by an
-	// Owner of the tenant the invitation belongs to (the handler
-	// applies the Owner gate via g.Owner() route middleware, so this
-	// method does not re-check role).
+	// Revoke transitions the pending row into revoked. Callable by a
+	// tenant admin for ordinary roles; owner-targeted invitations remain
+	// owner-only and that boundary is enforced in the handler layer, so
+	// this method does not re-check role.
 	Revoke(ctx context.Context, invID uint64) error
 
 	// GetByID returns an invitation or (nil, nil). Used by handlers to

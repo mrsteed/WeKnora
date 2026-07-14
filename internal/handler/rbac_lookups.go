@@ -158,10 +158,7 @@ func (h *CustomAgentHandler) AgentCreatorLookup(c *gin.Context) (string, error) 
 }
 
 func isPrivilegedResourceOperator(user *types.User) bool {
-	if user == nil {
-		return false
-	}
-	return user.IsSystemAdmin || user.IsSuperAdmin || user.CanAccessAllTenants
+	return types.IsPlatformPrivilegedUser(user)
 }
 
 func isPrivilegedResourceOperatorFromContext(c *gin.Context) bool {
@@ -174,9 +171,6 @@ func isPrivilegedResourceOperatorFromContext(c *gin.Context) bool {
 }
 
 func canBypassSameTenantResourceVisibility(ctx context.Context, user *types.User) bool {
-	if types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleAdmin) {
-		return true
-	}
 	return isPrivilegedResourceOperator(user)
 }
 

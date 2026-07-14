@@ -185,7 +185,7 @@
                     <t-input ref="newTagInputRef" v-model="newTagName" size="small" :maxlength="40"
                       :placeholder="$t('knowledgeBase.tagNamePlaceholder')"
                       @enter="submitCreateTag"
-                      @keydown="(_v, ctx) => { if (ctx?.e?.key === 'Escape') { ctx.e.stopPropagation(); ctx.e.preventDefault(); cancelCreateTag() } }" />
+                      @keydown="(_v: unknown, ctx: { e?: KeyboardEvent }) => { if (ctx?.e?.key === 'Escape') { ctx.e.stopPropagation(); ctx.e.preventDefault(); cancelCreateTag() } }" />
                   </div>
                 </div>
                 <div class="tag-inline-actions">
@@ -210,7 +210,7 @@
                       <div class="tag-edit-input" @click.stop>
                         <t-input :ref="setEditingTagInputRefByTag(tag.id)" v-model="editingTagName" size="small"
                           :maxlength="40" @enter="submitEditTag"
-                          @keydown="(_v, ctx) => { if (ctx?.e?.key === 'Escape') { ctx.e.stopPropagation(); ctx.e.preventDefault(); cancelEditTag() } }" />
+                          @keydown="(_v: unknown, ctx: { e?: KeyboardEvent }) => { if (ctx?.e?.key === 'Escape') { ctx.e.stopPropagation(); ctx.e.preventDefault(); cancelEditTag() } }" />
                       </div>
                     </template>
                     <template v-else>
@@ -591,8 +591,7 @@
                 <div class="textarea-container">
                   <div class="full-width-input-wrapper textarea-wrapper">
                     <t-textarea v-model="answerInput" :placeholder="$t('knowledgeEditor.faq.answerPlaceholder')"
-                      :autosize="{ minRows: 3, maxRows: 6 }" class="full-width-textarea" @keydown.ctrl.enter="addAnswer"
-                      @keydown.meta.enter="addAnswer" />
+                      :autosize="{ minRows: 3, maxRows: 6 }" class="full-width-textarea" @keydown.ctrl.enter="addAnswer" />
                     <t-button theme="primary" variant="outline"
                       :disabled="!answerInput.trim() || editorForm.answers.length >= 5" @click="addAnswer"
                       class="add-item-btn" size="small">

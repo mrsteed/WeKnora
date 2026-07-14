@@ -305,8 +305,8 @@ func TestRequireKBAccess_OwnTenantVisibilityCanDenyRead(t *testing.T) {
 	require.True(t, c.IsAborted(), "same-tenant read should respect KB visibility rules")
 }
 
-func TestRequireKBAccess_OwnTenantAdminBypassesVisibility(t *testing.T) {
-	rec, c := runGuard(t, 100, "kb-private", types.OrgRoleViewer,
+func TestRequireKBAccess_OwnTenantAdminStillRespectsVisibility(t *testing.T) {
+	_, c := runGuard(t, 100, "kb-private", types.OrgRoleViewer,
 		&types.KnowledgeBase{ID: "kb-private", TenantID: 100, Visibility: types.KBVisibilityPrivate, CreatedBy: "u-owner"},
 		nil,
 		guardOpts{
@@ -318,8 +318,7 @@ func TestRequireKBAccess_OwnTenantAdminBypassesVisibility(t *testing.T) {
 			},
 		},
 	)
-	require.False(t, c.IsAborted(), "tenant admin should bypass same-tenant visibility filtering")
-	require.Equal(t, 200, rec.Code)
+	require.True(t, c.IsAborted(), "tenant admin must still respect same-tenant KB visibility")
 }
 
 func TestIsResourceNotFound_ChunkNotFound(t *testing.T) {

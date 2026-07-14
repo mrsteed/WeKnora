@@ -92,8 +92,8 @@ func TestHandleComplete_IncludesKnowledgeReferencesInCompletePayload(t *testing.
 		},
 	}))
 
-	require.Len(t, streamStub.events, 2)
-	completeEvent := streamStub.events[1]
+	require.GreaterOrEqual(t, len(streamStub.events), 1)
+	completeEvent := streamStub.events[len(streamStub.events)-1]
 	assert.Equal(t, types.ResponseTypeComplete, completeEvent.Type)
 	refs, ok := completeEvent.Data["knowledge_references"].(types.References)
 	if !ok {

@@ -259,31 +259,32 @@ export function useChatStreamHandler(options: UseChatStreamHandlerOptions) {
     const events: ChatMessage[] = []
 
     if (agentSteps && Array.isArray(agentSteps) && agentSteps.length > 0) {
-      agentSteps.forEach((step: ChatMessage) => {
-        const stepTimestamp = step.timestamp ? new Date(String(step.timestamp)).getTime() : 0
-        const toolCalls = step.tool_calls
+      agentSteps.forEach((step) => {
+        const typedStep = step as ChatMessage
+        const stepTimestamp = typedStep.timestamp ? new Date(String(typedStep.timestamp)).getTime() : 0
+        const toolCalls = typedStep.tool_calls
         const hasToolCalls = toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0
 
         const reasoningText =
-          step.reasoning_content && String(step.reasoning_content).trim()
-            ? String(step.reasoning_content)
+          typedStep.reasoning_content && String(typedStep.reasoning_content).trim()
+            ? String(typedStep.reasoning_content)
             : ''
         if (reasoningText) {
           events.push({
             type: 'thinking',
-            event_id: `step-${step.iteration}-thought`,
+            event_id: `step-${typedStep.iteration}-thought`,
             content: reasoningText,
             done: true,
             thinking: false,
             timestamp: stepTimestamp || undefined,
-            duration_ms: step.duration || undefined,
+            duration_ms: typedStep.duration || undefined,
           })
         }
-        const preambleText = step.thought && String(step.thought).trim() ? String(step.thought) : ''
+        const preambleText = typedStep.thought && String(typedStep.thought).trim() ? String(typedStep.thought) : ''
         if (preambleText && hasToolCalls) {
           events.push({
             type: 'answer',
-            event_id: `step-${step.iteration}-preamble`,
+            event_id: `step-${typedStep.iteration}-preamble`,
             content: preambleText,
             done: true,
             superseded: true,

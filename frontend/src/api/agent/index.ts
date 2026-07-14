@@ -143,8 +143,11 @@ export const BUILTIN_AGENT_AGENT_ID = BUILTIN_SMART_REASONING_ID;
 
 // 获取智能体列表（包括内置智能体）
 // disabled_own_agent_ids: 当前租户在对话下拉中停用的「我的」智能体 ID，仅影响本租户
-export function listAgents() {
-  return get<{ data: CustomAgent[]; disabled_own_agent_ids?: string[] }>('/api/v1/agents');
+export function listAgents(params?: { creator?: 'all' | 'mine' | 'others' }) {
+  const query = new URLSearchParams();
+  if (params?.creator && params.creator !== 'all') query.set('creator', params.creator);
+  const qs = query.toString();
+  return get<{ data: CustomAgent[]; disabled_own_agent_ids?: string[] }>(qs ? `/api/v1/agents?${qs}` : '/api/v1/agents');
 }
 
 // 获取智能体详情

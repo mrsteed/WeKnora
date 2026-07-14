@@ -63,7 +63,7 @@ func (h *DataSourceHandler) getTenantID(c *gin.Context) uint64 {
 func (h *DataSourceHandler) getCurrentUser(c *gin.Context) (string, bool) {
 	if userVal, ok := c.Get(types.UserContextKey.String()); ok {
 		if user, ok := userVal.(*types.User); ok && user != nil {
-			return user.ID, user.IsSuperAdmin
+			return user.ID, types.IsPlatformPrivilegedUser(user)
 		}
 	}
 	if userID := c.GetString(types.UserIDContextKey.String()); userID != "" {
@@ -98,7 +98,7 @@ func (h *DataSourceHandler) getAuthorizedKnowledgeBase(
 	if h.kbVisible != nil {
 		userID, isSuperAdmin := h.getCurrentUser(c)
 		if userID != "" || isSuperAdmin {
-			bypassVisibility := isSuperAdmin || types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleAdmin)
+			bypassVisibility := isSuperAdmin
 			var allowed bool
 			var permErr error
 			if requireManage {

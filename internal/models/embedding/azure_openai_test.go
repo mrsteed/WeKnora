@@ -7,19 +7,20 @@ import (
 	"io"
 	"net/http"
 	"testing"
+
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 func TestAzureOpenAIEmbedderBatchEmbedSendsConfiguredDimensions(t *testing.T) {
-	t.Parallel()
-
 	var requestBody map[string]any
+	baseURL := newAzureEmbeddingTestBaseURL(t)
 	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("expected POST request, got %s", r.Method)
 		}
 
 		if got, want := r.URL.String(),
-			"https://example-resource.openai.azure.com/openai/deployments/text-embedding-3-large-deployment/embeddings?api-version=2024-10-21"; got != want {
+			baseURL+"/openai/deployments/text-embedding-3-large-deployment/embeddings?api-version=2024-10-21"; got != want {
 			t.Fatalf("unexpected request path: got %s want %s", got, want)
 		}
 
@@ -36,7 +37,7 @@ func TestAzureOpenAIEmbedderBatchEmbedSendsConfiguredDimensions(t *testing.T) {
 
 	embedder, err := NewAzureOpenAIEmbedder(
 		"test-key",
-		"https://example-resource.openai.azure.com",
+		baseURL,
 		"text-embedding-3-large-deployment",
 		511,
 		256,
@@ -65,9 +66,8 @@ func TestAzureOpenAIEmbedderBatchEmbedSendsConfiguredDimensions(t *testing.T) {
 }
 
 func TestAzureOpenAIEmbedderBatchEmbedOmitsDimensionsByDefault(t *testing.T) {
-	t.Parallel()
-
 	var requestBody map[string]any
+	baseURL := newAzureEmbeddingTestBaseURL(t)
 	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
@@ -82,7 +82,7 @@ func TestAzureOpenAIEmbedderBatchEmbedOmitsDimensionsByDefault(t *testing.T) {
 
 	embedder, err := NewAzureOpenAIEmbedder(
 		"test-key",
-		"https://example-resource.openai.azure.com",
+		baseURL,
 		"ada-002-deployment",
 		511,
 		1536,
@@ -105,9 +105,8 @@ func TestAzureOpenAIEmbedderBatchEmbedOmitsDimensionsByDefault(t *testing.T) {
 }
 
 func TestAzureOpenAIEmbedderBatchEmbedSendsDimensionsWhenOverrideEnabledRegardlessOfAPIVersion(t *testing.T) {
-	t.Parallel()
-
 	var requestBody map[string]any
+	baseURL := newAzureEmbeddingTestBaseURL(t)
 	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
@@ -122,7 +121,7 @@ func TestAzureOpenAIEmbedderBatchEmbedSendsDimensionsWhenOverrideEnabledRegardle
 
 	embedder, err := NewAzureOpenAIEmbedder(
 		"test-key",
-		"https://example-resource.openai.azure.com",
+		baseURL,
 		"text-embedding-3-large-deployment",
 		511,
 		256,
@@ -153,4 +152,12 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+func newAzureEmbeddingTestBaseURL(t *testing.T) string {
+	t.Helper()
+	t.Setenv("SSRF_WHITELIST", "127.0.0.1")
+	secutils.ResetSSRFWhitelistForTest()
+	t.Cleanup(secutils.ResetSSRFWhitelistForTest)
+	return "http://127.0.0.1"
 }

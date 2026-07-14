@@ -175,6 +175,9 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		return nil, err
 	}
 	kb.EnsureDefaults()
+	if err := normalizeKnowledgeBaseVisibility(kb); err != nil {
+		return nil, err
+	}
 	if kb.GetStorageProvider() == "" {
 		if tenantInfo, ok := ctx.Value(types.TenantInfoContextKey).(*types.Tenant); ok && tenantInfo != nil && tenantInfo.StorageEngineConfig != nil {
 			if provider := strings.ToLower(strings.TrimSpace(tenantInfo.StorageEngineConfig.DefaultProvider)); provider != "" {
@@ -387,22 +390,10 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	kb.Name = name
 	kb.Description = description
 	if visibility != "" {
-		switch visibility {
-		case types.KBVisibilityGlobal:
-			kb.Visibility = visibility
-			kb.OrganizationID = strings.TrimSpace(organizationID)
-		case types.KBVisibilityOrg:
-			organizationID = strings.TrimSpace(organizationID)
-			if organizationID == "" {
-				return nil, errors.New("organization_id is required when visibility is org")
-			}
-			kb.Visibility = visibility
-			kb.OrganizationID = organizationID
-		case types.KBVisibilityPrivate:
-			kb.Visibility = visibility
-			kb.OrganizationID = ""
-		default:
-			return nil, errors.New("invalid knowledge base visibility")
+		kb.Visibility = visibility
+		kb.OrganizationID = organizationID
+		if err := normalizeKnowledgeBaseVisibility(kb); err != nil {
+			return nil, err
 		}
 	}
 	if config != nil {
@@ -454,6 +445,37 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 
 	logger.Infof(ctx, "Knowledge base updated successfully, ID: %s, name: %s", kb.ID, kb.Name)
 	return kb, nil
+}
+
+func normalizeKnowledgeBaseVisibility(kb *types.KnowledgeBase) error {
+	if kb == nil {
+		return nil
+	}
+
+	visibility := strings.TrimSpace(kb.Visibility)
+	if visibility == "" {
+		visibility = types.KBVisibilityPrivate
+	}
+
+	switch visibility {
+	case types.KBVisibilityGlobal:
+		kb.Visibility = visibility
+		kb.OrganizationID = ""
+	case types.KBVisibilityOrg:
+		organizationID := strings.TrimSpace(kb.OrganizationID)
+		if organizationID == "" {
+			return errors.New("organization_id is required when visibility is org")
+		}
+		kb.Visibility = visibility
+		kb.OrganizationID = organizationID
+	case types.KBVisibilityPrivate:
+		kb.Visibility = visibility
+		kb.OrganizationID = ""
+	default:
+		return errors.New("invalid knowledge base visibility")
+	}
+
+	return nil
 }
 
 // TogglePinKnowledgeBase toggles the pin status of a knowledge base

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -18,8 +19,8 @@ import (
 )
 
 // TenantMemberHandler exposes /tenants/:id/members CRUD. The route layer
-// enforces RBAC (Viewer for list, Owner for any mutation) — see
-// router.RegisterTenantRoutes — so we don't re-check role here.
+// enforces RBAC (Viewer for list, Admin for mutations) and the handler
+// keeps the finer owner-only boundary for owner-targeted operations.
 //
 // Tenant scoping: the auth middleware resolves the caller's role against
 // the *active* tenant (JWT / X-Tenant-ID switch / API-key). The URL :id
@@ -34,6 +35,7 @@ import (
 type TenantMemberHandler struct {
 	memberService interfaces.TenantMemberService
 	userService   interfaces.UserService
+	orgTreeService interfaces.OrgTreeService
 }
 
 // NewTenantMemberHandler wires the dependencies. PR 1 already provides
@@ -44,11 +46,61 @@ type TenantMemberHandler struct {
 func NewTenantMemberHandler(
 	memberService interfaces.TenantMemberService,
 	userService interfaces.UserService,
+	orgTreeService interfaces.OrgTreeService,
 ) *TenantMemberHandler {
 	return &TenantMemberHandler{
 		memberService: memberService,
 		userService:   userService,
+		orgTreeService: orgTreeService,
 	}
+}
+
+func rootProjectionProbeContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
+}
+
+func hasExplicitRootAdminOrg(orgs []*types.OrgTreeNode) bool {
+	for _, org := range orgs {
+		if org == nil || !org.MyIsAdmin {
+			continue
+		}
+		if org.Level <= 1 {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyAdminOrg(orgs []*types.OrgTreeNode) bool {
+	for _, org := range orgs {
+		if org != nil && org.MyIsAdmin {
+			return true
+		}
+	}
+	return false
+}
+
+func effectiveTenantRoleForUser(
+	ctx context.Context,
+	rawRole types.TenantRole,
+	userID string,
+	tenantID uint64,
+	orgTreeService interfaces.OrgTreeService,
+) types.TenantRole {
+	return rawRole
+}
+
+func displayTenantRoleForUser(
+	ctx context.Context,
+	rawRole types.TenantRole,
+	userID string,
+	tenantID uint64,
+	orgTreeService interfaces.OrgTreeService,
+) types.TenantRole {
+	return rawRole
 }
 
 // addMemberRequest is the JSON body for POST /tenants/:id/members.
@@ -135,9 +187,12 @@ func (h *TenantMemberHandler) ListMembers(c *gin.Context) {
 
 	resp := make([]types.TenantMemberResponse, 0, len(members))
 	for _, m := range members {
+		effectiveRole := effectiveTenantRoleForUser(ctx, m.Role, m.UserID, tenantID, h.orgTreeService)
+		displayRole := displayTenantRoleForUser(ctx, m.Role, m.UserID, tenantID, h.orgTreeService)
 		row := types.TenantMemberResponse{
 			UserID:    m.UserID,
-			Role:      m.Role,
+			Role:      displayRole,
+			AuthRole:  effectiveRole,
 			Status:    m.Status,
 			InvitedBy: m.InvitedBy,
 			JoinedAt:  m.JoinedAt,
@@ -146,7 +201,7 @@ func (h *TenantMemberHandler) ListMembers(c *gin.Context) {
 			row.Email = u.Email
 			row.Username = u.Username
 			row.Avatar = u.Avatar
-			row.IsSuperAdmin = u.IsSuperAdmin || u.IsSystemAdmin
+			row.IsSuperAdmin = u.IsSuperAdmin
 		}
 		resp = append(resp, row)
 	}
@@ -166,7 +221,7 @@ func (h *TenantMemberHandler) ListMembers(c *gin.Context) {
 // @Summary      直接添加租户成员（直加路径）
 // @Description
 //
-//	Owner 通过 email 直接把用户作为 active 成员添加进当前租户。
+//	Tenant Admin/Owner 通过 email 直接把用户作为 active 成员添加进当前租户。
 //
 //	这是【直加路径】，被加入的用户没有任何确认机会就出现在租户里——
 //	保留它是为了三类不需要走邀请确认的场景：
@@ -204,6 +259,11 @@ func (h *TenantMemberHandler) AddMember(c *gin.Context) {
 	// sentinel-mapped 400.
 	if !req.Role.IsValid() {
 		c.Error(apperrors.NewValidationError("role must be one of owner/admin/contributor/viewer"))
+		return
+	}
+	callerTenantRole := types.TenantRoleFromContext(ctx)
+	if err := authorizeTenantRoleProvision(callerTenantRole, req.Role); err != nil {
+		c.Error(err)
 		return
 	}
 
@@ -273,7 +333,7 @@ func (h *TenantMemberHandler) AddMember(c *gin.Context) {
 
 // UpdateMemberRole godoc
 // @Summary      修改租户成员角色
-// @Description  Owner 修改某位成员在当前租户内的角色；不能将最后一位 Owner 降级
+// @Description  Tenant Admin/Owner 修改某位成员在当前租户内的角色；Owner 相关变更仍保留为 Owner 专属
 // @Tags         租户成员
 // @Accept       json
 // @Produce      json
@@ -304,6 +364,21 @@ func (h *TenantMemberHandler) UpdateMemberRole(c *gin.Context) {
 		c.Error(apperrors.NewValidationError("role must be one of owner/admin/contributor/viewer"))
 		return
 	}
+	currentMember, err := h.memberService.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		logger.Errorf(ctx, "GetMembership failed: user=%s tenant=%d err=%v", userID, tenantID, err)
+		c.Error(apperrors.NewInternalServerError("failed to load member").WithDetails(err.Error()))
+		return
+	}
+	if currentMember == nil {
+		c.Error(apperrors.NewNotFoundError("membership not found"))
+		return
+	}
+	callerTenantRole := types.TenantRoleFromContext(ctx)
+	if err := authorizeTenantMemberRoleChange(callerTenantRole, currentMember.Role, req.Role); err != nil {
+		c.Error(err)
+		return
+	}
 
 	if err := h.memberService.UpdateRole(ctx, userID, tenantID, req.Role); err != nil {
 		switch {
@@ -326,7 +401,7 @@ func (h *TenantMemberHandler) UpdateMemberRole(c *gin.Context) {
 
 // RemoveMember godoc
 // @Summary      移除租户成员
-// @Description  Owner 将某位成员从当前租户中移除（软删除 tenant_members 行）；不能移除最后一位 Owner
+// @Description  Tenant Admin/Owner 将某位成员从当前租户中移除；Owner 成员的移除仍保留为 Owner 专属
 // @Tags         租户成员
 // @Produce      json
 // @Param        id       path  string  true  "租户 ID"
@@ -343,6 +418,21 @@ func (h *TenantMemberHandler) RemoveMember(c *gin.Context) {
 	userID := strings.TrimSpace(c.Param("user_id"))
 	if userID == "" {
 		c.Error(apperrors.NewValidationError("user_id is required"))
+		return
+	}
+	currentMember, err := h.memberService.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		logger.Errorf(ctx, "GetMembership failed: user=%s tenant=%d err=%v", userID, tenantID, err)
+		c.Error(apperrors.NewInternalServerError("failed to load member").WithDetails(err.Error()))
+		return
+	}
+	if currentMember == nil {
+		c.Error(apperrors.NewNotFoundError("membership not found"))
+		return
+	}
+	callerTenantRole := types.TenantRoleFromContext(ctx)
+	if err := authorizeTenantMemberRemoval(callerTenantRole, currentMember.Role); err != nil {
+		c.Error(err)
 		return
 	}
 

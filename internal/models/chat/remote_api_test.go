@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/sashabaranov/go-openai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -135,9 +136,12 @@ func TestBuildChatCompletionRequest_MCPToolsFormat(t *testing.T) {
 func TestBuildChatCompletionRequest_GPT5MaxCompletionTokens(t *testing.T) {
 	build := func(t *testing.T, providerName, modelName string) *RemoteAPIChat {
 		t.Helper()
+		t.Setenv("SSRF_WHITELIST", "127.0.0.1")
+		secutils.ResetSSRFWhitelistForTest()
+		t.Cleanup(secutils.ResetSSRFWhitelistForTest)
 		c, err := NewRemoteAPIChat(&ChatConfig{
 			Source:    types.ModelSourceRemote,
-			BaseURL:   "https://example.openai.azure.com",
+			BaseURL:   "http://127.0.0.1",
 			ModelName: modelName,
 			APIKey:    "test-key",
 			ModelID:   modelName,
@@ -269,65 +273,6 @@ func TestConvertMessages_ReasoningContentRoundTrip(t *testing.T) {
 		assert.Empty(t, out[0].ReasoningContent)
 	})
 }
-func TestApplyCompletionToolCallMetadata(t *testing.T) {
-	c := newTestRemoteChat(t)
-	c.adapter = geminiProvider{}
-
-	resp := &types.ChatResponse{
-		ToolCalls: []types.LLMToolCall{{
-			ID:   "call_1",
-			Type: "function",
-			Function: types.FunctionCall{
-				Name:      "wiki_search",
-				Arguments: `{"query":"MACS"}`,
-			},
-		}},
-	}
-	body := []byte(`{
-		"choices":[{
-			"message":{
-				"tool_calls":[{
-					"id":"call_1",
-					"type":"function",
-					"function":{"name":"wiki_search","arguments":"{\"query\":\"MACS\"}"},
-					"extra_content":{"google":{"thought_signature":"sig-from-gemini"}}
-				}]
-			}
-		}]
-	}`)
-
-	c.applyCompletionToolCallMetadata(body, resp)
-	require.Len(t, resp.ToolCalls, 1)
-	assert.JSONEq(t, `{"thought_signature":"sig-from-gemini"}`,
-		string(resp.ToolCalls[0].ProviderMetadata["google"]))
-}
-
-func TestApplyStreamToolCallMetadata(t *testing.T) {
-	c := newTestRemoteChat(t)
-	c.adapter = geminiProvider{}
-	state := newStreamState()
-
-	body := []byte(`{
-		"choices":[{
-			"delta":{
-				"tool_calls":[{
-					"index":0,
-					"id":"call_1",
-					"type":"function",
-					"function":{"name":"wiki_search","arguments":"{\"query\":\"MACS\"}"},
-					"extra_content":{"google":{"thought_signature":"stream-sig-from-gemini"}}
-				}]
-			}
-		}]
-	}`)
-
-	c.applyStreamToolCallMetadata(body, state)
-	toolCalls := state.buildOrderedToolCalls()
-	require.Len(t, toolCalls, 1)
-	assert.JSONEq(t, `{"thought_signature":"stream-sig-from-gemini"}`,
-		string(toolCalls[0].ProviderMetadata["google"]))
-}
-
 func TestApplyCompletionToolCallMetadata(t *testing.T) {
 	c := newTestRemoteChat(t)
 	c.adapter = geminiProvider{}

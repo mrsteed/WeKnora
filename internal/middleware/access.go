@@ -49,25 +49,27 @@ import (
 // `error.code`.
 
 // IsCrossTenantSuperuser reports whether ctx carries a user that is
-// authorised for cross-tenant access at this moment. Both the user
-// attribute and the cluster-wide flag must be true; either alone is
-// not enough.
+// authorised for cross-tenant access at this moment.
+//
+// Compatibility rules:
+// 1. platform admins (is_system_admin / is_super_admin) always qualify;
+// 2. can_access_all_tenants-only users still require the cluster flag.
 func hasCrossTenantSuperuserCapability(u *types.User) bool {
-	if u == nil {
-		return false
-	}
-	return u.CanAccessAllTenants || u.IsSystemAdmin || u.IsSuperAdmin
+	return types.HasCrossTenantAccessCapability(u)
 }
 
 func IsCrossTenantSuperuser(ctx context.Context, cfg *config.Config) bool {
-	if cfg == nil || cfg.Tenant == nil || !cfg.Tenant.EnableCrossTenantAccess {
-		return false
-	}
 	u, ok := ctx.Value(types.UserContextKey).(*types.User)
 	if !ok || u == nil {
 		return false
 	}
-	return hasCrossTenantSuperuserCapability(u)
+	if types.IsPlatformPrivilegedUser(u) {
+		return true
+	}
+	if cfg == nil || cfg.Tenant == nil || !cfg.Tenant.EnableCrossTenantAccess {
+		return false
+	}
+	return u.CanAccessAllTenants
 }
 
 // IsTenantAccessible reports whether `user` is allowed to operate inside
@@ -94,7 +96,7 @@ func IsTenantAccessible(
 	if user.TenantID == targetTenantID {
 		return true
 	}
-	if cfg != nil && cfg.Tenant != nil && cfg.Tenant.EnableCrossTenantAccess && hasCrossTenantSuperuserCapability(user) {
+	if IsCrossTenantSuperuser(context.WithValue(ctx, types.UserContextKey, user), cfg) {
 		return true
 	}
 	if memberService == nil {
@@ -118,9 +120,13 @@ func IsTenantAccessible(
 func RequireCrossTenantAccess(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		// First the cluster-wide flag — if it's off, nobody gets through,
-		// not even users with CanAccessAllTenants=true. This mirrors the
-		// "must require BOTH" rule that previously lived in tenant.go.
+		u, ok := ctx.Value(types.UserContextKey).(*types.User)
+		if ok && u != nil && types.IsPlatformPrivilegedUser(u) {
+			c.Next()
+			return
+		}
+		// The legacy can_access_all_tenants-only path still honours the
+		// cluster-wide switch.
 		if cfg == nil || cfg.Tenant == nil || !cfg.Tenant.EnableCrossTenantAccess {
 			uid, _ := types.UserIDFromContext(ctx)
 			logger.Warnf(ctx,
@@ -130,7 +136,6 @@ func RequireCrossTenantAccess(cfg *config.Config) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		u, ok := ctx.Value(types.UserContextKey).(*types.User)
 		if !ok || u == nil || !u.CanAccessAllTenants {
 			uid, _ := types.UserIDFromContext(ctx)
 			logger.Warnf(ctx,

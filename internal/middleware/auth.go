@@ -84,6 +84,7 @@ func Auth(
 	tenantService interfaces.TenantService,
 	userService interfaces.UserService,
 	memberService interfaces.TenantMemberService,
+	orgTreeService interfaces.OrgTreeService,
 	cfg *config.Config,
 ) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -170,7 +171,7 @@ func Auth(
 				}
 
 				// 解析当前租户内的角色 (issue #1303)
-				role, ok := resolveTenantRole(c.Request.Context(), memberService, user, targetTenantID, crossTenantSwitch, cfg)
+				role, ok := resolveTenantRole(c.Request.Context(), memberService, orgTreeService, user, targetTenantID, crossTenantSwitch, cfg)
 				if !ok {
 					// 强制 RBAC 时，缺少 active membership 即拒绝；fail-open 路径已在
 					// resolveTenantRole 内部处理。
@@ -508,6 +509,7 @@ func principalTenantIDFromClaims(claims jwt.MapClaims) uint64 {
 func resolveTenantRole(
 	ctx context.Context,
 	memberService interfaces.TenantMemberService,
+	orgTreeService interfaces.OrgTreeService,
 	user *types.User,
 	targetTenantID uint64,
 	crossTenantSwitch bool,
@@ -516,10 +518,26 @@ func resolveTenantRole(
 	// 1. 正常成员关系
 	member, err := memberService.GetMembership(ctx, user.ID, targetTenantID)
 	if err == nil && member != nil && member.Status == types.TenantMemberStatusActive {
+		resolvedRole := member.Role
+		if resolvedRole == types.TenantRoleAdmin && orgTreeService != nil {
+			probeCtx := context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
+			if orgs, orgErr := orgTreeService.GetUserOrganizations(probeCtx, user.ID, targetTenantID); orgErr == nil {
+				hasRootAdmin := false
+				for _, org := range orgs {
+					if org != nil && org.MyIsAdmin && org.Level <= 1 {
+						hasRootAdmin = true
+						break
+					}
+				}
+				if !hasRootAdmin {
+					resolvedRole = types.TenantRoleContributor
+				}
+			}
+		}
 		logger.Infof(ctx,
 			"[auth] resolveTenantRole step1 hit: user=%s tenant=%d row_role=%s row_status=%s",
-			user.ID, targetTenantID, member.Role, member.Status)
-		return member.Role, true
+			user.ID, targetTenantID, resolvedRole, member.Status)
+		return resolvedRole, true
 	}
 	if err != nil {
 		logger.Warnf(ctx, "tenant_members lookup failed user=%s tenant=%d: %v",

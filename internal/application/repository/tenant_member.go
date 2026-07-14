@@ -102,7 +102,7 @@ func (r *tenantMemberRepository) CountFilteredByTenant(
 	q := r.db.WithContext(ctx).Model(&types.TenantMember{}).
 		Joins(`LEFT JOIN users ON users.id = tenant_members.user_id AND users.deleted_at IS NULL`).
 		Where("tenant_members.tenant_id = ?", tenantID).
-		Where(`(users.id IS NULL OR (COALESCE(users.is_super_admin, FALSE) = FALSE AND COALESCE(users.is_system_admin, FALSE) = FALSE))`)
+		Where(`(users.id IS NULL OR COALESCE(users.is_super_admin, FALSE) = FALSE)`)
 	var total int64
 	var err error
 	if search == "" {
@@ -125,7 +125,7 @@ func (r *tenantMemberRepository) ListPagedByTenant(
 	q := r.db.WithContext(ctx).Model(&types.TenantMember{}).
 		Joins(`LEFT JOIN users ON users.id = tenant_members.user_id AND users.deleted_at IS NULL`).
 		Where("tenant_members.tenant_id = ?", tenantID).
-		Where(`(users.id IS NULL OR (COALESCE(users.is_super_admin, FALSE) = FALSE AND COALESCE(users.is_system_admin, FALSE) = FALSE))`).
+		Where(`(users.id IS NULL OR COALESCE(users.is_super_admin, FALSE) = FALSE)`).
 		Order("tenant_members.joined_at ASC, tenant_members.id ASC").
 		Offset(offset).
 		Limit(limit)

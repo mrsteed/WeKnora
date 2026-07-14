@@ -166,6 +166,7 @@ const props = withDefaults(
     mode?: 'resource' | 'organization'
     modelValue: string
     collapsedKey?: string
+    resourceMineLabel?: string
     countAll?: number
     countMine?: number
     countByOrg?: Record<string, number>
@@ -182,6 +183,7 @@ const props = withDefaults(
   {
     mode: 'resource',
     collapsedKey: 'sidebar-collapsed-list',
+    resourceMineLabel: undefined,
     countAll: undefined,
     countMine: undefined,
     countByOrg: () => ({}),
@@ -257,14 +259,10 @@ const selected = computed({
   set: (v: string) => emit('update:modelValue', v)
 })
 
-// workspaceLabel is the unified label for the tenant-owned bucket.
-// Earlier iterations rendered the active tenant's display name here, but
-// long names (e.g. "wizardlab Test Team") got truncated to unreadable
-// stubs ("wiza…") in the collapsed strip and competed visually with the
-// org/space entries below. A constant i18n label sidesteps both issues;
-// the tenant identity is already conveyed by the dedicated TenantSelector
-// in the global header, so we don't lose information.
-const workspaceLabel = computed(() => t('listSpaceSidebar.workspace'))
+// The resource-mode "mine" bucket defaults to the historical
+// listSpaceSidebar.workspace label, but some pages intentionally rebrand it
+// (e.g. KB list uses "我的" because the scope is creator-based there).
+const workspaceLabel = computed(() => props.resourceMineLabel || t('listSpaceSidebar.workspace'))
 
 const organizations = computed(() => orgStore.organizations || [])
 

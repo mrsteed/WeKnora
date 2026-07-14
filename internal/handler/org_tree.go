@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -19,6 +21,25 @@ type OrgTreeHandler struct {
 	userService    interfaces.UserService
 	memberService  interfaces.TenantMemberService
 }
+
+const (
+	orgTreeDisplayRoleOwner        = "owner"
+	orgTreeDisplayRoleAdmin        = "admin"
+	orgTreeDisplayRoleSubOrgAdmin  = "suborg_admin"
+	orgTreeDisplayRoleCollaborator = "collaborator"
+	orgTreeDisplayRoleReadonly     = "readonly"
+
+	orgTreeRoleScopeWorkspaceOwner = "workspace_owner"
+	orgTreeRoleScopeWorkspaceAdmin = "workspace_admin"
+	orgTreeRoleScopeSubOrgAdmin    = "suborg_admin"
+	orgTreeRoleScopeOrgEditor      = "org_editor"
+	orgTreeRoleScopeOrgViewer      = "org_viewer"
+	orgTreeRoleScopeInheritedAdmin = "inherited_admin"
+
+	orgTreeMemberSourceTenantProjection = "tenant_projection"
+	orgTreeMemberSourceOrgDirect        = "org_direct"
+	orgTreeMemberSourceOrgInherited     = "org_inherited"
+)
 
 // NewOrgTreeHandler creates a new org-tree handler
 func NewOrgTreeHandler(
@@ -45,10 +66,247 @@ func normalizeOrgRole(raw string) (types.OrgMemberRole, error) {
 }
 
 func isPrivilegedOrgTreeOperator(user *types.User) bool {
-	if user == nil {
+	return types.IsPlatformPrivilegedUser(user)
+}
+
+func callerHasTenantAdminOrOwner(ctx context.Context) bool {
+	return types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleAdmin)
+}
+
+func isRootOrgNode(org *types.Organization) bool {
+	if org == nil {
 		return false
 	}
-	return user.IsSystemAdmin || user.IsSuperAdmin || user.CanAccessAllTenants
+	if org.ParentID == nil {
+		return true
+	}
+	return strings.TrimSpace(*org.ParentID) == "" || org.Level <= 1
+}
+
+func displayRoleForOrgMembership(role types.OrgMemberRole) (string, string, bool, bool) {
+	switch role {
+	case types.OrgRoleAdmin:
+		return orgTreeDisplayRoleSubOrgAdmin, orgTreeRoleScopeSubOrgAdmin, true, true
+	case types.OrgRoleEditor, types.OrgRoleContributor:
+		return orgTreeDisplayRoleCollaborator, orgTreeRoleScopeOrgEditor, false, false
+	default:
+		return orgTreeDisplayRoleReadonly, orgTreeRoleScopeOrgViewer, false, false
+	}
+}
+
+func buildDirectOrgMemberEntry(member *types.OrganizationMember) gin.H {
+	if member == nil || member.User == nil {
+		return gin.H{}
+	}
+	displayRole, roleScope, canManagePersonnel, canManageResources := displayRoleForOrgMembership(member.Role)
+	return gin.H{
+		"user_id":                member.UserID,
+		"username":               member.User.Username,
+		"email":                  member.User.Email,
+		"phone":                  member.User.Phone,
+		"role":                   string(member.Role),
+		"is_owner":               false,
+		"is_admin":               member.Role == types.OrgRoleAdmin,
+		"is_super_admin":         member.User.IsSuperAdmin,
+		"is_system_admin":        member.User.IsSystemAdmin,
+		"is_direct":              true,
+		"joined_at":              member.CreatedAt,
+		"display_role":           displayRole,
+		"role_scope":             roleScope,
+		"tenant_role":            "",
+		"org_role":               string(member.Role),
+		"source":                 orgTreeMemberSourceOrgDirect,
+		"is_projected_root_admin": false,
+		"can_manage_personnel":   canManagePersonnel,
+		"can_manage_resources":   canManageResources,
+	}
+}
+
+func buildProjectedRootMemberEntry(member *types.TenantMember, user *types.User) gin.H {
+	username := ""
+	email := ""
+	phone := ""
+	avatarIsSuperAdmin := false
+	if user != nil {
+		username = user.Username
+		email = user.Email
+		phone = user.Phone
+		avatarIsSuperAdmin = user.IsSuperAdmin
+	}
+	displayRole := orgTreeDisplayRoleAdmin
+	roleScope := orgTreeRoleScopeWorkspaceAdmin
+	isOwner := false
+	if member != nil && member.Role == types.TenantRoleOwner {
+		displayRole = orgTreeDisplayRoleOwner
+		roleScope = orgTreeRoleScopeWorkspaceOwner
+		isOwner = true
+	}
+	role := ""
+	joinedAt := member.JoinedAt
+	userID := ""
+	tenantRole := ""
+	if member != nil {
+		role = string(member.Role)
+		userID = member.UserID
+		tenantRole = string(member.Role)
+	}
+	return gin.H{
+		"user_id":                userID,
+		"username":               username,
+		"email":                  email,
+		"phone":                  phone,
+		"role":                   role,
+		"is_owner":               isOwner,
+		"is_admin":               true,
+		"is_super_admin":         avatarIsSuperAdmin,
+		"is_system_admin":        user != nil && user.IsSystemAdmin,
+		"is_direct":              true,
+		"joined_at":              joinedAt,
+		"display_role":           displayRole,
+		"role_scope":             roleScope,
+		"tenant_role":            tenantRole,
+		"org_role":               "",
+		"source":                 orgTreeMemberSourceTenantProjection,
+		"is_projected_root_admin": true,
+		"can_manage_personnel":   true,
+		"can_manage_resources":   true,
+	}
+}
+
+func buildRootOrgDirectMemberEntry(member *types.OrganizationMember, effectiveRole types.TenantRole) gin.H {
+	if member == nil || member.User == nil {
+		return gin.H{}
+	}
+	displayRole := orgTreeDisplayRoleReadonly
+	roleScope := orgTreeRoleScopeOrgViewer
+	canManagePersonnel := false
+	canManageResources := false
+	isOwner := false
+	isAdmin := false
+	switch effectiveRole {
+	case types.TenantRoleOwner:
+		displayRole = orgTreeDisplayRoleOwner
+		roleScope = orgTreeRoleScopeWorkspaceOwner
+		canManagePersonnel = true
+		canManageResources = true
+		isOwner = true
+		isAdmin = true
+	case types.TenantRoleAdmin:
+		displayRole = orgTreeDisplayRoleAdmin
+		roleScope = orgTreeRoleScopeWorkspaceAdmin
+		canManagePersonnel = true
+		canManageResources = true
+		isAdmin = true
+	case types.TenantRoleContributor:
+		displayRole = orgTreeDisplayRoleCollaborator
+		roleScope = orgTreeRoleScopeOrgEditor
+	case types.TenantRoleViewer:
+		displayRole = orgTreeDisplayRoleReadonly
+		roleScope = orgTreeRoleScopeOrgViewer
+	}
+	return gin.H{
+		"user_id":                 member.UserID,
+		"username":                member.User.Username,
+		"email":                   member.User.Email,
+		"phone":                   member.User.Phone,
+		"role":                    string(member.Role),
+		"is_owner":                isOwner,
+		"is_admin":                isAdmin,
+		"is_super_admin":          member.User.IsSuperAdmin,
+		"is_system_admin":         member.User.IsSystemAdmin,
+		"is_direct":               true,
+		"joined_at":               member.CreatedAt,
+		"display_role":            displayRole,
+		"role_scope":              roleScope,
+		"tenant_role":             string(effectiveRole),
+		"org_role":                string(member.Role),
+		"source":                  orgTreeMemberSourceOrgDirect,
+		"is_projected_root_admin": false,
+		"can_manage_personnel":    canManagePersonnel,
+		"can_manage_resources":    canManageResources,
+	}
+}
+
+func decorateInheritedAdminEntries(entries []map[string]interface{}) []map[string]interface{} {
+	for _, entry := range entries {
+		if entry == nil {
+			continue
+		}
+		entry["display_role"] = orgTreeDisplayRoleSubOrgAdmin
+		entry["role_scope"] = orgTreeRoleScopeInheritedAdmin
+		entry["tenant_role"] = ""
+		entry["org_role"] = string(types.OrgRoleAdmin)
+		entry["source"] = orgTreeMemberSourceOrgInherited
+		entry["is_projected_root_admin"] = false
+		entry["can_manage_personnel"] = true
+		entry["can_manage_resources"] = true
+		entry["is_owner"] = false
+		entry["is_admin"] = true
+	}
+	return entries
+}
+
+func (h *OrgTreeHandler) listProjectedRootAdminMembers(ctx context.Context, tenantID uint64) ([]gin.H, map[string]struct{}, error) {
+	if h.memberService == nil {
+		return nil, map[string]struct{}{}, nil
+	}
+	memberships, err := h.memberService.ListByTenant(ctx, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	projectedMemberships := make([]*types.TenantMember, 0)
+	for _, membership := range memberships {
+		if membership == nil {
+			continue
+		}
+		effectiveRole := effectiveTenantRoleForUser(ctx, membership.Role, membership.UserID, tenantID, h.orgTreeService)
+		if effectiveRole == types.TenantRoleOwner || effectiveRole == types.TenantRoleAdmin {
+			membership.Role = effectiveRole
+			projectedMemberships = append(projectedMemberships, membership)
+		}
+	}
+	sort.SliceStable(projectedMemberships, func(i, j int) bool {
+		left := projectedMemberships[i]
+		right := projectedMemberships[j]
+		leftOwner := left.Role == types.TenantRoleOwner
+		rightOwner := right.Role == types.TenantRoleOwner
+		if leftOwner != rightOwner {
+			return leftOwner
+		}
+		if !left.JoinedAt.Equal(right.JoinedAt) {
+			return left.JoinedAt.Before(right.JoinedAt)
+		}
+		return left.UserID < right.UserID
+	})
+
+	userIDs := make([]string, 0, len(projectedMemberships))
+	for _, membership := range projectedMemberships {
+		userIDs = append(userIDs, membership.UserID)
+	}
+	usersByID := map[string]*types.User{}
+	if h.userService != nil && len(userIDs) > 0 {
+		usersByID, err = h.userService.GetUsersByIDs(ctx, userIDs)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	projectedRows := make([]gin.H, 0, len(projectedMemberships))
+	projectedUserIDs := make(map[string]struct{}, len(projectedMemberships))
+	for _, membership := range projectedMemberships {
+		if membership == nil {
+			continue
+		}
+		if _, exists := projectedUserIDs[membership.UserID]; exists {
+			continue
+		}
+		if user := usersByID[membership.UserID]; user != nil && user.IsSuperAdmin {
+			continue
+		}
+		projectedUserIDs[membership.UserID] = struct{}{}
+		projectedRows = append(projectedRows, buildProjectedRootMemberEntry(membership, usersByID[membership.UserID]))
+	}
+	return projectedRows, projectedUserIDs, nil
 }
 
 func canBootstrapRootOrg(user *types.User, currentRole types.TenantRole, orgCount int) bool {
@@ -61,28 +319,164 @@ func canBootstrapRootOrg(user *types.User, currentRole types.TenantRole, orgCoun
 	return currentRole.HasPermission(types.TenantRoleAdmin)
 }
 
-func canAssignTenantRole(user *types.User, currentRole types.TenantRole, requested types.TenantRole) bool {
-	if isPrivilegedOrgTreeOperator(user) {
-		return true
-	}
-	if requested == "" {
-		return true
-	}
-	return currentRole.HasPermission(types.TenantRoleOwner)
-}
-
-func resolveTenantRoleForProvision(user *types.User, callerTenantRole types.TenantRole, req *types.CreateUserInOrgRequest) (types.TenantRole, error) {
+func resolveTenantRoleForProvision(callerTenantRole types.TenantRole, req *types.CreateUserInOrgRequest) (types.TenantRole, error) {
 	requested := types.TenantRole(strings.TrimSpace(req.TenantRole))
 	if requested == "" {
-		return types.TenantRoleViewer, nil
+		requested = types.TenantRoleViewer
 	}
-	if !requested.IsValid() {
-		return "", apperrors.NewValidationError("tenant_role must be one of owner/admin/contributor/viewer")
-	}
-	if !canAssignTenantRole(user, callerTenantRole, requested) {
-		return "", apperrors.NewForbiddenError("You do not have permission to assign the requested tenant role")
+	if err := authorizeTenantRoleProvision(callerTenantRole, requested); err != nil {
+		return "", err
 	}
 	return requested, nil
+}
+
+func resolveTenantRoleForOrgScopedProvision(
+	callerTenantRole types.TenantRole,
+	allowBranchScopedProvision bool,
+	req *types.CreateUserInOrgRequest,
+) (types.TenantRole, error) {
+	orgRole, err := normalizeOrgRole(req.Role)
+	if err != nil {
+		return "", err
+	}
+	var mappedRole types.TenantRole
+	switch orgRole {
+	case types.OrgRoleAdmin:
+		mappedRole = types.TenantRoleAdmin
+	case types.OrgRoleEditor, types.OrgRoleContributor:
+		mappedRole = types.TenantRoleContributor
+	default:
+		mappedRole = types.TenantRoleViewer
+	}
+	if allowBranchScopedProvision && !callerTenantRole.HasPermission(types.TenantRoleAdmin) {
+		if mappedRole == types.TenantRoleOwner {
+			return "", apperrors.NewForbiddenError(assignTenantRoleDeniedMessage)
+		}
+		return mappedRole, nil
+	}
+	return mappedRole, nil
+}
+
+func selectProvisionUserCandidate(matches ...*types.User) *types.User {
+	var candidate *types.User
+	for _, match := range matches {
+		if match == nil {
+			continue
+		}
+		if candidate == nil {
+			candidate = match
+			continue
+		}
+		if candidate.ID != match.ID {
+			return nil
+		}
+	}
+	return candidate
+}
+
+func countProvisionUserMatches(candidate *types.User, matches ...*types.User) int {
+	if candidate == nil {
+		return 0
+	}
+	count := 0
+	for _, match := range matches {
+		if match != nil && match.ID == candidate.ID {
+			count++
+		}
+	}
+	return count
+}
+
+func isReusableProvisionedUser(candidate *types.User, tenantID uint64, orgCount int, matchedCount int) bool {
+	if candidate == nil {
+		return false
+	}
+	if candidate.TenantID != tenantID || isPrivilegedOrgTreeOperator(candidate) || orgCount != 0 {
+		return false
+	}
+	return matchedCount >= 2
+}
+
+func (h *OrgTreeHandler) findReusableProvisionedUser(
+	ctx context.Context,
+	tenantID uint64,
+	req *types.CreateUserInOrgRequest,
+) (*types.User, error) {
+	usernameMatch, _ := h.userService.GetUserByUsername(ctx, req.Username)
+	var emailMatch *types.User
+	if req.Email != "" {
+		emailMatch, _ = h.userService.GetUserByEmail(ctx, req.Email)
+	}
+	var phoneMatch *types.User
+	if req.Phone != "" {
+		phoneMatch, _ = h.userService.GetUserByPhone(ctx, req.Phone)
+	}
+
+	candidate := selectProvisionUserCandidate(usernameMatch, emailMatch, phoneMatch)
+	if candidate == nil {
+		return nil, nil
+	}
+
+	orgs, err := h.orgTreeService.GetUserOrganizations(ctx, candidate.ID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	matchedCount := countProvisionUserMatches(candidate, usernameMatch, emailMatch, phoneMatch)
+	if !isReusableProvisionedUser(candidate, tenantID, len(orgs), matchedCount) {
+		return nil, nil
+	}
+	return candidate, nil
+}
+
+func (h *OrgTreeHandler) provisionUserForOrg(
+	ctx context.Context,
+	tenantID uint64,
+	req *types.CreateUserInOrgRequest,
+) (*types.User, bool, error) {
+	reusableUser, err := h.findReusableProvisionedUser(ctx, tenantID, req)
+	if err != nil {
+		return nil, false, err
+	}
+	if reusableUser == nil {
+		user, err := h.userService.CreateUserByAdmin(ctx, req, tenantID)
+		if err != nil {
+			return nil, false, err
+		}
+		return user, true, nil
+	}
+
+	logger.Infof(ctx, "Reusing orphaned org-tree user %s during provisioning", reusableUser.ID)
+	reusableUser.Username = req.Username
+	reusableUser.Email = req.Email
+	reusableUser.Phone = req.Phone
+	reusableUser.IsActive = true
+	if err := h.userService.UpdateUser(ctx, reusableUser); err != nil {
+		return nil, false, err
+	}
+	if err := h.userService.AdminSetPassword(ctx, reusableUser.ID, req.Password); err != nil {
+		return nil, false, err
+	}
+	return reusableUser, false, nil
+}
+
+func (h *OrgTreeHandler) ensureProvisionedMembership(
+	ctx context.Context,
+	userID string,
+	tenantID uint64,
+	role types.TenantRole,
+) error {
+	currentMember, err := h.memberService.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		return err
+	}
+	if currentMember == nil {
+		_, err := h.memberService.AddMember(ctx, userID, tenantID, role, nil)
+		return err
+	}
+	if currentMember.Role == role {
+		return nil
+	}
+	return h.memberService.UpdateRole(ctx, userID, tenantID, role)
 }
 
 // getUserFromContext extracts the current user from the Gin context.
@@ -105,7 +499,7 @@ func (h *OrgTreeHandler) getUserFromContext(c *gin.Context) (*types.User, bool) 
 // or any of its ancestor organizations (permission inheritance via materialized path).
 // Super admins are always considered admin of any org.
 func (h *OrgTreeHandler) isOrgAdminOf(c *gin.Context, user *types.User, orgID string, tenantID uint64) bool {
-	if isPrivilegedOrgTreeOperator(user) {
+	if isPrivilegedOrgTreeOperator(user) || callerHasTenantAdminOrOwner(c.Request.Context()) {
 		return true
 	}
 	ctx := c.Request.Context()
@@ -114,7 +508,7 @@ func (h *OrgTreeHandler) isOrgAdminOf(c *gin.Context, user *types.User, orgID st
 	orgMembers, err := h.orgTreeService.ListOrgMembers(ctx, orgID, tenantID)
 	if err == nil {
 		for _, member := range orgMembers {
-			if member.UserID == user.ID && (member.Role == types.OrgRoleAdmin || member.IsOwner) {
+			if member.UserID == user.ID && member.Role == types.OrgRoleAdmin {
 				return true
 			}
 		}
@@ -150,7 +544,7 @@ func parseAncestorIDs(path string, selfID string) []string {
 
 // isOrgAdminOfAny checks if the user is a super admin or admin of any org-tree organization.
 func (h *OrgTreeHandler) isOrgAdminOfAny(c *gin.Context, user *types.User, tenantID uint64) bool {
-	if isPrivilegedOrgTreeOperator(user) {
+	if isPrivilegedOrgTreeOperator(user) || callerHasTenantAdminOrOwner(c.Request.Context()) {
 		return true
 	}
 	ctx := c.Request.Context()
@@ -562,7 +956,8 @@ func (h *OrgTreeHandler) CreateUserInOrg(c *gin.Context) {
 		c.Error(err)
 		return
 	}
-	tenantRole, err := resolveTenantRoleForProvision(user, callerTenantRole, &req)
+	allowBranchScopedProvision := !callerTenantRole.HasPermission(types.TenantRoleAdmin) && !isPrivilegedOrgTreeOperator(user)
+	tenantRole, err := resolveTenantRoleForOrgScopedProvision(callerTenantRole, allowBranchScopedProvision, &req)
 	if err != nil {
 		c.Error(err)
 		return
@@ -573,7 +968,7 @@ func (h *OrgTreeHandler) CreateUserInOrg(c *gin.Context) {
 	}
 
 	// Step 1: Create user via user service
-	newUser, err := h.userService.CreateUserByAdmin(ctx, &req, tenantID)
+	newUser, createdNewUser, err := h.provisionUserForOrg(ctx, tenantID, &req)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to create user: %v", err)
 		c.Error(apperrors.NewInternalServerError("Failed to create user").WithDetails(err.Error()))
@@ -582,9 +977,11 @@ func (h *OrgTreeHandler) CreateUserInOrg(c *gin.Context) {
 
 	// Step 2: Bootstrap tenant membership so the new user can actually log into
 	// this workspace. Org-tree membership alone is not enough for RBAC.
-	if _, err := h.memberService.AddMember(ctx, newUser.ID, tenantID, tenantRole, nil); err != nil {
+	if err := h.ensureProvisionedMembership(ctx, newUser.ID, tenantID, tenantRole); err != nil {
 		logger.Errorf(ctx, "User created but failed to create tenant membership: %v", err)
-		_ = h.userService.DeleteUser(ctx, newUser.ID)
+		if createdNewUser {
+			_ = h.userService.DeleteUser(ctx, newUser.ID)
+		}
 		c.Error(apperrors.NewInternalServerError("Failed to create tenant membership").WithDetails(err.Error()))
 		return
 	}
@@ -596,18 +993,27 @@ func (h *OrgTreeHandler) CreateUserInOrg(c *gin.Context) {
 	}
 	if err := h.orgTreeService.AssignUserToOrg(ctx, orgID, tenantID, assignReq); err != nil {
 		logger.Errorf(ctx, "User created but failed to assign to org: %v", err)
+		message := "User created and added to workspace, but failed to assign to organization: " + err.Error()
+		if !createdNewUser {
+			message = "User restored and added to workspace, but failed to assign to organization: " + err.Error()
+		}
 		// User is created but assignment failed — return partial success
 		c.JSON(http.StatusOK, types.CreateUserInOrgResponse{
 			Success: true,
-			Message: "User created and added to workspace, but failed to assign to organization: " + err.Error(),
+			Message: message,
 			User:    newUser.ToUserInfo(),
 		})
 		return
 	}
 
+	message := "User created, added to workspace, and assigned to organization successfully"
+	if !createdNewUser {
+		message = "User restored, added to workspace, and assigned to organization successfully"
+	}
+
 	c.JSON(http.StatusOK, types.CreateUserInOrgResponse{
 		Success: true,
-		Message: "User created, added to workspace, and assigned to organization successfully",
+		Message: message,
 		User:    newUser.ToUserInfo(),
 	})
 }
@@ -715,7 +1121,9 @@ func (h *OrgTreeHandler) UpdateUserInOrg(c *gin.Context) {
 			Role:   types.OrgMemberRole(req.Role),
 		}
 		if err := h.orgTreeService.AssignUserToOrg(ctx, orgID, tenantID, assignReq); err != nil {
-			logger.Warnf(ctx, "User updated but failed to update role in org: %v", err)
+			logger.Errorf(ctx, "User updated but failed to update role in org: %v", err)
+			c.Error(apperrors.NewInternalServerError("Failed to update user role in organization").WithDetails(err.Error()))
+			return
 		}
 	}
 
@@ -969,25 +1377,56 @@ func (h *OrgTreeHandler) ListOrgMembers(c *gin.Context) {
 		c.Error(apperrors.NewInternalServerError("Failed to list organization members").WithDetails(err.Error()))
 		return
 	}
+	orgNode, err := h.orgTreeService.GetNode(ctx, orgID, tenantID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get org node for member list: %v", err)
+		c.Error(apperrors.NewInternalServerError("Failed to get organization node").WithDetails(err.Error()))
+		return
+	}
+
+	projectedRootAdmins := make([]gin.H, 0)
+	projectedRootAdminUserIDs := make(map[string]struct{})
+	effectiveTenantRoles := make(map[string]types.TenantRole)
+	if h.memberService != nil {
+		memberships, listErr := h.memberService.ListByTenant(ctx, tenantID)
+		if listErr == nil {
+			for _, membership := range memberships {
+				if membership == nil {
+					continue
+				}
+				effectiveTenantRoles[membership.UserID] = effectiveTenantRoleForUser(ctx, membership.Role, membership.UserID, tenantID, h.orgTreeService)
+			}
+		} else {
+			logger.Warnf(ctx, "Failed to precompute effective tenant roles for org members: %v", listErr)
+		}
+	}
+	if isRootOrgNode(orgNode) {
+		projectedRootAdmins, projectedRootAdminUserIDs, err = h.listProjectedRootAdminMembers(ctx, tenantID)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to project root admins for org %s: %v", orgID, err)
+			c.Error(apperrors.NewInternalServerError("Failed to build projected root admins").WithDetails(err.Error()))
+			return
+		}
+	}
 
 	// Classify direct members into admins and regular members
-	directAdmins := make([]gin.H, 0)
+	directAdmins := make([]gin.H, 0, len(projectedRootAdmins))
+	directAdmins = append(directAdmins, projectedRootAdmins...)
 	directMembers := make([]gin.H, 0)
 	for _, m := range members {
 		if m.User == nil {
 			continue
 		}
-		entry := gin.H{
-			"user_id":        m.UserID,
-			"username":       m.User.Username,
-			"email":          m.User.Email,
-			"phone":          m.User.Phone,
-			"role":           string(m.Role),
-			"is_owner":       m.IsOwner,
-			"is_admin":       m.Role == types.OrgRoleAdmin,
-			"is_super_admin": m.User.IsSuperAdmin,
-			"is_direct":      true,
-			"joined_at":      m.CreatedAt,
+		if _, projected := projectedRootAdminUserIDs[m.UserID]; projected {
+			continue
+		}
+		entry := buildDirectOrgMemberEntry(m)
+		if isRootOrgNode(orgNode) {
+			effectiveRole, ok := effectiveTenantRoles[m.UserID]
+			if !ok || effectiveRole == "" {
+				effectiveRole = types.TenantRoleViewer
+			}
+			entry = buildRootOrgDirectMemberEntry(m, effectiveRole)
 		}
 		if m.Role == types.OrgRoleAdmin {
 			directAdmins = append(directAdmins, entry)
@@ -1002,24 +1441,27 @@ func (h *OrgTreeHandler) ListOrgMembers(c *gin.Context) {
 		logger.Warnf(ctx, "Failed to list inherited admins for org %s: %v", orgID, err)
 		inheritedAdmins = nil
 	}
+	inheritedAdmins = decorateInheritedAdminEntries(inheritedAdmins)
 
 	// Build backward-compatible flat list (direct members only, as before)
-	flatResult := make([]gin.H, 0, len(members))
+	flatResult := make([]gin.H, 0, len(members)+len(projectedRootAdmins))
+	flatResult = append(flatResult, projectedRootAdmins...)
 	for _, m := range members {
 		if m.User == nil {
 			continue
 		}
-		flatResult = append(flatResult, gin.H{
-			"user_id":        m.UserID,
-			"username":       m.User.Username,
-			"email":          m.User.Email,
-			"phone":          m.User.Phone,
-			"role":           string(m.Role),
-			"is_owner":       m.IsOwner,
-			"is_admin":       m.Role == types.OrgRoleAdmin,
-			"is_super_admin": m.User.IsSuperAdmin,
-			"joined_at":      m.CreatedAt,
-		})
+		if _, projected := projectedRootAdminUserIDs[m.UserID]; projected {
+			continue
+		}
+		entry := buildDirectOrgMemberEntry(m)
+		if isRootOrgNode(orgNode) {
+			effectiveRole, ok := effectiveTenantRoles[m.UserID]
+			if !ok || effectiveRole == "" {
+				effectiveRole = types.TenantRoleViewer
+			}
+			entry = buildRootOrgDirectMemberEntry(m, effectiveRole)
+		}
+		flatResult = append(flatResult, entry)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1028,7 +1470,7 @@ func (h *OrgTreeHandler) ListOrgMembers(c *gin.Context) {
 		"direct_admins":    directAdmins,
 		"direct_members":   directMembers,
 		"inherited_admins": inheritedAdmins,
-		"total_direct":     len(members),
+		"total_direct":     len(flatResult),
 	})
 }
 

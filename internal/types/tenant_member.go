@@ -132,6 +132,7 @@ type TenantMemberResponse struct {
 	Avatar       string             `json:"avatar,omitempty"`
 	IsSuperAdmin bool               `json:"is_super_admin,omitempty"`
 	Role         TenantRole         `json:"role"`
+	AuthRole     TenantRole         `json:"auth_role,omitempty"`
 	Status       TenantMemberStatus `json:"status"`
 	InvitedBy    *string            `json:"invited_by,omitempty"`
 	JoinedAt     time.Time          `json:"joined_at"`

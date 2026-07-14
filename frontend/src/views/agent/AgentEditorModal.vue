@@ -53,7 +53,7 @@
 
                   <div class="settings-group">
                     <!-- 智能体 ID（用于 API 集成） -->
-                    <div v-if="editorMode === 'edit' && editorAgent?.id" class="setting-row">
+                    <div v-if="editorMode === 'edit' && editorAgent?.id && canManageIntegrations" class="setting-row">
                       <div class="setting-info">
                         <label>{{ $t('agent.editor.agentId') }}</label>
                         <p class="desc">{{ $t('agent.editor.agentIdDesc') }}</p>
@@ -165,6 +165,20 @@
                         <t-textarea v-model="formData.description"
                           :placeholder="$t('agent.editor.descriptionPlaceholder')"
                           :autosize="{ minRows: 2, maxRows: 4 }" :disabled="isBuiltinAgent" />
+                      </div>
+                    </div>
+
+                    <div v-if="!isBuiltinAgent && (authStore.isSuperAdmin || orgStore.myOrgTreeOrgs.length > 0)" class="setting-row">
+                      <div class="setting-info">
+                        <label>{{ $t('agent.editor.visibilityLabel') }}</label>
+                        <p class="desc">{{ $t('agent.editor.visibilityTip') }}</p>
+                      </div>
+                      <div class="setting-control">
+                        <t-radio-group v-model="formData.visibility">
+                          <t-radio-button value="private">{{ $t('agent.editor.visibilityPrivate') }}</t-radio-button>
+                          <t-radio-button value="org">{{ $t('agent.editor.visibilityOrg') }}</t-radio-button>
+                          <t-radio-button value="global">{{ $t('agent.editor.visibilityGlobal') }}</t-radio-button>
+                        </t-radio-group>
                       </div>
                     </div>
 
@@ -1452,6 +1466,8 @@ const props = defineProps<{
   visible: boolean;
   mode: 'create' | 'edit';
   agent?: CustomAgent | null;
+  initialVisibility?: 'private' | 'org' | 'global';
+  initialOrganizationId?: string;
   initialSection?: string;
   initialHighlightField?: string;
   // readOnly hides the save button so a Viewer who clicks an agent
@@ -1471,6 +1487,15 @@ const emit = defineEmits<{
 const savedAgent = ref<CustomAgent | null>(null);
 const editorMode = computed(() => (savedAgent.value ? 'edit' : props.mode));
 const editorAgent = computed(() => savedAgent.value ?? props.agent ?? null);
+
+const resolveAutoOrganizationID = (): string => {
+  return (
+    props.initialOrganizationId ||
+    orgStore.currentOrganizationId ||
+    orgStore.myOrgTreeOrgs[0]?.id ||
+    ''
+  );
+}
 
 const copyAgentId = async () => {
   const id = editorAgent.value?.id;
@@ -2018,6 +2043,8 @@ const defaultFormData = {
   name: '',
   description: '',
   is_builtin: false,
+  visibility: 'private' as 'private' | 'org' | 'global',
+  organization_id: '',
   config: {
     // 基础设置
     agent_mode: 'smart-reasoning' as 'quick-answer' | 'smart-reasoning',
@@ -2089,6 +2116,14 @@ const defaultFormData = {
 };
 
 const formData = ref(JSON.parse(JSON.stringify(defaultFormData)));
+
+const normalizeEditorVisibility = (value?: string): 'private' | 'org' | 'global' => {
+  const normalized = (value || '').trim();
+  if (normalized === 'private' || normalized === 'org' || normalized === 'global') {
+    return normalized;
+  }
+  return normalized === '' ? 'global' : 'private';
+}
 
 const applyDefaultChatModelIfEmpty = () => {
   if (props.mode !== 'create' || !formData.value) return
@@ -2197,6 +2232,7 @@ watch(currentSection, (section) => {
 
 const agentIMChannelCount = ref(0);
 const agentEmbedChannelCount = ref(0);
+const canManageIntegrations = computed(() => authStore.hasRole('owner'));
 
 async function loadAgentIntegrationCounts(agentId: string) {
   try {
@@ -2583,6 +2619,15 @@ const needsRerankModel = computed(() => {
   return false;
 });
 
+watch(
+  () => formData.value.visibility,
+  (visibility) => {
+    if (visibility === 'org' && !formData.value.organization_id) {
+      formData.value.organization_id = resolveAutoOrganizationID();
+    }
+  },
+);
+
 // 监听可见性变化，重置表单
 watch(() => props.visible, async (val) => {
   if (val) {
@@ -2594,6 +2639,9 @@ watch(() => props.visible, async (val) => {
     if (props.mode === 'edit' && props.agent) {
       // 深度复制对象以避免引用问题
       const agentData = JSON.parse(JSON.stringify(props.agent));
+      const visibility = normalizeEditorVisibility(agentData.visibility);
+      agentData.visibility = visibility;
+      agentData.organization_id = visibility === 'org' ? (agentData.organization_id || '') : '';
 
       // 确保 config 对象存在
       if (!agentData.config) {
@@ -2639,6 +2687,11 @@ watch(() => props.visible, async (val) => {
     } else {
       // 创建新智能体，使用系统默认值
       const newFormData = JSON.parse(JSON.stringify(defaultFormData));
+      const initialVisibility = props.initialVisibility || 'private';
+      newFormData.visibility = initialVisibility;
+      newFormData.organization_id = initialVisibility === 'org'
+        ? resolveAutoOrganizationID()
+        : '';
       // 应用系统默认检索参数
       newFormData.config.embedding_top_k = defaultEmbeddingTopK.value;
       newFormData.config.keyword_threshold = defaultKeywordThreshold.value;
@@ -3013,6 +3066,9 @@ const loadDependencies = async () => {
       chatResources.ensureKnowledgeBases(),
       chatResources.ensureWebSearchProviders(),
       editorResources.prefetchAgentEditorDeps(),
+      !authStore.isSuperAdmin && orgStore.myOrgTreeOrgs.length === 0
+        ? orgStore.fetchMyOrgTreeOrganizations()
+        : Promise.resolve(),
     ]);
 
     if (chatResources.allModels.length > 0) {
@@ -3872,6 +3928,16 @@ const handleSave = async () => {
   if (!isBuiltinAgent.value) {
     if (!formData.value.name || !formData.value.name.trim()) {
       MessagePlugin.error(t('agent.editor.nameRequired'));
+      currentSection.value = 'basic';
+      return;
+    }
+
+    if (formData.value.visibility === 'org' && !formData.value.organization_id) {
+      formData.value.organization_id = resolveAutoOrganizationID();
+    }
+
+    if (formData.value.visibility === 'org' && !formData.value.organization_id) {
+      MessagePlugin.error(t('agent.editor.orgRequired'));
       currentSection.value = 'basic';
       return;
     }

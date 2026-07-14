@@ -20,8 +20,9 @@ import (
 
 // TenantInvitationHandler exposes the tenant-scoped CRUD on the
 // `tenant_invitations` table plus the user-self-service inbox endpoints
-// (/me/invitations*). Route-level RBAC: tenant routes are Owner-gated
-// (POST/DELETE) or Viewer-gated (GET); inbox routes only require
+// (/me/invitations*). Route-level RBAC: tenant routes are Admin-gated
+// for mutations, and the handler preserves the owner-only boundary when
+// an invitation targets the owner role. Inbox routes only require
 // authentication (the service enforces "only invitee can act").
 type TenantInvitationHandler struct {
 	invitationService interfaces.TenantInvitationService
@@ -240,7 +241,7 @@ func (h *TenantInvitationHandler) ListTenantInvitations(c *gin.Context) {
 
 // CreateInvitation godoc
 // @Summary      发出租户邀请
-// @Description  Owner 通过邮箱邀请已注册用户加入当前租户；被邀请人需要在 /me/invitations 接受后才会成为成员。
+// @Description  Tenant Admin/Owner 通过邮箱邀请已注册用户加入当前租户；owner 邀请仍要求当前调用方是 owner。
 // @Tags         租户邀请
 // @Accept       json
 // @Produce      json
@@ -263,6 +264,11 @@ func (h *TenantInvitationHandler) CreateInvitation(c *gin.Context) {
 	}
 	if !req.Role.IsValid() {
 		c.Error(apperrors.NewValidationError("role must be one of owner/admin/contributor/viewer"))
+		return
+	}
+	callerTenantRole := types.TenantRoleFromContext(ctx)
+	if err := authorizeTenantRoleProvision(callerTenantRole, req.Role); err != nil {
+		c.Error(err)
 		return
 	}
 
@@ -319,7 +325,7 @@ func (h *TenantInvitationHandler) CreateInvitation(c *gin.Context) {
 
 // RevokeInvitation godoc
 // @Summary      撤销待接受邀请
-// @Description  Owner 取消一条还在 pending 的邀请；已 accepted/declined/revoked/expired 的行不可再撤销。
+// @Description  Tenant Admin/Owner 取消一条还在 pending 的邀请；owner 角色邀请的撤销仍要求 owner。
 // @Tags         租户邀请
 // @Produce      json
 // @Param        id      path  string  true  "租户 ID"
@@ -358,6 +364,11 @@ func (h *TenantInvitationHandler) RevokeInvitation(c *gin.Context) {
 		// Render the same 404 as "missing" so we don't leak existence
 		// across tenants.
 		c.Error(apperrors.NewNotFoundError("invitation not found"))
+		return
+	}
+	callerTenantRole := types.TenantRoleFromContext(ctx)
+	if err := authorizeTenantMemberRemoval(callerTenantRole, inv.Role); err != nil {
+		c.Error(err)
 		return
 	}
 

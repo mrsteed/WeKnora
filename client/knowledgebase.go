@@ -21,6 +21,9 @@ type KnowledgeBase struct {
 	IsPinned              bool                  `json:"is_pinned"`
 	Description           string                `json:"description"`
 	TenantID              uint64                `json:"tenant_id"`
+	CreatedBy             string                `json:"created_by,omitempty"`
+	Visibility            string                `json:"visibility,omitempty"`
+	OrganizationID        string                `json:"organization_id,omitempty"`
 	ChunkingConfig        ChunkingConfig        `json:"chunking_config"`
 	ImageProcessingConfig ImageProcessingConfig `json:"image_processing_config"`
 	FAQConfig             *FAQConfig            `json:"faq_config"`
@@ -296,6 +299,8 @@ func (c *Client) ListKnowledgeBases(ctx context.Context) ([]KnowledgeBase, error
 type UpdateKnowledgeBaseRequest struct {
 	Name        string               `json:"name"`
 	Description string               `json:"description"`
+	Visibility  string               `json:"visibility,omitempty"`
+	OrganizationID string            `json:"organization_id,omitempty"`
 	Config      *KnowledgeBaseConfig `json:"config"`
 }
 

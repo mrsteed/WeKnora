@@ -97,10 +97,12 @@ func (s *DataSourceService) CreateDataSource(ctx context.Context, ds *types.Data
 	}
 
 	// Validate configuration
-	if cfg, err := ds.ParseConfig(); err == nil && cfg != nil {
-		cfg.StripNonSecretCredentials(ds.Type)
-		if blob, err := cfg.ToJSON(); err == nil {
-			ds.Config = blob
+	if !isDatabaseDataSourceType(ds.Type) {
+		if cfg, err := ds.ParseConfig(); err == nil && cfg != nil {
+			cfg.StripNonSecretCredentials(ds.Type)
+			if blob, err := cfg.ToJSON(); err == nil {
+				ds.Config = blob
+			}
 		}
 	}
 	if err := s.validateDataSourceConfig(ctx, ds); err != nil {

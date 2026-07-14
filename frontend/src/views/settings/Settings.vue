@@ -150,8 +150,9 @@
                     <TenantInfo />
                   </div>
 
-                  <!-- 成员管理 (#1303 PR 3) -->
-                  <div v-if="currentSection === 'members'" class="section">
+                  <!-- 成员管理已隐藏：原“设置 > 成员管理”按租户角色展示，
+                       与新的组织树角色不一致，继续暴露会导致用户认知冲突。 -->
+                  <div v-if="false" class="section">
                     <TenantMembers />
                   </div>
 
@@ -285,7 +286,6 @@ const navItems = computed(() => {
     { key: 'system-global', icon: 'server', label: t('settings.system') },
     { key: 'userprofile', icon: 'user', label: t('userProfile.title') },
     { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
-    { key: 'members', icon: 'usergroup', label: t('tenantMember.title') },
     { key: 'api', icon: 'secured', label: t('settings.apiInfo') },
   ]
   // currentTenantRole 为空表示「membership 还没加载」—— 比起渲染整套
@@ -313,7 +313,7 @@ const navGroups = computed<NavGroup[]>(() => {
     {
       key: 'workspace',
       label: t('settings.navGroups.workspace'),
-      items: pickItems(['tenant', 'members', 'chathistory']),
+      items: pickItems(['tenant', 'chathistory']),
     },
     {
       key: 'models_runtime',

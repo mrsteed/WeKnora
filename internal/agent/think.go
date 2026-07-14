@@ -54,6 +54,15 @@ func recentAssistantDocumentSnapshot(messages []chat.Message) (string, int) {
 	return "", -1
 }
 
+func hasToolProtocolHistory(messages []chat.Message) bool {
+	for _, msg := range messages {
+		if msg.Role == "tool" || len(msg.ToolCalls) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func shouldEnableDuplicateDocumentHeadGuard(messages []chat.Message, snapshotIndex int) bool {
 	if snapshotIndex < 0 {
 		return false
@@ -299,6 +308,15 @@ func (e *AgentEngine) streamThinkingToEventBus(
 		Tools:             tools,
 		Thinking:          e.config.Thinking,
 		ParallelToolCalls: &parallelToolCalls,
+	}
+	if iteration == 0 && len(tools) > 0 && !hasToolProtocolHistory(messages) {
+		// qwen3_coder on vLLM is prone to ending the first round with plain
+		// planning text instead of an actual tool call. Force the opening round
+		// to pick a tool when tools are available and the context is otherwise
+		// clean. If prior turns already contain tool protocol messages, leaving
+		// tool_choice unset avoids long stalls on repeated/replayed questions
+		// while still allowing later rounds to finish via natural stop.
+		opts.ToolChoice = "required"
 	}
 
 	pendingToolCalls := make(map[string]bool)

@@ -116,6 +116,15 @@
                         <p class="form-tip granularity-hint">{{ granularityHint }}</p>
                       </div>
 
+                      <div v-if="authStore.isSuperAdmin || orgStore.myOrgTreeOrgs.length > 0" class="form-item">
+                        <label class="form-label">{{ $t('knowledgeEditor.basic.visibilityLabel') }}</label>
+                        <t-radio-group v-model="formData.visibility">
+                          <t-radio-button value="private">{{ $t('knowledgeEditor.basic.visibilityPrivate') }}</t-radio-button>
+                          <t-radio-button value="org">{{ $t('knowledgeEditor.basic.visibilityOrg') }}</t-radio-button>
+                          <t-radio-button value="global">{{ $t('knowledgeEditor.basic.visibilityGlobal') }}</t-radio-button>
+                        </t-radio-group>
+                        <p class="form-tip">{{ $t('knowledgeEditor.basic.visibilityTip') }}</p>
+                      </div>
                       <div class="form-item">
                         <label class="form-label required">{{ $t('knowledgeEditor.basic.nameLabel') }}</label>
                         <t-input 
@@ -133,20 +142,6 @@
                           :autosize="{ minRows: 3, maxRows: 6 }"
                         />
                       </div>
-                      <div v-if="authStore.isSuperAdmin || orgStore.myOrgTreeOrgs.length > 0" class="form-item">
-                        <label class="form-label">{{ $t('knowledgeEditor.basic.visibilityLabel') }}</label>
-                        <t-radio-group v-model="formData.visibility">
-                          <t-radio-button value="private">{{ $t('knowledgeEditor.basic.visibilityPrivate') }}</t-radio-button>
-                          <t-radio-button value="org">{{ $t('knowledgeEditor.basic.visibilityOrg') }}</t-radio-button>
-                          <t-radio-button value="global" :disabled="!authStore.isSuperAdmin">{{ $t('knowledgeEditor.basic.visibilityGlobal') }}</t-radio-button>
-                        </t-radio-group>
-                        <p class="form-tip">{{ $t('knowledgeEditor.basic.visibilityTip') }}</p>
-                      </div>
-                      <div v-if="formData.visibility === 'org'" class="form-item">
-                        <label class="form-label required">{{ $t('knowledgeEditor.basic.organizationLabel') }}</label>
-                        <OrgTreeSelector v-model="formData.organization_id" :show-all="authStore.isSuperAdmin" />
-                      </div>
-
                       <!-- Wiki 合成模型移至模型配置页 -->
                     </div>
                   </div>
@@ -551,7 +546,6 @@ import ModelSelector from '@/components/ModelSelector.vue'
 import GraphSettings from './settings/GraphSettings.vue'
 import KBShareSettings from './settings/KBShareSettings.vue'
 import DataSourceSettings from './settings/DataSourceSettings.vue'
-import OrgTreeSelector from '@/components/OrgTreeSelector.vue'
 import { useI18n } from 'vue-i18n'
 
 const uiStore = useUIStore()
@@ -568,6 +562,7 @@ const props = defineProps<{
   kbId?: string
   initialType?: 'document' | 'faq' | 'database'
   initialVisibility?: 'private' | 'org' | 'global'
+  initialOrganizationId?: string
 }>()
 
 // Emits
@@ -589,6 +584,24 @@ const databaseConnectionValidated = ref(false)
 const databaseConnectionError = ref('')
 // 用户是否在分块设置中手动改过任何值。一旦为 true，就不再根据索引策略自动调整默认分块参数。
 const chunkingDirty = ref(false)
+
+const resolveAutoOrganizationID = (): string => {
+  return (
+    props.initialOrganizationId ||
+    uiStore.kbEditorInitialOrganizationId ||
+    orgStore.currentOrganizationId ||
+    orgStore.myOrgTreeOrgs[0]?.id ||
+    ''
+  )
+}
+
+const normalizeEditorVisibility = (value?: string): 'private' | 'org' | 'global' => {
+  const normalized = (value || '').trim()
+  if (normalized === 'private' || normalized === 'org' || normalized === 'global') {
+    return normalized
+  }
+  return normalized === '' ? 'global' : 'private'
+}
 
 // 仅 Wiki 索引模式下的分块预设：更大 chunk、无 overlap、关闭父子分块。
 // 该预设只在「创建模式」下、且用户尚未手动调整分块参数时生效，避免覆盖既有 KB 的配置。
@@ -830,15 +843,32 @@ watch(
   { deep: true }
 )
 
+watch(
+  () => formData.value?.visibility,
+  (visibility) => {
+    if (!formData.value) return
+    if (visibility === 'org' && !formData.value.organization_id) {
+      formData.value.organization_id = resolveAutoOrganizationID()
+    }
+  },
+)
+
 // 初始化表单数据
-const initFormData = (type: 'document' | 'faq' | 'database' = 'document', visibility: 'private' | 'org' | 'global' = 'private') => {
+const initFormData = (
+  type: 'document' | 'faq' | 'database' = 'document',
+  visibility: 'private' | 'org' | 'global' = 'private',
+  initialOrganizationId?: string,
+) => {
   const isDatabaseType = type === 'database'
+  const organizationId = visibility === 'org'
+    ? (initialOrganizationId || resolveAutoOrganizationID())
+    : ''
   return {
     type,
     name: '',
     description: '',
     visibility,
-    organization_id: orgStore.currentOrganizationId || '',
+    organization_id: organizationId,
     faqConfig: {
       indexMode: 'question_only',
       questionIndexMode: 'separate'
@@ -936,6 +966,7 @@ const loadKBData = async () => {
 
     const kb = kbInfo.data
     hasFiles.value = (filesResult as any)?.total > 0
+    const visibility = normalizeEditorVisibility(kb.visibility)
     
     // 设置表单数据
     const kbType = (kb.type as 'document' | 'faq' | 'database') || 'document'
@@ -943,8 +974,8 @@ const loadKBData = async () => {
       type: kbType,
       name: kb.name || '',
       description: kb.description || '',
-      visibility: kb.visibility || 'private',
-      organization_id: kb.organization_id || '',
+      visibility,
+      organization_id: visibility === 'org' ? (kb.organization_id || '') : '',
       faqConfig: {
         indexMode: kb.faq_config?.index_mode || 'question_only',
         questionIndexMode: kb.faq_config?.question_index_mode || 'separate'
@@ -1304,9 +1335,12 @@ const validateForm = (): boolean => {
     return false
   }
 
-  // 验证组织可见性时必须选择组织
+  // 组织可见性自动使用当前组织树中的当前组织
   if (formData.value.visibility === 'org' && !formData.value.organization_id) {
-    MessagePlugin.warning(t('knowledgeEditor.messages.orgRequired') || 'Please select an organization for org visibility')
+    formData.value.organization_id = resolveAutoOrganizationID()
+  }
+  if (formData.value.visibility === 'org' && !formData.value.organization_id) {
+    MessagePlugin.warning(t('knowledgeEditor.basic.orgRequired') || 'Current account has no available organization')
     currentSection.value = 'basic'
     return false
   }
@@ -1337,7 +1371,9 @@ const buildSubmitData = () => {
     type: formData.value.type,
     max_concurrent_parse_tasks: formData.value.maxConcurrentParseTasks || 5,
     visibility: formData.value.visibility || 'private',
-    organization_id: formData.value.visibility !== 'private' ? formData.value.organization_id : undefined,
+    organization_id: formData.value.visibility === 'org'
+      ? (formData.value.organization_id || resolveAutoOrganizationID())
+      : undefined,
     chunking_config: {
       chunk_size: formData.value.chunkingConfig.chunkSize,
       chunk_overlap: formData.value.chunkingConfig.chunkOverlap,
@@ -1625,7 +1661,11 @@ const doSubmit = async () => {
         }
       }
 
-      emit('success', props.kbId)
+      emit('success', {
+        id: props.kbId,
+        visibility: data.visibility,
+        organization_id: data.organization_id,
+      })
     }
     
     handleClose()
@@ -1665,6 +1705,10 @@ watch(() => props.visible, async (newVal) => {
   if (newVal) {
     // 打开弹窗时，先重置状态
     resetState()
+
+    if (!authStore.isSuperAdmin && orgStore.myOrgTreeOrgs.length === 0) {
+      await orgStore.fetchMyOrgTreeOrganizations()
+    }
     
     // 检查是否有初始 section，如果有则跳转
     if (uiStore.kbEditorInitialSection) {
@@ -1680,7 +1724,8 @@ watch(() => props.visible, async (newVal) => {
     } else {
       // 创建模式：初始化空表单
       const visibility = props.initialVisibility || uiStore.kbEditorInitialVisibility || 'private'
-      formData.value = initFormData(props.initialType || 'document', visibility)
+      const initialOrganizationId = props.initialOrganizationId || uiStore.kbEditorInitialOrganizationId || undefined
+      formData.value = initFormData(props.initialType || 'document', visibility, initialOrganizationId)
       hasFiles.value = false
     }
   } else {
