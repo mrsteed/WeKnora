@@ -226,6 +226,88 @@ func TestResolveTenantRoleForCreateUser_PreservesExplicitTenantRoleForTenantAdmi
 	}
 }
 
+func TestResolveTenantRoleForUpdateUser_DefaultsMissingTenantRoleFromOrgRole(t *testing.T) {
+	role, shouldSync, err := resolveTenantRoleForUpdateUser(
+		types.TenantRoleViewer,
+		types.TenantRoleOwner,
+		false,
+		&types.UpdateUserInOrgRequest{Role: "admin"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !shouldSync {
+		t.Fatal("expected tenant role sync")
+	}
+	if role != types.TenantRoleContributor {
+		t.Fatalf("role=%s want contributor", role)
+	}
+}
+
+func TestResolveTenantRoleForUpdateUser_PreservesPrivilegedMembershipWithoutExplicitTenantRole(t *testing.T) {
+	role, shouldSync, err := resolveTenantRoleForUpdateUser(
+		types.TenantRoleAdmin,
+		types.TenantRoleOwner,
+		false,
+		&types.UpdateUserInOrgRequest{Role: "viewer"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if shouldSync {
+		t.Fatal("expected privileged tenant role to be preserved")
+	}
+	if role != types.TenantRoleAdmin {
+		t.Fatalf("role=%s want admin", role)
+	}
+}
+
+func TestResolveTenantRoleForUpdateUser_PreservesExplicitTenantRoleWhenProvided(t *testing.T) {
+	role, shouldSync, err := resolveTenantRoleForUpdateUser(
+		types.TenantRoleViewer,
+		types.TenantRoleAdmin,
+		false,
+		&types.UpdateUserInOrgRequest{Role: "admin", TenantRole: "admin"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !shouldSync {
+		t.Fatal("expected explicit tenant role to sync")
+	}
+	if role != types.TenantRoleAdmin {
+		t.Fatalf("role=%s want admin", role)
+	}
+}
+
+func TestResolveTenantRoleForSetOrgAdmin_MapsToggleToTenantRole(t *testing.T) {
+	role, shouldSync := resolveTenantRoleForSetOrgAdmin(types.TenantRoleViewer, true)
+	if !shouldSync {
+		t.Fatal("expected tenant role sync")
+	}
+	if role != types.TenantRoleContributor {
+		t.Fatalf("role=%s want contributor", role)
+	}
+
+	role, shouldSync = resolveTenantRoleForSetOrgAdmin(types.TenantRoleContributor, false)
+	if !shouldSync {
+		t.Fatal("expected tenant role sync")
+	}
+	if role != types.TenantRoleViewer {
+		t.Fatalf("role=%s want viewer", role)
+	}
+}
+
+func TestResolveTenantRoleForSetOrgAdmin_PreservesPrivilegedMembership(t *testing.T) {
+	role, shouldSync := resolveTenantRoleForSetOrgAdmin(types.TenantRoleOwner, false)
+	if shouldSync {
+		t.Fatal("expected privileged tenant role to be preserved")
+	}
+	if role != types.TenantRoleOwner {
+		t.Fatalf("role=%s want owner", role)
+	}
+}
+
 func TestResolveTenantRoleForCreateUser_UsesOrgScopedCapForBranchAdmin(t *testing.T) {
 	role, err := resolveTenantRoleForCreateUser(types.TenantRoleContributor, false, &types.CreateUserInOrgRequest{
 		Role:       "admin",

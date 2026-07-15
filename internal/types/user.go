@@ -233,6 +233,12 @@ type UpdateUserInOrgRequest struct {
 	Email    string `json:"email"`
 	Phone    string `json:"phone"`
 	Role     string `json:"role"`
+	// TenantRole is optional on edit. When omitted, the backend only auto-syncs
+	// non-privileged workspace roles from org role changes: viewer -> viewer,
+	// editor/admin -> contributor. Existing tenant admin/owner memberships are
+	// preserved unless an explicit tenant_role is provided through a privileged
+	// caller path.
+	TenantRole string `json:"tenant_role,omitempty"`
 }
 
 // UpdateUserPasswordInOrgRequest represents a request to reset a user's login password in an organization.

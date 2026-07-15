@@ -61,6 +61,7 @@ export interface UpdateUserInOrgRequest {
   email?: string
   phone?: string
   role?: 'admin' | 'editor' | 'viewer'
+  tenant_role?: 'owner' | 'admin' | 'contributor' | 'viewer'
 }
 
 export interface UpdateUserPasswordInOrgRequest {

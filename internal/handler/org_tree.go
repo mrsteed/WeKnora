@@ -359,17 +359,31 @@ func resolveTenantRoleForOrgScopedProvision(
 	return mappedRole, nil
 }
 
+func defaultTenantRoleForOrgRole(orgRole types.OrgMemberRole) types.TenantRole {
+	switch orgRole {
+	case types.OrgRoleViewer:
+		return types.TenantRoleViewer
+	default:
+		return types.TenantRoleContributor
+	}
+}
+
 func resolveDefaultTenantRoleForCreateUser(req *types.CreateUserInOrgRequest) (types.TenantRole, error) {
 	orgRole, err := normalizeOrgRole(req.Role)
 	if err != nil {
 		return "", err
 	}
-	switch orgRole {
-	case types.OrgRoleViewer:
-		return types.TenantRoleViewer, nil
-	default:
-		return types.TenantRoleContributor, nil
+	return defaultTenantRoleForOrgRole(orgRole), nil
+}
+
+func resolveTenantRoleForImplicitOrgRoleSync(
+	currentTenantRole types.TenantRole,
+	orgRole types.OrgMemberRole,
+) (types.TenantRole, bool) {
+	if currentTenantRole.HasPermission(types.TenantRoleAdmin) {
+		return currentTenantRole, false
 	}
+	return defaultTenantRoleForOrgRole(orgRole), true
 }
 
 func resolveTenantRoleForCreateUser(
@@ -388,6 +402,46 @@ func resolveTenantRoleForCreateUser(
 		return resolveTenantRoleForProvision(authorizingRole, req)
 	}
 	return resolveTenantRoleForOrgScopedProvision(callerTenantRole, true, req)
+}
+
+func resolveTenantRoleForUpdateUser(
+	currentTenantRole types.TenantRole,
+	callerTenantRole types.TenantRole,
+	callerIsPrivileged bool,
+	req *types.UpdateUserInOrgRequest,
+) (types.TenantRole, bool, error) {
+	roleText := strings.TrimSpace(req.Role)
+	tenantRoleText := strings.TrimSpace(req.TenantRole)
+	if roleText == "" {
+		if tenantRoleText != "" {
+			return "", false, apperrors.NewValidationError("role is required when tenant_role is provided")
+		}
+		return "", false, nil
+	}
+	orgRole, err := normalizeOrgRole(roleText)
+	if err != nil {
+		return "", false, err
+	}
+	if tenantRoleText != "" {
+		role, err := resolveTenantRoleForCreateUser(callerTenantRole, callerIsPrivileged, &types.CreateUserInOrgRequest{
+			Role:       string(orgRole),
+			TenantRole: tenantRoleText,
+		})
+		return role, true, err
+	}
+	role, shouldSync := resolveTenantRoleForImplicitOrgRoleSync(currentTenantRole, orgRole)
+	return role, shouldSync, nil
+}
+
+func resolveTenantRoleForSetOrgAdmin(
+	currentTenantRole types.TenantRole,
+	isAdmin bool,
+) (types.TenantRole, bool) {
+	orgRole := types.OrgRoleViewer
+	if isAdmin {
+		orgRole = types.OrgRoleAdmin
+	}
+	return resolveTenantRoleForImplicitOrgRoleSync(currentTenantRole, orgRole)
 }
 
 func selectProvisionUserCandidate(matches ...*types.User) *types.User {
@@ -510,6 +564,13 @@ func (h *OrgTreeHandler) ensureProvisionedMembership(
 		return nil
 	}
 	return h.memberService.UpdateRole(ctx, userID, tenantID, role)
+}
+
+func tenantRoleFromMembership(member *types.TenantMember) types.TenantRole {
+	if member == nil {
+		return ""
+	}
+	return member.Role
 }
 
 // getUserFromContext extracts the current user from the Gin context.
@@ -1080,11 +1141,27 @@ func (h *OrgTreeHandler) UpdateUserInOrg(c *gin.Context) {
 	if !ok {
 		return
 	}
+	callerTenantRole := types.TenantRoleFromContext(ctx)
+	var err error
 
 	// Permission: must be admin of this org
 	if !h.isOrgAdminOf(c, currentUser, orgID, tenantID) {
 		c.Error(apperrors.NewForbiddenError("You do not have permission to update users in this organization"))
 		return
+	}
+
+	var currentMembership *types.TenantMember
+	if strings.TrimSpace(req.Role) != "" || strings.TrimSpace(req.TenantRole) != "" {
+		if h.memberService == nil {
+			c.Error(apperrors.NewInternalServerError("tenant member service unavailable"))
+			return
+		}
+		currentMembership, err = h.memberService.GetMembership(ctx, userID, tenantID)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to get tenant membership: %v", err)
+			c.Error(apperrors.NewInternalServerError("Failed to get tenant membership").WithDetails(err.Error()))
+			return
+		}
 	}
 
 	// Get user
@@ -1135,6 +1212,17 @@ func (h *OrgTreeHandler) UpdateUserInOrg(c *gin.Context) {
 		}
 	}
 
+	desiredTenantRole, shouldSyncTenantRole, err := resolveTenantRoleForUpdateUser(
+		tenantRoleFromMembership(currentMembership),
+		callerTenantRole,
+		isPrivilegedOrgTreeOperator(currentUser),
+		&req,
+	)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
 	// Update user info
 	user.Username = req.Username
 	user.Email = req.Email
@@ -1155,6 +1243,14 @@ func (h *OrgTreeHandler) UpdateUserInOrg(c *gin.Context) {
 		if err := h.orgTreeService.AssignUserToOrg(ctx, orgID, tenantID, assignReq); err != nil {
 			logger.Errorf(ctx, "User updated but failed to update role in org: %v", err)
 			c.Error(apperrors.NewInternalServerError("Failed to update user role in organization").WithDetails(err.Error()))
+			return
+		}
+	}
+
+	if shouldSyncTenantRole {
+		if err := h.ensureProvisionedMembership(ctx, userID, tenantID, desiredTenantRole); err != nil {
+			logger.Errorf(ctx, "User updated but failed to sync tenant membership: %v", err)
+			c.Error(apperrors.NewInternalServerError("Failed to sync workspace role").WithDetails(err.Error()))
 			return
 		}
 	}
@@ -1337,11 +1433,29 @@ func (h *OrgTreeHandler) SetOrgAdmin(c *gin.Context) {
 		c.Error(apperrors.NewForbiddenError("Only organization administrators can manage admin roles in this organization"))
 		return
 	}
+	if h.memberService == nil {
+		c.Error(apperrors.NewInternalServerError("tenant member service unavailable"))
+		return
+	}
+	currentMembership, err := h.memberService.GetMembership(ctx, req.UserID, tenantID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get tenant membership for org admin sync: %v", err)
+		c.Error(apperrors.NewInternalServerError("Failed to get tenant membership").WithDetails(err.Error()))
+		return
+	}
+	desiredTenantRole, shouldSyncTenantRole := resolveTenantRoleForSetOrgAdmin(tenantRoleFromMembership(currentMembership), req.IsAdmin)
 
 	if err := h.orgTreeService.SetOrgAdmin(ctx, orgID, tenantID, &req); err != nil {
 		logger.Errorf(ctx, "Failed to set org admin: %v", err)
 		c.Error(apperrors.NewInternalServerError("Failed to set organization admin").WithDetails(err.Error()))
 		return
+	}
+	if shouldSyncTenantRole {
+		if err := h.ensureProvisionedMembership(ctx, req.UserID, tenantID, desiredTenantRole); err != nil {
+			logger.Errorf(ctx, "Org admin updated but failed to sync tenant membership: %v", err)
+			c.Error(apperrors.NewInternalServerError("Failed to sync workspace role").WithDetails(err.Error()))
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

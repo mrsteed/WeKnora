@@ -67,11 +67,14 @@ const emit = defineEmits<{
 const formRef = ref()
 const submitting = ref(false)
 
+type OrgRole = 'admin' | 'editor' | 'viewer'
+type TenantRole = 'contributor' | 'viewer'
+
 const formData = reactive({
   username: '',
   email: '',
   phone: '',
-  role: 'viewer' as 'admin' | 'editor' | 'viewer',
+  role: 'viewer' as OrgRole,
 })
 
 const formRules = {
@@ -105,6 +108,10 @@ watch(() => props.user, () => {
   }
 })
 
+const defaultTenantRoleForOrgRole = (role: OrgRole): TenantRole => {
+  return role === 'viewer' ? 'viewer' : 'contributor'
+}
+
 const handleClose = () => {
   emit('update:visible', false)
 }
@@ -132,6 +139,7 @@ const handleSubmit = async () => {
       email: formData.email || undefined,
       phone: formData.phone || undefined,
       role: formData.role,
+      tenant_role: defaultTenantRoleForOrgRole(formData.role),
     })
     if (res.success) {
       MessagePlugin.success(t('admin.member.updateUserSuccess'))
