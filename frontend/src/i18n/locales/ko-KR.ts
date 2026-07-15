@@ -5954,6 +5954,33 @@ export default {
   userProfile: {
     title: "사용자 정보",
     description: "계정 기본 정보(사용자 ID, 사용자 이름, 이메일, 가입 시각)를 확인합니다.",
+    changePasswordButton: "비밀번호 변경",
+    changePasswordTitle: "로그인 비밀번호 변경",
+    changePasswordConfirm: "변경",
+    changePasswordSuccess: "비밀번호가 변경되었습니다",
+    changePasswordFailed: "비밀번호 변경에 실패했습니다. 입력을 확인해 주세요.",
+    changePasswordDesc: "먼저 현재 비밀번호를 입력한 뒤 새 비밀번호를 입력하세요. 새 비밀번호는 8~32자리이며 문자와 숫자를 모두 포함하고, 사용자 이름과 달라야 합니다.",
+    fields: {
+      oldPassword: "현재 비밀번호",
+      newPassword: "새 비밀번호",
+      confirmPassword: "새 비밀번호 확인",
+    },
+    placeholders: {
+      oldPassword: "현재 비밀번호를 입력하세요",
+      newPassword: "새 비밀번호 입력 (8~32자리, 문자/숫자 포함)",
+      confirmPassword: "새 비밀번호를 다시 입력하세요",
+    },
+    errors: {
+      oldRequired: "현재 비밀번호를 입력해 주세요",
+      newRequired: "새 비밀번호를 입력해 주세요",
+      confirmRequired: "확인 비밀번호를 입력해 주세요",
+      mismatch: "두 비밀번호가 일치하지 않습니다",
+      weak: "새 비밀번호는 8~32자리, 문자/숫자 포함, 사용자 이름과 동일할 수 없습니다",
+      tooShort: "새 비밀번호가 너무 짧습니다. 최소 8자를 입력하세요",
+      tooLong: "새 비밀번호가 너무 깁니다. 32자 이내로 입력하세요",
+      oldWrong: "현재 비밀번호가 올바르지 않습니다",
+      changePasswordUnknown: "비밀번호 변경에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    },
   },
   tenantMember: {
     title: "멤버 관리",

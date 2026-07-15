@@ -298,7 +298,7 @@ curl --location 'http://localhost:8080/api/v1/auth/me' \
 | 字段          | 类型   | 必填 | 校验    | 说明      |
 | ------------- | ------ | ---- | ------- | --------- |
 | old_password  | string | 是   |          | 旧密码    |
-| new_password  | string | 是   | 最少 6 位 | 新密码    |
+| new_password  | string | 是   | 8-32 位，含字母与数字，且不能与用户名相同 | 新密码    |
 
 **请求**:
 

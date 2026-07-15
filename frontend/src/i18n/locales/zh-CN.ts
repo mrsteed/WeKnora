@@ -6134,6 +6134,33 @@ export default {
   userProfile: {
     title: "用户信息",
     description: "查看您的账户基础信息（用户 ID、用户名、邮箱、注册时间）",
+    changePasswordButton: "修改密码",
+    changePasswordTitle: "修改登录密码",
+    changePasswordConfirm: "确认修改",
+    changePasswordSuccess: "密码已修改",
+    changePasswordFailed: "密码修改失败，请检查输入",
+    changePasswordDesc: "先输入当前密码，再输入新密码。新密码 8-32 位，需同时包含字母与数字，且不能与用户名相同。",
+    fields: {
+      oldPassword: "当前密码",
+      newPassword: "新密码",
+      confirmPassword: "确认新密码",
+    },
+    placeholders: {
+      oldPassword: "请输入当前密码",
+      newPassword: "请输入新密码（8-32 位，包含字母和数字）",
+      confirmPassword: "请再输入一次新密码",
+    },
+    errors: {
+      oldRequired: "请输入当前密码",
+      newRequired: "请输入新密码",
+      confirmRequired: "请输入确认密码",
+      mismatch: "两次输入的密码不一致",
+      weak: "新密码需 8-32 位，包含字母和数字，且不能与用户名相同",
+      tooShort: "新密码长度不足，请输入至少 8 位",
+      tooLong: "新密码不能超过 32 位",
+      oldWrong: "当前密码错误，请重新输入",
+      changePasswordUnknown: "密码修改失败，请稍后再试",
+    },
   },
   tenantMember: {
     title: "成员管理",

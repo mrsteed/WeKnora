@@ -6084,6 +6084,33 @@ export default {
   userProfile: {
     title: 'User Profile',
     description: 'View your account info (user ID, username, email, registration time).',
+    changePasswordButton: 'Change Password',
+    changePasswordTitle: 'Change login password',
+    changePasswordConfirm: 'Confirm',
+    changePasswordSuccess: 'Password updated',
+    changePasswordFailed: 'Failed to update password, please check your input',
+    changePasswordDesc: 'Enter your current password first, then a new password. The new password must be 8–32 characters, contain both letters and digits, and cannot be the same as the username.',
+    fields: {
+      oldPassword: 'Current password',
+      newPassword: 'New password',
+      confirmPassword: 'Confirm new password',
+    },
+    placeholders: {
+      oldPassword: 'Enter your current password',
+      newPassword: 'New password (8–32 chars, letters and digits)',
+      confirmPassword: 'Re-enter the new password',
+    },
+    errors: {
+      oldRequired: 'Please enter your current password',
+      newRequired: 'Please enter a new password',
+      confirmRequired: 'Please confirm the new password',
+      mismatch: 'The two passwords do not match',
+      weak: 'New password must be 8–32 characters, include letters and digits, and cannot be the same as the username',
+      tooShort: 'New password is too short, please enter at least 8 characters',
+      tooLong: 'New password is too long, please keep it under 32 characters',
+      oldWrong: 'Current password is incorrect',
+      changePasswordUnknown: 'Failed to update password, please try again later',
+    },
   },
   tenantMember: {
     title: 'Members',

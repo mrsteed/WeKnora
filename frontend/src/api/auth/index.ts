@@ -353,6 +353,40 @@ export async function updateMyPreferences(
 }
 
 /**
+ * 修改当前登录用户的密码，调 POST /api/v1/auth/change-password。
+ * 依赖后端 service.ChangePassword：服务端会校验旧密码、调用
+ * validateLoginPassword、再 bcrypt 出新哈希并 update。请求体字段名、
+ * 最小长度（6 位）由后端 binding 决定，前端只负责呈现校验。
+ */
+export interface ChangePasswordRequest {
+  old_password: string
+  new_password: string
+}
+
+export async function changePassword(
+  payload: ChangePasswordRequest,
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const response: any = await post('/api/v1/auth/change-password', payload)
+    if (response && typeof response === 'object' && 'success' in response) {
+      return response as { success: boolean; message?: string }
+    }
+    return {
+      success: false,
+      message: t('userProfile.errors.changePasswordUnknown'),
+    }
+  } catch (error: any) {
+    return {
+      success: false,
+      message:
+        error?.response?.data?.message ||
+        error?.message ||
+        t('userProfile.errors.changePasswordUnknown'),
+    }
+  }
+}
+
+/**
  * 获取当前租户信息
  */
 export async function getCurrentTenant(): Promise<{ success: boolean; data?: TenantInfo; message?: string }> {

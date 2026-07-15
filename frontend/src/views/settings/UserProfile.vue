@@ -65,20 +65,47 @@
           <span class="info-value">{{ formatDate(userInfo?.created_at) }}</span>
         </div>
       </div>
+
+      <!-- 修改密码入口（仅在用户信息加载出账号时显示，避免未登录态露出按钮） -->
+      <div v-if="showChangePassword" class="setting-row">
+        <div class="setting-info">
+          <label>{{ $t('userProfile.changePasswordButton') }}</label>
+          <p class="desc">{{ $t('userProfile.changePasswordDesc') }}</p>
+        </div>
+        <div class="setting-control">
+          <t-button theme="primary" variant="outline" @click="openChangePasswordDialog">
+            {{ $t('userProfile.changePasswordButton') }}
+          </t-button>
+        </div>
+      </div>
     </div>
+
+    <ChangePasswordDialog v-model:visible="passwordDialogVisible" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { getCurrentUser, type UserInfo } from '@/api/auth'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '@/stores/auth'
+import ChangePasswordDialog from './ChangePasswordDialog.vue'
 
 const { t, locale } = useI18n()
+const authStore = useAuthStore()
 
 const userInfo = ref<UserInfo | null>(null)
 const loading = ref(true)
 const error = ref('')
+
+const passwordDialogVisible = ref(false)
+
+const showChangePassword = computed(() => Boolean(authStore.user?.id))
+
+const openChangePasswordDialog = () => {
+  if (!showChangePassword.value) return
+  passwordDialogVisible.value = true
+}
 
 const loadInfo = async () => {
   try {

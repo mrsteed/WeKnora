@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### New Features
+
+- **NEW**: **Settings → UserProfile — Change Password** — adds an in-place “修改密码” button that opens a dialog driven by the existing `POST /api/v1/auth/change-password` API (backend `min=8,max=32` binding aligned with `service.validateLoginPassword`). The dialog enforces current password entry, new/confirm match, an 8–32 char letter+digit rule, and unique-vs-username, then surfaces server-side “invalid old password” as a dedicated `current password incorrect` toast instead of the raw backend message. Regression tests in `internal/handler/auth_change_password_test.go` lock the 8-char lower / 32-char upper bound. See `frontend/src/views/settings/ChangePasswordDialog.vue` and `frontend/src/views/settings/UserProfile.vue`.
+
 ## [0.6.3] - 2026-06-26
 
 ### New Features
