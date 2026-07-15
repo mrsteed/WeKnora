@@ -50,7 +50,7 @@ export default {
     reopen: "新手引导",
     steps: {
       welcome: {
-        title: "欢迎使用 WeKnora",
+        title: "欢迎使用 IntraMind",
         desc: "只需几步，带你快速了解知识库、对话与智能体的核心用法。点击「下一步」开始。",
       },
       knowledge: {
@@ -1547,7 +1547,7 @@ export default {
   },
   initialization: {
     title: "初始化",
-    welcome: "欢迎使用WeKnora",
+    welcome: "欢迎使用 IntraMind",
     description: "请先配置系统以开始使用",
     step1: "步骤1：配置LLM模型",
     step2: "步骤2：配置嵌入模型",
@@ -2508,9 +2508,9 @@ export default {
     loadingInfo: "正在加载信息...",
     retry: "重试",
     versionLabel: "应用版本",
-    versionDescription: "当前应用服务（IntarMind-app）的版本号",
+    versionDescription: "当前应用服务（IntraMind-app）的版本号",
     frontendVersionLabel: "UI 版本",
-    frontendVersionDescription: "当前 UI 界面（IntarMind-ui）的构建版本号",
+    frontendVersionDescription: "当前 UI 界面（IntraMind-ui）的构建版本号",
     versionMismatch: "与应用版本不一致",
     buildTimeLabel: "构建时间",
     buildTimeDescription: "系统构建的时间",
@@ -3220,7 +3220,7 @@ export default {
     },
   },
   createChat: {
-    title: "Hi，我是 IntarMind，让你的知识触手可及",
+    title: "Hi，我是 IntraMind，让你的知识触手可及",
     newSessionTitle: "新会话",
     messages: {
       selectKnowledgeBase: "请先选择知识库",
