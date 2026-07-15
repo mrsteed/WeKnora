@@ -76,12 +76,15 @@ const emit = defineEmits<{
 const formRef = ref()
 const submitting = ref(false)
 
+type OrgRole = 'admin' | 'editor' | 'viewer'
+type TenantRole = 'contributor' | 'viewer'
+
 const formData = reactive({
   username: '',
   email: '',
   phone: '',
   password: '',
-  role: 'viewer' as 'admin' | 'editor' | 'viewer',
+  role: 'viewer' as OrgRole,
 })
 
 const orgRoleOptions = computed(() => ([
@@ -119,6 +122,10 @@ watch(() => props.visible, (val) => {
   }
 })
 
+const defaultTenantRoleForOrgRole = (role: OrgRole): TenantRole => {
+  return role === 'viewer' ? 'viewer' : 'contributor'
+}
+
 const handleClose = () => {
   emit('update:visible', false)
 }
@@ -142,6 +149,7 @@ const handleSubmit = async () => {
       phone: formData.phone || undefined,
       password: formData.password,
       role: formData.role,
+      tenant_role: defaultTenantRoleForOrgRole(formData.role),
     })
     if (res.success) {
       MessagePlugin.success(t('admin.member.createUserSuccess'))

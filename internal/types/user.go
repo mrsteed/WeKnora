@@ -213,9 +213,9 @@ type CreateUserInOrgRequest struct {
 	Phone    string `json:"phone"`
 	Password string `json:"password" binding:"required,min=8,max=32"`
 	Role     string `json:"role" binding:"required"`
-	// TenantRole is optional during the stage-0 transition. When omitted, the
-	// backend bootstraps the new account into the tenant as a Viewer so the user
-	// can at least log in to the workspace. Space admins / super admins may pass
+	// TenantRole is optional during org-scoped provisioning. When omitted, the
+	// backend derives the tenant role from the org role: viewer -> viewer,
+	// editor/admin -> contributor. Space admins / super admins may still pass
 	// admin/contributor/viewer explicitly; owner remains a deliberate action.
 	TenantRole string `json:"tenant_role,omitempty"`
 }

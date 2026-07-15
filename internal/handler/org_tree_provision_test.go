@@ -171,6 +171,61 @@ func TestResolveTenantRoleForCreateUser_PrefersExplicitTenantRoleForTenantOwner(
 	}
 }
 
+func TestResolveTenantRoleForCreateUser_DefaultsMissingTenantRoleFromOrgRole(t *testing.T) {
+	tests := []struct {
+		name       string
+		callerRole types.TenantRole
+		orgRole    string
+		want       types.TenantRole
+	}{
+		{
+			name:       "tenant owner suborg admin defaults to contributor",
+			callerRole: types.TenantRoleOwner,
+			orgRole:    "admin",
+			want:       types.TenantRoleContributor,
+		},
+		{
+			name:       "tenant admin editor defaults to contributor",
+			callerRole: types.TenantRoleAdmin,
+			orgRole:    "editor",
+			want:       types.TenantRoleContributor,
+		},
+		{
+			name:       "tenant admin viewer stays viewer",
+			callerRole: types.TenantRoleAdmin,
+			orgRole:    "viewer",
+			want:       types.TenantRoleViewer,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			role, err := resolveTenantRoleForCreateUser(tt.callerRole, false, &types.CreateUserInOrgRequest{
+				Role: tt.orgRole,
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if role != tt.want {
+				t.Fatalf("role=%s want %s", role, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveTenantRoleForCreateUser_PreservesExplicitTenantRoleForTenantAdmin(t *testing.T) {
+	role, err := resolveTenantRoleForCreateUser(types.TenantRoleAdmin, false, &types.CreateUserInOrgRequest{
+		Role:       "admin",
+		TenantRole: "admin",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if role != types.TenantRoleAdmin {
+		t.Fatalf("role=%s want admin", role)
+	}
+}
+
 func TestResolveTenantRoleForCreateUser_UsesOrgScopedCapForBranchAdmin(t *testing.T) {
 	role, err := resolveTenantRoleForCreateUser(types.TenantRoleContributor, false, &types.CreateUserInOrgRequest{
 		Role:       "admin",

@@ -359,11 +359,27 @@ func resolveTenantRoleForOrgScopedProvision(
 	return mappedRole, nil
 }
 
+func resolveDefaultTenantRoleForCreateUser(req *types.CreateUserInOrgRequest) (types.TenantRole, error) {
+	orgRole, err := normalizeOrgRole(req.Role)
+	if err != nil {
+		return "", err
+	}
+	switch orgRole {
+	case types.OrgRoleViewer:
+		return types.TenantRoleViewer, nil
+	default:
+		return types.TenantRoleContributor, nil
+	}
+}
+
 func resolveTenantRoleForCreateUser(
 	callerTenantRole types.TenantRole,
 	callerIsPrivileged bool,
 	req *types.CreateUserInOrgRequest,
 ) (types.TenantRole, error) {
+	if strings.TrimSpace(req.TenantRole) == "" {
+		return resolveDefaultTenantRoleForCreateUser(req)
+	}
 	if callerIsPrivileged || callerTenantRole.HasPermission(types.TenantRoleAdmin) {
 		authorizingRole := callerTenantRole
 		if callerIsPrivileged && !authorizingRole.HasPermission(types.TenantRoleOwner) {
