@@ -19,8 +19,10 @@ func (s *stubProjectedOrgTreeRepo) ListByTenantID(context.Context, uint64) ([]*t
 
 type stubProjectedOrganizationRepo struct {
 	interfaces.OrganizationRepository
-	userOrgs     []*types.Organization
-	membersByOrg map[string][]*types.OrganizationMember
+	userOrgs      []*types.Organization
+	membersByOrg  map[string][]*types.OrganizationMember
+	memberCounts  map[string]int
+	memberUserIDs map[string][]string
 }
 
 func (s *stubProjectedOrganizationRepo) ListOrgTreeOrganizationsByUserID(context.Context, string) ([]*types.Organization, error) {
@@ -32,6 +34,37 @@ func (s *stubProjectedOrganizationRepo) ListOrgTreeMembers(_ context.Context, or
 		return nil, nil
 	}
 	return s.membersByOrg[orgID], nil
+}
+
+func (s *stubProjectedOrganizationRepo) BatchCountOrgTreeMembers(_ context.Context, orgIDs []string) (map[string]int, error) {
+	out := make(map[string]int, len(orgIDs))
+	for _, orgID := range orgIDs {
+		if s.memberCounts != nil {
+			out[orgID] = s.memberCounts[orgID]
+			continue
+		}
+		out[orgID] = len(s.membersByOrg[orgID])
+	}
+	return out, nil
+}
+
+func (s *stubProjectedOrganizationRepo) BatchListOrgTreeMemberUserIDs(_ context.Context, orgIDs []string) (map[string][]string, error) {
+	out := make(map[string][]string, len(orgIDs))
+	for _, orgID := range orgIDs {
+		if s.memberUserIDs != nil {
+			out[orgID] = s.memberUserIDs[orgID]
+			continue
+		}
+		members := s.membersByOrg[orgID]
+		ids := make([]string, 0, len(members))
+		for _, member := range members {
+			if member != nil {
+				ids = append(ids, member.UserID)
+			}
+		}
+		out[orgID] = ids
+	}
+	return out, nil
 }
 
 func TestGetUserOrganizations_ProjectsRootForTenantOwner(t *testing.T) {
@@ -146,5 +179,49 @@ func TestGetUserOrganizations_DoesNotProjectRootForViewer(t *testing.T) {
 	}
 	if len(orgs) != 0 {
 		t.Fatalf("len(orgs) = %d, want 0", len(orgs))
+	}
+}
+
+func TestGetTreeForUser_TenantOwnerGetsManageableFullTree(t *testing.T) {
+	tenantID := uint64(42)
+	ctx := context.WithValue(context.Background(), types.TenantRoleContextKey, types.TenantRoleOwner)
+	rootID := "root-org"
+	orgTreeRepo := &stubProjectedOrgTreeRepo{
+		tenantOrgs: []*types.Organization{
+			{
+				ID:          rootID,
+				Name:        "Root",
+				Path:        "/root-org",
+				Level:       1,
+				OrgTenantID: &tenantID,
+			},
+			{
+				ID:          "child-org",
+				Name:        "Child",
+				ParentID:    &rootID,
+				Path:        "/root-org/child-org",
+				Level:       2,
+				OrgTenantID: &tenantID,
+			},
+		},
+	}
+	orgRepo := &stubProjectedOrganizationRepo{}
+	svc := &orgTreeService{orgTreeRepo: orgTreeRepo, orgRepo: orgRepo}
+
+	tree, err := svc.GetTreeForUser(ctx, "u-owner", tenantID, false)
+	if err != nil {
+		t.Fatalf("GetTreeForUser err = %v", err)
+	}
+	if len(tree) != 1 {
+		t.Fatalf("len(tree) = %d, want 1", len(tree))
+	}
+	if !tree[0].MyIsAdmin {
+		t.Fatal("expected owner root node to be manageable")
+	}
+	if len(tree[0].Children) != 1 {
+		t.Fatalf("len(children) = %d, want 1", len(tree[0].Children))
+	}
+	if !tree[0].Children[0].MyIsAdmin {
+		t.Fatal("expected owner child node to inherit manageable flag")
 	}
 }

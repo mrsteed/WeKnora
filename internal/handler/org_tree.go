@@ -339,6 +339,14 @@ func resolveTenantRoleForOrgScopedProvision(
 	if err != nil {
 		return "", err
 	}
+	if allowBranchScopedProvision && !callerTenantRole.HasPermission(types.TenantRoleAdmin) {
+		switch orgRole {
+		case types.OrgRoleViewer:
+			return types.TenantRoleViewer, nil
+		default:
+			return types.TenantRoleContributor, nil
+		}
+	}
 	var mappedRole types.TenantRole
 	switch orgRole {
 	case types.OrgRoleAdmin:
@@ -348,13 +356,22 @@ func resolveTenantRoleForOrgScopedProvision(
 	default:
 		mappedRole = types.TenantRoleViewer
 	}
-	if allowBranchScopedProvision && !callerTenantRole.HasPermission(types.TenantRoleAdmin) {
-		if mappedRole == types.TenantRoleOwner {
-			return "", apperrors.NewForbiddenError(assignTenantRoleDeniedMessage)
-		}
-		return mappedRole, nil
-	}
 	return mappedRole, nil
+}
+
+func resolveTenantRoleForCreateUser(
+	callerTenantRole types.TenantRole,
+	callerIsPrivileged bool,
+	req *types.CreateUserInOrgRequest,
+) (types.TenantRole, error) {
+	if callerIsPrivileged || callerTenantRole.HasPermission(types.TenantRoleAdmin) {
+		authorizingRole := callerTenantRole
+		if callerIsPrivileged && !authorizingRole.HasPermission(types.TenantRoleOwner) {
+			authorizingRole = types.TenantRoleOwner
+		}
+		return resolveTenantRoleForProvision(authorizingRole, req)
+	}
+	return resolveTenantRoleForOrgScopedProvision(callerTenantRole, true, req)
 }
 
 func selectProvisionUserCandidate(matches ...*types.User) *types.User {
@@ -956,8 +973,7 @@ func (h *OrgTreeHandler) CreateUserInOrg(c *gin.Context) {
 		c.Error(err)
 		return
 	}
-	allowBranchScopedProvision := !callerTenantRole.HasPermission(types.TenantRoleAdmin) && !isPrivilegedOrgTreeOperator(user)
-	tenantRole, err := resolveTenantRoleForOrgScopedProvision(callerTenantRole, allowBranchScopedProvision, &req)
+	tenantRole, err := resolveTenantRoleForCreateUser(callerTenantRole, isPrivilegedOrgTreeOperator(user), &req)
 	if err != nil {
 		c.Error(err)
 		return

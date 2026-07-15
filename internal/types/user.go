@@ -49,11 +49,11 @@ type User struct {
 	// Unique identifier of the user
 	ID string `json:"id"         gorm:"type:varchar(36);primaryKey"`
 	// Username of the user
-	Username string `json:"username"   gorm:"type:varchar(100);uniqueIndex;not null"`
+	Username string `json:"username"   gorm:"type:varchar(100);uniqueIndex:idx_users_username_active_unique,where:deleted_at IS NULL;not null"`
 	// Email address of the user
-	Email string `json:"email"      gorm:"type:varchar(255);uniqueIndex;not null"`
+	Email string `json:"email"      gorm:"type:varchar(255);uniqueIndex:idx_users_email_active_unique,where:deleted_at IS NULL;not null"`
 	// Phone number of the user (optional)
-	Phone string `json:"phone"      gorm:"type:varchar(20)"`
+	Phone string `json:"phone"      gorm:"type:varchar(20);uniqueIndex:idx_users_phone_active_unique,where:deleted_at IS NULL AND phone IS NOT NULL AND phone <> ''"`
 	// Hashed password of the user
 	PasswordHash string `json:"-"          gorm:"type:varchar(255);not null"`
 	// Avatar URL of the user

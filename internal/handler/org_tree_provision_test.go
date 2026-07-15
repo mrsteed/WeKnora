@@ -132,8 +132,8 @@ func TestResolveTenantRoleForOrgScopedProvision_MapsAdminOrgRoleToTenantAdmin(t 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if role != types.TenantRoleAdmin {
-		t.Fatalf("role=%s want admin", role)
+	if role != types.TenantRoleContributor {
+		t.Fatalf("role=%s want contributor", role)
 	}
 }
 
@@ -155,6 +155,45 @@ func TestResolveTenantRoleForOrgScopedProvision_MapsViewerOrgRoleToViewer(t *tes
 	}
 	if role != types.TenantRoleViewer {
 		t.Fatalf("role=%s want viewer", role)
+	}
+}
+
+func TestResolveTenantRoleForCreateUser_PrefersExplicitTenantRoleForTenantOwner(t *testing.T) {
+	role, err := resolveTenantRoleForCreateUser(types.TenantRoleOwner, false, &types.CreateUserInOrgRequest{
+		Role:       "admin",
+		TenantRole: "owner",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if role != types.TenantRoleOwner {
+		t.Fatalf("role=%s want owner", role)
+	}
+}
+
+func TestResolveTenantRoleForCreateUser_UsesOrgScopedCapForBranchAdmin(t *testing.T) {
+	role, err := resolveTenantRoleForCreateUser(types.TenantRoleContributor, false, &types.CreateUserInOrgRequest{
+		Role:       "admin",
+		TenantRole: "owner",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if role != types.TenantRoleContributor {
+		t.Fatalf("role=%s want contributor", role)
+	}
+}
+
+func TestResolveTenantRoleForCreateUser_AllowsPrivilegedOperatorToAssignOwner(t *testing.T) {
+	role, err := resolveTenantRoleForCreateUser(types.TenantRoleAdmin, true, &types.CreateUserInOrgRequest{
+		Role:       "admin",
+		TenantRole: "owner",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if role != types.TenantRoleOwner {
+		t.Fatalf("role=%s want owner", role)
 	}
 }
 

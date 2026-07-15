@@ -333,9 +333,22 @@ func (s *orgTreeService) computeSubtreeMemberCount(node *types.OrgTreeNode, memb
 func (s *orgTreeService) GetTreeForUser(ctx context.Context, userID string, tenantID uint64, isSuperAdmin bool) ([]*types.OrgTreeNode, error) {
 	logger.Infof(ctx, "Getting org tree for user %s in tenant %d (isSuperAdmin=%v)", userID, tenantID, isSuperAdmin)
 
-	// Super admins and tenant owner/admin see the full tree.
-	if isSuperAdmin || tenantRoleGrantsRootOrgProjection(ctx) {
+	// Super admins see the raw full tree; tenant owner/admin need the same full
+	// tree with every node marked manageable so the frontend can surface the
+	// operations the backend already authorises.
+	if isSuperAdmin {
 		return s.GetTree(ctx, tenantID)
+	}
+	if tenantRoleGrantsRootOrgProjection(ctx) {
+		fullTree, err := s.GetTree(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		manageableTree := make([]*types.OrgTreeNode, 0, len(fullTree))
+		for _, root := range fullTree {
+			manageableTree = append(manageableTree, s.copyNodeTree(root, true))
+		}
+		return manageableTree, nil
 	}
 
 	// Get all organizations the user is a member of

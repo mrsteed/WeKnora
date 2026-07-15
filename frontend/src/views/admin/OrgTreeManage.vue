@@ -2,7 +2,7 @@
   <div class="org-tree-manage">
     <div class="page-header">
       <h2 class="page-title">{{ $t('admin.orgTreeManage') }}</h2>
-      <t-button v-if="authStore.isSuperAdmin" theme="primary" @click="handleCreate(null)">
+      <t-button v-if="canBootstrapRootOrg" theme="primary" @click="handleCreate(null)">
         <template #icon><t-icon name="add" /></template>
         {{ $t('admin.org.createRoot') }}
       </t-button>
@@ -15,7 +15,7 @@
       <div v-else-if="orgTreeStore.tree.length === 0" class="tree-empty">
         <t-icon name="folder-open" class="empty-icon" />
         <p>{{ $t('admin.org.emptyTree') }}</p>
-        <t-button v-if="authStore.isSuperAdmin" theme="primary" variant="outline" @click="handleCreate(null)">
+        <t-button v-if="canBootstrapRootOrg" theme="primary" variant="outline" @click="handleCreate(null)">
           {{ $t('admin.org.createFirst') }}
         </t-button>
       </div>
@@ -44,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useOrgTreeStore } from '@/stores/orgTree'
 import { useAuthStore } from '@/stores/auth'
@@ -62,6 +62,7 @@ const editorVisible = ref(false)
 const editorMode = ref<'create' | 'edit'>('create')
 const editingNode = ref<OrgTreeNode | null>(null)
 const editorParentId = ref<string | null>(null)
+const canBootstrapRootOrg = computed(() => authStore.isSuperAdmin || (orgTreeStore.tree.length === 0 && authStore.hasRole('admin')))
 
 onMounted(() => {
   orgTreeStore.fetchTree()

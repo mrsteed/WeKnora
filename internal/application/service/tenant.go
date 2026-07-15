@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	apprepo "github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -34,12 +35,18 @@ type ListTenantsParams struct {
 
 // tenantService implements the TenantService interface
 type tenantService struct {
-	repo interfaces.TenantRepository // Repository for tenant data operations
+	repo          interfaces.TenantRepository    // Repository for tenant data operations
+	memberService interfaces.TenantMemberService
+	userRepo      interfaces.UserRepository
 }
 
 // NewTenantService creates a new tenant service instance
-func NewTenantService(repo interfaces.TenantRepository) interfaces.TenantService {
-	return &tenantService{repo: repo}
+func NewTenantService(
+	repo interfaces.TenantRepository,
+	memberService interfaces.TenantMemberService,
+	userRepo interfaces.UserRepository,
+) interfaces.TenantService {
+	return &tenantService{repo: repo, memberService: memberService, userRepo: userRepo}
 }
 
 // CreateTenant creates a new tenant
@@ -197,6 +204,14 @@ func (s *tenantService) DeleteTenant(ctx context.Context, id uint64) error {
 		logger.Infof(ctx, "Deleting tenant, ID: %d, name: %s", id, tenant.Name)
 	}
 
+	affectedUserIDs, err := s.snapshotTenantDeletionAffectedUsers(ctx, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"tenant_id": id,
+		})
+		return err
+	}
+
 	err = s.repo.DeleteTenant(ctx, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -205,8 +220,114 @@ func (s *tenantService) DeleteTenant(ctx context.Context, id uint64) error {
 		return err
 	}
 
+	if err := s.cleanupUsersAfterTenantDeletion(ctx, affectedUserIDs, id); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"tenant_id": id,
+		})
+		return err
+	}
+
 	logger.Infof(ctx, "Tenant deleted successfully, ID: %d", id)
 	return nil
+}
+
+func tenantDeletionAffectedUserIDs(members []*types.TenantMember) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(members))
+	for _, member := range members {
+		if member == nil || member.UserID == "" || member.Status != types.TenantMemberStatusActive {
+			continue
+		}
+		if _, ok := seen[member.UserID]; ok {
+			continue
+		}
+		seen[member.UserID] = struct{}{}
+		out = append(out, member.UserID)
+	}
+	return out
+}
+
+func replacementHomeTenantID(memberships []*types.TenantMember, deletedTenantID uint64) (uint64, bool) {
+	for _, membership := range memberships {
+		if membership == nil || membership.TenantID == deletedTenantID {
+			continue
+		}
+		if membership.Status == types.TenantMemberStatusActive {
+			return membership.TenantID, true
+		}
+	}
+	for _, membership := range memberships {
+		if membership == nil || membership.TenantID == deletedTenantID {
+			continue
+		}
+		return membership.TenantID, true
+	}
+	return 0, false
+}
+
+func (s *tenantService) snapshotTenantDeletionAffectedUsers(ctx context.Context, deletedTenantID uint64) ([]string, error) {
+	if s.memberService == nil || s.userRepo == nil {
+		return nil, nil
+	}
+
+	members, err := s.memberService.ListByTenant(ctx, deletedTenantID)
+	if err != nil {
+		return nil, err
+	}
+	return tenantDeletionAffectedUserIDs(members), nil
+}
+
+func (s *tenantService) cleanupUsersAfterTenantDeletion(ctx context.Context, userIDs []string, deletedTenantID uint64) error {
+	if s.memberService == nil || s.userRepo == nil {
+		return nil
+	}
+	for _, userID := range userIDs {
+		if err := s.cleanupUserAfterTenantDeletion(ctx, userID, deletedTenantID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *tenantService) cleanupUserAfterTenantDeletion(ctx context.Context, userID string, deletedTenantID uint64) error {
+	user, err := s.userRepo.GetUserByID(ctx, userID)
+	if errors.Is(err, apprepo.ErrUserNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	memberships, err := s.memberService.ListByUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if len(memberships) == 0 {
+		if types.IsPlatformPrivilegedUser(user) {
+			if user.TenantID != deletedTenantID {
+				return nil
+			}
+			user.TenantID = 0
+			return s.userRepo.UpdateUser(ctx, user)
+		}
+		return s.userRepo.DeleteUser(ctx, userID)
+	}
+	if user.TenantID != deletedTenantID {
+		return nil
+	}
+	nextTenantID, ok := replacementHomeTenantID(memberships, deletedTenantID)
+	if !ok {
+		if types.IsPlatformPrivilegedUser(user) {
+			user.TenantID = 0
+			return s.userRepo.UpdateUser(ctx, user)
+		}
+		return s.userRepo.DeleteUser(ctx, userID)
+	}
+	if nextTenantID == user.TenantID {
+		return nil
+	}
+	user.TenantID = nextTenantID
+	return s.userRepo.UpdateUser(ctx, user)
 }
 
 // UpdateAPIKey updates the API key for a specific tenant
