@@ -2,10 +2,12 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
@@ -209,6 +211,51 @@ func (h *ChunkHandler) fetchChunkAndVerifyOwnership(c *gin.Context) (*types.Chun
 	return chunk, knowledgeID, nil
 }
 
+func (h *ChunkHandler) resolveKnowledgeAndValidateGeneratedQuestionMutation(c *gin.Context, chunkID string) (*types.Knowledge, error) {
+	ctx := c.Request.Context()
+	chunk, err := h.service.GetChunkByIDOnly(ctx, chunkID)
+	if err != nil {
+		if err == service.ErrChunkNotFound {
+			return nil, errors.NewNotFoundError("Chunk not found")
+		}
+		return nil, errors.NewInternalServerError(err.Error())
+	}
+
+	knowledge, err := h.kgService.GetKnowledgeByIDOnly(ctx, chunk.KnowledgeID)
+	if err != nil {
+		return nil, errors.NewNotFoundError("Knowledge not found")
+	}
+
+	if access, ok := middleware.KBAccessFromContext(c); ok && access != nil && access.KnowledgeBase != nil {
+		if access.KnowledgeBase.ID == knowledge.KnowledgeBaseID && access.Permission == types.OrgRoleAdmin {
+			return knowledge, nil
+		}
+	}
+
+	userID, ok := types.UserIDFromContext(ctx)
+	if !ok || strings.TrimSpace(userID) == "" {
+		return nil, errors.NewUnauthorizedError("Unauthorized")
+	}
+	if strings.TrimSpace(knowledge.CreatedBy) == strings.TrimSpace(userID) {
+		return knowledge, nil
+	}
+
+	if h.kbVisible != nil {
+		tenantID, ok := types.TenantIDFromContext(ctx)
+		if ok && tenantID != 0 && knowledge.TenantID == tenantID {
+			canManage, accessErr := h.kbVisible.CanManageKB(ctx, userID, tenantID, knowledge.KnowledgeBaseID, false)
+			if accessErr != nil {
+				return nil, errors.NewInternalServerError(accessErr.Error())
+			}
+			if canManage {
+				return knowledge, nil
+			}
+		}
+	}
+
+	return nil, errors.NewForbiddenError("No permission to mutate this knowledge")
+}
+
 // UpdateChunk godoc
 // @Summary      更新分块
 // @Description  更新指定分块的内容和属性
@@ -362,6 +409,11 @@ func (h *ChunkHandler) DeleteGeneratedQuestion(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Errorf(ctx, "Failed to parse request parameters: %s", secutils.SanitizeForLog(err.Error()))
 		c.Error(errors.NewBadRequestError("Question ID is required"))
+		return
+	}
+
+	if _, err := h.resolveKnowledgeAndValidateGeneratedQuestionMutation(c, chunkID); err != nil {
+		c.Error(err)
 		return
 	}
 

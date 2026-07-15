@@ -31,7 +31,10 @@ interface KnowledgeItem {
 const props = defineProps<{
   items: KnowledgeItem[];
   selectedIds: Set<string>;
-  canEdit: boolean;
+  showActionColumn: boolean;
+  canMutateDocument: (item: KnowledgeItem) => boolean;
+  canSelectDocument: (item: KnowledgeItem) => boolean;
+  canMoveDocument: (item: KnowledgeItem) => boolean;
   tagList: Tag[];
   loading?: boolean;
 }>();
@@ -154,11 +157,17 @@ const statusByRow = computed(() => {
 });
 
 const allSelected = computed(() => {
-  return props.items.length > 0 && props.items.every(i => props.selectedIds.has(i.id));
+  const selectableItems = props.items.filter((item) => props.canSelectDocument(item));
+  return selectableItems.length > 0 && selectableItems.every(i => props.selectedIds.has(i.id));
 });
 const someSelected = computed(() => {
-  return props.items.some(i => props.selectedIds.has(i.id)) && !allSelected.value;
+  const selectableItems = props.items.filter((item) => props.canSelectDocument(item));
+  return selectableItems.some(i => props.selectedIds.has(i.id)) && !allSelected.value;
 });
+
+const canMutateItem = (item: KnowledgeItem) => props.canMutateDocument(item);
+const canSelectItem = (item: KnowledgeItem) => props.canSelectDocument(item);
+const canMoveItem = (item: KnowledgeItem) => props.canMoveDocument(item);
 
 const onHeaderCheckboxChange = (checked: boolean) => {
   emit('toggle-all', checked);
@@ -167,10 +176,6 @@ const onHeaderCheckboxChange = (checked: boolean) => {
 const onRowCheckboxChange = (item: KnowledgeItem, checked: boolean, ctx?: { e?: Event }) => {
   const me = ctx?.e as MouseEvent | undefined;
   emit('toggle-row', item.id, checked, !!me?.shiftKey);
-};
-
-const makeRowCheckboxChangeHandler = (item: KnowledgeItem) => {
-  return (checked: boolean, ctx?: { e?: Event }) => onRowCheckboxChange(item, checked, ctx);
 };
 
 const moreOpen = ref<string | null>(null);
@@ -220,7 +225,8 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
     <div class="doc-list-header" :class="{ 'is-stuck': headerStuck }" role="row">
       <div class="cell cell-check" role="columnheader" @click.stop>
         <t-checkbox class="doc-list-check" size="small" :checked="allSelected" :indeterminate="someSelected"
-          :disabled="!items.length" :title="t('knowledgeBase.selectAll')" @change="onHeaderCheckboxChange" />
+          :disabled="!items.some((item) => canSelectItem(item))" :title="t('knowledgeBase.selectAll')"
+          @change="onHeaderCheckboxChange" />
       </div>
       <div class="cell cell-name" role="columnheader">{{ t('knowledgeBase.columnName') }}</div>
       <div class="cell cell-tag" role="columnheader">{{ t('knowledgeBase.columnTag') }}</div>
@@ -229,7 +235,7 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
       <div class="cell cell-size" role="columnheader">{{ t('knowledgeBase.columnSize') }}</div>
       <div class="cell cell-status" role="columnheader">{{ t('knowledgeBase.columnStatus') }}</div>
       <div class="cell cell-time" role="columnheader">{{ t('knowledgeBase.columnUpdatedAt') }}</div>
-      <div class="cell cell-actions" role="columnheader" v-if="canEdit"></div>
+      <div class="cell cell-actions" role="columnheader" v-if="showActionColumn"></div>
     </div>
 
     <div class="doc-list-body">
@@ -238,7 +244,8 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
         role="row" @click="emit('open', item)">
         <div class="cell cell-check" @click.stop>
           <t-checkbox class="doc-list-check" size="small" :checked="selectedIds.has(item.id)" :title="item.file_name"
-            @change="makeRowCheckboxChangeHandler(item)" />
+            :disabled="!canSelectItem(item)"
+            @change="(checked: boolean, ctx?: { e?: Event }) => onRowCheckboxChange(item, checked, ctx)" />
         </div>
 
         <div class="cell cell-name">
@@ -257,7 +264,7 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
             <t-tooltip v-if="hasTagOverflow(item.id, item.tags.length)"
               :content="item.tags.map((t: any) => t.name).join(', ')" placement="top">
               <div class="row-tag-chips" :ref="(el: any) => setupTagChipsObserver(el, item.id, (item.tags || []).length)"
-                :class="{ 'is-clickable': canEdit }" @click.stop="canEdit && emit('tag-edit', item)">
+                :class="{ 'is-clickable': canMutateItem(item) }" @click.stop="canMutateItem(item) && emit('tag-edit', item)">
                 <t-tag v-for="tag in item.tags.slice(0, getTagLimit(item.id))" :key="tag.id" size="small"
                   variant="light-outline" class="row-tag">
                   {{ tag.name }}
@@ -266,14 +273,15 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
               </div>
             </t-tooltip>
             <div v-else class="row-tag-chips" :ref="(el: any) => setupTagChipsObserver(el, item.id, (item.tags || []).length)"
-              :class="{ 'is-clickable': canEdit }" @click.stop="canEdit && emit('tag-edit', item)">
+              :class="{ 'is-clickable': canMutateItem(item) }" @click.stop="canMutateItem(item) && emit('tag-edit', item)">
               <t-tag v-for="tag in item.tags.slice(0, getTagLimit(item.id))" :key="tag.id" size="small"
                 variant="light-outline" class="row-tag">
                 {{ tag.name }}
               </t-tag>
             </div>
           </template>
-          <span v-else class="row-tag-chips is-clickable" @click.stop="canEdit && emit('tag-edit', item)">
+          <span v-else class="row-tag-chips" :class="{ 'is-clickable': canMutateItem(item) }"
+            @click.stop="canMutateItem(item) && emit('tag-edit', item)">
             <span class="row-tag-add">+ {{ t('knowledgeBase.tagLabel') }}</span>
           </span>
         </div>
@@ -309,8 +317,9 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
           <span class="row-mono">{{ formatTime(item.updated_at) }}</span>
         </div>
 
-        <div class="cell cell-actions" v-if="canEdit" @click.stop>
+        <div class="cell cell-actions" v-if="showActionColumn" @click.stop>
           <t-popup placement="bottom-right" trigger="click" destroy-on-close
+            v-if="canMutateItem(item)"
             :on-visible-change="(v: boolean) => onMoreVisible(item.id, v)">
             <button class="row-more-btn" :class="{ active: moreOpen === item.id }" type="button"
               :aria-label="t('knowledgeBase.columnActions')">
@@ -346,7 +355,7 @@ const handleAction = (action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'de
                     <span>{{ t('knowledgeBase.cancelParse') }}</span>
                   </div>
                 </t-popconfirm>
-                <div class="row-menu-item" @click.stop="handleAction('move', item)">
+                <div v-if="canMoveItem(item)" class="row-menu-item" @click.stop="handleAction('move', item)">
                   <t-icon class="icon" name="swap" />
                   <span>{{ t('knowledgeBase.moveDocument') }}</span>
                 </div>

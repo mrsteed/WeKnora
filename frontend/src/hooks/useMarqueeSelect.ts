@@ -67,6 +67,7 @@ export interface UseMarqueeSelectOptions {
   itemSelector: string;
   selectedIds: Ref<Set<string>>;
   getItemId: (el: HTMLElement) => string | null;
+  canSelectId?: (id: string) => boolean;
   enabled?: Ref<boolean>;
   onSelectionStart?: () => void;
   minDragDistance?: number;
@@ -78,6 +79,7 @@ export function useMarqueeSelect(options: UseMarqueeSelectOptions) {
     itemSelector,
     selectedIds,
     getItemId,
+    canSelectId,
     enabled,
     onSelectionStart,
     minDragDistance = DEFAULT_MIN_DRAG_PX,
@@ -120,6 +122,7 @@ export function useMarqueeSelect(options: UseMarqueeSelectOptions) {
     container.querySelectorAll<HTMLElement>(itemSelector).forEach((el) => {
       const id = getItemId(el);
       if (!id) return;
+      if (canSelectId && !canSelectId(id)) return;
       if (rectsIntersect(box, el.getBoundingClientRect())) ids.add(id);
     });
     return ids;

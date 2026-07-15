@@ -47,6 +47,10 @@ func (s *stubMoveKGService) GetKnowledgeByID(_ context.Context, _ string) (*type
 	return nil, errors.New("knowledge not found")
 }
 
+func (s *stubMoveKGService) GetKnowledgeBatch(_ context.Context, _ uint64, _ []string) ([]*types.Knowledge, error) {
+	return []*types.Knowledge{}, nil
+}
+
 func newMoveGateRouter(kb interfaces.KnowledgeBaseService, kg interfaces.KnowledgeService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

@@ -1280,6 +1280,8 @@ func (h *KnowledgeBaseHandler) ListMoveTargets(c *gin.Context) {
 		c.Error(apperrors.NewUnauthorizedError("Unauthorized"))
 		return
 	}
+	currentTenantID := tenantID.(uint64)
+	currentUserID, _ := types.UserIDFromContext(ctx)
 
 	// Get source knowledge base
 	sourceKB, err := h.service.GetKnowledgeBaseByID(ctx, sourceKBID)
@@ -1291,7 +1293,7 @@ func (h *KnowledgeBaseHandler) ListMoveTargets(c *gin.Context) {
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
-	if sourceKB.TenantID != tenantID.(uint64) {
+	if sourceKB.TenantID != currentTenantID {
 		c.Error(errors.NewForbiddenError("No permission to access this knowledge base"))
 		return
 	}
@@ -1309,6 +1311,9 @@ func (h *KnowledgeBaseHandler) ListMoveTargets(c *gin.Context) {
 		if kb.ID == sourceKBID {
 			continue
 		}
+		if kb.TenantID != currentTenantID {
+			continue
+		}
 		if kb.IsTemporary {
 			continue
 		}
@@ -1317,6 +1322,12 @@ func (h *KnowledgeBaseHandler) ListMoveTargets(c *gin.Context) {
 		}
 		if kb.EmbeddingModelID != sourceKB.EmbeddingModelID {
 			continue
+		}
+		if h.kbVisibility != nil {
+			canAccess, accessErr := h.kbVisibility.CanAccessKB(ctx, currentUserID, currentTenantID, kb.ID, false)
+			if accessErr != nil || !canAccess {
+				continue
+			}
 		}
 		targets = append(targets, kb)
 	}

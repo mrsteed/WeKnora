@@ -265,7 +265,7 @@ func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler, g *r
 		chunks.DELETE("/:knowledge_id/:id", g.OwnedChunkKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunk)
 		chunks.DELETE("/:knowledge_id", g.OwnedChunkKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunksByKnowledgeID)
 		chunks.PUT("/:knowledge_id/:id", g.OwnedChunkKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.UpdateChunk)
-		chunks.DELETE("/by-id/:id/questions", g.OwnedChunkKBOrAdminFromChunkID(), g.KBAccessWriteFromChunkIDParam("id"), handler.DeleteGeneratedQuestion)
+		chunks.DELETE("/by-id/:id/questions", g.Viewer(), g.KBAccessReadFromChunkIDParam("id"), handler.DeleteGeneratedQuestion)
 	}
 }
 
@@ -286,29 +286,26 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 	{
 		// Cross-knowledge endpoints (no :id) can't be gated on a single
 		// KB — they accept arbitrary knowledge IDs and the handler must
-		// fan out the access check itself. So /batch and /search keep
-		// the role-only floor; /move and /batch-delete stay Contributor.
+		// fan out the access check itself. Keep the route-level floor at
+		// Viewer and let the handler apply per-document ownership / KB-admin
+		// rules after resolving every targeted document.
 		k.GET("/batch", g.Viewer(), handler.GetKnowledgeBatch)
 		k.GET("/:id", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledge)
 		k.GET("/:id/stages", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledgeSpans)
 		k.GET("/:id/spans", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledgeSpans)
-		k.DELETE("/:id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.DeleteKnowledge)
-		k.PUT("/:id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateKnowledge)
-		k.PUT("/manual/:id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateManualKnowledge)
-		k.POST("/:id/reparse", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.ReparseKnowledge)
-		k.POST("/:id/cancel-parse", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.CancelKnowledgeParse)
+		k.DELETE("/:id", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.DeleteKnowledge)
+		k.PUT("/:id", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.UpdateKnowledge)
+		k.PUT("/manual/:id", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.UpdateManualKnowledge)
+		k.POST("/:id/reparse", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.ReparseKnowledge)
+		k.POST("/:id/cancel-parse", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.CancelKnowledgeParse)
 		k.GET("/:id/download", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.DownloadKnowledgeFile)
 		k.GET("/:id/preview", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.PreviewKnowledgeFile)
-		k.PUT("/image/:id/:chunk_id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateImageInfo)
-		// Batch / cross-KB ops stay Contributor-gated: there is no
-		// single owning KB to walk back to. A future PR could add a
-		// "must own every targeted KB" guard if the requirement
-		// surfaces.
-		k.PUT("/tags", g.Contributor(), handler.UpdateKnowledgeTagBatch)
-		k.POST("/batch-reparse", g.Contributor(), handler.BatchReparseKnowledge)
+		k.PUT("/image/:id/:chunk_id", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.UpdateImageInfo)
+		k.PUT("/tags", g.Viewer(), handler.UpdateKnowledgeTagBatch)
+		k.POST("/batch-reparse", g.Viewer(), handler.BatchReparseKnowledge)
 		k.GET("/search", g.Viewer(), handler.SearchKnowledge)
-		k.POST("/batch-delete", g.Contributor(), handler.BatchDeleteKnowledge)
-		k.POST("/move", g.Contributor(), handler.MoveKnowledge)
+		k.POST("/batch-delete", g.Viewer(), handler.BatchDeleteKnowledge)
+		k.POST("/move", g.Viewer(), handler.MoveKnowledge)
 		k.GET("/move/progress/:task_id", g.Viewer(), handler.GetKnowledgeMoveProgress)
 	}
 }

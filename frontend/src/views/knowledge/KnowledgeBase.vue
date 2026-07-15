@@ -283,20 +283,29 @@ const canManage = computed(() => {
   return orgStore.canManageKB(kbId.value, false);
 });
 
-// Can mutate knowledge (move / batch-delete): the backend gate for these
-// two endpoints is g.Contributor(), so the caller MUST be Contributor+
-// in their tenant on top of having KB edit permission. Without the extra
-// role check, an org-share-editor whose tenant role is Viewer would see
-// the "Move" / "Batch manage" entries and 403 on click. For shared KBs
-// the local tenant role is irrelevant — canEdit already encodes the share
-// grant, so trust it.
-const canMutateKnowledge = computed(() => {
-  if (!canEdit.value) return false;
-  if (isViaShare.value) return true;
-  if (isOwner.value) return true;
-  if (authStore.hasRole('admin')) return true;
-  return authStore.hasRole('contributor');
-});
+const currentUserId = computed(() => (authStore.currentUserId || '').trim());
+const canManageAllDocuments = computed(() => canManage.value);
+type DocumentPermissionTarget = {
+  id?: string;
+  created_by?: string;
+} | null | undefined;
+
+const canMutateDocument = (item?: DocumentPermissionTarget) => {
+  if (!item) return false;
+  if (canManageAllDocuments.value) return true;
+  const createdBy = String(item.created_by || '').trim();
+  return createdBy !== '' && createdBy === currentUserId.value;
+};
+
+const canSelectDocument = (item?: DocumentPermissionTarget) => {
+  return canMutateDocument(item);
+};
+
+// Move stays same-tenant only; shared-KB visibility does not imply a
+// cross-tenant move target in the current backend task model.
+const canMoveDocument = (item?: DocumentPermissionTarget) => {
+  return !isViaShare.value && canMutateDocument(item);
+};
 
 // Upload permission follows KB visibility instead of KB management.
 // If the current page is readable, the user may upload/import/manual-create
@@ -312,6 +321,16 @@ const effectiveKBPermission = computed(() => orgStore.getKBPermission(kbId.value
 
 const knowledgeList = ref<Array<{ id: string; name: string; type?: string }>>([]);
 let { cardList, total, moreIndex, details, getKnowled, delKnowledge, openMore, onVisibleChange: _onVisibleChange, getCardDetails, getfDetails } = useKnowledgeBase(kbId.value)
+const canMutateAnyDocument = computed(() => {
+  if (canManageAllDocuments.value) return true;
+  return (cardList.value || []).some((item: KnowledgeCard) => canMutateDocument(item));
+});
+const canMutateCurrentDetailKnowledge = computed(() => {
+  if (!details?.id) return false;
+  if (canManageAllDocuments.value) return true;
+  const createdBy = String((details as any)?.created_by || '').trim();
+  return createdBy !== '' && createdBy === currentUserId.value;
+});
 
 const showKbDetailContextualGuide = computed(() => {
   return Boolean(kbId.value)
@@ -478,6 +497,7 @@ const awaitBatchReparseReflection = async (ids: string[]) => {
 };
 
 const confirmBatchReparse = async () => {
+  pruneUnauthorizedSelection();
   if (batchReparsing.value || batchDeleting.value || selectedIds.value.size === 0) return;
   const allIds = Array.from(selectedIds.value);
   const ids = allIds.filter((id) => {
@@ -661,6 +681,7 @@ const {
 } = useTagChipsOverflow('tagItemId');
 
 function openTagEditDialog(item: KnowledgeCard) {
+  if (!canMutateDocument(item)) return;
   tagEditTarget.value = item;
   tagEditDialogVisible.value = true;
 }
@@ -862,7 +883,7 @@ const onTagManageChanged = (payload?: { deletedTagId?: string }) => {
 
 const handleKnowledgeTagChange = async (knowledgeId: string, tagIds: string[]) => {
   try {
-    await updateKnowledgeTagBatch({ updates: { [knowledgeId]: tagIds } });
+    await updateKnowledgeTagBatch({ kb_id: kbId.value, updates: { [knowledgeId]: tagIds } });
     MessagePlugin.success(t('knowledgeBase.tagUpdateSuccess'));
     resetPage(); // Reset page counter to 1 when reloading files after tag change
     loadKnowledgeFiles(kbId.value);
@@ -1147,6 +1168,8 @@ watch(() => cardList.value, (newValue) => {
 type KnowledgeCard = {
   id: string;
   knowledge_base_id?: string;
+  created_by?: string;
+  created_by_nickname?: string;
   parse_status: string;
   summary_status?: string;
   description?: string;
@@ -1412,6 +1435,7 @@ const onReparseMenuClick = (index: number, item: KnowledgeCard) => {
 };
 
 const handleMoveKnowledge = async (item: KnowledgeCard) => {
+  if (!canMoveDocument(item)) return;
   moveKnowledgeId.value = item.id;
   moveMenuMode.value = 'targets';
   moveTargetsLoading.value = true;
@@ -1925,9 +1949,25 @@ const getDoc = (page: number) => {
   getfDetails(details.id, page)
 };
 
+const getKnowledgeCardById = (id: string) => {
+  return (cardList.value || []).find((item: KnowledgeCard) => item.id === id) || null;
+};
+
+const pruneUnauthorizedSelection = () => {
+  if (selectedIds.value.size === 0) return;
+  for (const id of Array.from(selectedIds.value)) {
+    const item = getKnowledgeCardById(id);
+    if (!item || !canSelectDocument(item)) selectedIds.value.delete(id);
+  }
+  if (selectedIds.value.size === 0) {
+    lastSelectedIndex = -1;
+  }
+};
+
 const toggleSelectRow = (id: string, checked: boolean, shiftKey?: boolean) => {
-  const items = cardList.value || [];
+  const items = (cardList.value || []).filter((item: KnowledgeCard) => canSelectDocument(item));
   const idx = items.findIndex((i: KnowledgeCard) => i.id === id);
+  if (idx < 0) return;
   if (shiftKey && lastSelectedIndex >= 0 && idx >= 0) {
     const [s, e] = idx < lastSelectedIndex
       ? [idx, lastSelectedIndex]
@@ -1949,10 +1989,11 @@ const onCardGridCheckboxChange = (id: string, checked: boolean, ctx?: { e?: Even
 };
 
 const toggleSelectAll = (checked: boolean) => {
+  const selectableItems = (cardList.value || []).filter((item: KnowledgeCard) => canSelectDocument(item));
   if (checked) {
-    for (const item of cardList.value || []) selectedIds.value.add(item.id);
+    for (const item of selectableItems) selectedIds.value.add(item.id);
   } else {
-    for (const item of cardList.value || []) selectedIds.value.delete(item.id);
+    for (const item of selectableItems) selectedIds.value.delete(item.id);
   }
 };
 
@@ -1984,6 +2025,7 @@ watch(viewMode, (mode) => {
 // Triggered from a card / row "..." menu — match the session-list UX where
 // the menu item simply opens batch mode (no auto-selection).
 const handleEnterBatchFromCard = (item: any) => {
+  if (!canSelectDocument(item)) return;
   if (item) item.isMore = false;
   moreIndex.value = -1;
   clearSelection();
@@ -2000,7 +2042,11 @@ const {
   itemSelector: '.knowledge-card[data-select-id], .doc-list-row[data-select-id]',
   selectedIds,
   getItemId: (el) => el.dataset.selectId || null,
-  enabled: computed(() => canEdit.value && !isFAQ.value && cardList.value.length > 0),
+  canSelectId: (id) => {
+    const item = getKnowledgeCardById(id);
+    return canSelectDocument(item);
+  },
+  enabled: computed(() => canMutateAnyDocument.value && !isFAQ.value && cardList.value.length > 0),
   onSelectionStart: () => {
     batchMode.value = true;
   },
@@ -2011,7 +2057,7 @@ const isManualDraftKnowledge = (item: KnowledgeCard) =>
 
 const openKnowledgeItem = (item: KnowledgeCard) => {
   if (shouldSuppressDocClick()) return;
-  if (canEdit.value && isManualDraftKnowledge(item)) {
+  if (canMutateDocument(item) && isManualDraftKnowledge(item)) {
     const index = cardList.value.findIndex((c) => c.id === item.id);
     if (index >= 0) {
       handleManualEdit(index, item);
@@ -2023,6 +2069,7 @@ const openKnowledgeItem = (item: KnowledgeCard) => {
 
 const onCardClick = (item: KnowledgeCard) => {
   if (batchMode.value) {
+    if (!canSelectDocument(item)) return;
     onCardGridCheckboxChange(item.id, !selectedIds.value.has(item.id));
     return;
   }
@@ -2030,6 +2077,7 @@ const onCardClick = (item: KnowledgeCard) => {
 };
 
 const confirmBatchDelete = async () => {
+  pruneUnauthorizedSelection();
   if (batchDeleting.value || batchReparsing.value || selectedIds.value.size === 0) return;
   const ids = Array.from(selectedIds.value);
   const deletedIdSet = new Set(ids);
@@ -2077,6 +2125,8 @@ const handleListAction = (
   action: 'edit' | 'reparse' | 'cancel-parse' | 'move' | 'delete',
   item: KnowledgeCard,
 ) => {
+  if (!canMutateDocument(item)) return;
+  if (action === 'move' && !canMoveDocument(item)) return;
   const idx = (cardList.value || []).findIndex((i: KnowledgeCard) => i.id === item.id);
   if (action === 'edit') return handleManualEdit(idx, item);
   if (action === 'reparse') return confirmRebuildKnowledge(idx, item);
@@ -2103,6 +2153,8 @@ watch(cardList, () => {
   if (moreIndex.value >= n) {
     moreIndex.value = -1;
   }
+  if (selectedIds.value.size === 0) return;
+  pruneUnauthorizedSelection();
   if (selectedIds.value.size === 0) return;
   const visible = new Set(items.map((i: KnowledgeCard) => i.id));
   for (const id of selectedIds.value) {
@@ -2443,13 +2495,13 @@ async function createNewSession(value: string): Promise<void> {
                       @mousemove="onCardMouseMove($event)" @mouseleave="onCardMouseLeave">
                       <div class="card-content">
                         <div class="card-content-nav">
-                          <div v-if="canEdit && batchMode" class="card-nav-check" @click.stop>
+                          <div v-if="canSelectDocument(item) && batchMode" class="card-nav-check" @click.stop>
                             <t-checkbox class="card-select-checkbox" size="small" :checked="selectedIds.has(item.id)"
                               :title="item.file_name"
                               @change="(checked: boolean, ctx?: { e?: Event }) => onCardGridCheckboxChange(item.id, checked, ctx)" />
                           </div>
                           <span class="card-content-title" :title="item.file_name">{{ item.file_name }}</span>
-                          <t-popup v-if="canEdit" v-model="item.isMore" overlayClassName="card-more"
+                          <t-popup v-if="canMutateDocument(item)" v-model="item.isMore" overlayClassName="card-more"
                             :on-visible-change="(v: boolean) => onCardMoreVisibleChange(v, item)" trigger="click"
                             destroy-on-close placement="bottom-right">
                             <div variant="outline" class="more-wrap" @click.stop="openMore(index)"
@@ -2488,12 +2540,12 @@ async function createNewSession(value: string): Promise<void> {
                                     <span>{{ t('knowledgeBase.cancelParse') }}</span>
                                   </div>
                                 </t-popconfirm>
-                                <div v-if="canMutateKnowledge" class="card-menu-item"
+                                <div v-if="canMoveDocument(item)" class="card-menu-item"
                                   @click.stop="handleMoveKnowledge(item)">
                                   <t-icon class="icon" name="swap" />
                                   <span>{{ t('knowledgeBase.moveDocument') }}</span>
                                 </div>
-                                <div v-if="canMutateKnowledge" class="card-menu-item"
+                                <div v-if="canSelectDocument(item)" class="card-menu-item"
                                   @click.stop="handleEnterBatchFromCard(item)">
                                   <t-icon class="icon" name="queue" />
                                   <span>{{ t('menu.batchManage') }}</span>
@@ -2621,7 +2673,7 @@ async function createNewSession(value: string): Promise<void> {
                         <div class="card-bottom-right">
                           <div v-if="tagList.length" class="card-tag-selector" @click.stop>
                             <!-- 可编辑模式：点击打开弹窗 -->
-                            <template v-if="canEdit">
+                            <template v-if="canMutateDocument(item)">
                               <template v-if="(item.tags || []).length > 0">
                                 <t-tooltip v-if="hasTagOverflow(item.id, (item.tags || []).length)"
                                   :content="(item.tags || []).map((t: any) => t.name).join(', ')" placement="top">
@@ -2743,7 +2795,9 @@ async function createNewSession(value: string): Promise<void> {
                 </template>
                 <template v-else-if="cardList.length && viewMode === 'list'">
                   <DocumentListView :items="cardList" :selected-ids="selectedIds" :tag-list="tagList"
-                    :can-edit="canEdit" @open="(item: any) => openKnowledgeItem(item)" @toggle-row="toggleSelectRow"
+                    :show-action-column="canMutateAnyDocument" :can-mutate-document="canMutateDocument"
+                    :can-select-document="canSelectDocument" :can-move-document="canMoveDocument"
+                    @open="(item: any) => openKnowledgeItem(item)" @toggle-row="toggleSelectRow"
                     @toggle-all="toggleSelectAll" @action="(action: any, item: any) => handleListAction(action, item)"
                     @tag-edit="(item: any) => openTagEditDialog(item)" />
                 </template>
@@ -2764,7 +2818,8 @@ async function createNewSession(value: string): Promise<void> {
       </template>
 
       <!-- DocContent drawer (shared by documents tab and wiki source refs) -->
-      <DocContent ref="docContentRef" :visible="isCardDetails" :details="details" :canEditKB="canEdit"
+      <DocContent ref="docContentRef" :visible="isCardDetails" :details="details"
+        :can-mutate-knowledge="canMutateCurrentDetailKnowledge"
         @closeDoc="closeDoc" @getDoc="getDoc">
       </DocContent>
     </div>
@@ -2785,7 +2840,7 @@ async function createNewSession(value: string): Promise<void> {
   <!-- 标签编辑弹窗 -->
   <TagEditDialog :visible="tagEditDialogVisible"
     :knowledge-name="tagEditTarget?.display_name || tagEditTarget?.file_name || tagEditTarget?.title || ''"
-    :kb-id="kbId" :tag-list="tagList" :selected-tags="tagEditTarget?.tags || []" :can-manage="canEdit"
+    :kb-id="kbId" :tag-list="tagList" :selected-tags="tagEditTarget?.tags || []" :can-manage="canManage"
     @update:visible="tagEditDialogVisible = $event" @confirm="onTagEditConfirm" @tag-created="loadTags(kbId, true)"
     @open-manage="openTagManageFromEditDialog" />
 

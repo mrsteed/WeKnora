@@ -14,21 +14,17 @@ import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL, hyd
 import { normalizeSpuriousTablePrefixes } from '@/utils/markdownTableNormalize';
 import { openMermaidFullscreen } from '@/utils/mermaidViewer';
 import { useI18n } from 'vue-i18n';
-import { useAuthStore } from '@/stores/auth';
 import DocumentPreview from '@/components/document-preview.vue';
 import KnowledgeProcessingTimeline from '@/components/knowledge-processing-timeline.vue';
 
 const { t } = useI18n();
-const authStore = useAuthStore();
 
 // canDeleteGeneratedQuestion 对应后端 DELETE /chunks/by-id/:id/questions
-// 的 OwnedChunkKBOrAdminFromChunkID 守卫——KB 创建者或租户 Admin+
-// 才允许删除。父组件 KnowledgeBase.vue 通过 :canEditKB 把 KB 级权限
-// 传下来（包含 KB creator / Admin / 组织分享 editor 三种来源），未
-// 传时按更严格的 Admin 兜底，避免 Viewer 看到一个会 403 的入口。
+// 的文档归属判定：KB 创建者 / 管理员可以删除任意文档下的问题，
+// 普通用户只能删除自己上传文档里的生成问题。父组件按当前打开的
+// 文档逐条计算后传入布尔值，避免无权限用户看到会 403 的入口。
 const canDeleteGeneratedQuestion = computed(() => {
-  if (props.canEditKB === true) return true;
-  return authStore.hasRole('admin');
+  return props.canMutateKnowledge === true;
 });
 
 const detailTags = computed(() => {
@@ -84,7 +80,7 @@ mermaid.initialize({
     topPadding: 50
   }
 });
-const props = defineProps(["visible", "details", "knowledgeType", "sourceInfo", "canEditKB", "parse_status"]);
+const props = defineProps(["visible", "details", "knowledgeType", "sourceInfo", "canMutateKnowledge", "parse_status"]);
 const emit = defineEmits(["closeDoc", "getDoc", "questionDeleted"]);
 
 const hasTimelineSpans = ref(false);
