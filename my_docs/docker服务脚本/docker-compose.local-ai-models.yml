@@ -1,0 +1,119 @@
+services:
+  infinity-api:
+    image: michaelf34/infinity:latest
+    container_name: weknora-infinity-api
+    restart: unless-stopped
+    gpus:
+      - driver: nvidia
+        device_ids: ["2"]
+        capabilities: [gpu]
+    environment:
+      HF_HUB_DISABLE_XET: "1"
+      INFINITY_MODEL_ID: "BAAI/bge-m3;BAAI/bge-reranker-v2-m3;"
+      INFINITY_SERVED_MODEL_NAME: "bge-m3;bge-reranker-v2-m3;"
+      INFINITY_BATCH_SIZE: "8;4;"
+      INFINITY_ENGINE: "torch"
+      INFINITY_DEVICE: "cuda"
+      INFINITY_DEVICE_ID: "0"
+      INFINITY_DTYPE: "float16"
+      INFINITY_MODEL_WARMUP: "false;false;"
+      INFINITY_PORT: "7997"
+      INFINITY_API_KEY: "local-infinity"
+    ports:
+      - "7997:7997"
+    volumes:
+      - /data/models/hf-cache:/app/.cache
+    command:
+      - v2
+
+  infinity-api-cpu:
+    image: michaelf34/infinity:latest
+    container_name: weknora-infinity-api-cpu
+    restart: unless-stopped
+    environment:
+      HF_HUB_DISABLE_XET: "1"
+      INFINITY_MODEL_ID: "BAAI/bge-m3;BAAI/bge-reranker-v2-m3;"
+      INFINITY_SERVED_MODEL_NAME: "bge-m3;bge-reranker-v2-m3;"
+      INFINITY_BATCH_SIZE: "4;2;"
+      INFINITY_ENGINE: "torch"
+      INFINITY_DEVICE: "cpu"
+      INFINITY_DTYPE: "float32"
+      INFINITY_MODEL_WARMUP: "false;false;"
+      INFINITY_PORT: "7997"
+      INFINITY_API_KEY: "local-infinity"
+    ports:
+      - "7997:7997"
+    volumes:
+      - /data/models/hf-cache:/app/.cache
+    command:
+      - v2
+
+  qwen3-vl-llamacpp:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: weknora-qwen3-vl-llamacpp
+    restart: unless-stopped
+    gpus:
+      - driver: nvidia
+        device_ids: ["2"]
+        capabilities: [gpu]
+    ports:
+      - "18080:8080"
+    volumes:
+      - /data/models/hf-cache/qwen3-vl-llamacpp:/root/.cache
+      - /data/weknora/model-logs/qwen3-vl-llamacpp:/logs
+    command:
+      - --hf-repo
+      - Qwen/Qwen3-VL-8B-Instruct-GGUF
+      - --hf-file
+      - Qwen3VL-8B-Instruct-Q4_K_M.gguf
+      - --mmproj-url
+      - https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-8B-Instruct-F16.gguf
+      - --alias
+      - qwen3-vl-8b-q4
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - "8192"
+      - --n-gpu-layers
+      - "99"
+      - --threads
+      - "8"
+      - --parallel
+      - "2"
+      - --cont-batching
+      - --mmproj-offload
+      - --image-min-tokens
+      - "256"
+      - --image-max-tokens
+      - "4096"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  speaches-asr:
+    image: ghcr.io/speaches-ai/speaches:latest-cuda-12.6.3
+    container_name: weknora-speaches-asr
+    restart: unless-stopped
+    gpus:
+      - driver: nvidia
+        device_ids: ["2"]
+        capabilities: [gpu]
+    ports:
+      - "18000:8000"
+    environment:
+      HF_HUB_DISABLE_XET: "1"
+      UVICORN_HOST: "0.0.0.0"
+      UVICORN_PORT: "8000"
+    volumes:
+      - /data/models/hf-cache:/home/ubuntu/.cache/huggingface/hub
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://0.0.0.0:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
