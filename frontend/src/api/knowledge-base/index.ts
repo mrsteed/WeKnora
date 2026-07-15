@@ -79,6 +79,10 @@ export function createKnowledgeBase(data: {
     model_id?: string;
     language?: string;
   };
+  question_generation_config?: {
+    enabled: boolean;
+    question_count?: number;
+  };
   extract_config?: any;
   faq_config?: { index_mode: string; question_index_mode?: string };
   wiki_config?: {

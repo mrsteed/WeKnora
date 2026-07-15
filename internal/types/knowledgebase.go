@@ -102,7 +102,7 @@ type KnowledgeBase struct {
 	// MaxConcurrentParseTasks caps how many file documents in this knowledge base
 	// may be actively parsed at the same time. Pending uploads beyond this limit
 	// stay in parse_status=pending until the lightweight dispatcher admits them.
-	MaxConcurrentParseTasks int `yaml:"max_concurrent_parse_tasks" json:"max_concurrent_parse_tasks" gorm:"column:max_concurrent_parse_tasks;not null;default:5"`
+	MaxConcurrentParseTasks int `yaml:"max_concurrent_parse_tasks" json:"max_concurrent_parse_tasks" gorm:"column:max_concurrent_parse_tasks;not null;default:3"`
 	// WikiConfig stores wiki-specific configuration (only for wiki type knowledge bases)
 	WikiConfig *WikiConfig `yaml:"wiki_config"             json:"wiki_config"             gorm:"column:wiki_config;type:json"`
 	// IndexingStrategy controls which indexing pipelines are active for this knowledge base.
@@ -540,7 +540,7 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 		return
 	}
 	if kb.MaxConcurrentParseTasks <= 0 {
-		kb.MaxConcurrentParseTasks = 5
+		kb.MaxConcurrentParseTasks = 3
 	}
 	if kb.Type == "" {
 		kb.Type = KnowledgeBaseTypeDocument

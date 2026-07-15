@@ -94,7 +94,7 @@ const emit = defineEmits<{
 const localQuestionGeneration = ref<QuestionGenerationConfig>(
   props.questionGeneration || { enabled: false, questionCount: 3 }
 )
-const localMaxConcurrentParseTasks = ref<number>(props.maxConcurrentParseTasks || 5)
+const localMaxConcurrentParseTasks = ref<number>(props.maxConcurrentParseTasks || 3)
 
 watch(() => props.questionGeneration, (newVal) => {
   if (newVal) {
@@ -121,7 +121,7 @@ const handleQuestionGenerationChange = () => {
 
 const handleMaxConcurrentParseTasksChange = () => {
   if (!localMaxConcurrentParseTasks.value || localMaxConcurrentParseTasks.value <= 0) {
-    localMaxConcurrentParseTasks.value = 5
+    localMaxConcurrentParseTasks.value = 3
   }
   emit('update:maxConcurrentParseTasks', localMaxConcurrentParseTasks.value)
 }

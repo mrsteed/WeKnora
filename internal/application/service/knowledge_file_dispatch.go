@@ -94,7 +94,7 @@ func (s *knowledgeService) ProcessKnowledgeFileDispatch(ctx context.Context, t *
 	// summary / graph work can overlap with the next parsing document.
 	limit := kb.MaxConcurrentParseTasks
 	if limit <= 0 {
-		limit = 5
+		limit = 3
 	}
 	available := limit - int(inFlight)
 	if available <= 0 {

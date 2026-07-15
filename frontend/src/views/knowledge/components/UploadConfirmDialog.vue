@@ -638,7 +638,7 @@ function createDefaultUIState(): UploadUIState {
     },
     multimodalConfig: { enabled: false, vllmModelId: '' },
     asrConfig: { enabled: false, modelId: '', language: '' },
-    questionGenerationConfig: { enabled: true, questionCount: 3 },
+    questionGenerationConfig: { enabled: false, questionCount: 3 },
     nodeExtractConfig: {
       enabled: false,
       text: '',
@@ -680,7 +680,7 @@ function initFromKbInfo(kb: any) {
       language: kb.asr_config?.language || '',
     },
     questionGenerationConfig: {
-      enabled: kb.question_generation_config?.enabled ?? true,
+      enabled: kb.question_generation_config?.enabled ?? false,
       questionCount: kb.question_generation_config?.question_count || 3,
     },
     nodeExtractConfig: {
