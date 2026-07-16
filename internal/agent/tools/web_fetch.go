@@ -2,12 +2,15 @@ package tools
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -23,8 +26,10 @@ import (
 )
 
 const (
-	webFetchTimeout  = 60 * time.Second // timeout for web fetch
-	webFetchMaxChars = 100000           // maximum number of characters to fetch
+	webFetchTimeout                 = 60 * time.Second // timeout for web fetch
+	webFetchMaxChars                = 100000           // maximum number of characters to fetch
+	webFetchChromedpBaseDirEnv      = "WEKNORA_WEB_FETCH_CHROMEDP_BASE_DIR"
+	webFetchChromedpDefaultBaseDir  = "/tmp"
 )
 
 var webFetchTool = BaseTool{
@@ -77,11 +82,21 @@ type webFetchItemResult struct {
 	err    error
 }
 
+type webFetchSummary struct {
+	RequestedCount int
+	FetchedCount   int
+	FailedCount    int
+	AllFetchFailed bool
+	AnswerBasis    string
+	StatusNotice   string
+}
+
 // WebFetchTool fetches web page content and summarizes it using an LLM
 type WebFetchTool struct {
 	BaseTool
-	client    *http.Client
-	chatModel chat.Chat
+	client          *http.Client
+	chatModel       chat.Chat
+	chromedpBaseDir string
 }
 
 // NewWebFetchTool creates a new web_fetch tool instance
@@ -91,9 +106,10 @@ func NewWebFetchTool(chatModel chat.Chat) *WebFetchTool {
 	ssrfConfig.Timeout = webFetchTimeout
 
 	return &WebFetchTool{
-		BaseTool:  webFetchTool,
-		client:    utils.NewSSRFSafeHTTPClient(ssrfConfig),
-		chatModel: chatModel,
+		BaseTool:        webFetchTool,
+		client:          utils.NewSSRFSafeHTTPClient(ssrfConfig),
+		chatModel:       chatModel,
+		chromedpBaseDir: resolveWebFetchChromedpBaseDir(),
 	}
 }
 
@@ -162,6 +178,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args json.RawMessage) (*type
 	}
 
 	wg.Wait()
+	summary := summarizeWebFetchResults(results)
 
 	var builder strings.Builder
 	builder.WriteString("=== Web Fetch Results ===\n\n")
@@ -198,29 +215,53 @@ func (t *WebFetchTool) Execute(ctx context.Context, args json.RawMessage) (*type
 		}
 	}
 
+	builder.WriteString("=== Fetch Summary ===\n")
+	builder.WriteString(fmt.Sprintf("- Requested URLs: %d\n", summary.RequestedCount))
+	builder.WriteString(fmt.Sprintf("- Full pages fetched: %d\n", summary.FetchedCount))
+	builder.WriteString(fmt.Sprintf("- Fetch failures: %d\n", summary.FailedCount))
+	if summary.StatusNotice != "" {
+		builder.WriteString(fmt.Sprintf("- Notice: %s\n", summary.StatusNotice))
+	}
+	builder.WriteString("\n")
+
 	// Add guidance for next steps
 	builder.WriteString("\n=== Next Steps ===\n")
-	if len(aggregated) > 0 {
-		builder.WriteString("- ✅ Full page content has been fetched and analyzed.\n")
+	if summary.FetchedCount > 0 {
+		builder.WriteString(fmt.Sprintf("- ✅ Full page content was fetched for %d of %d URL(s).\n", summary.FetchedCount, summary.RequestedCount))
 		builder.WriteString("- Evaluate if the content is sufficient to answer the question completely.\n")
 		builder.WriteString("- Synthesize information from all fetched pages for comprehensive answers.\n")
-		if !success {
-			builder.WriteString("- ⚠️ Some URLs failed to fetch. Use available content or try alternative sources.\n")
+		if summary.FailedCount > 0 {
+			builder.WriteString("- ⚠️ Some URLs could not be fetched. Treat those URLs as snippet-only evidence from prior web_search results.\n")
 		}
 	} else {
-		builder.WriteString("- ❌ No content was successfully fetched. Consider:\n")
+		builder.WriteString("- ❌ No full page content was successfully fetched.\n")
+		builder.WriteString("- Any downstream answer should rely on prior web_search snippets rather than full page text.\n")
+		builder.WriteString("- Consider:\n")
 		builder.WriteString("  - Verify URLs are accessible\n")
 		builder.WriteString("  - Try alternative sources from web_search results\n")
 		builder.WriteString("  - Check if information can be found in knowledge base instead\n")
 	}
 
 	data := map[string]interface{}{
-		"results":      aggregated,
-		"count":        len(aggregated),
-		"display_type": "web_fetch_results",
+		"results":          aggregated,
+		"count":            len(aggregated),
+		"requested_count":  summary.RequestedCount,
+		"fetched_count":    summary.FetchedCount,
+		"failed_count":     summary.FailedCount,
+		"all_fetch_failed": summary.AllFetchFailed,
+		"answer_basis":     summary.AnswerBasis,
+		"status_notice":    summary.StatusNotice,
+		"display_type":     "web_fetch_results",
 	}
 
-	logger.Infof(ctx, "[Tool][WebFetch] Completed with success=%v, items=%d", success, len(aggregated))
+	logger.Infof(
+		ctx,
+		"[Tool][WebFetch] Completed with success=%v, requested=%d, fetched=%d, failed=%d",
+		success,
+		summary.RequestedCount,
+		summary.FetchedCount,
+		summary.FailedCount,
+	)
 
 	return &types.ToolResult{
 		Success: success,
@@ -233,6 +274,56 @@ func (t *WebFetchTool) Execute(ctx context.Context, args json.RawMessage) (*type
 			return ""
 		}(),
 	}, nil
+}
+
+func resolveWebFetchChromedpBaseDir() string {
+	baseDir := strings.TrimSpace(os.Getenv(webFetchChromedpBaseDirEnv))
+	if baseDir == "" {
+		baseDir = webFetchChromedpDefaultBaseDir
+	}
+	return filepath.Clean(baseDir)
+}
+
+func summarizeWebFetchResults(results []*webFetchItemResult) webFetchSummary {
+	summary := webFetchSummary{
+		RequestedCount: len(results),
+		AnswerBasis:    "full_page_content",
+	}
+
+	for _, res := range results {
+		if res != nil && isFetchedWebFetchResult(res.data) {
+			summary.FetchedCount++
+		}
+	}
+
+	summary.FailedCount = summary.RequestedCount - summary.FetchedCount
+	summary.AllFetchFailed = summary.RequestedCount > 0 && summary.FetchedCount == 0
+
+	switch {
+	case summary.AllFetchFailed:
+		summary.AnswerBasis = "web_search_snippets_only"
+		summary.StatusNotice = "No full-page content was fetched. Any downstream answer should rely on prior web_search snippets rather than full-page text."
+	case summary.FailedCount > 0:
+		summary.AnswerBasis = "mixed_fulltext_and_snippets"
+		summary.StatusNotice = fmt.Sprintf(
+			"Fetched full-page content for %d of %d URL(s). Downstream answers should prioritize fetched page text and treat the remaining URLs as snippet-only evidence.",
+			summary.FetchedCount,
+			summary.RequestedCount,
+		)
+	}
+
+	return summary
+}
+
+func isFetchedWebFetchResult(data map[string]interface{}) bool {
+	if data == nil {
+		return false
+	}
+	if status, ok := data["fetch_status"].(string); ok && status != "" {
+		return status == "fetched"
+	}
+	rawContent, _ := data["raw_content"].(string)
+	return strings.TrimSpace(rawContent) != ""
 }
 
 // parseParams parses the parameters for a web fetch item
@@ -321,9 +412,10 @@ func (t *WebFetchTool) executeFetch(
 		logger.Errorf(ctx, "[Tool][WebFetch] 获取页面失败 url=%s err=%v", vp.URL, err)
 		return fmt.Sprintf("URL: %s\nError: %v\n", displayURL, err),
 			map[string]interface{}{
-				"url":    displayURL,
-				"prompt": vp.Prompt,
-				"error":  err.Error(),
+				"url":         displayURL,
+				"prompt":      vp.Prompt,
+				"error":       err.Error(),
+				"fetch_status": "failed",
 			}, err
 	}
 
@@ -335,6 +427,7 @@ func (t *WebFetchTool) executeFetch(
 		"raw_content":    textContent,
 		"content_length": len(textContent),
 		"method":         method,
+		"fetch_status":   "fetched",
 	}
 	params := webFetchParams{URL: displayURL, Prompt: vp.Prompt}
 	var summary string
@@ -414,6 +507,24 @@ func (t *WebFetchTool) buildOutputText(params webFetchParams, content string, su
 	return builder.String()
 }
 
+func (t *WebFetchTool) prepareChromedpProfileDir() (string, error) {
+	baseDir := resolveWebFetchChromedpBaseDir()
+	if t.chromedpBaseDir != "" {
+		baseDir = filepath.Clean(strings.TrimSpace(t.chromedpBaseDir))
+	}
+	if baseDir == "" {
+		baseDir = webFetchChromedpDefaultBaseDir
+	}
+	if err := os.MkdirAll(baseDir, 0o700); err != nil {
+		return "", fmt.Errorf("failed to prepare chromedp base directory %s: %w", baseDir, err)
+	}
+	profileDir, err := os.MkdirTemp(baseDir, "chromedp-runner-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create chromedp profile directory under %s: %w", baseDir, err)
+	}
+	return profileDir, nil
+}
+
 // fetchHTMLContent fetches the HTML content for a web fetch item using pinned IP (DNS pinning).
 func (t *WebFetchTool) fetchHTMLContent(ctx context.Context, vp *validatedParams) (string, string, error) {
 	html, err := t.fetchWithChromedp(ctx, vp)
@@ -439,16 +550,25 @@ func (t *WebFetchTool) fetchHTMLContent(ctx context.Context, vp *validatedParams
 // fetchWithChromedp fetches the HTML content with Chromedp. Uses host-resolver-rules to pin host to vp.PinnedIP (DNS rebinding protection).
 func (t *WebFetchTool) fetchWithChromedp(ctx context.Context, vp *validatedParams) (string, error) {
 	logger.Debugf(ctx, "[Tool][WebFetch] Chromedp 抓取开始 url=%s", vp.URL)
+	profileDir, err := t.prepareChromedpProfileDir()
+	if err != nil {
+		return "", fmt.Errorf("chromedp profile setup failed: %w", err)
+	}
+	defer os.RemoveAll(profileDir)
+	logger.Debugf(ctx, "[Tool][WebFetch] Chromedp profile_dir=%s base_dir=%s", profileDir, filepath.Dir(profileDir))
 
 	// DNS pinning: force Chrome to use the IP we resolved at validation time, not a second resolution.
 	hostRule := fmt.Sprintf("MAP %s %s", vp.Host, vp.PinnedIP.String())
 	opts := append(
 		chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.UserDataDir(profileDir),
 		chromedp.Flag("host-resolver-rules", hostRule),
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-setuid-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("no-first-run", true),
+		chromedp.Flag("no-default-browser-check", true),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("disable-features", "VizDisplayCompositor"),
 		chromedp.UserAgent(
@@ -466,16 +586,17 @@ func (t *WebFetchTool) fetchWithChromedp(ctx context.Context, vp *validatedParam
 	defer cancel()
 
 	var html string
-	err := chromedp.Run(ctx,
+	err = chromedp.Run(ctx,
 		chromedp.Navigate(vp.URL),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.OuterHTML("html", &html),
 	)
 	if err != nil {
+		logger.Warnf(ctx, "[Tool][WebFetch] Chromedp 运行失败 profile_dir=%s err=%v", profileDir, err)
 		return "", fmt.Errorf("chromedp run failed: %w", err)
 	}
 
-	logger.Debugf(ctx, "[Tool][WebFetch] Chromedp 抓取成功 url=%s", vp.URL)
+	logger.Debugf(ctx, "[Tool][WebFetch] Chromedp 抓取成功 url=%s profile_dir=%s", vp.URL, profileDir)
 	return html, nil
 }
 
@@ -506,13 +627,14 @@ func (t *WebFetchTool) fetchWithTimeout(ctx context.Context, vp *validatedParams
 	hostPort := net.JoinHostPort(vp.PinnedIP.String(), vp.Port)
 	rawURL := vp.URL
 	u, _ := url.Parse(rawURL)
+	originalHost := u.Host
 	u.Host = hostPort
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	// Preserve original host for TLS SNI and Host header (required for virtual hosting).
-	req.Host = net.JoinHostPort(vp.Host, vp.Port)
+	req.Host = originalHost
 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; WebFetchTool/1.0)")
 	req.Header.Set(
@@ -522,7 +644,29 @@ func (t *WebFetchTool) fetchWithTimeout(ctx context.Context, vp *validatedParams
 	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 	req.Header.Set("Cache-Control", "no-cache")
 
-	return t.client.Do(req)
+	return t.httpClientForFetch(vp).Do(req)
+}
+
+func (t *WebFetchTool) httpClientForFetch(vp *validatedParams) *http.Client {
+	if t.client == nil || !strings.HasPrefix(strings.ToLower(vp.URL), "https://") {
+		return t.client
+	}
+
+	baseTransport, ok := t.client.Transport.(*http.Transport)
+	if !ok {
+		return t.client
+	}
+
+	clientClone := *t.client
+	transportClone := baseTransport.Clone()
+	if transportClone.TLSClientConfig == nil {
+		transportClone.TLSClientConfig = &tls.Config{}
+	} else {
+		transportClone.TLSClientConfig = transportClone.TLSClientConfig.Clone()
+	}
+	transportClone.TLSClientConfig.ServerName = vp.Host
+	clientClone.Transport = transportClone
+	return &clientClone
 }
 
 // convertHTMLToText converts the HTML content to text

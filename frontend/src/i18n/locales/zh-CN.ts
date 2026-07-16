@@ -988,6 +988,12 @@ export default {
     collapseRaw: "收起原文",
     expandRaw: "展开原文",
     noWebContent: "未获取到网页内容",
+    webFetchStatusTitle: "抓取状态",
+    webFetchRequestedLabel: "请求页面数",
+    webFetchFetchedLabel: "成功抓取页数",
+    webFetchFailedLabel: "抓取失败页数",
+    webFetchAllFailedNotice: "未成功抓取任何完整页面，后续回答只能依赖此前的网络搜索摘要。",
+    webFetchPartialNotice: "已成功抓取 {requested} 个页面中的 {fetched} 个，其余页面只能视为搜索摘要证据。",
     lengthChars: "{value} 字",
     lengthThousands: "{value} 千字",
     chatExport: {

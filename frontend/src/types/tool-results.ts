@@ -268,6 +268,7 @@ export interface WebFetchResultItem {
     content_length?: number;
     method?: string;
     error?: string;
+    fetch_status?: string;
 }
 
 // Web fetch results data
@@ -275,6 +276,12 @@ export interface WebFetchResultsData {
     display_type: 'web_fetch_results';
     results: WebFetchResultItem[];
     count?: number;
+    requested_count?: number;
+    fetched_count?: number;
+    failed_count?: number;
+    all_fetch_failed?: boolean;
+    answer_basis?: string;
+    status_notice?: string;
 }
 
 // Grep knowledge aggregation item (legacy, grouped by knowledge_id)

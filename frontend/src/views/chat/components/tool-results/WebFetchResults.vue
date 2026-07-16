@@ -1,5 +1,24 @@
 <template>
   <div class="web-fetch-results">
+    <div v-if="statusNotice" class="stats-card stats-card--warning">
+      <div class="stats-title">{{ $t('chat.webFetchStatusTitle') }}</div>
+      <div class="status-notice">{{ statusNotice }}</div>
+      <div class="stats-list">
+        <div class="stats-item">
+          <span>{{ $t('chat.webFetchRequestedLabel') }}</span>
+          <span>{{ requestedCount }}</span>
+        </div>
+        <div class="stats-item">
+          <span>{{ $t('chat.webFetchFetchedLabel') }}</span>
+          <span>{{ fetchedCount }}</span>
+        </div>
+        <div class="stats-item">
+          <span>{{ $t('chat.webFetchFailedLabel') }}</span>
+          <span>{{ failedCount }}</span>
+        </div>
+      </div>
+    </div>
+
     <div v-if="items.length > 0" class="results-list">
       <div
         v-for="(item, index) in items"
@@ -101,6 +120,31 @@ const props = defineProps<Props>();
 const { t } = useI18n();
 
 const items = computed<WebFetchResultItem[]>(() => props.data.results || []);
+const requestedCount = computed<number>(() => props.data.requested_count ?? items.value.length);
+const fetchedCount = computed<number>(() => {
+  if (typeof props.data.fetched_count === 'number') {
+    return props.data.fetched_count;
+  }
+  return items.value.filter((item) => item.fetch_status === 'fetched' || (!!item.raw_content && !item.error)).length;
+});
+const failedCount = computed<number>(() => {
+  if (typeof props.data.failed_count === 'number') {
+    return props.data.failed_count;
+  }
+  return Math.max(requestedCount.value - fetchedCount.value, 0);
+});
+const statusNotice = computed<string>(() => {
+  if (props.data.all_fetch_failed) {
+    return t('chat.webFetchAllFailedNotice');
+  }
+  if (failedCount.value > 0) {
+    return t('chat.webFetchPartialNotice', {
+      fetched: fetchedCount.value,
+      requested: requestedCount.value,
+    });
+  }
+  return '';
+});
 const expandedCards = ref<Set<number>>(new Set());
 const expandedRaw = ref<Record<number, boolean>>({});
 
@@ -189,6 +233,18 @@ const indexKey = (index: number, item: WebFetchResultItem): string => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.stats-card--warning {
+  background: var(--td-warning-color-1);
+  border-color: var(--td-warning-color-3);
+}
+
+.status-notice {
+  font-size: 12px;
+  color: var(--td-text-color-primary);
+  line-height: 1.6;
+  margin-bottom: 8px;
 }
 
 .result-index {
