@@ -77,6 +77,7 @@ type RouterParams struct {
 	UserFavoriteHandler          *handler.UserResourceFavoriteHandler
 	SkillHandler                 *handler.SkillHandler
 	OrganizationHandler          *handler.OrganizationHandler
+	OrgTreeHandler               *handler.OrgTreeHandler
 	IMHandler                    *handler.IMHandler
 	EmbedChannelHandler          *handler.EmbedChannelHandler
 	EmbedChannelService          interfaces.EmbedChannelService
@@ -279,6 +280,12 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterUserFavoriteRoutes(v1, params.UserFavoriteHandler, rbacGuards)
 		RegisterSkillRoutes(v1, params.SkillHandler, rbacGuards)
 		RegisterOrganizationRoutes(v1, params.OrganizationHandler, rbacGuards)
+		RegisterOrgTreeRoutes(v1, params.OrgTreeHandler)
+		superAdmin := v1.Group("", rbacGuards.SystemAdmin())
+		{
+			RegisterOrgTreeSuperAdminRoutes(superAdmin, params.OrgTreeHandler)
+		}
+		v1.GET("/my-organizations", params.OrgTreeHandler.GetMyOrganizations)
 		RegisterIMChannelRoutes(v1, params.IMHandler, rbacGuards)
 		RegisterEmbedChannelRoutes(v1, params.EmbedChannelHandler, rbacGuards)
 		RegisterDataSourceRoutes(v1, params.DataSourceHandler, params.DataSourceCredentialsHandler, rbacGuards)
@@ -321,4 +328,37 @@ func trustedProxies() []string {
 		}
 	}
 	return proxies
+}
+
+// RegisterOrgTreeRoutes registers org-tree management routes.
+// Fine-grained permission checks are enforced inside OrgTreeHandler.
+func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
+	if orgTreeHandler == nil {
+		return
+	}
+	orgTree := r.Group("/org-tree")
+	{
+		orgTree.GET("/search-users", orgTreeHandler.SearchUsersForAssign)
+		orgTree.GET("", orgTreeHandler.GetOrgTree)
+		orgTree.POST("", orgTreeHandler.CreateOrgNode)
+		orgTree.GET("/:id", orgTreeHandler.GetOrgNode)
+		orgTree.PUT("/:id", orgTreeHandler.UpdateOrgNode)
+		orgTree.DELETE("/:id", orgTreeHandler.DeleteOrgNode)
+		orgTree.POST("/:id/move", orgTreeHandler.MoveOrgNode)
+		orgTree.GET("/:id/members", orgTreeHandler.ListOrgMembers)
+		orgTree.POST("/:id/members", orgTreeHandler.AssignUser)
+		orgTree.POST("/:id/create-user", orgTreeHandler.CreateUserInOrg)
+		orgTree.PUT("/:id/users/:user_id", orgTreeHandler.UpdateUserInOrg)
+		orgTree.DELETE("/:id/members/:user_id", orgTreeHandler.RemoveUser)
+		orgTree.PUT("/:id/admin", orgTreeHandler.SetOrgAdmin)
+	}
+}
+
+// RegisterOrgTreeSuperAdminRoutes registers org-tree routes that require system admin privileges.
+func RegisterOrgTreeSuperAdminRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
+	if orgTreeHandler == nil {
+		return
+	}
+	r.PUT("/org-tree/super-admin", orgTreeHandler.SetSuperAdmin)
+	r.PUT("/org-tree/:id/users/:user_id/password", orgTreeHandler.UpdateUserPasswordInOrg)
 }

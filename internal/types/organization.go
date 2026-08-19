@@ -10,8 +10,12 @@ import (
 type OrgMemberRole string
 
 const (
+	// OrgRoleOwner has full ownership over organization-level resources.
+	OrgRoleOwner OrgMemberRole = "owner"
 	// OrgRoleAdmin has full control over the organization and shared knowledge bases
 	OrgRoleAdmin OrgMemberRole = "admin"
+	// OrgRoleContributor is the upstream RBAC name for the local editor capability level.
+	OrgRoleContributor OrgMemberRole = "contributor"
 	// OrgRoleEditor can edit shared knowledge base content but cannot manage settings
 	OrgRoleEditor OrgMemberRole = "editor"
 	// OrgRoleViewer can only view and search shared knowledge bases
@@ -21,7 +25,7 @@ const (
 // IsValid checks if the role is valid
 func (r OrgMemberRole) IsValid() bool {
 	switch r {
-	case OrgRoleAdmin, OrgRoleEditor, OrgRoleViewer:
+	case OrgRoleOwner, OrgRoleAdmin, OrgRoleContributor, OrgRoleEditor, OrgRoleViewer:
 		return true
 	default:
 		return false
@@ -31,9 +35,11 @@ func (r OrgMemberRole) IsValid() bool {
 // HasPermission checks if this role has at least the required permission level
 func (r OrgMemberRole) HasPermission(required OrgMemberRole) bool {
 	roleLevel := map[OrgMemberRole]int{
-		OrgRoleAdmin:  3,
-		OrgRoleEditor: 2,
-		OrgRoleViewer: 1,
+		OrgRoleOwner:       4,
+		OrgRoleAdmin:       3,
+		OrgRoleContributor: 2,
+		OrgRoleEditor:      2,
+		OrgRoleViewer:      1,
 	}
 	return roleLevel[r] >= roleLevel[required]
 }
@@ -46,15 +52,22 @@ func (r OrgMemberRole) HasPermission(required OrgMemberRole) bool {
 // argument is.
 func MinOrgRole(a, b OrgMemberRole) OrgMemberRole {
 	if a == "" {
-		return b
+		return normalizeOrgRole(b)
 	}
 	if b == "" {
-		return a
+		return normalizeOrgRole(a)
 	}
 	if a.HasPermission(b) {
-		return b
+		return normalizeOrgRole(b)
 	}
-	return a
+	return normalizeOrgRole(a)
+}
+
+func normalizeOrgRole(role OrgMemberRole) OrgMemberRole {
+	if role == OrgRoleEditor {
+		return OrgRoleContributor
+	}
+	return role
 }
 
 // Organization represents a collaboration organization for cross-tenant sharing
@@ -88,6 +101,16 @@ type Organization struct {
 	Searchable bool `json:"searchable" gorm:"default:false"`
 	// Max members allowed; 0 means no limit
 	MemberLimit int `json:"member_limit" gorm:"default:50"`
+	// Parent organization ID; nil for top-level org-tree nodes.
+	ParentID *string `json:"parent_id" gorm:"type:varchar(36)"`
+	// Materialized path for org-tree nodes.
+	Path string `json:"path" gorm:"type:text;default:''"`
+	// Tree depth level (1 = top-level).
+	Level int `json:"level" gorm:"default:1"`
+	// Sort order among siblings.
+	SortOrder int `json:"sort_order" gorm:"default:0"`
+	// Tenant ID this org-tree node belongs to; nil for cross-tenant shared spaces.
+	OrgTenantID *uint64 `json:"org_tenant_id" gorm:"column:tenant_id"`
 	// Creation time
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time
@@ -96,9 +119,10 @@ type Organization struct {
 	DeletedAt gorm.DeletedAt `json:"deleted_at" gorm:"index"`
 
 	// Associations (not stored in database)
-	Owner   *User                      `json:"owner,omitempty" gorm:"foreignKey:OwnerID"`
-	Members []OrganizationTenantMember `json:"members,omitempty" gorm:"foreignKey:OrganizationID"`
-	Shares  []KnowledgeBaseShare       `json:"shares,omitempty" gorm:"foreignKey:OrganizationID"`
+	Owner    *User                      `json:"owner,omitempty" gorm:"foreignKey:OwnerID"`
+	Members  []OrganizationTenantMember `json:"members,omitempty" gorm:"foreignKey:OrganizationID"`
+	Shares   []KnowledgeBaseShare       `json:"shares,omitempty" gorm:"foreignKey:OrganizationID"`
+	Children []*Organization            `json:"children,omitempty" gorm:"-"`
 }
 
 // TableName returns the table name for GORM
@@ -129,6 +153,25 @@ type OrganizationTenantMember struct {
 // TableName returns the table name for GORM
 func (OrganizationTenantMember) TableName() string {
 	return "organization_tenant_members"
+}
+
+// OrganizationMember represents a user-scoped org-tree membership row stored in organization_members.
+type OrganizationMember struct {
+	ID             string         `json:"id" gorm:"type:varchar(36);primaryKey"`
+	OrganizationID string         `json:"organization_id" gorm:"type:varchar(36);not null;index"`
+	UserID         string         `json:"user_id" gorm:"type:varchar(36);not null;index"`
+	TenantID       uint64         `json:"tenant_id" gorm:"not null;index"`
+	Role           OrgMemberRole  `json:"role" gorm:"type:varchar(32);not null;default:'viewer'"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	Organization   *Organization  `json:"organization,omitempty" gorm:"foreignKey:OrganizationID"`
+	User           *User          `json:"user,omitempty" gorm:"foreignKey:UserID"`
+	IsOwner        bool           `json:"is_owner,omitempty" gorm:"-"`
+	DeletedAt      gorm.DeletedAt `json:"deleted_at,omitempty" gorm:"index"`
+}
+
+func (OrganizationMember) TableName() string {
+	return "organization_members"
 }
 
 // JoinRequestStatus represents the status of a join request
@@ -584,4 +627,42 @@ type ListMembersResponse struct {
 type ListSharesResponse struct {
 	Shares []KnowledgeBaseShareResponse `json:"shares"`
 	Total  int64                        `json:"total"`
+}
+
+// CreateOrgTreeNodeRequest represents a request to create an org-tree node.
+type CreateOrgTreeNodeRequest struct {
+	Name        string  `json:"name" binding:"required,min=1,max=255"`
+	Description string  `json:"description" binding:"max=1000"`
+	ParentID    *string `json:"parent_id"`
+	SortOrder   int     `json:"sort_order"`
+}
+
+// UpdateOrgTreeNodeRequest represents a request to update an org-tree node.
+type UpdateOrgTreeNodeRequest struct {
+	Name        *string `json:"name" binding:"omitempty,min=1,max=255"`
+	Description *string `json:"description" binding:"omitempty,max=1000"`
+	SortOrder   *int    `json:"sort_order"`
+}
+
+// MoveOrgNodeRequest represents a request to move a node in the org tree.
+type MoveOrgNodeRequest struct {
+	NewParentID *string `json:"new_parent_id"`
+	SortOrder   int     `json:"sort_order"`
+}
+
+// AssignUserToOrgRequest represents a request to assign a user to an organization.
+type AssignUserToOrgRequest struct {
+	UserID string        `json:"user_id" binding:"required"`
+	Role   OrgMemberRole `json:"role" binding:"required"`
+}
+
+// RemoveUserFromOrgRequest represents a request to remove a user from an organization.
+type RemoveUserFromOrgRequest struct {
+	UserID string `json:"user_id"`
+}
+
+// SetOrgAdminRequest represents a request to set/unset an organization admin.
+type SetOrgAdminRequest struct {
+	UserID  string `json:"user_id" binding:"required"`
+	IsAdmin bool   `json:"is_admin"`
 }

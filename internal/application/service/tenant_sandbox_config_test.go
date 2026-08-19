@@ -279,6 +279,10 @@ func (s stubAgentRepo) ListNamesBySandboxConfigID(
 	return s.names, s.err
 }
 
+func (s stubAgentRepo) ListAccessibleAgents(context.Context, string, uint64, []string) ([]*types.CustomAgent, error) {
+	return nil, nil
+}
+
 type stubProviderClient struct {
 	inventories [][]sandbox.RemoteSandboxSummary
 	templates   []sandbox.RemoteTemplate

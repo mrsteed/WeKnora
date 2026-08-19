@@ -278,6 +278,15 @@ func (r *cleanupUserRepo) GetUserByID(_ context.Context, id string) (*types.User
 func (r *cleanupUserRepo) GetUsersByIDs(context.Context, []string) (map[string]*types.User, error) {
 	return nil, nil
 }
+func (r *cleanupUserRepo) GetUserByPhone(_ context.Context, phone string) (*types.User, error) {
+	for _, user := range r.users {
+		if user != nil && user.Phone == phone {
+			cp := *user
+			return &cp, nil
+		}
+	}
+	return nil, errors.New("user not found")
+}
 func (r *cleanupUserRepo) GetUserByEmail(context.Context, string) (*types.User, error) {
 	return nil, nil
 }
