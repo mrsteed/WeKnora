@@ -947,6 +947,9 @@ func (r *realKBRepo) ListKnowledgeBases(_ context.Context) ([]*types.KnowledgeBa
 func (r *realKBRepo) ListKnowledgeBasesByTenantID(_ context.Context, _ uint64) ([]*types.KnowledgeBase, error) {
 	return nil, nil
 }
+func (r *realKBRepo) ListAccessibleKBs(_ context.Context, _ string, _ uint64, _ []string) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
 func (r *realKBRepo) UpdateKnowledgeBase(_ context.Context, _ *types.KnowledgeBase) error {
 	return nil
 }

@@ -114,6 +114,7 @@ type sessionService struct {
 	sessionRepo           interfaces.SessionRepository           // Repository for session data
 	messageRepo           interfaces.MessageRepository           // Repository for message data
 	knowledgeBaseService  interfaces.KnowledgeBaseService        // Service for knowledge base operations
+	kbVisibility          interfaces.KBVisibilityService         // Same-tenant KB visibility service
 	modelService          interfaces.ModelService                // Service for model operations
 	tenantService         interfaces.TenantService               // Service for tenant operations
 	eventManager          *chatpipeline.EventManager             // Event manager for chat pipeline
@@ -129,6 +130,7 @@ type sessionService struct {
 	sandboxPinner         *SessionSandboxPinner
 	sandboxPolicy         WorkspaceSandboxPolicy
 	memoryService         interfaces.MemoryService // Service for cross-session long-term memory
+	agentKBScope          *AgentKBScopeResolver
 }
 
 // NewSessionService creates a new session service instance with all required dependencies
@@ -136,6 +138,7 @@ func NewSessionService(cfg *config.Config,
 	sessionRepo interfaces.SessionRepository,
 	messageRepo interfaces.MessageRepository,
 	knowledgeBaseService interfaces.KnowledgeBaseService,
+	kbVisibility interfaces.KBVisibilityService,
 	knowledgeService interfaces.KnowledgeService,
 	chunkService interfaces.ChunkService,
 	modelService interfaces.ModelService,
@@ -151,12 +154,14 @@ func NewSessionService(cfg *config.Config,
 	sandboxPinner *SessionSandboxPinner,
 	sandboxPolicy WorkspaceSandboxPolicy,
 	memoryService interfaces.MemoryService,
+	agentKBScope *AgentKBScopeResolver,
 ) interfaces.SessionService {
 	return &sessionService{
 		cfg:                   cfg,
 		sessionRepo:           sessionRepo,
 		messageRepo:           messageRepo,
 		knowledgeBaseService:  knowledgeBaseService,
+		kbVisibility:          kbVisibility,
 		knowledgeService:      knowledgeService,
 		chunkService:          chunkService,
 		modelService:          modelService,
@@ -172,7 +177,18 @@ func NewSessionService(cfg *config.Config,
 		sandboxPinner:         sandboxPinner,
 		sandboxPolicy:         sandboxPolicy,
 		memoryService:         memoryService,
+		agentKBScope:          agentKBScope,
 	}
+}
+
+func (s *sessionService) agentScopeResolver() *AgentKBScopeResolver {
+	if s == nil {
+		return nil
+	}
+	if s.agentKBScope != nil {
+		return s.agentKBScope
+	}
+	return NewAgentKBScopeResolver(s.knowledgeBaseService, s.kbVisibility, s.kbShareService, s.knowledgeService)
 }
 
 // CreateSession creates a new conversation session

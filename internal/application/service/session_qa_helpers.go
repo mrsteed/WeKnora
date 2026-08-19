@@ -35,9 +35,7 @@ func (s *sessionService) resolveKnowledgeBases(
 
 	if hasExplicitMention {
 		logger.Infof(ctx, "Using request-specified targets: kbs=%v, docs=%v", kbIDs, knowledgeIDs)
-		// When using a shared agent, restrict @mentions to the agent's allowed KB scope
-		// to prevent users from injecting KB/knowledge IDs outside the agent's configured range.
-		if customAgent != nil && req.Session != nil && req.Session.TenantID != customAgent.TenantID {
+		if customAgent != nil && req.Session != nil {
 			kbIDs, knowledgeIDs = s.restrictMentionsToAgentScope(ctx, customAgent, req.Session.TenantID, kbIDs, knowledgeIDs)
 			req.TagScopes = s.restrictTagScopesToAgentScope(ctx, customAgent, req.Session.TenantID, req.TagScopes)
 		}
@@ -67,6 +65,14 @@ func (s *sessionService) restrictTagScopesToAgentScope(
 ) []types.TagScope {
 	if len(tagScopes) == 0 {
 		return nil
+	}
+	if resolver := s.agentScopeResolver(); resolver != nil {
+		_, _, filteredTagScopes, err := resolver.RestrictKnowledgeTargets(ctx, agent, sessionTenantID, nil, nil, tagScopes)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to restrict tag scopes to agent scope: %v", err)
+			return nil
+		}
+		return filteredTagScopes
 	}
 	allowedKBIDs := s.resolveKnowledgeBasesFromAgent(ctx, agent, sessionTenantID)
 	allowedSet := make(map[string]bool, len(allowedKBIDs))
@@ -277,9 +283,9 @@ func (s *sessionService) applyAgentOverridesToChatManage(
 }
 
 // restrictMentionsToAgentScope filters user-provided @mention targets (KB IDs
-// and knowledge IDs) so that only those within the shared agent's allowed KB
-// scope are retained. This prevents users from bypassing the agent's
-// KBSelectionMode by injecting arbitrary KB/knowledge IDs into the request.
+// and knowledge IDs) so that only those within the agent's allowed KB scope
+// are retained. This prevents explicit request targets from bypassing the
+// agent's runtime knowledge range.
 func (s *sessionService) restrictMentionsToAgentScope(
 	ctx context.Context,
 	agent *types.CustomAgent,
@@ -287,9 +293,20 @@ func (s *sessionService) restrictMentionsToAgentScope(
 	kbIDs []string,
 	knowledgeIDs []string,
 ) ([]string, []string) {
+	if resolver := s.agentScopeResolver(); resolver != nil {
+		filteredKBs, filteredKnowledge, _, err := resolver.RestrictKnowledgeTargets(ctx, agent, sessionTenantID, kbIDs, knowledgeIDs, nil)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to restrict explicit KB targets to agent scope: %v", err)
+			return nil, nil
+		}
+		logger.Infof(ctx, "Restricted @mentions to agent scope: kbs %d->%d, knowledge %d->%d",
+			len(kbIDs), len(filteredKBs), len(knowledgeIDs), len(filteredKnowledge))
+		return filteredKBs, filteredKnowledge
+	}
+
 	allowedKBIDs := s.resolveKnowledgeBasesFromAgent(ctx, agent, sessionTenantID)
 	if len(allowedKBIDs) == 0 {
-		logger.Warnf(ctx, "Shared agent has no allowed KBs, blocking all @mentions")
+		logger.Warnf(ctx, "Agent has no allowed KBs, blocking all @mentions")
 		return nil, nil
 	}
 

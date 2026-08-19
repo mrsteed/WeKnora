@@ -15,6 +15,7 @@ interface Tag {
 
 interface KnowledgeCard {
   id: string;
+  created_by?: string;
   knowledge_base_id?: string;
   parse_status: string;
   summary_status?: string;
@@ -44,6 +45,7 @@ const props = defineProps<{
   canEdit: boolean;
   canDownload: boolean;
   canMutateKnowledge: boolean;
+  currentUserId?: string;
   traceAvailableById: Record<string, boolean>;
   tagList: Tag[];
   /** Sub-folders of the folder currently being browsed. */
@@ -116,6 +118,15 @@ const isTraceMenuVisible = (item: KnowledgeCard): boolean => {
   if (isParseInFlight(item.parse_status)) return true;
   return props.traceAvailableById[item.id] === true;
 };
+
+const rowCanEdit = (item: KnowledgeCard) => {
+  const createdBy = String(item.created_by || '').trim();
+  return props.canEdit || (!!createdBy && !!props.currentUserId && createdBy === props.currentUserId);
+};
+
+const rowCanMutate = (item: KnowledgeCard) => rowCanEdit(item);
+
+const rowHasActionMenu = (item: KnowledgeCard) => rowCanMutate(item) || props.canDownload || isTraceMenuVisible(item);
 
 const inFlightCardStatusText = (item: KnowledgeCard): string => {
   if (item.parse_status === 'finalizing') {
@@ -358,7 +369,7 @@ const handleAction = (action: 'download' | 'edit' | 'view-trace' | 'reparse' | '
           </div>
           <span class="card-content-title" :title="item.file_name">{{ item.file_name }}</span>
           <t-popup
-            v-if="canEdit"
+            v-if="rowHasActionMenu(item)"
             v-model="item.isMore"
             overlayClassName="card-more"
             :on-visible-change="(v: boolean) => onMenuVisibleChange(v, item)"
@@ -391,7 +402,7 @@ const handleAction = (action: 'download' | 'edit' | 'view-trace' | 'reparse' | '
                 <DocumentActionMenu
                   :item="item"
                   :can-download="canDownload"
-                  :can-mutate-knowledge="canMutateKnowledge"
+                  :can-mutate-knowledge="rowCanMutate(item)"
                   :trace-visible="isTraceMenuVisible(item)"
                   @download="handleAction('download', item)"
                   @edit="handleAction('edit', item)"
@@ -547,7 +558,7 @@ const handleAction = (action: 'download' | 'edit' | 'view-trace' | 'reparse' | '
         <div class="card-bottom-right">
           <div v-if="tagList.length" class="card-tag-selector" @click.stop>
             <!-- Editable mode -->
-            <template v-if="canEdit">
+            <template v-if="rowCanEdit(item)">
               <template v-if="(item.tags || []).length > 0">
                 <t-tooltip
                   v-if="hasTagOverflow(item.id, (item.tags || []).length)"

@@ -112,6 +112,11 @@ func (r *fakeKBRepo) ListKnowledgeBasesByTenantID(_ context.Context, tenantID ui
 	}
 	return rows, nil
 }
+func (r *fakeKBRepo) ListAccessibleKBs(_ context.Context, userID string, tenantID uint64, orgIDs []string) ([]*types.KnowledgeBase, error) {
+	_ = userID
+	_ = orgIDs
+	return r.ListKnowledgeBasesByTenantID(context.Background(), tenantID)
+}
 func (r *fakeKBRepo) UpdateKnowledgeBase(_ context.Context, _ *types.KnowledgeBase) error {
 	return nil
 }

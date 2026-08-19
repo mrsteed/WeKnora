@@ -34,6 +34,7 @@ type KnowledgeHandler struct {
 	cfg               *config.Config
 	kgService         interfaces.KnowledgeService
 	kbService         interfaces.KnowledgeBaseService
+	kbVisibility      interfaces.KBVisibilityService
 	kbShareService    interfaces.KBShareService
 	agentShareService interfaces.AgentShareService
 	asynqClient       interfaces.TaskEnqueuer
@@ -45,6 +46,7 @@ func NewKnowledgeHandler(
 	cfg *config.Config,
 	kgService interfaces.KnowledgeService,
 	kbService interfaces.KnowledgeBaseService,
+	kbVisibility interfaces.KBVisibilityService,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
 	asynqClient interfaces.TaskEnqueuer,
@@ -54,11 +56,48 @@ func NewKnowledgeHandler(
 		cfg:               cfg,
 		kgService:         kgService,
 		kbService:         kbService,
+		kbVisibility:      kbVisibility,
 		kbShareService:    kbShareService,
 		agentShareService: agentShareService,
 		asynqClient:       asynqClient,
 		spanRepo:          spanRepo,
 	}
+}
+
+func canBypassSameTenantKnowledgeVisibilityFromContext(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	userVal, _ := c.Get(types.UserContextKey.String())
+	user, _ := userVal.(*types.User)
+	return types.IsPlatformPrivilegedUser(user)
+}
+
+func (h *KnowledgeHandler) canMutateKnowledge(c *gin.Context, knowledge *types.Knowledge) (bool, error) {
+	if knowledge == nil {
+		return false, nil
+	}
+	userID := c.GetString(types.UserIDContextKey.String())
+	if knowledge.CreatedBy != "" && userID != "" && knowledge.CreatedBy == userID {
+		return true, nil
+	}
+	if h.kbVisibility == nil {
+		return false, nil
+	}
+	ctx := c.Request.Context()
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	return h.kbVisibility.CanManageKB(ctx, userID, tenantID, knowledge.KnowledgeBaseID, canBypassSameTenantKnowledgeVisibilityFromContext(c))
+}
+
+func (h *KnowledgeHandler) requireKnowledgeMutation(c *gin.Context, knowledge *types.Knowledge) error {
+	allowed, err := h.canMutateKnowledge(c, knowledge)
+	if err != nil {
+		return errors.NewInternalServerError(err.Error())
+	}
+	if !allowed {
+		return errors.NewForbiddenError("No permission to operate on this knowledge")
+	}
+	return nil
 }
 
 // requireKBOwnershipOrAdmin enforces the same "KB creator OR Admin+" matrix
@@ -126,6 +165,26 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccessWithKBID(c *gin.Context, k
 		return nil, kbID, 0, "", errors.NewInternalServerError(err.Error())
 	}
 	if kb.TenantID == tenantID {
+		if h.kbVisibility != nil {
+			callerUserID, _ := userID.(string)
+			canManage, manageErr := h.kbVisibility.CanManageKB(ctx, callerUserID, tenantID, kbID, canBypassSameTenantKnowledgeVisibilityFromContext(c))
+			if manageErr != nil {
+				logger.ErrorWithFields(ctx, manageErr, nil)
+				return nil, kbID, 0, "", errors.NewInternalServerError(manageErr.Error())
+			}
+			if canManage {
+				return kb, kbID, tenantID, types.OrgRoleAdmin, nil
+			}
+			canRead, readErr := h.kbVisibility.CanAccessKB(ctx, callerUserID, tenantID, kbID, canBypassSameTenantKnowledgeVisibilityFromContext(c))
+			if readErr != nil {
+				logger.ErrorWithFields(ctx, readErr, nil)
+				return nil, kbID, 0, "", errors.NewInternalServerError(readErr.Error())
+			}
+			if !canRead {
+				return nil, kbID, 0, "", errors.NewForbiddenError("Permission denied to access this knowledge base")
+			}
+			return kb, kbID, tenantID, types.OrgRoleViewer, nil
+		}
 		return kb, kbID, tenantID, types.OrgRoleAdmin, nil
 	}
 	if h.kbShareService != nil {
@@ -171,9 +230,19 @@ func (h *KnowledgeHandler) resolveKnowledgeAndValidateKBAccess(c *gin.Context, k
 		return nil, ctx, err
 	}
 
-	// Owner: knowledge belongs to caller's tenant
+	// Same-tenant knowledge is only readable when its owning KB is readable.
 	if knowledge.TenantID == tenantID {
-		return knowledge, context.WithValue(ctx, types.TenantIDContextKey, tenantID), nil
+		if h.kbService == nil || h.kbVisibility == nil {
+			return knowledge, context.WithValue(ctx, types.TenantIDContextKey, tenantID), nil
+		}
+		_, _, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccessWithKBID(c, knowledge.KnowledgeBaseID)
+		if err != nil {
+			return nil, ctx, err
+		}
+		if !permission.HasPermission(requiredPermission) {
+			return nil, ctx, errors.NewForbiddenError("Permission denied to access this knowledge")
+		}
+		return knowledge, context.WithValue(ctx, types.TenantIDContextKey, effectiveTenantID), nil
 	}
 
 	// Shared KB: check organization permission
@@ -1300,8 +1369,12 @@ func (h *KnowledgeHandler) DeleteKnowledge(c *gin.Context) {
 		return
 	}
 
-	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleEditor)
+	knowledge, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleViewer)
 	if err != nil {
+		c.Error(err)
+		return
+	}
+	if err := h.requireKnowledgeMutation(c, knowledge); err != nil {
 		c.Error(err)
 		return
 	}
@@ -1383,10 +1456,6 @@ func (h *KnowledgeHandler) BatchDeleteKnowledge(c *gin.Context) {
 		c.Error(errors.NewForbiddenError("No permission to delete knowledge"))
 		return
 	}
-	if err := h.requireKBOwnershipOrAdmin(c, kbID); err != nil {
-		c.Error(err)
-		return
-	}
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, effectiveTenantID)
 
 	// Single batch fetch to validate that every id exists and belongs to the
@@ -1407,6 +1476,10 @@ func (h *KnowledgeHandler) BatchDeleteKnowledge(c *gin.Context) {
 			c.Error(errors.NewBadRequestError(
 				fmt.Sprintf("Knowledge %s does not belong to knowledge base %s",
 					secutils.SanitizeForLog(k.ID), secutils.SanitizeForLog(kbID))))
+			return
+		}
+		if err := h.requireKnowledgeMutation(c, k); err != nil {
+			c.Error(err)
 			return
 		}
 	}
@@ -1529,8 +1602,12 @@ func (h *KnowledgeHandler) DownloadKnowledgeFile(c *gin.Context) {
 	// Keep a handler-level Editor check in addition to the route guard. The
 	// original file is more sensitive than parsed-content reads and must not
 	// be downloadable through a read-only organization share.
-	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleEditor)
+	knowledge, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleViewer)
 	if err != nil {
+		c.Error(err)
+		return
+	}
+	if err := h.requireKnowledgeMutation(c, knowledge); err != nil {
 		c.Error(err)
 		return
 	}
@@ -1801,21 +1878,25 @@ func (h *KnowledgeHandler) UpdateKnowledge(c *gin.Context) {
 		return
 	}
 
-	_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleEditor)
+	knowledge, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, id, types.OrgRoleViewer)
 	if err != nil {
 		c.Error(err)
 		return
 	}
+	if err := h.requireKnowledgeMutation(c, knowledge); err != nil {
+		c.Error(err)
+		return
+	}
 
-	var knowledge types.Knowledge
-	if err := c.ShouldBindJSON(&knowledge); err != nil {
+	var updatePayload types.Knowledge
+	if err := c.ShouldBindJSON(&updatePayload); err != nil {
 		logger.Error(ctx, "Failed to parse request parameters", err)
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
-	knowledge.ID = id
+	updatePayload.ID = id
 
-	if err := h.kgService.UpdateKnowledge(effCtx, &knowledge); err != nil {
+	if err := h.kgService.UpdateKnowledge(effCtx, &updatePayload); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
@@ -2511,6 +2592,10 @@ func (h *KnowledgeHandler) MoveKnowledge(c *gin.Context) {
 			c.Error(errors.NewBadRequestError(fmt.Sprintf("Knowledge item %s is not in completed status (current: %s)", kID, knowledge.ParseStatus)))
 			return
 		}
+		if err := h.requireKnowledgeMutation(c, knowledge); err != nil {
+			c.Error(err)
+			return
+		}
 	}
 
 	// Generate task ID
@@ -2762,6 +2847,10 @@ func (h *KnowledgeHandler) BatchReparseKnowledge(c *gin.Context) {
 			c.Error(errors.NewBadRequestError(
 				fmt.Sprintf("Knowledge %s does not belong to knowledge base %s",
 					secutils.SanitizeForLog(k.ID), secutils.SanitizeForLog(kbID))))
+			return
+		}
+		if err := h.requireKnowledgeMutation(c, k); err != nil {
+			c.Error(err)
 			return
 		}
 	}

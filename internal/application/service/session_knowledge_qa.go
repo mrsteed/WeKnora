@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Tencent/WeKnora/internal/agent/tools"
 	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/event"
@@ -322,16 +321,9 @@ func (s *sessionService) selectChatModelID(
 	return "", fmt.Errorf("no chat model ID available: no knowledge bases configured and no available models")
 }
 
-// resolveKnowledgeBasesFromAgent resolves knowledge base IDs based on agent's KBSelectionMode.
-// sessionTenantID is the tenant of the current session (caller); it is compared with
-// customAgent.TenantID to detect the shared-agent scenario and avoid leaking the
-// current user's personal shared KBs into the agent's retrieval scope.
-//
-// Returns the resolved knowledge base IDs based on the selection mode:
-//   - "all": fetches all knowledge bases for the tenant
-//   - "selected": uses the explicitly configured knowledge bases
-//   - "none": returns empty slice
-//   - default: falls back to configured knowledge bases for backward compatibility
+// resolveKnowledgeBasesFromAgent resolves the effective KB IDs for this caller.
+// The same resolver is shared by suggested questions, agent @mention KB lists,
+// QA runtime, and IM commands so every entry point sees the same KB scope.
 func (s *sessionService) resolveKnowledgeBasesFromAgent(
 	ctx context.Context,
 	customAgent *types.CustomAgent,
@@ -340,96 +332,17 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 	if customAgent == nil {
 		return nil
 	}
-
-	switch customAgent.Config.KBSelectionMode {
-	case "all":
-		// Authoritative capability filter for the runtime path. The frontend
-		// editor and @mention dropdown apply the same filter, but we don't
-		// trust the client here: a stale session payload or API caller could
-		// still ask us to retrieve against an incompatible KB and we'd rather
-		// just drop it (and log) than feed it to tools that would no-op.
-		capFilter := tools.DeriveKBFilterForAgent(customAgent.Config.AgentMode, customAgent.Config.AllowedTools)
-		accept := func(kb *types.KnowledgeBase) bool {
-			if kb == nil {
-				return false
-			}
-			if capFilter.IsEmpty() {
-				return true
-			}
-			return tools.KBSatisfiesAgentRequirements(kb.Capabilities(), customAgent.Config.AgentMode, customAgent.Config.AllowedTools)
-		}
-
-		// Get own knowledge bases (uses ctx TenantID = agent's tenant)
-		allKBs, err := s.knowledgeBaseService.ListKnowledgeBases(ctx)
-		if err != nil {
-			logger.Warnf(ctx, "Failed to list all knowledge bases: %v", err)
-		}
-		kbIDSet := make(map[string]bool)
-		kbIDs := make([]string, 0, len(allKBs))
-		ownSkipped := 0
-		for _, kb := range allKBs {
-			if !accept(kb) {
-				ownSkipped++
-				continue
-			}
-			kbIDs = append(kbIDs, kb.ID)
-			kbIDSet[kb.ID] = true
-		}
-
-		// For shared agents (session tenant != agent tenant), only use the agent
-		// tenant's own KBs. Including the current user's shared KBs would leak
-		// unrelated KBs from other organisations into the agent's retrieval scope.
-		isSharedAgent := sessionTenantID != 0 && sessionTenantID != customAgent.TenantID
-		sharedSkipped := 0
-		if !isSharedAgent {
-			tenantID := types.MustTenantIDFromContext(ctx)
-			userIDVal := ctx.Value(types.UserIDContextKey)
-			if userIDVal != nil {
-				if userID, ok := userIDVal.(string); ok && userID != "" && s.kbShareService != nil {
-					callerTenantRole := types.TenantRoleFromContext(ctx)
-					sharedList, err := s.kbShareService.ListSharedKnowledgeBases(ctx, tenantID, callerTenantRole)
-					if err != nil {
-						logger.Warnf(ctx, "Failed to list shared knowledge bases: %v", err)
-					} else {
-						for _, info := range sharedList {
-							if info == nil || info.KnowledgeBase == nil || kbIDSet[info.KnowledgeBase.ID] {
-								continue
-							}
-							if !accept(info.KnowledgeBase) {
-								sharedSkipped++
-								continue
-							}
-							kbIDs = append(kbIDs, info.KnowledgeBase.ID)
-							kbIDSet[info.KnowledgeBase.ID] = true
-						}
-					}
-				}
-			}
-		} else {
-			logger.Infof(ctx, "Shared agent detected (session tenant %d != agent tenant %d): skipping user's shared KBs",
-				sessionTenantID, customAgent.TenantID)
-		}
-
-		if ownSkipped+sharedSkipped > 0 {
-			logger.Infof(ctx,
-				"KBSelectionMode=all: tool-capability filter removed %d own + %d shared KBs (agent=%s, tools=%v)",
-				ownSkipped, sharedSkipped, customAgent.ID, customAgent.Config.AllowedTools)
-		}
-		logger.Infof(ctx, "KBSelectionMode=all: loaded %d knowledge bases (own + shared)", len(kbIDs))
-		return kbIDs
-	case "selected":
-		logger.Infof(ctx, "KBSelectionMode=selected: using %d configured knowledge bases", len(customAgent.Config.KnowledgeBases))
-		return customAgent.Config.KnowledgeBases
-	case "none":
-		logger.Infof(ctx, "KBSelectionMode=none: no knowledge bases configured")
+	resolver := s.agentScopeResolver()
+	if resolver == nil {
 		return nil
-	default:
-		// Default to "selected" behavior for backward compatibility
-		if len(customAgent.Config.KnowledgeBases) > 0 {
-			logger.Infof(ctx, "KBSelectionMode not set: using %d configured knowledge bases", len(customAgent.Config.KnowledgeBases))
-		}
-		return customAgent.Config.KnowledgeBases
 	}
+	kbIDs, err := resolver.ResolveKnowledgeBaseIDs(ctx, customAgent, sessionTenantID)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to resolve agent knowledge base scope: %v", err)
+		return nil
+	}
+	logger.Infof(ctx, "Resolved %d knowledge bases for agent %s (mode=%s)", len(kbIDs), customAgent.ID, customAgent.Config.KBSelectionMode)
+	return kbIDs
 }
 
 // buildSearchTargets computes the unified search targets from knowledgeBaseIDs and knowledgeIDs.

@@ -34,6 +34,9 @@ func (s *stubKBRepoForModelDelete) ListKnowledgeBases(context.Context) ([]*types
 func (s *stubKBRepoForModelDelete) ListKnowledgeBasesByTenantID(context.Context, uint64) ([]*types.KnowledgeBase, error) {
 	return nil, nil
 }
+func (s *stubKBRepoForModelDelete) ListAccessibleKBs(context.Context, string, uint64, []string) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
 func (s *stubKBRepoForModelDelete) UpdateKnowledgeBase(context.Context, *types.KnowledgeBase) error {
 	return nil
 }
@@ -62,6 +65,9 @@ func (s *stubAgentRepoForModelDelete) GetAgentByID(context.Context, string, uint
 	return nil, nil
 }
 func (s *stubAgentRepoForModelDelete) ListAgentsByTenantID(context.Context, uint64) ([]*types.CustomAgent, error) {
+	return nil, nil
+}
+func (s *stubAgentRepoForModelDelete) ListAccessibleAgents(context.Context, string, uint64, []string) ([]*types.CustomAgent, error) {
 	return nil, nil
 }
 func (s *stubAgentRepoForModelDelete) UpdateAgent(context.Context, *types.CustomAgent) error {

@@ -55,6 +55,16 @@ const (
 	FAQQuestionIndexModeSeparate FAQQuestionIndexMode = "separate"
 )
 
+// KnowledgeBase visibility constants.
+const (
+	// KBVisibilityGlobal means the KB is visible to all users within the tenant.
+	KBVisibilityGlobal = "global"
+	// KBVisibilityOrg means the KB is visible to members of the owning organization.
+	KBVisibilityOrg = "org"
+	// KBVisibilityPrivate means the KB is visible only to the creator.
+	KBVisibilityPrivate = "private"
+)
+
 // KnowledgeBase represents a knowledge base entity
 type KnowledgeBase struct {
 	// Unique identifier of the knowledge base
@@ -75,6 +85,10 @@ type KnowledgeBase struct {
 	// Nullable for backward compatibility with rows created before the
 	// RBAC migration backfilled the column to the workspace Owner.
 	CreatorID string `yaml:"creator_id"              json:"creator_id"              gorm:"type:varchar(36);index"`
+	// Visibility controls same-tenant visibility for local org-tree scoped flows.
+	Visibility string `yaml:"visibility"              json:"visibility"              gorm:"type:varchar(20);default:'private'"`
+	// OrganizationID scopes org-visible KBs to one org-tree node.
+	OrganizationID string `yaml:"organization_id"         json:"organization_id"         gorm:"type:varchar(36)"`
 	// Chunking configuration
 	ChunkingConfig ChunkingConfig `yaml:"chunking_config"         json:"chunking_config"         gorm:"type:json"`
 	// Image processing configuration

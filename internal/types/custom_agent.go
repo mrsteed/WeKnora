@@ -59,6 +59,16 @@ const (
 	AgentTypeCustom = "custom"
 )
 
+// Agent visibility constants (same model as KnowledgeBase visibility).
+const (
+	// AgentVisibilityGlobal means the agent is visible to all users within the tenant.
+	AgentVisibilityGlobal = "global"
+	// AgentVisibilityOrg means the agent is visible to members of the owning organization.
+	AgentVisibilityOrg = "org"
+	// AgentVisibilityPrivate means the agent is visible only to the creator.
+	AgentVisibilityPrivate = "private"
+)
+
 // CustomAgent represents a configurable AI agent (similar to GPTs)
 type CustomAgent struct {
 	// Unique identifier of the agent (composite primary key with TenantID)
@@ -77,6 +87,10 @@ type CustomAgent struct {
 	TenantID uint64 `yaml:"tenant_id" json:"tenant_id" gorm:"primaryKey"`
 	// Created by user ID
 	CreatedBy string `yaml:"created_by" json:"created_by" gorm:"type:varchar(36)"`
+	// Visibility controls same-tenant visibility for local org-tree scoped flows.
+	Visibility string `yaml:"visibility" json:"visibility" gorm:"type:varchar(20);default:'private'"`
+	// OrganizationID scopes org-visible agents to one org-tree node.
+	OrganizationID string `yaml:"organization_id" json:"organization_id" gorm:"type:varchar(36)"`
 
 	// Agent configuration
 	Config CustomAgentConfig `yaml:"config" json:"config" gorm:"type:json"`

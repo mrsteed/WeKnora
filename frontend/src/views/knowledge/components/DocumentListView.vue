@@ -15,6 +15,7 @@ interface Tag {
 interface KnowledgeItem {
   id: string;
   file_name: string;
+  created_by?: string;
   folder_path?: string;
   file_type?: string;
   file_size?: number | string;
@@ -35,6 +36,7 @@ const props = defineProps<{
   canEdit: boolean;
   canDownload: boolean;
   canMutateKnowledge: boolean;
+  currentUserId?: string;
   traceVisibleIds: Record<string, boolean>;
   tagList: Tag[];
   loading?: boolean;
@@ -125,6 +127,22 @@ const getSourceInfo = (item: KnowledgeItem): { icon: string; label: string } => 
   if (item.type === 'manual') return { icon: 'edit', label: t('knowledgeBase.channelManual') };
   return { icon: 'upload', label: t('knowledgeBase.channelUpload') };
 };
+
+const rowCanEdit = (item: KnowledgeItem) => {
+  const createdBy = String(item.created_by || '').trim();
+  return props.canEdit || (!!createdBy && !!props.currentUserId && createdBy === props.currentUserId);
+};
+
+const rowCanMutate = (item: KnowledgeItem) => rowCanEdit(item);
+
+const rowHasActionMenu = (item: KnowledgeItem) => {
+  return rowCanMutate(item)
+    || props.canDownload
+    || !!props.traceVisibleIds[item.id]
+    || ['pending', 'processing', 'finalizing'].includes(String(item.parse_status || ''));
+};
+
+const showActionColumn = computed(() => props.canEdit || props.canDownload || !!props.currentUserId);
 
 interface StatusInfo {
   label: string;
@@ -268,7 +286,7 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
       <div class="cell cell-size" role="columnheader">{{ t('knowledgeBase.columnSize') }}</div>
       <div class="cell cell-status" role="columnheader">{{ t('knowledgeBase.columnStatus') }}</div>
       <div class="cell cell-time" role="columnheader">{{ t('knowledgeBase.columnUpdatedAt') }}</div>
-      <div class="cell cell-actions" role="columnheader" v-if="canEdit"></div>
+      <div class="cell cell-actions" role="columnheader" v-if="showActionColumn"></div>
     </div>
 
     <div class="doc-list-body">
@@ -298,7 +316,7 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
         <div class="cell cell-size"></div>
         <div class="cell cell-status"></div>
         <div class="cell cell-time"></div>
-        <div v-if="canEdit" class="cell cell-actions" aria-hidden="true"></div>
+        <div v-if="showActionColumn" class="cell cell-actions" aria-hidden="true"></div>
       </div>
 
       <div v-for="item in items" :key="item.id" class="doc-list-row"
@@ -330,7 +348,7 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
             <t-tooltip v-if="hasTagOverflow(item.id, (item.tags || []).length)"
               :content="(item.tags || []).map((t: any) => t.name).join(', ')" placement="top">
               <div class="row-tag-chips" :ref="(el: any) => setupTagChipsObserver(el, item.id, (item.tags || []).length)"
-                :class="{ 'is-clickable': canEdit }" @click.stop="canEdit && emit('tag-edit', item)">
+                :class="{ 'is-clickable': rowCanEdit(item) }" @click.stop="rowCanEdit(item) && emit('tag-edit', item)">
                 <t-tag v-for="tag in (item.tags || []).slice(0, getTagLimit(item.id))" :key="tag.id" size="small"
                   variant="light-outline" class="row-tag">
                   {{ tag.name }}
@@ -339,14 +357,14 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
               </div>
             </t-tooltip>
             <div v-else class="row-tag-chips" :ref="(el: any) => setupTagChipsObserver(el, item.id, (item.tags || []).length)"
-              :class="{ 'is-clickable': canEdit }" @click.stop="canEdit && emit('tag-edit', item)">
+              :class="{ 'is-clickable': rowCanEdit(item) }" @click.stop="rowCanEdit(item) && emit('tag-edit', item)">
               <t-tag v-for="tag in (item.tags || []).slice(0, getTagLimit(item.id))" :key="tag.id" size="small"
                 variant="light-outline" class="row-tag">
                 {{ tag.name }}
               </t-tag>
             </div>
           </template>
-          <span v-else class="row-tag-chips is-clickable" @click.stop="canEdit && emit('tag-edit', item)">
+          <span v-else class="row-tag-chips is-clickable" @click.stop="rowCanEdit(item) && emit('tag-edit', item)">
             <span class="row-tag-add">+ {{ t('knowledgeBase.tagLabel') }}</span>
           </span>
         </div>
@@ -378,10 +396,10 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
           <span class="row-mono">{{ formatTime(item.updated_at) }}</span>
         </div>
 
-        <div class="cell cell-actions" v-if="canEdit" @click.stop>
+        <div class="cell cell-actions" v-if="showActionColumn" @click.stop>
           <t-popup placement="bottom-right" trigger="click" destroy-on-close overlay-class-name="card-more"
             :on-visible-change="(v: boolean) => onMoreVisible(item.id, v)">
-            <button class="row-more-btn" :class="{ active: moreOpen === item.id }" type="button"
+            <button v-if="rowHasActionMenu(item)" class="row-more-btn" :class="{ active: moreOpen === item.id }" type="button"
               :aria-label="t('knowledgeBase.columnActions')">
               <t-icon name="more" size="16px" />
             </button>
@@ -402,7 +420,7 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
                 <DocumentActionMenu
                   :item="item"
                   :can-download="canDownload"
-                  :can-mutate-knowledge="canMutateKnowledge"
+                  :can-mutate-knowledge="rowCanMutate(item)"
                   :trace-visible="!!traceVisibleIds[item.id] || (item.parse_status === 'pending' || item.parse_status === 'processing' || item.parse_status === 'finalizing')"
                   @download="handleAction('download', item)"
                   @edit="handleAction('edit', item)"

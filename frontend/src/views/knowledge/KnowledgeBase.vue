@@ -318,6 +318,8 @@ const canMutateKnowledge = computed(() => {
   return authStore.hasRole('contributor');
 });
 
+const currentUserId = computed(() => authStore.user?.id || '');
+
 // Effective permission: from direct org share list or from GET /knowledge-bases/:id (e.g. agent-visible KB)
 const effectiveKBPermission = computed(() => orgStore.getKBPermission(kbId.value) || kbInfo.value?.my_permission || '');
 
@@ -2598,6 +2600,7 @@ async function createNewSession(value: string): Promise<void> {
                     :can-edit="canEdit"
                     :can-download="canDownloadKnowledge"
                     :can-mutate-knowledge="canMutateKnowledge"
+                    :current-user-id="currentUserId"
                     :trace-available-by-id="traceAvailableById"
                     :tag-list="tagList"
                     :move-menu-mode="moveMenuMode"
@@ -2624,6 +2627,7 @@ async function createNewSession(value: string): Promise<void> {
                   <DocumentListView :items="cardList" :folders="currentChildFolders" :folder-options="folderOptions"
                     :selected-ids="selectedIds" :tag-list="tagList"
                     :can-edit="canEdit" :can-download="canDownloadKnowledge" :can-mutate-knowledge="canMutateKnowledge"
+                    :current-user-id="currentUserId"
                     :trace-visible-ids="traceAvailableById"
                     :move-menu-mode="moveMenuMode"
                     :move-target-kbs="moveTargetKbs"

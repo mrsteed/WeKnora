@@ -196,6 +196,9 @@ type KnowledgeBaseRepository interface {
 	//   - Possible errors such as database errors, etc.
 	ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
 
+	// ListAccessibleKBs filters same-tenant KBs by local visibility rules.
+	ListAccessibleKBs(ctx context.Context, userID string, tenantID uint64, orgIDs []string) ([]*types.KnowledgeBase, error)
+
 	// UpdateKnowledgeBase updates a knowledge base record
 	// Parameters:
 	//   - ctx: Context information

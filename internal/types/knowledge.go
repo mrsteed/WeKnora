@@ -172,6 +172,8 @@ type Knowledge struct {
 	StorageSize int64 `json:"storage_size"`
 	// Metadata of the knowledge
 	Metadata JSON `json:"metadata"           gorm:"type:json"`
+	// CreatedBy stores the internal user ID that uploaded or created this knowledge entry.
+	CreatedBy string `json:"created_by"         gorm:"type:varchar(36);default:'';index"`
 	// CustomMetadata is user-authored descriptive metadata. It is deliberately
 	// separate from Metadata, which contains internal ingestion state and IDs.
 	CustomMetadata JSON `json:"custom_metadata" gorm:"type:json;not null"`

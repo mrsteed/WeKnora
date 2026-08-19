@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
@@ -28,6 +27,7 @@ import (
 type KnowledgeBaseHandler struct {
 	service            interfaces.KnowledgeBaseService
 	knowledgeService   interfaces.KnowledgeService
+	agentKBScope       *service.AgentKBScopeResolver
 	kbShareService     interfaces.KBShareService
 	agentShareService  interfaces.AgentShareService
 	asynqClient        interfaces.TaskEnqueuer
@@ -41,6 +41,7 @@ type KnowledgeBaseHandler struct {
 func NewKnowledgeBaseHandler(
 	service interfaces.KnowledgeBaseService,
 	knowledgeService interfaces.KnowledgeService,
+	agentKBScope *service.AgentKBScopeResolver,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
 	asynqClient interfaces.TaskEnqueuer,
@@ -50,6 +51,7 @@ func NewKnowledgeBaseHandler(
 	return &KnowledgeBaseHandler{
 		service:            service,
 		knowledgeService:   knowledgeService,
+		agentKBScope:       agentKBScope,
 		kbShareService:     kbShareService,
 		agentShareService:  agentShareService,
 		asynqClient:        asynqClient,
@@ -605,53 +607,18 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"success": true, "data": []interface{}{}})
 			return
 		}
-		sourceTenantID := agent.TenantID
-		kbs, err := h.service.ListKnowledgeBasesByTenantID(ctx, sourceTenantID)
+		var kbs []*types.KnowledgeBase
+		if h.agentKBScope != nil {
+			kbs, err = h.agentKBScope.ResolveKnowledgeBases(ctx, agent, currentTenantID)
+		} else {
+			kbs, err = h.service.ListKnowledgeBasesByTenantID(ctx, agent.TenantID)
+		}
 		if err != nil {
 			logger.ErrorWithFields(ctx, err, nil)
 			c.Error(apperrors.NewInternalServerError(err.Error()))
 			return
 		}
-		if mode == "selected" && len(agent.Config.KnowledgeBases) > 0 {
-			allowed := make(map[string]bool)
-			for _, id := range agent.Config.KnowledgeBases {
-				allowed[id] = true
-			}
-			filtered := make([]*types.KnowledgeBase, 0, len(kbs))
-			for _, kb := range kbs {
-				if allowed[kb.ID] {
-					filtered = append(filtered, kb)
-				}
-			}
-			kbs = filtered
-		}
 		kbs = filterKnowledgeBasesForAPIKeyScope(ctx, kbs)
-
-		// `all` mode: authoritative server-side capability filter so a client
-		// that bypassed the frontend (old tab, curl, rogue plugin) can't @ a
-		// KB whose capabilities don't match this agent. The filter combines
-		// tool-derived requirements (smart-reasoning) with the implicit
-		// RAG-only requirement of quick-answer mode (which has no
-		// `allowed_tools` but still needs vector/keyword chunks to work).
-		// Non-`all` modes already constrain the scope explicitly.
-		if mode == "all" {
-			filter := tools.DeriveKBFilterForAgent(agent.Config.AgentMode, agent.Config.AllowedTools)
-			if !filter.IsEmpty() {
-				before := len(kbs)
-				kept := make([]*types.KnowledgeBase, 0, before)
-				for _, kb := range kbs {
-					if tools.KBSatisfiesAgentRequirements(kb.Capabilities(), agent.Config.AgentMode, agent.Config.AllowedTools) {
-						kept = append(kept, kb)
-					}
-				}
-				if removed := before - len(kept); removed > 0 {
-					logger.Infof(ctx,
-						"ListKnowledgeBases(agent=%s, mode=all): capability filter removed %d of %d KBs",
-						agentID, removed, before)
-				}
-				kbs = kept
-			}
-		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,

@@ -116,6 +116,9 @@ type CustomAgentRepository interface {
 	//   - Possible errors such as database errors, etc.
 	ListAgentsByTenantID(ctx context.Context, tenantID uint64) ([]*types.CustomAgent, error)
 
+	// ListAccessibleAgents filters same-tenant custom agents by local visibility rules.
+	ListAccessibleAgents(ctx context.Context, userID string, tenantID uint64, orgIDs []string) ([]*types.CustomAgent, error)
+
 	// UpdateAgent updates an agent record
 	// Parameters:
 	//   - ctx: Context information

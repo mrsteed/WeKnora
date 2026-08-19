@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -35,13 +34,16 @@ const (
 
 // customAgentService implements the CustomAgentService interface
 type customAgentService struct {
-	repo           interfaces.CustomAgentRepository
-	chunkRepo      interfaces.ChunkRepository
-	kbService      interfaces.KnowledgeBaseService
-	kbShareService interfaces.KBShareService
-	wikiPageRepo   interfaces.WikiPageRepository
-	tagRepo        interfaces.KnowledgeTagRepository
-	knowledgeRepo  interfaces.KnowledgeRepository
+	repo             interfaces.CustomAgentRepository
+	chunkRepo        interfaces.ChunkRepository
+	kbService        interfaces.KnowledgeBaseService
+	kbVisibility     interfaces.KBVisibilityService
+	kbShareService   interfaces.KBShareService
+	wikiPageRepo     interfaces.WikiPageRepository
+	tagRepo          interfaces.KnowledgeTagRepository
+	knowledgeRepo    interfaces.KnowledgeRepository
+	knowledgeService interfaces.KnowledgeService
+	agentKBScope     *AgentKBScopeResolver
 }
 
 // NewCustomAgentService creates a new custom agent service
@@ -49,20 +51,36 @@ func NewCustomAgentService(
 	repo interfaces.CustomAgentRepository,
 	chunkRepo interfaces.ChunkRepository,
 	kbService interfaces.KnowledgeBaseService,
+	kbVisibility interfaces.KBVisibilityService,
 	kbShareService interfaces.KBShareService,
 	wikiPageRepo interfaces.WikiPageRepository,
 	tagRepo interfaces.KnowledgeTagRepository,
 	knowledgeRepo interfaces.KnowledgeRepository,
+	knowledgeService interfaces.KnowledgeService,
+	agentKBScope *AgentKBScopeResolver,
 ) interfaces.CustomAgentService {
 	return &customAgentService{
-		repo:           repo,
-		chunkRepo:      chunkRepo,
-		kbService:      kbService,
-		kbShareService: kbShareService,
-		wikiPageRepo:   wikiPageRepo,
-		tagRepo:        tagRepo,
-		knowledgeRepo:  knowledgeRepo,
+		repo:             repo,
+		chunkRepo:        chunkRepo,
+		kbService:        kbService,
+		kbVisibility:     kbVisibility,
+		kbShareService:   kbShareService,
+		wikiPageRepo:     wikiPageRepo,
+		tagRepo:          tagRepo,
+		knowledgeRepo:    knowledgeRepo,
+		knowledgeService: knowledgeService,
+		agentKBScope:     agentKBScope,
 	}
+}
+
+func (s *customAgentService) agentScopeResolver() *AgentKBScopeResolver {
+	if s == nil {
+		return nil
+	}
+	if s.agentKBScope != nil {
+		return s.agentKBScope
+	}
+	return NewAgentKBScopeResolver(s.kbService, s.kbVisibility, s.kbShareService, s.knowledgeService)
 }
 
 // CreateAgent creates a new custom agent
@@ -324,6 +342,7 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 	if existingAgent != nil {
 		// Update existing record - only update config, keep basic info unchanged
 		existingAgent.Config = agent.Config
+		existingAgent.Visibility = types.AgentVisibilityGlobal
 		existingAgent.UpdatedAt = time.Now()
 		existingAgent.EnsureDefaults()
 		if err := existingAgent.Config.QuestionSuggestions.Validate(); err != nil {
@@ -351,6 +370,7 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 		Avatar:      defaultAgent.Avatar,
 		IsBuiltin:   true,
 		TenantID:    tenantID,
+		Visibility:  types.AgentVisibilityGlobal,
 		Config:      agent.Config,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
@@ -507,6 +527,9 @@ func (s *customAgentService) getSuggestedQuestions(
 	limit int,
 	includeCurated bool,
 ) ([]types.SuggestedQuestion, error) {
+	requestedKBIDs := append([]string(nil), kbIDs...)
+	rawScopeTagIDs := flattenTagScopeIDs(tagScopes)
+
 	// A non-positive limit means "unspecified": fall back to the agent's
 	// configured Starters.Count (below) or the default. An explicit limit is
 	// authoritative and only bounded by the safety cap.
@@ -518,11 +541,10 @@ func (s *customAgentService) getSuggestedQuestions(
 		limit = suggestionMaxLimit
 	}
 
-	if err := types.AuthorizeTenantAPIKeyKnowledgeTargets(ctx, kbIDs, knowledgeIDs); err != nil {
+	if err := types.AuthorizeTenantAPIKeyKnowledgeTargets(ctx, requestedKBIDs, knowledgeIDs); err != nil {
 		return nil, err
 	}
-	scopeTagIDs := flattenTagScopeIDs(tagScopes)
-	if err := types.AuthorizeTenantAPIKeyOptionalTagIDs(ctx, scopeTagIDs); err != nil {
+	if err := types.AuthorizeTenantAPIKeyOptionalTagIDs(ctx, rawScopeTagIDs); err != nil {
 		return nil, err
 	}
 
@@ -537,6 +559,13 @@ func (s *customAgentService) getSuggestedQuestions(
 	if err != nil {
 		return nil, err
 	}
+	if resolver := s.agentScopeResolver(); resolver != nil {
+		kbIDs, knowledgeIDs, tagScopes, err = resolver.RestrictKnowledgeTargets(ctx, agent, tenantID, kbIDs, knowledgeIDs, tagScopes)
+		if err != nil {
+			return nil, err
+		}
+	}
+	scopeTagIDs := flattenTagScopeIDs(tagScopes)
 
 	var curated []types.SuggestedQuestion
 	starterMode := types.SuggestionModeKnowledge
@@ -591,37 +620,14 @@ func (s *customAgentService) getSuggestedQuestions(
 	// 2. Determine knowledge base scope
 	effectiveKBIDs := kbIDs
 	if len(effectiveKBIDs) == 0 && len(knowledgeIDs) == 0 && len(resolvedTags.TagIDsByTenant) == 0 {
-		// Use agent's KB configuration
-		switch agent.Config.KBSelectionMode {
-		case "all":
-			kbs, err := s.kbService.ListKnowledgeBases(ctx)
+		if resolver := s.agentScopeResolver(); resolver != nil {
+			effectiveKBIDs, err = resolver.ResolveKnowledgeBaseIDs(ctx, agent, tenantID)
 			if err != nil {
 				logger.ErrorWithFields(ctx, err, map[string]interface{}{
 					"agent_id": agentID,
 				})
-				// Return what we have so far (agent_config suggestions)
 				return finalizeStarterSuggestions(curated, nil, starterMode, limit), nil
 			}
-			// Honor the agent's implicit/explicit capability requirements so
-			// e.g. a quick-answer (RAG-only) agent doesn't surface wiki-only
-			// KBs whose wiki pages it could never answer from. Same filter
-			// the @ mention dropdown applies on the frontend.
-			capFilter := tools.DeriveKBFilterForAgent(agent.Config.AgentMode, agent.Config.AllowedTools)
-			for _, kb := range kbs {
-				if !capFilter.IsEmpty() &&
-					!tools.KBSatisfiesAgentRequirements(kb.Capabilities(), agent.Config.AgentMode, agent.Config.AllowedTools) {
-					continue
-				}
-				effectiveKBIDs = append(effectiveKBIDs, kb.ID)
-			}
-		case "selected":
-			effectiveKBIDs = agent.Config.KnowledgeBases
-		case "none":
-			// No KB access, return agent_config suggestions only
-			return finalizeStarterSuggestions(curated, nil, starterMode, limit), nil
-		default:
-			// Default to agent's configured KBs
-			effectiveKBIDs = agent.Config.KnowledgeBases
 		}
 	}
 	// Match the chat retrieval target semantics: a tag scope narrows its parent
@@ -629,7 +635,7 @@ func (s *customAgentService) getSuggestedQuestions(
 	// explicitly selected KBs remain additive.
 	effectiveKBIDs = excludeSuggestionStrings(effectiveKBIDs, resolvedTags.KnowledgeBaseIDs)
 
-	filteredKBIDs, err := types.FilterKnowledgeBasesForTenantAPIKeyScope(ctx, kbIDs, effectiveKBIDs)
+	filteredKBIDs, err := types.FilterKnowledgeBasesForTenantAPIKeyScope(ctx, requestedKBIDs, effectiveKBIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -833,7 +839,7 @@ func (s *customAgentService) resolveSuggestionTagScopes(
 	tagScopes []types.TagScope,
 ) (resolvedSuggestionTagScopes, error) {
 	result := resolvedSuggestionTagScopes{TagIDsByTenant: make(map[uint64][]string)}
-	if len(tagScopes) == 0 || s.tagRepo == nil || s.knowledgeRepo == nil || s.kbService == nil {
+	if len(tagScopes) == 0 || s.tagRepo == nil || (s.knowledgeRepo == nil && s.knowledgeService == nil) || s.kbService == nil {
 		return result, nil
 	}
 
@@ -881,7 +887,12 @@ func (s *customAgentService) resolveSuggestionTagScopes(
 
 			result.KnowledgeBaseIDs = mergeUniqueStrings(result.KnowledgeBaseIDs, []string{kbID})
 			result.TagIDsByTenant[tenantID] = mergeUniqueStrings(result.TagIDsByTenant[tenantID], validTagIDs)
-			knowledgeIDs, err := s.knowledgeRepo.ListIDsByTagIDs(ctx, tenantID, kbID, validTagIDs)
+			var knowledgeIDs []string
+			if s.knowledgeRepo != nil {
+				knowledgeIDs, err = s.knowledgeRepo.ListIDsByTagIDs(ctx, tenantID, kbID, validTagIDs)
+			} else {
+				knowledgeIDs, err = s.knowledgeService.ListKnowledgeIDsByTagIDs(ctx, tenantID, kbID, validTagIDs)
+			}
 			if err != nil {
 				return result, err
 			}
