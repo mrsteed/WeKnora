@@ -25,6 +25,7 @@ type UserService interface {
 	// is not an error when some ids resolve to no row. Used on hot list
 	// endpoints (tenant members, audit logs) to avoid N+1 queries.
 	GetUsersByIDs(ctx context.Context, ids []string) (map[string]*types.User, error)
+	GetUserByPhone(ctx context.Context, phone string) (*types.User, error)
 	// GetUserByEmail gets a user by email
 	GetUserByEmail(ctx context.Context, email string) (*types.User, error)
 	// GetUserByUsername gets a user by username
@@ -35,8 +36,10 @@ type UserService interface {
 	UpdateUser(ctx context.Context, user *types.User) error
 	// DeleteUser deletes a user
 	DeleteUser(ctx context.Context, id string) error
+	CreateUserByAdmin(ctx context.Context, req *types.CreateUserInOrgRequest, tenantID uint64) (*types.User, error)
 	// ChangePassword changes user password
 	ChangePassword(ctx context.Context, userID string, oldPassword, newPassword string) error
+	AdminSetPassword(ctx context.Context, userID string, newPassword string) error
 	// AdminResetPassword replaces a user's password without requiring the old
 	// password and revokes all of that user's existing sessions. Callers must
 	// enforce the system-admin and cannot-reset-self guards before invoking it.
@@ -97,6 +100,7 @@ type UserRepository interface {
 	// GetUsersByIDs batch-fetches users by id, returning a map keyed by
 	// user id. Missing ids are simply absent from the result.
 	GetUsersByIDs(ctx context.Context, ids []string) (map[string]*types.User, error)
+	GetUserByPhone(ctx context.Context, phone string) (*types.User, error)
 	// GetUserByEmail gets a user by email
 	GetUserByEmail(ctx context.Context, email string) (*types.User, error)
 	// GetUserByUsername gets a user by username

@@ -84,6 +84,8 @@ type User struct {
 	Username string `json:"username"   gorm:"type:varchar(100);uniqueIndex;not null"`
 	// Email address of the user
 	Email string `json:"email"      gorm:"type:varchar(255);uniqueIndex;not null"`
+	// Phone number of the user (optional)
+	Phone string `json:"phone"      gorm:"type:varchar(20)"`
 	// Hashed password of the user
 	PasswordHash string `json:"-"          gorm:"type:varchar(255);not null"`
 	// Avatar URL of the user
@@ -94,6 +96,8 @@ type User struct {
 	IsActive bool `json:"is_active"  gorm:"default:true"`
 	// Whether the user can access all workspaces (cross-workspace access)
 	CanAccessAllTenants bool `json:"can_access_all_tenants" gorm:"default:false"`
+	// Whether the user is a local super admin (platform-level privileges).
+	IsSuperAdmin bool `json:"is_super_admin" gorm:"default:false"`
 	// Whether the user is a system administrator (independent of workspace roles)
 	IsSystemAdmin bool `json:"is_system_admin" gorm:"default:false;index"`
 	// Per-user UI/feature preferences.
@@ -243,6 +247,7 @@ type UserInfo struct {
 	ID                  string          `json:"id"`
 	Username            string          `json:"username"`
 	Email               string          `json:"email"`
+	Phone               string          `json:"phone,omitempty"`
 	Avatar              string          `json:"avatar"`
 	TenantID            uint64          `json:"tenant_id"`
 	IsActive            bool            `json:"is_active"`
@@ -259,6 +264,7 @@ func (u *User) ToUserInfo() *UserInfo {
 		ID:                  u.ID,
 		Username:            u.Username,
 		Email:               u.Email,
+		Phone:               u.Phone,
 		Avatar:              u.Avatar,
 		TenantID:            u.TenantID,
 		IsActive:            u.IsActive,
@@ -268,4 +274,36 @@ func (u *User) ToUserInfo() *UserInfo {
 		CreatedAt:           u.CreatedAt,
 		UpdatedAt:           u.UpdatedAt,
 	}
+}
+
+// CreateUserInOrgRequest represents a request to create a new user and assign to an organization.
+type CreateUserInOrgRequest struct {
+	Username   string `json:"username" binding:"required,min=2,max=50"`
+	Email      string `json:"email"`
+	Phone      string `json:"phone"`
+	Password   string `json:"password" binding:"required,min=8,max=32"`
+	Role       string `json:"role" binding:"required"`
+	TenantRole string `json:"tenant_role,omitempty"`
+}
+
+// CreateUserInOrgResponse represents the response for creating a user in an organization.
+type CreateUserInOrgResponse struct {
+	Success bool      `json:"success"`
+	Message string    `json:"message,omitempty"`
+	User    *UserInfo `json:"user,omitempty"`
+}
+
+// UpdateUserInOrgRequest represents a request to update user information inside an organization.
+type UpdateUserInOrgRequest struct {
+	Username   string `json:"username" binding:"required,min=2,max=50"`
+	Email      string `json:"email"`
+	Phone      string `json:"phone"`
+	Role       string `json:"role"`
+	TenantRole string `json:"tenant_role,omitempty"`
+}
+
+// UpdateUserPasswordInOrgRequest represents a request to reset a user's login password.
+type UpdateUserPasswordInOrgRequest struct {
+	NewPassword     string `json:"new_password" binding:"required,min=8,max=32"`
+	ConfirmPassword string `json:"confirm_password" binding:"required,min=8,max=32"`
 }

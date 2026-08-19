@@ -140,6 +140,22 @@ func TenantRoleFromContext(ctx context.Context) TenantRole {
 	return v
 }
 
+// IsPlatformPrivilegedUser reports whether the user carries platform-admin identity.
+func IsPlatformPrivilegedUser(u *User) bool {
+	if u == nil {
+		return false
+	}
+	return u.IsSystemAdmin || u.IsSuperAdmin
+}
+
+// HasCrossTenantAccessCapability reports whether the user can operate across tenant boundaries.
+func HasCrossTenantAccessCapability(u *User) bool {
+	if u == nil {
+		return false
+	}
+	return u.CanAccessAllTenants || IsPlatformPrivilegedUser(u)
+}
+
 // IsSystemAdminFromContext extracts the system admin flag from ctx.
 // Returns false (fail-closed) when the key is absent.
 func IsSystemAdminFromContext(ctx context.Context) bool {
