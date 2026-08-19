@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
+	appservice "github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/event"
@@ -803,6 +804,7 @@ func NewService(
 	agentService interfaces.CustomAgentService,
 	knowledgeService interfaces.KnowledgeService,
 	kbService interfaces.KnowledgeBaseService,
+	agentKBScope *appservice.AgentKBScopeResolver,
 	streamManager interfaces.StreamManager,
 	defaultFileSvc interfaces.FileService,
 	documentReader interfaces.DocumentReader,
@@ -817,8 +819,8 @@ func NewService(
 	// Build command registry.
 	registry := NewCommandRegistry()
 	registry.Register(newHelpCommand(registry))
-	registry.Register(newInfoCommand(kbService))
-	registry.Register(newSearchCommand(sessionService, kbService))
+	registry.Register(newInfoCommand(kbService, agentKBScope))
+	registry.Register(newSearchCommand(sessionService, kbService, agentKBScope))
 	registry.Register(newStopCommand())
 	registry.Register(newClearCommand())
 
@@ -1590,9 +1592,14 @@ func (s *Service) GetChannelByID(channelID string) (*IMChannel, error) {
 }
 
 // GetChannelByIDAndTenant loads a channel from the database, scoped to a specific tenant.
-func (s *Service) GetChannelByIDAndTenant(channelID string, tenantID uint64) (*IMChannel, error) {
+// When createdBy is non-empty, the lookup is additionally restricted to the channel owner.
+func (s *Service) GetChannelByIDAndTenant(channelID string, tenantID uint64, createdBy string) (*IMChannel, error) {
 	var ch IMChannel
-	if err := s.db.Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", channelID, tenantID).First(&ch).Error; err != nil {
+	query := s.db.Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", channelID, tenantID)
+	if createdBy = strings.TrimSpace(createdBy); createdBy != "" {
+		query = query.Where("created_by = ?", createdBy)
+	}
+	if err := query.First(&ch).Error; err != nil {
 		return nil, err
 	}
 	return &ch, nil
@@ -2933,10 +2940,14 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 // ── CRUD operations for IM channels ──
 
 // ListChannelsByAgent returns all channels for a given agent within a tenant.
-func (s *Service) ListChannelsByAgent(agentID string, tenantID uint64) ([]IMChannel, error) {
+// When createdBy is non-empty, the result is restricted to channels created by that user.
+func (s *Service) ListChannelsByAgent(agentID string, tenantID uint64, createdBy string) ([]IMChannel, error) {
 	var channels []IMChannel
-	if err := s.db.Where("agent_id = ? AND tenant_id = ? AND deleted_at IS NULL", agentID, tenantID).
-		Order("created_at DESC").Find(&channels).Error; err != nil {
+	query := s.db.Where("agent_id = ? AND tenant_id = ? AND deleted_at IS NULL", agentID, tenantID)
+	if createdBy = strings.TrimSpace(createdBy); createdBy != "" {
+		query = query.Where("created_by = ?", createdBy)
+	}
+	if err := query.Order("created_at DESC").Find(&channels).Error; err != nil {
 		return nil, err
 	}
 	return channels, nil
@@ -2967,7 +2978,8 @@ type ChannelWithAgent struct {
 // in custom_agents) produce an empty AgentName — the frontend can substitute a
 // localized "builtin agent" label in that case. Channels whose custom agent was
 // soft-deleted are excluded so overview lists stay consistent after agent removal.
-func (s *Service) ListChannelsByTenant(tenantID uint64) ([]ChannelWithAgent, error) {
+// When createdBy is non-empty, the list is restricted to channels created by that user.
+func (s *Service) ListChannelsByTenant(tenantID uint64, createdBy string) ([]ChannelWithAgent, error) {
 	builtinIDs := types.GetBuiltinAgentIDs()
 	var rows []ChannelWithAgent
 	q := s.db.Table("im_channels AS c").
@@ -2978,6 +2990,9 @@ func (s *Service) ListChannelsByTenant(tenantID uint64) ([]ChannelWithAgent, err
 		Joins(`LEFT JOIN custom_agents AS a
                ON a.id = c.agent_id AND a.tenant_id = c.tenant_id AND a.deleted_at IS NULL`).
 		Where("c.tenant_id = ? AND c.deleted_at IS NULL", tenantID)
+	if createdBy = strings.TrimSpace(createdBy); createdBy != "" {
+		q = q.Where("c.created_by = ?", createdBy)
+	}
 	if len(builtinIDs) > 0 {
 		q = q.Where("a.id IS NOT NULL OR c.agent_id IN ?", builtinIDs)
 	} else {
@@ -3068,9 +3083,14 @@ func (s *Service) DeleteChannelsByAgent(agentID string, tenantID uint64) error {
 	return nil
 }
 
-// DeleteChannel soft-deletes a channel and stops it. Only deletes if the channel belongs to the given tenant.
-func (s *Service) DeleteChannel(channelID string, tenantID uint64) error {
-	result := s.db.Where("id = ? AND tenant_id = ?", channelID, tenantID).Delete(&IMChannel{})
+// DeleteChannel soft-deletes a channel and stops it. When createdBy is non-empty,
+// only channels owned by that user are deleted.
+func (s *Service) DeleteChannel(channelID string, tenantID uint64, createdBy string) error {
+	query := s.db.Where("id = ? AND tenant_id = ?", channelID, tenantID)
+	if createdBy = strings.TrimSpace(createdBy); createdBy != "" {
+		query = query.Where("created_by = ?", createdBy)
+	}
+	result := query.Delete(&IMChannel{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -3082,10 +3102,15 @@ func (s *Service) DeleteChannel(channelID string, tenantID uint64) error {
 	return nil
 }
 
-// ToggleChannel enables or disables a channel. Only toggles if the channel belongs to the given tenant.
-func (s *Service) ToggleChannel(channelID string, tenantID uint64) (*IMChannel, error) {
+// ToggleChannel enables or disables a channel. When createdBy is non-empty,
+// only channels owned by that user are toggled.
+func (s *Service) ToggleChannel(channelID string, tenantID uint64, createdBy string) (*IMChannel, error) {
 	var ch IMChannel
-	if err := s.db.Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", channelID, tenantID).First(&ch).Error; err != nil {
+	query := s.db.Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", channelID, tenantID)
+	if createdBy = strings.TrimSpace(createdBy); createdBy != "" {
+		query = query.Where("created_by = ?", createdBy)
+	}
+	if err := query.First(&ch).Error; err != nil {
 		return nil, err
 	}
 	ch.Enabled = !ch.Enabled

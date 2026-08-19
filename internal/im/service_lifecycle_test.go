@@ -65,6 +65,7 @@ func newLifecycleTestDB(t *testing.T) *gorm.DB {
 		bot_identity TEXT NOT NULL DEFAULT '',
 		session_mode TEXT NOT NULL DEFAULT 'user',
 		credentials TEXT NOT NULL DEFAULT '{}',
+		created_by TEXT NOT NULL DEFAULT '',
 		created_at DATETIME,
 		updated_at DATETIME,
 		deleted_at DATETIME
@@ -98,6 +99,7 @@ func createLifecycleChannel(t *testing.T, db *gorm.DB, id, agentID string) *IMCh
 		OutputMode:  "full",
 		SessionMode: string(SessionModeUser),
 		Credentials: types.JSON(`{"token":"v1"}`),
+		CreatedBy:   "owner-1",
 	}
 	if err := db.Create(channel).Error; err != nil {
 		t.Fatalf("create channel: %v", err)
@@ -246,7 +248,7 @@ func TestChannelConfigEventReloadsOtherReplica(t *testing.T) {
 		t.Fatal("second replica did not reload the published channel change")
 	}
 
-	if _, err := svcOne.ToggleChannel(channel.ID, channel.TenantID); err != nil {
+	if _, err := svcOne.ToggleChannel(channel.ID, channel.TenantID, ""); err != nil {
 		t.Fatalf("disable channel: %v", err)
 	}
 	deadline = time.Now().Add(2 * time.Second)

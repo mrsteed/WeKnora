@@ -59,6 +59,11 @@ func (h *IMHandler) CreateIMChannel(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	ownerID := currentIMChannelOwnerID(c)
+	if ownerID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 
 	var req struct {
 		Platform        string     `json:"platform" binding:"required"`
@@ -90,6 +95,7 @@ func (h *IMHandler) CreateIMChannel(c *gin.Context) {
 		SessionMode:     req.SessionMode,
 		KnowledgeBaseID: req.KnowledgeBaseID,
 		Credentials:     req.Credentials,
+		CreatedBy:       ownerID,
 		Enabled:         true,
 	}
 	if req.Enabled != nil {
@@ -142,7 +148,13 @@ func (h *IMHandler) ListIMChannels(c *gin.Context) {
 		return
 	}
 
-	channels, err := h.imService.ListChannelsByAgent(agentID, tenantID)
+	ownerID := currentIMChannelOwnerID(c)
+	if ownerID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	channels, err := h.imService.ListChannelsByAgent(agentID, tenantID, ownerID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list channels"})
 		return
@@ -161,7 +173,13 @@ func (h *IMHandler) ListAllIMChannels(c *gin.Context) {
 		return
 	}
 
-	channels, err := h.imService.ListChannelsByTenant(tenantID)
+	ownerID := currentIMChannelOwnerID(c)
+	if ownerID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	channels, err := h.imService.ListChannelsByTenant(tenantID, ownerID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list channels"})
 		return
@@ -198,8 +216,13 @@ func (h *IMHandler) UpdateIMChannel(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	ownerID := currentIMChannelOwnerID(c)
+	if ownerID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 
-	channel, err := h.imService.GetChannelByIDAndTenant(channelID, tenantID)
+	channel, err := h.imService.GetChannelByIDAndTenant(channelID, tenantID, ownerID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
 		return
@@ -291,8 +314,13 @@ func (h *IMHandler) DeleteIMChannel(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	ownerID := currentIMChannelOwnerID(c)
+	if ownerID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 
-	if err := h.imService.DeleteChannel(channelID, tenantID); err != nil {
+	if err := h.imService.DeleteChannel(channelID, tenantID, ownerID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete channel"})
 		return
 	}
@@ -326,8 +354,13 @@ func (h *IMHandler) ToggleIMChannel(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	ownerID := currentIMChannelOwnerID(c)
+	if ownerID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
 
-	channel, err := h.imService.ToggleChannel(channelID, tenantID)
+	channel, err := h.imService.ToggleChannel(channelID, tenantID, ownerID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to toggle channel"})
 		return
