@@ -173,6 +173,27 @@ const router = createRouter({
           component: () => import("../views/organization/OrganizationList.vue"),
           meta: { requiresInit: true, requiresAuth: true, requiredCapability: 'organizations' }
         },
+        {
+          path: "admin",
+          name: "admin",
+          component: () => import("../views/admin/AdminLayout.vue"),
+          meta: { requiresInit: true, requiresAuth: true, requiresOrgAdmin: true },
+          redirect: "/platform/admin/org-tree",
+          children: [
+            {
+              path: "org-tree",
+              name: "orgTreeManage",
+              component: () => import("../views/admin/OrgTreeManage.vue"),
+              meta: { requiresInit: true, requiresAuth: true, requiresOrgAdmin: true }
+            },
+            {
+              path: "members",
+              name: "memberManage",
+              component: () => import("../views/admin/MemberManage.vue"),
+              meta: { requiresInit: true, requiresAuth: true, requiresOrgAdmin: true }
+            },
+          ],
+        },
         // Compatibility redirects for /platform/system/* URLs. System
         // administration surfaces live as dedicated sections inside the
         // standard Settings modal; keep stable URLs for bookmarks and
@@ -408,6 +429,13 @@ router.beforeEach(async (to, from, next) => {
   // the bounce. This is UI-only; the server enforces the real check.
   if (to.meta.requiresSystemAdmin === true) {
     if (!authStore.isSystemAdmin) {
+      next('/platform/knowledge-bases')
+      return
+    }
+  }
+
+  if (to.meta.requiresOrgAdmin === true) {
+    if (!authStore.isSuperAdmin && !authStore.isOrgAdmin) {
       next('/platform/knowledge-bases')
       return
     }

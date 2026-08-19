@@ -1,117 +1,47 @@
 <template>
   <div class="login-layout">
     <div class="animated-bg">
-      <div class="knowledge-node node-1">
-        <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-        </svg>
-      </div>
-      <div class="knowledge-node node-2">
-        <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-      </div>
-      <div class="knowledge-node node-3">
-        <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 2L2 7l10 5 10-5-10-5z" />
-          <path d="M2 17l10 5 10-5" />
-          <path d="M2 12l10 5 10-5" />
-        </svg>
-      </div>
-      <div class="knowledge-node node-4">
-        <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <ellipse cx="12" cy="5" rx="9" ry="3" />
-          <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-          <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-        </svg>
-      </div>
-      <div class="knowledge-node node-5">
-        <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8" />
-          <path d="m21 21-4.35-4.35" />
-        </svg>
-      </div>
-      <div class="knowledge-node node-6">
-        <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path
-            d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-          <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-          <line x1="12" y1="22.08" x2="12" y2="12" />
-        </svg>
-      </div>
-      <div class="knowledge-node node-7">
-        <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-        </svg>
-      </div>
-      <div class="knowledge-node node-8">
-        <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        </svg>
-      </div>
-      <div class="knowledge-node node-9">
-        <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-      </div>
-      <div class="knowledge-node node-10">
-        <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3" />
-          <path
-            d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24" />
-        </svg>
-      </div>
-      <div class="knowledge-node node-11">
-        <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M9 11l3 3L22 4" />
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-        </svg>
-      </div>
-      <div class="knowledge-node node-12">
-        <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polygon
-            points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-        </svg>
-      </div>
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="orb orb-3"></div>
 
-      <svg class="knowledge-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
-        <line class="connection-line line-1" x1="20" y1="15" x2="35" y2="25" />
-        <line class="connection-line line-2" x1="35" y1="25" x2="55" y2="20" />
-        <line class="connection-line line-3" x1="55" y1="20" x2="85" y2="12" />
-        <line class="connection-line line-4" x1="8" y1="35" x2="25" y2="45" />
-        <line class="connection-line line-5" x1="25" y1="45" x2="65" y2="48" />
-        <line class="connection-line line-6" x1="20" y1="60" x2="60" y2="75" />
-        <line class="connection-line line-7" x1="20" y1="15" x2="20" y2="60" />
-        <line class="connection-line line-8" x1="55" y1="20" x2="45" y2="50" />
-        <line class="connection-line line-9" x1="65" y1="48" x2="90" y2="38" />
-        <line class="connection-line line-10" x1="40" y1="70" x2="75" y2="80" />
-        <line class="connection-line line-11" x1="35" y1="25" x2="25" y2="45" />
-        <line class="connection-line line-12" x1="75" y1="30" x2="65" y2="48" />
+      <svg class="neural-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <line class="conn-line cl-1" x1="15" y1="20" x2="35" y2="30" />
+        <line class="conn-line cl-2" x1="35" y1="30" x2="55" y2="22" />
+        <line class="conn-line cl-3" x1="55" y1="22" x2="75" y2="18" />
+        <line class="conn-line cl-4" x1="10" y1="45" x2="30" y2="50" />
+        <line class="conn-line cl-5" x1="30" y1="50" x2="50" y2="55" />
+        <line class="conn-line cl-6" x1="50" y1="55" x2="70" y2="48" />
+        <line class="conn-line cl-7" x1="70" y1="48" x2="90" y2="42" />
+        <line class="conn-line cl-8" x1="12" y1="70" x2="28" y2="75" />
+        <line class="conn-line cl-9" x1="28" y1="75" x2="48" y2="80" />
+        <line class="conn-line cl-10" x1="48" y1="80" x2="68" y2="72" />
+        <line class="conn-line cl-11" x1="20" y1="20" x2="15" y2="45" />
+        <line class="conn-line cl-12" x1="35" y1="30" x2="30" y2="50" />
+        <line class="conn-line cl-13" x1="55" y1="22" x2="50" y2="55" />
+        <line class="conn-line cl-14" x1="70" y1="48" x2="68" y2="72" />
       </svg>
+
+      <div class="n-node nn-1"></div>
+      <div class="n-node nn-2"></div>
+      <div class="n-node nn-3"></div>
+      <div class="n-node nn-4"></div>
+      <div class="n-node nn-5"></div>
+      <div class="n-node nn-6"></div>
+      <div class="n-node nn-7"></div>
+      <div class="n-node nn-8"></div>
+      <div class="n-node nn-9"></div>
+      <div class="n-node nn-10"></div>
     </div>
 
-    <!-- Logo - Top Left -->
-    <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-logo" :title="$t('common.github')">
-      <img src="@/assets/img/weknora.png" alt="WeKnora" class="logo-image" />
-    </a>
+    <div class="header-logo">
+      <span class="logo-text">IntraMind</span>
+      <span class="logo-divider">·</span>
+      <span class="logo-sub">智枢</span>
+    </div>
 
     <!-- Header Links - Top Right -->
     <div class="header-links">
-      <a href="https://weknora.weixin.qq.com" target="_blank" class="header-link" :title="$t('common.website')">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-          stroke-linecap="round">
-          <circle cx="12" cy="12" r="10" />
-          <line x1="2" y1="12" x2="22" y2="12" />
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-        </svg>
-        <span class="link-text">{{ $t('common.website') }}</span>
-      </a>
-
       <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-link" :title="$t('common.info')">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
           <path
@@ -145,7 +75,37 @@
     <!-- Left Showcase Section -->
     <div class="showcase-section">
       <div class="showcase-content">
-        <p class="showcase-subtitle">{{ $t('platform.subtitle') }}</p>
+        <div class="brand-icon-wrapper">
+          <svg class="brand-icon" viewBox="0 0 200 200" fill="none">
+            <ellipse cx="100" cy="100" rx="100" ry="100" fill="#6C3AFF" opacity="0.06" />
+            <ellipse cx="100" cy="100" rx="80" ry="80" stroke="#00D4FF" stroke-width="1.5" opacity="0.3" fill="none" />
+            <ellipse cx="100" cy="100" rx="55" ry="55" stroke="#6C3AFF" stroke-width="1" opacity="0.35" fill="none" />
+            <ellipse cx="100" cy="100" rx="25" ry="25" fill="#6C3AFF" opacity="0.5" />
+            <ellipse cx="100" cy="100" rx="16" ry="16" fill="#00D4FF" opacity="0.85" />
+            <ellipse cx="100" cy="100" rx="8" ry="8" fill="#FFFFFF" opacity="0.95" />
+            <line x1="50" y1="50" x2="84" y2="84" stroke="#00D4FF" stroke-width="1.5" opacity="0.45" />
+            <line x1="150" y1="50" x2="116" y2="84" stroke="#6C3AFF" stroke-width="1.5" opacity="0.45" />
+            <line x1="50" y1="150" x2="84" y2="116" stroke="#6C3AFF" stroke-width="1.5" opacity="0.45" />
+            <line x1="150" y1="150" x2="116" y2="116" stroke="#00D4FF" stroke-width="1.5" opacity="0.45" />
+            <line x1="100" y1="22" x2="100" y2="75" stroke="#00D4FF" stroke-width="1" opacity="0.35" />
+            <line x1="100" y1="125" x2="100" y2="178" stroke="#00D4FF" stroke-width="1" opacity="0.35" />
+            <line x1="22" y1="100" x2="75" y2="100" stroke="#6C3AFF" stroke-width="1" opacity="0.35" />
+            <line x1="125" y1="100" x2="178" y2="100" stroke="#6C3AFF" stroke-width="1" opacity="0.35" />
+            <circle cx="40" cy="45" r="7" fill="#00D4FF" />
+            <circle cx="160" cy="45" r="7" fill="#6C3AFF" />
+            <circle cx="40" cy="155" r="7" fill="#6C3AFF" />
+            <circle cx="160" cy="155" r="7" fill="#00D4FF" />
+            <circle cx="100" cy="18" r="6" fill="#00D4FF" />
+            <circle cx="100" cy="182" r="6" fill="#00D4FF" />
+            <circle cx="14" cy="100" r="6" fill="#6C3AFF" />
+            <circle cx="186" cy="100" r="6" fill="#6C3AFF" />
+            <ellipse cx="100" cy="100" rx="95" ry="35" stroke="#00D4FF" stroke-width="0.8" opacity="0.15" fill="none" transform="rotate(-20 100 100)" />
+            <ellipse cx="100" cy="100" rx="85" ry="28" stroke="#6C3AFF" stroke-width="0.8" opacity="0.12" fill="none" transform="rotate(30 100 100)" />
+          </svg>
+        </div>
+        <div class="accent-bar"></div>
+        <h1 class="brand-title">IntraMind<span class="brand-cn">-智枢</span></h1>
+        <p class="brand-tagline">{{ $t('platform.subtitle') }}</p>
         <p class="showcase-description">{{ $t('platform.description') }}</p>
 
         <div class="feature-tags">
@@ -153,21 +113,6 @@
           <span class="tag">{{ $t('platform.agent') }}</span>
           <span class="tag">{{ $t('platform.wiki') }}</span>
           <span class="tag">{{ $t('platform.hybridSearch') }}</span>
-        </div>
-
-        <!-- Swiper Carousel -->
-        <div class="carousel-container">
-          <swiper :modules="modules" :slides-per-view="1" :loop="true" :autoplay="{
-            delay: 4000,
-            disableOnInteraction: false,
-          }" :effect="'fade'" :fade-effect="{ crossFade: true }"
-            :pagination="{ clickable: true, dynamicBullets: false }" :speed="800" class="screenshot-swiper">
-            <swiper-slide v-for="(slide, index) in slides" :key="index">
-              <div class="slide-content">
-                <img :src="slide.image" :alt="slide.title" class="slide-image" />
-              </div>
-            </swiper-slide>
-          </swiper>
         </div>
       </div>
     </div>
@@ -344,11 +289,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useRoleLabel } from '@/composables/useRoleLabel'
 import { notifyLoginSuccess } from '@/utils/loginNotify'
-import { Swiper, SwiperSlide } from 'swiper/vue'
-import { Autoplay, EffectFade, Pagination } from 'swiper/modules'
-import 'swiper/css'
-import 'swiper/css/effect-fade'
-import 'swiper/css/pagination'
 import {
   login,
   register,
@@ -364,44 +304,11 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
 
-// Import screenshot images
-import screenshot1 from '@/assets/img/screenshot-1.svg'
-import screenshot2 from '@/assets/img/screenshot-2.svg'
-import screenshot3 from '@/assets/img/screenshot-3.svg'
-import screenshot4 from '@/assets/img/screenshot-4.svg'
-
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const { t, tm, locale } = useI18n()
 const { formatRole, roleIcon } = useRoleLabel()
-
-// Swiper modules
-const modules = [Autoplay, EffectFade, Pagination]
-
-// Carousel slides data
-const slides = [
-  {
-    image: screenshot4,
-    title: t('platform.carousel.agenticRagTitle'),
-    description: t('platform.carousel.agenticRagDesc')
-  },
-  {
-    image: screenshot2,
-    title: t('platform.carousel.hybridSearchTitle'),
-    description: t('platform.carousel.hybridSearchDesc')
-  },
-  {
-    image: screenshot3,
-    title: t('platform.carousel.wikiTitle'),
-    description: t('platform.carousel.wikiDesc')
-  },
-  {
-    image: screenshot1,
-    title: t('platform.carousel.smartDocRetrievalTitle'),
-    description: t('platform.carousel.smartDocRetrievalDesc')
-  }
-]
 
 // Form references
 const formRef = ref()
@@ -1815,6 +1722,621 @@ onMounted(async () => {
 
   .animated-bg {
     display: none;
+  }
+}
+</style>
+
+<style lang="less" scoped>
+.login-layout {
+  background: #0a0a0b;
+
+  &::before {
+    background:
+      radial-gradient(ellipse at 20% 40%, rgba(108, 58, 255, 0.08) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 60%, rgba(0, 212, 255, 0.06) 0%, transparent 60%),
+      radial-gradient(ellipse at 50% 100%, rgba(108, 58, 255, 0.04) 0%, transparent 50%);
+    z-index: 0;
+  }
+}
+
+.animated-bg {
+  overflow: hidden;
+}
+
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  animation: orbFloat 12s infinite ease-in-out;
+}
+
+.orb-1 {
+  width: 400px;
+  height: 400px;
+  background: rgba(0, 212, 255, 0.06);
+  top: -10%;
+  left: 10%;
+}
+
+.orb-2 {
+  width: 350px;
+  height: 350px;
+  background: rgba(108, 58, 255, 0.06);
+  bottom: -5%;
+  right: 15%;
+  animation-delay: 4s;
+}
+
+.orb-3 {
+  width: 300px;
+  height: 300px;
+  background: rgba(0, 212, 255, 0.04);
+  top: 50%;
+  left: 40%;
+  animation-delay: 8s;
+}
+
+@keyframes orbFloat {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  33% {
+    transform: translate(30px, -20px) scale(1.05);
+  }
+
+  66% {
+    transform: translate(-20px, 15px) scale(0.95);
+  }
+}
+
+.neural-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.25;
+}
+
+.conn-line {
+  stroke: rgba(0, 212, 255, 0.5);
+  stroke-width: 1;
+  stroke-dasharray: 5, 4;
+  stroke-linecap: round;
+  animation: lineFlow 8s infinite linear;
+}
+
+.cl-4,
+.cl-5,
+.cl-8,
+.cl-10,
+.cl-12,
+.cl-14,
+.nn-2,
+.nn-4,
+.nn-5,
+.nn-7,
+.nn-10 {
+  stroke: rgba(108, 58, 255, 0.5);
+  background: #6c3aff;
+  box-shadow: 0 0 8px rgba(108, 58, 255, 0.6);
+}
+
+.cl-2 { animation-delay: 0.6s; }
+.cl-3 { animation-delay: 1.2s; }
+.cl-4 { animation-delay: 0.3s; }
+.cl-5 { animation-delay: 0.9s; }
+.cl-6 { animation-delay: 1.5s; }
+.cl-7 { animation-delay: 2.1s; }
+.cl-8 { animation-delay: 0.4s; }
+.cl-9 { animation-delay: 1s; }
+.cl-10 { animation-delay: 1.6s; }
+.cl-11 { animation-delay: 0.7s; }
+.cl-12 { animation-delay: 1.3s; }
+.cl-13 { animation-delay: 0.5s; }
+.cl-14 { animation-delay: 1.8s; }
+
+.n-node {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #00d4ff;
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.6);
+  animation: nodePulse 3s infinite ease-in-out;
+}
+
+.nn-1 { top: 20%; left: 15%; }
+.nn-2 { top: 30%; left: 35%; animation-delay: 0.5s; }
+.nn-3 { top: 22%; left: 55%; animation-delay: 1s; }
+.nn-4 { top: 18%; left: 75%; animation-delay: 1.5s; }
+.nn-5 { top: 45%; left: 10%; animation-delay: 2s; }
+.nn-6 { top: 50%; left: 30%; animation-delay: 0.8s; }
+.nn-7 { top: 55%; left: 50%; animation-delay: 1.3s; }
+.nn-8 { top: 48%; left: 70%; animation-delay: 1.8s; }
+.nn-9 { top: 70%; left: 28%; animation-delay: 0.3s; }
+.nn-10 { top: 80%; left: 48%; animation-delay: 2.3s; }
+
+@keyframes nodePulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+
+  50% {
+    transform: scale(1.4);
+    opacity: 1;
+  }
+}
+
+.header-logo {
+  position: fixed;
+  top: 32px;
+  left: 50px;
+  z-index: 100;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+
+  .logo-text {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 1px;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .logo-divider {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 20px;
+    margin: 0 2px;
+  }
+
+  .logo-sub {
+    font-size: 18px;
+    font-weight: 500;
+    background: linear-gradient(135deg, #00d4ff, #6c3aff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+.header-links {
+  top: 28px;
+  right: 28px;
+  gap: 10px;
+}
+
+.header-link {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.25s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(0, 212, 255, 0.3);
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 212, 255, 0.15);
+  }
+}
+
+.language-switch button {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.8);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(0, 212, 255, 0.3);
+    color: #fff;
+  }
+}
+
+.language-dropdown {
+  background: rgba(20, 20, 25, 0.95);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.language-option {
+  color: rgba(255, 255, 255, 0.7);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  &.active {
+    background: rgba(0, 212, 255, 0.1);
+    color: #00d4ff;
+  }
+
+  .check-icon {
+    color: #00d4ff;
+  }
+}
+
+.showcase-section {
+  align-items: center;
+  justify-content: center;
+  padding: 100px 30px 100px 50px;
+}
+
+.showcase-content {
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 0;
+}
+
+.brand-icon-wrapper {
+  width: 220px;
+  height: 220px;
+  margin-bottom: 32px;
+  animation: iconFloat 6s infinite ease-in-out;
+  filter: drop-shadow(0 0 30px rgba(0, 212, 255, 0.2)) drop-shadow(0 0 60px rgba(108, 58, 255, 0.1));
+}
+
+.brand-icon {
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes iconFloat {
+  0%,
+  100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+.accent-bar {
+  width: 60px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #6c3aff, #00d4ff);
+  margin-bottom: 24px;
+}
+
+.brand-title {
+  margin: 0 0 12px;
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 2px;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+
+  .brand-cn {
+    font-size: 36px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #00d4ff, #6c3aff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+.brand-tagline {
+  margin: 0 0 16px;
+  font-size: 16px;
+  color: #8b8b90;
+  letter-spacing: 2px;
+  line-height: 1.6;
+}
+
+.showcase-description {
+  max-width: 440px;
+  margin: 0 0 28px;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.feature-tags {
+  justify-content: center;
+  margin-bottom: 0;
+}
+
+.tag {
+  background: rgba(0, 212, 255, 0.08);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: rgba(0, 212, 255, 0.15);
+    border-color: rgba(0, 212, 255, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 212, 255, 0.15);
+  }
+}
+
+.form-section {
+  align-items: center;
+  padding: 40px 50px 40px 30px;
+}
+
+.form-panel {
+  max-width: 440px;
+  margin-bottom: 0;
+}
+
+.form-card {
+  background: rgba(255, 255, 255, 0.04) !important;
+  backdrop-filter: blur(24px);
+  border-radius: 20px;
+  padding: 40px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.form-title {
+  color: #fff;
+  font-size: 26px;
+}
+
+.form-welcome,
+.form-subtitle,
+.form-hint {
+  color: #8b8b90;
+}
+
+.form-hint {
+  background: rgba(0, 212, 255, 0.08);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.form-content {
+  :deep(.t-form-item__label) {
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  :deep(.t-input) {
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    border-radius: 10px !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    transition: all 0.25s ease;
+
+    &:focus-within {
+      border-color: #00d4ff !important;
+      box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.15), 0 0 20px rgba(0, 212, 255, 0.08) !important;
+    }
+
+    &:hover {
+      border-color: rgba(0, 212, 255, 0.4) !important;
+    }
+
+    .t-input__inner {
+      color: #fff !important;
+
+      &::placeholder {
+        color: rgba(255, 255, 255, 0.35) !important;
+      }
+    }
+
+    .t-input__suffix,
+    .t-input__suffix-icon {
+      color: rgba(255, 255, 255, 0.4) !important;
+
+      &:hover {
+        color: #00d4ff !important;
+      }
+    }
+  }
+}
+
+.submit-button {
+  height: 48px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 20px 0 16px;
+
+  :deep(.t-button) {
+    background: linear-gradient(135deg, #00d4ff 0%, #6c3aff 100%) !important;
+    border: none !important;
+    color: #fff !important;
+
+    &:hover {
+      background: linear-gradient(135deg, #00bfea 0%, #5a2fe0 100%) !important;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 212, 255, 0.25), 0 4px 12px rgba(108, 58, 255, 0.2);
+    }
+  }
+}
+
+.oidc-divider {
+  color: rgba(255, 255, 255, 0.4);
+
+  span {
+    background: rgba(15, 15, 18, 0.92);
+    color: rgba(255, 255, 255, 0.55);
+  }
+
+  &::before {
+    border-top-color: rgba(255, 255, 255, 0.08);
+  }
+}
+
+.oidc-button,
+.register-cta__button {
+  height: 46px;
+  border-radius: 10px;
+}
+
+.register-cta__divider span {
+  background: rgba(15, 15, 18, 0.92);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.register-cta__divider::before {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.register-cta__button {
+  border-color: rgba(0, 212, 255, 0.28);
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.04);
+
+  &:hover {
+    border-color: rgba(0, 212, 255, 0.48);
+    color: #fff;
+    background: rgba(0, 212, 255, 0.08);
+  }
+}
+
+.form-footer {
+  color: rgba(255, 255, 255, 0.62);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+
+  .link-button {
+    color: #00d4ff;
+  }
+}
+
+.login-features {
+  .feature-item {
+    color: rgba(255, 255, 255, 0.62);
+
+    .feature-icon {
+      background: rgba(0, 212, 255, 0.14);
+      color: #00d4ff;
+    }
+  }
+}
+
+.invite-banner {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.invite-banner__icon,
+.invite-banner__hint {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.invite-banner__title {
+  color: #fff;
+}
+
+.invite-banner--error {
+  background: rgba(220, 38, 38, 0.12);
+  border-color: rgba(248, 113, 113, 0.22);
+  color: #fecaca;
+}
+
+@media (max-width: 1024px) {
+  .header-logo {
+    top: 26px;
+    left: 40px;
+  }
+
+  .showcase-section {
+    padding: 84px 24px 72px 40px;
+  }
+
+  .brand-title {
+    font-size: 36px;
+
+    .brand-cn {
+      font-size: 30px;
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .login-layout {
+    flex-direction: column;
+  }
+
+  .showcase-section,
+  .form-section {
+    flex: 0 0 auto;
+    padding: 32px 24px;
+  }
+
+  .header-logo {
+    top: 22px;
+    left: 24px;
+  }
+
+  .header-links {
+    top: 18px;
+    right: 18px;
+  }
+
+  .brand-icon-wrapper {
+    width: 180px;
+    height: 180px;
+    margin-bottom: 24px;
+  }
+
+  .brand-title {
+    font-size: 32px;
+    letter-spacing: 1px;
+
+    .brand-cn {
+      font-size: 26px;
+    }
+  }
+}
+
+@media (max-width: 480px) {
+  .header-logo {
+    left: 20px;
+
+    .logo-text {
+      font-size: 18px;
+    }
+
+    .logo-sub {
+      font-size: 15px;
+    }
+  }
+
+  .header-links {
+    right: 14px;
+
+    .link-text {
+      display: none;
+    }
+
+    .header-link {
+      padding: 9px 10px;
+    }
+  }
+
+  .showcase-section,
+  .form-section {
+    padding: 24px 18px;
+  }
+
+  .brand-icon-wrapper {
+    width: 150px;
+    height: 150px;
+  }
+
+  .brand-title {
+    font-size: 28px;
+
+    .brand-cn {
+      font-size: 22px;
+    }
+  }
+
+  .form-card {
+    padding: 28px 20px;
   }
 }
 </style>

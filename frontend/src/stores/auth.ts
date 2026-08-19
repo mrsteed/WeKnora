@@ -122,6 +122,10 @@ export const useAuthStore = defineStore('auth', () => {
     return user.value?.is_system_admin === true
   })
 
+  const isSuperAdmin = computed(() => {
+    return isSystemAdmin.value || user.value?.is_super_admin === true
+  })
+
   // currentTenantRole returns the user's role in the active tenant
   // (defaulting to '' when memberships have not been loaded). Used by
   // role-aware UI gating; PR 2 wires backend enforcement, PR 3 uses
@@ -179,6 +183,13 @@ export const useAuthStore = defineStore('auth', () => {
   const hasRole = (min: 'viewer' | 'contributor' | 'admin' | 'owner'): boolean => {
     return (ROLE_LEVEL[currentTenantRole.value] ?? 0) >= ROLE_LEVEL[min]
   }
+
+  const organizationStore = useOrganizationStore()
+
+  const isOrgAdmin = computed(() => {
+    if (hasRole('admin')) return true
+    return organizationStore.myOrgTreeOrgs.some(org => org.my_is_admin === true)
+  })
 
   const effectiveTenantId = computed(() => {
     // 如果选择了其他空间，使用选择的空间ID，否则使用用户默认空间ID
@@ -565,8 +576,10 @@ export const useAuthStore = defineStore('auth', () => {
     currentUserId,
     canAccessAllTenants,
     isSystemAdmin,
+    isSuperAdmin,
     currentTenantRole,
     hasRole,
+    isOrgAdmin,
     effectiveTenantId,
     isLiteMode,
 
