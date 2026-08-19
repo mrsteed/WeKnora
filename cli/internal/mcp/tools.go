@@ -34,8 +34,8 @@ func toolErrorResult(err error) *mcpsdk.CallToolResult {
 	if detail.Hint != "" {
 		textLine += "\nhint: " + detail.Hint
 	}
-	if detail.RetryCommand != "" {
-		textLine += "\nretry: " + detail.RetryCommand
+	if len(detail.RetryArgv) != 0 {
+		textLine += "\nretry: " + strings.Join(detail.RetryArgv, " ")
 	}
 	// StructuredContent accepts any; pass *ErrDetail directly (no round-trip).
 	return &mcpsdk.CallToolResult{
@@ -91,13 +91,13 @@ type knowledgeService interface {
 
 type chatService interface {
 	CreateSession(ctx context.Context, req *sdk.CreateSessionRequest) (*sdk.Session, error)
-	KnowledgeQAStream(ctx context.Context, sessionID string, req *sdk.KnowledgeQARequest, cb func(*sdk.StreamResponse) error) error
+	KnowledgeQAStream(ctx context.Context, sessionID string, req *sdk.KnowledgeQARequest, cb func(*sdk.StreamResponse) error, opts ...sdk.ResourceURLOptions) error
 }
 
 type agentService interface {
 	ListAgents(ctx context.Context) ([]sdk.Agent, error)
 	GetAgent(ctx context.Context, agentID string) (*sdk.Agent, error)
-	AgentQAStreamWithRequest(ctx context.Context, sessionID string, req *sdk.AgentQARequest, cb sdk.AgentEventCallback) error
+	AgentQAStreamWithRequest(ctx context.Context, sessionID string, req *sdk.AgentQARequest, cb sdk.AgentEventCallback, opts ...sdk.ResourceURLOptions) error
 }
 
 // chunkListService is the narrow surface chunk_list depends on. Kept
@@ -114,7 +114,7 @@ type chunkListService interface {
 // four domain interfaces - also satisfies it.
 type sessionAskService interface {
 	CreateSession(ctx context.Context, req *sdk.CreateSessionRequest) (*sdk.Session, error)
-	AgentQAStreamWithRequest(ctx context.Context, sessionID string, req *sdk.AgentQARequest, cb sdk.AgentEventCallback) error
+	AgentQAStreamWithRequest(ctx context.Context, sessionID string, req *sdk.AgentQARequest, cb sdk.AgentEventCallback, opts ...sdk.ResourceURLOptions) error
 }
 
 // registerTools wires the curated 10 tools onto server. Adding a tool here
@@ -659,14 +659,15 @@ func addChunkList(server *mcpsdk.Server, svc chunkListService) {
 		}
 		// `limit` is typed as int by chunkListInput, so the SDK rejects
 		// non-numeric values at schema validation (e.g. "limit":"50")
-		// before this handler runs. Here we only default+clamp the
-		// already-decoded value.
+		// before this handler runs. Default when unset; reject over-max
+		// (rather than silently clamping) so the agent's request is never
+		// quietly changed — matching search_chunks in this same file.
 		limit := in.Limit
 		if limit < 1 {
 			limit = chunkListDefaultLimit
 		}
 		if limit > chunkListMaxLimit {
-			limit = chunkListMaxLimit
+			return toolErrorResult(cmdutil.NewError(cmdutil.CodeInputInvalidArgument, fmt.Sprintf("limit must be in 1..%d", chunkListMaxLimit))), nil, nil
 		}
 		chunks, total, err := svc.ListKnowledgeChunks(ctx, in.DocID, 1, limit)
 		if err != nil {

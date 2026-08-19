@@ -61,7 +61,7 @@ type Options struct {
 // of this file.
 type ChatService interface {
 	CreateSession(ctx context.Context, req *sdk.CreateSessionRequest) (*sdk.Session, error)
-	KnowledgeQAStream(ctx context.Context, sessionID string, req *sdk.KnowledgeQARequest, cb func(*sdk.StreamResponse) error) error
+	KnowledgeQAStream(ctx context.Context, sessionID string, req *sdk.KnowledgeQARequest, cb func(*sdk.StreamResponse) error, opts ...sdk.ResourceURLOptions) error
 }
 
 // NewCmd builds `weknora chat <text>`.
@@ -116,7 +116,7 @@ both flags for the complete projected stream.`,
 	cmdutil.AddFormatFlag(cmd, chatFields...)
 	cmdutil.SetAgentHelp(cmd, cmdutil.AgentHelp{
 		UsedFor:       "Ask a RAG question against a knowledge base. Default JSON returns a bounded answer-event projection. --reference adds indexed citations; --verbose adds reasoning, tools, and lifecycle events. --format ndjson streams raw SDK events; --format text renders the selected events live.",
-		RequiredFlags: []string{"--kb"},
+		RequiredFlags: []string{"<text> (positional)", "--kb"},
 		Examples: []string{
 			`weknora chat "What is RRF?" --kb kb_abc`,
 			`weknora chat "What is RRF?" --kb kb_abc --jq '[.data.events[].content] | join("")'`,

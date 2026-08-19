@@ -1,0 +1,146 @@
+name: App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/*.go"
+      - "!cli/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - "config/**"
+      - "migrations/**"
+      - "scripts/**"
+      - "skills/preloaded/**"
+      - "docker/Dockerfile.app"
+      - "third_party/anydoc-go/**"
+      - ".github/workflows/app.yml"
+  pull_request:
+    paths:
+      - "**/*.go"
+      - "!cli/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - "config/**"
+      - "migrations/**"
+      - "scripts/**"
+      - "skills/preloaded/**"
+      - "docker/Dockerfile.app"
+      - "third_party/anydoc-go/**"
+      - ".github/workflows/app.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26"
+  GOPROXY: https://proxy.golang.org,direct
+  # Keep tests independent of a developer machine's custom log template.
+  LOG_FORMAT: ""
+  BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+
+jobs:
+  verify:
+    name: Format, vet, test, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          # v6 defaults to go.mod for the cache key (more stable than go.sum).
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Compare base..head, not the PR merge commit, so files changed only
+            # on main after the branch point are not attributed to this PR.
+            diff_range="${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
+          else
+            base="$BASE_SHA"
+            if [ -z "$base" ] || [[ "$base" =~ ^0+$ ]]; then
+              base=$(git rev-parse HEAD^)
+            fi
+            diff_range="$base..$GITHUB_SHA"
+          fi
+          unformatted=$(
+            git diff --name-only --diff-filter=ACMR -z "$diff_range" -- '*.go' ':!cli/**' |
+              xargs -0 -r gofmt -l
+          )
+          if [ -n "$unformatted" ]; then
+            echo "The following Go files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet and test
+        shell: bash
+        run: |
+          mapfile -t pkgs < <(go list ./... | grep -v '/docreader/')
+          go vet "${pkgs[@]}"
+          go test "${pkgs[@]}"
+
+      - name: Build server
+        run: go build ./cmd/server
+
+  anydoc:
+    name: anydoc parser engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo-audit
+        id: cargo-audit-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-${{ runner.os }}
+
+      - name: Install cargo-audit
+        if: steps.cargo-audit-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --locked
+
+      # The vendored bindings pull anydoc and its PDF stack from crates.io, and
+      # WeKnora parses untrusted uploads in-process. A Rust advisory there (as
+      # in RUSTSEC-2026-0187, an uncatchable abort on a hostile PDF) has to
+      # break the build, not wait for someone to notice. Vulnerabilities fail
+      # the job; unmaintained-crate warnings only report, since a transitive
+      # crate going unmaintained is not something this repo can act on.
+      - name: Audit the vendored dependency tree
+        working-directory: third_party/anydoc-go
+        run: cargo audit
+
+      # The archive is a build artifact, not a committed blob, so CI is what
+      # keeps the vendored bindings in third_party/anydoc-go compiling.
+      - name: Build the anydoc static archive
+        run: ./scripts/build-anydoc-lib.sh
+
+      - name: Vet, test, and build with the engine linked in
+        run: |
+          go vet -tags anydoc ./internal/infrastructure/docparser/...
+          go test -tags anydoc -count=1 ./internal/infrastructure/docparser/...
+          go build -tags anydoc ./cmd/server
