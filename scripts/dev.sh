@@ -83,6 +83,92 @@ show_help() {
     echo "  make dev-start DEV_ARGS=--odl-hybrid   # 同上（Makefile 传参）"
     echo "  $0 app                      # 在另一个终端启动后端"
     echo "  $0 frontend                 # 在另一个终端启动前端"
+    echo ""
+    echo "数据目录模式快捷入口:"
+    echo "  ./scripts/dev-named-volume.sh start    # 使用 Docker named volumes（默认）"
+    echo "  ./scripts/dev-host-data.sh start       # 使用仓库内 .local-data/dev-compose 目录"
+}
+
+current_dev_data_mode() {
+    printf '%s' "${WEKNORA_DEV_DATA_MODE:-named-volume}"
+}
+
+recommended_dev_start_command() {
+    if [ "$(current_dev_data_mode)" = "host-data" ]; then
+        printf '%s' "./scripts/dev-host-data.sh start"
+        return
+    fi
+    printf '%s' "./scripts/dev-named-volume.sh start"
+}
+
+is_loopback_host() {
+    case "$1" in
+        ""|localhost|127.0.0.1)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+tcp_probe() {
+    local host="$1"
+    local port="$2"
+    if ! command -v nc &> /dev/null; then
+        return 2
+    fi
+    nc -z -w 3 "$host" "$port" >/dev/null 2>&1
+}
+
+check_local_app_dependencies() {
+    local failed=0
+    local db_host="${DB_HOST:-127.0.0.1}"
+    local db_port="${DB_PORT:-5432}"
+    local redis_host="${REDIS_ADDR%%:*}"
+    local redis_port="${REDIS_ADDR##*:}"
+    local docreader_host="${DOCREADER_ADDR%%:*}"
+    local docreader_port="${DOCREADER_ADDR##*:}"
+
+    if [ "${DB_DRIVER:-postgres}" = "postgres" ] && is_loopback_host "$db_host"; then
+        if tcp_probe "$db_host" "$db_port"; then
+            log_success "PostgreSQL ${db_host}:${db_port} 可达"
+        else
+            log_error "PostgreSQL ${db_host}:${db_port} 不可达"
+            failed=1
+        fi
+    fi
+
+    if is_loopback_host "$redis_host"; then
+        if tcp_probe "$redis_host" "${redis_port:-6379}"; then
+            log_success "Redis ${redis_host}:${redis_port:-6379} 可达"
+        elif [ $? -eq 2 ]; then
+            log_warning "未安装 nc，跳过 Redis 连通性检查"
+        else
+            log_warning "Redis ${redis_host}:${redis_port:-6379} 不可达；队列与缓存功能可能退化"
+        fi
+    fi
+
+    if [ "${DOCREADER_TRANSPORT:-grpc}" = "grpc" ] && is_loopback_host "$docreader_host"; then
+        if tcp_probe "$docreader_host" "${docreader_port:-50051}"; then
+            log_success "DocReader ${docreader_host}:${docreader_port:-50051} 可达"
+        elif [ $? -eq 2 ]; then
+            log_warning "未安装 nc，跳过 DocReader 连通性检查"
+        else
+            log_warning "DocReader ${docreader_host}:${docreader_port:-50051} 不可达；文档解析相关功能将不可用"
+        fi
+    fi
+
+    if [ "$failed" -ne 0 ]; then
+        echo ""
+        log_error "本地后端启动前检查失败：数据库未就绪"
+        log_info "排查建议:"
+        echo "  1. 先启动基础设施: $(recommended_dev_start_command)"
+        echo "  2. 查看容器状态: ./scripts/dev.sh status"
+        echo "  3. 如果你在使用 host-data 模式，可检查数据目录权限: ${WEKNORA_DEV_DATA_ROOT:-$PROJECT_ROOT/.local-data/dev-compose}"
+        echo "  4. 如果数据库刚起，请等待 healthcheck 通过后再执行 ./scripts/dev.sh app"
+        return 1
+    fi
+
+    return 0
 }
 
 # 加载 .env 与可选的 .env.local（后者覆盖前者）
@@ -186,6 +272,11 @@ start_services() {
     fi
 
     cd "$PROJECT_ROOT"
+
+    log_info "数据目录模式: $(current_dev_data_mode)"
+    if [ -n "${WEKNORA_DEV_DATA_ROOT:-}" ]; then
+        log_info "数据目录根路径: ${WEKNORA_DEV_DATA_ROOT}"
+    fi
     
     # 检查 .env 文件
     if [ ! -f ".env" ]; then
@@ -493,6 +584,12 @@ start_app() {
         return 1
     fi
 
+    if [ -z "${DEV_REMOTE_HOST:-}" ]; then
+        if ! check_local_app_dependencies; then
+            return 1
+        fi
+    fi
+
     # .env.example uses /data/files for the Docker app container, where a
     # volume is mounted at that path. When the backend runs directly on the
     # host via dev-app, /data is often read-only or missing, so use a repo-local
@@ -501,7 +598,16 @@ start_app() {
     if [ -z "${LOCAL_STORAGE_BASE_DIR:-}" ] || [ "$LOCAL_STORAGE_BASE_DIR" = "/data/files" ]; then
         export LOCAL_STORAGE_BASE_DIR="$PROJECT_ROOT/.local-data/files"
     fi
-    mkdir -p "$LOCAL_STORAGE_BASE_DIR"
+    if ! mkdir -p "$LOCAL_STORAGE_BASE_DIR"; then
+        log_error "无法创建本地存储目录: $LOCAL_STORAGE_BASE_DIR"
+        log_info "请检查目录权限，或通过 LOCAL_STORAGE_BASE_DIR 指向一个可写目录"
+        return 1
+    fi
+    if [ ! -w "$LOCAL_STORAGE_BASE_DIR" ]; then
+        log_error "本地存储目录不可写: $LOCAL_STORAGE_BASE_DIR"
+        log_info "请检查目录权限，或改用 host-data / named-volume 模式后重试"
+        return 1
+    fi
     
     # 确保必要的环境变量已设置
     if [ -z "$DB_DRIVER" ]; then
@@ -511,6 +617,8 @@ start_app() {
     
     log_info "环境变量已设置，启动应用..."
     log_info "数据库地址: $DB_HOST:${DB_PORT:-5432}"
+    log_info "本地文件存储目录: $LOCAL_STORAGE_BASE_DIR"
+    log_info "基础设施数据目录模式: $(current_dev_data_mode)"
     
     export CGO_CFLAGS="-Wno-deprecated-declarations -Wno-gnu-folding-constant"
     if [[ "$(uname)" == "Darwin" ]]; then

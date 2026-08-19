@@ -37,8 +37,8 @@ services:
     ports:
       - "${APP_PORT:-8080}:8080"
     volumes:
-      - data-files:/data/files
-      - docreader-tmp:/tmp/docreader:ro
+      - ${WEKNORA_APP_DATA_MOUNT:-data-files}:/data/files
+      - ${WEKNORA_DOCREADER_TMP_MOUNT:-docreader-tmp}:/tmp/docreader:ro
       - ./config/config.yaml:/app/config/config.yaml
       # Optional: mount custom skills directory (allows adding skills without rebuilding image)
       - ./skills/preloaded:/app/skills/preloaded
@@ -509,7 +509,7 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_NAME}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - ${WEKNORA_POSTGRES_DATA_MOUNT:-postgres-data}:/var/lib/postgresql/data
     networks:
       - WeKnora-network
     healthcheck:
@@ -593,7 +593,7 @@ services:
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_ACCESS_KEY:-minioadmin}
     command: server --console-address ":9001" /data
     volumes:
-      - minio_data:/data
+      - ${WEKNORA_MINIO_DATA_MOUNT:-minio_data}:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
@@ -609,7 +609,7 @@ services:
     image: neo4j:2025.10.1
     container_name: WeKnora-neo4j
     volumes:
-      - neo4j-data:/data
+      - ${WEKNORA_NEO4J_DATA_MOUNT:-neo4j-data}:/data
     environment:
       - NEO4J_AUTH=${NEO4J_USERNAME:-neo4j}/${NEO4J_PASSWORD:-password}
       - NEO4J_apoc_export_file_enabled=true
@@ -633,7 +633,7 @@ services:
       - "${QDRANT_REST_PORT:-6333}:6333"
       - "${QDRANT_PORT:-6334}:6334"
     volumes:
-      - qdrant_data:/qdrant/storage
+      - ${WEKNORA_QDRANT_DATA_MOUNT:-qdrant_data}:/qdrant/storage
     networks:
       - WeKnora-network
     restart: unless-stopped
@@ -662,7 +662,7 @@ services:
       - "19530:19530"
       - "9091:9091"
     volumes:
-      - milvus_data:/var/lib/milvus
+      - ${WEKNORA_MILVUS_DATA_MOUNT:-milvus_data}:/var/lib/milvus
     networks:
       - WeKnora-network
     restart: unless-stopped
@@ -685,7 +685,7 @@ services:
       - "9035:8080"
       - "50052:50051"
     volumes:
-      - weaviate_data:/var/lib/weaviate
+      - ${WEKNORA_WEAVIATE_DATA_MOUNT:-weaviate_data}:/var/lib/weaviate
     networks:
       - WeKnora-network
     restart: unless-stopped
