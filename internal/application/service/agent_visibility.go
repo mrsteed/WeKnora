@@ -90,6 +90,19 @@ func (s *agentVisibilityService) CanAccessAgent(ctx context.Context, userID stri
 	if isSuperAdmin {
 		return true, nil
 	}
+	// Built-in agents are platform resources: they are always readable by
+	// anyone in the tenant (tenant ownership is already guaranteed by
+	// GetAgentByID's tenant-scoped lookup). Their persisted config override
+	// rows historically carry visibility=''/'private' with an empty
+	// created_by (no owner), which under the private rule would deny every
+	// non-privileged user — so the private-visibility rule must NOT apply.
+	if types.IsBuiltinAgentID(agentID) {
+		agent, err := s.agentService.GetAgentByID(ctx, agentID)
+		if err != nil {
+			return false, err
+		}
+		return agent != nil && agent.TenantID == tenantID, nil
+	}
 	agent, err := s.agentService.GetAgentByID(ctx, agentID)
 	if err != nil {
 		return false, err

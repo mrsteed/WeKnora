@@ -139,12 +139,21 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 				chatManage.ChatResponse = &types.ChatResponse{}
 			}
 			chatManage.ChatResponse.Content = finalContent
+			// Deltas under answerID have already streamed this exact full answer
+			// (answerBuilder only grows together with the emitted deltas), so the
+			// terminal event must carry only the completion marker with EMPTY
+			// content. Re-sending the full text here would be appended a second
+			// time by every consumer that accumulates final_answer events
+			// (qa.go persistence, AgentStreamHandler, frontend, memory, IM),
+			// causing the answer to appear twice. This matches the
+			// static-final-answer pattern in the agent pipeline (content event
+			// followed by an empty Done=true marker).
 			eventBus.Emit(ctx, types.Event{
 				ID:        fmt.Sprintf("%s-terminal", answerID),
 				Type:      types.EventType(event.EventAgentFinalAnswer),
 				SessionID: chatManage.SessionID,
 				Data: event.AgentFinalAnswerData{
-					Content:          finalContent,
+					Content:          "",
 					Done:             true,
 					CompletionStatus: types.MessageCompletionStatusCompleted,
 					FinishReason:     "stop",

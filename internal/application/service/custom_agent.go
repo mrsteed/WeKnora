@@ -359,7 +359,11 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 		return types.ApplyBuiltinAgentLocalizedMetadata(ctx, existingAgent), nil
 	}
 
-	// Create new record for built-in agent with customized config
+	// Create new record for built-in agent with customized config.
+	// Built-in agents are tenant-wide platform resources; the persisted
+	// override row must be visible to all tenant members (global), never
+	// private-with-no-owner — the latter would deny every non-privileged
+	// user read access (per-id detail/copy/suggested-questions → 1002).
 	newAgent := &types.CustomAgent{
 		ID:          defaultAgent.ID,
 		Name:        defaultAgent.Name,
@@ -367,6 +371,7 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 		Avatar:      defaultAgent.Avatar,
 		IsBuiltin:   true,
 		TenantID:    tenantID,
+		Visibility:  types.AgentVisibilityGlobal,
 		Config:      agent.Config,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),

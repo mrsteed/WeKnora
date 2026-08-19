@@ -135,6 +135,10 @@ func TestPluginChatCompletionStream_EmitsTerminalEventWhenChannelClosesWithoutDo
 	assert.Equal(t, "正常结束的回答", first.Content)
 	assert.False(t, first.Done)
 	assert.True(t, terminal.Done)
+	// Regression: the terminal marker must NOT re-carry the full answer,
+	// otherwise consumers accumulating final_answer events persist the
+	// answer twice. Only the completion status rides this event.
+	assert.Empty(t, terminal.Content)
 	assert.Equal(t, "completed", terminal.CompletionStatus)
 	assert.Equal(t, "stop", terminal.FinishReason)
 	assert.True(t, terminal.AllowComplete)
