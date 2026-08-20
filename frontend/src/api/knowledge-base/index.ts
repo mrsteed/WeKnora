@@ -84,6 +84,8 @@ export function createKnowledgeBase(data: {
   name: string;
   description?: string;
   type?: 'document' | 'faq';
+  visibility?: string;
+  organization_id?: string;
   chunking_config?: any;
   embedding_model_id?: string;
   summary_model_id?: string;
@@ -139,6 +141,8 @@ export function getKnowledgeBaseById(id: string, options?: { agent_id?: string; 
 export function updateKnowledgeBase(id: string, data: {
   name: string;
   description?: string;
+  visibility?: string;
+  organization_id?: string;
   config?: {
     chunking_config?: any;
     image_processing_config?: any;

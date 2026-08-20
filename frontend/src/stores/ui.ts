@@ -7,6 +7,8 @@ export const useUIStore = defineStore('ui', {
     kbEditorMode: 'create' as 'create' | 'edit',
     currentKBId: null as string | null,
     kbEditorType: 'document' as 'document' | 'faq',
+    kbEditorInitialVisibility: null as 'private' | 'global' | 'org' | null,
+    kbEditorInitialOrganizationId: null as string | null,
     // 当前选中的标签 ID，用于文件上传时传递
     selectedTagIds: [] as string[],
     kbEditorInitialSection: null as string | null,
@@ -52,11 +54,24 @@ export const useUIStore = defineStore('ui', {
       this.openKBSettings(kbId, initialSection)
     },
 
-    openCreateKB(type: 'document' | 'faq' = 'document', initialSection?: string) {
+    openCreateKB(
+      type: 'document' | 'faq' = 'document',
+      initialVisibilityOrSection?: 'private' | 'global' | 'org' | string,
+      initialSection?: string,
+      initialOrganizationId?: string,
+    ) {
       this.currentKBId = null
       this.kbEditorMode = 'create'
       this.kbEditorType = type
-      this.kbEditorInitialSection = initialSection || null
+      if (initialVisibilityOrSection === 'private' || initialVisibilityOrSection === 'global' || initialVisibilityOrSection === 'org') {
+        this.kbEditorInitialVisibility = initialVisibilityOrSection
+        this.kbEditorInitialSection = initialSection || null
+        this.kbEditorInitialOrganizationId = initialOrganizationId || null
+      } else {
+        this.kbEditorInitialVisibility = null
+        this.kbEditorInitialSection = initialVisibilityOrSection || null
+        this.kbEditorInitialOrganizationId = null
+      }
       this.showKBEditorModal = true
     },
 
@@ -64,6 +79,8 @@ export const useUIStore = defineStore('ui', {
       this.showKBEditorModal = false
       this.currentKBId = null
       this.kbEditorInitialSection = null
+      this.kbEditorInitialVisibility = null
+      this.kbEditorInitialOrganizationId = null
       this.kbEditorType = 'document'
     },
 

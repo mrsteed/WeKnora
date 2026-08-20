@@ -113,6 +113,7 @@ export interface UserInfo {
   can_access_all_tenants?: boolean
   preferences?: UserPreferences
   is_system_admin?: boolean
+  is_super_admin?: boolean
   created_at: string
   updated_at: string
 }
@@ -152,6 +153,7 @@ export function userInfoFromApi(
     tenant_id: String(tid) || '',
     can_access_all_tenants: u?.can_access_all_tenants === true,
     is_system_admin: u?.is_system_admin === true,
+    is_super_admin: u?.is_super_admin === true || u?.is_system_admin === true,
     preferences: u?.preferences,
     created_at: u?.created_at || new Date().toISOString(),
     updated_at: u?.updated_at || new Date().toISOString(),

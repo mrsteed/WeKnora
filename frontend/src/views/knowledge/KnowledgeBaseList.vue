@@ -701,6 +701,8 @@
     <!-- 知识库编辑器（创建/编辑统一组件） -->
     <KnowledgeBaseEditorModal :visible="uiStore.showKBEditorModal" :mode="uiStore.kbEditorMode"
       :kb-id="uiStore.currentKBId || undefined" :initial-type="uiStore.kbEditorType"
+      :initial-visibility="uiStore.kbEditorInitialVisibility || undefined"
+      :initial-organization-id="uiStore.kbEditorInitialOrganizationId || undefined"
       @update:visible="(val) => val ? null : uiStore.closeKBEditor()" @success="handleKBEditorSuccess" />
 
     <!-- 共享知识库对话框 -->
@@ -1697,7 +1699,19 @@ const handleCreateKnowledgeBase = () => {
   // 无模型时仍打开创建向导，并定位到模型配置页；用户可在向导内添加模型，无需先跳转系统设置
   const initialSection =
     modelsReadyLoaded.value && !isReadyForDocumentKb.value ? 'models' : undefined
-  uiStore.openCreateKB('document', initialSection)
+  let visibility: 'private' | 'org' | 'global' = 'private'
+  let organizationId: string | undefined
+  if (spaceSelection.value === 'global') {
+    visibility = 'global'
+  } else if (spaceSelection.value === 'org') {
+    visibility = 'org'
+  } else if (spaceSelection.value === 'mine') {
+    visibility = 'private'
+  } else if (spaceSelection.value !== 'all' && spaceSelection.value !== 'shared') {
+    visibility = 'org'
+    organizationId = spaceSelection.value
+  }
+  uiStore.openCreateKB('document', visibility, initialSection, organizationId)
 }
 
 // 知识库编辑器成功回调（创建或编辑成功）

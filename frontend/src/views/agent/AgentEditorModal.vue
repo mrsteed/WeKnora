@@ -168,6 +168,21 @@
                       </div>
                     </div>
 
+                    <!-- 组织可见性（仅在非内置智能体，且当前账号是超管或属于某个组织时显示） -->
+                    <div v-if="!isBuiltinAgent && (authStore.isSuperAdmin || orgStore.myOrgTreeOrgs.length > 0)" class="setting-row">
+                      <div class="setting-info">
+                        <label>{{ $t('agent.editor.visibilityLabel') }}</label>
+                        <p class="desc">{{ $t('agent.editor.visibilityTip') }}</p>
+                      </div>
+                      <div class="setting-control">
+                        <t-radio-group v-model="formData.visibility">
+                          <t-radio-button value="private">{{ $t('agent.editor.visibilityPrivate') }}</t-radio-button>
+                          <t-radio-button value="org">{{ $t('agent.editor.visibilityOrg') }}</t-radio-button>
+                          <t-radio-button value="global">{{ $t('agent.editor.visibilityGlobal') }}</t-radio-button>
+                        </t-radio-group>
+                      </div>
+                    </div>
+
                     <!-- 长期记忆。放在这里而不是「多轮对话」那一组，是因为那一组
                          整个带了 !isAgentMode，而智能推理恰恰是最需要这个开关的模式。
                          这个开关只能"关"：空间或个人设置关闭时，这里打开也不生效。 -->
@@ -1769,6 +1784,8 @@ const props = defineProps<{
   visible: boolean;
   mode: 'create' | 'edit';
   agent?: CustomAgent | null;
+  initialVisibility?: 'private' | 'org' | 'global';
+  initialOrganizationId?: string;
   initialSection?: string;
   initialHighlightField?: string;
   // readOnly hides the save button so a Viewer who clicks an agent
@@ -1788,6 +1805,16 @@ const emit = defineEmits<{
 const savedAgent = ref<CustomAgent | null>(null);
 const editorMode = computed(() => (savedAgent.value ? 'edit' : props.mode));
 const editorAgent = computed(() => savedAgent.value ?? props.agent ?? null);
+
+// 解析"组织可见"时使用的默认组织 ID：优先调用方指定，其次当前组织，最后第一个所属组织
+const resolveAutoOrganizationID = (): string => {
+  return (
+    props.initialOrganizationId ||
+    orgStore.currentOrganizationId ||
+    orgStore.myOrgTreeOrgs[0]?.id ||
+    ''
+  );
+}
 const isPostCreateSession = computed(() => !!savedAgent.value);
 const saveButtonLabel = computed(() =>
   editorMode.value === 'create'
@@ -2350,6 +2377,8 @@ const defaultFormData = {
   name: '',
   description: '',
   is_builtin: false,
+  visibility: 'private' as 'private' | 'org' | 'global',
+  organization_id: '',
   config: {
     // 基础设置
     agent_mode: 'smart-reasoning' as 'quick-answer' | 'smart-reasoning',
@@ -2457,6 +2486,15 @@ const defaultFormData = {
 };
 
 const formData = ref(JSON.parse(JSON.stringify(defaultFormData)));
+
+// 归一化可见性取值；空串视为 global（兼容旧数据未填可见性的场景）
+const normalizeEditorVisibility = (value?: string): 'private' | 'org' | 'global' => {
+  const normalized = (value || '').trim();
+  if (normalized === 'private' || normalized === 'org' || normalized === 'global') {
+    return normalized;
+  }
+  return normalized === '' ? 'global' : 'private';
+}
 
 const starterSuggestionModeOptions = computed(() => [
   { value: 'curated', label: t('agentEditor.questionSuggestions.modeCurated') },
@@ -2975,6 +3013,16 @@ const needsRerankModel = computed(() => {
   return false;
 });
 
+// 监听可见性切换为 org 且未选组织时，自动填默认组织
+watch(
+  () => formData.value.visibility,
+  (visibility) => {
+    if (visibility === 'org' && !formData.value.organization_id) {
+      formData.value.organization_id = resolveAutoOrganizationID();
+    }
+  },
+);
+
 // 监听可见性变化，重置表单
 watch(() => props.visible, async (val) => {
   if (val) {
@@ -2986,6 +3034,9 @@ watch(() => props.visible, async (val) => {
     if (props.mode === 'edit' && props.agent) {
       // 深度复制对象以避免引用问题
       const agentData = JSON.parse(JSON.stringify(props.agent));
+      const visibility = normalizeEditorVisibility(agentData.visibility);
+      agentData.visibility = visibility;
+      agentData.organization_id = visibility === 'org' ? (agentData.organization_id || '') : '';
 
       // 确保 config 对象存在
       if (!agentData.config) {
@@ -3054,6 +3105,11 @@ watch(() => props.visible, async (val) => {
     } else {
       // 创建新智能体，使用系统默认值
       const newFormData = JSON.parse(JSON.stringify(defaultFormData));
+      const initialVisibility = props.initialVisibility || 'private';
+      newFormData.visibility = initialVisibility;
+      newFormData.organization_id = initialVisibility === 'org'
+        ? resolveAutoOrganizationID()
+        : '';
       // 应用系统默认检索参数
       newFormData.config.embedding_top_k = defaultEmbeddingTopK.value;
       newFormData.config.keyword_threshold = defaultKeywordThreshold.value;
@@ -3415,6 +3471,9 @@ const loadDependencies = async () => {
       chatResources.ensureWebSearchProviders(),
       chatResources.ensureSandboxConfigs(),
       editorResources.prefetchAgentEditorDeps(),
+      !authStore.isSuperAdmin && orgStore.myOrgTreeOrgs.length === 0
+        ? orgStore.fetchMyOrgTreeOrganizations()
+        : Promise.resolve(),
     ]);
 
     if (chatResources.allModels.length > 0) {
@@ -4271,6 +4330,16 @@ const handleSave = async () => {
   if (!isBuiltinAgent.value) {
     if (!formData.value.name || !formData.value.name.trim()) {
       MessagePlugin.error(t('agent.editor.nameRequired'));
+      currentSection.value = 'basic';
+      return;
+    }
+
+    // "组织可见"时必须指定所属组织；优先自动解析，其次提示用户
+    if (formData.value.visibility === 'org' && !formData.value.organization_id) {
+      formData.value.organization_id = resolveAutoOrganizationID();
+    }
+    if (formData.value.visibility === 'org' && !formData.value.organization_id) {
+      MessagePlugin.error(t('agent.editor.orgRequired'));
       currentSection.value = 'basic';
       return;
     }

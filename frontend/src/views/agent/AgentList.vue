@@ -801,6 +801,8 @@
 
     <!-- 智能体编辑器弹窗 -->
     <AgentEditorModal :visible="editorVisible" :mode="editorMode" :agent="editingAgent"
+      :initialVisibility="editorInitialVisibility"
+      :initialOrganizationId="editorInitialOrganizationId || undefined"
       :initialSection="editorInitialSection"
       :initialHighlightField="editorInitialHighlightField"
       :readOnly="editorMode === 'edit' && editingAgent != null && !canManageAgent(editingAgent as AgentWithUI)"
@@ -1079,6 +1081,8 @@ const sharedAgentMcpScopeText = computed(() => {
 const editorVisible = ref(false)
 const editorMode = ref<'create' | 'edit'>('create')
 const editingAgent = ref<CustomAgent | null>(null)
+const editorInitialVisibility = ref<'private' | 'org' | 'global'>('private')
+const editorInitialOrganizationId = ref<string>('')
 const editorInitialSection = ref<string>('basic')
 const editorInitialHighlightField = ref<string>('')
 /** 当前打开三点菜单的卡片 agent.id（用于受控弹出层，避免 computed 项无持久引用导致菜单不响应） */
@@ -1561,6 +1565,8 @@ const formatDate = (dateStr: string) => {
 const openCreateModal = () => {
   editingAgent.value = null
   editorMode.value = 'create'
+  editorInitialVisibility.value = spaceSelectionOrgId.value ? 'org' : 'private'
+  editorInitialOrganizationId.value = spaceSelectionOrgId.value ? spaceSelection.value : ''
   editorInitialSection.value = 'basic'
   editorInitialHighlightField.value = ''
   editorVisible.value = true
