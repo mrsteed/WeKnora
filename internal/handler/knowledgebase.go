@@ -14,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/errors"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -28,6 +29,7 @@ type KnowledgeBaseHandler struct {
 	service            interfaces.KnowledgeBaseService
 	knowledgeService   interfaces.KnowledgeService
 	agentKBScope       *service.AgentKBScopeResolver
+	kbVisibility       interfaces.KBVisibilityService
 	kbShareService     interfaces.KBShareService
 	agentShareService  interfaces.AgentShareService
 	asynqClient        interfaces.TaskEnqueuer
@@ -42,6 +44,7 @@ func NewKnowledgeBaseHandler(
 	service interfaces.KnowledgeBaseService,
 	knowledgeService interfaces.KnowledgeService,
 	agentKBScope *service.AgentKBScopeResolver,
+	kbVisibility interfaces.KBVisibilityService,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
 	asynqClient interfaces.TaskEnqueuer,
@@ -52,6 +55,7 @@ func NewKnowledgeBaseHandler(
 		service:            service,
 		knowledgeService:   knowledgeService,
 		agentKBScope:       agentKBScope,
+		kbVisibility:       kbVisibility,
 		kbShareService:     kbShareService,
 		agentShareService:  agentShareService,
 		asynqClient:        asynqClient,
@@ -378,8 +382,23 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 		c.Error(apperrors.NewBadRequestError("Storage provider is not allowed by STORAGE_ALLOW_LIST"))
 		return
 	}
+	if req.Visibility == "" {
+		req.Visibility = types.KBVisibilityPrivate
+	}
+	switch req.Visibility {
+	case types.KBVisibilityGlobal:
+	case types.KBVisibilityOrg:
+		if strings.TrimSpace(req.OrganizationID) == "" {
+			c.Error(apperrors.NewBadRequestError("organization_id is required when visibility is 'org'"))
+			return
+		}
+	case types.KBVisibilityPrivate:
+	default:
+		c.Error(apperrors.NewBadRequestError("Invalid visibility value, must be 'global', 'org', or 'private'"))
+		return
+	}
 
-	logger.Infof(ctx, "Creating knowledge base, name: %s", secutils.SanitizeForLog(req.Name))
+	logger.Infof(ctx, "Creating knowledge base, name: %s, visibility: %s", secutils.SanitizeForLog(req.Name), req.Visibility)
 	// Create knowledge base using the service
 	kb, err := h.service.CreateKnowledgeBase(ctx, &req)
 	if err != nil {
@@ -414,6 +433,9 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 // For shared KBs, effectiveTenantID is the source tenant ID (owner's tenant)
 func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(c *gin.Context) (*types.KnowledgeBase, string, uint64, types.OrgMemberRole, error) {
 	ctx := c.Request.Context()
+	if access, ok := middleware.KBAccessFromContext(c); ok && access != nil && access.KnowledgeBase != nil {
+		return access.KnowledgeBase, access.KnowledgeBase.ID, access.EffectiveTenantID, access.Permission, nil
+	}
 
 	// Get tenant ID from context
 	tenantID, exists := c.Get(types.TenantIDContextKey.String())
@@ -451,8 +473,35 @@ func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(c *gin.Context) (*typ
 		return nil, id, 0, "", apperrors.NewInternalServerError(err.Error())
 	}
 
-	// Check 1: Verify tenant ownership (owner has full access)
+	// Check 1: Same-tenant access still respects KB visibility. Only
+	// platform-level privileged operators bypass same-tenant visibility.
 	if kb.TenantID == tenantID.(uint64) {
+		if userExists && h.kbVisibility != nil {
+			userIDStr, _ := userID.(string)
+			isPrivilegedOperator := false
+			if userVal, ok := c.Get(types.UserContextKey.String()); ok {
+				if currentUser, ok := userVal.(*types.User); ok && currentUser != nil {
+					isPrivilegedOperator = canBypassSameTenantResourceVisibility(ctx, currentUser)
+				}
+			}
+
+			canManage, manageErr := h.kbVisibility.CanManageKB(ctx, userIDStr, tenantID.(uint64), id, isPrivilegedOperator)
+			if manageErr != nil {
+				return nil, id, 0, "", apperrors.NewInternalServerError(manageErr.Error())
+			}
+			if canManage {
+				return kb, id, tenantID.(uint64), types.OrgRoleAdmin, nil
+			}
+
+			canAccess, accessErr := h.kbVisibility.CanAccessKB(ctx, userIDStr, tenantID.(uint64), id, isPrivilegedOperator)
+			if accessErr != nil {
+				return nil, id, 0, "", apperrors.NewInternalServerError(accessErr.Error())
+			}
+			if canAccess {
+				return kb, id, tenantID.(uint64), types.OrgRoleViewer, nil
+			}
+			return nil, id, 0, "", apperrors.NewForbiddenError("No permission to operate")
+		}
 		return kb, id, tenantID.(uint64), types.OrgRoleAdmin, nil
 	}
 
@@ -572,6 +621,19 @@ func (h *KnowledgeBaseHandler) GetKnowledgeBase(c *gin.Context) {
 // @Router       /knowledge-bases [get]
 func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 	ctx := c.Request.Context()
+	organizationID := c.Query("organization_id")
+	filterByOrganization := func(kbs []*types.KnowledgeBase) []*types.KnowledgeBase {
+		if organizationID == "" {
+			return kbs
+		}
+		filtered := make([]*types.KnowledgeBase, 0, len(kbs))
+		for _, kb := range kbs {
+			if kb != nil && kb.OrganizationID == organizationID {
+				filtered = append(filtered, kb)
+			}
+		}
+		return filtered
+	}
 
 	agentID := c.Query("agent_id")
 	if agentID != "" {
@@ -618,6 +680,7 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 			c.Error(apperrors.NewInternalServerError(err.Error()))
 			return
 		}
+		kbs = filterByOrganization(kbs)
 		kbs = filterKnowledgeBasesForAPIKeyScope(ctx, kbs)
 
 		c.JSON(http.StatusOK, gin.H{
@@ -627,13 +690,35 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 		return
 	}
 
-	// Get all knowledge bases for this tenant
-	kbs, err := h.service.ListKnowledgeBases(ctx)
+	userIDVal, _ := c.Get(types.UserIDContextKey.String())
+	userID, _ := userIDVal.(string)
+	currentTenantID := c.GetUint64(types.TenantIDContextKey.String())
+	if userID == "" {
+		c.Error(apperrors.NewUnauthorizedError("User ID not found in context"))
+		return
+	}
+
+	var (
+		kbs []*types.KnowledgeBase
+		err error
+	)
+	if h.kbVisibility != nil {
+		var bypassVisibility bool
+		if userVal, ok := c.Get(types.UserContextKey.String()); ok {
+			if user, ok := userVal.(*types.User); ok && user != nil {
+				bypassVisibility = canBypassSameTenantResourceVisibility(ctx, user)
+			}
+		}
+		kbs, err = h.kbVisibility.ListAccessibleKBs(ctx, userID, currentTenantID, bypassVisibility)
+	} else {
+		kbs, err = h.service.ListKnowledgeBases(ctx)
+	}
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(apperrors.NewInternalServerError(err.Error()))
 		return
 	}
+	kbs = filterByOrganization(kbs)
 
 	// Optional creator filter — drives the [All | Mine | Others] segmented
 	// control on the list page. We filter in-process rather than pushing
@@ -645,16 +730,14 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 	// or "others" — they fall out of both filters cleanly.
 	creatorFilter := strings.ToLower(strings.TrimSpace(c.Query("creator")))
 	if creatorFilter == "mine" || creatorFilter == "others" {
-		callerUserID, _ := c.Get(types.UserIDContextKey.String())
-		callerUserIDStr, _ := callerUserID.(string)
 		filtered := make([]*types.KnowledgeBase, 0, len(kbs))
 		for _, kb := range kbs {
 			if kb.CreatorID == "" {
 				continue
 			}
-			if creatorFilter == "mine" && kb.CreatorID == callerUserIDStr {
+			if creatorFilter == "mine" && kb.CreatorID == userID {
 				filtered = append(filtered, kb)
-			} else if creatorFilter == "others" && kb.CreatorID != callerUserIDStr {
+			} else if creatorFilter == "others" && kb.CreatorID != userID {
 				filtered = append(filtered, kb)
 			}
 		}
@@ -686,10 +769,9 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 	// CreatorID 为空的老数据）就让字段为空，前端按 fallback 渲染。
 	enrichKBCreatorNames(ctx, h.userService, kbs)
 
-	callerTenantID := c.GetUint64(types.TenantIDContextKey.String())
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    h.buildKBListResponse(ctx, kbs, callerTenantID),
+		"data":    h.buildKBListResponse(ctx, kbs, currentTenantID),
 	})
 }
 
@@ -797,9 +879,11 @@ func (h *KnowledgeBaseHandler) TogglePinKnowledgeBase(c *gin.Context) {
 
 // UpdateKnowledgeBaseRequest defines the request body structure for updating a knowledge base
 type UpdateKnowledgeBaseRequest struct {
-	Name        string                     `json:"name"        binding:"required"`
-	Description string                     `json:"description"`
-	Config      *types.KnowledgeBaseConfig `json:"config"`
+	Name           string                     `json:"name"        binding:"required"`
+	Description    string                     `json:"description"`
+	Visibility     string                     `json:"visibility"`
+	OrganizationID string                     `json:"organization_id"`
+	Config         *types.KnowledgeBaseConfig `json:"config"`
 }
 
 // UpdateKnowledgeBase godoc
@@ -820,15 +904,43 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 	logger.Info(ctx, "Start updating knowledge base")
 
 	// Validate and get the knowledge base
-	_, id, _, permission, err := h.validateAndGetKnowledgeBase(c)
+	kb, id, _, _, err := h.validateAndGetKnowledgeBase(c)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	// Only admin/editor can update knowledge base
-	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
-		c.Error(apperrors.NewForbiddenError("No permission to update knowledge base"))
+	userVal, ok := c.Get(types.UserContextKey.String())
+	if !ok {
+		c.Error(apperrors.NewUnauthorizedError("User context not found"))
+		return
+	}
+	user, ok := userVal.(*types.User)
+	if !ok || user == nil {
+		c.Error(apperrors.NewUnauthorizedError("Invalid user context"))
+		return
+	}
+
+	logger.Infof(ctx, "Permission check - KB ID: %s, CreatedBy: %s, User ID: %s, IsSuperAdmin: %v, Visibility: %s",
+		kb.ID, kb.CreatorID, user.ID, user.IsSuperAdmin, kb.Visibility)
+
+	if h.kbVisibility != nil {
+		tenantID, ok := types.TenantIDFromContext(ctx)
+		if !ok {
+			c.Error(apperrors.NewUnauthorizedError("Unauthorized"))
+			return
+		}
+		canManage, manageErr := h.kbVisibility.CanManageKB(ctx, user.ID, tenantID, kb.ID, canBypassSameTenantResourceVisibility(ctx, user))
+		if manageErr != nil {
+			c.Error(apperrors.NewInternalServerError(manageErr.Error()))
+			return
+		}
+		if !canManage {
+			c.Error(apperrors.NewForbiddenError("当前用户无权更新此知识库"))
+			return
+		}
+	} else if kb.CreatorID != "" && kb.CreatorID != user.ID && !user.IsSuperAdmin {
+		c.Error(apperrors.NewForbiddenError("当前用户无权更新此知识库"))
 		return
 	}
 
@@ -850,12 +962,26 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 			return
 		}
 	}
+	if req.Visibility != "" {
+		switch req.Visibility {
+		case types.KBVisibilityGlobal:
+		case types.KBVisibilityOrg:
+			if strings.TrimSpace(req.OrganizationID) == "" {
+				c.Error(apperrors.NewBadRequestError("organization_id is required when visibility is 'org'"))
+				return
+			}
+		case types.KBVisibilityPrivate:
+		default:
+			c.Error(apperrors.NewBadRequestError("Invalid visibility value, must be 'global', 'org', or 'private'"))
+			return
+		}
+	}
 
 	logger.Infof(ctx, "Updating knowledge base, ID: %s, name: %s",
 		secutils.SanitizeForLog(id), secutils.SanitizeForLog(req.Name))
 
 	// Update the knowledge base
-	kb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config)
+	updatedKB, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config, req.Visibility, req.OrganizationID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(apperrors.NewInternalServerError(err.Error()))
@@ -867,7 +993,7 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 	callerTenantID := c.GetUint64(types.TenantIDContextKey.String())
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    buildKBResponse(kb, h.resolveKBStoreView(ctx, kb, callerTenantID), nil),
+		"data":    buildKBResponse(updatedKB, h.resolveKBStoreView(ctx, updatedKB, callerTenantID), nil),
 	})
 }
 
@@ -888,16 +1014,43 @@ func (h *KnowledgeBaseHandler) DeleteKnowledgeBase(c *gin.Context) {
 	logger.Info(ctx, "Start deleting knowledge base")
 
 	// Validate and get the knowledge base
-	kb, id, _, permission, err := h.validateAndGetKnowledgeBase(c)
+	kb, id, _, _, err := h.validateAndGetKnowledgeBase(c)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	// Only owner (admin with matching tenant) can delete knowledge base
-	tenantID, _ := c.Get(types.TenantIDContextKey.String())
-	if kb.TenantID != tenantID.(uint64) || permission != types.OrgRoleAdmin {
-		c.Error(apperrors.NewForbiddenError("Only knowledge base owner can delete"))
+	userVal, ok := c.Get(types.UserContextKey.String())
+	if !ok {
+		c.Error(apperrors.NewUnauthorizedError("User context not found"))
+		return
+	}
+	user, ok := userVal.(*types.User)
+	if !ok || user == nil {
+		c.Error(apperrors.NewUnauthorizedError("Invalid user context"))
+		return
+	}
+
+	logger.Infof(ctx, "Permission check - KB ID: %s, CreatedBy: %s, User ID: %s, IsSuperAdmin: %v, Visibility: %s",
+		kb.ID, kb.CreatorID, user.ID, user.IsSuperAdmin, kb.Visibility)
+
+	if h.kbVisibility != nil {
+		tenantID, ok := types.TenantIDFromContext(ctx)
+		if !ok {
+			c.Error(apperrors.NewUnauthorizedError("Unauthorized"))
+			return
+		}
+		canManage, manageErr := h.kbVisibility.CanManageKB(ctx, user.ID, tenantID, kb.ID, canBypassSameTenantResourceVisibility(ctx, user))
+		if manageErr != nil {
+			c.Error(apperrors.NewInternalServerError(manageErr.Error()))
+			return
+		}
+		if !canManage {
+			c.Error(apperrors.NewForbiddenError("当前用户无权删除此知识库"))
+			return
+		}
+	} else if kb.CreatorID != "" && kb.CreatorID != user.ID && !user.IsSuperAdmin {
+		c.Error(apperrors.NewForbiddenError("当前用户无权删除此知识库"))
 		return
 	}
 

@@ -847,6 +847,8 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
 		storage_backend_id VARCHAR(36),
     wiki_config TEXT,
     indexing_strategy TEXT,
+    visibility VARCHAR(20) NOT NULL DEFAULT 'private',
+    organization_id VARCHAR(36) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME

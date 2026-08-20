@@ -90,6 +90,13 @@ func (s *customAgentService) CreateAgent(ctx context.Context, agent *types.Custo
 		return nil, ErrAgentNameRequired
 	}
 
+	visibility, organizationID, err := normalizeCustomAgentVisibility(agent.Visibility, agent.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	agent.Visibility = visibility
+	agent.OrganizationID = organizationID
+
 	// Generate UUID and set creation timestamps
 	if agent.ID == "" {
 		agent.ID = uuid.New().String()
@@ -306,6 +313,16 @@ func (s *customAgentService) UpdateAgent(ctx context.Context, agent *types.Custo
 	existingAgent.Config = agent.Config
 	existingAgent.UpdatedAt = time.Now()
 
+	// Update visibility if provided
+	if agent.Visibility != "" {
+		visibility, organizationID, err := normalizeCustomAgentVisibility(agent.Visibility, agent.OrganizationID)
+		if err != nil {
+			return nil, err
+		}
+		existingAgent.Visibility = visibility
+		existingAgent.OrganizationID = organizationID
+	}
+
 	// Ensure defaults
 	existingAgent.EnsureDefaults()
 	if err := existingAgent.Config.QuestionSuggestions.Validate(); err != nil {
@@ -323,6 +340,28 @@ func (s *customAgentService) UpdateAgent(ctx context.Context, agent *types.Custo
 
 	logger.Infof(ctx, "Custom agent updated successfully, ID: %s", agent.ID)
 	return existingAgent, nil
+}
+
+func normalizeCustomAgentVisibility(visibility string, organizationID string) (string, string, error) {
+	visibility = strings.TrimSpace(visibility)
+	if visibility == "" {
+		visibility = types.AgentVisibilityPrivate
+	}
+
+	switch visibility {
+	case types.AgentVisibilityGlobal:
+		return visibility, "", nil
+	case types.AgentVisibilityOrg:
+		organizationID = strings.TrimSpace(organizationID)
+		if organizationID == "" {
+			return "", "", errors.New("organization_id is required when visibility is org")
+		}
+		return visibility, organizationID, nil
+	case types.AgentVisibilityPrivate:
+		return visibility, "", nil
+	default:
+		return "", "", errors.New("invalid agent visibility")
+	}
 }
 
 // updateBuiltinAgent updates a built-in agent's configuration (but not basic info)
@@ -460,15 +499,17 @@ func (s *customAgentService) CopyAgent(ctx context.Context, id string) (*types.C
 
 	// Create a new agent with copied data
 	newAgent := &types.CustomAgent{
-		ID:          uuid.New().String(),
-		Name:        sourceAgent.Name + " (副本)",
-		Description: sourceAgent.Description,
-		Avatar:      sourceAgent.Avatar,
-		IsBuiltin:   false, // Copied agents are never built-in
-		TenantID:    tenantID,
-		Config:      sourceAgent.Config,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:             uuid.New().String(),
+		Name:           sourceAgent.Name + " (副本)",
+		Description:    sourceAgent.Description,
+		Avatar:         sourceAgent.Avatar,
+		IsBuiltin:      false, // Copied agents are never built-in
+		TenantID:       tenantID,
+		Visibility:     types.AgentVisibilityPrivate,
+		OrganizationID: "",
+		Config:         sourceAgent.Config,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 	// The clone is owned by whoever ran the copy, not the original
 	// creator — same reasoning as CopyKnowledgeBase. Skip synthetic

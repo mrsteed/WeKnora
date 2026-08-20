@@ -130,12 +130,14 @@ type rbacGuards struct {
 	chunkKBCreator       middleware.CreatorLookup
 	chunkKBCreatorFromID middleware.CreatorLookup // chunk routes that address chunks by :id (no knowledge id in URL)
 	wikiKBCreator        middleware.CreatorLookup
+	imChannelCreator     middleware.CreatorLookup
 
 	// Services for the KB-access guard (own / org-shared / via shared
 	// agent). Captured here so route lines can reference g.KBAccess()
 	// without having to plumb the services through every Register*
 	// function.
 	kbService         middleware.KBLookup
+	kbVisibility      interfaces.KBVisibilityService
 	knowledgeService  middleware.KnowledgeLookup
 	chunkService      middleware.ChunkLookup
 	kbShareService    interfaces.KBShareService
@@ -154,10 +156,12 @@ func newRBACGuards(
 	cfg *config.Config,
 	kbHandler *handler.KnowledgeBaseHandler,
 	agentHandler *handler.CustomAgentHandler,
+	imHandler *handler.IMHandler,
 	knowledgeHandler *handler.KnowledgeHandler,
 	chunkHandler *handler.ChunkHandler,
 	wikiHandler *handler.WikiPageHandler,
 	kbService interfaces.KnowledgeBaseService,
+	kbVisibility interfaces.KBVisibilityService,
 	knowledgeService interfaces.KnowledgeService,
 	chunkService interfaces.ChunkService,
 	kbShareService interfaces.KBShareService,
@@ -171,6 +175,9 @@ func newRBACGuards(
 	if agentHandler != nil {
 		g.agentCreator = agentHandler.AgentCreatorLookup
 	}
+	if imHandler != nil {
+		g.imChannelCreator = imHandler.IMChannelCreatorLookup
+	}
 	if knowledgeHandler != nil {
 		g.knowledgeKBCreator = knowledgeHandler.KBCreatorLookupFromKnowledgeID
 	}
@@ -182,6 +189,7 @@ func newRBACGuards(
 		g.wikiKBCreator = wikiHandler.KBCreatorLookupFromKBPath
 	}
 	g.kbService = kbService
+	g.kbVisibility = kbVisibility
 	g.knowledgeService = knowledgeService
 	g.chunkService = chunkService
 	g.kbShareService = kbShareService
@@ -210,6 +218,26 @@ func (g *rbacGuards) AdminOrSystemAdmin() gin.HandlerFunc {
 
 func (g *rbacGuards) Owner() gin.HandlerFunc {
 	return middleware.RequireRole(types.TenantRoleOwner, g.cfg)
+}
+
+// OwnerOrSystemAdminDelete is a narrow delete-tenant guard: keep the normal
+// Owner rule for ordinary members, but allow platform super-admins to delete a
+// tenant even when the cluster-wide cross-tenant role bypass is disabled.
+func (g *rbacGuards) OwnerOrSystemAdminDelete() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		if types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleOwner) {
+			c.Next()
+			return
+		}
+		if user, ok := ctx.Value(types.UserContextKey).(*types.User); ok && user != nil {
+			if user.IsSystemAdmin || user.IsSuperAdmin {
+				c.Next()
+				return
+			}
+		}
+		middleware.RequireRole(types.TenantRoleOwner, g.cfg)(c)
+	}
 }
 
 // API-key authorization — a SEPARATE authority from the JWT role/ownership
@@ -461,6 +489,13 @@ func (g *rbacGuards) OwnedAgentOrAdmin() gin.HandlerFunc {
 	return middleware.RequireOwnershipOrRole(types.TenantRoleAdmin, g.agentCreator, g.cfg)
 }
 
+// OwnedIMChannelOnly is stricter than OwnedAgentOrAdmin: IM channels are
+// user-private tenant resources, so even tenant Admin / Owner do not bypass
+// the creator check.
+func (g *rbacGuards) OwnedIMChannelOnly() gin.HandlerFunc {
+	return middleware.RequireOwnershipOnly(g.imChannelCreator, g.cfg)
+}
+
 // OwnedKnowledgeKBOrAdmin: per-knowledge mutations (update / delete /
 // reparse / image edit) — the URL :id is a knowledge id, the lookup
 // walks it back to the owning KB's CreatorID. Same "creator OR Admin+"
@@ -554,6 +589,7 @@ func (g *rbacGuards) KBAccessRead(param string) gin.HandlerFunc {
 		middleware.KBIDFromParam(param),
 		types.OrgRoleViewer,
 		g.kbService,
+		g.kbVisibility,
 		g.kbShareService,
 		g.agentShareService,
 		g.cfg,
@@ -568,6 +604,7 @@ func (g *rbacGuards) KBAccessWrite(param string) gin.HandlerFunc {
 		middleware.KBIDFromParam(param),
 		types.OrgRoleEditor,
 		g.kbService,
+		g.kbVisibility,
 		g.kbShareService,
 		g.agentShareService,
 		g.cfg,
@@ -583,6 +620,7 @@ func (g *rbacGuards) KBAccessReadFromKnowledgeIDParam(param string) gin.HandlerF
 		middleware.KBIDFromKnowledgeIDParam(param, g.knowledgeService),
 		types.OrgRoleViewer,
 		g.kbService,
+		g.kbVisibility,
 		g.kbShareService,
 		g.agentShareService,
 		g.cfg,
@@ -596,6 +634,7 @@ func (g *rbacGuards) KBAccessWriteFromKnowledgeIDParam(param string) gin.Handler
 		middleware.KBIDFromKnowledgeIDParam(param, g.knowledgeService),
 		types.OrgRoleEditor,
 		g.kbService,
+		g.kbVisibility,
 		g.kbShareService,
 		g.agentShareService,
 		g.cfg,
@@ -610,6 +649,7 @@ func (g *rbacGuards) KBAccessReadFromChunkIDParam(param string) gin.HandlerFunc 
 		middleware.KBIDFromChunkIDParam(param, g.chunkService),
 		types.OrgRoleViewer,
 		g.kbService,
+		g.kbVisibility,
 		g.kbShareService,
 		g.agentShareService,
 		g.cfg,
@@ -624,6 +664,7 @@ func (g *rbacGuards) KBAccessWriteFromChunkIDParam(param string) gin.HandlerFunc
 		middleware.KBIDFromChunkIDParam(param, g.chunkService),
 		types.OrgRoleEditor,
 		g.kbService,
+		g.kbVisibility,
 		g.kbShareService,
 		g.agentShareService,
 		g.cfg,

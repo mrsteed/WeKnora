@@ -252,6 +252,7 @@ type UserInfo struct {
 	TenantID            uint64          `json:"tenant_id"`
 	IsActive            bool            `json:"is_active"`
 	CanAccessAllTenants bool            `json:"can_access_all_tenants"`
+	IsSuperAdmin        bool            `json:"is_super_admin"`
 	IsSystemAdmin       bool            `json:"is_system_admin"`
 	Preferences         UserPreferences `json:"preferences"`
 	CreatedAt           time.Time       `json:"created_at"`
@@ -269,7 +270,8 @@ func (u *User) ToUserInfo() *UserInfo {
 		TenantID:            u.TenantID,
 		IsActive:            u.IsActive,
 		CanAccessAllTenants: u.CanAccessAllTenants,
-		IsSystemAdmin:       u.IsSystemAdmin,
+		IsSuperAdmin:        u.IsSuperAdmin,
+		IsSystemAdmin:       u.IsSystemAdmin || u.IsSuperAdmin,
 		Preferences:         u.Preferences,
 		CreatedAt:           u.CreatedAt,
 		UpdatedAt:           u.UpdatedAt,

@@ -40,6 +40,7 @@ type RouterParams struct {
 	EvaluationService            interfaces.EvaluationService
 	KBShareService               interfaces.KBShareService
 	AgentShareService            interfaces.AgentShareService
+	KBVisibilityService          interfaces.KBVisibilityService
 	KBHandler                    *handler.KnowledgeBaseHandler
 	KnowledgeHandler             *handler.KnowledgeHandler
 	TenantHandler                *handler.TenantHandler
@@ -210,10 +211,12 @@ func NewRouter(params RouterParams) *gin.Engine {
 			params.Config,
 			params.KBHandler,
 			params.CustomAgentHandler,
+			params.IMHandler,
 			params.KnowledgeHandler,
 			params.ChunkHandler,
 			params.WikiPageHandler,
 			params.KBService,
+			params.KBVisibilityService,
 			params.KnowledgeService,
 			params.ChunkService,
 			params.KBShareService,

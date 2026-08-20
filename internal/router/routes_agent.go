@@ -279,32 +279,31 @@ func RegisterIMRoutes(r *gin.Engine, imHandler *handler.IMHandler) {
 
 // RegisterIMChannelRoutes registers IM channel CRUD routes (requires authentication).
 //
-// IM channels carry external bot credentials (WeChat/Feishu/Slack/...);
-// listing is Viewer+ but any mutation, toggle, or QR-code login flow
-// (which can hijack a personal WeChat session) is Admin+.
+// IM channels are per-user tenant resources: create/list are available to
+// Contributors, while update/delete/toggle are restricted to the channel owner.
 func RegisterIMChannelRoutes(r *gin.RouterGroup, imHandler *handler.IMHandler, g *rbacGuards) {
 	// Channel CRUD under agents
 	agentChannels := g.apiKeyGroup(r.Group("/agents/:id/im-channels"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		agentChannels.POST("", g.Admin(), imHandler.CreateIMChannel)
-		agentChannels.GET("", g.Viewer(), imHandler.ListIMChannels)
+		agentChannels.POST("", g.Contributor(), imHandler.CreateIMChannel)
+		agentChannels.GET("", g.Contributor(), imHandler.ListIMChannels)
 	}
 
 	// Channel operations by channel ID
 	channels := g.apiKeyGroup(r.Group("/im-channels"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		channels.GET("", g.Viewer(), imHandler.ListAllIMChannels)
-		channels.PUT("/:id", g.Admin(), imHandler.UpdateIMChannel)
-		channels.DELETE("/:id", g.Admin(), imHandler.DeleteIMChannel)
-		channels.POST("/:id/toggle", g.Admin(), imHandler.ToggleIMChannel)
+		channels.GET("", g.Contributor(), imHandler.ListAllIMChannels)
+		channels.PUT("/:id", g.Contributor(), g.OwnedIMChannelOnly(), imHandler.UpdateIMChannel)
+		channels.DELETE("/:id", g.Contributor(), g.OwnedIMChannelOnly(), imHandler.DeleteIMChannel)
+		channels.POST("/:id/toggle", g.Contributor(), g.OwnedIMChannelOnly(), imHandler.ToggleIMChannel)
 	}
 
-	// WeChat QR code login (requires authentication) — Admin+: a successful
-	// scan binds a personal WeChat account to the tenant.
+	// WeChat QR code login (requires authentication) — contributor-created,
+	// per-user channel resources.
 	wechatGroup := g.apiKeyGroup(r.Group("/wechat"), apiKeyManageChannels(apiKeyFullAccess()))
 	{
-		wechatGroup.POST("/qrcode", g.Admin(), imHandler.WeChatGetQRCode)
-		wechatGroup.POST("/qrcode/status", g.Admin(), imHandler.WeChatPollQRCodeStatus)
+		wechatGroup.POST("/qrcode", g.Contributor(), imHandler.WeChatGetQRCode)
+		wechatGroup.POST("/qrcode/status", g.Contributor(), imHandler.WeChatPollQRCodeStatus)
 	}
 }
 

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -46,6 +47,7 @@ func (s *kbVisibilityService) ListAccessibleKBs(ctx context.Context, userID stri
 		}
 		s.fillKnowledgeCounts(ctx, kbs)
 		s.fillCreatorNames(ctx, kbs)
+		s.applyUserKBPins(ctx, tenantID, userID, kbs)
 		return kbs, nil
 	}
 
@@ -61,6 +63,7 @@ func (s *kbVisibilityService) ListAccessibleKBs(ctx context.Context, userID stri
 
 	s.fillKnowledgeCounts(ctx, kbs)
 	s.fillCreatorNames(ctx, kbs)
+	s.applyUserKBPins(ctx, tenantID, userID, kbs)
 	return kbs, nil
 }
 
@@ -133,4 +136,38 @@ func (s *kbVisibilityService) CanManageKB(ctx context.Context, userID string, te
 
 func (s *kbVisibilityService) fillCreatorNames(ctx context.Context, kbs []*types.KnowledgeBase) {
 	fillKnowledgeBaseCreatorNames(ctx, s.userRepo, kbs)
+}
+
+func (s *kbVisibilityService) applyUserKBPins(ctx context.Context, tenantID uint64, userID string, kbs []*types.KnowledgeBase) {
+	if len(kbs) == 0 || userID == "" {
+		return
+	}
+	pins, err := s.kbRepo.ListUserKBPinIDs(ctx, tenantID, userID)
+	if err != nil {
+		logger.Warnf(ctx, "applyUserKBPins: failed to load pins for tenant=%d user=%s: %v", tenantID, userID, err)
+		return
+	}
+	if len(pins) == 0 {
+		return
+	}
+	for _, kb := range kbs {
+		if ts, ok := pins[kb.ID]; ok {
+			kb.IsPinned = true
+			t := ts
+			kb.PinnedAt = &t
+		}
+	}
+	sort.SliceStable(kbs, func(i, j int) bool {
+		a, b := kbs[i], kbs[j]
+		if a.IsPinned != b.IsPinned {
+			return a.IsPinned
+		}
+		if a.IsPinned && b.IsPinned {
+			at, bt := a.PinnedAt, b.PinnedAt
+			if at != nil && bt != nil && !at.Equal(*bt) {
+				return at.After(*bt)
+			}
+		}
+		return a.CreatedAt.After(b.CreatedAt)
+	})
 }

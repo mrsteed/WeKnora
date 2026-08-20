@@ -219,6 +219,7 @@ func runGuard(
 		KBIDFromParam("id"),
 		requiredPerm,
 		kbsvc,
+		nil,
 		shareSvc,
 		agentSvc,
 		cfgRBAC(true),
@@ -318,6 +319,7 @@ func TestRequireKBAccess_NoTenant_Aborts(t *testing.T) {
 		KBIDFromParam("id"),
 		types.OrgRoleViewer,
 		&stubKBLookup{},
+		nil,
 		nil,
 		nil,
 		cfgRBAC(true),
@@ -509,7 +511,7 @@ func TestRequireKBAccess_Forbidden_FailOpenWhenRBACDisabled(t *testing.T) {
 	guard := RequireKBAccess(
 		KBIDFromParam("id"),
 		types.OrgRoleEditor, // would-deny
-		kbsvc, share, nil,
+		kbsvc, nil, share, nil,
 		cfgRBAC(false), // enforcement off
 	)
 	guard(c)
@@ -532,7 +534,7 @@ func TestRequireKBAccess_NotFound_FiresEvenWhenRBACDisabled(t *testing.T) {
 		KBIDFromParam("id"),
 		types.OrgRoleViewer,
 		&stubKBLookup{kbs: map[string]*types.KnowledgeBase{}},
-		nil, nil,
+		nil, nil, nil,
 		cfgRBAC(false),
 	)
 	guard(c)

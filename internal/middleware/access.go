@@ -52,12 +52,22 @@ import (
 // authorised for cross-tenant access at this moment. Both the user
 // attribute and the cluster-wide flag must be true; either alone is
 // not enough.
+func hasCrossTenantSuperuserCapability(u *types.User) bool {
+	return types.HasCrossTenantAccessCapability(u)
+}
+
 func IsCrossTenantSuperuser(ctx context.Context, cfg *config.Config) bool {
-	if cfg == nil || cfg.Tenant == nil || !cfg.Tenant.EnableCrossTenantAccess {
-		return false
-	}
 	u, ok := ctx.Value(types.UserContextKey).(*types.User)
 	if !ok || u == nil {
+		return false
+	}
+	if !hasCrossTenantSuperuserCapability(u) {
+		return false
+	}
+	if types.IsPlatformPrivilegedUser(u) {
+		return true
+	}
+	if cfg == nil || cfg.Tenant == nil || !cfg.Tenant.EnableCrossTenantAccess {
 		return false
 	}
 	return u.CanAccessAllTenants
@@ -87,7 +97,7 @@ func IsTenantAccessible(
 	if user.TenantID == targetTenantID {
 		return true
 	}
-	if cfg != nil && cfg.Tenant != nil && cfg.Tenant.EnableCrossTenantAccess && user.CanAccessAllTenants {
+	if IsCrossTenantSuperuser(context.WithValue(ctx, types.UserContextKey, user), cfg) {
 		return true
 	}
 	if memberService == nil {
@@ -111,30 +121,29 @@ func IsTenantAccessible(
 func RequireCrossTenantAccess(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		if scope, ok := types.TenantAPIKeyScopeFromContext(ctx); ok && scope.IsPlatform() {
+		u, ok := ctx.Value(types.UserContextKey).(*types.User)
+		if ok && u != nil && types.IsPlatformPrivilegedUser(u) {
 			c.Next()
 			return
 		}
-		// First the cluster-wide flag — if it's off, nobody gets through,
-		// not even users with CanAccessAllTenants=true. This mirrors the
-		// "must require BOTH" rule that previously lived in tenant.go.
+		// The legacy can_access_all_tenants-only path still honours the
+		// cluster-wide switch.
 		if cfg == nil || cfg.Tenant == nil || !cfg.Tenant.EnableCrossTenantAccess {
 			uid, _ := types.UserIDFromContext(ctx)
 			logger.Warnf(ctx,
 				"[rbac] cross-tenant route blocked (EnableCrossTenantAccess=false): user=%s path=%s",
 				uid, c.Request.URL.Path)
-			_ = c.Error(apperrors.NewForbiddenError("Cross-workspace access is disabled"))
+			_ = c.Error(apperrors.NewForbiddenError("Cross-tenant access is disabled"))
 			c.Abort()
 			return
 		}
-		u, ok := ctx.Value(types.UserContextKey).(*types.User)
 		if !ok || u == nil || !u.CanAccessAllTenants {
 			uid, _ := types.UserIDFromContext(ctx)
 			logger.Warnf(ctx,
 				"[rbac] cross-tenant route blocked (not a superuser): user=%s path=%s",
 				uid, c.Request.URL.Path)
 			_ = c.Error(apperrors.NewForbiddenError(
-				"Insufficient permissions for cross-workspace operation"))
+				"Insufficient permissions for cross-tenant operation"))
 			c.Abort()
 			return
 		}

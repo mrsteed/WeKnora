@@ -310,6 +310,61 @@ var ErrOwnershipForbidden = errors.New("rbac: ownership or role insufficient")
 // (e.g. KB id carried in a JSON body rather than a URL param).
 //
 // Returns nil when access is allowed. ErrResourceNotFound means the
+
+// RequireOwnershipOnly guards endpoints that must only be operated on by the
+// resource creator. Unlike RequireOwnershipOrRole, there is intentionally no
+// Admin / Owner / cross-tenant-superuser bypass here: the caller must be the
+// recorded creator of the resource.
+func RequireOwnershipOnly(lookup CreatorLookup, cfg *config.Config) gin.HandlerFunc {
+	warnOnNilConfig(cfg)
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		uid, _ := types.UserIDFromContext(ctx)
+
+		if !rbacEnforcementEnabled(cfg) {
+			logger.Warnf(ctx,
+				"[rbac] ownership-only would be checked (enforcement off, lookup skipped): user=%s path=%s",
+				uid, c.Request.URL.Path)
+			c.Next()
+			return
+		}
+
+		creator, err := lookup(c)
+		switch {
+		case errors.Is(err, ErrResourceNotFound):
+			c.Next()
+			return
+		case err != nil:
+			logger.Errorf(ctx,
+				"[rbac] ownership-only lookup failed: user=%s path=%s err=%v",
+				uid, c.Request.URL.Path, err)
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": "Service Unavailable: cannot verify resource ownership",
+			})
+			c.Abort()
+			return
+		}
+
+		if creator != "" && creator == uid {
+			c.Next()
+			return
+		}
+
+		role := types.TenantRoleFromContext(ctx)
+		logger.Warnf(ctx,
+			"[rbac] ownership-only insufficient: user=%s role=%s creator=%q path=%s",
+			uid, role, creator, c.Request.URL.Path)
+		if svc := AuditServiceFromContext(c); svc != nil {
+			tenantID, _ := types.TenantIDFromContext(ctx)
+			_ = svc.LogDenied(ctx, c, tenantID, uid, string(role), "resource_owner")
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Forbidden: must own the resource",
+		})
+		c.Abort()
+	}
+}
+
 // handler should issue its own 404. ErrOwnershipForbidden maps to 403.
 // Any other error is a transient lookup failure (503).
 func EvaluateOwnershipOrRole(
