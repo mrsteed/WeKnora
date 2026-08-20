@@ -42,4 +42,5 @@ export const updateStorageBackend = (id: string, data: Partial<StorageBackend>) 
 export const deleteStorageBackend = (id: string) => del(`/api/v1/storage-backends/${id}`)
 export const setDefaultStorageBackend = (id: string) => put(`/api/v1/storage-backends/${id}/default`, {})
 export const testStorageBackend = (data: Partial<StorageBackend>) => post('/api/v1/storage-backends/test', data)
-export const testStorageBackendByID = (id: string) => post(`/api/v1/storage-backends/${id}/test`, {})
+// 携带 config 时测试表单中的未保存配置(密文字段留空/占位符时回退已存凭据);不传则测试已保存配置
+export const testStorageBackendByID = (id: string, config?: StorageBackendConfig) => post(`/api/v1/storage-backends/${id}/test`, config ? { config } : {})

@@ -12170,7 +12170,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Update a storage backend's mutable fields (name, credentials, status). Provider and physical location (endpoint, region, bucket, path prefix) are immutable; use storage migration to move data. Environment-sourced backends are read-only. Redacted secret placeholders preserve the stored credentials.",
+                "description": "Update a storage backend's fields (name, provider-specific config incl. minio deployment mode / endpoint / region / bucket / credentials, status). The provider type itself stays fixed; all connection fields can be changed freely - the update runs validation and a live connectivity test before persisting. Environment-sourced backends are read-only. Redacted secret placeholders preserve the stored credentials.",
                 "consumes": [
                     "application/json"
                 ],
@@ -12208,7 +12208,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Immutable field change, read-only backend, validation, or connectivity failure",
+                        "description": "Read-only backend, validation, or connectivity failure",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }

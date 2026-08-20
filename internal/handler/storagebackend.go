@@ -125,14 +125,14 @@ func (h *StorageBackendHandler) Create(c *gin.Context) {
 
 // Update godoc
 // @Summary      Update storage backend
-// @Description  Update a storage backend's mutable fields (name, credentials, status). Provider and physical location (endpoint, region, bucket, path prefix) are immutable; use storage migration to move data. Environment-sourced backends are read-only. Redacted secret placeholders preserve the stored credentials.
+// @Description  Update a storage backend's fields (name, provider-specific config incl. minio deployment mode / endpoint / region / bucket / credentials, status). The provider type itself stays fixed; all connection fields can be changed freely — the update runs validation and a live connectivity test before persisting. Environment-sourced backends are read-only. Redacted secret placeholders preserve the stored credentials.
 // @Tags         StorageBackend
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                   true  "Storage backend ID"
 // @Param        request  body      storageBackendRequest    true  "Updated storage backend fields"
 // @Success      200      {object}  map[string]interface{}   "Updated storage backend"
-// @Failure      400      {object}  apperrors.AppError          "Immutable field change, read-only backend, validation, or connectivity failure"
+// @Failure      400      {object}  apperrors.AppError          "Read-only backend, validation, or connectivity failure"
 // @Failure      401      {object}  map[string]interface{}   "Unauthorized"
 // @Failure      404      {object}  apperrors.AppError          "Storage backend not found"
 // @Security     Bearer
@@ -232,7 +232,8 @@ func (h *StorageBackendHandler) TestRaw(c *gin.Context) {
 
 // TestByID godoc
 // @Summary      Test storage backend by ID
-// @Description  Test connectivity of an existing saved storage backend using its stored credentials. Returns success=false with a sanitized error message on failure (the HTTP status stays 200).
+// @Description  Test connectivity of an existing storage backend using its stored credentials by default. An optional request body carrying {config} tests the in-progress form values instead (used by the edit dialog so unsaved changes can be verified); empty or redacted secret fields fall back to the stored credentials. Returns success=false with a sanitized error message on failure (the HTTP status stays 200).
+// @Param        request  body      object                  false "Optional in-progress config to test: {config: {mode, endpoint, ...}}"
 // @Tags         StorageBackend
 // @Produce      json
 // @Param        id   path      string  true  "Storage backend ID"
@@ -251,6 +252,25 @@ func (h *StorageBackendHandler) TestByID(c *gin.Context) {
 	if backend == nil {
 		c.Error(apperrors.NewNotFoundError("storage backend not found"))
 		return
+	}
+	// 编辑态“测试连接”可携带当前表单配置,以便测试尚未保存的改动(包括
+	// minio 部署模式切换);此时密文类字段为空/脱敏占位符时回填库里已存凭据。
+	// 不带 body 时则直接测库里已保存的配置(卡片菜单里的“测试连接”)。
+	var testReq struct {
+		Config types.StorageBackendConfig `json:"config"`
+	}
+	if err := c.ShouldBindJSON(&testReq); err == nil && testReq.Config.Mode != "" {
+		// 拷贝一份,避免改写 GetByID 拿到的库记录本身;密文字段为空/占位符时
+		// 回填库里已存凭据。
+		testReq.Config = testReq.Config.MergeSecrets(backend.Config)
+		backend = &types.StorageBackend{
+			ID:       backend.ID,
+			TenantID: backend.TenantID,
+			Name:     backend.Name,
+			Provider: backend.Provider, // provider 与卡片一一对应,保持不可变
+			Config:   testReq.Config,
+			Status:   backend.Status,
+		}
 	}
 	if err := h.service.Test(c.Request.Context(), backend); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": storageTestErrorMessage(err)})

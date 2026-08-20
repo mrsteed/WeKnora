@@ -83,8 +83,12 @@ func (s *StorageBackendService) Update(ctx context.Context, incoming *types.Stor
 	}
 	incoming.Provider = existing.Provider
 	incoming.Config = incoming.Config.MergeSecrets(existing.Config)
-	if incoming.Config.LocationKey(existing.Provider) != existing.Config.LocationKey(existing.Provider) {
-		return apperrors.NewBadRequestError("endpoint, region, bucket and path prefix are immutable; use storage migration instead")
+	// 连接参数(endpoint/region/bucket/path_prefix/minio 部署模式)允许在编辑时自由修改：
+	// 保存前由 Validate + Test 兜底校验合法性与连通性。
+	if incoming.Provider == "minio" && incoming.Config.Mode == "docker" {
+		// docker 模式的 SSL 跟随部署环境，与连接测试(fallback MINIO_USE_SSL)一致，
+		// 防止表单残留的 use_ssl 被写库后与 HTTP-only MinIO 运行时不匹配。
+		applyMinioEnvSSL(&incoming.Config)
 	}
 	if incoming.Status == "" {
 		incoming.Status = existing.Status
@@ -231,6 +235,10 @@ func (s *StorageBackendService) Test(ctx context.Context, backend *types.Storage
 			if c.BucketName == "" {
 				c.BucketName = os.Getenv("MINIO_BUCKET_NAME")
 			}
+			// use_ssl 从环境变量回退,与运行时 factory.go 对齐(默认 false):
+			// 否则表单/库里残留的 use_ssl=true 会让连接测试用 TLS 握手打向
+			// HTTP 端点而必然失败。
+			applyMinioEnvSSL(&c)
 		}
 		return filesvc.CheckMinioConnectivity(ctx, c.Endpoint, c.AccessKeyID, c.SecretAccessKey, c.BucketName, c.UseSSL)
 	case "cos":
@@ -306,6 +314,18 @@ func (s *StorageBackendService) ResolveFileService(ctx context.Context, tenant *
 		return nil, resolvedProvider, err
 	}
 	return filesvc.NewResourceCatalogFileService(inner, s.resourceCatalog), resolvedProvider, nil
+}
+
+// applyMinioEnvSSL 统一 minio docker(环境变量)模式的 use_ssl 取值：以
+// MINIO_USE_SSL 环境变量为准(默认关闭)。Test 用它做连接测试、Update 用它做
+// 落库归一，避免表单/库里残留的 use_ssl 与 HTTP-only 部署不匹配。
+func applyMinioEnvSSL(c *types.StorageBackendConfig) {
+	switch strings.ToLower(os.Getenv("MINIO_USE_SSL")) {
+	case "1", "true", "yes", "on":
+		c.UseSSL = true
+	default:
+		c.UseSSL = false
+	}
 }
 
 func validateStorageBackendEndpoint(backend *types.StorageBackend) error {

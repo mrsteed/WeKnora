@@ -135,7 +135,6 @@
                 type="button"
                 class="source-option"
                 :class="{ 'is-active': form.config.mode !== 'docker' }"
-                :disabled="!!editing"
                 @click="form.config.mode = 'remote'"
               >
                 <t-icon name="cloud" class="source-option__icon" />
@@ -145,7 +144,6 @@
                 type="button"
                 class="source-option"
                 :class="{ 'is-active': form.config.mode === 'docker' }"
-                :disabled="!!editing"
                 @click="form.config.mode = 'docker'"
               >
                 <t-icon name="server" class="source-option__icon" />
@@ -161,14 +159,13 @@
             <label class="form-label required">Endpoint</label>
             <t-input
               v-model="form.config.endpoint"
-              :disabled="!!editing"
               :placeholder="form.provider === 'minio' ? 'storage.example.com:9000' : 'https://storage.example.com'"
               clearable
             />
           </div>
           <div v-if="needsRegion" class="form-item">
             <label class="form-label required">Region</label>
-            <t-input v-model="form.config.region" :disabled="!!editing" clearable />
+            <t-input v-model="form.config.region" clearable />
           </div>
           <template v-if="needsCredentials">
             <div class="form-item">
@@ -184,13 +181,14 @@
               </t-input>
             </div>
           </template>
-          <div v-if="form.provider !== 'local'" class="form-item">
+          <!-- minio 环境变量(docker)模式与 Endpoint/凭证一致，bucket 走 MINIO_BUCKET_NAME，不展示 -->
+          <div v-if="form.provider !== 'local' && !(form.provider === 'minio' && form.config.mode === 'docker')" class="form-item">
             <label class="form-label required">Bucket</label>
-            <t-input v-model="form.config.bucket_name" :disabled="!!editing" clearable />
+            <t-input v-model="form.config.bucket_name" clearable />
           </div>
           <div v-if="form.provider === 'cos'" class="form-item">
             <label class="form-label">App ID</label>
-            <t-input v-model="form.config.app_id" :disabled="!!editing" :placeholder="t('settings.storageBackend.optionalPlaceholder')" clearable />
+            <t-input v-model="form.config.app_id" :placeholder="t('settings.storageBackend.optionalPlaceholder')" clearable />
           </div>
         </section>
 
@@ -198,11 +196,11 @@
           <h4 class="setting-drawer__section-title">{{ t('settings.storageBackend.advancedSection') }}</h4>
           <div class="form-item">
             <label class="form-label">{{ t('settings.storageBackend.pathPrefixLabel') }}</label>
-            <t-input v-model="form.config.path_prefix" :disabled="!!editing" placeholder="weknora/" clearable />
+            <t-input v-model="form.config.path_prefix" placeholder="weknora/" clearable />
           </div>
           <div v-if="form.provider === 'minio'" class="form-item">
             <div class="vision-toggle">
-              <t-switch v-model="form.config.use_ssl" />
+              <t-switch :model-value="effectiveUseSSL" @change="(v: any) => (form.config.use_ssl = !!v)" :disabled="form.provider === 'minio' && form.config.mode === 'docker'" />
               <span class="form-desc form-desc--inline">{{ t('settings.storageBackend.useSslDesc') }}</span>
             </div>
           </div>
@@ -332,6 +330,10 @@ async function load() {
     backends.value = list.data || []; defaultID.value = list.default_storage_backend_id || ''; providers.value = types.data || []
   } finally { loading.value = false }
 }
+// minio 环境变量(docker)模式下,SSL 跟随部署环境(MINIO_USE_SSL),页面固定为
+// 关闭状态,避免表单里残留的 use_ssl=true 导致保存时的连通性测试用 TLS 握手
+// 打向 HTTP 端点而必然失败(与 factory.go 运行时行为一致)。
+const effectiveUseSSL = computed(() => (form.provider === 'minio' && form.config.mode === 'docker') ? false : !!form.config.use_ssl)
 function resetConfig() { form.config = blankConfig(); rawTestResult.value = null }
 function openCreate() { editing.value = null; form.name = ''; form.provider = providers.value[0] || 'local'; form.config = blankConfig(); rawTestResult.value = null; visible.value = true }
 function openEdit(backend: StorageBackend) { editing.value = backend; form.name = backend.name; form.provider = backend.provider; form.config = { ...blankConfig(), ...backend.config }; rawTestResult.value = null; visible.value = true }
@@ -339,7 +341,7 @@ async function testRaw() {
   testing.value = true
   rawTestResult.value = null
   try {
-    const r: any = editing.value ? await testStorageBackendByID(editing.value.id) : await testStorageBackend(form)
+    const r: any = editing.value ? await testStorageBackendByID(editing.value.id, { ...form.config }) : await testStorageBackend(form)
     if (r.success) { rawTestResult.value = 'ok'; MessagePlugin.success(t('settings.storageBackend.testSuccess')) }
     else { rawTestResult.value = 'error'; MessagePlugin.error(r.error || t('settings.storageBackend.testFailed')) }
   } finally { testing.value = false }

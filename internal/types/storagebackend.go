@@ -183,14 +183,17 @@ func (c StorageBackendConfig) ValidateForProvider(provider string) error {
 		if c.Mode == "" {
 			c.Mode = "remote"
 		}
+		// docker(环境变量)模式：endpoint/密钥/bucket 全部由 MINIO_* 环境变量提供，
+		// 运行时(factory.go)与连接测试(Test)都从 .env 回退，故此处不要求任何字段必填，
+		// 与 remote 模式(四项全部必填)区分对待。
 		if c.Mode != "docker" {
-			for name, value := range map[string]string{"endpoint": c.Endpoint, "access_key_id": c.AccessKeyID, "secret_access_key": c.SecretAccessKey} {
+			for name, value := range map[string]string{"endpoint": c.Endpoint, "access_key_id": c.AccessKeyID, "secret_access_key": c.SecretAccessKey, "bucket_name": c.BucketName} {
 				if err := required(name, value); err != nil {
 					return err
 				}
 			}
 		}
-		return required("bucket_name", c.BucketName)
+		return nil
 	case "cos":
 		for name, value := range map[string]string{"region": c.Region, "access_key_id": c.AccessKeyID, "secret_access_key": c.SecretAccessKey, "bucket_name": c.BucketName} {
 			if err := required(name, value); err != nil {
