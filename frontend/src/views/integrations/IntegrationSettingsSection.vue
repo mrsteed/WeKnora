@@ -1,21 +1,9 @@
 <template>
   <div class="integrations-settings">
-    <div class="integrations-settings__body" :class="{ 'integrations-settings__body--landing': isLandingSection }">
+    <div class="integrations-settings__body">
       <div v-if="tab === 'im'" class="section">
         <div class="section-header">
           <h2>{{ $t('agentEditor.im.title') }}</h2>
-          <p class="section-description">
-            {{ $t('agentEditor.im.description') }}
-            <a
-              href="https://github.com/Tencent/WeKnora/blob/main/docs/IM%E9%9B%86%E6%88%90%E5%BC%80%E5%8F%91%E6%96%87%E6%A1%A3.md"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="doc-link"
-            >
-              {{ $t('agentEditor.im.docLink') }}
-              <t-icon name="link" class="link-icon" />
-            </a>
-          </p>
         </div>
         <IMChannelPanel v-model:filter-agent-id="filterAgentId" />
       </div>
@@ -36,20 +24,16 @@
         <ApiIntegrationSettings />
       </div>
 
-      <ChromeExtensionLanding v-if="tab === 'chrome'" />
-      <ClawSkillLanding v-if="tab === 'claw'" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import IMChannelPanel from '@/components/IMChannelPanel.vue'
 import AgentEmbedChannelPanel from '@/components/AgentEmbedChannelPanel.vue'
 import ApiIntegrationSettings from '@/views/integrations/ApiIntegrationSettings.vue'
-import ChromeExtensionLanding from '@/views/integrations/ChromeExtensionLanding.vue'
-import ClawSkillLanding from '@/views/integrations/ClawSkillLanding.vue'
 import type { IntegrationTab } from '@/config/integrations'
 
 const filterAgentId = ref('')
@@ -59,10 +43,6 @@ const props = defineProps<{
 }>()
 
 const route = useRoute()
-
-const isLandingSection = computed(
-  () => props.tab === 'chrome' || props.tab === 'claw',
-)
 
 function applyAgentFilterFromRoute() {
   filterAgentId.value = (route.query.agentId as string) || ''

@@ -4195,7 +4195,6 @@ export default {
     title: 'General Settings',
     allSettings: 'All Settings',
     personalSettings: 'Personal Settings',
-    helpAndDocs: 'Help & Documentation',
     description: 'Configure language, appearance and other basic options',
     settings: 'Settings',
     close: 'Close Settings'
@@ -4458,8 +4457,7 @@ export default {
     builtinModels: {
       title: 'Built-in Models',
       description: 'Built-in models are visible to all workspaces. Sensitive information is hidden, and they cannot be edited or deleted.',
-      descriptionAdmin: 'Built-in models are visible to all workspaces. System administrators can edit configuration and credentials; deletion remains deployment-managed.',
-      viewGuide: 'View Built-in Models Guide'
+      descriptionAdmin: 'Built-in models are visible to all workspaces. System administrators can edit configuration and credentials; deletion remains deployment-managed.'
     },
     builtinTag: 'Built-in',
     confirmDelete: 'Delete model "{name}"?',
@@ -6226,7 +6224,6 @@ export default {
   tenantMember: {
     title: 'Members',
     sectionDescription: 'Invite teammates to the workspace and manage their roles. Only Owner can add or remove members.',
-    learnRbacGuide: 'Learn about RBAC',
     listTitle: 'Workspace members',
     loading: 'Loading members…',
     retry: 'Retry',

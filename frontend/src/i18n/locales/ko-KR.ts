@@ -121,7 +121,6 @@ export default {
   tenantMember: {
     title: '멤버 관리',
     sectionDescription: '워크스페이스에 동료를 초대하고 역할을 관리합니다. 소유자만 멤버를 추가하거나 제거할 수 있습니다.',
-    learnRbacGuide: 'RBAC 알아보기',
     listTitle: '워크스페이스 멤버',
     loading: '멤버를 불러오는 중…',
     retry: '다시 시도',
@@ -1992,8 +1991,7 @@ export default {
     builtinModels: {
       title: '기본 제공 모델',
       description: '기본 제공 모델은 모든 워크스페이스에게 표시됩니다. 민감한 정보는 숨겨지며, 편집하거나 삭제할 수 없습니다.',
-      descriptionAdmin: '기본 제공 모델은 모든 워크스페이스에게 표시됩니다. 시스템 관리자는 구성과 자격 증명을 편집할 수 있으며, 삭제는 배포 구성에서 관리됩니다.',
-      viewGuide: '기본 제공 모델 관리 가이드 보기'
+      descriptionAdmin: '기본 제공 모델은 모든 워크스페이스에게 표시됩니다. 시스템 관리자는 구성과 자격 증명을 편집할 수 있으며, 삭제는 배포 구성에서 관리됩니다.'
     },
     toasts: {
       nameRequired: '모델 이름은 비워둘 수 없습니다',
@@ -2251,7 +2249,6 @@ export default {
     title: '일반 설정',
     allSettings: '모든 설정',
     personalSettings: '개인 설정',
-    helpAndDocs: '도움말 및 문서',
     description: '언어, 외관 등 기본 옵션 설정',
     settings: '설정',
     close: '설정 닫기'

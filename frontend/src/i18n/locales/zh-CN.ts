@@ -121,7 +121,6 @@ export default {
   tenantMember: {
     title: '成员管理',
     sectionDescription: '邀请伙伴加入当前空间并分配角色。只有 Owner 可以新增或移除成员。',
-    learnRbacGuide: '了解 RBAC',
     listTitle: '空间成员',
     loading: '正在加载成员…',
     retry: '重试',
@@ -1939,7 +1938,7 @@ export default {
   },
   modelSettings: {
     title: '模型配置',
-    description: '管理不同类型的 AI 模型，支持 Ollama 本地模型和远程 API',
+    description: '管理不同类型的 AI 模型',
     copySuffix: ' 副本',
     builtinTag: '内置',
     confirmDelete: '确定删除模型「{name}」吗？',
@@ -1994,8 +1993,7 @@ export default {
     builtinModels: {
       title: '内置模型',
       description: '内置模型对所有空间可见，敏感信息会被隐藏，且不可编辑或删除。',
-      descriptionAdmin: '内置模型对所有空间可见。系统管理员可编辑配置和凭据；删除仍由部署配置管理。',
-      viewGuide: '查看内置模型管理指南'
+      descriptionAdmin: '内置模型对所有空间可见。系统管理员可编辑配置和凭据；删除仍由部署配置管理。'
     },
     toasts: {
       nameRequired: '模型名称不能为空',
@@ -2253,7 +2251,6 @@ export default {
     title: '常规设置',
     allSettings: '全部设置',
     personalSettings: '个人设置',
-    helpAndDocs: '帮助与文档',
     description: '配置语言、外观等基础选项',
     settings: '设置',
     close: '关闭设置'
