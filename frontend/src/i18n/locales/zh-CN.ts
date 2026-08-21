@@ -6009,6 +6009,7 @@ export default {
     columnName: '文件名',
     columnTag: '标签',
     columnSize: '大小',
+    columnUploader: '上传人',
     columnSource: '来源',
     columnStatus: '状态',
     columnUpdatedAt: '更新时间',

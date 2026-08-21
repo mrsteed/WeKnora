@@ -5939,6 +5939,7 @@ export default {
     columnName: '파일 이름',
     columnTag: '태그',
     columnSize: '크기',
+    columnUploader: '업로드한 사람',
     columnSource: '소스',
     columnStatus: '상태',
     columnUpdatedAt: '업데이트',

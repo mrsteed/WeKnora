@@ -5939,6 +5939,7 @@ export default {
     columnName: 'Имя',
     columnTag: 'Тег',
     columnSize: 'Размер',
+    columnUploader: 'Кто загрузил',
     columnSource: 'Источник',
     columnStatus: 'Статус',
     columnUpdatedAt: 'Обновлено',

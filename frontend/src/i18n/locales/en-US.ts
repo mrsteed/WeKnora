@@ -584,6 +584,7 @@ export default {
     columnName: 'Name',
     columnTag: 'Tag',
     columnSize: 'Size',
+    columnUploader: 'Uploader',
     columnSource: 'Source',
     columnStatus: 'Status',
     columnUpdatedAt: 'Updated',

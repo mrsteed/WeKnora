@@ -16,6 +16,8 @@ interface KnowledgeItem {
   id: string;
   file_name: string;
   created_by?: string;
+  /** Display name derived from created_by on the server; never persisted. */
+  created_by_nickname?: string;
   folder_path?: string;
   file_type?: string;
   file_size?: number | string;
@@ -105,6 +107,14 @@ const formatTime = (time?: string) => {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${yy}-${MM}-${dd} ${hh}:${mm}`;
+};
+
+const getUploaderLabel = (item: KnowledgeItem) => {
+  const nickname = item.created_by_nickname?.trim();
+  if (nickname) return nickname;
+  const createdBy = item.created_by?.trim();
+  if (createdBy) return createdBy;
+  return '--';
 };
 
 const getSourceInfo = (item: KnowledgeItem): { icon: string; label: string } => {
@@ -282,6 +292,7 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
       </div>
       <div class="cell cell-name" role="columnheader">{{ t('knowledgeBase.columnName') }}</div>
       <div class="cell cell-tag" role="columnheader">{{ t('knowledgeBase.columnTag') }}</div>
+      <div class="cell cell-uploader" role="columnheader">{{ t('knowledgeBase.columnUploader') }}</div>
       <div class="cell cell-source" role="columnheader">{{ t('knowledgeBase.columnSource') }}</div>
       <div class="cell cell-size" role="columnheader">{{ t('knowledgeBase.columnSize') }}</div>
       <div class="cell cell-status" role="columnheader">{{ t('knowledgeBase.columnStatus') }}</div>
@@ -308,6 +319,7 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
           </div>
         </div>
         <div class="cell cell-tag"></div>
+        <div class="cell cell-uploader"></div>
         <div class="cell cell-source">
           <span class="row-folder-meta">
             {{ t('knowledgeBase.folderTree.folderCardCount', { count: folder.total_count }) }}
@@ -367,6 +379,10 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
           <span v-else class="row-tag-chips is-clickable" @click.stop="rowCanEdit(item) && emit('tag-edit', item)">
             <span class="row-tag-add">+ {{ t('knowledgeBase.tagLabel') }}</span>
           </span>
+        </div>
+
+        <div class="cell cell-uploader">
+          <span class="row-uploader" :title="getUploaderLabel(item)">{{ getUploaderLabel(item) }}</span>
         </div>
 
         <div class="cell cell-source">
@@ -533,6 +549,7 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
     44px // checkbox
     minmax(260px, 2.6fr) // name
     minmax(100px, 0.9fr) // tag
+    minmax(120px, 0.9fr) // uploader
     minmax(96px, 0.8fr) // source
     96px // size
     minmax(96px, 0.7fr) // status
@@ -758,6 +775,19 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
 .cell-source {
   gap: 6px;
   min-width: 0;
+}
+
+.cell-uploader {
+  min-width: 0;
+}
+
+.row-uploader {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
 }
 
 .row-source-icon {
