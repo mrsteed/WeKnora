@@ -37,6 +37,13 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	// and then reads the role via TenantRoleFromContext would otherwise see
 	// the type-zero TenantRole and fall back to Viewer, blocking even Owners.
 	TenantRoleContextKey: true,
+	// ResourceAuthUserID/User: the entry-point creator identity (e.g. the IM
+	// channel owner) under which resource-scoped writes are stamped. It is an
+	// identity in the same class as UserIDContextKey — background work must
+	// keep attributing created resources to the same person, or an IM file
+	// upload that detaches mid-flight would drop the uploader from the row.
+	ResourceAuthUserIDContextKey: true,
+	ResourceAuthUserContextKey:   true,
 	// Per-API-key operation and KB scopes: a restriction, so dropping it would
 	// hand background work broader reach than the key it came from.
 	TenantAPIKeyScopeContextKey: true,

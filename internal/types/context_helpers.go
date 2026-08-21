@@ -358,6 +358,66 @@ func LanguageNameFromContext(ctx context.Context) string {
 	return ResolveLanguageName(ctx, "")
 }
 
+// ResourceAuthUserIDContextKey and ResourceAuthUserContextKey carry the
+// "resource auth" identity — the user that created the entry point through
+// which a resource-authenticated request is served (e.g. the IM channel
+// owner). Unlike the request caller identity (UserIDContextKey), which may be
+// absent or synthetic in non-web call paths, this identity stays stable so
+// downstream resource ownership checks (document uploader, KB creator) can be
+// resolved consistently.
+const (
+	// ResourceAuthUserIDContextKey is the context key for the resource-auth user ID.
+	ResourceAuthUserIDContextKey ContextKey = "ResourceAuthUserID"
+	// ResourceAuthUserContextKey is the context key for the resource-auth user.
+	ResourceAuthUserContextKey ContextKey = "ResourceAuthUser"
+)
+
+// ResourceAuthUserIDFromContext returns the resource-auth user ID if present.
+func ResourceAuthUserIDFromContext(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "", false
+	}
+	v, ok := ctx.Value(ResourceAuthUserIDContextKey).(string)
+	if !ok || strings.TrimSpace(v) == "" {
+		return "", false
+	}
+	return v, true
+}
+
+// ResourceAuthUserFromContext returns the cached resource-auth user if present.
+func ResourceAuthUserFromContext(ctx context.Context) (*User, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	v, ok := ctx.Value(ResourceAuthUserContextKey).(*User)
+	if !ok || v == nil {
+		return nil, false
+	}
+	return v, true
+}
+
+// WithResourceAuthUserID stores the resource-auth user ID on ctx.
+func WithResourceAuthUserID(ctx context.Context, id string) context.Context {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, ResourceAuthUserIDContextKey, id)
+}
+
+// WithResourceAuthUser stores the resource-auth user on ctx. It also records
+// the user ID, so callers that only need the ID do not have to load the user.
+func WithResourceAuthUser(ctx context.Context, user *User) context.Context {
+	if user == nil {
+		return ctx
+	}
+	ctx = context.WithValue(ctx, ResourceAuthUserContextKey, user)
+	if strings.TrimSpace(user.ID) != "" {
+		ctx = context.WithValue(ctx, ResourceAuthUserIDContextKey, strings.TrimSpace(user.ID))
+	}
+	return ctx
+}
+
 // LanguageLocaleName maps a locale code to a human-readable language name for LLM prompts.
 func LanguageLocaleName(locale string) string {
 	switch locale {
