@@ -55,7 +55,7 @@ show_help() {
     echo "用法: $0 [命令] [选项]"
     echo ""
     echo "命令:"
-    echo "  start      启动基础设施服务（postgres, redis, docreader, langfuse）"
+    echo "  start      启动基础设施服务（postgres, redis, docreader, minio, langfuse）"
     echo "  stop       停止所有服务"
     echo "  restart    重启所有服务"
     echo "  logs       查看服务日志"
@@ -64,8 +64,8 @@ show_help() {
     echo "  frontend   启动前端开发服务器（本地运行）"
     echo "  help       显示此帮助信息"
     echo ""
-    echo "可选 Profile（用于 start 命令）:"
-    echo "  --minio       启动 MinIO 对象存储"
+    echo "可选 Profile（用于 start 命令；minio/langfuse 默认开启）:"
+    echo "  --minio       启动 MinIO 对象存储（默认已开启，STORAGE_TYPE=minio 的后端强依赖）"
     echo "  --qdrant      启动 Qdrant 向量数据库"
     echo "  --neo4j       启动 Neo4j 图数据库"
     echo "  --dex         启动 Dex（OIDC 身份认证）"
@@ -299,10 +299,13 @@ start_services() {
     
     # 解析 profile 参数
     shift  # 移除 "start" 命令本身
-    # 默认启动基础设施（postgres / redis / docreader）+ langfuse，
-    # 其余可选服务通过 --minio / --qdrant / --neo4j / --dex / --full 按需开启。
-    PROFILES="--profile langfuse"
-    ENABLED_SERVICES="langfuse"
+    # 默认启动基础设施（postgres / redis / docreader）+ minio + langfuse。
+    # minio 默认开启是因为 STORAGE_TYPE=minio 的后端启动时强依赖
+    # 127.0.0.1:9000（initFileService 检查 bucket），缺了会 panic；
+    # 与 stop_services 的全量 profile 超集保持对称，避免 stop 后 start 起不全。
+    # 其余可选服务通过 --qdrant / --neo4j / --dex / --full 按需开启。
+    PROFILES="--profile minio --profile langfuse"
+    ENABLED_SERVICES="minio langfuse"
     while [ $# -gt 0 ]; do
         case "$1" in
             --minio)
@@ -410,8 +413,15 @@ stop_services() {
     fi
     
     cd "$PROJECT_ROOT"
-    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml down
-    
+    # stop 必须与 start 对称：start 默认带 --profile langfuse，还可通过
+    # --minio/--qdrant/--neo4j/--dex/--odl-hybrid/--full 追加可选项。
+    # 这里用"全量 profile 超集"执行 down，确保无论 start 以哪种组合起过服务，
+    # stop 都能把对应容器与网络一并回收（未起过的服务没有容器，会被自动跳过）。
+    # 否则裸 down 只会停掉无 profile 的基础容器，Langfuse 等会残留并占住网络。
+    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml \
+        --profile langfuse --profile minio --profile qdrant \
+        --profile neo4j --profile dex --profile odl-hybrid down
+
     if [ $? -eq 0 ]; then
         log_success "所有服务已停止"
         return 0
