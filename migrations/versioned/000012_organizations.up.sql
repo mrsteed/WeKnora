@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS organizations (
     deleted_at TIMESTAMP WITH TIME ZONE
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_invite_code ON organizations(invite_code) WHERE invite_code IS NOT NULL AND deleted_at IS NULL;
+-- Org-tree nodes store the zero-value invite code '' (see 000085); exclude
+-- blank strings like NULLs so they never collide in the unique index.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_invite_code ON organizations(invite_code) WHERE invite_code IS NOT NULL AND btrim(invite_code) <> '' AND deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_organizations_owner_id ON organizations(owner_id);
 CREATE INDEX IF NOT EXISTS idx_organizations_deleted_at ON organizations(deleted_at);
 
