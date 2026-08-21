@@ -295,7 +295,13 @@ export async function deleteTenant(
   tenantId: number,
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const response = await del(`/api/v1/tenants/${tenantId}`)
+    // 删除目标空间时携带其 X-Tenant-ID：若删的就是当前空间，
+    // 服务端按该 id 解析角色并执行 OwnerOrSystemAdminDelete 守卫。
+    const response = await del(`/api/v1/tenants/${tenantId}`, undefined, {
+      headers: {
+        'X-Tenant-ID': String(tenantId),
+      },
+    })
     return response as unknown as { success: boolean; message?: string }
   } catch (error: any) {
     return {
