@@ -257,6 +257,7 @@ type Service struct {
 	sessionService interfaces.SessionService
 	messageService interfaces.MessageService
 	tenantService  interfaces.TenantService
+	userService    interfaces.UserService
 	agentService   interfaces.CustomAgentService
 
 	// knowledgeService is used for saving IM file messages to knowledge bases.
@@ -397,6 +398,32 @@ func withIMIdentity(ctx context.Context, tenantID uint64, channelID string, msg 
 	// OAuth wait times out for every unauthorized service.
 	ctx = types.WithMCPOAuthNonInteractive(ctx)
 	return ctx
+}
+
+// withIMResourceAuthContext tags the session context with the channel owner as
+// the resource-auth identity. IM file uploads are stored into the channel's
+// knowledge base from a background goroutine where the request caller is the
+// synthetic "system-<tenantID>"; without this tag the document uploader would
+// be unattributable. The channel creator is the real person behind the upload.
+func (s *Service) withIMResourceAuthContext(ctx context.Context, channel *IMChannel) context.Context {
+	if channel == nil || strings.TrimSpace(channel.CreatedBy) == "" {
+		return ctx
+	}
+	creatorID := strings.TrimSpace(channel.CreatedBy)
+	ctx = types.WithResourceAuthUserID(ctx, creatorID)
+	if s.userService == nil {
+		return ctx
+	}
+	user, err := s.userService.GetUserByID(ctx, creatorID)
+	if err != nil {
+		logger.Warnf(ctx, "[IM] Failed to load resource auth user %s for channel %s: %v", creatorID, channel.ID, err)
+		return ctx
+	}
+	if user == nil {
+		logger.Warnf(ctx, "[IM] Resource auth user %s for channel %s not found", creatorID, channel.ID)
+		return ctx
+	}
+	return types.WithResourceAuthUser(ctx, user)
 }
 
 // imMCPAuthService identifies an OAuth-enabled MCP service that the IM user has
@@ -801,6 +828,7 @@ func NewService(
 	sessionService interfaces.SessionService,
 	messageService interfaces.MessageService,
 	tenantService interfaces.TenantService,
+	userService interfaces.UserService,
 	agentService interfaces.CustomAgentService,
 	knowledgeService interfaces.KnowledgeService,
 	kbService interfaces.KnowledgeBaseService,
@@ -830,6 +858,7 @@ func NewService(
 		sessionService:   sessionService,
 		messageService:   messageService,
 		tenantService:    tenantService,
+		userService:      userService,
 		agentService:     agentService,
 		knowledgeService: knowledgeService,
 		kbService:        kbService,
@@ -1713,6 +1742,7 @@ func (s *Service) HandleMessage(ctx context.Context, msg *IncomingMessage, chann
 	}
 	sessionCtx := context.WithValue(ctx, types.TenantInfoContextKey, tenant)
 	sessionCtx = withIMIdentity(sessionCtx, tenantID, channelID, msg)
+	sessionCtx = s.withIMResourceAuthContext(sessionCtx, channel)
 
 	// 2. Resolve or create a WeKnora session
 	channelSession, err := s.resolveSession(sessionCtx, msg, tenantID, agentID, channelID, channel.SessionMode)
@@ -3200,6 +3230,10 @@ func (s *Service) processDownloadedFileToKnowledgeBase(ctx context.Context, chan
 	}
 	kbCtx := context.WithValue(ctx, types.TenantIDContextKey, tenantID)
 	kbCtx = context.WithValue(kbCtx, types.TenantInfoContextKey, tenant)
+	// Attribute the stored document to the channel creator: the background
+	// save otherwise sees only the synthetic caller identity and the row
+	// would have no uploader.
+	kbCtx = s.withIMResourceAuthContext(kbCtx, channel)
 
 	fileName := file.fileName
 	ext := fileExtension(fileName)
