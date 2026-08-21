@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	apprepo "github.com/Tencent/WeKnora/internal/application/repository"
 	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -21,13 +22,20 @@ type ListTenantsParams struct {
 
 // tenantService implements the TenantService interface
 type tenantService struct {
-	repo        interfaces.TenantRepository // Repository for tenant data operations
-	storageRepo interfaces.StorageBackendRepository
+	repo          interfaces.TenantRepository    // Repository for tenant data operations
+	storageRepo   interfaces.StorageBackendRepository
+	memberService interfaces.TenantMemberService // Used to snapshot/resolve tenant memberships during deletion
+	userRepo      interfaces.UserRepository      // Used to clean up users whose only membership was the deleted tenant
 }
 
 // NewTenantService creates a new tenant service instance
-func NewTenantService(repo interfaces.TenantRepository, storageRepo interfaces.StorageBackendRepository) interfaces.TenantService {
-	return &tenantService{repo: repo, storageRepo: storageRepo}
+func NewTenantService(
+	repo interfaces.TenantRepository,
+	storageRepo interfaces.StorageBackendRepository,
+	memberService interfaces.TenantMemberService,
+	userRepo interfaces.UserRepository,
+) interfaces.TenantService {
+	return &tenantService{repo: repo, storageRepo: storageRepo, memberService: memberService, userRepo: userRepo}
 }
 
 // CreateTenant creates a new tenant
@@ -190,6 +198,18 @@ func (s *tenantService) DeleteTenant(ctx context.Context, id uint64) error {
 		logger.Infof(ctx, "Deleting tenant, ID: %d, name: %s", id, tenant.Name)
 	}
 
+	// Snapshot the affected active members BEFORE the tenant row (and their
+	// membership rows, deleted in the repository transaction) disappear, so we
+	// can reconcile each user's home tenant — or delete orphan accounts —
+	// without racing the DB delete.
+	affectedUserIDs, err := s.snapshotTenantDeletionAffectedUsers(ctx, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"tenant_id": id,
+		})
+		return err
+	}
+
 	err = s.repo.DeleteTenant(ctx, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -198,8 +218,132 @@ func (s *tenantService) DeleteTenant(ctx context.Context, id uint64) error {
 		return err
 	}
 
+	if err := s.cleanupUsersAfterTenantDeletion(ctx, affectedUserIDs, id); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"tenant_id": id,
+		})
+		return err
+	}
+
 	logger.Infof(ctx, "Workspace deleted successfully, ID: %d", id)
 	return nil
+}
+
+// tenantDeletionAffectedUserIDs dedupes the active membership rows of the
+// deleted tenant down to the set of user IDs that need post-deletion
+// reconciliation.
+func tenantDeletionAffectedUserIDs(members []*types.TenantMember) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(members))
+	for _, member := range members {
+		if member == nil || member.UserID == "" || member.Status != types.TenantMemberStatusActive {
+			continue
+		}
+		if _, ok := seen[member.UserID]; ok {
+			continue
+		}
+		seen[member.UserID] = struct{}{}
+		out = append(out, member.UserID)
+	}
+	return out
+}
+
+// replacementHomeTenantID picks the next home tenant for a user whose previous
+// home was the deleted tenant: the first active membership, else the first
+// leftover membership row of any status.
+func replacementHomeTenantID(memberships []*types.TenantMember, deletedTenantID uint64) (uint64, bool) {
+	for _, membership := range memberships {
+		if membership == nil || membership.TenantID == deletedTenantID {
+			continue
+		}
+		if membership.Status == types.TenantMemberStatusActive {
+			return membership.TenantID, true
+		}
+	}
+	for _, membership := range memberships {
+		if membership == nil || membership.TenantID == deletedTenantID {
+			continue
+		}
+		return membership.TenantID, true
+	}
+	return 0, false
+}
+
+func (s *tenantService) snapshotTenantDeletionAffectedUsers(ctx context.Context, deletedTenantID uint64) ([]string, error) {
+	if s.memberService == nil || s.userRepo == nil {
+		return nil, nil
+	}
+
+	members, err := s.memberService.ListByTenant(ctx, deletedTenantID)
+	if err != nil {
+		return nil, err
+	}
+	return tenantDeletionAffectedUserIDs(members), nil
+}
+
+// cleanupUsersAfterTenantDeletion reconciles users who were active members of
+// the deleted tenant:
+//   - users with other memberships get their home tenant re-pointed at the
+//     replacement home tenant (when their home was the deleted one);
+//   - platform-privileged users without other memberships keep the account but
+//     lose the tenant binding (they authenticate without a tenant);
+//   - ordinary users without other memberships are deleted outright: they can
+//     no longer log into anything, so the row is pure noise.
+//
+// The repository transaction has already removed every tenant_members row for
+// the deleted tenant, so by the time this runs the member lists below never
+// contain the deleted tenant.
+func (s *tenantService) cleanupUsersAfterTenantDeletion(ctx context.Context, userIDs []string, deletedTenantID uint64) error {
+	if s.memberService == nil || s.userRepo == nil {
+		return nil
+	}
+	for _, userID := range userIDs {
+		if err := s.cleanupUserAfterTenantDeletion(ctx, userID, deletedTenantID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *tenantService) cleanupUserAfterTenantDeletion(ctx context.Context, userID string, deletedTenantID uint64) error {
+	user, err := s.userRepo.GetUserByID(ctx, userID)
+	if errors.Is(err, apprepo.ErrUserNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	memberships, err := s.memberService.ListByUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if len(memberships) == 0 {
+		if types.IsPlatformPrivilegedUser(user) {
+			if user.TenantID != deletedTenantID {
+				return nil
+			}
+			user.TenantID = 0
+			return s.userRepo.UpdateUser(ctx, user)
+		}
+		return s.userRepo.DeleteUser(ctx, userID)
+	}
+	if user.TenantID != deletedTenantID {
+		return nil
+	}
+	nextTenantID, ok := replacementHomeTenantID(memberships, deletedTenantID)
+	if !ok {
+		if types.IsPlatformPrivilegedUser(user) {
+			user.TenantID = 0
+			return s.userRepo.UpdateUser(ctx, user)
+		}
+		return s.userRepo.DeleteUser(ctx, userID)
+	}
+	if nextTenantID == user.TenantID {
+		return nil
+	}
+	user.TenantID = nextTenantID
+	return s.userRepo.UpdateUser(ctx, user)
 }
 
 // ListAllTenants lists all tenants (for users with cross-tenant access permission)
