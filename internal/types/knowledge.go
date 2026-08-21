@@ -174,6 +174,10 @@ type Knowledge struct {
 	Metadata JSON `json:"metadata"           gorm:"type:json"`
 	// CreatedBy stores the internal user ID that uploaded or created this knowledge entry.
 	CreatedBy string `json:"created_by"         gorm:"type:varchar(36);default:'';index"`
+	// CreatedByNickname is the resolved display name of CreatedBy. It is
+	// derived from CreatedBy at read time and is never persisted, so the
+	// creator_id axis stays the single source of truth.
+	CreatedByNickname string `json:"created_by_nickname" gorm:"-"`
 	// CustomMetadata is user-authored descriptive metadata. It is deliberately
 	// separate from Metadata, which contains internal ingestion state and IDs.
 	CustomMetadata JSON `json:"custom_metadata" gorm:"type:json;not null"`

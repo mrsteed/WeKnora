@@ -61,6 +61,7 @@ type knowledgeService struct {
 	storageResolver interfaces.StorageBackendResolver
 	resourceCatalog interfaces.ResourceCatalog
 	modelService    interfaces.ModelService
+	userRepo        interfaces.UserRepository
 	task            interfaces.TaskEnqueuer
 	taskInspector   interfaces.TaskInspector
 	graphEngine     interfaces.RetrieveGraphRepository
@@ -105,6 +106,7 @@ func NewKnowledgeService(
 	storageResolver interfaces.StorageBackendResolver,
 	resourceCatalog interfaces.ResourceCatalog,
 	modelService interfaces.ModelService,
+	userRepo interfaces.UserRepository,
 	task interfaces.TaskEnqueuer,
 	taskInspector interfaces.TaskInspector,
 	graphEngine interfaces.RetrieveGraphRepository,
@@ -134,6 +136,7 @@ func NewKnowledgeService(
 		storageResolver: storageResolver,
 		resourceCatalog: resourceCatalog,
 		modelService:    modelService,
+		userRepo:        userRepo,
 		task:            task,
 		taskInspector:   taskInspector,
 		graphEngine:     graphEngine,
@@ -561,6 +564,8 @@ func (s *knowledgeService) ListPagedKnowledgeByKnowledgeBaseID(ctx context.Conte
 			}
 		}
 	}
+
+	fillKnowledgeCreatorNicknames(ctx, s.userRepo, knowledges)
 
 	return types.NewPageResult(total, page, knowledges), nil
 }
