@@ -228,6 +228,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
+import { useWorkspaceSetupStore } from '@/stores/workspaceSetup'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { getCurrentUser, logout as logoutApi, userInfoFromApi } from '@/api/auth'
 import { useI18n } from 'vue-i18n'
@@ -249,6 +250,7 @@ const { t } = useI18n()
 const router = useRouter()
 const uiStore = useUIStore()
 const authStore = useAuthStore()
+const workspaceSetupStore = useWorkspaceSetupStore()
 const { formatRole, roleIcon } = useRoleLabel()
 const { homeTenantId, isHomeTenantActive, isHomeTenant } = useHomeTenant()
 
@@ -366,9 +368,10 @@ const closeAll = () => {
 
 // ---------- Create new tenant ----------
 // 超级管理员在空间子菜单底部点 "+ 创建新工作区" → 弹 CreateTenantDialog →
-// 后端写一行 owner 的 tenant_members → 直接切到新空间。复用 switchToTenant
-// 同款的 setSelectedTenant + navigateAfterTenantSwitch 链路，避免 token
-// 依然指向旧空间带来的 SSE / store 不一致。
+// 后端写一行 owner 的 tenant_members → 直接切到新空间，随后弹出
+// WorkspaceSetupWizard（指定首位负责人 / 创建根组织 / 设置空间与组织角色）。
+// 复用 switchToTenant 同款的 setSelectedTenant + navigateAfterTenantSwitch
+// 链路，避免 token 依然指向旧空间带来的 SSE / store 不一致。
 const createTenantDialogVisible = ref(false)
 const deletingTenantId = ref<number | null>(null)
 const deleteDialogVisible = ref(false)
@@ -387,6 +390,9 @@ const openCreateTenantDialog = () => {
 const onTenantCreated = async (newTenant: TenantInfo) => {
   await authStore.refreshFromAuthMe()
   authStore.setSelectedTenant(newTenant.id, newTenant.name)
+  // 创建成功后启动空间初始化向导：pending 持久化到 sessionStorage，
+  // 刷新页面也会恢复（App.vue 挂载的 WorkspaceSetupWizard 消费它）。
+  workspaceSetupStore.start(newTenant)
   const persist = persistLastActiveTenantPreference(newTenant.id)
   Promise.race([persist, new Promise((r) => setTimeout(r, 300))])
     .finally(() => navigateAfterTenantSwitch())
