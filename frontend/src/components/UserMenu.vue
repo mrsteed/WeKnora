@@ -107,6 +107,13 @@
           <t-icon name="server" class="menu-icon" />
           <span>{{ $t('settings.navGroups.systemAdministration') }}</span>
         </div>
+        <template v-if="!authStore.isLiteMode">
+          <div class="menu-divider"></div>
+          <div class="menu-item danger" @click="handleLogout">
+            <t-icon name="logout" class="menu-icon" />
+            <span>{{ $t('auth.logout') }}</span>
+          </div>
+        </template>
       </div>
     </Transition>
 
@@ -164,6 +171,7 @@
 
     <!-- 创建工作区弹窗 -->
     <CreateTenantDialog v-model:visible="createTenantDialogVisible" @created="onTenantCreated" />
+
   </div>
 </template>
 
@@ -173,7 +181,7 @@ import { useRouter } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { getCurrentUser, userInfoFromApi } from '@/api/auth'
+import { getCurrentUser, logout as logoutApi, userInfoFromApi } from '@/api/auth'
 import { useI18n } from 'vue-i18n'
 import CreateTenantDialog from '@/components/CreateTenantDialog.vue'
 import {
@@ -277,6 +285,27 @@ const handleSystemAdmin = () => {
   menuVisible.value = false
   uiStore.openSettings('system-global')
   router.push({ path: '/platform/settings', query: { section: 'system-global' } })
+}
+
+// 注销
+const handleLogout = async () => {
+  menuVisible.value = false
+
+  try {
+    // 调用后端API注销
+    await logoutApi()
+  } catch (error) {
+    // 即使API调用失败，也继续执行本地清理
+    console.error('注销API调用失败:', error)
+  }
+
+  // 清理所有状态和本地存储
+  authStore.logout()
+
+  MessagePlugin.success(t('auth.logout'))
+
+  // 跳转到登录页
+  router.push('/login')
 }
 
 // Hover-driven submenu controls. A small hide delay tolerates the pointer
@@ -1148,6 +1177,7 @@ onUnmounted(() => {
     font-size: 12px;
     color: var(--td-text-color-placeholder);
   }
+
 
   .tenant-submenu-create {
     display: flex;
