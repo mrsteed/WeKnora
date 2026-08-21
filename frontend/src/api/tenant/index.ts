@@ -306,10 +306,11 @@ export async function deleteTenant(
 }
 
 /**
- * 创建新工作区（任意已登录用户均可调用）。
+ * 创建新工作区（仅超级管理员可调用）。
  * 后端会自动把调用者写成新空间的 Owner，并填充默认 storage_quota
  * 等服务端字段；API Key 由用户在集成页手动创建。
- * 路由：POST /api/v1/tenants（router 上不挂 g.CrossTenant()，自助场景使用）。
+ * 路由：POST /api/v1/tenants（router 上不挂跨租户守卫，
+ * 但 handler 内会做权威权限检查）。前端 capability 只影响入口可见性。
  */
 export async function createTenant(
   payload: { name: string; description?: string },

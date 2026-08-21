@@ -239,15 +239,12 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 	}
 	apiKeyScope, hasAPIKeyScope := types.TenantAPIKeyScopeFromContext(ctx)
 	platformCaller := hasAPIKeyScope && apiKeyScope.IsPlatform()
-	catalogManager := caller.CanAccessAllTenants || platformCaller
+	catalogManager := caller.IsSuperAdmin || platformCaller
 
-	// Deployment-level policy: ordinary users may be restricted to joining
-	// existing workspaces by invitation. This check is authoritative; the
-	// frontend capability only improves UX and cannot bypass it. Cross-tenant
-	// superusers retain the catalog-management create path.
-	if !catalogManager &&
-		!resolveTenantSelfServiceCreationEnabled(ctx, h.config, h.systemSettingSvc) {
-		logger.Warnf(ctx, "Self-service tenant creation denied by policy for user %s", caller.ID)
+	// 创建新空间只允许超级管理员；平台级 API Key 保留平台目录管理能力。
+	// 前端 capability 只影响入口可见性，不能绕过这里的权威检查。
+	if !catalogManager {
+		logger.Warnf(ctx, "Tenant creation denied for non-super-admin user %s", caller.ID)
 		c.Error(errors.NewTenantCreationDisabledError())
 		return
 	}

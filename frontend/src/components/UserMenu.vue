@@ -287,7 +287,7 @@ const closeAll = () => {
 }
 
 // ---------- Create new tenant ----------
-// 普通用户在空间子菜单底部点 "+ 创建新工作区" → 弹 CreateTenantDialog →
+// 超级管理员在空间子菜单底部点 "+ 创建新工作区" → 弹 CreateTenantDialog →
 // 后端写一行 owner 的 tenant_members → 直接切到新空间。复用 switchToTenant
 // 同款的 setSelectedTenant + navigateAfterTenantSwitch 链路，避免 token
 // 依然指向旧空间带来的 SSE / store 不一致。

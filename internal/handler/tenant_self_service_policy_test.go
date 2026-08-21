@@ -64,14 +64,14 @@ func (s *tenantPolicyTenantService) CreateTenant(_ context.Context, tenant *type
 	return tenant, nil
 }
 
-func TestCreateTenantRejectsRegularUserWhenSelfServiceDisabled(t *testing.T) {
+func TestCreateTenantRejectsRegularUserWithoutSuperAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tenants := &tenantPolicyTenantService{}
 	h := &TenantHandler{
 		service:          tenants,
 		userService:      &tenantPolicyUserService{user: &types.User{ID: "regular-user"}},
 		config:           &config.Config{Tenant: &config.TenantConfig{}},
-		systemSettingSvc: &tenantPolicySettingService{enabled: false},
+		systemSettingSvc: &tenantPolicySettingService{enabled: true},
 	}
 	r := gin.New()
 	r.Use(tenantPolicyErrorCapture())
@@ -92,15 +92,44 @@ func TestCreateTenantRejectsRegularUserWhenSelfServiceDisabled(t *testing.T) {
 	}
 }
 
-func TestCreateTenantAllowsCrossTenantSuperuserWhenSelfServiceDisabled(t *testing.T) {
+func TestCreateTenantRejectsCrossTenantUserWithoutSuperAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tenants := &tenantPolicyTenantService{}
 	h := &TenantHandler{
 		service: tenants,
 		userService: &tenantPolicyUserService{user: &types.User{
-			ID:                  "super-user",
+			ID:                  "cross-tenant-user",
 			TenantID:            1,
 			CanAccessAllTenants: true,
+		}},
+		config:           &config.Config{Tenant: &config.TenantConfig{}},
+		systemSettingSvc: &tenantPolicySettingService{enabled: true},
+	}
+	r := gin.New()
+	r.Use(tenantPolicyErrorCapture())
+	r.POST("/tenants", h.CreateTenant)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/tenants", bytes.NewBufferString(`{"name":"blocked-cross-tenant"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if tenants.createCalls != 0 {
+		t.Fatalf("CreateTenant called %d times, want 0", tenants.createCalls)
+	}
+}
+
+func TestCreateTenantAllowsSuperAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tenants := &tenantPolicyTenantService{}
+	h := &TenantHandler{
+		service: tenants,
+		userService: &tenantPolicyUserService{user: &types.User{
+			ID:           "super-user",
+			TenantID:     1,
+			IsSuperAdmin: true,
 		}},
 		config:           &config.Config{Tenant: &config.TenantConfig{}},
 		systemSettingSvc: &tenantPolicySettingService{enabled: false},
@@ -130,7 +159,7 @@ func TestAuthMeProjectsTenantCreationCapability(t *testing.T) {
 			Email:    "tenantless@example.com",
 		}},
 		configInfo:       &config.Config{Tenant: &config.TenantConfig{}},
-		systemSettingSvc: &tenantPolicySettingService{enabled: false},
+		systemSettingSvc: &tenantPolicySettingService{enabled: true},
 	}
 	r := gin.New()
 	r.GET("/auth/me", h.GetCurrentUser)
@@ -141,6 +170,56 @@ func TestAuthMeProjectsTenantCreationCapability(t *testing.T) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), `"can_create_tenant":false`) {
+		t.Fatalf("response missing capability: %s", w.Body.String())
+	}
+}
+
+func TestAuthMeHidesTenantCreationCapabilityForCrossTenantUserWithoutSuperAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &AuthHandler{
+		userService: &tenantPolicyUserService{user: &types.User{
+			ID:                  "cross-tenant-user",
+			Username:            "cross-tenant",
+			Email:               "cross-tenant@example.com",
+			CanAccessAllTenants: true,
+		}},
+		configInfo:       &config.Config{Tenant: &config.TenantConfig{}},
+		systemSettingSvc: &tenantPolicySettingService{enabled: true},
+	}
+	r := gin.New()
+	r.GET("/auth/me", h.GetCurrentUser)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/auth/me", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"can_create_tenant":false`) {
+		t.Fatalf("response missing capability: %s", w.Body.String())
+	}
+}
+
+func TestAuthMeProjectsTenantCreationCapabilityForSuperAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &AuthHandler{
+		userService: &tenantPolicyUserService{user: &types.User{
+			ID:           "super-admin-user",
+			Username:     "superadmin",
+			Email:        "superadmin@example.com",
+			IsSuperAdmin: true,
+		}},
+		configInfo:       &config.Config{Tenant: &config.TenantConfig{}},
+		systemSettingSvc: &tenantPolicySettingService{enabled: false},
+	}
+	r := gin.New()
+	r.GET("/auth/me", h.GetCurrentUser)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/auth/me", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"can_create_tenant":true`) {
 		t.Fatalf("response missing capability: %s", w.Body.String())
 	}
 }
