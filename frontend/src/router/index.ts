@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteLocationNormalized } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useOrganizationStore } from '@/stores/organization'
 import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities'
 import { autoSetup, getCurrentUser, userInfoFromApi } from '@/api/auth'
 import type { DeploymentCapabilityKey } from '@/config/deploymentCapabilities'
@@ -41,6 +42,12 @@ function hasPendingOIDCCallback() {
   const hash = window.location.hash || ''
   return hash.includes('oidc_result=') || hash.includes('oidc_error=')
 }
+
+// One-shot per tenant per SPA session: the /my-organizations fetch is only
+// needed when a route gated by requiresOrgAdmin is reached (see guard below).
+// Tracked per tenant because the endpoint is tenant-scoped (X-Tenant-ID) and
+// the org tree — hence isOrgAdmin — differs across tenants.
+const myOrgTreeOrgsLoadedTenants = new Set<string>()
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -435,6 +442,23 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (to.meta.requiresOrgAdmin === true) {
+    if (!authStore.isSuperAdmin) {
+      // isOrgAdmin depends on organizationStore.myOrgTreeOrgs, which is only
+      // populated by GET /my-organizations. That endpoint previously had no
+      // main-layout caller (OrganizationSwitcher is not mounted anywhere), so
+      // a pure org-tree admin (e.g. tenant role contributor acting as
+      // "子组织管理员") always failed this gate and never saw the
+      // "组织人员管理" menu (menu.ts filters on the same isOrgAdmin).
+      // Fetch once per session before deciding, so the gate (and the menu
+      // visibility, which re-renders on the same store state) is correct the
+      // first time. The endpoint does the real authorization; on fetch
+      // failure the store stays empty and the gate stays fail-closed.
+      const orgFetchTenantKey = String(authStore.effectiveTenantId ?? '')
+      if (!myOrgTreeOrgsLoadedTenants.has(orgFetchTenantKey)) {
+        myOrgTreeOrgsLoadedTenants.add(orgFetchTenantKey)
+        await useOrganizationStore().fetchMyOrgTreeOrganizations()
+      }
+    }
     if (!authStore.isSuperAdmin && !authStore.isOrgAdmin) {
       next('/platform/knowledge-bases')
       return

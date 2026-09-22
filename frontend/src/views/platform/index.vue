@@ -29,6 +29,8 @@ import GlobalInvitationBell from '@/components/GlobalInvitationBell.vue'
 import NewUserGuide from '@/components/NewUserGuide.vue'
 import { useCommandPaletteStore } from '@/stores/commandPalette'
 import { useChatResourcesStore } from '@/stores/chatResources'
+import { useOrganizationStore } from '@/stores/organization'
+import { useAuthStore } from '@/stores/auth'
 import { getKnowledgeBaseById } from '@/api/knowledge-base/index'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
@@ -195,6 +197,15 @@ onMounted(() => {
     maybeOpenCmdkFromRoute()
     // 后台预取对话输入栏资源，进入 creatChat / chat 时复用缓存
     void useChatResourcesStore().prefetchChatInput()
+    // 拉取当前空间下"我的组织"（含 my_is_admin）。侧栏「组织人员管理」菜单
+    // 的可见性依赖 authStore.isOrgAdmin，其数据来源是 organization store 的
+    // myOrgTreeOrgs；该数据此前只在死组件 OrganizationSwitcher 的 onMounted
+    // 里拉取（未被任何页面挂载），纯组织树管理员（如空间角色为 contributor
+    // 的子组织管理员）进不到 admin 菜单。这里在平台布局挂载时按需补拉一次，
+    // 接口自身带鉴权，失败时 store 保持空值、菜单维持隐藏（fail-closed）。
+    if (useAuthStore().isLoggedIn) {
+        void useOrganizationStore().fetchMyOrgTreeOrganizations()
+    }
 });
 
 // 监听路由变化，兼容 SPA 内部跳转时的 ?cmdk= 参数
