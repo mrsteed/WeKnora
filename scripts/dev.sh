@@ -301,7 +301,7 @@ start_services() {
     shift  # 移除 "start" 命令本身
     # 默认启动基础设施（postgres / redis / docreader）+ minio + langfuse。
     # minio 默认开启是因为 STORAGE_TYPE=minio 的后端启动时强依赖
-    # 127.0.0.1:9000（initFileService 检查 bucket），缺了会 panic；
+    # 127.0.0.1:${MINIO_PORT:-9009}（initFileService 检查 bucket），缺了会 panic；
     # 与 stop_services 的全量 profile 超集保持对称，避免 stop 后 start 起不全。
     # 其余可选服务通过 --qdrant / --neo4j / --dex / --full 按需开启。
     PROFILES="--profile minio --profile langfuse"
@@ -373,7 +373,7 @@ start_services() {
         
         # 根据启用的 profile 显示额外服务
         if [[ "$ENABLED_SERVICES" == *"minio"* ]]; then
-            echo "  - MinIO:         localhost:9000 (Console: localhost:9001)"
+            echo "  - MinIO:         localhost:${MINIO_PORT:-9009} (Console: localhost:${MINIO_CONSOLE_PORT:-9010})"
         fi
         if [[ "$ENABLED_SERVICES" == *"qdrant"* ]]; then
             echo "  - Qdrant:        localhost:6333 (gRPC: localhost:6334)"
@@ -582,7 +582,7 @@ start_app() {
     else
         export DB_HOST=127.0.0.1
         export DOCREADER_ADDR=127.0.0.1:50051
-        export MINIO_ENDPOINT=127.0.0.1:9000
+        export MINIO_ENDPOINT=127.0.0.1:${MINIO_PORT:-9009}
         export REDIS_ADDR=127.0.0.1:6379
         export MILVUS_ADDRESS=127.0.0.1:19530
         export NEO4J_URI=bolt://127.0.0.1:7687

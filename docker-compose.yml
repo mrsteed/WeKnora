@@ -106,7 +106,7 @@ services:
 
       # 认证 / 空间 / RBAC / 审计
       # 禁止新用户注册（生产建议 true）
-      - DISABLE_REGISTRATION=${DISABLE_REGISTRATION:-false}
+      - DISABLE_REGISTRATION=${DISABLE_REGISTRATION:-true}
       # 公开注册后的默认空间策略：create_personal（默认，自动创建个人空间）/ tenantless
       - WEKNORA_AUTH_DEFAULT_TENANT_MODE=${WEKNORA_AUTH_DEFAULT_TENANT_MODE:-create_personal}
       # 是否允许普通用户登录后主动创建空间（默认 true；false 仅能邀请加入，超管不受影响）
@@ -586,8 +586,8 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: WeKnora-minio
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${MINIO_PORT:-9009}:9000"
+      - "${MINIO_CONSOLE_PORT:-9010}:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ACCESS_KEY_ID:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_ACCESS_KEY:-minioadmin}
