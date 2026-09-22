@@ -11,12 +11,16 @@ import { BUILTIN_QUICK_ANSWER_ID } from '@/api/agent'
 import { useChatResourcesStore } from '@/stores/chatResources'
 import { useEditorResourcesStore } from '@/stores/editorResources'
 import { useOrganizationStore } from '@/stores/organization'
+import { useOrgTreeStore } from '@/stores/orgTree'
 
-/** 登出时丢弃 Pinia 内的空间级资源缓存，避免 SPA 重登复用上一账号数据。 */
+/** 登出时丢弃 Pinia 内的空间级资源缓存，避免 SPA 重登复用上一账号数据。
+ *  orgTree 也必须在列：组织树按账号权限返回（超管全量 / 子管理员仅管辖子树），
+ *  漏清会出现"登出 A 超管 → SPA 内登录 B 子管理员 → B 看到 A 的全量树"。 */
 function clearSessionResourceCaches() {
   useChatResourcesStore().invalidate()
   useEditorResourcesStore().invalidate()
   useOrganizationStore().clearState()
+  useOrgTreeStore().clearState()
 }
 
 // Per-user UI preferences are namespaced by user id in localStorage.

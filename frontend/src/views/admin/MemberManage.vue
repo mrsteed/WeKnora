@@ -93,9 +93,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useOrgTreeStore } from '@/stores/orgTree'
+import { useAuthStore } from '@/stores/auth'
 import { removeUserFromOrg, setOrgAdmin, setSuperAdmin } from '@/api/org-tree'
 import { useI18n } from 'vue-i18n'
 import type { OrgMember, OrgTreeNode } from '@/api/org-tree'
@@ -107,6 +108,7 @@ import EditUserDialog from './components/EditUserDialog.vue'
 import ResetUserPasswordDialog from './components/ResetUserPasswordDialog.vue'
 
 const orgTreeStore = useOrgTreeStore()
+const authStore = useAuthStore()
 const { t } = useI18n()
 
 const selectedOrgId = ref<string | null>(null)
@@ -118,10 +120,23 @@ const editingUser = ref<any>(null)
 const memberRefreshKey = ref(0)
 
 onMounted(() => {
-  if (orgTreeStore.tree.length === 0) {
-    orgTreeStore.fetchTree()
-  }
+  // 组织树按登录账号的权限过滤（超管看全量，子组织管理员仅看管辖子树）。
+  // 不能沿用"store 有缓存就不请求"：同账号在页内来回切换不会出问题，
+  // 但 SPA 内登出再换账号登录时缓存仍是上一个账号的树，会显示错误的全量结构。
+  orgTreeStore.fetchTree()
 })
+
+// 兜底：若 store 里残留的是上一个账号的树（登录流程未清理或 store 被跨账号复用），
+// 用户发生变化时强制重新拉取，并清掉上一个账号选中节点的状态。
+watch(
+  () => authStore.currentUserId,
+  (uid, prev) => {
+    if (!uid || uid === prev) return
+    selectedOrgId.value = null
+    orgTreeStore.clearState()
+    orgTreeStore.fetchTree()
+  },
+)
 
 const selectedOrgName = computed(() => {
   if (!selectedOrgId.value) return ''
