@@ -40,8 +40,9 @@
       <span class="logo-sub">智枢</span>
     </div>
 
-    <!-- Header Links - Top Right -->
-    <div class="header-links">
+    <!-- Header Links - Top Right（品牌展示区暂不展示 GitHub/语言切换，
+         保留 DOM 与逻辑，恢复时移除 v-if 即可） -->
+    <div class="header-links" v-if="false">
       <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-link" :title="$t('common.info')">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
           <path
@@ -109,10 +110,10 @@
         <p class="showcase-description">{{ $t('platform.description') }}</p>
 
         <div class="feature-tags">
-          <span class="tag">{{ $t('platform.rag') }}</span>
-          <span class="tag">{{ $t('platform.agent') }}</span>
-          <span class="tag">{{ $t('platform.wiki') }}</span>
-          <span class="tag">{{ $t('platform.hybridSearch') }}</span>
+          <span class="tag">{{ $t('platform.tagAnswer') }}</span>
+          <span class="tag">{{ $t('platform.tagReason') }}</span>
+          <span class="tag">{{ $t('platform.tagGrow') }}</span>
+          <span class="tag">{{ $t('platform.tagPrivate') }}</span>
         </div>
       </div>
     </div>
@@ -139,7 +140,6 @@
           </div>
           <div class="form-header">
             <h2 class="form-title">{{ $t('auth.login') }}</h2>
-            <p class="form-welcome">{{ $t('auth.subtitle') }}</p>
             <p v-if="registrationEnabled" class="form-hint">{{ $t('auth.loginHint') }}</p>
           </div>
 
@@ -183,16 +183,16 @@
             <!-- Features list -->
             <div class="login-features">
               <div class="feature-item">
-                <span class="feature-icon">✓</span>
-                <span class="feature-text">{{ $t('platform.multimodalParsing') }}</span>
+                <span class="feature-icon">◆</span>
+                <span class="feature-text">{{ $t('platform.loginFeatAnswer') }}</span>
               </div>
               <div class="feature-item">
-                <span class="feature-icon">✓</span>
-                <span class="feature-text">{{ $t('platform.hybridSearchEngine') }}</span>
+                <span class="feature-icon">◆</span>
+                <span class="feature-text">{{ $t('platform.loginFeatReason') }}</span>
               </div>
               <div class="feature-item">
-                <span class="feature-icon">✓</span>
-                <span class="feature-text">{{ $t('platform.ragQandA') }}</span>
+                <span class="feature-icon">◆</span>
+                <span class="feature-text">{{ $t('platform.loginFeatGrow') }}</span>
               </div>
             </div>
           </div>
@@ -1684,7 +1684,8 @@ onMounted(async () => {
 
   .tag {
     font-size: 12px;
-    padding: 6px 16px;
+    padding: 8px 12px;
+    gap: 7px;
   }
 
   .form-section {
@@ -1980,9 +1981,9 @@ onMounted(async () => {
 }
 
 .brand-icon-wrapper {
-  width: 220px;
-  height: 220px;
-  margin-bottom: 32px;
+  width: 200px;
+  height: 200px;
+  margin-bottom: 28px;
   animation: iconFloat 6s infinite ease-in-out;
   filter: drop-shadow(0 0 30px rgba(0, 212, 255, 0.2)) drop-shadow(0 0 60px rgba(108, 58, 255, 0.1));
 }
@@ -1999,19 +2000,19 @@ onMounted(async () => {
 }
 
 .accent-bar {
-  width: 60px;
-  height: 2px;
-  border-radius: 2px;
+  width: 72px;
+  height: 3px;
+  border-radius: 999px;
   background: linear-gradient(90deg, #6c3aff, #00d4ff);
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .brand-title {
-  margin: 0 0 12px;
-  font-size: 44px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 2px;
+  margin: 0 0 14px;
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 1px;
   color: #fff;
   font-family: 'Inter', sans-serif;
 
@@ -2026,38 +2027,63 @@ onMounted(async () => {
 }
 
 .brand-tagline {
-  margin: 0 0 16px;
-  font-size: 16px;
-  color: #8b8b90;
-  letter-spacing: 2px;
+  margin: 0 0 14px;
+  font-size: 17px;
+  color: rgba(255, 255, 255, 0.62);
+  letter-spacing: 1px;
   line-height: 1.6;
 }
 
 .showcase-description {
-  max-width: 440px;
-  margin: 0 0 28px;
-  color: rgba(255, 255, 255, 0.74);
+  max-width: 420px;
+  margin: 0 0 24px;
+  color: rgba(255, 255, 255, 0.72);
   font-size: 14px;
-  line-height: 1.75;
+  line-height: 1.8;
 }
 
 .feature-tags {
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 420px;
   margin-bottom: 0;
 }
 
 .tag {
-  background: rgba(0, 212, 255, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1.2;
+  background: rgba(0, 212, 255, 0.07);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(0, 212, 255, 0.15);
   color: rgba(255, 255, 255, 0.85);
   transition: all 0.3s ease;
 
+  &::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #00d4ff, #6c3aff);
+    box-shadow: 0 0 8px rgba(0, 212, 255, 0.6);
+  }
+
+  &:nth-child(even)::before {
+    background: linear-gradient(135deg, #6c3aff, #00d4ff);
+    box-shadow: 0 0 8px rgba(108, 58, 255, 0.6);
+  }
+
   &:hover {
-    background: rgba(0, 212, 255, 0.15);
-    border-color: rgba(0, 212, 255, 0.3);
+    background: rgba(0, 212, 255, 0.14);
+    border-color: rgba(0, 212, 255, 0.35);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 212, 255, 0.15);
+    box-shadow: 0 4px 14px rgba(0, 212, 255, 0.16);
   }
 }
 
@@ -2069,6 +2095,67 @@ onMounted(async () => {
 .form-panel {
   max-width: 440px;
   margin-bottom: 0;
+}
+
+
+/* 登录卡底部特性清单：胶囊化展示，图标用品牌色渐变描边，
+   与展示区 tag 的"三能力 + 私有化"叙事保持一致。 */
+.login-features {
+  margin-top: 26px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-features .feature-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  background: rgba(0, 212, 255, 0.05);
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  transition: all 0.25s ease;
+
+  &:hover {
+    background: rgba(0, 212, 255, 0.1);
+    border-color: rgba(0, 212, 255, 0.3);
+    transform: translateX(4px);
+  }
+
+  .feature-icon {
+    position: relative;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 10px;
+    color: #00d4ff;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(0, 212, 255, 0.18), rgba(108, 58, 255, 0.18));
+      border: 1px solid rgba(0, 212, 255, 0.35);
+    }
+
+    span,
+    & > * {
+      position: relative;
+      z-index: 1;
+    }
+  }
+
+  .feature-text {
+    font-size: 13px;
+    letter-spacing: 0.2px;
+  }
 }
 
 .form-card {
@@ -2097,8 +2184,13 @@ onMounted(async () => {
 }
 
 .form-content {
-  :deep(.t-form-item__label) {
-    color: rgba(255, 255, 255, 0.85);
+  /* TDesign 渲染出的 <label> 可能不带 t-form-item__label 类，
+     旧规则未命中时颜色会回退到浅色主题变量(黑字)→ 深色卡片上不可见。
+     这里通配 .form-content 内全部标签文字并强制亮色，一并覆盖必填星号。 */
+  :deep(.t-form-item__label),
+  :deep(.t-form-item label),
+  :deep(label) {
+    color: rgba(255, 255, 255, 0.85) !important;
   }
 
   :deep(.t-input) {
@@ -2121,6 +2213,19 @@ onMounted(async () => {
 
       &::placeholder {
         color: rgba(255, 255, 255, 0.35) !important;
+      }
+
+      /* 浏览器自动填充账号/密码（autocomplete 命中）时，会强制套用
+       * -webkit-autofill 的浅底 + 黑色文字，深色主题下与卡片冲突、字变黑。
+       * 这里用 -webkit-text-fill-color 把字色压回白色，并用超宽内阴影
+       * 把填充浅底覆写为与输入框一致的深色，使自动填充与普通输入一致。 */
+      &:-webkit-autofill,
+      &:-webkit-autofill:hover,
+      &:-webkit-autofill:focus {
+        -webkit-text-fill-color: #fff !important;
+        box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.06) inset !important;
+        caret-color: #fff;
+        transition: background-color 9999s ease-in-out 0s;
       }
     }
 
