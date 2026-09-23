@@ -48,8 +48,11 @@ func NormalizeKnowledgeFolderPath(raw string) string {
 		if segment == "" || segment == "." || segment == ".." {
 			continue
 		}
+		// Truncate at a rune boundary: naive byte slicing can split a CJK
+		// rune and leave an invalid UTF-8 dangling byte, which is rejected
+		// downstream by secutils.ValidateInput ("文件夹路径包含非法字符").
 		if len(segment) > MaxKnowledgeFolderSegmentLength {
-			segment = strings.TrimSpace(segment[:MaxKnowledgeFolderSegmentLength])
+			segment = strings.TrimSpace(segment[:utf8SafeCut(segment, MaxKnowledgeFolderSegmentLength)])
 		}
 		if segment == "" {
 			continue
@@ -65,6 +68,23 @@ func NormalizeKnowledgeFolderPath(raw string) string {
 		path = strings.Join(segments, "/")
 	}
 	return path
+}
+
+// utf8SafeCut returns the largest byte offset <= maxBytes that lands on a
+// UTF-8 rune boundary, so byte-truncating CJK directory names cannot leave a
+// dangling continuation byte (which would later be rejected by the UTF-8
+// validity check in secutils.ValidateInput).
+func utf8SafeCut(s string, maxBytes int) int {
+	n := maxBytes
+	if n >= len(s) {
+		return len(s)
+	}
+	// Walk back over UTF-8 continuation bytes (0b10xxxxxx) to the leading
+	// byte of the rune that was split.
+	for n > 0 && s[n]&0xC0 == 0x80 {
+		n--
+	}
+	return n
 }
 
 // SplitKnowledgeRelativePath splits an upload path such as
