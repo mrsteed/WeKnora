@@ -257,6 +257,40 @@ export async function getDown(url: string): Promise<Blob> {
   return res
 }
 
+// POST variant of getDown for file-producing endpoints (e.g. batch zip download).
+// The backend answers failures with application/json even on the blob route, so
+// this helper inspects the response content-type and re-throws a normal error
+// object in that case — callers can then rely on `await ... catch (e) => e.message`.
+export async function postDown(
+  url: string,
+  data: unknown = {},
+  onDownloadProgress?: (e: { loaded: number }) => void,
+  config: Record<string, any> = {},
+): Promise<Blob> {
+  const res = await instance.post<Blob>(url, data, {
+    responseType: "blob",
+    timeout: 600000, // large zips take longer than the 30s default
+    ...(config || {}),
+    onDownloadProgress: onDownloadProgress || (config || {}).onDownloadProgress,
+  }) as unknown as Blob;
+  const contentType = (res?.type || "").toLowerCase();
+  if (contentType.indexOf("json") >= 0) {
+    const text = await (res as Blob).text();
+    let message = text;
+    try {
+      const parsed = JSON.parse(text);
+      message =
+        (typeof parsed?.error === "string" ? parsed.error : parsed?.error?.message) ||
+        parsed?.message ||
+        message;
+    } catch {
+      // keep raw text
+    }
+    return Promise.reject({ status: 400, message });
+  }
+  return res;
+}
+
 export function postUpload(
   url: string,
   data = {},

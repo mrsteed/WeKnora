@@ -1,4 +1,4 @@
-import { get, post, put, del, postUpload, getDown } from "../../utils/request";
+import { get, post, put, del, postUpload, getDown, postDown } from "../../utils/request";
 import type { KnowledgeProcessOverrides } from '@/types/knowledgeProcess';
 import type { AuditLog, AuditOutcome, ListAuditLogResponse } from '@/api/tenant/audit-log';
 
@@ -380,6 +380,20 @@ export function batchDeleteKnowledge(kbId: string, ids: string[]) {
 
 export function downKnowledgeDetails(id: string) {
   return getDown(`/api/v1/knowledge/${id}/download`);
+}
+
+// 批量下载（同一知识库内）：后端将选中文件打包为 ZIP 后流式返回。
+// 前端不落地文件，直接返回 Blob 交给页面触发浏览器保存。
+export function batchDownloadKnowledge(
+  kbId: string,
+  ids: string[],
+  onProgress?: (e: { loaded: number }) => void,
+) {
+  return postDown(
+    `/api/v1/knowledge/batch-download`,
+    { kb_id: kbId, ids },
+    onProgress,
+  );
 }
 
 export function previewKnowledgeFile(id: string) {

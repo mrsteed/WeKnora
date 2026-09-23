@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import FolderPickerMenu, { type FolderOption } from './FolderPickerMenu.vue';
 
-defineProps<{
+const props = defineProps<{
   count: number;
   deleteLoading?: boolean;
   reparseLoading?: boolean;
   tagLoading?: boolean;
+  // 批量下载进行中：显示 loading 并禁用按钮。
+  downloadLoading?: boolean;
+  // 是否渲染“批量下载”按钮；受 KB 级下载权控制（与单文件下载入口一致）。
+  canDownload?: boolean;
   // When true the bar stays visible even with 0 selections, so users can exit
   // batch mode from here without selecting anything first.
   visible?: boolean;
@@ -22,11 +26,18 @@ const emit = defineEmits<{
   (e: 'reparse'): void;
   (e: 'batchTag'): void;
   (e: 'moveToFolder', folderPath: string): void;
+  (e: 'batchDownload'): void;
 }>();
 
 const { t } = useI18n();
 
 const folderPickerVisible = ref(false);
+
+// 下载是不可逆的长任务（打包 + 传输），期间禁用自身避免重复触发；
+// 其他批量按钮不受影响（下载不修改文件集合）。
+const anyBatchLoading = computed(() =>
+  props.deleteLoading || props.reparseLoading || props.tagLoading || props.downloadLoading
+);
 </script>
 
 <template>
@@ -41,6 +52,13 @@ const folderPickerVisible = ref(false);
           </t-button>
         </div>
         <div class="batch-bar-actions">
+          <t-button v-if="canDownload" theme="default" variant="outline" size="small"
+            :disabled="count === 0 || anyBatchLoading" :loading="downloadLoading"
+            @click="emit('batchDownload')">
+            <template #icon><t-icon name="download" size="14px" /></template>
+            {{ t('knowledgeBase.batchDownload') }}
+          </t-button>
+
           <t-popconfirm theme="warning" :content="t('knowledgeBase.confirmBatchReparseDocument', { count })"
             :confirm-btn="{ content: t('knowledgeBase.confirmBatchReparse'), theme: 'warning' }"
             :cancel-btn="{ content: t('common.cancel') }" placement="top" @confirm="emit('reparse')">
@@ -92,8 +110,9 @@ const folderPickerVisible = ref(false);
 .doc-batch-bar {
   position: relative;
   z-index: 5;
-  width: 100%;
-  max-width: 560px;
+  /* 宽度随按钮数量自适应（按钮增减时不再留大片空白），窄屏时收缩到父容器 */
+  width: max-content;
+  max-width: 100%;
   margin: 0 auto;
   padding: 0 4px;
   box-sizing: border-box;
@@ -103,7 +122,8 @@ const folderPickerVisible = ref(false);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   padding: 8px 12px;
   background: var(--td-bg-color-container);
   border: 1px solid var(--td-component-stroke);
@@ -111,12 +131,14 @@ const folderPickerVisible = ref(false);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
 }
 
+/* 左侧（已选 N + 取消选择）不参与压缩，否则新增按钮后会被
+   flex-shrink:0 的右侧操作挤成 0 宽，导致"取消选择"被遮挡。 */
 .batch-bar-left {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex: 0 0 auto;
   min-width: 0;
-  flex: 1;
 }
 
 .batch-bar-count {

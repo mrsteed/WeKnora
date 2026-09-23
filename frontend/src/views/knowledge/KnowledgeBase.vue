@@ -39,6 +39,7 @@ import {
   moveKnowledgeToFolder,
   renameKnowledgeFolder,
   downKnowledgeDetails,
+  batchDownloadKnowledge,
   type KnowledgeFolderTree,
 } from "@/api/knowledge-base/index";
 import { knowledgeSpansPayloadHasTrace } from '@/utils/knowledgeTrace';
@@ -441,6 +442,8 @@ let lastSelectedIndex = -1;
 const batchDeleting = ref(false);
 const batchReparsing = ref(false);
 const batchTagging = ref(false);
+const batchDownloading = ref(false);
+const batchDownloadedBytes = ref(0);
 const batchTagDialogVisible = ref(false);
 const batchTagPreSelectedIds = computed(() => {
   const ids = Array.from(selectedIds.value);
@@ -2116,6 +2119,49 @@ const handleBatchTag = () => {
   batchTagDialogVisible.value = true;
 };
 
+// Human-readable byte count for the batch-download progress line (0 → indeterminate).
+const formatDownloadBytes = (bytes: number): string => {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+};
+
+const handleBatchDownload = async () => {
+  if (batchDownloading.value || selectedIds.value.size === 0) return;
+  if (!canDownloadKnowledge.value) return;
+  const ids = Array.from(selectedIds.value);
+  batchDownloading.value = true;
+  batchDownloadedBytes.value = 0;
+  try {
+    const file = await batchDownloadKnowledge(kbId.value, ids, (e) => {
+      batchDownloadedBytes.value = e.loaded;
+    });
+    const kbLabel = (kbInfo.value?.name || kbId.value || 'knowledge').toString().slice(0, 40);
+    const stamp = new Date().toISOString().replace(/[:T]/g, '').slice(0, 13).replace(/-/g, '');
+    const fileName = `knowledge_${kbLabel}_${stamp}.zip`;
+    const objectUrl = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.style.display = 'none';
+    link.href = objectUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    nextTick(() => {
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    });
+    // 下载是非破坏性操作：保留选中，便于用户继续批量管理。
+    MessagePlugin.success(t('knowledgeBase.batchDownloadSuccess', { count: ids.length }));
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || t('knowledgeBase.batchDownloadFailed'));
+  } finally {
+    batchDownloading.value = false;
+    batchDownloadedBytes.value = 0;
+  }
+};
+
 const onBatchTagConfirm = async (tagIds: string[]) => {
   if (batchTagging.value || selectedIds.value.size === 0) return;
   const ids = Array.from(selectedIds.value);
@@ -2660,11 +2706,20 @@ async function createNewSession(value: string): Promise<void> {
                 </template>
               </div>
               <div class="doc-batch-bar-anchor" v-show="batchMode || selectedIds.size > 0">
+                <div v-if="batchDownloading" class="batch-download-progress">
+                  <t-icon name="download" size="14px" />
+                  <span class="batch-download-progress-text">
+                    {{ t('knowledgeBase.batchDownloadDownloading') }}
+                    {{ formatDownloadBytes(batchDownloadedBytes) }}
+                  </span>
+                </div>
                 <DocumentBatchBar :count="selectedIds.size" :delete-loading="batchDeleting"
-                  :reparse-loading="batchReparsing" :tag-loading="batchTagging" :visible="batchMode || selectedIds.size > 0"
+                  :reparse-loading="batchReparsing" :tag-loading="batchTagging"
+                  :download-loading="batchDownloading" :can-download="canDownloadKnowledge"
+                  :visible="batchMode || selectedIds.size > 0"
                   :show-move-to-folder="canEdit" :folder-options="folderOptions"
                   @cancel="handleBatchCancel" @delete="confirmBatchDelete" @reparse="confirmBatchReparse"
-                  @batch-tag="handleBatchTag"
+                  @batch-tag="handleBatchTag" @batch-download="handleBatchDownload"
                   @move-to-folder="(path: string) => moveKnowledgeIntoFolder(Array.from(selectedIds), path)" />
               </div>
             </div>
@@ -3425,6 +3480,33 @@ async function createNewSession(value: string): Promise<void> {
     border-color: var(--td-error-color-6);
     background: color-mix(in srgb, var(--td-error-color-6) 12%, transparent);
   }
+}
+
+/* 批量下载进度提示：在批量条上方，仅打包/传输期间可见 */
+.batch-download-progress {
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
+  border-radius: var(--td-radius-large);
+  box-shadow: var(--td-shadow-1);
+
+  .t-icon {
+    animation: batch-download-spin 1.4s linear infinite;
+  }
+
+  .batch-download-progress-text {
+    white-space: nowrap;
+  }
+}
+
+@keyframes batch-download-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* 批量条悬浮在滚动区底部，不挤占列表高度 */
