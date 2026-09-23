@@ -1,29 +1,54 @@
 <template>
-  <div class="member-manage">
+  <div class="organ-manage">
     <div class="page-header">
-      <h2 class="page-title">{{ $t('admin.memberManage') }}</h2>
+      <h2 class="page-title">{{ $t('admin.title') }}</h2>
+      <t-button
+        v-if="canBootstrapRootOrg"
+        theme="primary"
+        @click="handleCreate(null)"
+      >
+        <template #icon><t-icon name="add" /></template>
+        {{ $t('admin.org.createRoot') }}
+      </t-button>
     </div>
 
-    <div class="member-layout">
-      <!-- Left: Org tree selector -->
-      <div class="org-selector-panel">
+    <div class="organ-layout">
+      <!-- Left: Org tree (selection + edit actions) -->
+      <div class="org-panel">
         <div class="panel-header">
-          <span>{{ $t('admin.member.selectOrg') }}</span>
+          <span>{{ $t('admin.organ.orgPanel') }}</span>
         </div>
         <div class="org-tree-list">
           <div v-if="orgTreeStore.loading" class="tree-loading">
             <t-loading size="small" />
           </div>
-          <template v-else>
-            <OrgTreeSelectItem
+          <div v-else-if="orgTreeStore.tree.length === 0" class="tree-empty">
+            <t-icon name="folder-open" class="empty-icon" />
+            <p>{{ $t('admin.org.emptyTree') }}</p>
+            <t-button
+              v-if="canBootstrapRootOrg"
+              theme="primary"
+              variant="outline"
+              size="small"
+              @click="handleCreate(null)"
+            >
+              {{ $t('admin.org.createFirst') }}
+            </t-button>
+          </div>
+          <div v-else>
+            <OrgTreeNodeItem
               v-for="node in orgTreeStore.tree"
               :key="node.id"
               :node="node"
               :level="0"
               :selected-id="selectedOrgId"
+              @create="handleCreate"
+              @edit="handleEdit"
+              @delete="handleDelete"
+              @move="handleMove"
               @select="handleSelectOrg"
             />
-          </template>
+          </div>
         </div>
       </div>
 
@@ -59,6 +84,14 @@
         </template>
       </div>
     </div>
+
+    <OrgTreeEditor
+      v-model:visible="editorVisible"
+      :mode="editorMode"
+      :node="editingNode"
+      :parent-id="editorParentId"
+      @success="handleEditorSuccess"
+    />
 
     <AssignOrgDialog
       v-model:visible="showAssignDialog"
@@ -97,10 +130,11 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useOrgTreeStore } from '@/stores/orgTree'
 import { useAuthStore } from '@/stores/auth'
-import { removeUserFromOrg, setOrgAdmin, setSuperAdmin } from '@/api/org-tree'
+import { removeUserFromOrg, setOrgAdmin, setSuperAdmin, moveOrgTreeNode } from '@/api/org-tree'
 import { useI18n } from 'vue-i18n'
 import type { OrgMember, OrgTreeNode } from '@/api/org-tree'
-import OrgTreeSelectItem from './components/OrgTreeSelectItem.vue'
+import OrgTreeNodeItem from './components/OrgTreeNodeItem.vue'
+import OrgTreeEditor from './components/OrgTreeEditor.vue'
 import MemberTable from './components/MemberTable.vue'
 import AssignOrgDialog from './components/AssignOrgDialog.vue'
 import CreateUserDialog from './components/CreateUserDialog.vue'
@@ -111,23 +145,25 @@ const orgTreeStore = useOrgTreeStore()
 const authStore = useAuthStore()
 const { t } = useI18n()
 
+// ---------- 组织树（选中 + 结构管理） ----------
 const selectedOrgId = ref<string | null>(null)
-const showAssignDialog = ref(false)
-const showCreateUserDialog = ref(false)
-const showEditUserDialog = ref(false)
-const showResetPasswordDialog = ref(false)
-const editingUser = ref<any>(null)
-const memberRefreshKey = ref(0)
+const editorVisible = ref(false)
+const editorMode = ref<'create' | 'edit'>('create')
+const editingNode = ref<OrgTreeNode | null>(null)
+const editorParentId = ref<string | null>(null)
+
+const canBootstrapRootOrg = computed(
+  () => authStore.isSuperAdmin || (orgTreeStore.tree.length === 0 && authStore.hasRole('admin')),
+)
 
 onMounted(() => {
   // 组织树按登录账号的权限过滤（超管看全量，子组织管理员仅看管辖子树）。
-  // 不能沿用"store 有缓存就不请求"：同账号在页内来回切换不会出问题，
+  // 不能沿用"store 有缓存就不请求"：同账号来回切换没问题，
   // 但 SPA 内登出再换账号登录时缓存仍是上一个账号的树，会显示错误的全量结构。
   orgTreeStore.fetchTree()
 })
 
-// 兜底：若 store 里残留的是上一个账号的树（登录流程未清理或 store 被跨账号复用），
-// 用户发生变化时强制重新拉取，并清掉上一个账号选中节点的状态。
+// 兜底：若 store 里残留的是上一个账号的树，用户变化时强制重新拉取并清状态。
 watch(
   () => authStore.currentUserId,
   (uid, prev) => {
@@ -137,6 +173,66 @@ watch(
     orgTreeStore.fetchTree()
   },
 )
+
+const handleSelectOrg = (orgId: string) => {
+  selectedOrgId.value = orgId
+}
+
+const handleCreate = (parentId: string | null) => {
+  editorMode.value = 'create'
+  editingNode.value = null
+  editorParentId.value = parentId
+  editorVisible.value = true
+}
+
+const handleEdit = (node: OrgTreeNode) => {
+  editorMode.value = 'edit'
+  editingNode.value = node
+  editorParentId.value = null
+  editorVisible.value = true
+}
+
+const handleDelete = async (node: OrgTreeNode) => {
+  try {
+    await orgTreeStore.deleteNode(node.id)
+    MessagePlugin.success(t('admin.org.deleteSuccess'))
+    // 删除的是当前选中组织时清空选中
+    if (selectedOrgId.value === node.id) {
+      selectedOrgId.value = null
+    }
+  } catch {
+    MessagePlugin.error(t('admin.org.deleteFailed'))
+  }
+}
+
+const handleEditorSuccess = () => {
+  editorVisible.value = false
+  // 编辑时可能变更了上级组织（内部走了 move 接口），move 不会改本地 store，
+  // 因此成功关闭后统一重新拉树，保证结构与选中状态一致。
+  orgTreeStore.fetchTree()
+}
+
+const handleMove = async (payload: { nodeId: string; newParentId: string | null }) => {
+  try {
+    const res = await moveOrgTreeNode(payload.nodeId, { new_parent_id: payload.newParentId })
+    if (res.success) {
+      MessagePlugin.success(t('admin.org.moveSuccess'))
+      orgTreeStore.fetchTree()
+    } else {
+      MessagePlugin.error(res.message || t('admin.org.moveFailed'))
+    }
+  } catch {
+    MessagePlugin.error(t('admin.org.moveFailed'))
+  }
+}
+
+// ---------- 成员管理 ----------
+const showAssignDialog = ref(false)
+const showCreateUserDialog = ref(false)
+const showEditUserDialog = ref(false)
+const showResetPasswordDialog = ref(false)
+const editingUser = ref<any>(null)
+const memberRefreshKey = ref(0)
 
 const selectedOrgName = computed(() => {
   if (!selectedOrgId.value) return ''
@@ -152,10 +248,6 @@ const selectedOrgName = computed(() => {
   }
   return findNode(orgTreeStore.tree)
 })
-
-const handleSelectOrg = (orgId: string) => {
-  selectedOrgId.value = orgId
-}
 
 const handleRemoveMember = async (userId: string) => {
   if (!selectedOrgId.value) return
@@ -221,12 +313,15 @@ const handleEditUserSuccess = () => {
 </script>
 
 <style lang="less" scoped>
-.member-manage {
-  max-width: 1100px;
+.organ-manage {
+  width: 100%;
 }
 
 .page-header {
-  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
 
   .page-title {
     font-size: 20px;
@@ -236,15 +331,15 @@ const handleEditUserSuccess = () => {
   }
 }
 
-.member-layout {
+.organ-layout {
   display: flex;
   gap: 16px;
   height: calc(100vh - 160px);
 }
 
-.org-selector-panel {
-  width: 260px;
-  min-width: 260px;
+.org-panel {
+  width: 420px;
+  min-width: 420px;
   background: #fff;
   border-radius: 12px;
   border: 1px solid #e7e7e7;
@@ -270,6 +365,25 @@ const handleEditUserSuccess = () => {
     display: flex;
     justify-content: center;
     padding: 24px;
+  }
+
+  .tree-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 16px;
+    color: #999;
+
+    .empty-icon {
+      font-size: 40px;
+      color: #ddd;
+      margin-bottom: 12px;
+    }
+
+    p {
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
   }
 }
 

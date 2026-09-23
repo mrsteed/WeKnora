@@ -4,6 +4,7 @@
     :header="$t('admin.member.resetPasswordFor', { org: orgName })"
     :confirm-btn="{ content: $t('admin.member.resetPassword'), loading: submitting }"
     :cancel-btn="$t('common.cancel')"
+    :close-on-overlay-click="false"
     @confirm="handleSubmit"
     @close="handleClose"
     width="480px"
@@ -64,17 +65,17 @@ const formData = reactive({
 
 const formRules = {
   newPassword: [
-    { required: true, message: () => t('auth.passwordRequired'), trigger: 'blur' },
-    { min: 8, message: () => t('auth.passwordMinLength'), trigger: 'blur' },
-    { max: 32, message: () => t('auth.passwordMaxLength'), trigger: 'blur' },
-    { pattern: /[a-zA-Z]/, message: () => t('auth.passwordMustContainLetter'), trigger: 'blur' },
-    { pattern: /\d/, message: () => t('auth.passwordMustContainNumber'), trigger: 'blur' },
+    { required: true, message: t('auth.passwordRequired'), trigger: 'blur' },
+    { min: 8, message: t('auth.passwordMinLength'), trigger: 'blur' },
+    { max: 32, message: t('auth.passwordMaxLength'), trigger: 'blur' },
+    { pattern: /[a-zA-Z]/, message: t('auth.passwordMustContainLetter'), trigger: 'blur' },
+    { pattern: /\d/, message: t('auth.passwordMustContainNumber'), trigger: 'blur' },
   ],
   confirmPassword: [
-    { required: true, message: () => t('auth.confirmPasswordRequired'), trigger: 'blur' },
+    { required: true, message: t('auth.confirmPasswordRequired'), trigger: 'blur' },
     {
       validator: (val: string) => val === formData.newPassword,
-      message: () => t('auth.passwordMismatch'),
+      message: t('auth.passwordMismatch'),
       trigger: 'blur',
     },
   ],

@@ -4,6 +4,7 @@
     :header="$t('admin.member.createUserTo', { org: orgName })"
     :confirm-btn="{ content: $t('admin.member.createUser'), loading: submitting }"
     :cancel-btn="$t('common.cancel')"
+    :close-on-overlay-click="false"
     @confirm="handleSubmit"
     @close="handleClose"
     width="480px"
@@ -95,13 +96,13 @@ const orgRoleOptions = computed(() => ([
 
 const formRules = {
   username: [
-    { required: true, message: () => t('auth.usernameRequired'), trigger: 'blur' },
-    { min: 2, message: () => t('auth.usernameMinLength'), trigger: 'blur' },
+    { required: true, message: t('auth.usernameRequired'), trigger: 'blur' },
+    { min: 2, message: t('auth.usernameMinLength'), trigger: 'blur' },
   ],
   password: [
-    { required: true, message: () => t('auth.passwordRequired'), trigger: 'blur' },
-    { min: 8, message: () => t('auth.passwordMinLength'), trigger: 'blur' },
-    { max: 32, message: () => t('auth.passwordMaxLength'), trigger: 'blur' },
+    { required: true, message: t('auth.passwordRequired'), trigger: 'blur' },
+    { min: 8, message: t('auth.passwordMinLength'), trigger: 'blur' },
+    { max: 32, message: t('auth.passwordMaxLength'), trigger: 'blur' },
   ],
   role: [
     { required: true, trigger: 'change' },

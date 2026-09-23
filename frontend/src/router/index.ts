@@ -185,20 +185,17 @@ const router = createRouter({
           name: "admin",
           component: () => import("../views/admin/AdminLayout.vue"),
           meta: { requiresInit: true, requiresAuth: true, requiresOrgAdmin: true },
-          redirect: "/platform/admin/org-tree",
+          redirect: "/platform/admin/organ",
           children: [
             {
-              path: "org-tree",
-              name: "orgTreeManage",
-              component: () => import("../views/admin/OrgTreeManage.vue"),
+              path: "organ",
+              name: "organManage",
+              component: () => import("../views/admin/OrganManage.vue"),
               meta: { requiresInit: true, requiresAuth: true, requiresOrgAdmin: true }
             },
-            {
-              path: "members",
-              name: "memberManage",
-              component: () => import("../views/admin/MemberManage.vue"),
-              meta: { requiresInit: true, requiresAuth: true, requiresOrgAdmin: true }
-            },
+            // 旧地址兼容：组织树管理 / 组织人员管理 已合并为组织管理页
+            { path: "org-tree", redirect: { name: "organManage" } },
+            { path: "members", redirect: { name: "organManage" } },
           ],
         },
         // Compatibility redirects for /platform/system/* URLs. System

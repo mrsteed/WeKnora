@@ -408,7 +408,7 @@ const isMenuItemActive = (itemPath: string): boolean => {
         case 'organizations':
             return currentRoute === 'organizationList';
         case 'admin':
-            return currentRoute === 'orgTreeManage' || currentRoute === 'memberManage';
+            return currentRoute === 'organManage';
         case 'creatChat':
             return currentRoute === 'kbCreatChat' || currentRoute === 'globalCreatChat';
         case 'settings':
@@ -430,7 +430,7 @@ const getIconActiveState = (itemPath: string) => {
         ),
         isCreatChatActive: itemPath === 'creatChat' && (currentRoute === 'kbCreatChat' || currentRoute === 'globalCreatChat'),
         isSettingsActive: itemPath === 'settings' && currentRoute === 'settings',
-        isAdminActive: itemPath === 'admin' && (currentRoute === 'orgTreeManage' || currentRoute === 'memberManage'),
+        isAdminActive: itemPath === 'admin' && currentRoute === 'organManage',
         isChatActive: itemPath === 'chat' && currentRoute === 'chat'
     };
 };
@@ -1081,7 +1081,7 @@ const handleMenuClick = async (path: string) => {
         // 组织菜单项：跳转到组织列表
         router.push('/platform/organizations')
     } else if (path === 'admin') {
-        router.push('/platform/admin/members')
+        router.push('/platform/admin/organ')
     } else if (path === 'settings') {
         // 设置菜单项：打开设置弹窗并跳转路由
         uiStore.openSettings()

@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="visible" class="dialog-overlay" @click.self="handleClose">
+      <div v-if="visible" class="dialog-overlay" @click.self="handleOverlayClick">
         <div class="dialog-content">
           <div class="dialog-header">
             <h3>{{ $t('admin.member.addMemberTo', { org: orgName }) }}</h3>
@@ -126,6 +126,13 @@ const handleSearch = async () => {
 
 const handleClose = () => {
   emit('update:visible', false)
+}
+
+// 从内容区按住左键拖到遮罩再松手时，click 会落在遮罩上（@click.self）。
+// 此时若产生了文字选区就说明是“选择复制”意图，不应关闭弹窗。
+const handleOverlayClick = () => {
+  if (window.getSelection()?.toString()) return
+  handleClose()
 }
 
 const handleSubmit = async () => {

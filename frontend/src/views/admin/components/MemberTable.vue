@@ -74,7 +74,7 @@
             {{ $t('common.edit') }}
           </t-button>
           <t-button
-            v-if="authStore.isSuperAdmin"
+            v-if="canResetPassword"
             size="small"
             variant="text"
             theme="primary"
@@ -83,14 +83,15 @@
             {{ $t('admin.member.resetPassword') }}
           </t-button>
           <t-button
+            v-if="!member.is_admin"
             size="small"
             variant="text"
-            :theme="member.is_admin ? 'default' : 'primary'"
+            theme="primary"
             :disabled="member.is_owner === true || isProjectedRootAdmin(member)"
             :title="isProjectedRootAdmin(member) ? $t('admin.member.adjustInTenantMembers') : ''"
-            @click="$emit('setAdmin', member.user_id, !member.is_admin)"
+            @click="$emit('setAdmin', member.user_id, true)"
           >
-            {{ member.is_admin ? $t('admin.member.revokeAdmin') : $t('admin.member.setAdmin') }}
+            {{ $t('admin.member.setAdmin') }}
           </t-button>
           <t-popconfirm
             :content="$t('admin.member.removeConfirm')"
@@ -113,13 +114,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getOrgMembers, type OrgMember, type InheritedAdmin } from '@/api/org-tree'
 import { useAuthStore } from '@/stores/auth'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+
+// 重置密码入口:超管/系统管理员,或当前空间 Admin 及以上(含 Owner)。
+// 组织管理员(suborg_admin)不显示;真实鉴权由后端 RequireSystemAdmin 守卫保证。
+const canResetPassword = computed(() =>
+  authStore.isSuperAdmin || authStore.hasRole('admin'),
+)
 
 function displayRoleLabel(member: Pick<OrgMember, 'display_role' | 'is_owner' | 'is_admin' | 'role'> | Pick<InheritedAdmin, 'display_role' | 'role'>) {
   switch (member.display_role) {

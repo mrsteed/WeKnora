@@ -1,8 +1,8 @@
 <template>
-  <div class="org-tree-node-item" :style="{ paddingLeft: level * 24 + 'px' }">
+  <div class="org-tree-node-item" :style="{ paddingLeft: level * 20 + 'px' }">
     <div
       class="node-row"
-      :class="{ expanded: isExpanded, 'drag-over': isDragOver }"
+      :class="{ expanded: isExpanded, 'drag-over': isDragOver, active: selectedId === node.id }"
       :draggable="canManageNode"
       @dragstart.stop="handleDragStart"
       @dragover.prevent="canManageNode ? handleDragOver($event) : undefined"
@@ -18,7 +18,7 @@
         />
         <span v-else class="expand-placeholder"></span>
       </div>
-      <div class="node-info">
+      <div class="node-info" @click="$emit('select', node.id)">
         <t-icon name="folder" class="node-icon" />
         <span class="node-name">{{ node.name }}</span>
         <span v-if="node.description" class="node-desc">{{ node.description }}</span>
@@ -54,10 +54,12 @@
         :key="child.id"
         :node="child"
         :level="level + 1"
+        :selected-id="selectedId"
         @create="$emit('create', $event)"
         @edit="$emit('edit', $event)"
         @delete="$emit('delete', $event)"
         @move="$emit('move', $event)"
+        @select="$emit('select', $event)"
       />
     </div>
   </div>
@@ -71,13 +73,18 @@ import type { OrgTreeNode } from '@/api/org-tree'
 const props = defineProps<{
   node: OrgTreeNode
   level: number
+  selectedId?: string | null
 }>()
+
+// 选中态由父组件透传（成员管理页复用本组件作为组织选择器）
+const selectedId = computed(() => props.selectedId ?? null)
 
 const emit = defineEmits<{
   (e: 'create', parentId: string): void
   (e: 'edit', node: OrgTreeNode): void
   (e: 'delete', node: OrgTreeNode): void
   (e: 'move', payload: { nodeId: string; newParentId: string | null }): void
+  (e: 'select', orgId: string): void
 }>()
 
 const authStore = useAuthStore()
@@ -147,6 +154,14 @@ const handleDragEnd = () => {
       outline: 2px dashed #0052d9;
       outline-offset: -2px;
     }
+
+    &.active {
+      background: #e8f3ff;
+
+      .node-name {
+        color: #0052d9;
+      }
+    }
   }
 
   .node-expand {
@@ -175,6 +190,7 @@ const handleDragEnd = () => {
     gap: 8px;
     flex: 1;
     min-width: 0;
+    cursor: pointer;
 
     .node-icon {
       font-size: 16px;
