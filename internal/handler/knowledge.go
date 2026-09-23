@@ -1704,7 +1704,7 @@ stream:
 			if failedEntry != nil {
 				failedName = failedEntry.filename
 			}
-			_, _ = w.Write([]byte(fmt.Sprintf(
+			_, _ = w.Write(fmt.Appendf(nil,
 				"批量下载在打包过程中被中止。\n"+
 					"原因: %v\n"+
 					"失败文件: %s\n"+
@@ -1712,7 +1712,7 @@ stream:
 					"已写入字节数: %d\n"+
 					"请求知识数: %d\n\n"+
 					"请重新发起批量下载。",
-				firstErr, failedName, secutils.SanitizeForLog(kbID), bytesWritten, len(ids))))
+				firstErr, failedName, secutils.SanitizeForLog(kbID), bytesWritten, len(ids)))
 		}
 		// 忽略 zw.Close 的二次错误：此时响应可能已断连接头。
 		_ = zw.Close()

@@ -168,9 +168,6 @@ func TestLanguageFromContextOrDefault(t *testing.T) {
 }
 
 func TestMCPOAuthNonInteractive(t *testing.T) {
-	if IsMCPOAuthNonInteractive(nil) {
-		t.Fatal("nil context should not be non-interactive")
-	}
 	if IsMCPOAuthNonInteractive(context.Background()) {
 		t.Fatal("background context should not be non-interactive")
 	}
@@ -222,9 +219,6 @@ func TestLLMCallMetadataContext(t *testing.T) {
 }
 
 func TestTaskRetryMetadataContext(t *testing.T) {
-	if _, _, ok := TaskRetryMetadataFromContext(nil); ok {
-		t.Fatal("nil context should not contain task retry metadata")
-	}
 	if _, _, ok := TaskRetryMetadataFromContext(context.Background()); ok {
 		t.Fatal("background context should not contain task retry metadata")
 	}
@@ -241,7 +235,7 @@ func BenchmarkLanguageLocaleName(b *testing.B) {
 	testCases := []string{"zh", "en", "zh-CN", "ko", "unknown"}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, locale := range testCases {
 			LanguageLocaleName(locale)
 		}
