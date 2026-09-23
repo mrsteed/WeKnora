@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -1502,6 +1504,292 @@ func (h *KnowledgeHandler) BatchDeleteKnowledge(c *gin.Context) {
 			"deleted_count": len(ids),
 		},
 	})
+}
+
+// maxBatchDownloadLimit caps the number of files in one batch download.
+// Kept intentionally lower than the batch-delete cap (200): each file holds an
+// open source handle during the zip stream and the response is a long-lived
+// client download.
+const maxBatchDownloadLimit = 50
+
+// batchDownloadAlreadyCompressedExts are extensions that are already
+// compressed; zipping them with Deflate wastes CPU for no size win.
+var batchDownloadAlreadyCompressedExts = map[string]struct{}{
+	".zip": {}, ".gz": {}, ".gzip": {}, ".7z": {}, ".rar": {}, ".bz2": {}, ".zst": {},
+	".jpg": {}, ".jpeg": {}, ".png": {}, ".gif": {}, ".webp": {}, ".avif": {}, ".heic": {},
+	".mp3": {}, ".mp4": {}, ".m4a": {}, ".webm": {}, ".mov": {}, ".mkv": {}, ".avi": {},
+	".pdf": {}, ".woff": {}, ".woff2": {},
+}
+
+// BatchDownloadKnowledgeRequest is the body schema for POST /knowledge/batch-download.
+type BatchDownloadKnowledgeRequest struct {
+	KBID string   `json:"kb_id" binding:"required"`
+	IDs  []string `json:"ids" binding:"required"`
+}
+
+// BatchDownloadKnowledge godoc
+// @Summary      批量下载知识文件
+// @Description  按 ID 列表把同一知识库下的多个知识文件打包为 ZIP 流式返回。
+// @Description  权限与单文件下载一致：全局 Contributor + 该 KB 的 Editor/Admin（或 KB owner）。
+// @Description  任一 ID 校验失败（不存在 / 不属于该 KB / 无写权限）则整个请求拒绝，不开始写流。
+// @Tags         知识管理
+// @Accept       json
+// @Produce      application/zip
+// @Param        request  body      BatchDownloadKnowledgeRequest  true  "批量下载请求"
+// @Success      200      {file}    file    "ZIP 打包文件"
+// @Failure      400      {object}  errors.AppError  "请求参数错误"
+// @Failure      403      {object}  errors.AppError  "权限不足"
+// @Failure      404      {object}  errors.AppError  "知识不存在或不属于该知识库"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /knowledge/batch-download [post]
+func (h *KnowledgeHandler) BatchDownloadKnowledge(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req BatchDownloadKnowledgeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewBadRequestError("Invalid request parameters: " + err.Error()))
+		return
+	}
+
+	ids := dedupeKnowledgeIDs(req.IDs)
+	if len(ids) == 0 {
+		c.Error(errors.NewBadRequestError("ids cannot be empty"))
+		return
+	}
+	if len(ids) > maxBatchDownloadLimit {
+		c.Error(errors.NewBadRequestError(fmt.Sprintf("too many ids (max %d per batch)", maxBatchDownloadLimit)))
+		return
+	}
+
+	// Phase 1a: KB 级访问校验（与 batch-delete 一致：body 带 kb_id，handler 自行完成
+	// KB 级 Editor/Admin 判定；路由层只挂 g.Contributor()）。
+	kb, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccessWithKBID(c, req.KBID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+		c.Error(errors.NewForbiddenError("No permission to download knowledge from this knowledge base"))
+		return
+	}
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, effectiveTenantID)
+
+	// Phase 1b: 一次性取回所有知识，校验数量、KB 隶属与逐条 mutation 权限。
+	knowledgeList, err := h.kgService.GetKnowledgeBatch(ctx, effectiveTenantID, ids)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+	foundIDs := make(map[string]bool, len(knowledgeList))
+	for _, k := range knowledgeList {
+		foundIDs[k.ID] = true
+	}
+	if len(foundIDs) != len(ids) {
+		missing := "-"
+		for _, id := range ids {
+			if !foundIDs[id] {
+				missing = id
+				break
+			}
+		}
+		c.Error(errors.NewNotFoundError(fmt.Sprintf(
+			"Knowledge not found: %s", secutils.SanitizeForLog(batchDownloadIDPrefix(missing)))))
+		return
+	}
+	byID := make(map[string]*types.Knowledge, len(knowledgeList))
+	for _, k := range knowledgeList {
+		if k.KnowledgeBaseID != kbID {
+			c.Error(errors.NewNotFoundError(fmt.Sprintf(
+				"Knowledge %s does not belong to knowledge base %s",
+				secutils.SanitizeForLog(batchDownloadIDPrefix(k.ID)), secutils.SanitizeForLog(kbID))))
+			return
+		}
+		// 与单文件下载 DownloadKnowledgeFile 保持一致：原始文件属于敏感数据，
+		// 必须通过 requireKnowledgeMutation（KB 内 mutation 权限，含共享 KB 场景）。
+		if err := h.requireKnowledgeMutation(c, k); err != nil {
+			c.Error(err)
+			return
+		}
+		byID[k.ID] = k
+	}
+
+	// Phase 1c: 预打开全部文件句柄并按调用顺序收集，同时完成文件名去重。
+	// 句柄窗口 = 整个 zip 写出时长；≤50 个 fd 在 Linux 默认 ulimit（1024+）下无压力。
+	type zipEntry struct {
+		file     io.ReadCloser
+		filename string
+	}
+	entries := make([]zipEntry, 0, len(ids))
+	nameCount := make(map[string]int, len(ids))
+	defer func() {
+		for _, e := range entries {
+			if e.file != nil {
+				e.file.Close()
+			}
+		}
+	}()
+	for _, id := range ids {
+		file, filename, err := h.kgService.GetKnowledgeFile(ctx, id)
+		if err != nil {
+			logger.ErrorWithFields(ctx, err, map[string]interface{}{
+				"knowledge_id": secutils.SanitizeForLog(id),
+				"kb_id":        secutils.SanitizeForLog(kbID),
+			})
+			c.Error(errors.NewInternalServerError(
+				"Failed to open file for knowledge " + secutils.SanitizeForLog(id[:8])))
+			return
+		}
+		entries = append(entries, zipEntry{file: file, filename: sanitizeZipEntryName(id, filename, nameCount)})
+	}
+
+	// Phase 2: 流式写 zip。此处已 200 开流前的最后一段——设置响应头后即可写出。
+	zipName := buildBatchDownloadZipName(kb.Name, kbID)
+	c.Header("Content-Description", "File Transfer")
+	c.Header("Content-Transfer-Encoding", "binary")
+	c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": zipName}))
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Encoding", "identity")
+	c.Header("Cache-Control", "no-store")
+	c.Status(http.StatusOK)
+
+	zw := zip.NewWriter(c.Writer)
+	// 客户端断连时 io.Copy 到 c.Writer 会返回错误从而中止循环，无需额外 ctx select。
+	var firstErr error
+	var failedEntry *zipEntry
+stream:
+	for _, e := range entries {
+		select {
+		case <-ctx.Done():
+			firstErr = ctx.Err()
+			failedEntry = &e
+			break stream
+		default:
+		}
+		method := zip.Deflate
+		if _, alreadyCompressed := batchDownloadAlreadyCompressedExts[strings.ToLower(filepath.Ext(e.filename))]; alreadyCompressed {
+			method = zip.Store
+		}
+		header := &zip.FileHeader{Name: e.filename, Method: method}
+		w, err := zw.CreateHeader(header)
+		if err != nil {
+			firstErr = err
+			failedEntry = &e
+			break stream
+		}
+		if _, err := io.Copy(w, e.file); err != nil {
+			firstErr = err
+			failedEntry = &e
+			break stream
+		}
+	}
+
+	if firstErr != nil {
+		// 已 200 开流，无法再转 JSON。尽力写一个说明条目让客户端看到原因，
+		// 并记审计日志（kb_id / failed_id / 已写字节数，见设计文档 4.4）；
+		// 客户端拿到的将是"部分 zip + 错误说明"。
+		bytesWritten := c.Writer.Size()
+		logger.Errorf(ctx, "Batch knowledge download aborted mid-stream: kb_id: %s, failed_id: %s, bytes_written: %d, err: %v",
+			secutils.SanitizeForLog(kbID),
+			func() string {
+				if failedEntry == nil {
+					return "-"
+				}
+				return secutils.SanitizeForLog(failedEntry.filename)
+			}(),
+			bytesWritten, firstErr)
+		if w, err := zw.Create("_DOWNLOAD_ERROR.txt"); err == nil {
+			failedName := "-"
+			if failedEntry != nil {
+				failedName = failedEntry.filename
+			}
+			_, _ = w.Write([]byte(fmt.Sprintf(
+				"批量下载在打包过程中被中止。\n"+
+					"原因: %v\n"+
+					"失败文件: %s\n"+
+					"kb_id: %s\n"+
+					"已写入字节数: %d\n"+
+					"请求知识数: %d\n\n"+
+					"请重新发起批量下载。",
+				firstErr, failedName, secutils.SanitizeForLog(kbID), bytesWritten, len(ids))))
+		}
+		// 忽略 zw.Close 的二次错误：此时响应可能已断连接头。
+		_ = zw.Close()
+		return
+	}
+	if err := zw.Close(); err != nil {
+		logger.Errorf(ctx, "Failed to close zip writer: %v", err)
+		return
+	}
+	bytesWritten := c.Writer.Size()
+	logger.Infof(ctx, "Batch knowledge download completed: kb_id: %s, count: %d, bytes: %d",
+		secutils.SanitizeForLog(kbID), len(ids), bytesWritten)
+}
+
+// sanitizeZipEntryName produces a unique, safe entry name for a zip. It trims
+// path-adjacent pieces from the source filename (we only ever store flat
+// entries in the archive, so keep only the base name) and appends a numeric
+// suffix " (2)"、" (3)"... on collision. Returns the final name and records
+// the increment in nameCount (mutated).
+func sanitizeZipEntryName(knowledgeID, raw string, nameCount map[string]int) string {
+	base := raw
+	if idx := strings.LastIndexAny(base, "/\\"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	base = strings.TrimSpace(base)
+	if base == "" || base == "." || base == ".." {
+		base = knowledgeID
+	}
+	// Defense in depth against zip-slip: even though we already stripped
+	// slashes, reject any leftover path separators or control chars.
+	base = strings.NewReplacer("\x00", "", "\n", "", "\r", "", "/", "", "\\", "", "'", "").Replace(base)
+	if strings.TrimSpace(base) == "" {
+		base = knowledgeID
+	}
+	nameCount[base]++
+	if nameCount[base] == 1 {
+		return base
+	}
+	dot := strings.LastIndex(base, ".")
+	if dot <= 0 {
+		return fmt.Sprintf("%s (%d)", base, nameCount[base])
+	}
+	return fmt.Sprintf("%s (%d)%s", base[:dot], nameCount[base], base[dot:])
+}
+
+// batchDownloadIDPrefix returns the first 8 chars of a knowledge id for
+// user-facing messages (design doc 3.1: error messages carry id 前8位).
+func batchDownloadIDPrefix(id string) string {
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8]
+}
+
+// buildBatchDownloadZipName assembles the download filename for the zip
+// payload, e.g. "knowledge_<kbNameOrID8>_<YYYYMMDD-HHmm>.zip".
+func buildBatchDownloadZipName(kbName, kbID string) string {
+	label := strings.TrimSpace(kbName)
+	if label == "" {
+		label = kbID
+	}
+	// Keep the URL-safe portion of the name; fall back to kb id if it becomes empty.
+	safe := strings.NewReplacer(
+		"\x00", "", "\n", "", "\r", "", "\t", "",
+		"/", "-", "\\", "-", "\"", "", "'", "",
+		":", "", "*", "", "?", "",
+		"<", "", ">", "", "|", "",
+	).Replace(label)
+	if strings.TrimSpace(safe) == "" {
+		safe = kbID
+	}
+	if len(safe) > 40 {
+		// Truncate aggressively but keep the tail (more identifiable).
+		safe = "…" + safe[len(safe)-39:]
+	}
+	now := time.Now().Format("20060102-1504")
+	return fmt.Sprintf("knowledge_%s_%s.zip", safe, now)
 }
 
 // ClearKnowledgeBaseContents godoc

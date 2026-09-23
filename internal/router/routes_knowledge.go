@@ -116,6 +116,12 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		// retrieve capability declared by kRead; role guards intentionally defer
 		// machine-principal authorization to the API-key gate.
 		kRead.GET("/:id/download", g.Contributor(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.DownloadKnowledgeFile)
+		// Batch download is a read that streams the original source files, so it
+		// lives under the same retrieve capability as the single-file download
+		// above. The KB id travels in the body, so the per-KB Editor/Admin gate
+		// is enforced inside the handler (like /batch, /search) rather than via
+		// a URL-param middleware.
+		kRead.POST("/batch-download", g.Contributor(), handler.BatchDownloadKnowledge)
 		kRead.GET("/:id/preview", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.PreviewKnowledgeFile)
 		k.PUT("/image/:id/:chunk_id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateImageInfo)
 		kRead.GET("/search", g.Viewer(), handler.SearchKnowledge)
