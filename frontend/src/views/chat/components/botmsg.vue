@@ -43,7 +43,8 @@
                 </div>
             </div>
             <!-- 复制和添加到知识库按钮 - 非 Agent 模式下显示 -->
-            <div v-if="answerFullyRendered && (content || session.content)" class="answer-toolbar">
+            <div v-if="answerFullyRendered && (content || session.content || exportContent)" class="answer-toolbar">
+                <ExportDropdown v-if="canExportAnswer" :content="exportContent" />
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer"
                     :title="$t('agent.copy')">
                     <t-icon name="copy" />
@@ -112,6 +113,7 @@ import ChatRequestInfoButton from '@/components/ChatRequestInfoButton.vue';
 import ChatCitationFloat from '@/components/ChatCitationFloat.vue';
 import picturePreview from '@/components/picture-preview.vue';
 import ChatArtifactsDrawer from './ChatArtifactsDrawer.vue';
+import ExportDropdown from './ExportDropdown.vue';
 import { sanitizeMarkdownHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL, hydrateProtectedFileImages } from '@/utils/security';
 import { useI18n } from 'vue-i18n';
 import { MessagePlugin } from 'tdesign-vue-next';
@@ -121,6 +123,7 @@ import {
     formatManualTitle,
 } from '@/utils/chatMessageShared';
 import { copyWithToast } from '@/utils/clipboard';
+import { resolveChatExportContent } from '@/utils/exportUtils';
 import {
     createChatMarkdownRenderer,
     renderChatMarkdown,
@@ -298,6 +301,12 @@ const hasActualContent = computed(() => {
     const text = props.content || props.session?.content || '';
     return text && text.trim().length > 0;
 });
+
+const exportContent = computed(() =>
+    resolveChatExportContent(props.session, props.content || props.session?.content || '')
+);
+
+const canExportAnswer = computed(() => Boolean(exportContent.value));
 
 // 获取实际内容
 const getActualContent = () => {

@@ -27,6 +27,16 @@ export default {
     apiChats: 'API sessions',
     noSessions: 'No conversations yet'
   },
+  chatExport: {
+    title: 'Export document',
+    markdown: 'Export as Markdown',
+    pdf: 'Export as PDF',
+    word: 'Export as Word',
+    xlsx: 'Export as Excel',
+    success: 'Export completed',
+    failed: 'Export failed. Please try again later.',
+    emptyContent: 'There is no content to export'
+  },
   chatHeader: {
     moreActions: 'More conversation actions',
     copySessionId: 'Copy Session ID',

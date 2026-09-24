@@ -94,6 +94,9 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         libsqlite3-0 \
         python3 python3-pip python3-dev libffi-dev libssl-dev \
         nodejs npm \
+        chromium pandoc \
+        texlive-xetex texlive-lang-chinese texlive-fonts-recommended \
+        libfontconfig1 fonts-noto-cjk fonts-noto-cjk-extra fonts-noto-color-emoji fonts-liberation \
         gosu \
         ffmpeg && \
     python3 -m pip install --break-system-packages --upgrade pip setuptools wheel && \
@@ -104,6 +107,8 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
     chmod +x /usr/local/bin/uvx && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+ENV WEKNORA_EXPORT_CHROME_BIN=/usr/bin/chromium
 
 # Create data directories and set permissions
 RUN mkdir -p /data/files && \

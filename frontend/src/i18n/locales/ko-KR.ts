@@ -6320,6 +6320,16 @@ export default {
       }
     }
   },
+  chatExport: {
+    title: '문서 내보내기',
+    markdown: 'Markdown으로 내보내기',
+    pdf: 'PDF로 내보내기',
+    word: 'Word로 내보내기',
+    xlsx: 'Excel로 내보내기',
+    success: '내보내기에 성공했습니다',
+    failed: '내보내기에 실패했습니다. 잠시 후 다시 시도하세요.',
+    emptyContent: '내보낼 내용이 없습니다'
+  },
   chatHeader: {
     moreActions: '대화 추가 작업',
     copySessionId: '세션 ID 복사',

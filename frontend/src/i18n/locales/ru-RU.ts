@@ -6320,6 +6320,16 @@ export default {
       }
     }
   },
+  chatExport: {
+    title: 'Экспорт документа',
+    markdown: 'Экспорт в Markdown',
+    pdf: 'Экспорт в PDF',
+    word: 'Экспорт в Word',
+    xlsx: 'Экспорт в Excel',
+    success: 'Экспорт выполнен',
+    failed: 'Не удалось экспортировать документ. Повторите попытку позже.',
+    emptyContent: 'Нет содержимого для экспорта'
+  },
   chatHeader: {
     moreActions: 'Другие действия с диалогом',
     copySessionId: 'Копировать ID сессии',

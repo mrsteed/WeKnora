@@ -416,6 +416,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewOrganizationHandler))
 	must(container.Provide(handler.NewOrgTreeHandler))
 	must(container.Provide(handler.NewMemoryHandler))
+	must(container.Provide(handler.NewExportHandler))
 
 	// Data source handler
 	must(container.Provide(handler.NewDataSourceHandler))

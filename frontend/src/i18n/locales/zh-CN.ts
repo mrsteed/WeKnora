@@ -6411,6 +6411,16 @@ export default {
       }
     }
   },
+  chatExport: {
+    title: '导出文档',
+    markdown: '导出为 Markdown',
+    pdf: '导出为 PDF',
+    word: '导出为 Word',
+    xlsx: '导出为 Excel',
+    success: '导出成功',
+    failed: '导出失败，请稍后重试',
+    emptyContent: '当前内容为空，无法导出'
+  },
   chatHeader: {
     moreActions: '更多对话操作',
     copySessionId: '复制会话 ID',

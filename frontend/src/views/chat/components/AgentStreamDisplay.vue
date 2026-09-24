@@ -328,6 +328,7 @@
               </div>
               <div v-if="answerFullyRendered && event.done && event.content && event.content.trim() && !embeddedMode"
                 class="answer-toolbar">
+                <ExportDropdown v-if="canExportAnswer(event)" :content="resolveAnswerExportContent(event)" />
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer(event)"
                   :title="$t('agent.copy')">
                   <t-icon name="copy" />
@@ -534,6 +535,7 @@ import 'katex/dist/katex.min.css';
 import ToolResultRenderer from './ToolResultRenderer.vue';
 import ToolApprovalCard from './ToolApprovalCard.vue';
 import McpOAuthCard from './McpOAuthCard.vue';
+import ExportDropdown from './ExportDropdown.vue';
 import ChatRequestInfoButton from '@/components/ChatRequestInfoButton.vue';
 import ChatCitationFloat from '@/components/ChatCitationFloat.vue';
 import picturePreview from '@/components/picture-preview.vue';
@@ -569,6 +571,7 @@ import {
   injectCachedMermaidSvg,
 } from '@/utils/chatMessageShared';
 import { copyWithToast } from '@/utils/clipboard';
+import { resolveChatExportContent } from '@/utils/exportUtils';
 import {
   configureMarkedForChatMarkdown,
   renderChatMarkdown,
@@ -866,6 +869,13 @@ const embedAuthProps = computed(() => ({
 const showRequestInfo = computed(
   () => !props.embeddedMode && !!(props.session?.request_id || props.session?.id),
 );
+
+const resolveAnswerExportContent = (answerEvent?: any): string => {
+	const fallbackContent = typeof answerEvent?.content === 'string' ? answerEvent.content : '';
+	return resolveChatExportContent(props.session as any, fallbackContent);
+};
+
+const canExportAnswer = (answerEvent?: any): boolean => Boolean(resolveAnswerExportContent(answerEvent));
 
 const {
   memoryItems,

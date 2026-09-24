@@ -88,6 +88,7 @@ type RouterParams struct {
 	WeKnoraCloudHandler          *handler.WeKnoraCloudHandler
 	WikiPageHandler              *handler.WikiPageHandler
 	MemoryHandler                *handler.MemoryHandler
+	ExportHandler                *handler.ExportHandler
 }
 
 // NewRouter 创建新的路由
@@ -295,6 +296,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler, rbacGuards)
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler, rbacGuards)
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
+		RegisterExportRoutes(v1, params.ExportHandler)
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 
 		// Fail fast if any declared API-key policy points at a route
@@ -364,4 +366,17 @@ func RegisterOrgTreeSuperAdminRoutes(r *gin.RouterGroup, orgTreeHandler *handler
 	}
 	r.PUT("/org-tree/super-admin", orgTreeHandler.SetSuperAdmin)
 	r.PUT("/org-tree/:id/users/:user_id/password", orgTreeHandler.UpdateUserPasswordInOrg)
+}
+
+// RegisterExportRoutes 注册文档导出相关的路由。
+func RegisterExportRoutes(r *gin.RouterGroup, exportHandler *handler.ExportHandler) {
+	if exportHandler == nil {
+		return
+	}
+	exportGroup := r.Group("/export")
+	{
+		exportGroup.POST("/document", exportHandler.ExportDocument)
+		exportGroup.GET("/capabilities", exportHandler.ExportCapabilities)
+		exportGroup.POST("/html", exportHandler.ExportHTML)
+	}
 }
