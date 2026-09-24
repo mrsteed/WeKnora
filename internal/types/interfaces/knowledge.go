@@ -99,6 +99,16 @@ type KnowledgeService interface {
 	) (int64, error)
 	// RenameKnowledgeFolder moves a folder and everything below it to a new path.
 	RenameKnowledgeFolder(ctx context.Context, kbID string, from string, to string) (int64, error)
+
+	// CreateKnowledgeFolder ensures a (possibly empty) folder exists by
+	// materializing a placeholder row when the folder holds no real document.
+	// Returns the normalized path and whether a placeholder was inserted.
+	CreateKnowledgeFolder(ctx context.Context, kbID string, folderPath string) (string, bool, error)
+	// DeleteKnowledgeFolder removes an EMPTY folder: only its placeholder
+	// row is deleted. A folder holding real documents (directly or in any
+	// descendant) is refused with a conflict error whose details carry the
+	// total document count. Returns the number of deleted rows (0 or 1).
+	DeleteKnowledgeFolder(ctx context.Context, kbID string, folderPath string) (int64, error)
 	// DeleteKnowledge deletes knowledge by ID.
 	DeleteKnowledge(ctx context.Context, id string) error
 	// DeleteKnowledgeList deletes multiple knowledge entries by IDs.
@@ -280,6 +290,26 @@ type KnowledgeRepository interface {
 		from string,
 		to string,
 	) (int64, error)
+	// HasKnowledgeInFolder reports whether the folder or any of its descendants
+	// holds a real (non-placeholder) knowledge entry.
+	HasKnowledgeInFolder(
+		ctx context.Context,
+		tenantID uint64,
+		kbID string,
+		folderPath string,
+	) (bool, error)
+	// DeleteFolderPlaceholder soft-deletes the given placeholder row (it is a
+	// synthetic marker row, never a real document; the type guard makes sure
+	// a real row can never be removed through this method).
+	DeleteFolderPlaceholder(ctx context.Context, placeholder *types.Knowledge) (int64, error)
+	// GetFolderPlaceholder returns the existing empty-folder placeholder row if
+	// any, or nil when the folder holds only real documents.
+	GetFolderPlaceholder(
+		ctx context.Context,
+		tenantID uint64,
+		kbID string,
+		folderPath string,
+	) (*types.Knowledge, error)
 	// AminusB returns the IDs of knowledge in A that have no counterpart in B,
 	// comparing file_hash as a multiset (so duplicate-count differences and
 	// NULL/empty hashes are handled correctly, letting a clone converge).

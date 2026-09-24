@@ -16,7 +16,20 @@ const (
 	KnowledgeTypeManual = "manual"
 	// KnowledgeTypeFAQ represents the FAQ knowledge type
 	KnowledgeTypeFAQ = "faq"
+	// KnowledgeTypeFolderPlaceholder represents a synthetic knowledge row that
+	// makes an otherwise empty folder visible in the sidebar tree. Folders are
+	// derived from the folder_path column of real entries, so without a
+	// placeholder an explicitly created empty folder would simply not exist.
+	// Placeholder rows are excluded from document lists, search, counts and
+	// download/preview; only the folder tree consumes them.
+	KnowledgeTypeFolderPlaceholder = "folder_placeholder"
 )
+
+// FolderPlaceholderFileName is the sentinel file_name of a folder placeholder
+// row. It is a dot-prefixed hidden style name so it never collides with a
+// user-chosen document name and never renders as a plausible file. It must stay
+// plain ASCII: a NUL byte here is rejected by PostgreSQL UTF8 (SQLSTATE 22021).
+const FolderPlaceholderFileName = ".folder-placeholder"
 
 // Channel constants identify through which channel a knowledge entry was ingested.
 // Aligned with Message.Channel values ("web", "api", "im") but allows finer granularity.

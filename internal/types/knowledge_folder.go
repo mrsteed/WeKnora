@@ -231,3 +231,25 @@ func BuildKnowledgeFolderTree(counts []*KnowledgeFolderCount) *KnowledgeFolderTr
 	sortNodes(tree.Folders)
 	return tree
 }
+
+// NewFolderPlaceholder builds the synthetic knowledge row that makes an
+// otherwise empty folder visible in the sidebar tree. It is deliberately
+// minimal: no file, no parse pipeline, no embeddings — the row only exists to
+// carry a folder_path. Callers must not re-parse or download it.
+func NewFolderPlaceholder(tenantID uint64, kbID string, id, folderPath string) *Knowledge {
+	return &Knowledge{
+		ID:              id,
+		TenantID:        tenantID,
+		KnowledgeBaseID: kbID,
+		Type:            KnowledgeTypeFolderPlaceholder,
+		FileName:        FolderPlaceholderFileName,
+		FolderPath:      folderPath,
+		ParseStatus:     ParseStatusCompleted,
+	}
+}
+
+// IsFolderPlaceholder reports whether the entry is a synthetic empty-folder
+// marker rather than a real document.
+func (k Knowledge) IsFolderPlaceholder() bool {
+	return k.Type == KnowledgeTypeFolderPlaceholder
+}

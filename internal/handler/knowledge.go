@@ -1224,6 +1224,13 @@ type RenameKnowledgeFolderRequest struct {
 	To   string `json:"to"   binding:"required"`
 }
 
+// CreateKnowledgeFolderRequest is the payload for creating (or ensuring) an
+// empty folder inside a knowledge base.
+type CreateKnowledgeFolderRequest struct {
+	// Path is the full slash-separated folder path, relative to the KB root.
+	Path string `json:"path" binding:"required"`
+}
+
 // RenameKnowledgeFolder godoc
 // @Summary      重命名或移动文件夹
 // @Description  把一个文件夹及其所有子目录改到新路径。目标路径已存在时两个文件夹合并；不能移动到自身子目录下
@@ -1279,6 +1286,102 @@ func (h *KnowledgeHandler) RenameKnowledgeFolder(c *gin.Context) {
 			"moved_count": affected,
 			"folder_path": types.NormalizeKnowledgeFolderPath(req.To),
 		},
+	})
+}
+
+// CreateKnowledgeFolder materializes an empty folder in the sidebar tree. The
+// folder is backed by a synthetic placeholder document (issue: folders are a
+// projection of knowledge rows, so an empty one needs a marker row).
+func (h *KnowledgeHandler) CreateKnowledgeFolder(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req CreateKnowledgeFolderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewBadRequestError("Invalid request parameters: " + err.Error()))
+		return
+	}
+
+	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccess(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+		c.Error(errors.NewForbiddenError("No permission to modify knowledge"))
+		return
+	}
+	if err := h.requireKBOwnershipOrAdmin(c, kbID); err != nil {
+		c.Error(err)
+		return
+	}
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, effectiveTenantID)
+
+	folderPath, created, err := h.kgService.CreateKnowledgeFolder(ctx, kbID, req.Path)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    gin.H{"folder_path": folderPath, "created": created},
+	})
+}
+
+// DeleteKnowledgeFolderRequest is the payload for deleting an empty folder.
+// Only folders holding no real document can be deleted; non-empty folders are
+// refused with HTTP 409 and the subtree document count in the error details.
+type DeleteKnowledgeFolderRequest struct {
+	Path string `json:"path" binding:"required"`
+}
+
+// DeleteKnowledgeFolder deletes an empty folder. Folders derived from real
+// documents disappear on their own when the last document leaves them; this
+// endpoint only ever removes the synthetic placeholder that keeps an empty
+// folder visible in the sidebar tree.
+func (h *KnowledgeHandler) DeleteKnowledgeFolder(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req DeleteKnowledgeFolderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewBadRequestError("Invalid request parameters: " + err.Error()))
+		return
+	}
+
+	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccess(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+		c.Error(errors.NewForbiddenError("No permission to modify knowledge"))
+		return
+	}
+	if err := h.requireKBOwnershipOrAdmin(c, kbID); err != nil {
+		c.Error(err)
+		return
+	}
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, effectiveTenantID)
+
+	deleted, err := h.kgService.DeleteKnowledgeFolder(ctx, kbID, req.Path)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    gin.H{"folder_path": req.Path, "deleted": deleted},
 	})
 }
 

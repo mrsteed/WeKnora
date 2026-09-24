@@ -20,6 +20,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -643,7 +644,108 @@ func (s *knowledgeService) RenameKnowledgeFolder(ctx context.Context,
 	return affected, nil
 }
 
-// normalizeTargetFolderPath canonicalizes a caller-supplied destination folder
+// CreateKnowledgeFolder ensures a (possibly empty) folder exists under the given
+// path by materializing a synthetic placeholder row when no real document lives
+// there yet. Creating a folder that already exists is a no-op.
+func (s *knowledgeService) CreateKnowledgeFolder(ctx context.Context,
+	kbID string, folderPath string,
+) (string, bool, error) {
+	target, err := normalizeTargetFolderPath(ctx, folderPath)
+	if err != nil {
+		return "", false, err
+	}
+	if target == "" {
+		return "", false, werrors.NewBadRequestError("文件夹路径不能为空")
+	}
+
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+
+	// Folders holding real documents already exist in the tree; nothing to do.
+	real, err := s.repo.HasKnowledgeInFolder(ctx, tenantID, kbID, target)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to check folder contents for %q: %v", target, err)
+		return "", false, err
+	}
+	if real {
+		return target, false, nil
+	}
+
+	// Idempotency: reuse any existing placeholder (e.g. a duplicate request).
+	if existing, err := s.repo.GetFolderPlaceholder(ctx, tenantID, kbID, target); err != nil {
+		logger.Errorf(ctx, "Failed to look up folder placeholder for %q: %v", target, err)
+		return "", false, err
+	} else if existing != nil {
+		return target, false, nil
+	}
+
+	placeholder := types.NewFolderPlaceholder(tenantID, kbID, uuid.NewString(), target)
+	if err := s.repo.CreateKnowledge(ctx, placeholder); err != nil {
+		logger.Errorf(ctx, "Failed to create folder placeholder for %q: %v", target, err)
+		return "", false, err
+	}
+	logger.Infof(ctx, "Created empty folder %q in kb %s (placeholder %s)", target, kbID, placeholder.ID)
+	return target, true, nil
+}
+
+// DeleteKnowledgeFolder removes an empty folder by deleting its placeholder
+// row. A folder that still holds real documents - in the folder itself or
+// any descendant - is refused with a 409 conflict error whose details carry
+// the total document count, so the client can suggest moving them first.
+func (s *knowledgeService) DeleteKnowledgeFolder(ctx context.Context,
+	kbID string, folderPath string,
+) (int64, error) {
+	target, err := normalizeTargetFolderPath(ctx, folderPath)
+	if err != nil {
+		return 0, err
+	}
+	if target == "" {
+		return 0, werrors.NewBadRequestError("文件夹路径不能为空")
+	}
+
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+
+	// Counts come from the same aggregation as the sidebar tree, so the number
+	// shown here and in the tree can never disagree.
+	counts, err := s.repo.ListKnowledgeFolderCounts(ctx, tenantID, kbID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to list folder counts for %q: %v", target, err)
+		return 0, err
+	}
+	var totalDocs int64
+	for _, row := range counts {
+		if row == nil || row.FolderPath == "" {
+			continue
+		}
+		if row.FolderPath == target || strings.HasPrefix(row.FolderPath, target+"/") {
+			totalDocs += row.Count
+		}
+	}
+	if totalDocs > 0 {
+		return 0, werrors.NewConflictError("目录非空，不能删除").WithDetails(map[string]any{
+			"folder_path": target,
+			"total_docs":  totalDocs,
+		})
+	}
+
+	placeholder, err := s.repo.GetFolderPlaceholder(ctx, tenantID, kbID, target)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to look up folder placeholder for %q: %v", target, err)
+		return 0, err
+	}
+	if placeholder == nil {
+		// No placeholder and no documents: the folder does not exist, nothing to do.
+		return 0, nil
+	}
+	deleted, err := s.repo.DeleteFolderPlaceholder(ctx, placeholder)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to delete folder placeholder %s: %v", placeholder.ID, err)
+		return 0, err
+	}
+	logger.Infof(ctx, "Deleted empty folder %q in kb %s (placeholder %s)", target, kbID, placeholder.ID)
+	return deleted, nil
+}
+
+// normalizeTargetFolderPath canonicalizes a caller-supplied destination folder// normalizeTargetFolderPath canonicalizes a caller-supplied destination folder
 // and applies the same input validation as the upload path, since the value ends
 // up rendered as sidebar tree labels.
 func normalizeTargetFolderPath(ctx context.Context, folderPath string) (string, error) {
@@ -666,6 +768,11 @@ func (s *knowledgeService) GetKnowledgeFile(ctx context.Context, id string) (io.
 	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, id)
 	if err != nil {
 		return nil, "", err
+	}
+
+	// Empty-folder placeholders are tree markers, not downloadable documents.
+	if knowledge.IsFolderPlaceholder() {
+		return nil, "", werrors.NewNotFoundError("Knowledge not found")
 	}
 
 	// Manual knowledge stores content in Metadata — stream it directly as a .md file.

@@ -145,7 +145,9 @@ func applyKnowledgeListFilter(query *gorm.DB, filter types.KnowledgeListFilter) 
 		// pipeline marks the row `deleting` before tearing down its resources; a
 		// row whose delete task exhausts its retries is flipped to `failed` by the
 		// dead-letter callback and stays visible so the failure remains actionable.
-		query = query.Where("parse_status <> ?", types.ParseStatusDeleting)
+		// Empty-folder placeholder rows are tree markers, not documents.
+		query = query.Where("parse_status <> ?", types.ParseStatusDeleting).
+			Where("type <> ?", types.KnowledgeTypeFolderPlaceholder)
 	}
 	if !filter.UpdatedFrom.IsZero() {
 		query = query.Where("updated_at >= ?", filter.UpdatedFrom)
@@ -212,14 +214,31 @@ func (r *knowledgeRepository) ListKnowledgeFolderCounts(
 	tenantID uint64,
 	kbID string,
 ) ([]*types.KnowledgeFolderCount, error) {
+	// Two-part aggregation:
+	//  1. real document counts per folder (placeholders excluded, so every
+	//     count shown in the tree only ever reflects actual documents);
+	//  2. the set of folder paths that at least contain a placeholder row,
+	//     emitted with count = 0. Without part 2, a folder holding no
+	//     documents at all would produce no group row, so the tree builder
+	//     would never materialize it and freshly created empty folders
+	//     would be invisible in the sidebar.
 	var counts []*types.KnowledgeFolderCount
-	if err := r.db.WithContext(ctx).
-		Model(&types.Knowledge{}).
-		Select("folder_path AS folder_path, COUNT(*) AS count").
-		Where("tenant_id = ? AND knowledge_base_id = ? AND parse_status <> ?",
-			tenantID, kbID, types.ParseStatusDeleting).
-		Group("folder_path").
-		Find(&counts).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(`
+	  SELECT folder_path, count FROM (
+	    SELECT folder_path AS folder_path, COUNT(*) AS count
+	    FROM knowledges
+	    WHERE tenant_id = ? AND knowledge_base_id = ?
+	      AND parse_status <> ? AND type <> ? AND deleted_at IS NULL
+	    GROUP BY folder_path
+	    UNION
+	    SELECT DISTINCT folder_path, 0 AS count
+	    FROM knowledges
+	    WHERE tenant_id = ? AND knowledge_base_id = ?
+	      AND type = ? AND deleted_at IS NULL
+	  ) AS folder_counts`,
+		tenantID, kbID, types.ParseStatusDeleting, types.KnowledgeTypeFolderPlaceholder,
+		tenantID, kbID, types.KnowledgeTypeFolderPlaceholder).
+		Scan(&counts).Error; err != nil {
 		return nil, err
 	}
 	return counts, nil
@@ -304,6 +323,62 @@ func (r *knowledgeRepository) RenameKnowledgeFolderPath(
 	return affected, nil
 }
 
+// GetFolderPlaceholder returns the existing empty-folder placeholder row for the
+// given folder, or nil when none exists yet.
+func (r *knowledgeRepository) GetFolderPlaceholder(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+	folderPath string,
+) (*types.Knowledge, error) {
+	var k types.Knowledge
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND knowledge_base_id = ? AND folder_path = ? AND type = ?",
+			tenantID, kbID, folderPath, types.KnowledgeTypeFolderPlaceholder).
+		First(&k).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &k, nil
+}
+
+// HasKnowledgeInFolder reports whether the folder or any of its descendants holds
+// a real (non-placeholder) knowledge entry that is not mid-deletion.
+func (r *knowledgeRepository) HasKnowledgeInFolder(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+	folderPath string,
+) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&types.Knowledge{}).
+		Where("tenant_id = ? AND knowledge_base_id = ? AND type <> ? AND parse_status <> ?",
+			tenantID, kbID, types.KnowledgeTypeFolderPlaceholder, types.ParseStatusDeleting).
+		Where("folder_path = ? OR folder_path LIKE ? ESCAPE ?",
+			folderPath, escapeLikeKeyword(folderPath)+"/%", likeEscapeChar).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// DeleteFolderPlaceholder soft-deletes the given synthetic placeholder row,
+// consistent with other knowledge rows (GORM deleted_at). The type filter
+// guards against ever deleting a real document row.
+// Returns the number of deleted rows (0 or 1).
+func (r *knowledgeRepository) DeleteFolderPlaceholder(ctx context.Context, placeholder *types.Knowledge) (int64, error) {
+	res := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND knowledge_base_id = ? AND id = ? AND type = ?",
+			placeholder.TenantID, placeholder.KnowledgeBaseID, placeholder.ID, types.KnowledgeTypeFolderPlaceholder).
+		Delete(&types.Knowledge{})
+	return res.RowsAffected, res.Error
+}
+
 // UpdateKnowledge updates knowledge
 func (r *knowledgeRepository) UpdateKnowledge(ctx context.Context, knowledge *types.Knowledge) error {
 	omit := omitFieldsOnUpdate
@@ -355,7 +430,8 @@ func (r *knowledgeRepository) CheckKnowledgeExists(
 	params *types.KnowledgeCheckParams,
 ) (bool, *types.Knowledge, error) {
 	query := r.db.WithContext(ctx).Model(&types.Knowledge{}).
-		Where("tenant_id = ? AND knowledge_base_id = ? AND parse_status <> ?", tenantID, kbID, "failed")
+		Where("tenant_id = ? AND knowledge_base_id = ? AND parse_status <> ? AND type <> ?",
+			tenantID, kbID, "failed", types.KnowledgeTypeFolderPlaceholder)
 
 	switch params.Type {
 	case "file":
@@ -815,7 +891,8 @@ func (r *knowledgeRepository) SearchKnowledge(
 		Joins("JOIN knowledge_bases ON knowledge_bases.id = knowledges.knowledge_base_id").
 		Where("knowledges.tenant_id = ?", tenantID).
 		Where("knowledge_bases.type = ?", types.KnowledgeBaseTypeDocument).
-		Where("knowledges.deleted_at IS NULL")
+		Where("knowledges.deleted_at IS NULL").
+		Where("knowledges.type <> ?", types.KnowledgeTypeFolderPlaceholder)
 
 	// If keyword is provided, filter by file_name or title (case-insensitive).
 	if keyword != "" {
@@ -935,7 +1012,8 @@ func (r *knowledgeRepository) SearchKnowledgeInScopes(
 		Joins("JOIN knowledge_bases ON knowledge_bases.id = knowledges.knowledge_base_id AND knowledge_bases.tenant_id = knowledges.tenant_id").
 		Where(scopeCondition, args...).
 		Where("knowledge_bases.type = ?", types.KnowledgeBaseTypeDocument).
-		Where("knowledges.deleted_at IS NULL")
+		Where("knowledges.deleted_at IS NULL").
+		Where("knowledges.type <> ?", types.KnowledgeTypeFolderPlaceholder)
 
 	if keyword != "" {
 		escaped := strings.ToLower(escapeLikeKeyword(keyword))
