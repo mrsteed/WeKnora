@@ -4388,6 +4388,8 @@ export default {
     form: {
       knowledgeBaseLabel: '目标知识库',
       knowledgeBasePlaceholder: '请选择知识库',
+      folderLabel: '目标文件夹',
+      folderPlaceholder: '可选择现有文件夹，默认知识库根目录',
       titleLabel: '知识标题',
       titlePlaceholder: '请输入标题',
       contentPlaceholder: '支持 Markdown 语法，可使用 # 标题、列表、代码块等'

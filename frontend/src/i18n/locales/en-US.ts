@@ -2088,6 +2088,8 @@ export default {
     form: {
       knowledgeBaseLabel: 'Target knowledge base',
       knowledgeBasePlaceholder: 'Select knowledge base',
+      folderLabel: 'Target folder',
+      folderPlaceholder: 'Optional. Pick an existing folder; the KB root is used by default',
       titleLabel: 'Knowledge title',
       titlePlaceholder: 'Enter title',
       contentPlaceholder: 'Supports Markdown. Use # headings, lists, code blocks, etc.'

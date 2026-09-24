@@ -4310,6 +4310,8 @@ export default {
     form: {
       knowledgeBaseLabel: 'Целевая база знаний',
       knowledgeBasePlaceholder: 'Выберите базу знаний',
+      folderLabel: 'Целевая папка',
+      folderPlaceholder: 'Необязательно: выберите существующую папку, по умолчанию — корень',
       titleLabel: 'Заголовок знания',
       titlePlaceholder: 'Введите заголовок',
       contentPlaceholder: 'Поддерживается Markdown. Используйте # заголовки, списки, блоки кода и т.д.'

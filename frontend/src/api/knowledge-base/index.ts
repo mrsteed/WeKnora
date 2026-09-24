@@ -253,6 +253,8 @@ export function createManualKnowledge(
     status: string
     tag_ids?: string[]
     process_config?: KnowledgeProcessOverrides
+    /** Optional target folder (e.g. "docs/spec"); empty = KB root. */
+    folder_path?: string
   },
 ) {
   return post(`/api/v1/knowledge-bases/${kbId}/knowledge/manual`, data);

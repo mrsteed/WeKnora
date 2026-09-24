@@ -4310,6 +4310,8 @@ export default {
     form: {
       knowledgeBaseLabel: '대상 지식베이스',
       knowledgeBasePlaceholder: '지식베이스를 선택해주세요',
+      folderLabel: '대상 폴더',
+      folderPlaceholder: '선택 사항입니다. 기존 폴더를 선택하거나 기본값인 지식베이스 루트 사용',
       titleLabel: '지식 제목',
       titlePlaceholder: '제목을 입력해주세요',
       contentPlaceholder: 'Markdown 구문을 지원합니다. # 제목, 목록, 코드 블록 등을 사용할 수 있습니다'

@@ -287,6 +287,9 @@ type ManualKnowledgePayload struct {
 	TagIDs        []string                   `json:"tag_ids"`
 	Channel       string                     `json:"channel"`
 	ProcessConfig *KnowledgeProcessOverrides `json:"process_config,omitempty"`
+	// FolderPath optionally places the new manual entry into a named folder.
+	// Empty (or missing) means the knowledge base root.
+	FolderPath string `json:"folder_path,omitempty"`
 }
 
 // KnowledgeSearchScope defines a (tenant_id, knowledge_base_id) scope for knowledge search (e.g. own KBs + shared KBs).
