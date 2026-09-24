@@ -37,11 +37,15 @@
           v-for="row in rows"
           :key="row.path || '__root__'"
           class="kb-folder-row"
+          :draggable="canDragRow(row)"
           :class="{
             active: selectedPath === row.path,
             'is-root': row.kind === 'root',
             'is-editable': canEdit && row.kind === 'folder',
             'is-menu-open': menuOpenPath === row.path,
+            'is-drop-target':
+              dragOverPath === row.path && draggingPath !== null && draggingPath !== row.path,
+            'is-dragging': draggingPath === row.path,
           }"
           :style="{ '--kb-folder-depth': row.depth }"
           :title="row.kind === 'root' ? t('knowledgeBase.folderTree.rootRowTip') : row.path"
@@ -49,6 +53,10 @@
           tabindex="0"
           @click="emit('select', row.path)"
           @keydown.enter="emit('select', row.path)"
+          @dragstart="canDragRow(row) && onFolderDragStart($event, row)"
+          @dragover.prevent="canEdit ? onFolderDragOver($event, row) : undefined"
+          @drop="canEdit ? onFolderDrop($event, row) : undefined"
+          @dragend="onFolderDragEnd"
         >
           <span
             v-if="row.hasChildren"
@@ -73,7 +81,9 @@
             ref="renameInputRef"
             v-model="renameValue"
             class="kb-folder-row__rename"
-            :placeholder="t('knowledgeBase.folderTree.renamePlaceholder')"
+            :placeholder="t(creatingUnder !== null
+              ? 'knowledgeBase.folderTree.newFolderPlaceholder'
+              : 'knowledgeBase.folderTree.renamePlaceholder')"
             @click.stop
             @keydown.enter="commitRename(row)"
             @keydown.esc="cancelRename"
@@ -85,6 +95,20 @@
             </span>
             <span class="kb-folder-row__trailing">
               <span class="kb-folder-row__count">{{ row.totalCount }}</span>
+              <t-tooltip
+                v-if="canEdit && row.kind === 'root'"
+                :content="t('knowledgeBase.folderTree.newTopFolder')"
+                placement="top"
+              >
+                <button
+                  type="button"
+                  class="kb-folder-row__icon-btn kb-folder-row__add"
+                  :aria-label="t('knowledgeBase.folderTree.newTopFolder')"
+                  @click.stop="onStartCreateTopLevel"
+                >
+                  <t-icon name="add" size="14px" />
+                </button>
+              </t-tooltip>
               <t-popup
                 v-if="canEdit && row.kind === 'folder'"
                 :visible="menuOpenPath === row.path"
@@ -108,6 +132,14 @@
                     <div class="popup-menu-item" @click="onFolderMenuRename(row)">
                       <t-icon name="edit" class="menu-icon" />
                       <span>{{ t('knowledgeBase.folderTree.rename') }}</span>
+                    </div>
+                    <div class="popup-menu-item" @click="onMenuCreateSubfolder(row)">
+                      <t-icon name="folder-add" class="menu-icon" />
+                      <span>{{ t('knowledgeBase.folderTree.newSubfolder') }}</span>
+                    </div>
+                    <div class="popup-menu-item is-danger" @click="onFolderMenuDelete(row)">
+                      <t-icon name="delete" class="menu-icon" />
+                      <span>{{ t('knowledgeBase.folderTree.delete') }}</span>
                     </div>
                   </div>
                 </template>
@@ -149,6 +181,9 @@ const emit = defineEmits<{
   select: [path: string]
   'update:collapsed': [collapsed: boolean]
   rename: [payload: { from: string; to: string }]
+  create: [path: string]
+  delete: [path: string]
+  move: [payload: { from: string; to: string }]
 }>()
 
 const { t } = useI18n()
@@ -158,6 +193,9 @@ const expanded = ref(new Set<string>([ROOT_FOLDER_PATH]))
 // null, not '', because '' is the root's own path: a falsy sentinel would put
 // the root row into rename mode permanently.
 const renamingPath = ref<string | null>(null)
+// Creation reuses the rename input: `creatingUnder` holds the parent path of
+// the folder being created (ROOT_FOLDER_PATH for a top-level folder).
+const creatingUnder = ref<string | null>(null)
 const menuOpenPath = ref<string | null>(null)
 const renameValue = ref('')
 const renameInputRef = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
@@ -168,7 +206,12 @@ const isExpanded = (path: string) => expanded.value.has(path)
 
 // The root has no name of its own to edit, and excluding it here means no
 // sentinel value can ever put it into rename mode.
-const isRenaming = (row: FolderRow) => row.kind === 'folder' && renamingPath.value === row.path
+const isRenaming = (row: FolderRow):
+  boolean =>
+  (row.kind === 'folder' && renamingPath.value === row.path) ||
+  (creatingUnder.value !== null &&
+    ((creatingUnder.value === ROOT_FOLDER_PATH && row.kind === 'root') ||
+      creatingUnder.value === row.path))
 
 const toggle = (path: string) => {
   const next = new Set(expanded.value)
@@ -178,6 +221,7 @@ const toggle = (path: string) => {
 }
 
 const startRename = async (row: FolderRow) => {
+  creatingUnder.value = null
   renamingPath.value = row.path
   renameValue.value = row.name
   await nextTick()
@@ -195,19 +239,99 @@ const onFolderMenuRename = async (row: FolderRow) => {
   await startRename(row)
 }
 
+const onMenuCreateSubfolder = async (row: FolderRow) => {
+  menuOpenPath.value = null
+  renamingPath.value = null
+  creatingUnder.value = row.path
+  renameValue.value = ''
+  await nextTick()
+  const input = Array.isArray(renameInputRef.value) ? renameInputRef.value[0] : renameInputRef.value
+  input?.focus()
+}
+
+// Deletion is always possible from the menu; whether the folder is actually
+// empty is decided by the parent (which shows the confirm dialog / the
+// "move documents first" message) and enforced again by the backend.
+const onFolderMenuDelete = (row: FolderRow) => {
+  menuOpenPath.value = null
+  emit('delete', row.path)
+}
+
+// Top-level folder creation, triggered from the root row's plus button.
+const onStartCreateTopLevel = async () => {
+  renamingPath.value = null
+  creatingUnder.value = ROOT_FOLDER_PATH
+  renameValue.value = ''
+  await nextTick()
+  const input = Array.isArray(renameInputRef.value) ? renameInputRef.value[0] : renameInputRef.value
+  input?.focus()
+}
+
 const cancelRename = () => {
   renamingPath.value = null
+  creatingUnder.value = null
   renameValue.value = ''
 }
 
 const commitRename = (row: FolderRow) => {
   if (!isRenaming(row)) return
   const name = renameValue.value.trim()
+  const wasCreating = creatingUnder.value
   cancelRename()
+  if (wasCreating !== null) {
+    // Creation mode: the edited text is the new folder's name.
+    if (!name) return
+    emit('create', joinFolderPath(wasCreating, name))
+    return
+  }
   // Only the last segment is edited here; the folder keeps its place in the tree.
   if (!name || name === row.name) return
   const parent = row.path.slice(0, Math.max(0, row.path.length - row.name.length - 1))
   emit('rename', { from: row.path, to: joinFolderPath(parent, name) })
+}
+
+// ----- Drag & drop: move a folder by dropping it onto another folder (or the
+// root). Mirrors the org tree's HTML5 DnD: dropping a folder onto a target makes
+// it a direct child of that target. Persistence reuses the same rename/move
+// endpoint the parent wires up (PUT .../knowledge/folders), which re-paths the
+// whole subtree; the self-subtree guard lives in the parent via
+// canMoveFolderTo, plus the local check below. -----
+const draggingPath = ref<string | null>(null)
+const dragOverPath = ref<string | null>(null)
+
+const canDragRow = (row: FolderRow) =>
+  props.canEdit && row.kind === 'folder' && !isRenaming(row)
+
+const onFolderDragStart = (e: DragEvent, row: FolderRow) => {
+  draggingPath.value = row.path
+  const dt = e.dataTransfer
+  if (dt) {
+    dt.effectAllowed = 'move'
+    dt.setData('text/plain', row.path)
+    dt.setData('application/x-kb-folder-name', row.name)
+  }
+}
+
+const onFolderDragOver = (e: DragEvent, row: FolderRow) => {
+  if (!draggingPath.value) return
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+  dragOverPath.value = row.path
+}
+
+const onFolderDrop = (e: DragEvent, row: FolderRow) => {
+  const from = e.dataTransfer?.getData('text/plain')
+  const draggedName = e.dataTransfer?.getData('application/x-kb-folder-name')
+  dragOverPath.value = null
+  draggingPath.value = null
+  if (!from || !draggedName || from === row.path) return
+  // Never let a folder land inside its own subtree — that would strand it.
+  if (row.path.startsWith(`${from}/`)) return
+  emit('move', { from, to: joinFolderPath(row.path, draggedName) })
+}
+
+const onFolderDragEnd = () => {
+  dragOverPath.value = null
+  draggingPath.value = null
 }
 
 // Keep the selected folder reachable: expand the root and every folder above
@@ -356,6 +480,15 @@ watch(
   &.is-root .kb-folder-row__label {
     font-weight: 500;
   }
+
+  &.is-drop-target {
+    background: var(--td-brand-color-light, color-mix(in srgb, var(--td-brand-color) 12%, transparent));
+    box-shadow: inset 0 0 0 1px var(--td-brand-color);
+  }
+
+  &.is-dragging {
+    opacity: 0.5;
+  }
 }
 
 .kb-folder-row__toggle,
@@ -447,6 +580,28 @@ watch(
   .kb-folder-row__more {
     display: inline-flex;
   }
+}
+
+.kb-folder-row__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--td-text-color-secondary, #888);
+  cursor: pointer;
+  visibility: hidden;
+  &:hover {
+    background: var(--td-bg-color-secondarycontainer, rgba(0, 0, 0, 0.05));
+    color: var(--td-brand-color, #0052d9);
+  }
+}
+.kb-folder-row:hover .kb-folder-row__add,
+.kb-folder-row:focus-within .kb-folder-row__add {
+  visibility: visible;
 }
 
 .kb-folder-row__more.is-open {

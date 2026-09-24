@@ -341,6 +341,17 @@ export function renameKnowledgeFolder(kbId: string, from: string, to: string) {
   return put(`/api/v1/knowledge-bases/${kbId}/knowledge/folders`, { from, to });
 }
 
+/** Create (or ensure) an empty folder at the given full path. */
+export function createKnowledgeFolder(kbId: string, path: string) {
+  return post(`/api/v1/knowledge-bases/${kbId}/knowledge/folders`, { path });
+}
+
+/** Delete an empty folder at the given full path. Non-empty folders are
+ *  refused by the backend with HTTP 409 and `total_docs` in the error. */
+export function deleteKnowledgeFolder(kbId: string, path: string) {
+  return del(`/api/v1/knowledge-bases/${kbId}/knowledge/folders`, { path });
+}
+
 export function getKnowledgeDetails(id: string, options?: { agent_id?: string; agent_source_tenant_id?: string }) {
   const query = new URLSearchParams();
   if (options?.agent_id) query.set('agent_id', options.agent_id);

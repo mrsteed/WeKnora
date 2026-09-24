@@ -38,6 +38,8 @@ import {
   listKnowledgeFolders,
   moveKnowledgeToFolder,
   renameKnowledgeFolder,
+  createKnowledgeFolder,
+  deleteKnowledgeFolder,
   downKnowledgeDetails,
   batchDownloadKnowledge,
   type KnowledgeFolderTree,
@@ -874,6 +876,124 @@ const handleFolderRename = async ({ from, to }: { from: string; to: string }) =>
   }
 };
 
+// Drag-and-drop move from the folder tree. The tree hands over { from, to } where
+// `to` is the target folder path with the dragged folder's own name appended
+// ("drop onto X" makes it a child of X, including the root). It is the same
+// whole-subtree re-path as a rename, so it reuses the rename endpoint and the
+// identical selected-folder remap below.
+const handleFolderMove = async ({ from, to }: { from: string; to: string }) => {
+  if (!kbId.value || !to || from === to) return;
+  if (!canMoveFolderTo(from, to)) {
+    MessagePlugin.warning(t('knowledgeBase.folderTree.renameInvalid'));
+    return;
+  }
+  try {
+    const res: any = await renameKnowledgeFolder(kbId.value, from, to);
+    const movedCount = res?.data?.moved_count ?? 0;
+    if (movedCount === 0) {
+      MessagePlugin.warning(t('knowledgeBase.folderTree.moveFailed'));
+      await loadFolderTree(kbId.value);
+      return;
+    }
+    MessagePlugin.success(t('knowledgeBase.folderTree.moveSuccess'));
+    // Follow the folder to its new path so the user stays where they were.
+    if (selectedFolderPath.value === from) {
+      selectedFolderPath.value = to;
+    } else if (selectedFolderPath.value.startsWith(`${from}/`)) {
+      selectedFolderPath.value = to + selectedFolderPath.value.slice(from.length);
+    }
+    resetPage();
+    await loadKnowledgeFiles(kbId.value);
+    await loadFolderTree(kbId.value);
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('knowledgeBase.folderTree.moveFailed'));
+  }
+};
+
+// Empty-folder creation from the tree (root "+" button or a folder's context
+// menu). The backend materializes a placeholder row only when no real document
+// exists at the path, so the call is safe to issue for existing folders too.
+const handleFolderCreate = async (path: string) => {
+  if (!kbId.value || !path) return;
+  try {
+    await createKnowledgeFolder(kbId.value, path);
+    MessagePlugin.success(t('knowledgeBase.folderTree.createSuccess'));
+    // Open the new folder: expand everything on its path and select it.
+    selectedFolderPath.value = path;
+    resetPage();
+    await loadFolderTree(kbId.value);
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('knowledgeBase.folderTree.createFailed'));
+    await loadFolderTree(kbId.value);
+  }
+};
+
+/** Name of the folder at `path`, for confirm-dialog copy. */
+const folderNameAt = (tree: any, path: string) => {
+  const idx = path.lastIndexOf('/');
+  return idx >= 0 ? path.slice(idx + 1) : path;
+};
+
+const handleFolderDelete = (path: string) => {
+  if (!kbId.value || !path || path === ROOT_FOLDER_PATH) return;
+  // `rows` in the tree is derived from the same payload; here we read the
+  // counts straight from the cached tree so the confirm copy matches what is
+  // displayed (the backend re-checks and is authoritative).
+  let docCount = 0;
+  const walk = (nodes: any[]) => {
+    for (const n of nodes || []) {
+      if (n.path === path) {
+        // Mirror the row badge: total_count is the number the tree displays,
+        // and it already includes every descendant folder.
+        docCount = n.total_count || 0;
+        return true;
+      }
+      if (n.children?.length && walk(n.children)) return true;
+    }
+    return false;
+  };
+  walk(folderTree.value?.folders || []);
+  const name = folderNameAt(folderTree.value, path);
+  if (docCount > 0) {
+    MessagePlugin.warning(
+      t('knowledgeBase.folderTree.deleteBlocked', { name, count: docCount }),
+    );
+    return;
+  }
+  // Inline confirm card (same visual style as the KB-list delete dialog):
+  // the heavy modal confirm feels overkill for a single empty folder.
+  folderDeleteTarget.value = { path, name };
+  folderDeleteDialogVisible.value = true;
+};
+
+const folderDeleteDialogVisible = ref(false);
+const folderDeleteTarget = ref<{ path: string; name: string } | null>(null);
+
+const confirmFolderDelete = async () => {
+  const target = folderDeleteTarget.value;
+  if (!kbId.value || !target) {
+    folderDeleteDialogVisible.value = false;
+    return;
+  }
+  const { path } = target;
+  folderDeleteDialogVisible.value = false;
+  try {
+    await deleteKnowledgeFolder(kbId.value, path);
+    MessagePlugin.success(t('knowledgeBase.folderTree.deleteSuccess'));
+    // A deleted folder can no longer be the browse location: fall back to
+    // the root, mirroring the existing stale-path recovery at tree load.
+    if (selectedFolderPath.value === path || selectedFolderPath.value.startsWith(path + '/')) {
+      selectedFolderPath.value = ROOT_FOLDER_PATH;
+    }
+    resetPage();
+    await loadFolderTree(kbId.value);
+    await loadKnowledgeFiles(kbId.value);
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('knowledgeBase.folderTree.deleteFailed'));
+    await loadFolderTree(kbId.value);
+  }
+};
+
 const handleFolderTreeCollapsedChange = (value: boolean) => {
   folderTreeCollapsed.value = value;
   writeStoredFlag(FOLDER_TREE_COLLAPSED_KEY, value);
@@ -1119,7 +1239,12 @@ watch(() => kbId.value, (newKbId, oldKbId) => {
     folderTree.value = null;
     selectedFolderPath.value = ROOT_FOLDER_PATH;
   }
-  loadKnowledgeBaseInfo(newKbId);
+  // Cold start (e.g. opening a ?knowledge_id= link in a new tab): the initial
+  // root-level list is loaded here and the cardList watcher below will only
+  // react to non-empty lists, so kick the locate funnel once this load settles.
+  loadKnowledgeBaseInfo(newKbId).then(() => {
+    if (pendingKnowledgeId.value) void tryAutoOpenDocument();
+  });
 }, { immediate: true });
 
 watch(selectedTagIds, (newVal, oldVal) => {
@@ -1229,17 +1354,123 @@ const pendingKnowledgeId = ref<string | null>(
   (route.query.knowledge_id as string) || null
 );
 
-const tryAutoOpenDocument = () => {
-  if (!pendingKnowledgeId.value || !cardList.value?.length) return;
+// Current locate target (drives the pulse highlight + cleanup on unmount).
+const locatingKnowledgeId = ref<string | null>(null);
+let locateTimer: number | null = null;
+
+const scrollToAndHighlight = (id: string) => {
+  locatingKnowledgeId.value = id;
+  let attempts = 0;
+  const tick = () => {
+    const el: HTMLElement | null =
+      document.querySelector(`.knowledge-card[data-select-id="${id}"]`) ||
+      document.querySelector(`.doc-list-row[data-select-id="${id}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('knowledge-locate-highlight');
+      window.setTimeout(() => {
+        el.classList.remove('knowledge-locate-highlight');
+        if (locatingKnowledgeId.value === id) locatingKnowledgeId.value = null;
+      }, 3000);
+    } else if (++attempts < 30) {
+      // Card is still rendering; keep polling.
+      requestAnimationFrame(tick);
+    }
+  };
+  requestAnimationFrame(tick);
+};
+const waitForCard = (id: string, tries: number, delay: number): Promise<boolean> =>
+  new Promise((resolve) => {
+    if (id !== locatingKnowledgeId.value) return resolve(false); // superseded by a newer target
+    let n = 0;
+    const tick = () => {
+      if (id !== locatingKnowledgeId.value) return;
+      if (cardList.value?.find((c: KnowledgeCard) => c.id === id)) return resolve(true);
+      if (++n >= tries) return resolve(false);
+      locateTimer = window.setTimeout(tick, delay);
+    };
+    tick();
+  });
+
+const clearLocateState = (id: string) => {
+  if (locateTimer) { clearTimeout(locateTimer); locateTimer = null; }
+  if (locatingKnowledgeId.value === id) locatingKnowledgeId.value = null;
+};
+
+const tryAutoOpenDocument = async () => {
   const targetId = pendingKnowledgeId.value;
+  if (!targetId || isFAQ.value) return;
+  if (locatingKnowledgeId.value && locatingKnowledgeId.value !== targetId) return; // locate in flight
   pendingKnowledgeId.value = null;
-  const card = cardList.value.find((c: KnowledgeCard) => c.id === targetId);
-  if (card) {
-    nextTick(() => openCardDetails(card));
+  locatingKnowledgeId.value = targetId;
+
+  // ① Fetch the single doc first: a ?knowledge_id= link may point at a doc that
+  // lives in a sub-folder the current root-level list does not contain.
+  let meta: any = null;
+  try {
+    const r: any = await getKnowledgeDetails(targetId);
+    if (r?.success && r.data) meta = r.data;
+  } catch { /* deleted / no permission → fall through to fallback */ }
+  if (locatingKnowledgeId.value !== targetId) return; // superseded by a newer target
+  if (!kbId.value) { clearLocateState(targetId); return; }
+
+  const locateInLoaded = () => !!cardList.value?.find((c: KnowledgeCard) => c.id === targetId);
+  const rememberRestore = () => ({
+    folder: selectedFolderPath.value,
+    keyword: docSearchKeyword.value,
+    page,
+  });
+  // Reset the paged-in state (handleScroll bumps `page` for lazy loading) and
+  // restore the browsing state. The keyword/folder watchers may schedule one
+  // harmless extra reload, which settles to the same restored view.
+  const restoreState = (saved: ReturnType<typeof rememberRestore>) => {
+    resetPage();
+    knowledgeScroll.value?.scrollTo({ top: 0 });
+    docSearchKeyword.value = saved.keyword;
+    selectedFolderPath.value = saved.folder;
+    page = saved.page;
+  };
+
+  // ② Already in the loaded list → scroll + highlight + open drawer.
+  if (locateInLoaded()) {
+    scrollToAndHighlight(targetId);
+    nextTick(() => openCardDetails(cardList.value.find((c: KnowledgeCard) => c.id === targetId)!));
+    return;
+  }
+
+  const saved = rememberRestore();
+
+  // ③ Navigate into the target's own folder so its card enters the list.
+  if (meta?.folder_path) {
+    selectedFolderPath.value = meta.folder_path;
+    await loadKnowledgeFiles(kbId.value);
+    if (locateInLoaded()) {
+      scrollToAndHighlight(targetId);
+      nextTick(() => openCardDetails(cardList.value.find((c: KnowledgeCard) => c.id === targetId)!));
+      return;
+    }
+  }
+
+  // ④ Fallback: full-KB search by exact file name (folder_recursive kicks in via isFiltering).
+  if (meta?.file_name || meta?.title) {
+    docSearchKeyword.value = (meta.file_name || meta.title).trim();
+    await loadKnowledgeFiles(kbId.value);
+  }
+
+  // ⑤ Retry window covers lazy loading, slow folder trees and re-renders.
+  const found = await waitForCard(targetId, 8, 300);
+  if (locatingKnowledgeId.value !== targetId) return; // superseded
+  if (found) {
+    scrollToAndHighlight(targetId);
+    nextTick(() => openCardDetails(cardList.value.find((c: KnowledgeCard) => c.id === targetId)!));
   } else {
-    nextTick(() => {
-      openCardDetails({ id: targetId } as KnowledgeCard);
-    });
+    // ⑥ Document not reachable for this user (deleted / cross-tenant): restore
+    // browsing state and open an empty-shell drawer (its own fetch will surface
+    // the 404/403 path) instead of leaving the user with a random folder.
+    restoreState(saved);
+    clearLocateState(targetId);
+    MessagePlugin.warning(t('knowledgeBase.docNotFound'));
+    nextTick(() => openCardDetails({ id: targetId } as KnowledgeCard));
   }
 };
 
@@ -1282,6 +1513,7 @@ onUnmounted(() => {
   window.removeEventListener('weknora:knowledge-file-drop', handleKnowledgeFileDrop as EventListener);
   window.removeEventListener('weknora:open-knowledge', handleOpenKnowledgeEvent as EventListener);
   stopMovePoll();
+  clearLocateState(locatingKnowledgeId.value || '');
   if (timeout !== null) {
     clearTimeout(timeout);
     timeout = null;
@@ -2416,7 +2648,7 @@ async function createNewSession(value: string): Promise<void> {
           <KbFolderTree v-if="showFolderTree && !folderTreeCollapsed" :tree="folderTree" :selected-path="selectedFolderPath"
             :loading="folderTreeLoading" :can-edit="canEdit"
             @select="handleFolderSelect" @update:collapsed="handleFolderTreeCollapsedChange"
-            @rename="handleFolderRename" />
+            @rename="handleFolderRename" @move="handleFolderMove" @create="handleFolderCreate" @delete="handleFolderDelete" />
           <div class="tag-content">
             <div class="doc-card-area">
               <nav v-if="showFolderTree" class="doc-folder-path"
@@ -2769,6 +3001,24 @@ async function createNewSession(value: string): Promise<void> {
     :is-faq="isFAQ"
     @changed="onTagManageChanged"
   />
+
+  <!-- 删除目录确认（内联卡片，与知识库列表删除确认同风格） -->
+  <t-dialog v-model:visible="folderDeleteDialogVisible" dialogClassName="del-kb-folder-dialog"
+    :closeBtn="false" :cancelBtn="null" :confirmBtn="null" :width="420" overflow-scroll>
+    <div class="circle-wrap">
+      <div class="dialog-header">
+        <img class="circle-img" src="@/assets/img/circle.png" alt="">
+        <span class="circle-title">{{ t('knowledgeBase.folderTree.delete') }}</span>
+      </div>
+      <span class="del-circle-txt">
+        {{ t('knowledgeBase.folderTree.deleteConfirm', { name: folderDeleteTarget?.name ?? '' }) }}
+      </span>
+      <div class="circle-btn">
+        <span class="circle-btn-txt" @click="folderDeleteDialogVisible = false">{{ t('common.cancel') }}</span>
+        <span class="circle-btn-txt confirm" @click="confirmFolderDelete">{{ t('common.confirm') }}</span>
+      </div>
+    </div>
+  </t-dialog>
 </template>
 <style>
 /* 下拉菜单容器样式已统一至 @/assets/dropdown-menu.less */
@@ -2812,6 +3062,101 @@ async function createNewSession(value: string): Promise<void> {
 .tag-more-popup .tag-menu-item:hover {
   background: var(--td-bg-color-secondarycontainer);
   color: var(--td-text-color-primary);
+}
+
+/* ?knowledge_id= locate pulse — applied to card/row elements rendered by the
+   grid (DocumentCardView) and list (DocumentListView) children. */
+.knowledge-locate-highlight {
+  position: relative;
+  animation: kb-locate-pulse 0.7s ease-in-out 4;
+  border-radius: 8px;
+}
+@keyframes kb-locate-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50%      { box-shadow: 0 0 0 3px color-mix(in srgb, var(--td-brand-color) 55%, transparent); }
+}
+
+/* 删除目录确认卡片（.circle-wrap）— 与知识库列表删除确认同构，
+   样式统一放在 unscoped 块，因 TDialog 挂载到 body，scoped 选择器不可达。 */
+.del-kb-folder-dialog {
+  padding: 0 !important;
+  border-radius: 8px !important;
+
+  .t-dialog__header {
+    display: none;
+  }
+
+  .t-dialog__close {
+    top: 12px;
+    right: 12px;
+  }
+
+  .t-dialog__body {
+    padding: 16px 20px 14px;
+  }
+
+  .circle-wrap {
+    .dialog-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .circle-img {
+      width: 20px;
+      height: 20px;
+      margin-right: 8px;
+    }
+
+    .circle-title {
+      color: var(--td-text-color-primary);
+      font-family: var(--app-font-family);
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 24px;
+    }
+
+    .del-circle-txt {
+      color: var(--td-text-color-placeholder);
+      font-family: var(--app-font-family);
+      font-size: 14px;
+      font-weight: 400;
+      line-height: 22px;
+      display: inline-block;
+      margin-left: 29px;
+      margin-bottom: 20px;
+      word-break: break-all;
+    }
+
+    .circle-btn {
+      height: 22px;
+      width: 100%;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .circle-btn-txt {
+      color: var(--td-text-color-primary);
+      font-family: var(--app-font-family);
+      font-size: 14px;
+      font-weight: 400;
+      line-height: 22px;
+      cursor: pointer;
+
+      &:hover {
+        opacity: 0.8;
+      }
+    }
+
+    .confirm {
+      color: var(--td-error-color);
+      margin-left: 40px;
+
+      &:hover {
+        opacity: 0.8;
+      }
+    }
+  }
 }
 </style>
 <style scoped lang="less">

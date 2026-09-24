@@ -33,10 +33,18 @@
                             <a
                                 class="doc-group-navigate"
                                 :href="getDocumentHref(group)"
-                                target="_blank"
-                                rel="noopener noreferrer"
+                                @click="(e) => openDocument(e, group)"
                             >
                                 <t-icon name="jump" size="14px" />
+                            </a>
+                        </t-tooltip>
+                        <t-tooltip v-if="group.knowledgeId" :content="$t('common.download')">
+                            <a
+                                class="doc-group-navigate"
+                                role="button"
+                                @click.prevent.stop="downloadReference(group)"
+                            >
+                                <t-icon name="download" size="14px" />
                             </a>
                         </t-tooltip>
                     </div>
@@ -60,12 +68,15 @@
     </div>
 </template>
 <script setup>
-import { computed, ref, reactive } from "vue";
+import { computed, ref, reactive, nextTick } from "vue";
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
+import { MessagePlugin } from 'tdesign-vue-next';
 import { sanitizeHTML } from '@/utils/security';
 import ContentPopup from './tool-results/ContentPopup.vue';
 import { useChatReferencesDrawer } from '@/composables/useChatReferencesDrawer';
+import { downKnowledgeDetails } from '@/api/knowledge-base/index';
+import { resolveKnowledgeDownloadFileName } from '@/views/knowledge/knowledgeDownloadFileName';
 
 const router = useRouter();
 const { t } = useI18n();
@@ -181,6 +192,40 @@ const getDocumentHref = (group) => {
         query
     }).href;
 };
+
+// Same-tab navigation (default); middle/right-click and Ctrl/⌘+click still open a new tab.
+const openDocument = (e, group) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+    e.preventDefault();
+    const query = {};
+    if (group.knowledgeId) query.knowledge_id = group.knowledgeId;
+    router.push({ path: `/platform/knowledge-bases/${group.knowledgeBaseId}`, query }).catch(() => {});
+};
+
+async function downloadReference(group) {
+    if (!group.knowledgeId) return;
+    try {
+        const file = await downKnowledgeDetails(group.knowledgeId);
+        const objectUrl = URL.createObjectURL(file);
+        const link = document.createElement('a');
+        link.style.display = 'none';
+        link.href = objectUrl;
+        link.download = resolveKnowledgeDownloadFileName({
+            id: group.knowledgeId,
+            file_name: group.title,
+            title: group.title,
+        });
+        document.body.appendChild(link);
+        link.click();
+        nextTick(() => {
+            link.remove();
+            URL.revokeObjectURL(objectUrl);
+        });
+    } catch {
+        // /knowledge/:id/download needs Contributor + KB write permission — degrade gracefully.
+        MessagePlugin.warning(t('chat.referenceDownloadDenied'));
+    }
+}
 
 const getWebSearchUrl = (item) => {
     if (item.metadata?.url) {

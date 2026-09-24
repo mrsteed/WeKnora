@@ -70,17 +70,25 @@
                     <div class="reference-item__document-main">
                       <div class="reference-item__title-row">
                         <h5 class="reference-item__title">{{ item.title }}</h5>
-                        <a
-                          v-if="item.knowledgeBaseId && !embeddedMode"
-                          class="reference-item__open"
-                          :href="getDocumentHref(item)"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          :aria-label="t('chat.navigateToDocument')"
-                          @click.stop
-                        >
-                          <t-icon name="jump" size="14px" />
-                        </a>
+                        <span v-if="item.knowledgeBaseId && !embeddedMode" class="reference-item__actions" @click.stop>
+                          <a
+                            class="reference-item__open"
+                            :href="getDocumentHref(item)"
+                            :aria-label="t('chat.navigateToDocument')"
+                            @click.stop="(e: MouseEvent) => openDocument(e, item)"
+                          >
+                            <t-icon name="jump" size="14px" />
+                          </a>
+                          <a
+                            v-show="item.knowledgeId"
+                            class="reference-item__open"
+                            role="button"
+                            :aria-label="t('common.download')"
+                            @click.stop.prevent="downloadReference(item)"
+                          >
+                            <t-icon name="download" size="14px" />
+                          </a>
+                        </span>
                       </div>
                       <p v-if="item.snippet && !expandedKeys.has(item.key)" class="reference-item__snippet">
                         {{ formatReferenceSnippet(item.snippet) }}
@@ -138,6 +146,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { MessagePlugin } from 'tdesign-vue-next'
 import { useChatReferencesDrawer } from '@/composables/useChatReferencesDrawer'
 import {
   buildReferenceSections,
@@ -145,6 +154,8 @@ import {
   resolveReferenceHighlightKey,
   type ReferenceListItem,
 } from '@/utils/referenceSources'
+import { downKnowledgeDetails } from '@/api/knowledge-base/index'
+import { resolveKnowledgeDownloadFileName } from '@/views/knowledge/knowledgeDownloadFileName'
 
 const props = defineProps<{
   embeddedMode?: boolean
@@ -267,6 +278,41 @@ function getDocumentHref(item: ReferenceListItem) {
     path: `/platform/knowledge-bases/${item.knowledgeBaseId}`,
     query,
   }).href
+}
+
+// Same-tab navigation (default); middle/right-click and Ctrl/⌘+click still open a new tab.
+function openDocument(e: MouseEvent, item: ReferenceListItem) {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return
+  e.preventDefault()
+  const query: Record<string, string> = {}
+  if (item.knowledgeId) query.knowledge_id = item.knowledgeId
+  router.push({ path: `/platform/knowledge-bases/${item.knowledgeBaseId!}`, query }).catch(() => {})
+}
+
+async function downloadReference(item: ReferenceListItem) {
+  if (!item.knowledgeId) return
+  try {
+    const file = await downKnowledgeDetails(item.knowledgeId)
+    const objectUrl = URL.createObjectURL(file)
+    const link = document.createElement('a')
+    link.style.display = 'none'
+    link.href = objectUrl
+    link.download = resolveKnowledgeDownloadFileName({
+      id: item.knowledgeId,
+      file_name: item.title,
+      title: item.title,
+    })
+    document.body.appendChild(link)
+    link.click()
+    nextTick(() => {
+      link.remove()
+      URL.revokeObjectURL(objectUrl)
+    })
+  } catch {
+    // /knowledge/:id/download needs Contributor + KB write permission, which is
+    // intentionally stricter than viewing — degrade instead of a raw axios error.
+    MessagePlugin.warning(t('chat.referenceDownloadDenied'))
+  }
 }
 
 function shouldShowItemTitle(item: ReferenceListItem) {
@@ -547,6 +593,15 @@ watch(visible, (open) => {
 
 .reference-item__open:hover {
   color: var(--td-text-color-primary);
+}
+
+.reference-item__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-top: 3px;
+  line-height: 1;
 }
 
 .reference-item__snippet {

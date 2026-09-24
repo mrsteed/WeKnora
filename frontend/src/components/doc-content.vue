@@ -20,6 +20,7 @@ import { normalizeSpuriousTablePrefixes } from '@/utils/markdownTableNormalize';
 import { openMermaidFullscreen } from '@/utils/mermaidViewer';
 import { diffWikiLines, type WikiDiffLine } from '@/utils/wikiLineDiff';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import DocumentPreview from '@/components/document-preview.vue';
 import KnowledgeProcessingTimeline from '@/components/knowledge-processing-timeline.vue';
@@ -214,6 +215,7 @@ mermaid.initialize({
 });
 const props = defineProps(["visible", "details", "knowledgeType", "sourceInfo", "canEditKB", "canDownloadKB", "parse_status", "kbId"]);
 const emit = defineEmits(["closeDoc", "getDoc", "questionDeleted", "summaryStateChange"]);
+const router = useRouter();
 
 const applySummaryState = (summaryStatus?: string, description?: string) => {
   if (typeof summaryStatus === 'string' && summaryStatus) {
@@ -1531,6 +1533,17 @@ const downloadFile = () => {
       MessagePlugin.error(t('file.downloadFailed'));
     });
 };
+
+// Close the drawer and navigate (same tab) to the KB list with ?knowledge_id,
+// which re-enters the locate funnel in KnowledgeBase.vue (scroll + highlight).
+const locateInKb = () => {
+  if (!props.kbId || !props.details?.id) return;
+  emit('closeDoc', false);
+  router
+    .replace({ path: `/platform/knowledge-bases/${props.kbId}`, query: { knowledge_id: props.details.id } })
+    .catch(() => {});
+};
+
 const handleChunkPageChange = (pageInfo: { current: number }) => {
   if (props.details?.chunkLoading || pageInfo.current === loadedChunkPage.value) return;
   pendingChunkPage = pageInfo.current;
@@ -1563,6 +1576,13 @@ const handleChunkPageChange = (pageInfo: { current: number }) => {
               @click="downloadFile()">
               <template #icon>
                 <t-icon name="download" size="16px" />
+              </template>
+            </t-button>
+            <t-button v-if="kbId && details.id" class="header-action-btn" size="small"
+              variant="text" shape="square" theme="default" :title="$t('knowledgeBase.locateInKb')"
+              @click="locateInKb()">
+              <template #icon>
+                <t-icon name="location" size="16px" />
               </template>
             </t-button>
             <t-button v-if="details.id && hasTimelineSpans" class="header-action-btn trace-entry-btn" size="small"
