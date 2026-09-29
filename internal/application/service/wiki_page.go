@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -45,9 +47,12 @@ type wikiPageService struct {
 	repo            interfaces.WikiPageRepository
 	chunkRepo       interfaces.ChunkRepository
 	kbService       interfaces.KnowledgeBaseService
+	kbShareService  interfaces.KBShareService
 	taskPendingRepo interfaces.TaskPendingOpsRepository
 	redisClient     *redis.Client
 }
+
+const maxWikiSearchKnowledgeBases = 32
 
 // NewWikiPageService creates a new wiki page service
 func NewWikiPageService(
@@ -56,11 +61,13 @@ func NewWikiPageService(
 	kbService interfaces.KnowledgeBaseService,
 	taskPendingRepo interfaces.TaskPendingOpsRepository,
 	redisClient *redis.Client,
+	kbShareService interfaces.KBShareService,
 ) interfaces.WikiPageService {
 	return &wikiPageService{
 		repo:            repo,
 		chunkRepo:       chunkRepo,
 		kbService:       kbService,
+		kbShareService:  kbShareService,
 		taskPendingRepo: taskPendingRepo,
 		redisClient:     redisClient,
 	}
@@ -993,6 +1000,18 @@ func (s *wikiPageService) FindSimilarPages(ctx context.Context, kbID string, que
 	return s.repo.FindSimilarPages(ctx, kbID, query, pageTypes, limit)
 }
 
+// FindPagesByNormalizedTitle looks up exact same-type title identities for
+// wiki ingest, independent of the trigram top-K used for semantic dedup.
+func (s *wikiPageService) FindPagesByNormalizedTitle(ctx context.Context, kbID, pageType, identity string) ([]*types.WikiPageLite, error) {
+	return s.repo.FindPagesByNormalizedTitle(ctx, kbID, pageType, identity)
+}
+
+// FindPagesByNormalizedTitles looks up several normalized title identities
+// in one query so wiki ingest does not seq-scan once per extracted item.
+func (s *wikiPageService) FindPagesByNormalizedTitles(ctx context.Context, kbID, pageType string, identities []string) ([]*types.WikiPageLite, error) {
+	return s.repo.FindPagesByNormalizedTitles(ctx, kbID, pageType, identities)
+}
+
 // ListDistinctCategoryPaths returns the existing wiki folder paths. Used by
 // wiki ingest's taxonomy planner to ground folder reuse.
 func (s *wikiPageService) ListDistinctCategoryPaths(ctx context.Context, kbID string, maxPaths int) ([][]string, error) {
@@ -1008,6 +1027,109 @@ func (s *wikiPageService) CountByType(ctx context.Context, kbID string) (map[str
 // SearchPages performs full-text search over wiki pages
 func (s *wikiPageService) SearchPages(ctx context.Context, kbID string, query string, limit int) ([]*types.WikiPage, error) {
 	return s.repo.Search(ctx, kbID, query, limit)
+}
+
+func (s *wikiPageService) SearchPagesAcross(
+	ctx context.Context, kbIDs []string, query string, limit int,
+) ([]*types.WikiPage, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, apperrors.NewBadRequestError("query is required")
+	}
+
+	ids := uniqueNonEmptyWikiSearchKBIDs(kbIDs)
+	if len(ids) == 0 {
+		return nil, apperrors.NewBadRequestError(
+			"at least one knowledge_base_id or knowledge_base_ids must be provided")
+	}
+	if len(ids) > maxWikiSearchKnowledgeBases {
+		return nil, apperrors.NewBadRequestError(
+			fmt.Sprintf("at most %d knowledge_base_ids are allowed", maxWikiSearchKnowledgeBases))
+	}
+
+	if s.kbService == nil {
+		return nil, apperrors.NewInternalServerError("knowledge base service is not configured")
+	}
+
+	kbs, err := s.kbService.GetKnowledgeBasesByIDsOnly(ctx, ids)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"knowledge_base_ids": ids,
+		})
+		return nil, err
+	}
+
+	kbByID := make(map[string]*types.KnowledgeBase, len(kbs))
+	for _, kb := range kbs {
+		if kb == nil || kb.ID == "" {
+			continue
+		}
+		kbByID[kb.ID] = kb
+	}
+
+	authorized := make([]*types.KnowledgeBase, 0, len(ids))
+	for _, id := range ids {
+		kb, ok := kbByID[id]
+		if !ok {
+			return nil, apperrors.NewNotFoundError("knowledge base not found")
+		}
+		authorized = append(authorized, kb)
+	}
+
+	if types.CallerFromContext(ctx).TenantID == 0 {
+		return nil, apperrors.NewUnauthorizedError("tenant id is required")
+	}
+	// Authorize before inspecting KB settings so an unauthorized caller gets
+	// the same NotFound for a foreign KB regardless of its wiki setting.
+	if err := access.AuthorizeKBAccess(ctx, s.kbShareService, authorized); err != nil {
+		return nil, err
+	}
+	for _, kb := range authorized {
+		if !kb.IsWikiEnabled() {
+			return nil, apperrors.NewBadRequestError("Wiki feature is not enabled for this knowledge base")
+		}
+	}
+
+	pages, err := s.repo.SearchAcross(ctx, ids, query, limit)
+	if err != nil {
+		if isInvalidWikiSearchQuery(err) {
+			return nil, apperrors.NewBadRequestError("invalid search query")
+		}
+		return nil, err
+	}
+	if pages == nil {
+		return []*types.WikiPage{}, nil
+	}
+	return pages, nil
+}
+
+func uniqueNonEmptyWikiSearchKBIDs(ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func isInvalidWikiSearchQuery(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "invalid regular expression") ||
+		strings.Contains(msg, "invalid regex")
 }
 
 // --- Internal helpers ---
@@ -1269,7 +1391,16 @@ func normalizeWikiHierarchy(page *types.WikiPage) {
 	}
 	page.ParentSlug = strings.TrimSpace(page.ParentSlug)
 
-	cleanPath := types.StringArray(types.CleanWikiCategoryPath(page.CategoryPath))
+	// A page filed in a folder mirrors the folder tree exactly: its
+	// category_path was derived from the validated folder path, so the
+	// model-noise cleaning (which drops type-like labels such as "概念") must
+	// not rewrite it. Only pages without a folder carry model-authored labels.
+	var cleanPath types.StringArray
+	if strings.TrimSpace(page.FolderID) != "" {
+		cleanPath = types.StringArray(types.TrimWikiFolderSegments(page.CategoryPath))
+	} else {
+		cleanPath = types.StringArray(types.CleanWikiCategoryPath(page.CategoryPath))
+	}
 	page.CategoryPath = cleanPath
 	page.Depth = len(cleanPath)
 
@@ -1348,19 +1479,18 @@ func (s *wikiPageService) ListIssues(ctx context.Context, kbID string, slug stri
 }
 
 // UpdateIssueStatus updates an issue's status
-func (s *wikiPageService) UpdateIssueStatus(ctx context.Context, issueID string, status string) error {
-	return s.repo.UpdateIssueStatus(ctx, issueID, status)
+func (s *wikiPageService) UpdateIssueStatus(ctx context.Context, kbID string, issueID string, status string) error {
+	return s.repo.UpdateIssueStatus(ctx, kbID, issueID, status)
 }
 
 // --- Folder tree (wiki_folders) ---
 
-// wikiFolderSegments splits a materialized folder path ("AI/RAG") into cleaned
-// segments. Empty/blank path yields nil (the wiki root).
+// wikiFolderSegments splits a materialized folder path ("AI/RAG") into its
+// literal segments. Empty/blank path yields nil (the wiki root). Folder names
+// are authoritative, so a folder named like a page type ("概念", "Concepts")
+// is kept rather than dropped as model noise.
 func wikiFolderSegments(path string) []string {
-	if strings.TrimSpace(path) == "" {
-		return nil
-	}
-	return types.CleanWikiCategoryPath(strings.Split(path, "/"))
+	return types.WikiFolderPathSegments(path)
 }
 
 // applyFolderToPage refreshes a page's derived category_path cache from its

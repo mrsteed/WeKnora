@@ -16,6 +16,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/service"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/sandbox"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -104,6 +105,62 @@ func TestSandboxInventoryUnverifiableMapsToDistinct409(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
 	require.Equal(t, "sandbox_inventory_unverifiable", payload.Error.Code)
 	require.Contains(t, payload.Error.Message, "无法连接")
+}
+
+func TestSkillSnapshotReleaseFailedMapsTo409WithRemaining(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.DELETE("/sandbox-configs/:id", func(c *gin.Context) {
+		if !respondSandboxConfigRefusal(c, &service.SkillSnapshotReleaseFailedError{
+			Remaining: []string{"snap-2"},
+		}) {
+			t.Fatal("expected snapshot release failure to map as a refusal")
+		}
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/sandbox-configs/cfg-a", nil)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusConflict, w.Code)
+
+	var payload struct {
+		Error struct {
+			Code string `json:"code"`
+			Data struct {
+				SnapshotIDs []string `json:"snapshot_ids"`
+			} `json:"data"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
+	require.Equal(t, "skill_snapshot_release_failed", payload.Error.Code)
+	require.Equal(t, []string{"snap-2"}, payload.Error.Data.SnapshotIDs)
+}
+
+func TestSkillSnapshotBlocksTemplateMapsTo409(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/sandbox-configs/templates/query", func(c *gin.Context) {
+		if !respondSandboxConfigRefusal(c, service.ErrSkillSnapshotBlocksTemplateChange) {
+			t.Fatal("expected skill snapshot template lock to map as a refusal")
+		}
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/sandbox-configs/templates/query", nil)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusConflict, w.Code)
+
+	var payload struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
+	require.Equal(t, "skill_snapshot_blocks_template", payload.Error.Code)
+	require.Contains(t, payload.Error.Message, "不能更换连接")
 }
 
 func TestSandboxConfigDeletePassesForceQuery(t *testing.T) {
@@ -254,4 +311,34 @@ func (s *fakeSandboxConfigService) QueryTemplates(
 	service.SandboxTemplateQueryInput,
 ) (*service.SandboxTemplateCatalog, error) {
 	return &service.SandboxTemplateCatalog{}, nil
+}
+
+func newSandboxConfigTestRouter(h *SandboxConfigHandler) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(middleware.ErrorHandler())
+	r.GET("/sandbox-configs", h.List)
+	r.POST("/sandbox-configs", h.Create)
+	return r
+}
+
+func TestSandboxConfigRoutesAreHiddenOnLiteDesktop(t *testing.T) {
+	h := &SandboxConfigHandler{service: &fakeSandboxConfigService{}, desktop: true}
+	r := newSandboxConfigTestRouter(h)
+	r.PUT("/sandbox-configs/workspace-policy", h.SetWorkspacePolicy)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/sandbox-configs", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.JSONEq(t, `{"success":true,"data":[],"workspace_scripts_disabled":false}`, w.Body.String())
+
+	// The script switch still governs the host sandbox, so it stays reachable.
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPut, "/sandbox-configs/workspace-policy",
+		strings.NewReader(`{"scripts_disabled":false}`)))
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/sandbox-configs", strings.NewReader(`{"name":"x"}`)))
+	require.Equal(t, http.StatusNotFound, w.Code)
 }

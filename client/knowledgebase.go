@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -243,6 +244,8 @@ type SearchResult struct {
 type HybridSearchResponse struct {
 	Success bool            `json:"success"`
 	Data    []*SearchResult `json:"data"`
+	// Meta is present when the request carried a rerank object.
+	Meta *RetrievalMeta `json:"meta,omitempty"`
 }
 
 type CopyKnowledgeBaseRequest struct {
@@ -404,13 +407,49 @@ type SearchParams struct {
 	MatchCount           int     `json:"match_count"`
 	DisableKeywordsMatch bool    `json:"disable_keywords_match"`
 	DisableVectorMatch   bool    `json:"disable_vector_match"`
+	// KnowledgeBaseIDs searches several knowledge bases that share one
+	// embedding model; the path ID must be one of them.
+	KnowledgeBaseIDs []string `json:"knowledge_base_ids,omitempty"`
+	// KnowledgeIDs limits the search to these documents.
+	KnowledgeIDs []string `json:"knowledge_ids,omitempty"`
+	// TagIDs limits the search to these tags.
+	TagIDs []string `json:"tag_ids,omitempty"`
+	// Rerank, when set and enabled, reranks the candidates before cutting to
+	// MatchCount. Nil keeps the raw retrieval order.
+	Rerank *RerankOptions `json:"rerank,omitempty"`
 }
 
 // HybridSearch performs hybrid search.
-func (c *Client) HybridSearch(ctx context.Context, knowledgeBaseID string, params *SearchParams) ([]*SearchResult, error) {
+// Pass ResourceURLOptions to receive public HTTP(S) file URLs in results.
+func (c *Client) HybridSearch(
+	ctx context.Context,
+	knowledgeBaseID string,
+	params *SearchParams,
+	opts ...ResourceURLOptions,
+) ([]*SearchResult, error) {
+	response, err := c.HybridSearchDetailed(ctx, knowledgeBaseID, params, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return response.Data, nil
+}
+
+// HybridSearchDetailed performs hybrid search and returns the whole
+// response, including the rerank diagnostics in Meta.
+func (c *Client) HybridSearchDetailed(
+	ctx context.Context,
+	knowledgeBaseID string,
+	params *SearchParams,
+	opts ...ResourceURLOptions,
+) (*HybridSearchResponse, error) {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/hybrid-search", knowledgeBaseID)
 
-	resp, err := c.doRequest(ctx, http.MethodPost, path, params, nil)
+	queryParams := url.Values{}
+	if len(opts) > 0 {
+		applyResourceURLQuery(queryParams, &opts[0])
+	}
+
+	resp, err := c.doRequest(ctx, http.MethodPost, path, params, queryParams)
 	if err != nil {
 		return nil, err
 	}
@@ -420,7 +459,7 @@ func (c *Client) HybridSearch(ctx context.Context, knowledgeBaseID string, param
 		return nil, err
 	}
 
-	return response.Data, nil
+	return &response, nil
 }
 
 // TogglePinKnowledgeBase toggles the pin status of a knowledge base.
