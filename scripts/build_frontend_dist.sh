@@ -13,6 +13,14 @@ fi
 
 export VITE_IS_DOCKER="${VITE_IS_DOCKER:-true}"
 
+# 依赖安装用 pnpm(项目带 pnpm-lock.yaml, lockfileVersion 9)。
+# npm 侧的 package-lock.json 与 pnpm-lock.yaml 并存时, 本机 npm 9 解析
+# package-lock 会报 "Invalid comparator: none" / EUSAGE, 故不用 npm ci。
+command -v pnpm >/dev/null 2>&1 || {
+  echo "!! 需要 pnpm 但未安装。安装: npm i -g pnpm  (或 corepack enable pnpm)" >&2
+  exit 1
+}
+
 cd "$PROJECT_ROOT/frontend"
-npm ci
-npm run build
+pnpm install --frozen-lockfile
+pnpm run build
