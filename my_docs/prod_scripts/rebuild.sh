@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 #
-# WeKnora 生产发版入口：重建镜像 + 重建运行中的容器（数据卷不动）。
-#   ./rebuild.sh                 # build app docreader frontend，然后全部 --force-recreate
-#   ./rebuild.sh frontend        # 只重建前端镜像与容器
+# WeKnora 生产发版入口：本地重建 app + 重建运行中的容器（数据卷不动）。
+#   docreader / minio / langfuse / clickhouse / paradedb / redis 等官方镜像
+#   由 compose.sh up 阶段的 ensure_official_images 自动 docker pull 到最新，
+#   不属于本地 build 目标。
+#   frontend(nginx+dist) 已改宿主机自管（不进镜像、不由本栈重建），请勿传 frontend。
+#   ./rebuild.sh                 # build app，然后 --force-recreate 运行中容器
+#   ./rebuild.sh app             # 只重建 app（默认即 app）
 #   ./rebuild.sh --profile minio # 顺带 up 可选 profile 服务
 # 回滚: git 切回旧 commit 后重跑本脚本。
 #
