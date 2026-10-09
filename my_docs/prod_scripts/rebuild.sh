@@ -5,6 +5,8 @@ set -euo pipefail
 #   docreader / minio / langfuse / clickhouse / paradedb / redis 等官方镜像
 #   由 compose.sh up 阶段的 ensure_official_images 自动 docker pull 到最新，
 #   不属于本地 build 目标。
+#   重建前会自动预热 app 的硬依赖 profile 服务（minio/langfuse）：minio 启动即查
+#   bucket，缺失会导致 app panic 重启死循环；已在运行者幂等秒过（见 compose.sh rebuild-all）。
 #   frontend(nginx+dist) 已改宿主机自管（不进镜像、不由本栈重建），请勿传 frontend。
 #   ./rebuild.sh                 # build app，然后 --force-recreate 运行中容器
 #   ./rebuild.sh app             # 只重建 app（默认即 app）

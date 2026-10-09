@@ -292,12 +292,22 @@ cmd_up() {
   check_dev_conflict || true
   check_host_ports || true
 
+  # --build: 先本地构建自编译服务（app），并让 app 容器用新镜像 --force-recreate。
+  # 修前 bug：build 变量解析后从未使用（死旗标），且 up -d 幂等不重建运行中容器，
+  # 导致 `start.sh --build` 只起了既有容器、旧镜像原封不动。
+  if [[ "$build" == true ]]; then
+    log "up --build: 本地构建自编译服务 (app)"
+    _build_self_built
+  fi
+
   if [[ ${#explicit_svcs[@]} -gt 0 ]]; then
     # 显式服务模式：profile 名提供 config 解析上下文，确保 profile 服务的 image 能被查到；
     # 自编译服务名跳过；跳过健康等待
     ensure_official_images "${prof_clean[@]}" "${explicit_svcs[@]}"
     log "up 显式服务: ${explicit_svcs[*]}（显式模式不做健康等待）"
-    "${DC[@]}" "${PROF_FLAGS[@]}" up -d "${explicit_svcs[@]}"
+    local -a ex_up_flags=(up -d)
+    [[ "$build" == true ]] && ex_up_flags+=(--force-recreate)
+    "${DC[@]}" "${PROF_FLAGS[@]}" "${ex_up_flags[@]}" "${explicit_svcs[@]}"
     "${DC[@]}" "${PROF_FLAGS[@]}" ps
     return 0
   fi
@@ -321,8 +331,15 @@ cmd_up() {
   "${DC[@]}" "${PROF_FLAGS[@]}" up -d ${INFRA:+${INFRA}} \
     || warn "基础设施 up 存在失败容器（上方 compose 原始报错）；请 ${0} ps 查看哪个未起"
 
-  log "up 应用层 (app) —— 失败只告警，不影响基础设施"
-  "${DC[@]}" "${PROF_FLAGS[@]}" up -d app \
+  # --build 时新镜像必须落到运行中容器 → --force-recreate；否则幂等 up 复用旧镜像
+  local -a app_up_flags=(up -d)
+  if [[ "$build" == true ]]; then
+    app_up_flags+=(--force-recreate)
+    log "up 应用层 (app) —— --build 已构建新镜像，force-recreate 使其生效；失败只告警"
+  else
+    log "up 应用层 (app) —— 失败只告警，不影响基础设施"
+  fi
+  "${DC[@]}" "${PROF_FLAGS[@]}" "${app_up_flags[@]}" app \
     || warn "app 启动失败（上方为其真实报错）；基础设施仍在运行。排查: ${0} logs -n app"
 
   log "状态:"; "${DC[@]}" "${PROF_FLAGS[@]}" ps
@@ -481,6 +498,33 @@ cmd_rebuild_all() {
       *) die "rebuild-all: 未知服务 $t（可选: app；frontend 已改宿主机自管不进镜像）" ;;
     esac
   done
+
+  # ---- 硬依赖预热（根因修复）----
+  # rebuild-all 只对"正在运行"的容器 --force-recreate，绝不新拉缺失的依赖容器。
+  # minio 是 app 的硬依赖（STORAGE_TYPE=minio 时 initFileService 启动即查 bucket），
+  # 若 minio 曾被 down 移除，仅重建 app 会因 DNS 解析不到 minio 而 panic → Restarting 死循环。
+  # 故重建目标前先把默认 profile 依赖服务（minio/langfuse）确保在线：已在运行者幂等秒过，
+  # 缺失者拉起。profile 服务必须带 --profile 才能在 compose config 中解析，故此处透传。
+  local -a rb_dep_profiles=() rb_defp dp
+  read -r -a rb_defp <<< "$DEFAULT_PROFILES"
+  for dp in "${rb_defp[@]}"; do [[ -n "$dp" ]] && rb_dep_profiles+=("$dp"); done
+  if [[ ${#rb_dep_profiles[@]} -gt 0 ]]; then
+    _profile_flags "${rb_dep_profiles[@]}"   # 写入全局 PROF_FLAGS
+    local -a rb_dep_svcs=() rb_slist s
+    for p in "${rb_dep_profiles[@]}"; do
+      rb_slist="$(profile_services "$p")"
+      [[ "$rb_slist" == "__unknown__" ]] && continue
+      for s in $rb_slist; do rb_dep_svcs+=("$s"); done
+    done
+    log "rebuild-precheck: 确保依赖服务在线: ${rb_dep_svcs[*]:-（无 app 硬依赖）}"
+    ensure_official_images "${rb_dep_profiles[@]}"
+    if [[ ${#rb_dep_svcs[@]} -gt 0 ]]; then
+      "${DC[@]}" "${PROF_FLAGS[@]}" up -d "${rb_dep_svcs[@]}" \
+        || warn "依赖服务 up 存在失败容器（见上）；继续重建目标容器"
+    fi
+    PROF_FLAGS=()   # 还原全局：目标容器重建/up 保持原有（无 profile）语义
+  fi
+
   _build_self_built "${targets[@]}"
   local up_svcs=()
   for t in "${targets[@]}"; do
@@ -546,7 +590,8 @@ Commands:
       启动生产核心集 (postgres redis docreader app)
       + 默认 profile (minio langfuse, 对齐 make dev-start)。
       自动: 1) 预拉所有官方镜像（app 跳过）2) 启动
-      --build           先本地 build app，再启动（其余服务仍走官方 pull）
+      --build           先本地 build app，再以其 --force-recreate app 容器（发版路径；
+                        其余服务仍走官方 pull）。仅换镜像不起容器请用: rebuild.sh
       --no-minio        关闭默认 minio profile（当 STORAGE_TYPE 非 minio 时可用）
       --no-langfuse     关闭默认 langfuse profile
       传 svc...         只 up 列出服务（跳过健康等待，显式服务模式）

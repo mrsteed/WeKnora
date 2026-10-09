@@ -11,7 +11,8 @@ set -euo pipefail
 #           前端包与 nginx 配置都不进镜像，由宿主机自行编译部署）
 # 用法:
 #   ./start.sh                       # 启动核心集 + minio + langfuse，自动预拉官方镜像
-#   ./start.sh --build               # 先本地构建 app 再启动（发版；frontend 由宿主机自管）
+#   ./start.sh --build               # 先本地重建 app 镜像并 force-recreate app 容器（发版；
+#                                    #   frontend 由宿主机自管；等价于 start + rebuild 合一）
 #   ./start.sh --no-langfuse         # 关 langfuse
 #   ./start.sh --no-minio --no-langfuse  # 只起 CORE_SERVICES（最小化）
 #   ./start.sh --help                # compose.sh 全量命令
