@@ -183,6 +183,11 @@ func TestMinerUReaderPreservesMultipartFilename(t *testing.T) {
 			}
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Version probe: 404 forces the reader onto the legacy /file_parse path.
+				if r.URL.Path == "/v1/health" {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
 				got := capturedRequest{method: r.Method, path: r.URL.Path}
 				file, header, err := r.FormFile("files")
 				if err != nil {
@@ -312,5 +317,121 @@ func TestProcessImagesMatchesPathsWithSpaces(t *testing.T) {
 	}
 	if refs[0].OriginalRef != "images/第 1 页.jpg" {
 		t.Fatalf("unexpected OriginalRef: %q", refs[0].OriginalRef)
+	}
+}
+
+// TestSplitMinerU4xImages verifies that inline data-URI images in 4.x
+// markdown are split into an images/<hash>_<n>.<ext> map and that the markdown
+// references are rewritten to the same paths (2.x-style layout).
+func TestSplitMinerU4xImages(t *testing.T) {
+	png := createTestPNG(4, 2)
+	b64 := base64.StdEncoding.EncodeToString(png)
+	dataURI := "data:image/png;base64," + b64
+	md := "# doc\n\nbefore ![](data:image/png;base64," + b64 + ") after\n\n!" +
+		"[](data:image/png;base64," + b64 +")\n" +
+		`<img src="data:image/png;base64,` + b64 + `">\n`
+
+	gotMD, imgs := splitMinerU4xImages(md)
+	if len(imgs) != 3 {
+		t.Fatalf("expected 3 images, got %d", len(imgs))
+	}
+	if strings.Contains(gotMD, "data:image/") {
+		t.Fatalf("markdown still contains data URIs: %q", gotMD[:min(200, len(gotMD))])
+	}
+	for key, val := range imgs {
+		if !strings.HasPrefix(key, "images/") || !strings.HasSuffix(key, ".png") {
+			t.Fatalf("unexpected image key: %q", key)
+		}
+		if val != dataURI {
+			t.Fatalf("image %s: value = %q, want the data URI", key, val[:40])
+		}
+		if !strings.Contains(gotMD, "![]("+key+")") && !strings.Contains(gotMD, `src="`+key+`"`) {
+			t.Fatalf("markdown does not reference %s", key)
+		}
+	}
+}
+
+// TestSplitMinerU4xImagesNoImages ensures plain markdown passes through untouched.
+func TestSplitMinerU4xImagesNoImages(t *testing.T) {
+	md := "# heading\n\nplain text\n"
+	got, imgs := splitMinerU4xImages(md)
+	if got != md || len(imgs) != 0 {
+		t.Fatalf("unexpected change: %q / %d images", got, len(imgs))
+	}
+}
+
+// TestMinerUReaderV4FlowEndToEnd exercises the 4.x V1 API path: version probe,
+// inline job submission, polling, markdown content fetch and data-URI image
+// splitting, ending with a ReadResult carrying decoded ImageRefs.
+func TestMinerUReaderV4FlowEndToEnd(t *testing.T) {
+	utils.SetSSRFWhitelistFromRaw("127.0.0.1")
+	t.Cleanup(func() {
+		utils.SetSSRFWhitelistFromRaw("")
+	})
+
+	png := createTestPNG(8, 6)
+	b64 := base64.StdEncoding.EncodeToString(png)
+	mdBody := "# report\n\ntext line\n\n![](data:image/png;base64," + b64 + ")\n"
+
+	var jobPayload map[string]any
+	job := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/v1/health":
+			_, _ = w.Write([]byte(`{"status":"ok","version":"4.0.10"}`))
+		case r.URL.Path == "/v1/parse/jobs" && r.Method == http.MethodPost:
+			_ = json.NewDecoder(r.Body).Decode(&jobPayload)
+			_, _ = w.Write([]byte(`{"job_id":"job_test42"}`))
+		case r.URL.Path == "/v1/parse/jobs/job_test42":
+			_, _ = w.Write([]byte(`{"status":"completed","files":[{"name":"doc.pdf","status":"completed","output_files":{"markdown":{"file_id":"file_md1"}}}]}`))
+		case r.URL.Path == "/v1/files/file_md1/content":
+			_, _ = w.Write([]byte(mdBody))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"detail":"Not Found"}`))
+		}
+	}))
+	defer job.Close()
+
+	reader := NewMinerUReader(map[string]string{"mineru_endpoint": job.URL})
+	res, err := reader.Read(context.Background(), &types.ReadRequest{
+		FileContent: []byte("%PDF-1.7 tiny"),
+		FileName:    "tiny.doc",
+		FileType:    "pdf",
+	})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if !strings.Contains(res.MarkdownContent, "# report") {
+		t.Fatalf("markdown missing heading: %q", res.MarkdownContent)
+	}
+	if strings.Contains(res.MarkdownContent, "data:image/") {
+		t.Fatalf("markdown still inlines a data URI: %q", res.MarkdownContent)
+	}
+	if len(res.ImageRefs) != 1 {
+		t.Fatalf("expected 1 ImageRef, got %d", len(res.ImageRefs))
+	}
+	if string(res.ImageRefs[0].ImageData) != string(png) {
+		t.Fatalf("ImageRef data does not match the original image bytes")
+	}
+	if res.ImageRefs[0].MimeType != "image/png" {
+		t.Fatalf("unexpected mime type: %q", res.ImageRefs[0].MimeType)
+	}
+	// inline source must carry base64 of the exact file bytes and be
+	// wrapped as {"source": {...}} per the 4.x V1 API contract
+	files, _ := jobPayload["files"].([]any)
+	if len(files) != 1 {
+		t.Fatalf("job payload files: %v", jobPayload["files"])
+	}
+	wrapped, _ := files[0].(map[string]any)
+	src, _ := wrapped["source"].(map[string]any)
+	if src == nil {
+		t.Fatalf("expected files[0] to wrap the source object, got %v", files[0])
+	}
+	if src["type"] != "inline" {
+		t.Fatalf("expected inline source, got %v", src)
+	}
+	if got, _ := src["data"].(string); got != base64.StdEncoding.EncodeToString([]byte("%PDF-1.7 tiny")) {
+		t.Fatalf("inline data mismatch")
 	}
 }
