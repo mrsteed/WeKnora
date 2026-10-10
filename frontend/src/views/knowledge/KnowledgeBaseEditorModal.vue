@@ -525,13 +525,19 @@ const emit = defineEmits<{
 // 解析当前账号应归属的组织：优先调用方显式指定，其次当前组织，最后回退到
 // 我组织树中的第一个组织。组织可见的 KB 必须落到一个具体组织节点上。
 const resolveAutoOrganizationID = (): string => {
-  return (
-    props.initialOrganizationId ||
-    uiStore.kbEditorInitialOrganizationId ||
-    orgStore.currentOrganizationId ||
-    orgStore.myOrgTreeOrgs[0]?.id ||
-    ''
-  )
+  const availableOrgIDs = new Set(orgStore.myOrgTreeOrgs.map((org) => org.id))
+  const candidates = [
+    props.initialOrganizationId,
+    uiStore.kbEditorInitialOrganizationId,
+    orgStore.currentOrgTreeOrganization?.id,
+    orgStore.myOrgTreeOrgs[0]?.id,
+  ]
+  for (const candidate of candidates) {
+    if (candidate && availableOrgIDs.has(candidate)) {
+      return candidate
+    }
+  }
+  return ''
 }
 
 const normalizeEditorVisibility = (value?: string): 'private' | 'org' | 'global' => {
@@ -857,9 +863,12 @@ const loadAllModels = async (force = false) => {
 }
 
 // 加载知识库数据（编辑模式）
-const loadKBData = async (kbIdOverride?: string) => {
+const loadKBData = async (
+  kbIdOverride?: string,
+  options?: { suppressErrorToast?: boolean }
+) => {
   const kbId = kbIdOverride ?? activeKbId.value
-  if (editorMode.value !== 'edit' || !kbId) return
+  if (editorMode.value !== 'edit' || !kbId) return false
   
   loading.value = true
   try {
@@ -983,10 +992,14 @@ const loadKBData = async (kbIdOverride?: string) => {
     }
     initialStorageProvider.value = formData.value.storageProvider
     initialIndexingStrategy.value = { ...formData.value.indexingStrategy }
+    return true
   } catch (error) {
     console.error('Failed to load knowledge base data:', error)
-    MessagePlugin.error(t('knowledgeEditor.messages.loadDataFailed'))
+    if (!options?.suppressErrorToast) {
+      MessagePlugin.error(t('knowledgeEditor.messages.loadDataFailed'))
+    }
     handleClose()
+    return false
   } finally {
     loading.value = false
   }
@@ -1419,8 +1432,10 @@ const doSubmit = async () => {
       const createdKbId = result.data.id as string
       savedKbId.value = createdKbId
       currentSection.value = 'basic'
-      await loadKBData(createdKbId)
-      MessagePlugin.success(t('knowledgeEditor.messages.createSuccess'))
+      const loaded = await loadKBData(createdKbId, { suppressErrorToast: true })
+      MessagePlugin[loaded ? 'success' : 'warning'](
+        t(loaded ? 'knowledgeEditor.messages.createSuccess' : 'knowledgeEditor.messages.createSuccessLoadFailed')
+      )
       markContextualGuideDone('kbCreate')
       emit('success', createdKbId)
     } else {
@@ -1600,7 +1615,7 @@ watch(() => props.visible, async (newVal) => {
     // 打开弹窗时，先重置状态
     resetState()
 
-    if (!authStore.isSuperAdmin && orgStore.myOrgTreeOrgs.length === 0) {
+    if (!authStore.isSuperAdmin) {
       await orgStore.fetchMyOrgTreeOrganizations()
     }
     

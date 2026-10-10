@@ -14,10 +14,12 @@
         </span>
         <div class="workspace-setup-header__body">
           <div class="workspace-setup-header__row">
-            <span class="workspace-setup-header__title">{{ t('tenant.setupWizard.title') }}</span>
+            <span class="workspace-setup-header__title">{{
+              t("tenant.setupWizard.title")
+            }}</span>
           </div>
           <p class="workspace-setup-header__desc">
-            {{ t('tenant.setupWizard.subtitle', { name: pendingTenantName }) }}
+            {{ t("tenant.setupWizard.subtitle", { name: pendingTenantName }) }}
           </p>
         </div>
       </div>
@@ -28,7 +30,10 @@
         <div
           v-for="(label, index) in stepTitles"
           :key="label"
-          :class="['workspace-setup-step', { 'is-active': step === index, 'is-done': step > index }]"
+          :class="[
+            'workspace-setup-step',
+            { 'is-active': step === index, 'is-done': step > index },
+          ]"
         >
           <span class="workspace-setup-step__num">
             <t-icon v-if="step > index" name="check" size="12px" />
@@ -40,21 +45,30 @@
 
       <div v-if="step === 0" class="workspace-setup-body">
         <section class="workspace-setup-section workspace-setup-section--info">
-          <p class="workspace-setup-section__copy">{{ t('tenant.setupWizard.tip') }}</p>
+          <p class="workspace-setup-section__copy">
+            {{ t("tenant.setupWizard.tip") }}
+          </p>
         </section>
 
         <section class="workspace-setup-section">
           <div class="workspace-setup-section__head">
-            <h4>{{ t('tenant.setupWizard.modeLabel') }}</h4>
-            <p>{{ t('tenant.setupWizard.introDesc') }}</p>
+            <h4>{{ t("tenant.setupWizard.modeLabel") }}</h4>
+            <p>{{ t("tenant.setupWizard.introDesc") }}</p>
           </div>
 
-          <div class="workspace-setup-mode-grid" role="radiogroup" :aria-label="t('tenant.setupWizard.modeLabel')">
+          <div
+            class="workspace-setup-mode-grid"
+            role="radiogroup"
+            :aria-label="t('tenant.setupWizard.modeLabel')"
+          >
             <button
               v-for="mode in modeOptions"
               :key="mode.value"
               type="button"
-              :class="['workspace-setup-mode', { 'is-active': form.personMode === mode.value }]"
+              :class="[
+                'workspace-setup-mode',
+                { 'is-active': form.personMode === mode.value },
+              ]"
               :aria-checked="form.personMode === mode.value"
               role="radio"
               @click="form.personMode = mode.value"
@@ -68,12 +82,19 @@
 
         <section class="workspace-setup-section">
           <div class="workspace-setup-section__head">
-            <h4>{{ t('tenant.setupWizard.tenantRoleLabel') }}</h4>
-            <p>{{ t('tenant.setupWizard.tenantRoleDesc') }}</p>
+            <h4>{{ t("tenant.setupWizard.tenantRoleLabel") }}</h4>
+            <p>{{ t("tenant.setupWizard.tenantRoleDesc") }}</p>
           </div>
 
-          <t-radio-group v-model="form.tenantRole" class="workspace-setup-radio-group">
-            <t-radio v-for="role in tenantRoleOptions" :key="role.value" :value="role.value">
+          <t-radio-group
+            v-model="form.tenantRole"
+            class="workspace-setup-radio-group"
+          >
+            <t-radio
+              v-for="role in tenantRoleOptions"
+              :key="role.value"
+              :value="role.value"
+            >
               {{ role.label }}
             </t-radio>
           </t-radio-group>
@@ -87,19 +108,32 @@
 
           <div v-if="isExistingMode" class="workspace-setup-form-grid">
             <div class="workspace-setup-field">
-              <label>{{ t('tenant.setupWizard.existingEmailLabel') }}</label>
-              <t-input v-model="form.existingEmail" :placeholder="t('tenant.setupWizard.existingEmailPlaceholder')" clearable />
-              <p class="workspace-setup-field__hint">{{ t('tenant.setupWizard.existingEmailHint') }}</p>
+              <label>{{ t("tenant.setupWizard.existingEmailLabel") }}</label>
+              <t-input
+                v-model="form.existingEmail"
+                :placeholder="t('tenant.setupWizard.existingEmailPlaceholder')"
+                clearable
+              />
+              <p class="workspace-setup-field__hint">
+                {{ t("tenant.setupWizard.existingEmailHint") }}
+              </p>
             </div>
           </div>
 
-          <div v-else-if="isNewMode" class="workspace-setup-form-grid workspace-setup-form-grid--two-col">
+          <div
+            v-else-if="isNewMode"
+            class="workspace-setup-form-grid workspace-setup-form-grid--two-col"
+          >
             <div class="workspace-setup-field">
-              <label>{{ t('admin.member.username') }}</label>
-              <t-input v-model="form.newUsername" :placeholder="t('admin.member.usernamePlaceholder')" clearable />
+              <label>{{ t("admin.member.username") }}</label>
+              <t-input
+                v-model="form.newUsername"
+                :placeholder="t('admin.member.usernamePlaceholder')"
+                clearable
+              />
             </div>
             <div class="workspace-setup-field">
-              <label>{{ t('auth.password') }}</label>
+              <label>{{ t("auth.password") }}</label>
               <t-input
                 v-model="form.newPassword"
                 type="password"
@@ -108,18 +142,26 @@
               />
             </div>
             <div class="workspace-setup-field">
-              <label>{{ t('admin.member.email') }}</label>
-              <t-input v-model="form.newEmail" :placeholder="t('admin.member.emailOptionalPlaceholder')" clearable />
+              <label>{{ t("admin.member.email") }}</label>
+              <t-input
+                v-model="form.newEmail"
+                :placeholder="t('admin.member.emailOptionalPlaceholder')"
+                clearable
+              />
             </div>
             <div class="workspace-setup-field">
-              <label>{{ t('admin.member.phone') }}</label>
-              <t-input v-model="form.newPhone" :placeholder="t('admin.member.phonePlaceholder')" clearable />
+              <label>{{ t("admin.member.phone") }}</label>
+              <t-input
+                v-model="form.newPhone"
+                :placeholder="t('admin.member.phonePlaceholder')"
+                clearable
+              />
             </div>
           </div>
 
           <div v-else class="workspace-setup-form-grid">
             <div class="workspace-setup-field">
-              <label>{{ t('tenant.setupWizard.inviteMessageLabel') }}</label>
+              <label>{{ t("tenant.setupWizard.inviteMessageLabel") }}</label>
               <t-textarea
                 v-model="form.inviteMessage"
                 :placeholder="t('tenant.setupWizard.inviteMessagePlaceholder')"
@@ -134,8 +176,8 @@
       <div v-else-if="step === 1" class="workspace-setup-body">
         <section class="workspace-setup-section">
           <div class="workspace-setup-section__head">
-            <h4>{{ t('tenant.setupWizard.rootOrgTitle') }}</h4>
-            <p>{{ t('tenant.setupWizard.rootOrgDesc') }}</p>
+            <h4>{{ t("tenant.setupWizard.rootOrgTitle") }}</h4>
+            <p>{{ t("tenant.setupWizard.rootOrgDesc") }}</p>
           </div>
 
           <div
@@ -143,36 +185,52 @@
             class="workspace-setup-callout workspace-setup-callout--success"
             role="status"
           >
-            {{ t('tenant.setupWizard.retryReuseRootHint', { name: createdRootOrg.name }) }}
+            {{
+              t("tenant.setupWizard.retryReuseRootHint", {
+                name: createdRootOrg.name,
+              })
+            }}
           </div>
           <div
             v-else-if="isInviteMode"
             class="workspace-setup-callout workspace-setup-callout--neutral"
             role="status"
           >
-            {{ t('tenant.setupWizard.inviteOrgHint') }}
+            {{ t("tenant.setupWizard.inviteOrgHint") }}
           </div>
           <div
             v-else-if="isNewMode"
             class="workspace-setup-callout workspace-setup-callout--neutral"
             role="status"
           >
-            {{ t('tenant.setupWizard.rootOrgRequiredHint') }}
+            {{ t("tenant.setupWizard.rootOrgRequiredHint") }}
           </div>
 
           <div class="workspace-setup-checkbox-row">
-            <t-checkbox v-model="form.shouldSetupOrg" :disabled="isOrgSetupLocked">
-              {{ t('tenant.setupWizard.createRootToggle') }}
+            <t-checkbox
+              v-model="form.shouldSetupOrg"
+              :disabled="isOrgSetupLocked"
+            >
+              {{ t("tenant.setupWizard.createRootToggle") }}
             </t-checkbox>
           </div>
 
           <div v-if="form.shouldSetupOrg" class="workspace-setup-form-grid">
             <div class="workspace-setup-field">
-              <label>{{ t('tenant.setupWizard.rootOrgNameLabel') }}</label>
-              <t-input v-model="form.rootOrgName" :disabled="!!createdRootOrg" :placeholder="t('tenant.setupWizard.rootOrgNamePlaceholder', { name: pendingTenantName })" clearable />
+              <label>{{ t("tenant.setupWizard.rootOrgNameLabel") }}</label>
+              <t-input
+                v-model="form.rootOrgName"
+                :disabled="!!createdRootOrg"
+                :placeholder="
+                  t('tenant.setupWizard.rootOrgNamePlaceholder', {
+                    name: pendingTenantName,
+                  })
+                "
+                clearable
+              />
             </div>
             <div class="workspace-setup-field">
-              <label>{{ t('tenant.setupWizard.rootOrgDescLabel') }}</label>
+              <label>{{ t("tenant.setupWizard.rootOrgDescLabel") }}</label>
               <t-textarea
                 v-model="form.rootOrgDescription"
                 :disabled="!!createdRootOrg"
@@ -184,14 +242,24 @@
           </div>
         </section>
 
-        <section v-if="form.shouldSetupOrg && !isInviteMode" class="workspace-setup-section">
+        <section
+          v-if="form.shouldSetupOrg && !isInviteMode"
+          class="workspace-setup-section"
+        >
           <div class="workspace-setup-section__head">
-            <h4>{{ t('tenant.setupWizard.orgRoleLabel') }}</h4>
-            <p>{{ t('tenant.setupWizard.orgRoleDesc') }}</p>
+            <h4>{{ t("tenant.setupWizard.orgRoleLabel") }}</h4>
+            <p>{{ t("tenant.setupWizard.orgRoleDesc") }}</p>
           </div>
 
-          <t-radio-group v-model="form.orgRole" class="workspace-setup-radio-group">
-            <t-radio v-for="role in orgRoleOptions" :key="role.value" :value="role.value">
+          <t-radio-group
+            v-model="form.orgRole"
+            class="workspace-setup-radio-group"
+          >
+            <t-radio
+              v-for="role in orgRoleOptions"
+              :key="role.value"
+              :value="role.value"
+            >
               {{ role.label }}
             </t-radio>
           </t-radio-group>
@@ -204,14 +272,20 @@
             <t-icon name="check-circle-filled" size="24px" />
           </span>
           <div>
-            <h4>{{ t('tenant.setupWizard.resultTitle') }}</h4>
-            <p>{{ t('tenant.setupWizard.resultDesc', { name: pendingTenantName }) }}</p>
+            <h4>{{ t("tenant.setupWizard.resultTitle") }}</h4>
+            <p>
+              {{
+                t("tenant.setupWizard.resultDesc", { name: pendingTenantName })
+              }}
+            </p>
           </div>
         </div>
 
         <div class="workspace-setup-result__card">
           <p class="workspace-setup-result__summary">{{ resultSummary }}</p>
-          <p class="workspace-setup-result__summary workspace-setup-result__summary--sub">
+          <p
+            class="workspace-setup-result__summary workspace-setup-result__summary--sub"
+          >
             {{ resultOrgSummary }}
           </p>
         </div>
@@ -225,11 +299,13 @@
         </div>
 
         <div v-if="resultInviteUrl" class="workspace-setup-result__card">
-          <label class="workspace-setup-field__label">{{ t('tenant.setupWizard.inviteLinkLabel') }}</label>
+          <label class="workspace-setup-field__label">{{
+            t("tenant.setupWizard.inviteLinkLabel")
+          }}</label>
           <div class="workspace-setup-result__link-row">
             <t-input :value="resultInviteUrl" readonly />
             <t-button theme="primary" variant="outline" @click="copyInviteLink">
-              {{ t('tenant.setupWizard.copyInviteLink') }}
+              {{ t("tenant.setupWizard.copyInviteLink") }}
             </t-button>
           </div>
         </div>
@@ -238,19 +314,41 @@
       <div class="workspace-setup-footer">
         <div class="workspace-setup-footer__left">
           <t-button v-if="step === 1" variant="outline" @click="step = 0">
-            {{ t('common.back') }}
+            {{ t("common.back") }}
           </t-button>
         </div>
         <div class="workspace-setup-footer__right">
           <t-button v-if="step === 0" theme="primary" @click="goNext">
-            {{ t('common.next') }}
+            {{ t("common.next") }}
           </t-button>
-          <t-button v-else-if="step === 1" theme="primary" :loading="submitting" @click="runSetup">
-            {{ t('tenant.setupWizard.finish') }}
+          <t-button
+            v-else-if="step === 1"
+            theme="primary"
+            :loading="submitting"
+            @click="runSetup"
+          >
+            {{ t("tenant.setupWizard.finish") }}
           </t-button>
-          <t-button v-else theme="primary" @click="enterWorkspace">
-            {{ t('tenant.setupWizard.enter') }}
-          </t-button>
+          <template v-else>
+            <t-button
+              v-if="result?.retryable"
+              variant="outline"
+              @click="enterWorkspace"
+            >
+              {{ t("tenant.setupWizard.enter") }}
+            </t-button>
+            <t-button
+              v-if="result?.retryable"
+              theme="primary"
+              :loading="submitting"
+              @click="retrySetupFromResult"
+            >
+              {{ t("tenant.setupWizard.retrySetup") }}
+            </t-button>
+            <t-button v-else theme="primary" @click="enterWorkspace">
+              {{ t("tenant.setupWizard.enter") }}
+            </t-button>
+          </template>
         </div>
       </div>
     </div>
@@ -258,423 +356,487 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
-import { useI18n } from 'vue-i18n'
+import { computed, reactive, ref, watch } from "vue";
+import { MessagePlugin } from "tdesign-vue-next";
+import { useI18n } from "vue-i18n";
 
+import { getOrgTree } from "@/api/org-tree";
+import { bootstrapWorkspace } from "@/api/tenant";
+import type { TenantRole } from "@/api/tenant/members";
+import { useRoleLabel } from "@/composables/useRoleLabel";
+import { useAuthStore } from "@/stores/auth";
+import { useWorkspaceSetupStore } from "@/stores/workspaceSetup";
 import {
-  assignUserToOrg,
-  createOrgTreeNode,
-  createUserInOrg,
-} from '@/api/org-tree'
-import { createInviteLink } from '@/api/tenant/invitations'
-import {
-  addMember,
-  listMembers,
-  updateMemberRole,
-  type TenantMember,
-  type TenantRole,
-} from '@/api/tenant/members'
-import { useRoleLabel } from '@/composables/useRoleLabel'
-import { useAuthStore } from '@/stores/auth'
-import { useWorkspaceSetupStore } from '@/stores/workspaceSetup'
-import { navigateAfterTenantSwitch, stashTenantSwitchToast } from '@/utils/tenantSwitch'
+  navigateAfterTenantSwitch,
+  stashTenantSwitchToast,
+} from "@/utils/tenantSwitch";
+import { selectReusableRootOrg } from "@/utils/workspaceSetupRootOrg";
 
-type PersonMode = 'existing' | 'new' | 'invite'
-type OrgRole = 'admin' | 'editor' | 'viewer'
+type PersonMode = "existing" | "new" | "invite";
+type OrgRole = "admin" | "editor" | "viewer";
 
 interface CreatedRootOrg {
-  id: string
-  name: string
+  id: string;
+  name: string;
 }
 
 interface SetupResult {
-  summary: string
-  orgSummary: string
-  warning?: string
-  inviteUrl?: string
+  summary: string;
+  orgSummary: string;
+  warning?: string;
+  inviteUrl?: string;
+  retryable?: boolean;
 }
 
-const { t } = useI18n()
-const { formatRole } = useRoleLabel()
-const authStore = useAuthStore()
-const workspaceSetupStore = useWorkspaceSetupStore()
+const { t } = useI18n();
+const { formatRole } = useRoleLabel();
+const authStore = useAuthStore();
+const workspaceSetupStore = useWorkspaceSetupStore();
 
-const step = ref(0)
-const submitting = ref(false)
-const createdRootOrg = ref<CreatedRootOrg | null>(null)
-const resolvedResponsibleUserId = ref<string>('')
-const result = ref<SetupResult | null>(null)
+const step = ref(0);
+const submitting = ref(false);
+const createdRootOrg = ref<CreatedRootOrg | null>(null);
+const resolvedResponsibleUserId = ref<string>("");
+const result = ref<SetupResult | null>(null);
 
 const form = reactive({
-  personMode: 'existing' as PersonMode,
-  tenantRole: 'admin' as TenantRole,
-  existingEmail: '',
-  inviteMessage: '',
-  newUsername: '',
-  newEmail: '',
-  newPhone: '',
-  newPassword: '',
+  personMode: "existing" as PersonMode,
+  tenantRole: "admin" as TenantRole,
+  existingEmail: "",
+  inviteMessage: "",
+  newUsername: "",
+  newEmail: "",
+  newPhone: "",
+  newPassword: "",
   shouldSetupOrg: true,
-  rootOrgName: '',
-  rootOrgDescription: '',
-  orgRole: 'admin' as OrgRole,
-})
+  rootOrgName: "",
+  rootOrgDescription: "",
+  orgRole: "admin" as OrgRole,
+});
 
-const pending = computed(() => workspaceSetupStore.pending)
-const pendingTenantName = computed(() => pending.value?.tenantName || '')
+const pending = computed(() => workspaceSetupStore.pending);
+const pendingTenantName = computed(() => pending.value?.tenantName || "");
 const visible = computed(() => {
-  return !!pending.value && authStore.isLoggedIn && authStore.effectiveTenantId === pending.value.tenantId
-})
+  return (
+    !!pending.value &&
+    authStore.isLoggedIn &&
+    authStore.effectiveTenantId === pending.value.tenantId
+  );
+});
 
-const isExistingMode = computed(() => form.personMode === 'existing')
-const isNewMode = computed(() => form.personMode === 'new')
-const isInviteMode = computed(() => form.personMode === 'invite')
-const isOrgSetupLocked = computed(() => isNewMode.value)
+const isExistingMode = computed(() => form.personMode === "existing");
+const isNewMode = computed(() => form.personMode === "new");
+const isInviteMode = computed(() => form.personMode === "invite");
+const isOrgSetupLocked = computed(() => isNewMode.value);
 
 const stepTitles = computed(() => [
-  t('tenant.setupWizard.steps.person'),
-  t('tenant.setupWizard.steps.organization'),
-  t('tenant.setupWizard.steps.done'),
-])
+  t("tenant.setupWizard.steps.person"),
+  t("tenant.setupWizard.steps.organization"),
+  t("tenant.setupWizard.steps.done"),
+]);
 
 const modeOptions = computed(() => [
   {
-    value: 'existing' as PersonMode,
-    icon: 'user',
-    title: t('tenant.setupWizard.modes.existing.title'),
-    desc: t('tenant.setupWizard.modes.existing.desc'),
+    value: "existing" as PersonMode,
+    icon: "user",
+    title: t("tenant.setupWizard.modes.existing.title"),
+    desc: t("tenant.setupWizard.modes.existing.desc"),
   },
   {
-    value: 'new' as PersonMode,
-    icon: 'user-add',
-    title: t('tenant.setupWizard.modes.new.title'),
-    desc: t('tenant.setupWizard.modes.new.desc'),
+    value: "new" as PersonMode,
+    icon: "user-add",
+    title: t("tenant.setupWizard.modes.new.title"),
+    desc: t("tenant.setupWizard.modes.new.desc"),
   },
   {
-    value: 'invite' as PersonMode,
-    icon: 'link',
-    title: t('tenant.setupWizard.modes.invite.title'),
-    desc: t('tenant.setupWizard.modes.invite.desc'),
+    value: "invite" as PersonMode,
+    icon: "link",
+    title: t("tenant.setupWizard.modes.invite.title"),
+    desc: t("tenant.setupWizard.modes.invite.desc"),
   },
-])
+]);
 
 const tenantRoleOptions = computed(() => [
-  { value: 'viewer' as TenantRole, label: t('tenantMember.role.viewer') },
-  { value: 'contributor' as TenantRole, label: t('tenantMember.role.contributor') },
-  { value: 'admin' as TenantRole, label: t('tenantMember.role.admin') },
-  { value: 'owner' as TenantRole, label: t('tenantMember.role.owner') },
-])
+  { value: "viewer" as TenantRole, label: t("tenantMember.role.viewer") },
+  {
+    value: "contributor" as TenantRole,
+    label: t("tenantMember.role.contributor"),
+  },
+  { value: "admin" as TenantRole, label: t("tenantMember.role.admin") },
+  { value: "owner" as TenantRole, label: t("tenantMember.role.owner") },
+]);
 
 const orgRoleOptions = computed(() => [
-  { value: 'viewer' as OrgRole, label: t('admin.member.roleViewer') },
-  { value: 'editor' as OrgRole, label: t('admin.member.roleEditor') },
-  { value: 'admin' as OrgRole, label: t('admin.member.roleAdmin') },
-])
+  { value: "viewer" as OrgRole, label: t("admin.member.roleViewer") },
+  { value: "editor" as OrgRole, label: t("admin.member.roleEditor") },
+  { value: "admin" as OrgRole, label: t("admin.member.roleAdmin") },
+]);
 
 const currentModeTitle = computed(() => {
-  if (isExistingMode.value) return t('tenant.setupWizard.modes.existing.title')
-  if (isNewMode.value) return t('tenant.setupWizard.modes.new.title')
-  return t('tenant.setupWizard.modes.invite.title')
-})
+  if (isExistingMode.value) return t("tenant.setupWizard.modes.existing.title");
+  if (isNewMode.value) return t("tenant.setupWizard.modes.new.title");
+  return t("tenant.setupWizard.modes.invite.title");
+});
 
 const currentModeDesc = computed(() => {
-  if (isExistingMode.value) return t('tenant.setupWizard.modes.existing.desc')
-  if (isNewMode.value) return t('tenant.setupWizard.modes.new.desc')
-  return t('tenant.setupWizard.modes.invite.desc')
-})
+  if (isExistingMode.value) return t("tenant.setupWizard.modes.existing.desc");
+  if (isNewMode.value) return t("tenant.setupWizard.modes.new.desc");
+  return t("tenant.setupWizard.modes.invite.desc");
+});
 
-const resultSummary = computed(() => result.value?.summary || '')
-const resultOrgSummary = computed(() => result.value?.orgSummary || '')
-const resultWarning = computed(() => result.value?.warning || '')
-const resultInviteUrl = computed(() => result.value?.inviteUrl || '')
+const resultSummary = computed(() => result.value?.summary || "");
+const resultOrgSummary = computed(() => result.value?.orgSummary || "");
+const resultWarning = computed(() => result.value?.warning || "");
+const resultInviteUrl = computed(() => result.value?.inviteUrl || "");
 
 function resetState() {
-  step.value = 0
-  submitting.value = false
-  createdRootOrg.value = null
-  resolvedResponsibleUserId.value = ''
-  result.value = null
-  form.personMode = 'existing'
-  form.tenantRole = 'admin'
-  form.existingEmail = ''
-  form.inviteMessage = ''
-  form.newUsername = ''
-  form.newEmail = ''
-  form.newPhone = ''
-  form.newPassword = ''
-  form.shouldSetupOrg = true
-  form.rootOrgName = pending.value?.tenantName || ''
-  form.rootOrgDescription = pending.value?.tenantDescription || ''
-  form.orgRole = 'admin'
+  step.value = 0;
+  submitting.value = false;
+  createdRootOrg.value = null;
+  resolvedResponsibleUserId.value = "";
+  result.value = null;
+  form.personMode = "existing";
+  form.tenantRole = "admin";
+  form.existingEmail = "";
+  form.inviteMessage = "";
+  form.newUsername = "";
+  form.newEmail = "";
+  form.newPhone = "";
+  form.newPassword = "";
+  form.shouldSetupOrg = true;
+  form.rootOrgName = pending.value?.tenantName || "";
+  form.rootOrgDescription = pending.value?.tenantDescription || "";
+  form.orgRole = "admin";
+  if (pending.value?.createdRootOrg) {
+    createdRootOrg.value = pending.value.createdRootOrg;
+    form.rootOrgName = pending.value.createdRootOrg.name;
+  }
 }
 
 watch(
   () => pending.value?.tenantId,
   () => {
-    if (pending.value) resetState()
+    if (pending.value) resetState();
   },
   { immediate: true },
-)
+);
+
+watch(
+  [() => pending.value?.tenantId, visible, () => form.shouldSetupOrg],
+  ([tenantId, isVisible, shouldSetupOrg]) => {
+    if (!tenantId || !isVisible || !shouldSetupOrg || createdRootOrg.value)
+      return;
+    void probeExistingRootOrg();
+  },
+  { immediate: true },
+);
 
 watch(
   () => form.personMode,
   (mode) => {
-    resolvedResponsibleUserId.value = ''
-    result.value = null
-    if (mode === 'new') {
-      form.shouldSetupOrg = true
-      form.orgRole = 'admin'
+    resolvedResponsibleUserId.value = "";
+    result.value = null;
+    workspaceSetupStore.rotateIdempotencyKey();
+    if (mode === "new") {
+      form.shouldSetupOrg = true;
+      form.orgRole = "admin";
     }
   },
-)
+);
 
 watch(
   () => form.existingEmail,
   () => {
-    resolvedResponsibleUserId.value = ''
+    resolvedResponsibleUserId.value = "";
   },
-)
+);
 
 function absoluteInviteURL(raw: string): string {
-  if (!raw) return ''
-  if (/^https?:\/\//i.test(raw)) return raw
-  const origin = (typeof window !== 'undefined' && window.location && window.location.origin) || ''
-  return raw.startsWith('/') ? origin + raw : origin + '/' + raw
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const origin =
+    (typeof window !== "undefined" &&
+      window.location &&
+      window.location.origin) ||
+    "";
+  return raw.startsWith("/") ? origin + raw : origin + "/" + raw;
 }
 
 async function copyInviteLink() {
-  if (!resultInviteUrl.value) return
+  if (!resultInviteUrl.value) return;
   try {
-    await navigator.clipboard.writeText(resultInviteUrl.value)
-    MessagePlugin.success(t('tenantInvitation.copied'))
+    await navigator.clipboard.writeText(resultInviteUrl.value);
+    MessagePlugin.success(t("tenantInvitation.copied"));
   } catch {
-    MessagePlugin.error(t('tenantInvitation.copyFailed'))
+    MessagePlugin.error(t("tenantInvitation.copyFailed"));
   }
 }
 
 function validateStepOne(): boolean {
   if (isExistingMode.value) {
     if (!form.existingEmail.trim()) {
-      MessagePlugin.warning(t('tenant.setupWizard.errors.existingEmailRequired'))
-      return false
+      MessagePlugin.warning(
+        t("tenant.setupWizard.errors.existingEmailRequired"),
+      );
+      return false;
     }
-    return true
+    return true;
   }
 
   if (isNewMode.value) {
     if (form.newUsername.trim().length === 0) {
-      MessagePlugin.warning(t('auth.usernameRequired'))
-      return false
+      MessagePlugin.warning(t("auth.usernameRequired"));
+      return false;
     }
     if (form.newUsername.trim().length < 2) {
-      MessagePlugin.warning(t('auth.usernameMinLength'))
-      return false
+      MessagePlugin.warning(t("auth.usernameMinLength"));
+      return false;
     }
     if (form.newPassword.length === 0) {
-      MessagePlugin.warning(t('auth.passwordRequired'))
-      return false
+      MessagePlugin.warning(t("auth.passwordRequired"));
+      return false;
     }
     if (form.newPassword.length < 8) {
-      MessagePlugin.warning(t('auth.passwordMinLength'))
-      return false
+      MessagePlugin.warning(t("auth.passwordMinLength"));
+      return false;
     }
     if (form.newPassword.length > 32) {
-      MessagePlugin.warning(t('auth.passwordMaxLength'))
-      return false
+      MessagePlugin.warning(t("auth.passwordMaxLength"));
+      return false;
     }
     if (!form.newEmail.trim() && !form.newPhone.trim()) {
-      MessagePlugin.warning(t('admin.member.emailOrPhoneRequired'))
-      return false
+      MessagePlugin.warning(t("admin.member.emailOrPhoneRequired"));
+      return false;
     }
   }
 
-  return true
+  return true;
 }
 
 function validateStepTwo(): boolean {
   if (isNewMode.value && !form.shouldSetupOrg) {
-    MessagePlugin.warning(t('tenant.setupWizard.rootOrgRequiredHint'))
-    return false
+    MessagePlugin.warning(t("tenant.setupWizard.rootOrgRequiredHint"));
+    return false;
   }
-  if (form.shouldSetupOrg && !createdRootOrg.value && !form.rootOrgName.trim()) {
-    MessagePlugin.warning(t('tenant.setupWizard.errors.rootOrgNameRequired'))
-    return false
+  if (
+    form.shouldSetupOrg &&
+    !createdRootOrg.value &&
+    !form.rootOrgName.trim()
+  ) {
+    MessagePlugin.warning(t("tenant.setupWizard.errors.rootOrgNameRequired"));
+    return false;
   }
-  return true
+  return true;
 }
 
 function goNext() {
-  if (!validateStepOne()) return
-  step.value = 1
+  if (!validateStepOne()) return;
+  step.value = 1;
 }
 
-async function ensureRootOrg(tenantId: number): Promise<CreatedRootOrg | null> {
-  if (!form.shouldSetupOrg) return null
-  if (createdRootOrg.value) return createdRootOrg.value
-
-  const resp = await createOrgTreeNode({
-    name: form.rootOrgName.trim(),
-    description: form.rootOrgDescription.trim() || undefined,
-  })
-  if (!resp.success || !resp.data) {
-    throw new Error(resp.message || t('tenant.setupWizard.errors.generic'))
-  }
-  createdRootOrg.value = {
-    id: resp.data.id,
-    name: resp.data.name,
-  }
-  return createdRootOrg.value
-}
-
-async function findTenantMemberByEmail(tenantId: number, email: string): Promise<TenantMember | null> {
-  const resp = await listMembers(tenantId, {
-    q: email,
-    page: 1,
-    page_size: 20,
-  })
-  if (!resp.success || !resp.data) return null
-  const target = email.trim().toLowerCase()
-  return resp.data.members.find((member) => member.email.trim().toLowerCase() === target) || null
-}
-
-async function ensureExistingMember(tenantId: number): Promise<string> {
-  if (resolvedResponsibleUserId.value) return resolvedResponsibleUserId.value
-
-  const email = form.existingEmail.trim()
+async function probeExistingRootOrg(): Promise<CreatedRootOrg | null> {
+  if (!form.shouldSetupOrg) return null;
+  if (createdRootOrg.value) return createdRootOrg.value;
   try {
-    const resp = await addMember(tenantId, { email, role: form.tenantRole })
-    if (!resp.success || !resp.data) {
-      throw new Error(resp.message || t('tenant.setupWizard.errors.generic'))
-    }
-    resolvedResponsibleUserId.value = resp.data.user_id
-    return resolvedResponsibleUserId.value
-  } catch (err: any) {
-    if (err?.status === 404) {
-      throw new Error(t('tenant.setupWizard.errors.existingUserNotFound'))
-    }
-    if (err?.status === 409) {
-      const member = await findTenantMemberByEmail(tenantId, email)
-      if (!member) {
-        throw new Error(err?.message || t('tenant.setupWizard.errors.generic'))
+    const treeResp = await getOrgTree();
+    if (treeResp.success && treeResp.data) {
+      const reusableRoot = selectReusableRootOrg(treeResp.data, [
+        form.rootOrgName,
+        pendingTenantName.value,
+      ]);
+      if (reusableRoot) {
+        createdRootOrg.value = reusableRoot;
+        form.rootOrgName = reusableRoot.name;
+        workspaceSetupStore.setCreatedRootOrg(reusableRoot);
+        return reusableRoot;
       }
-      if (member.role !== form.tenantRole) {
-        const updateResp = await updateMemberRole(tenantId, member.user_id, form.tenantRole)
-        if (!updateResp.success) {
-          throw new Error(updateResp.message || t('tenant.setupWizard.errors.generic'))
-        }
-      }
-      resolvedResponsibleUserId.value = member.user_id
-      return resolvedResponsibleUserId.value
     }
-    throw new Error(err?.message || t('tenant.setupWizard.errors.generic'))
+  } catch {
+    // Ignore root-org probing failures and fall through to active creation.
   }
+  return null;
+}
+
+async function ensureRootOrg(): Promise<CreatedRootOrg | null> {
+  if (!form.shouldSetupOrg) return null;
+  const reusableRoot = await probeExistingRootOrg();
+  if (reusableRoot) return reusableRoot;
+  return pending.value?.createdRootOrg || null;
+}
+
+function resolveBootstrapErrorMessage(err: any): string {
+  const reason = err?.details?.reason || err?.error?.details?.reason;
+  const field = err?.details?.field || err?.error?.details?.field;
+  if (reason === "user_conflict") {
+    if (field === "phone") return t("tenant.setupWizard.errors.phoneExists");
+    if (field === "email") return t("tenant.setupWizard.errors.emailExists");
+    if (field === "username")
+      return t("tenant.setupWizard.errors.usernameExists");
+  }
+  if (reason === "idempotency_key_reused") {
+    workspaceSetupStore.rotateIdempotencyKey();
+    return t("tenant.setupWizard.errors.idempotencyKeyReused");
+  }
+  if (err?.status === 404) {
+    return t("tenant.setupWizard.errors.existingUserNotFound");
+  }
+  return err?.message || t("tenant.setupWizard.errors.generic");
 }
 
 async function runSetup() {
-  if (!pending.value) return
-  if (!validateStepTwo()) return
+  if (!pending.value) return;
+  if (!validateStepTwo()) return;
 
-  submitting.value = true
+  submitting.value = true;
   try {
-    const tenantId = pending.value.tenantId
-    const rootOrg = await ensureRootOrg(tenantId)
+    const tenantId = pending.value.tenantId;
+    const rootOrg = await ensureRootOrg();
+    const resp = await bootstrapWorkspace(tenantId, {
+      idempotency_key: pending.value.idempotencyKey,
+      mode: form.personMode,
+      tenant_role: form.tenantRole,
+      should_setup_org: form.shouldSetupOrg,
+      root_org_id: rootOrg?.id,
+      root_org_name: form.rootOrgName.trim() || undefined,
+      root_org_description: form.rootOrgDescription.trim() || undefined,
+      org_role: form.shouldSetupOrg ? form.orgRole : undefined,
+      existing_email: isExistingMode.value
+        ? form.existingEmail.trim()
+        : undefined,
+      invite_message: isInviteMode.value
+        ? form.inviteMessage.trim() || undefined
+        : undefined,
+      new_username: isNewMode.value ? form.newUsername.trim() : undefined,
+      new_email: isNewMode.value
+        ? form.newEmail.trim() || undefined
+        : undefined,
+      new_phone: isNewMode.value
+        ? form.newPhone.trim() || undefined
+        : undefined,
+      new_password: isNewMode.value ? form.newPassword : undefined,
+    });
+    if (!resp.success || !resp.data) {
+      throw resp;
+    }
+
+    const bootstrap = resp.data;
+    const resultRootOrg = bootstrap.root_org
+      ? { id: bootstrap.root_org.id, name: bootstrap.root_org.name }
+      : rootOrg;
+    createdRootOrg.value = resultRootOrg;
+    workspaceSetupStore.setCreatedRootOrg(resultRootOrg);
+    if (resultRootOrg) {
+      form.rootOrgName = resultRootOrg.name;
+    }
 
     if (isExistingMode.value) {
-      const userId = await ensureExistingMember(tenantId)
-      if (rootOrg) {
-        const assignResp = await assignUserToOrg(rootOrg.id, {
-          user_id: userId,
-          role: form.orgRole,
-        })
-        if (!assignResp.success) {
-          throw new Error(assignResp.message || t('tenant.setupWizard.errors.generic'))
-        }
-      }
+      resolvedResponsibleUserId.value =
+        bootstrap.user?.id || resolvedResponsibleUserId.value;
       result.value = {
-        summary: rootOrg
-          ? t('tenant.setupWizard.resultExistingWithOrg', {
+        summary: resultRootOrg
+          ? t("tenant.setupWizard.resultExistingWithOrg", {
               email: form.existingEmail.trim(),
-              org: rootOrg.name,
+              org: resultRootOrg.name,
             })
-          : t('tenant.setupWizard.resultExisting', {
+          : t("tenant.setupWizard.resultExisting", {
               email: form.existingEmail.trim(),
             }),
-        orgSummary: rootOrg
-          ? t('tenant.setupWizard.resultOrgCreated', { name: rootOrg.name })
-          : t('tenant.setupWizard.resultOrgSkipped'),
-      }
+        orgSummary: resultRootOrg
+          ? bootstrap.root_org?.reused
+            ? t("tenant.setupWizard.resultOrgReused", {
+                name: resultRootOrg.name,
+              })
+            : t("tenant.setupWizard.resultOrgCreated", {
+                name: resultRootOrg.name,
+              })
+          : t("tenant.setupWizard.resultOrgSkipped"),
+        warning:
+          bootstrap.status === "partial_success" &&
+          bootstrap.steps.org_assignment.message
+            ? t("tenant.setupWizard.warnings.existingUserPartial", {
+                message: bootstrap.steps.org_assignment.message,
+              })
+            : undefined,
+        retryable: bootstrap.status === "partial_success",
+      };
     } else if (isNewMode.value) {
-      if (!rootOrg) {
-        throw new Error(t('tenant.setupWizard.rootOrgRequiredHint'))
-      }
-      const resp = await createUserInOrg(rootOrg.id, {
-        username: form.newUsername.trim(),
-        email: form.newEmail.trim() || undefined,
-        phone: form.newPhone.trim() || undefined,
-        password: form.newPassword,
-        role: form.orgRole,
-        tenant_role: form.tenantRole,
-      })
-      if (!resp.success) {
-        throw new Error(resp.message || t('tenant.setupWizard.errors.generic'))
+      if (!resultRootOrg) {
+        throw new Error(t("tenant.setupWizard.rootOrgRequiredHint"));
       }
       result.value = {
-        summary: t('tenant.setupWizard.resultNewUserWithOrg', {
-          username: form.newUsername.trim(),
-          org: rootOrg.name,
+        summary: t("tenant.setupWizard.resultNewUserWithOrg", {
+          username: bootstrap.user?.username || form.newUsername.trim(),
+          org: resultRootOrg.name,
         }),
-        orgSummary: t('tenant.setupWizard.resultOrgCreated', { name: rootOrg.name }),
-        warning: resp.message?.includes('failed to assign to organization')
-          ? t('tenant.setupWizard.warnings.newUserPartial', { message: resp.message })
-          : undefined,
-      }
+        orgSummary: bootstrap.root_org?.reused
+          ? t("tenant.setupWizard.resultOrgReused", {
+              name: resultRootOrg.name,
+            })
+          : t("tenant.setupWizard.resultOrgCreated", {
+              name: resultRootOrg.name,
+            }),
+        warning:
+          bootstrap.status === "partial_success" &&
+          bootstrap.steps.org_assignment.message
+            ? t("tenant.setupWizard.warnings.newUserPartial", {
+                message: bootstrap.steps.org_assignment.message,
+              })
+            : undefined,
+        retryable: bootstrap.status === "partial_success",
+      };
     } else {
-      const resp = await createInviteLink(tenantId, {
-        role: form.tenantRole,
-        message: form.inviteMessage.trim() || undefined,
-      })
-      const inviteUrl = absoluteInviteURL(resp.data?.invite_url || '')
-      if (!resp.success || !resp.data || !inviteUrl) {
-        throw new Error(resp.message || t('tenant.setupWizard.errors.missingInviteLink'))
+      const inviteUrl = absoluteInviteURL(bootstrap.invite_url || "");
+      if (!inviteUrl) {
+        throw new Error(t("tenant.setupWizard.errors.missingInviteLink"));
       }
       result.value = {
-        summary: t('tenant.setupWizard.resultInvite'),
-        orgSummary: rootOrg
-          ? t('tenant.setupWizard.resultOrgCreated', { name: rootOrg.name })
-          : t('tenant.setupWizard.resultOrgSkipped'),
+        summary: t("tenant.setupWizard.resultInvite"),
+        orgSummary: resultRootOrg
+          ? bootstrap.root_org?.reused
+            ? t("tenant.setupWizard.resultOrgReused", {
+                name: resultRootOrg.name,
+              })
+            : t("tenant.setupWizard.resultOrgCreated", {
+                name: resultRootOrg.name,
+              })
+          : t("tenant.setupWizard.resultOrgSkipped"),
         inviteUrl,
-      }
+        retryable: false,
+      };
       try {
-        await navigator.clipboard.writeText(inviteUrl)
-        MessagePlugin.success(t('tenantInvitation.copied'))
+        await navigator.clipboard.writeText(inviteUrl);
+        MessagePlugin.success(t("tenantInvitation.copied"));
       } catch {
         // ignore clipboard failures here; the result step still exposes a copy button.
       }
     }
 
-    step.value = 2
+    step.value = 2;
   } catch (err: any) {
-    MessagePlugin.error(err?.message || t('tenant.setupWizard.errors.generic'))
+    MessagePlugin.error(resolveBootstrapErrorMessage(err));
   } finally {
-    submitting.value = false
+    submitting.value = false;
   }
 }
 
 function navigateIntoWorkspace() {
-  if (!pending.value) return
-  const currentRole = authStore.currentTenantRole || 'owner'
+  if (!pending.value) return;
+  const currentRole = authStore.currentTenantRole || "owner";
   stashTenantSwitchToast({
     name: pending.value.tenantName,
     role: formatRole(currentRole),
     roleEnum: currentRole,
-  })
-  workspaceSetupStore.clear()
-  navigateAfterTenantSwitch()
+  });
+  workspaceSetupStore.clear();
+  navigateAfterTenantSwitch();
 }
 
 function enterWorkspace() {
-  navigateIntoWorkspace()
+  navigateIntoWorkspace();
+}
+
+function retrySetupFromResult() {
+  void runSetup();
 }
 </script>
 
@@ -766,7 +928,10 @@ function enterWorkspace() {
   font-size: 13px;
   font-weight: 500;
   border: 1px solid transparent;
-  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
 }
 
 .workspace-setup-step.is-active {
@@ -792,7 +957,7 @@ function enterWorkspace() {
 
 /* 步骤之间的连接线 */
 .workspace-setup-step::after {
-  content: '';
+  content: "";
   flex: 1;
   height: 1px;
   background: var(--td-component-stroke);
@@ -805,7 +970,11 @@ function enterWorkspace() {
 }
 
 .workspace-setup-step.is-done::after {
-  background: color-mix(in srgb, var(--td-brand-color) 40%, var(--td-component-stroke));
+  background: color-mix(
+    in srgb,
+    var(--td-brand-color) 40%,
+    var(--td-component-stroke)
+  );
 }
 
 .workspace-setup-step__label {
@@ -828,13 +997,19 @@ function enterWorkspace() {
   border: 1px solid var(--td-component-stroke);
   border-radius: 12px;
   background: var(--td-bg-color-container);
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 /* info 段用作软提示条；保持与品牌色系的统一，避免引入主题绿/黄 */
 .workspace-setup-section--info {
   background: color-mix(in srgb, var(--td-brand-color) 6%, transparent);
-  border-color: color-mix(in srgb, var(--td-brand-color) 24%, var(--td-component-stroke));
+  border-color: color-mix(
+    in srgb,
+    var(--td-brand-color) 24%,
+    var(--td-component-stroke)
+  );
   padding: 10px 14px;
 }
 
@@ -849,7 +1024,7 @@ function enterWorkspace() {
 }
 
 .workspace-setup-section__copy::before {
-  content: '';
+  content: "";
   display: inline-block;
   flex-shrink: 0;
   width: 4px;
@@ -885,7 +1060,11 @@ function enterWorkspace() {
 
 .workspace-setup-callout--success {
   background: color-mix(in srgb, var(--td-brand-color) 8%, transparent);
-  border-color: color-mix(in srgb, var(--td-brand-color) 22%, var(--td-component-stroke));
+  border-color: color-mix(
+    in srgb,
+    var(--td-brand-color) 22%,
+    var(--td-component-stroke)
+  );
   color: color-mix(in srgb, var(--td-text-color-primary) 88%, transparent);
 }
 
@@ -914,19 +1093,32 @@ function enterWorkspace() {
   text-align: left;
   color: var(--td-text-color-primary);
   cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .workspace-setup-mode:hover {
-  border-color: color-mix(in srgb, var(--td-brand-color) 32%, var(--td-component-stroke));
+  border-color: color-mix(
+    in srgb,
+    var(--td-brand-color) 32%,
+    var(--td-component-stroke)
+  );
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
 }
 
 .workspace-setup-mode.is-active {
   border-color: var(--td-brand-color);
-  background: color-mix(in srgb, var(--td-brand-color) 6%, var(--td-bg-color-container));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--td-brand-color) 14%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--td-brand-color) 6%,
+    var(--td-bg-color-container)
+  );
+  box-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--td-brand-color) 14%, transparent);
 }
 
 .workspace-setup-mode__icon {
@@ -1004,8 +1196,13 @@ function enterWorkspace() {
   gap: 14px;
   padding: 18px 20px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--td-brand-color) 7%, var(--td-bg-color-container));
-  border: 1px solid color-mix(in srgb, var(--td-brand-color) 22%, var(--td-component-stroke));
+  background: color-mix(
+    in srgb,
+    var(--td-brand-color) 7%,
+    var(--td-bg-color-container)
+  );
+  border: 1px solid
+    color-mix(in srgb, var(--td-brand-color) 22%, var(--td-component-stroke));
 }
 
 .workspace-setup-result__hero-content {

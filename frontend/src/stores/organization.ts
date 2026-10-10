@@ -787,8 +787,11 @@ export const useOrganizationStore = defineStore('organization', () => {
       const response = await getMyOrgTreeOrganizations()
       if (response.success && response.data) {
         myOrgTreeOrgs.value = response.data
-        if (!currentOrganizationId.value && response.data.length > 0) {
-          switchOrganization(response.data[0].id)
+        const hasCurrentOrg =
+          !!currentOrganizationId.value &&
+          response.data.some((org) => org.id === currentOrganizationId.value)
+        if (!hasCurrentOrg) {
+          switchOrganization(response.data[0]?.id || null)
         }
       }
     } catch (e: any) {

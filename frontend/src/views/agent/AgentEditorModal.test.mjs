@@ -34,3 +34,11 @@ test('shows a post-create hint after the first successful save', () => {
   assert.match(source, /settings-footer-note/)
   assert.match(source, /agent\.editor\.postCreateHint\.title/)
 })
+
+test('loads chat models before optional editor dependencies', () => {
+  assert.match(
+    source,
+    /await chatResources\.ensureModels\(\);\s*allModels\.value = Array\.isArray\(chatResources\.allModels\) \? chatResources\.allModels : \[\];\s*\n\s*await Promise\.all\(\[/,
+  )
+  assert.match(source, /editorResources\.ensureStorageEngineStatus\(true\)/)
+})

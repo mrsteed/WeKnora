@@ -254,6 +254,7 @@ export const useAuthStore = defineStore('auth', () => {
   // only on an actual tenant change, so logout / init paths are not touched.
   const clearTenantScopedClientState = () => {
     try {
+      useOrganizationStore().clearState()
       localStorage.removeItem('weknora_last_chat_model_id')
       localStorage.removeItem('weknora_current_kb')
       const raw = localStorage.getItem('WeKnora_settings')

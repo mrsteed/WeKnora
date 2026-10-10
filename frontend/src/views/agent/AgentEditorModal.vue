@@ -3402,14 +3402,10 @@ watch(() => uiStore.showSettingsModal, async (visible, prevVisible) => {
     try {
       await Promise.all([
         chatResources.ensureModels(true),
-        editorResources.ensureStorageEngine(true),
+        editorResources.ensureStorageEngineStatus(true),
       ]);
-      if (chatResources.allModels.length > 0) {
-        allModels.value = chatResources.allModels;
-      }
-      if (editorResources.storageStatus.length > 0) {
-        storageEngineStatus.value = editorResources.storageStatus;
-      }
+      allModels.value = Array.isArray(chatResources.allModels) ? chatResources.allModels : [];
+      storageEngineStatus.value = editorResources.storageStatus;
     } catch (e) {
       console.warn('Failed to refresh data after settings closed', e);
     }
@@ -3465,8 +3461,10 @@ const applyPromptTemplateDefaults = (cfg: PromptTemplatesConfig | null) => {
 // 加载依赖数据（复用空间级缓存，避免重复请求）
 const loadDependencies = async () => {
   try {
+    await chatResources.ensureModels();
+    allModels.value = Array.isArray(chatResources.allModels) ? chatResources.allModels : [];
+
     await Promise.all([
-      chatResources.ensureModels(),
       chatResources.ensureKnowledgeBases(),
       chatResources.ensureWebSearchProviders(),
       chatResources.ensureSandboxConfigs(),
@@ -3475,10 +3473,6 @@ const loadDependencies = async () => {
         ? orgStore.fetchMyOrgTreeOrganizations()
         : Promise.resolve(),
     ]);
-
-    if (chatResources.allModels.length > 0) {
-      allModels.value = chatResources.allModels;
-    }
 
     const myKbs = chatResources.rawKnowledgeBases.map((kb: any) => mapKbToOption(kb, false));
     const myKbIds = new Set(myKbs.map(kb => kb.value));

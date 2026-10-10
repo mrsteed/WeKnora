@@ -40,7 +40,8 @@ export function pickUsableStorageProvider(
 }
 
 type EditorResourceKey =
-  | 'storageEngine'
+  | 'storageEngineConfig'
+  | 'storageEngineStatus'
   | 'mcpServices'
   | 'skills'
   | 'agentTypePresets'
@@ -82,15 +83,26 @@ export const useEditorResourcesStore = defineStore('editorResources', () => {
   }
 
   async function ensureStorageEngine(force = false): Promise<void> {
-    return runOnce('storageEngine', force, async () => {
-      const [configRes, statusRes] = await Promise.all([
-        getStorageEngineConfig(),
-        getStorageEngineStatus(),
-      ])
+    await Promise.all([
+      ensureStorageEngineConfig(force),
+      ensureStorageEngineStatus(force),
+    ])
+  }
+
+  async function ensureStorageEngineConfig(force = false): Promise<void> {
+    return runOnce('storageEngineConfig', force, async () => {
+      const configRes = await getStorageEngineConfig()
       storageConfig.value = configRes?.data ?? null
+      loadedAt.value.storageEngineConfig = Date.now()
+    })
+  }
+
+  async function ensureStorageEngineStatus(force = false): Promise<void> {
+    return runOnce('storageEngineStatus', force, async () => {
+      const statusRes = await getStorageEngineStatus()
       storageStatus.value = statusRes?.data?.engines ?? []
       storageAllowedProviders.value = statusRes?.data?.allowed_providers ?? []
-      loadedAt.value.storageEngine = Date.now()
+      loadedAt.value.storageEngineStatus = Date.now()
     })
   }
 
@@ -179,7 +191,7 @@ export const useEditorResourcesStore = defineStore('editorResources', () => {
       ensureSkills(force),
       ensureAgentTypePresets(force),
       ensurePromptTemplates(force),
-      ensureStorageEngine(force),
+      ensureStorageEngineStatus(force),
       ensurePlaceholders(force),
       ensureTenantRetrievalConfig(force),
     ])
@@ -222,6 +234,7 @@ export const useEditorResourcesStore = defineStore('editorResources', () => {
     parserEngines,
     systemInfo,
     ensureStorageEngine,
+    ensureStorageEngineStatus,
     resolveUsableStorageProvider,
     ensureMcpServices,
     ensureSkills,
