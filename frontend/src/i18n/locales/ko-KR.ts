@@ -3617,6 +3617,7 @@ export default {
       summaryRequired: 'Summary 모델을 선택해주세요',
       multimodalInvalid: '멀티모달 설정 검증 실패',
       createSuccess: '지식베이스 생성 성공',
+      createSuccessLoadFailed: '지식베이스는 생성되었지만 상세 정보를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.',
       createFailed: '지식베이스 생성 실패',
       missingId: '지식베이스 ID가 없습니다',
       buildDataFailed: '데이터 구축 실패',
