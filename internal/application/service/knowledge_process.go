@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -2435,6 +2436,16 @@ func (s *knowledgeService) ReparseKnowledge(
 	processOverrides, _ = existing.ProcessOverrides()
 	reparseEff := ResolveProcessConfig(kb, processOverrides)
 
+	if existing.FilePath != "" {
+		if err := s.ensureKnowledgeSourceReadable(ctx, kb, existing.FilePath); err != nil {
+			logger.Errorf(ctx, "ReparseKnowledge: source file unavailable for %s: %v", existing.ID, err)
+			if _, permanent := classifyKnowledgeSourceAccessError(err); permanent {
+				return existing, werrors.NewBadRequestError("源文件不存在或已不可访问，请重新上传文件后再重建知识")
+			}
+			return existing, werrors.NewServiceUnavailableError("源文件暂时无法访问，请稍后重试")
+		}
+	}
+
 	// Keep wiki's pending queue consistent across both manual and non-manual
 	// paths. The destructive work (swapping old wiki contributions for new)
 	// happens asynchronously inside mapOneDocument — see its oldPageSlugs
@@ -3646,6 +3657,12 @@ func (s *knowledgeService) convert(
 	if !isURL {
 		fileReader, err := s.resolveFileServiceForPath(ctx, kb, payload.FilePath).GetFile(ctx, payload.FilePath)
 		if err != nil {
+			if msg, permanent := classifyKnowledgeSourceAccessError(err); permanent {
+				s.failStage(ctx, knowledge.ID, types.StageDocReader,
+					werrors.ErrCodeDocReaderParseFailed, msg, err)
+				_, _ = s.failKnowledge(ctx, knowledge, true, "%s: %v", msg, err)
+				return nil, asynq.SkipRetry
+			}
 			s.failStage(ctx, knowledge.ID, types.StageDocReader,
 				werrors.ErrCodeDocReaderParseFailed, "failed to get file", err)
 			return s.failKnowledge(ctx, knowledge, isLastRetry, "failed to get file: %v", err)
@@ -3750,6 +3767,45 @@ func isLikelyRateLimitError(err error) bool {
 		}
 	}
 	return false
+}
+
+const missingKnowledgeSourceMessage = "source file is missing or no longer accessible; please re-upload the file"
+
+func classifyKnowledgeSourceAccessError(err error) (string, bool) {
+	if err == nil {
+		return "", false
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return missingKnowledgeSourceMessage, true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, needle := range []string{
+		"resource not found",
+		"no such file",
+		"no such file or directory",
+		"http 404",
+		"status code: 404",
+	} {
+		if strings.Contains(msg, needle) {
+			return missingKnowledgeSourceMessage, true
+		}
+	}
+	return "", false
+}
+
+func (s *knowledgeService) ensureKnowledgeSourceReadable(
+	ctx context.Context,
+	kb *types.KnowledgeBase,
+	filePath string,
+) error {
+	if strings.TrimSpace(filePath) == "" {
+		return nil
+	}
+	reader, err := s.resolveFileServiceForPath(ctx, kb, filePath).GetFile(ctx, filePath)
+	if err != nil {
+		return err
+	}
+	return reader.Close()
 }
 
 // resolveDocReader picks the reader for one parse request. The engine catalog

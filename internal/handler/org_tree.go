@@ -444,128 +444,6 @@ func resolveTenantRoleForSetOrgAdmin(
 	return resolveTenantRoleForImplicitOrgRoleSync(currentTenantRole, orgRole)
 }
 
-func selectProvisionUserCandidate(matches ...*types.User) *types.User {
-	var candidate *types.User
-	for _, match := range matches {
-		if match == nil {
-			continue
-		}
-		if candidate == nil {
-			candidate = match
-			continue
-		}
-		if candidate.ID != match.ID {
-			return nil
-		}
-	}
-	return candidate
-}
-
-func countProvisionUserMatches(candidate *types.User, matches ...*types.User) int {
-	if candidate == nil {
-		return 0
-	}
-	count := 0
-	for _, match := range matches {
-		if match != nil && match.ID == candidate.ID {
-			count++
-		}
-	}
-	return count
-}
-
-func isReusableProvisionedUser(candidate *types.User, tenantID uint64, orgCount int, matchedCount int) bool {
-	if candidate == nil {
-		return false
-	}
-	if candidate.TenantID != tenantID || isPrivilegedOrgTreeOperator(candidate) || orgCount != 0 {
-		return false
-	}
-	return matchedCount >= 2
-}
-
-func (h *OrgTreeHandler) findReusableProvisionedUser(
-	ctx context.Context,
-	tenantID uint64,
-	req *types.CreateUserInOrgRequest,
-) (*types.User, error) {
-	usernameMatch, _ := h.userService.GetUserByUsername(ctx, req.Username)
-	var emailMatch *types.User
-	if req.Email != "" {
-		emailMatch, _ = h.userService.GetUserByEmail(ctx, req.Email)
-	}
-	var phoneMatch *types.User
-	if req.Phone != "" {
-		phoneMatch, _ = h.userService.GetUserByPhone(ctx, req.Phone)
-	}
-
-	candidate := selectProvisionUserCandidate(usernameMatch, emailMatch, phoneMatch)
-	if candidate == nil {
-		return nil, nil
-	}
-
-	orgs, err := h.orgTreeService.GetUserOrganizations(ctx, candidate.ID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	matchedCount := countProvisionUserMatches(candidate, usernameMatch, emailMatch, phoneMatch)
-	if !isReusableProvisionedUser(candidate, tenantID, len(orgs), matchedCount) {
-		return nil, nil
-	}
-	return candidate, nil
-}
-
-func (h *OrgTreeHandler) provisionUserForOrg(
-	ctx context.Context,
-	tenantID uint64,
-	req *types.CreateUserInOrgRequest,
-) (*types.User, bool, error) {
-	reusableUser, err := h.findReusableProvisionedUser(ctx, tenantID, req)
-	if err != nil {
-		return nil, false, err
-	}
-	if reusableUser == nil {
-		user, err := h.userService.CreateUserByAdmin(ctx, req, tenantID)
-		if err != nil {
-			return nil, false, err
-		}
-		return user, true, nil
-	}
-
-	logger.Infof(ctx, "Reusing orphaned org-tree user %s during provisioning", reusableUser.ID)
-	reusableUser.Username = req.Username
-	reusableUser.Email = req.Email
-	reusableUser.Phone = req.Phone
-	reusableUser.IsActive = true
-	if err := h.userService.UpdateUser(ctx, reusableUser); err != nil {
-		return nil, false, err
-	}
-	if err := h.userService.AdminSetPassword(ctx, reusableUser.ID, req.Password); err != nil {
-		return nil, false, err
-	}
-	return reusableUser, false, nil
-}
-
-func (h *OrgTreeHandler) ensureProvisionedMembership(
-	ctx context.Context,
-	userID string,
-	tenantID uint64,
-	role types.TenantRole,
-) error {
-	currentMember, err := h.memberService.GetMembership(ctx, userID, tenantID)
-	if err != nil {
-		return err
-	}
-	if currentMember == nil {
-		_, err := h.memberService.AddMember(ctx, userID, tenantID, role, nil)
-		return err
-	}
-	if currentMember.Role == role {
-		return nil
-	}
-	return h.memberService.UpdateRole(ctx, userID, tenantID, role)
-}
-
 func tenantRoleFromMembership(member *types.TenantMember) types.TenantRole {
 	if member == nil {
 		return ""
@@ -1061,16 +939,16 @@ func (h *OrgTreeHandler) CreateUserInOrg(c *gin.Context) {
 	}
 
 	// Step 1: Create user via user service
-	newUser, createdNewUser, err := h.provisionUserForOrg(ctx, tenantID, &req)
+	newUser, createdNewUser, err := provisionUserForOrg(ctx, h.orgTreeService, h.userService, tenantID, &req)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to create user: %v", err)
-		c.Error(apperrors.NewInternalServerError("Failed to create user").WithDetails(err.Error()))
+		c.Error(translateUserProvisionError(err))
 		return
 	}
 
 	// Step 2: Bootstrap tenant membership so the new user can actually log into
 	// this workspace. Org-tree membership alone is not enough for RBAC.
-	if err := h.ensureProvisionedMembership(ctx, newUser.ID, tenantID, tenantRole); err != nil {
+	if _, err := ensureProvisionedMembership(ctx, h.memberService, newUser.ID, tenantID, tenantRole); err != nil {
 		logger.Errorf(ctx, "User created but failed to create tenant membership: %v", err)
 		if createdNewUser {
 			_ = h.userService.DeleteUser(ctx, newUser.ID)
@@ -1189,7 +1067,7 @@ func (h *OrgTreeHandler) UpdateUserInOrg(c *gin.Context) {
 	if req.Username != user.Username {
 		existingUser, _ := h.userService.GetUserByUsername(ctx, req.Username)
 		if existingUser != nil && existingUser.ID != userID {
-			c.Error(apperrors.NewBadRequestError("Username already exists"))
+			c.Error(newUserConflictAppError("username", "Username already exists"))
 			return
 		}
 	}
@@ -1198,7 +1076,7 @@ func (h *OrgTreeHandler) UpdateUserInOrg(c *gin.Context) {
 	if req.Email != "" && req.Email != user.Email {
 		existingUser, _ := h.userService.GetUserByEmail(ctx, req.Email)
 		if existingUser != nil && existingUser.ID != userID {
-			c.Error(apperrors.NewBadRequestError("Email already exists"))
+			c.Error(newUserConflictAppError("email", "Email already exists"))
 			return
 		}
 	}
@@ -1207,7 +1085,7 @@ func (h *OrgTreeHandler) UpdateUserInOrg(c *gin.Context) {
 	if req.Phone != "" && req.Phone != user.Phone {
 		existingUser, _ := h.userService.GetUserByPhone(ctx, req.Phone)
 		if existingUser != nil && existingUser.ID != userID {
-			c.Error(apperrors.NewBadRequestError("Phone already exists"))
+			c.Error(newUserConflictAppError("phone", "Phone already exists"))
 			return
 		}
 	}
@@ -1248,7 +1126,7 @@ func (h *OrgTreeHandler) UpdateUserInOrg(c *gin.Context) {
 	}
 
 	if shouldSyncTenantRole {
-		if err := h.ensureProvisionedMembership(ctx, userID, tenantID, desiredTenantRole); err != nil {
+		if _, err := ensureProvisionedMembership(ctx, h.memberService, userID, tenantID, desiredTenantRole); err != nil {
 			logger.Errorf(ctx, "User updated but failed to sync tenant membership: %v", err)
 			c.Error(apperrors.NewInternalServerError("Failed to sync workspace role").WithDetails(err.Error()))
 			return
@@ -1451,7 +1329,7 @@ func (h *OrgTreeHandler) SetOrgAdmin(c *gin.Context) {
 		return
 	}
 	if shouldSyncTenantRole {
-		if err := h.ensureProvisionedMembership(ctx, req.UserID, tenantID, desiredTenantRole); err != nil {
+		if _, err := ensureProvisionedMembership(ctx, h.memberService, req.UserID, tenantID, desiredTenantRole); err != nil {
 			logger.Errorf(ctx, "Org admin updated but failed to sync tenant membership: %v", err)
 			c.Error(apperrors.NewInternalServerError("Failed to sync workspace role").WithDetails(err.Error()))
 			return

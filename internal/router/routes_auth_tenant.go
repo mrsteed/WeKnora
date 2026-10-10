@@ -94,6 +94,7 @@ func RegisterTenantRoutes(
 				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), g.Owner(), handler.UpdateTenant)
 			g.apiKeyRoute(tenantByID, http.MethodDelete, "",
 				apiKeyPlatform(types.APIKeyCapabilitySystemTenantsManage), g.OwnerOrSystemAdminDelete(), handler.DeleteTenant)
+			tenantByID.POST("/bootstrap", g.Owner(), handler.BootstrapWorkspace)
 			tenantByID.GET("/api-keys", g.Owner(), handler.ListAPIKeys)
 			tenantByID.POST("/api-keys", g.Owner(), handler.CreateAPIKey)
 			tenantByID.PUT("/api-keys/:key_id", g.Owner(), handler.UpdateAPIKey)

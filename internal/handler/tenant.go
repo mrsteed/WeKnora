@@ -25,12 +25,15 @@ import (
 // Provides functionality for creating, retrieving, updating, and deleting tenants
 // through the REST API endpoints
 type TenantHandler struct {
-	service       interfaces.TenantService
-	apiKeyService interfaces.TenantAPIKeyService
-	userService   interfaces.UserService
-	memberService interfaces.TenantMemberService
-	kbService     interfaces.KnowledgeBaseService
-	config        *config.Config
+	service           interfaces.TenantService
+	apiKeyService     interfaces.TenantAPIKeyService
+	userService       interfaces.UserService
+	memberService     interfaces.TenantMemberService
+	invitationService interfaces.TenantInvitationService
+	orgTreeService    interfaces.OrgTreeService
+	bootstrapService  interfaces.TenantBootstrapService
+	kbService         interfaces.KnowledgeBaseService
+	config            *config.Config
 	// systemSettingSvc resolves runtime tenant policies and limits.
 	// Reading goes DB > ENV >
 	// in-code default, so a SystemAdmin's UI override applies on the
@@ -60,18 +63,24 @@ func NewTenantHandler(
 	apiKeyService interfaces.TenantAPIKeyService,
 	userService interfaces.UserService,
 	memberService interfaces.TenantMemberService,
+	invitationService interfaces.TenantInvitationService,
+	orgTreeService interfaces.OrgTreeService,
+	bootstrapService interfaces.TenantBootstrapService,
 	kbService interfaces.KnowledgeBaseService,
 	config *config.Config,
 	systemSettingSvc interfaces.SystemSettingService,
 ) *TenantHandler {
 	return &TenantHandler{
-		service:          service,
-		apiKeyService:    apiKeyService,
-		userService:      userService,
-		memberService:    memberService,
-		kbService:        kbService,
-		config:           config,
-		systemSettingSvc: systemSettingSvc,
+		service:           service,
+		apiKeyService:     apiKeyService,
+		userService:       userService,
+		memberService:     memberService,
+		invitationService: invitationService,
+		orgTreeService:    orgTreeService,
+		bootstrapService:  bootstrapService,
+		kbService:         kbService,
+		config:            config,
+		systemSettingSvc:  systemSettingSvc,
 	}
 }
 

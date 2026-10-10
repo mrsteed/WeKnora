@@ -178,6 +178,9 @@ func (a *sameTenantResourceAuthorizer) canReadResource(
 	if isPrivileged {
 		return true
 	}
+	if rule.CreatedBy != "" && rule.CreatedBy == userID {
+		return true
+	}
 	if scope == nil {
 		scope = &sameTenantOrgScope{
 			readOrgIDs:            map[string]struct{}{},

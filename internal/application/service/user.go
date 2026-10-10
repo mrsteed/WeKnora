@@ -32,6 +32,21 @@ var (
 	jwtSecretOnce sync.Once
 	jwtSecret     string
 
+	// ErrUserContactRequired is returned when neither email nor phone was
+	// supplied during admin provisioning.
+	ErrUserContactRequired = errors.New("at least one of email or phone is required")
+
+	// ErrUserCredentialsRequired is returned when the admin provisioning
+	// payload omits the mandatory username or password.
+	ErrUserCredentialsRequired = errors.New("username and password are required")
+
+	// ErrUsernameAlreadyExists / ErrEmailAlreadyExists / ErrPhoneAlreadyExists
+	// let handlers translate uniqueness conflicts into field-specific 409s.
+	ErrUsernameAlreadyExists = errors.New("username already exists")
+	ErrEmailAlreadyExists    = errors.New("email already exists")
+	ErrPhoneAlreadyExists    = errors.New("phone already exists")
+	ErrUserAlreadyExists     = errors.New("user already exists")
+
 	// ErrPasswordPolicy is returned when a newly chosen password does not
 	// meet the product's public 8-32 character, letter-and-number contract.
 	// It is exported so HTTP handlers can translate the failure to a 400
@@ -224,11 +239,15 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 func (s *userService) CreateUserByAdmin(ctx context.Context, req *types.CreateUserInOrgRequest, tenantID uint64) (*types.User, error) {
 	logger.Info(ctx, "Admin creating a new user")
 
+	req.Username = strings.TrimSpace(req.Username)
+	req.Email = strings.TrimSpace(req.Email)
+	req.Phone = strings.TrimSpace(req.Phone)
+
 	if req.Email == "" && req.Phone == "" {
-		return nil, errors.New("at least one of email or phone is required")
+		return nil, ErrUserContactRequired
 	}
 	if req.Username == "" || req.Password == "" {
-		return nil, errors.New("username and password are required")
+		return nil, ErrUserCredentialsRequired
 	}
 	if err := ValidatePasswordPolicy(req.Password); err != nil {
 		return nil, err
@@ -236,18 +255,18 @@ func (s *userService) CreateUserByAdmin(ctx context.Context, req *types.CreateUs
 
 	existingUser, _ := s.userRepo.GetUserByUsername(ctx, req.Username)
 	if existingUser != nil {
-		return nil, errors.New("user with this username already exists")
+		return nil, ErrUsernameAlreadyExists
 	}
 	if req.Email != "" {
 		existingUser, _ = s.userRepo.GetUserByEmail(ctx, req.Email)
 		if existingUser != nil {
-			return nil, errors.New("user with this email already exists")
+			return nil, ErrEmailAlreadyExists
 		}
 	}
 	if req.Phone != "" {
 		existingUser, _ = s.userRepo.GetUserByPhone(ctx, req.Phone)
 		if existingUser != nil {
-			return nil, errors.New("user with this phone already exists")
+			return nil, ErrPhoneAlreadyExists
 		}
 	}
 
@@ -271,6 +290,25 @@ func (s *userService) CreateUserByAdmin(ctx context.Context, req *types.CreateUs
 
 	if err := s.userRepo.CreateUser(ctx, user); err != nil {
 		logger.Errorf(ctx, "Failed to create user: %v", err)
+		if isUniqueViolation(err) {
+			msg := strings.ToLower(err.Error())
+			switch {
+			case strings.Contains(msg, "idx_users_username_active_unique"),
+				strings.Contains(msg, "users.username"),
+				strings.Contains(msg, "users_username_key"):
+				return nil, ErrUsernameAlreadyExists
+			case strings.Contains(msg, "idx_users_email_active_unique"),
+				strings.Contains(msg, "users.email"),
+				strings.Contains(msg, "users_email_key"):
+				return nil, ErrEmailAlreadyExists
+			case strings.Contains(msg, "idx_users_phone_active_unique"),
+				strings.Contains(msg, "idx_users_phone_unique"),
+				strings.Contains(msg, "users.phone"):
+				return nil, ErrPhoneAlreadyExists
+			default:
+				return nil, ErrUserAlreadyExists
+			}
+		}
 		return nil, errors.New("failed to create user")
 	}
 

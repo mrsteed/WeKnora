@@ -28,6 +28,7 @@ import (
 type KnowledgeBaseHandler struct {
 	service            interfaces.KnowledgeBaseService
 	knowledgeService   interfaces.KnowledgeService
+	orgTreeService     interfaces.OrgTreeService
 	agentKBScope       *service.AgentKBScopeResolver
 	kbVisibility       interfaces.KBVisibilityService
 	kbShareService     interfaces.KBShareService
@@ -43,6 +44,7 @@ type KnowledgeBaseHandler struct {
 func NewKnowledgeBaseHandler(
 	service interfaces.KnowledgeBaseService,
 	knowledgeService interfaces.KnowledgeService,
+	orgTreeService interfaces.OrgTreeService,
 	agentKBScope *service.AgentKBScopeResolver,
 	kbVisibility interfaces.KBVisibilityService,
 	kbShareService interfaces.KBShareService,
@@ -54,6 +56,7 @@ func NewKnowledgeBaseHandler(
 	return &KnowledgeBaseHandler{
 		service:            service,
 		knowledgeService:   knowledgeService,
+		orgTreeService:     orgTreeService,
 		agentKBScope:       agentKBScope,
 		kbVisibility:       kbVisibility,
 		kbShareService:     kbShareService,
@@ -62,6 +65,31 @@ func NewKnowledgeBaseHandler(
 		vectorStoreService: vectorStoreService,
 		userService:        userService,
 	}
+}
+
+func (h *KnowledgeBaseHandler) validateKnowledgeBaseOrganization(ctx context.Context, organizationID string) error {
+	orgID := strings.TrimSpace(organizationID)
+	if orgID == "" {
+		return apperrors.NewBadRequestError("organization_id is required when visibility is 'org'")
+	}
+	if h.orgTreeService == nil {
+		return apperrors.NewInternalServerError("organization service unavailable")
+	}
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok || tenantID == 0 {
+		return apperrors.NewUnauthorizedError("Unauthorized")
+	}
+	if _, err := h.orgTreeService.GetNode(ctx, orgID, tenantID); err != nil {
+		if stderrors.Is(err, repository.ErrOrganizationNotFound) {
+			return apperrors.NewBadRequestError("organization_id does not belong to current tenant")
+		}
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"organization_id": orgID,
+			"tenant_id":       tenantID,
+		})
+		return apperrors.NewInternalServerError("failed to validate organization_id")
+	}
+	return nil
 }
 
 // buildKBResponse turns a knowledge base into a JSON-ready response shape,
@@ -390,6 +418,10 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 	case types.KBVisibilityOrg:
 		if strings.TrimSpace(req.OrganizationID) == "" {
 			c.Error(apperrors.NewBadRequestError("organization_id is required when visibility is 'org'"))
+			return
+		}
+		if err := h.validateKnowledgeBaseOrganization(ctx, req.OrganizationID); err != nil {
+			c.Error(err)
 			return
 		}
 	case types.KBVisibilityPrivate:
@@ -968,6 +1000,10 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		case types.KBVisibilityOrg:
 			if strings.TrimSpace(req.OrganizationID) == "" {
 				c.Error(apperrors.NewBadRequestError("organization_id is required when visibility is 'org'"))
+				return
+			}
+			if err := h.validateKnowledgeBaseOrganization(ctx, req.OrganizationID); err != nil {
+				c.Error(err)
 				return
 			}
 		case types.KBVisibilityPrivate:
