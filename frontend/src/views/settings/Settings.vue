@@ -267,8 +267,9 @@ type NavGroup = {
 // 以「页面里至少有 1 个有意义的写操作所要求的最低角色」为基准，把基础设
 // 施配置（models 写、ollama 下载、websearch 写、parser/storage/vector/mcp
 // CRUD、chat-history 配置）统一收到 admin；只读类（general / system info /
-// tenant-info / members 名册）保留 viewer 可见；最高敏感的 reset api
-// key 是 owner-only。改这张表前请在 router.go 里复核对应路由组。
+// tenant-info）保留 viewer 可见；成员管理仅 owner（超级管理员经
+// canAccessAllTenants bypass）可见；最高敏感的 reset api key 是
+// owner-only。改这张表前请在 router.go 里复核对应路由组。
 //
 // 特别说明：
 // - chathistory 页面唯一的「启用消息索引」开关 PUT /tenants/kv/chat-history-config

@@ -8,7 +8,8 @@ import {
 } from './settingsAccess'
 
 test('management shortcuts are stricter than read-only settings pages', () => {
-  assert.equal(SETTINGS_SECTION_MIN_ROLE.members, 'viewer')
+  // 成员管理入口已收紧为 owner-only（仅空间 owner / 超级管理员可见）
+  assert.equal(SETTINGS_SECTION_MIN_ROLE.members, 'owner')
   assert.equal(SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE.members, 'owner')
   assert.equal(SETTINGS_SECTION_MIN_ROLE.models, 'viewer')
   assert.equal(SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE.models, 'admin')
