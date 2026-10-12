@@ -40,6 +40,10 @@ services:
       - ${WEKNORA_APP_DATA_MOUNT:-data-files}:/data/files
       - ${WEKNORA_DOCREADER_TMP_MOUNT:-docreader-tmp}:/tmp/docreader:ro
       - ./config/config.yaml:/app/config/config.yaml
+      # PDF/Word 导出资产（pdf.css、katex、reference.docx）。官方镜像未内置
+      # config/export，缺失时 /export/capabilities 将 pdf、docx 标记为不可用；
+      # 挂载后路径与代码 candidateExportRoots() 的 /app/config/export 查找逻辑对齐。
+      - ./config/export:/app/config/export:ro
       # Optional: mount custom skills directory (allows adding skills without rebuilding image)
       - ./skills/preloaded:/app/skills/preloaded
       # Optional: declarative built-in models. Copy config/builtin_models.yaml.example
