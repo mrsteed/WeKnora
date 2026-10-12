@@ -6509,6 +6509,7 @@ export default {
       parentInvalid: "상위 조직으로 자신 또는 하위 조직을 선택할 수 없습니다",
       sortOrder: "정렬 순서",
       nameRequired: "조직 이름을 입력하세요",
+      nameDuplicate: "이미 같은 이름의 조직이 조직에 존재합니다. 다른 이름을 입력하세요.",
       createRoot: "최상위 조직 만들기",
       createFirst: "첫 번째 조직 만들기",
       emptyTree: "아직 조직 데이터가 없습니다",

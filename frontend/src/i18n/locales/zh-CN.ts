@@ -7038,6 +7038,7 @@ export default {
       parentInvalid: "不能选择自身或其下级组织作为上级",
       sortOrder: "排序",
       nameRequired: "请输入组织名称",
+      nameDuplicate: "整个组织树中已存在同名组织，请更换名称",
       createRoot: "创建根组织",
       createFirst: "创建第一个组织",
       emptyTree: "暂无组织数据",

@@ -155,6 +155,27 @@ watch(() => props.visible, (val) => {
   }
 })
 
+const findTreeNode = (nodes: OrgTreeNode[], id: string): OrgTreeNode | null => {
+  for (const n of nodes) {
+    if (n.id === id) return n
+    if (n.children) {
+      const f = findTreeNode(n.children, id)
+      if (f) return f
+    }
+  }
+  return null
+}
+
+// 整棵组织树内是否存在与 name 重名的节点（跨层级，忽略首尾空白与大小写）
+const treeHasName = (nodes: OrgTreeNode[], name: string): boolean => {
+  const target = name.trim().toLowerCase()
+  for (const n of nodes) {
+    if (n.name.trim().toLowerCase() === target) return true
+    if (n.children && treeHasName(n.children, name)) return true
+  }
+  return false
+}
+
 const handleClose = () => {
   emit('update:visible', false)
 }
@@ -163,6 +184,14 @@ const handleSubmit = async () => {
   if (!form.value.name.trim()) {
     MessagePlugin.warning(t('admin.org.nameRequired'))
     return
+  }
+  // 新建时全局重名拦截：整棵组织树中不允许出现同名节点（跨层级），
+  // 命中时仅提示，不发起创建请求。
+  if (props.mode === 'create') {
+    if (treeHasName(orgTreeStore.tree, form.value.name)) {
+      MessagePlugin.warning(t('admin.org.nameDuplicate'))
+      return
+    }
   }
   saving.value = true
   try {

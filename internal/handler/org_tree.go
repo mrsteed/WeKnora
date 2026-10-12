@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -643,6 +645,11 @@ func (h *OrgTreeHandler) CreateOrgNode(c *gin.Context) {
 
 	org, err := h.orgTreeService.CreateNode(ctx, tenantID, userID, &req)
 	if err != nil {
+		if errors.Is(err, service.ErrOrgTreeNodeNameDuplicate) {
+			logger.Warnf(ctx, "Rejected duplicate org-tree node name in tenant %d: %v", tenantID, err)
+			c.Error(apperrors.NewValidationError("An organization with this name already exists in the tree"))
+			return
+		}
 		logger.Errorf(ctx, "Failed to create org-tree node: %v", err)
 		c.Error(apperrors.NewInternalServerError("Failed to create organization tree node").WithDetails(err.Error()))
 		return

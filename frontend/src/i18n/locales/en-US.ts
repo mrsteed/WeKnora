@@ -2490,6 +2490,7 @@ export default {
       parentInvalid: "Cannot set a node as its own descendant",
       sortOrder: "Sort Order",
       nameRequired: "Please enter the organization name",
+      nameDuplicate: "An organization with this name already exists in the tree. Please use a different name.",
       createRoot: "Create Root Organization",
       createFirst: "Create First Organization",
       emptyTree: "No organization data yet",

@@ -20,6 +20,29 @@ type orgTreeService struct {
 	userService         interfaces.UserService
 }
 
+// ErrOrgTreeNodeNameDuplicate 表示组织树内已存在同名节点（全局唯一，跨层级），
+// handler 层据此返回 400（而非 500），前端也可直接做本地预检。
+var ErrOrgTreeNodeNameDuplicate = errors.New("organization tree node name already exists in the tree")
+
+// hasDuplicateName 检查租户组织树内（全部层级）是否已存在同名节点（忽略大小写与首尾空白）。
+func (s *orgTreeService) hasDuplicateName(ctx context.Context, tenantID uint64, name string) bool {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return false
+	}
+	all, err := s.orgTreeRepo.ListByTenantID(ctx, tenantID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to list org nodes for duplicate check: %v", err)
+		return false
+	}
+	for _, o := range all {
+		if o != nil && strings.EqualFold(strings.TrimSpace(o.Name), trimmed) {
+			return true
+		}
+	}
+	return false
+}
+
 func tenantRoleGrantsRootOrgProjection(ctx context.Context) bool {
 	return types.TenantRoleFromContext(ctx).HasPermission(types.TenantRoleAdmin)
 }
@@ -71,6 +94,12 @@ func NewOrgTreeService(
 // CreateNode creates a new organization tree node under a tenant
 func (s *orgTreeService) CreateNode(ctx context.Context, tenantID uint64, userID string, req *types.CreateOrgTreeNodeRequest) (*types.Organization, error) {
 	logger.Infof(ctx, "Creating org-tree node: %s under tenant: %d by user: %s", req.Name, tenantID, userID)
+
+	// 全局重名校验：整个组织树内（跨层级）不允许出现重名节点，命中时直接拒绝创建
+	if s.hasDuplicateName(ctx, tenantID, req.Name) {
+		logger.Warnf(ctx, "Duplicate org-tree node name rejected: %s in tenant %d (global tree)", req.Name, tenantID)
+		return nil, fmt.Errorf("%w: name %q", ErrOrgTreeNodeNameDuplicate, strings.TrimSpace(req.Name))
+	}
 
 	org := &types.Organization{
 		ID:            uuid.New().String(),
