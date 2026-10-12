@@ -43,7 +43,6 @@ import {
   exportAsPDF,
   exportAsWord,
   exportAsXLSX,
-  generateFilename,
   type ExportCapability,
   getExportCapabilities,
   type ExportCapabilities,
@@ -137,19 +136,20 @@ const handleExport = async (format: ExportFormat) => {
       return;
     }
 
-    const filename = generateFilename(props.filenamePrefix || undefined);
+    // 文件名前缀：优先调用方指定的 filenamePrefix，其次由内容主题（标题）推导。
+    const prefix = props.filenamePrefix || undefined;
     switch (format) {
       case 'pdf':
-        await exportAsPDF(content, filename, props.exportApiBase || undefined);
+        await exportAsPDF(content, prefix, props.exportApiBase || undefined);
         break;
       case 'markdown':
-        await exportAsMarkdown(content, filename, props.exportApiBase || undefined);
+        await exportAsMarkdown(content, prefix, props.exportApiBase || undefined);
         break;
       case 'docx':
-        await exportAsWord(content, filename, props.exportApiBase || undefined);
+        await exportAsWord(content, prefix, props.exportApiBase || undefined);
         break;
       case 'xlsx':
-        await exportAsXLSX(content, filename, props.exportApiBase || undefined);
+        await exportAsXLSX(content, prefix, props.exportApiBase || undefined);
         break;
     }
     MessagePlugin.success(t('chatExport.success'));

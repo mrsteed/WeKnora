@@ -1,4 +1,5 @@
-import { postDown, get } from './request';
+import { get } from './request';
+import { getApiBaseUrl } from './api-base';
 
 export type ExportFormat = 'markdown' | 'pdf' | 'docx' | 'xlsx';
 
@@ -57,13 +58,70 @@ export interface ChatExportContentSource {
 }
 
 /**
- * 生成导出文件名前缀。
- *
- * 后端接口会统一追加时间戳并补齐扩展名，这里只负责提供可读的业务前缀，
- * 避免前后端重复追加时间戳导致文件名出现双时间戳。
+ * 从 Markdown 内容提取“主题”，用于生成以内容主题命名的导出文件名。
+ * 优先取第一个 Markdown 标题，其次取第一段有意义的正文短句。
  */
-export const generateFilename = (prefix?: string): string => {
-  return prefix?.trim() || '对话导出';
+export const deriveExportTopic = (content: string): string => {
+  if (typeof content !== 'string') return '';
+  const lines = content.split(/\r?\n/);
+
+  const heading = lines
+    .map((line) => line.trim())
+    .find((line) => /^#{1,6}\s+/.test(line));
+  if (heading) {
+    return cleanTopicForFilename(heading.replace(/^#{1,6}\s+/, ''));
+  }
+
+  const firstLine = lines
+    .map((line) => line.trim())
+    .find((line) => {
+      if (!line) return false;
+      if (/^(#{1,6}\s)/.test(line)) return false;
+      if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) return false;
+      if (/^(```|~~~)/.test(line)) return false;
+      return true;
+    });
+  if (!firstLine) return '';
+
+  const cleaned = firstLine
+    .replace(/^(>[\s>]*)+/, '')
+    .replace(/^[-*+]\s+(\[[ xX]\s+)?/, '')
+    .replace(/^\d+[.)、．]\s*/, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`~]/g, '')
+    .trim();
+  return cleanTopicForFilename(cleaned);
+};
+
+const cleanTopicForFilename = (raw: string): string => {
+  const MAX = 50;
+  let s = (raw || '')
+    .replace(/^\s*(一|二|三|四|五|六|七|八|九|十|十一|十二|十三|十四|十五)?[、)）.．]\s*/,
+      '')
+    .replace(/[，。；：！？、,.:;!?"'“”‘’()（）\[\]{}【】]/g, '')
+    .replace(/[\\/:*?<>|\u0000-\u001f]/g, '')
+    .replace(/[\s\u3000]+/g, ' ')
+    .trim();
+  if (!s) return '';
+  if (s.length > MAX) s = s.slice(0, MAX).replace(/\s+$/, '');
+  return s;
+};
+
+/**
+ * 按“内容主题”生成导出文件名前缀：
+ * 优先调用方传入的 prefix，其次从内容推导主题，最后回退到默认名。
+ * 后端会在此基础上追加时间戳与扩展名。
+ */
+export const deriveExportFilename = (
+  content: string,
+  prefix?: string,
+  fallback = '对话导出',
+): string => {
+  const base = (prefix || '').trim();
+  if (base) return base;
+  const topic = deriveExportTopic(content);
+  return topic || fallback;
 };
 
 /**
@@ -144,59 +202,101 @@ const normalizeCapability = (
 });
 
 /**
+ * 通过原生 fetch 调用导出接口，以便在拿到 blob 的同时读取
+ * Content-Disposition 响应头（全局 axios 实例的响应拦截器会抹掉响应头，
+ * 拿不到这里需要的服务端文件名）。
+ */
+const postExportDocument = async (
+  content: string,
+  format: ExportFormat,
+  prefix: string,
+  exportApiBase?: string,
+): Promise<{ blob: Blob; filename?: string }> => {
+  const token = localStorage.getItem('weknora_token');
+  const tenantId = localStorage.getItem('weknora_selected_tenant_id');
+  const res = await fetch(`${getApiBaseUrl()}${buildExportApiBase(exportApiBase)}/document`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(tenantId ? { 'X-Tenant-ID': tenantId } : {}),
+    },
+    body: JSON.stringify({ content, format, filename_prefix: prefix }),
+  });
+
+  const blob = await res.blob();
+  if (!res.ok || (blob.type || '').toLowerCase().includes('json')) {
+    const text = await blob.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.error || parsed?.message) {
+        return Promise.reject({ status: 400, message: parsed?.error?.message || parsed?.error || parsed?.message });
+      }
+    } catch {
+      // 非 JSON 按原文抛错
+    }
+    return Promise.reject({ status: 400, message: text });
+  }
+
+  return {
+    blob,
+    filename: extractFilenameFromDisposition(res.headers.get('Content-Disposition') ?? undefined) || undefined,
+  };
+};
+
+/**
  * 通过统一后端接口导出文档。
  */
 const exportViaBackend = async (
   content: string,
   format: ExportFormat,
-  filename: string,
+  prefix: string,
   exportApiBase?: string,
 ): Promise<void> => {
-  let blob: Blob;
+  let result: { blob: Blob; filename?: string };
   try {
-    blob = await postDown(`${buildExportApiBase(exportApiBase)}/document`, {
-      content,
-      format,
-      filename_prefix: filename,
-    });
+    result = await postExportDocument(content, format, prefix, exportApiBase);
   } catch (error) {
     throw normalizeExportError(error);
   }
 
-  if (!(blob instanceof Blob) || blob.size === 0) {
+  const { blob, filename } = result;
+  if (blob.size === 0) {
     throw new Error('Backend returned empty or invalid response');
   }
 
-  const downloadFilename = buildFallbackFilename(filename, format);
+  // 优先使用服务端文件名（服务端基于同一前缀补齐时间戳与扩展名），
+  // 解析不到时回退到本地同构命名，保证命名与后端策略一致。
+  const downloadFilename = filename || buildFallbackFilename(prefix, format);
   triggerDownload(blob, downloadFilename);
 };
 
 /**
  * 导出为 Markdown 文件。
  */
-export const exportAsMarkdown = async (content: string, filename: string, exportApiBase?: string): Promise<void> => {
-  await exportViaBackend(content, 'markdown', filename, exportApiBase);
+export const exportAsMarkdown = async (content: string, prefix?: string, exportApiBase?: string): Promise<void> => {
+  await exportViaBackend(content, 'markdown', deriveExportFilename(content, prefix), exportApiBase);
 };
 
 /**
  * 导出为 PDF 文件。
  */
-export const exportAsPDF = async (content: string, filename: string, exportApiBase?: string): Promise<void> => {
-  await exportViaBackend(content, 'pdf', filename, exportApiBase);
+export const exportAsPDF = async (content: string, prefix?: string, exportApiBase?: string): Promise<void> => {
+  await exportViaBackend(content, 'pdf', deriveExportFilename(content, prefix), exportApiBase);
 };
 
 /**
  * 导出为 Word DOCX 文件。
  */
-export const exportAsWord = async (content: string, filename: string, exportApiBase?: string): Promise<void> => {
-  await exportViaBackend(content, 'docx', filename, exportApiBase);
+export const exportAsWord = async (content: string, prefix?: string, exportApiBase?: string): Promise<void> => {
+  await exportViaBackend(content, 'docx', deriveExportFilename(content, prefix), exportApiBase);
 };
 
 /**
  * 导出为 XLSX 文件。
  */
-export const exportAsXLSX = async (content: string, filename: string, exportApiBase?: string): Promise<void> => {
-  await exportViaBackend(content, 'xlsx', filename, exportApiBase);
+export const exportAsXLSX = async (content: string, prefix?: string, exportApiBase?: string): Promise<void> => {
+  await exportViaBackend(content, 'xlsx', deriveExportFilename(content, prefix), exportApiBase);
 };
 
 export const appendChatDocumentEvidenceAppendix = (
