@@ -178,7 +178,7 @@
                         <t-radio-group v-model="formData.visibility">
                           <t-radio-button value="private">{{ $t('agent.editor.visibilityPrivate') }}</t-radio-button>
                           <t-radio-button value="org">{{ $t('agent.editor.visibilityOrg') }}</t-radio-button>
-                          <t-radio-button value="global">{{ $t('agent.editor.visibilityGlobal') }}</t-radio-button>
+                          <t-radio-button v-if="canSetGlobalVisibility" value="global">{{ $t('agent.editor.visibilityGlobal') }}</t-radio-button>
                         </t-radio-group>
                       </div>
                     </div>
@@ -1776,6 +1776,12 @@ const authStore = useAuthStore();
 const router = useRouter();
 const orgStore = useOrganizationStore();
 const chatResources = useChatResourcesStore();
+
+// 协作者（贡献者及以下租户角色，非超管）创建智能体时不展示「全局可见」选项，
+// 仅保留私有 / 组织可见；编辑已有全局可见智能体时保持选项可见，避免单选组无选中态。
+const canSetGlobalVisibility = computed(
+  () => authStore.isSuperAdmin || authStore.hasRole('admin') || formData.value?.visibility === 'global',
+);
 const editorResources = useEditorResourcesStore();
 
 const { t, locale: i18nLocale } = useI18n();

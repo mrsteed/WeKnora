@@ -78,7 +78,7 @@
                         <t-radio-group v-model="formData.visibility">
                           <t-radio-button value="private">{{ $t('knowledgeEditor.basic.visibilityPrivate') }}</t-radio-button>
                           <t-radio-button value="org">{{ $t('knowledgeEditor.basic.visibilityOrg') }}</t-radio-button>
-                          <t-radio-button value="global">{{ $t('knowledgeEditor.basic.visibilityGlobal') }}</t-radio-button>
+                          <t-radio-button v-if="canSetGlobalVisibility" value="global">{{ $t('knowledgeEditor.basic.visibilityGlobal') }}</t-radio-button>
                         </t-radio-group>
                         <p class="form-tip">{{ $t('knowledgeEditor.basic.visibilityTip') }}</p>
                       </div>
@@ -503,6 +503,12 @@ const uiStore = useUIStore()
 const authStore = useAuthStore()
 const orgStore = useOrganizationStore()
 const chatResources = useChatResourcesStore()
+
+// 协作者（贡献者及以下租户角色，非超管）创建知识库时不展示「全局可见」选项，
+// 仅保留私有 / 组织可见；编辑已有全局可见 KB 时保持选项可见，避免单选组无选中态。
+const canSetGlobalVisibility = computed(
+  () => authStore.isSuperAdmin || authStore.hasRole('admin') || formData.value?.visibility === 'global',
+)
 const editorResources = useEditorResourcesStore()
 const { t } = useI18n()
 
