@@ -645,10 +645,9 @@ func (s *sessionService) DeleteAllSessions(ctx context.Context) error {
 	}
 
 	// Tear down sandboxes while session rows (and pins) are still readable.
-	if sessions != nil {
-		for _, session := range sessions {
-			s.destroyBoundSandbox(ctx, session.ID)
-		}
+	// Ranging over a nil slice is a no-op, so no extra nil check is needed.
+	for _, session := range sessions {
+		s.destroyBoundSandbox(ctx, session.ID)
 	}
 
 	if _, err := s.sessionRepo.DeleteAllByTenantID(ctx, tenantID, userID); err != nil {
@@ -657,7 +656,7 @@ func (s *sessionService) DeleteAllSessions(ctx context.Context) error {
 		})
 		return err
 	}
-	if s.suggestionRepo != nil && sessions != nil {
+	if s.suggestionRepo != nil {
 		for _, session := range sessions {
 			if err := s.suggestionRepo.DeleteBySessionID(ctx, tenantID, session.ID); err != nil {
 				logger.Warnf(ctx, "Failed to delete suggestions for session %s: %v", session.ID, err)

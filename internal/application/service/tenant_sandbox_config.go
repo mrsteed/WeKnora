@@ -492,7 +492,7 @@ func pickStandardTemplate(items []sandbox.RemoteTemplate) *sandbox.RemoteTemplat
 // only ever compared, and it should not be able to surface a credential in a
 // panic trace or a heap dump.
 func ensureTemplateKey(tenantID uint64, identity sandbox.SandboxIdentity) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%d|%#v", tenantID, identity)))
+	sum := sha256.Sum256(fmt.Appendf(nil, "%d|%#v", tenantID, identity))
 	return hex.EncodeToString(sum[:])
 }
 
