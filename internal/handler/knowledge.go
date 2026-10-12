@@ -2920,7 +2920,7 @@ func (h *KnowledgeHandler) MoveKnowledge(c *gin.Context) {
 		c.Error(errors.NewForbiddenError("No permission to access source knowledge base"))
 		return
 	}
-	if err := h.requireKBOwnershipOrAdmin(c, req.SourceKBID); err != nil {
+	if err := requireMoveKBManagePermission(c, h.kbVisibility, req.SourceKBID); err != nil {
 		c.Error(err)
 		return
 	}
@@ -2939,7 +2939,7 @@ func (h *KnowledgeHandler) MoveKnowledge(c *gin.Context) {
 		c.Error(errors.NewForbiddenError("No permission to access target knowledge base"))
 		return
 	}
-	if err := h.requireKBOwnershipOrAdmin(c, req.TargetKBID); err != nil {
+	if err := requireMoveKBManagePermission(c, h.kbVisibility, req.TargetKBID); err != nil {
 		c.Error(err)
 		return
 	}

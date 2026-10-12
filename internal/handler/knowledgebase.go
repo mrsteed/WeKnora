@@ -1529,31 +1529,19 @@ func (h *KnowledgeBaseHandler) ListMoveTargets(c *gin.Context) {
 		c.Error(errors.NewForbiddenError("No permission to access this knowledge base"))
 		return
 	}
-
-	// Get all knowledge bases
-	allKBs, err := h.service.ListKnowledgeBases(ctx)
-	if err != nil {
-		c.Error(errors.NewInternalServerError(err.Error()))
+	if err := requireMoveKBManagePermission(c, h.kbVisibility, sourceKBID); err != nil {
+		c.Error(err)
 		return
 	}
 
-	// Filter eligible targets
-	targets := make([]*types.KnowledgeBase, 0)
-	for _, kb := range allKBs {
-		if kb.ID == sourceKBID {
-			continue
-		}
-		if kb.IsTemporary {
-			continue
-		}
-		if kb.Type != sourceKB.Type {
-			continue
-		}
-		if kb.EmbeddingModelID != sourceKB.EmbeddingModelID {
-			continue
-		}
-		targets = append(targets, kb)
+	// Get KBs the caller may actually move into, then apply the move-specific
+	// business compatibility filters (same type/model, not temporary, not self).
+	allKBs, err := listManageableMoveTargetKBs(c, h.service, h.kbVisibility)
+	if err != nil {
+		c.Error(err)
+		return
 	}
+	targets := filterMoveTargetsByBusinessRules(sourceKB, allKBs)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
