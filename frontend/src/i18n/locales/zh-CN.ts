@@ -2667,6 +2667,7 @@ export default {
   error: {
     networkError: "网络错误，请检查您的网络连接",
     invalidCredentials: "用户名或密码错误",
+    generic: "操作失败，请稍后重试",
     tokenRefreshFailed: "Token刷新失败",
     pleaseRelogin: "请重新登录",
     fileSizeExceeded: "文件大小不能超过 {size}M！",
@@ -2676,6 +2677,69 @@ export default {
     missingKbId: "缺少知识库ID",
     tokenNotFound: "未找到登录令牌，请重新登录",
     streamFailed: "流式连接失败",
+    messages: {
+      user: {
+        invalid_credentials: "用户名或密码错误",
+        account_disabled: "账号已被禁用",
+        already_exists: "用户已存在",
+        username_exists: "用户名已存在",
+        email_exists: "邮箱已存在",
+        phone_exists: "手机号已存在",
+      },
+      bootstrap: {
+        idempotency_key_reused: "本次初始化已完成，请刷新后重新发起新的初始化流程",
+        user_create_failed: "初始化失败，请稍后重试",
+      },
+      invite: {
+        email_already_has_account: "该邮箱已存在账号，请先登录后再加入团队",
+        link_no_longer_valid_login: "邀请链接已失效，请登录您刚创建的账号后继续",
+      },
+      tenant: {
+        required: "请先选择或创建空间",
+      },
+      auth: {
+        api_key_service_unavailable: "API Key 服务未配置",
+        invalid_or_expired_token: "登录已失效，请重新登录",
+        missing_authentication: "请先登录",
+        invalid_workspace: "当前空间无效或不可用",
+        not_member_of_target_workspace: "你不是目标空间成员",
+        invalid_tenant_header: "空间标识无效",
+        target_workspace_forbidden: "无权访问目标空间",
+        invalid_api_key: "API Key 无效",
+        invalid_api_key_scope: "API Key 作用域无效",
+        workspace_switch_forbidden: "当前 API Key 不允许切换空间",
+      },
+      embed: {
+        channel_id_required: "缺少嵌入渠道 ID",
+        token_required: "缺少嵌入发布令牌",
+        invalid_channel_or_token: "嵌入渠道或令牌无效",
+        channel_disabled: "该嵌入渠道已被禁用",
+        origin_not_allowed: "当前来源不在允许列表中",
+        rate_limited: "请求过于频繁，请稍后再试",
+        workspace_unavailable: "当前空间暂不可用",
+      },
+      system: {
+        docreader: {
+          addr_required: "请提供 DocReader 地址",
+          addr_empty: "DocReader 地址不能为空",
+          addr_invalid: "DocReader 地址无效",
+          unavailable: "文档转换服务暂不可用",
+          reconnect_failed: "连接 DocReader 失败",
+        },
+        parser: {
+          invalid_request_body: "请求体格式错误",
+        },
+        storage: {
+          invalid_request_body: "请求体格式错误",
+          provider_disabled: "该存储引擎已被禁用",
+        },
+      },
+      sandbox: {
+        sandboxes_still_live: "该配置仍有运行中或已暂停的沙箱，请先结束或删除相关会话，或新建一份配置",
+        sandbox_inventory_unverifiable: "无法连接该后端核实是否仍有沙箱",
+        sandbox_config_cordoned: "该配置正在被其他人修改，请稍后重试",
+      },
+    },
     initialization: {
       checkFailed: "检查失败",
       testFailed: "测试失败",
@@ -2689,6 +2753,15 @@ export default {
       updateFailed: "更新空间信息失败",
       deleteFailed: "删除空间失败",
     },
+    orgTree: {
+      requestFailed: "组织架构操作失败，请稍后重试",
+    },
+    organization: {
+      requestFailed: "共享空间操作失败，请稍后重试",
+    },
+    weknoraCloud: {
+      saveCredentialsFailed: "保存 WeKnoraCloud 凭证失败",
+    },
     model: {
       createFailed: "创建模型失败",
       getFailed: "获取模型失败",
@@ -2697,6 +2770,7 @@ export default {
     },
     auth: {
       loginFailed: "登录失败",
+      autoSetupFailed: "自动初始化不可用，请稍后重试",
       registerFailed: "注册失败",
       getUserFailed: "获取用户信息失败",
       getTenantFailed: "获取空间信息失败",

@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/service"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/ratelimit"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -80,15 +80,13 @@ func EmbedAuth(
 	return func(c *gin.Context) {
 		channelID := strings.TrimSpace(c.Param("channel_id"))
 		if channelID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "channel_id is required"})
-			c.Abort()
+			abortWithReason(c, apperrors.NewBadRequestError("channel_id is required"), "embed.channel_id_required")
 			return
 		}
 
 		token := extractEmbedToken(c)
 		if token == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "embed publish token is required"})
-			c.Abort()
+			abortWithReason(c, apperrors.NewUnauthorizedError("embed publish token is required"), "embed.token_required")
 			return
 		}
 
@@ -97,8 +95,7 @@ func EmbedAuth(
 		if service.IsEmbedSessionToken(token) {
 			resolvedID, resolveErr := svc.ResolveSessionToken(c.Request.Context(), token)
 			if resolveErr != nil || resolvedID != channelID {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid embed channel or token"})
-				c.Abort()
+				abortWithReason(c, apperrors.NewUnauthorizedError("invalid embed channel or token"), "embed.invalid_channel_or_token")
 				return
 			}
 			ch, err = svc.LookupEnabledChannel(c.Request.Context(), channelID)
@@ -107,48 +104,41 @@ func EmbedAuth(
 		}
 		if err != nil {
 			if errors.Is(err, service.ErrEmbedChannelDisabled) {
-				c.JSON(http.StatusForbidden, gin.H{"error": "embed channel is disabled"})
-				c.Abort()
+				abortWithReason(c, apperrors.NewForbiddenError("embed channel is disabled"), "embed.channel_disabled")
 				return
 			}
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid embed channel or token"})
-			c.Abort()
+			abortWithReason(c, apperrors.NewUnauthorizedError("invalid embed channel or token"), "embed.invalid_channel_or_token")
 			return
 		}
 
 		origin := requestOrigin(c)
 		if !originAllowed(origin, ch.AllowedOriginsList()) {
 			logger.Warnf(c.Request.Context(), "[embed_auth] origin %q not allowed for channel %s", origin, channelID)
-			c.JSON(http.StatusForbidden, gin.H{"error": "origin not allowed"})
-			c.Abort()
+			abortWithReason(c, apperrors.NewForbiddenError("origin not allowed"), "embed.origin_not_allowed")
 			return
 		}
 
 		// Per-IP per-minute cap.
 		rateKey := fmt.Sprintf("%s:%s", channelID, c.ClientIP())
 		if !limiter.Allow(c.Request.Context(), rateKey, ch.RateLimitPerMinute) {
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
-			c.Abort()
+			abortWithReason(c, apperrors.NewTooManyRequestsError("rate limit exceeded"), "embed.rate_limited")
 			return
 		}
 		// Channel-wide per-minute cap (bounds burst across rotating IPs since
 		// the publish token is publicly visible).
 		if !limiter.Allow(c.Request.Context(), channelID+":__global", embedGlobalPerMinute(ch.RateLimitPerMinute)) {
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
-			c.Abort()
+			abortWithReason(c, apperrors.NewTooManyRequestsError("rate limit exceeded"), "embed.rate_limited")
 			return
 		}
 		// Channel-wide daily total cap (bounds sustained abuse).
 		if !dailyLimiter.Allow(c.Request.Context(), channelID, ch.RateLimitPerDay) {
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": "daily request limit exceeded"})
-			c.Abort()
+			abortWithReason(c, apperrors.NewTooManyRequestsError("daily request limit exceeded"), "embed.rate_limited")
 			return
 		}
 
 		tenant, err := tenantSvc.GetTenantByID(c.Request.Context(), ch.TenantID)
 		if err != nil || tenant == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "workspace unavailable"})
-			c.Abort()
+			abortWithReason(c, apperrors.NewInternalServerError("workspace unavailable"), "embed.workspace_unavailable")
 			return
 		}
 

@@ -2498,6 +2498,7 @@ export default {
   error: {
     networkError: 'Ошибка сети, проверьте подключение',
     invalidCredentials: 'Неверное имя пользователя или пароль',
+    generic: 'Что-то пошло не так. Попробуйте ещё раз.',
     tokenRefreshFailed: 'Не удалось обновить токен',
     pleaseRelogin: 'Пожалуйста, войдите снова',
     fileSizeExceeded: 'Размер файла не может превышать {size}МБ!',
@@ -2507,6 +2508,69 @@ export default {
     missingKbId: 'Отсутствует ID базы знаний',
     tokenNotFound: 'Токен входа не найден, войдите снова',
     streamFailed: 'Ошибка потокового соединения',
+    messages: {
+      user: {
+        invalid_credentials: 'Неверное имя пользователя или пароль',
+        account_disabled: 'Эта учётная запись отключена',
+        already_exists: 'Пользователь уже существует',
+        username_exists: 'Имя пользователя уже существует',
+        email_exists: 'Email уже существует',
+        phone_exists: 'Телефон уже существует',
+      },
+      bootstrap: {
+        idempotency_key_reused: 'Эта инициализация уже завершена. Обновите страницу и начните новый процесс.',
+        user_create_failed: 'Не удалось завершить инициализацию рабочего пространства. Повторите попытку позже.',
+      },
+      invite: {
+        email_already_has_account: 'Для этого email уже существует аккаунт. Войдите в систему, чтобы присоединиться к рабочему пространству.',
+        link_no_longer_valid_login: 'Эта ссылка-приглашение больше недействительна. Войдите в только что созданный аккаунт, чтобы продолжить.',
+      },
+      tenant: {
+        required: 'Сначала выберите или создайте рабочее пространство',
+      },
+      auth: {
+        api_key_service_unavailable: 'Сервис API key сейчас недоступен',
+        invalid_or_expired_token: 'Сеанс истёк. Пожалуйста, войдите снова',
+        missing_authentication: 'Сначала войдите в систему',
+        invalid_workspace: 'Текущее рабочее пространство недействительно или недоступно',
+        not_member_of_target_workspace: 'Вы не являетесь участником целевого рабочего пространства',
+        invalid_tenant_header: 'Некорректный заголовок рабочего пространства',
+        target_workspace_forbidden: 'У вас нет доступа к целевому рабочему пространству',
+        invalid_api_key: 'Недействительный API key',
+        invalid_api_key_scope: 'Недопустимая область действия API key',
+        workspace_switch_forbidden: 'Этот API key не может переключать рабочие пространства',
+      },
+      embed: {
+        channel_id_required: 'Отсутствует ID embed-канала',
+        token_required: 'Отсутствует publish token embed-канала',
+        invalid_channel_or_token: 'Недействительный embed-канал или токен',
+        channel_disabled: 'Этот embed-канал отключён',
+        origin_not_allowed: 'Этот origin не разрешён',
+        rate_limited: 'Слишком много запросов. Повторите попытку позже',
+        workspace_unavailable: 'Рабочее пространство сейчас недоступно',
+      },
+      system: {
+        docreader: {
+          addr_required: 'Укажите адрес DocReader',
+          addr_empty: 'Адрес DocReader не может быть пустым',
+          addr_invalid: 'Адрес DocReader недействителен',
+          unavailable: 'Сервис конвертации документов сейчас недоступен',
+          reconnect_failed: 'Не удалось переподключиться к DocReader',
+        },
+        parser: {
+          invalid_request_body: 'Некорректное тело запроса',
+        },
+        storage: {
+          invalid_request_body: 'Некорректное тело запроса',
+          provider_disabled: 'Этот storage engine отключён',
+        },
+      },
+      sandbox: {
+        sandboxes_still_live: 'Эта конфигурация всё ещё используется запущенными или приостановленными песочницами. Сначала завершите или удалите соответствующие сеансы либо создайте другую конфигурацию.',
+        sandbox_inventory_unverifiable: 'Сейчас невозможно проверить использование песочниц для этого backend',
+        sandbox_config_cordoned: 'Эту конфигурацию сейчас изменяет другой пользователь. Повторите попытку позже.',
+      },
+    },
     initialization: {
       checkFailed: 'Проверка не пройдена',
       testFailed: 'Тест не пройден'
@@ -2520,6 +2584,15 @@ export default {
       updateFailed: 'Не удалось обновить информацию о пространстве',
       deleteFailed: 'Failed to delete workspace'
     },
+    orgTree: {
+      requestFailed: 'Не удалось выполнить операцию с деревом организаций. Повторите попытку позже'
+    },
+    organization: {
+      requestFailed: 'Не удалось выполнить операцию с общим пространством. Повторите попытку позже'
+    },
+    weknoraCloud: {
+      saveCredentialsFailed: 'Не удалось сохранить учётные данные WeKnoraCloud'
+    },
     model: {
       createFailed: 'Не удалось создать модель',
       getFailed: 'Не удалось получить модель',
@@ -2528,6 +2601,7 @@ export default {
     },
     auth: {
       loginFailed: 'Ошибка входа',
+      autoSetupFailed: 'Автонастройка недоступна. Повторите попытку позже',
       registerFailed: 'Ошибка регистрации',
       getUserFailed: 'Не удалось получить информацию о пользователе',
       getTenantFailed: 'Не удалось получить информацию о пространстве',

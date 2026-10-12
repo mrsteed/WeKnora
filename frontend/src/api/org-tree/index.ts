@@ -1,4 +1,15 @@
 import { get, post, put, del } from '@/utils/request'
+import i18n from '@/i18n'
+import { resolveErrorMessage } from '@/utils/errorMessage'
+
+const t = (key: string) => {
+  const translated = i18n.global.t(key)
+  return typeof translated === 'string' ? translated : String(translated)
+}
+
+function fallbackOrgTreeError(error: unknown, fallbackKey: string): string {
+  return resolveErrorMessage(error, t, fallbackKey)
+}
 
 // ==================== Types ====================
 
@@ -150,7 +161,7 @@ export async function getOrgTree(): Promise<ApiResponse<OrgTreeNode[]>> {
   try {
     return await get('/api/v1/org-tree') as unknown as ApiResponse<OrgTreeNode[]>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to get org tree' }
+    return { success: false, message: fallbackOrgTreeError(error, 'error.orgTree.requestFailed') }
   }
 }
 
@@ -159,7 +170,7 @@ export async function createOrgTreeNode(data: CreateOrgTreeNodeRequest): Promise
   try {
     return await post('/api/v1/org-tree', data) as unknown as ApiResponse<OrgTreeNode>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to create org tree node' }
+    return { success: false, message: fallbackOrgTreeError(error, 'error.orgTree.requestFailed') }
   }
 }
 
@@ -168,7 +179,7 @@ export async function getOrgTreeNode(id: string): Promise<ApiResponse<OrgTreeNod
   try {
     return await get(`/api/v1/org-tree/${id}`) as unknown as ApiResponse<OrgTreeNode>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to get org tree node' }
+    return { success: false, message: fallbackOrgTreeError(error, 'error.orgTree.requestFailed') }
   }
 }
 
@@ -177,7 +188,7 @@ export async function updateOrgTreeNode(id: string, data: UpdateOrgTreeNodeReque
   try {
     return await put(`/api/v1/org-tree/${id}`, data) as unknown as ApiResponse<OrgTreeNode>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to update org tree node' }
+    return { success: false, message: fallbackOrgTreeError(error, 'error.orgTree.requestFailed') }
   }
 }
 
@@ -186,7 +197,7 @@ export async function deleteOrgTreeNode(id: string): Promise<ApiResponse<null>> 
   try {
     return await del(`/api/v1/org-tree/${id}`) as unknown as ApiResponse<null>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to delete org tree node' }
+    return { success: false, message: fallbackOrgTreeError(error, 'error.orgTree.requestFailed') }
   }
 }
 
@@ -195,7 +206,7 @@ export async function moveOrgTreeNode(id: string, data: MoveOrgNodeRequest): Pro
   try {
     return await post(`/api/v1/org-tree/${id}/move`, data) as unknown as ApiResponse<null>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to move org tree node' }
+    return { success: false, message: fallbackOrgTreeError(error, 'error.orgTree.requestFailed') }
   }
 }
 
@@ -204,7 +215,7 @@ export async function assignUserToOrg(orgId: string, data: AssignUserToOrgReques
   try {
     return await post(`/api/v1/org-tree/${orgId}/members`, data) as unknown as ApiResponse<null>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to assign user to org' }
+    return { success: false, message: fallbackOrgTreeError(error, 'error.orgTree.requestFailed') }
   }
 }
 
@@ -213,7 +224,7 @@ export async function removeUserFromOrg(orgId: string, userId: string): Promise<
   try {
     return await del(`/api/v1/org-tree/${orgId}/members/${userId}`) as unknown as ApiResponse<null>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to remove user from org' }
+    return { success: false, message: fallbackOrgTreeError(error, 'admin.member.removeFailed') }
   }
 }
 
@@ -222,7 +233,7 @@ export async function setOrgAdmin(orgId: string, data: SetOrgAdminRequest): Prom
   try {
     return await put(`/api/v1/org-tree/${orgId}/admin`, data) as unknown as ApiResponse<null>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to set org admin' }
+    return { success: false, message: fallbackOrgTreeError(error, 'error.orgTree.requestFailed') }
   }
 }
 
@@ -231,7 +242,7 @@ export async function getMyOrgTreeOrganizations(): Promise<ApiResponse<OrgTreeNo
   try {
     return await get('/api/v1/my-organizations') as unknown as ApiResponse<OrgTreeNode[]>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to get my organizations' }
+    return { success: false, message: fallbackOrgTreeError(error, 'error.orgTree.requestFailed') }
   }
 }
 
@@ -240,7 +251,7 @@ export async function getOrgMembers(orgId: string): Promise<OrgMembersResponse> 
   try {
     return await get(`/api/v1/org-tree/${orgId}/members`) as unknown as OrgMembersResponse
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to get org members' }
+    return { success: false, message: fallbackOrgTreeError(error, 'error.orgTree.requestFailed') }
   }
 }
 
@@ -249,7 +260,7 @@ export async function searchUsersForAssign(query: string, limit: number = 20): P
   try {
     return await get(`/api/v1/org-tree/search-users?q=${encodeURIComponent(query)}&limit=${limit}`) as unknown as ApiResponse<SearchUserResult[]>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to search users' }
+    return { success: false, message: fallbackOrgTreeError(error, 'error.orgTree.requestFailed') }
   }
 }
 
@@ -258,7 +269,7 @@ export async function setSuperAdmin(userId: string, isSuperAdmin: boolean): Prom
   try {
     return await put(`/api/v1/org-tree/super-admin`, { user_id: userId, is_super_admin: isSuperAdmin }) as unknown as ApiResponse<null>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to set super admin' }
+    return { success: false, message: fallbackOrgTreeError(error, 'error.orgTree.requestFailed') }
   }
 }
 
@@ -267,7 +278,7 @@ export async function createUserInOrg(orgId: string, data: CreateUserInOrgReques
   try {
     return await post(`/api/v1/org-tree/${orgId}/create-user`, data) as unknown as CreateUserInOrgResponse
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to create user' }
+    return { success: false, message: fallbackOrgTreeError(error, 'admin.member.createUserFailed') }
   }
 }
 
@@ -276,7 +287,7 @@ export async function updateUserInOrg(orgId: string, userId: string, data: Updat
   try {
     return await put(`/api/v1/org-tree/${orgId}/users/${userId}`, data) as unknown as CreateUserInOrgResponse
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to update user' }
+    return { success: false, message: fallbackOrgTreeError(error, 'admin.member.updateUserFailed') }
   }
 }
 
@@ -285,6 +296,6 @@ export async function updateUserPasswordInOrg(orgId: string, userId: string, dat
   try {
     return await put(`/api/v1/org-tree/${orgId}/users/${userId}/password`, data) as unknown as ApiResponse<null>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to update user password' }
+    return { success: false, message: fallbackOrgTreeError(error, 'admin.member.resetPasswordFailed') }
   }
 }

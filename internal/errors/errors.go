@@ -284,6 +284,45 @@ func NewVectorStoreUnavailableError(message string) *AppError {
 	}
 }
 
+// NewHTTPStatusError adapts an existing HTTP status/message pair into the
+// standard AppError envelope without forcing each caller to re-select a
+// constructor. It is intended for incremental migrations away from ad-hoc
+// JSON error bodies.
+func NewHTTPStatusError(status int, message string) *AppError {
+	switch status {
+	case http.StatusBadRequest:
+		return NewBadRequestError(message)
+	case http.StatusUnauthorized:
+		return NewUnauthorizedError(message)
+	case http.StatusForbidden:
+		return NewForbiddenError(message)
+	case http.StatusNotFound:
+		return NewNotFoundError(message)
+	case http.StatusGone:
+		return &AppError{Code: ErrNotFound, Message: message, HTTPCode: status}
+	case http.StatusConflict:
+		return NewConflictError(message)
+	case http.StatusLocked:
+		return &AppError{Code: ErrConflict, Message: message, HTTPCode: status}
+	case http.StatusTooManyRequests:
+		return NewTooManyRequestsError(message)
+	case http.StatusRequestEntityTooLarge:
+		return NewRequestTooLargeError(message)
+	case http.StatusGatewayTimeout:
+		return NewTimeoutError(message)
+	case http.StatusServiceUnavailable:
+		return NewServiceUnavailableError(message)
+	default:
+		if status >= 500 {
+			return &AppError{Code: ErrInternalServer, Message: message, HTTPCode: status}
+		}
+		if status >= 400 {
+			return &AppError{Code: ErrBadRequest, Message: message, HTTPCode: status}
+		}
+		return NewInternalServerError(message)
+	}
+}
+
 // IsAppError checks if the error is an AppError type
 func IsAppError(err error) (*AppError, bool) {
 	appErr, ok := err.(*AppError)

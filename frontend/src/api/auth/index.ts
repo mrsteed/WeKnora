@@ -1,7 +1,11 @@
 import { post, get, put } from '@/utils/request'
 import i18n from '@/i18n'
+import { resolveErrorMessage } from '@/utils/errorMessage'
 
-const t = (key: string) => i18n.global.t(key)
+const t = (key: string) => {
+  const translated = i18n.global.t(key)
+  return typeof translated === 'string' ? translated : String(translated)
+}
 
 // 用户登录接口
 export interface LoginRequest {
@@ -300,7 +304,7 @@ export async function autoSetup(): Promise<LoginResponse> {
   } catch (error: any) {
     return {
       success: false,
-      message: error.message || 'Auto-setup unavailable'
+      message: resolveErrorMessage(error, t, 'error.auth.autoSetupFailed')
     }
   }
 }
@@ -521,7 +525,7 @@ export async function getInvitationByToken(token: string): Promise<InviteLookupR
     const response = await post(`/api/v1/auth/invitations/lookup`, { token })
     return response as unknown as InviteLookupResponse
   } catch (error: any) {
-    return { success: false, message: error.message || '' }
+    return { success: false, message: resolveErrorMessage(error, t, 'inviteRegister.invalidBody') }
   }
 }
 

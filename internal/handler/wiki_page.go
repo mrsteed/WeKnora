@@ -95,7 +95,7 @@ func getSlugParam(c *gin.Context) string {
 func (h *WikiPageHandler) ListPages(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -132,7 +132,7 @@ func (h *WikiPageHandler) ListPages(c *gin.Context) {
 
 	resp, err := h.wikiService.ListPages(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -153,7 +153,7 @@ func (h *WikiPageHandler) ListPages(c *gin.Context) {
 func (h *WikiPageHandler) ListFolders(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	parentID := strings.TrimSpace(c.Query("parent_id"))
@@ -167,7 +167,7 @@ func (h *WikiPageHandler) ListFolders(c *gin.Context) {
 	}
 	folders, err := h.wikiService.ListChildFolders(c.Request.Context(), kbID, parentID, pageTypes)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if folders == nil {
@@ -192,12 +192,12 @@ func (h *WikiPageHandler) ListFolders(c *gin.Context) {
 func (h *WikiPageHandler) CreateFolder(c *gin.Context) {
 	kbID, tenantID, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req types.WikiFolderCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid request body: " + err.Error())
 		return
 	}
 	folder, err := h.wikiService.CreateFolder(c.Request.Context(), kbID, tenantID, strings.TrimSpace(req.ParentID), req.Name)
@@ -226,17 +226,17 @@ func (h *WikiPageHandler) CreateFolder(c *gin.Context) {
 func (h *WikiPageHandler) UpdateFolder(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	folderID := secutils.SanitizeForLog(c.Param("folder_id"))
 	if folderID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Folder ID is required"})
+		respondHTTPError(c, http.StatusBadRequest, "Folder ID is required")
 		return
 	}
 	var req types.WikiFolderUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid request body: " + err.Error())
 		return
 	}
 	folder, err := h.wikiService.RenameOrMoveFolder(
@@ -262,12 +262,12 @@ func (h *WikiPageHandler) UpdateFolder(c *gin.Context) {
 func (h *WikiPageHandler) DeleteFolder(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	folderID := secutils.SanitizeForLog(c.Param("folder_id"))
 	if folderID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Folder ID is required"})
+		respondHTTPError(c, http.StatusBadRequest, "Folder ID is required")
 		return
 	}
 	if err := h.wikiService.DeleteFolder(c.Request.Context(), kbID, folderID); err != nil {
@@ -292,17 +292,17 @@ func (h *WikiPageHandler) DeleteFolder(c *gin.Context) {
 func (h *WikiPageHandler) MovePage(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req types.WikiPageMoveRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid request body: " + err.Error())
 		return
 	}
 	slug := strings.TrimSpace(req.Slug)
 	if slug == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Page slug is required"})
+		respondHTTPError(c, http.StatusBadRequest, "Page slug is required")
 		return
 	}
 	page, err := h.wikiService.MovePage(c.Request.Context(), kbID, slug, strings.TrimSpace(req.FolderID))
@@ -317,11 +317,11 @@ func (h *WikiPageHandler) MovePage(c *gin.Context) {
 func writeWikiFolderError(c *gin.Context, err error) {
 	switch {
 	case stderrors.Is(err, repository.ErrWikiFolderNotFound), stderrors.Is(err, repository.ErrWikiPageNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusNotFound, err.Error())
 	case stderrors.Is(err, repository.ErrWikiFolderConflict), stderrors.Is(err, repository.ErrWikiFolderNotEmpty):
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusConflict, err.Error())
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 	}
 }
 
@@ -355,13 +355,13 @@ func parseWikiCategoryPath(raw string) []string {
 func (h *WikiPageHandler) CreatePage(c *gin.Context) {
 	kbID, tenantID, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	var page types.WikiPage
 	if err := c.ShouldBindJSON(&page); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid request body: " + err.Error())
 		return
 	}
 
@@ -370,18 +370,18 @@ func (h *WikiPageHandler) CreatePage(c *gin.Context) {
 	page.PageType = strings.TrimSpace(page.PageType)
 	page.Status = strings.TrimSpace(page.Status)
 	if page.PageType != "" && !types.IsValidWikiPageType(page.PageType) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid page_type: " + page.PageType})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid page_type: " + page.PageType)
 		return
 	}
 	if page.Status != "" && !types.IsValidWikiPageStatus(page.Status) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status: " + page.Status})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid status: " + page.Status)
 		return
 	}
 
 	ctx := types.WithWikiEditSource(c.Request.Context(), types.WikiEditSourceUser)
 	created, err := h.wikiService.CreatePage(ctx, &page)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -416,23 +416,23 @@ func (h *WikiPageHandler) recordManualWikiActivity(
 func (h *WikiPageHandler) GetPage(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	slug := getSlugParam(c)
 	if slug == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Page slug is required"})
+		respondHTTPError(c, http.StatusBadRequest, "Page slug is required")
 		return
 	}
 
 	page, err := h.wikiService.GetPageBySlug(c.Request.Context(), kbID, slug)
 	if err != nil {
 		if stderrors.Is(err, repository.ErrWikiPageNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Wiki page not found"})
+			respondHTTPError(c, http.StatusNotFound, "Wiki page not found")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -461,19 +461,19 @@ func (h *WikiPageHandler) GetPage(c *gin.Context) {
 func (h *WikiPageHandler) UpdatePage(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	slug := getSlugParam(c)
 	if slug == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Page slug is required"})
+		respondHTTPError(c, http.StatusBadRequest, "Page slug is required")
 		return
 	}
 
 	var req types.WikiPageUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid request body: " + err.Error())
 		return
 	}
 
@@ -482,10 +482,10 @@ func (h *WikiPageHandler) UpdatePage(c *gin.Context) {
 	existing, err := h.wikiService.GetPageBySlug(ctx, kbID, slug)
 	if err != nil {
 		if stderrors.Is(err, repository.ErrWikiPageNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Wiki page not found"})
+			respondHTTPError(c, http.StatusNotFound, "Wiki page not found")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if req.Version > 0 && req.Version != existing.Version {
@@ -512,14 +512,14 @@ func (h *WikiPageHandler) UpdatePage(c *gin.Context) {
 	if req.PageType != nil {
 		page.PageType = strings.TrimSpace(*req.PageType)
 		if !types.IsValidWikiPageType(page.PageType) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid page_type: " + page.PageType})
+			respondHTTPError(c, http.StatusBadRequest, "Invalid page_type: " + page.PageType)
 			return
 		}
 	}
 	if req.Status != nil {
 		page.Status = strings.TrimSpace(*req.Status)
 		if !types.IsValidWikiPageStatus(page.Status) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status: " + page.Status})
+			respondHTTPError(c, http.StatusBadRequest, "Invalid status: " + page.Status)
 			return
 		}
 	}
@@ -531,11 +531,11 @@ func (h *WikiPageHandler) UpdatePage(c *gin.Context) {
 	if err != nil {
 		switch {
 		case stderrors.Is(err, repository.ErrWikiPageNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "Wiki page not found"})
+			respondHTTPError(c, http.StatusNotFound, "Wiki page not found")
 		case stderrors.Is(err, repository.ErrWikiPageConflict):
-			c.JSON(http.StatusConflict, gin.H{"error": "Wiki page was modified by someone else"})
+			respondHTTPError(c, http.StatusConflict, "Wiki page was modified by someone else")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		}
 		return
 	}
@@ -565,13 +565,13 @@ func (h *WikiPageHandler) UpdatePage(c *gin.Context) {
 func (h *WikiPageHandler) ListRevisions(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	slug := getSlugParam(c)
 	if slug == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Page slug is required"})
+		respondHTTPError(c, http.StatusBadRequest, "Page slug is required")
 		return
 	}
 
@@ -580,16 +580,16 @@ func (h *WikiPageHandler) ListRevisions(c *gin.Context) {
 	if raw := c.Query("version"); raw != "" {
 		version, parseErr := strconv.Atoi(raw)
 		if parseErr != nil || version < 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid version"})
+			respondHTTPError(c, http.StatusBadRequest, "Invalid version")
 			return
 		}
 		rev, err := h.wikiService.GetRevision(ctx, kbID, slug, version)
 		if err != nil {
 			if stderrors.Is(err, repository.ErrWikiPageNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Wiki page revision not found"})
+				respondHTTPError(c, http.StatusNotFound, "Wiki page revision not found")
 				return
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			respondHTTPError(c, http.StatusInternalServerError, err.Error())
 			return
 		}
 		c.JSON(http.StatusOK, rev)
@@ -611,10 +611,10 @@ func (h *WikiPageHandler) ListRevisions(c *gin.Context) {
 	resp, err := h.wikiService.ListRevisions(ctx, kbID, slug, limit, offset)
 	if err != nil {
 		if stderrors.Is(err, repository.ErrWikiPageNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Wiki page not found"})
+			respondHTTPError(c, http.StatusNotFound, "Wiki page not found")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, resp)
@@ -640,22 +640,22 @@ func (h *WikiPageHandler) ListRevisions(c *gin.Context) {
 func (h *WikiPageHandler) RevertPage(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	var req types.WikiPageRevertRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid request body: " + err.Error())
 		return
 	}
 	slug := strings.TrimSpace(req.Slug)
 	if slug == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Page slug is required"})
+		respondHTTPError(c, http.StatusBadRequest, "Page slug is required")
 		return
 	}
 	if req.Version < 1 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid version"})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid version")
 		return
 	}
 
@@ -664,13 +664,13 @@ func (h *WikiPageHandler) RevertPage(c *gin.Context) {
 	if err != nil {
 		switch {
 		case stderrors.Is(err, repository.ErrWikiPageNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "Wiki page or revision not found"})
+			respondHTTPError(c, http.StatusNotFound, "Wiki page or revision not found")
 		case stderrors.Is(err, repository.ErrWikiPageConflict):
-			c.JSON(http.StatusConflict, gin.H{"error": "Wiki page was modified by someone else"})
+			respondHTTPError(c, http.StatusConflict, "Wiki page was modified by someone else")
 		case stderrors.Is(err, service.ErrWikiRevertToCurrentVersion):
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondHTTPError(c, http.StatusBadRequest, err.Error())
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		}
 		return
 	}
@@ -692,13 +692,13 @@ func (h *WikiPageHandler) RevertPage(c *gin.Context) {
 func (h *WikiPageHandler) DeletePage(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	slug := getSlugParam(c)
 	if slug == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Page slug is required"})
+		respondHTTPError(c, http.StatusBadRequest, "Page slug is required")
 		return
 	}
 
@@ -708,10 +708,10 @@ func (h *WikiPageHandler) DeletePage(c *gin.Context) {
 
 	if err := h.wikiService.DeletePage(ctx, kbID, slug); err != nil {
 		if stderrors.Is(err, repository.ErrWikiPageNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Wiki page not found"})
+			respondHTTPError(c, http.StatusNotFound, "Wiki page not found")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -738,7 +738,7 @@ func (h *WikiPageHandler) DeletePage(c *gin.Context) {
 func (h *WikiPageHandler) GetIndex(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -761,7 +761,7 @@ func (h *WikiPageHandler) GetIndex(c *gin.Context) {
 
 	resp, err := h.wikiService.GetIndexView(c.Request.Context(), kbID, pageTypes, limit, c.Query("cursor"))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -801,7 +801,7 @@ const (
 func (h *WikiPageHandler) GetGraph(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -810,13 +810,13 @@ func (h *WikiPageHandler) GetGraph(c *gin.Context) {
 		mode = types.WikiGraphModeOverview
 	}
 	if mode != types.WikiGraphModeOverview && mode != types.WikiGraphModeEgo {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "mode must be 'overview' or 'ego'"})
+		respondHTTPError(c, http.StatusBadRequest, "mode must be 'overview' or 'ego'")
 		return
 	}
 
 	center := strings.TrimSpace(c.Query("center"))
 	if mode == types.WikiGraphModeEgo && center == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "center is required when mode=ego"})
+		respondHTTPError(c, http.StatusBadRequest, "center is required when mode=ego")
 		return
 	}
 
@@ -824,7 +824,7 @@ func (h *WikiPageHandler) GetGraph(c *gin.Context) {
 	if v := c.Query("depth"); v != "" {
 		parsed, parseErr := strconv.Atoi(v)
 		if parseErr != nil || parsed < 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "depth must be a positive integer"})
+			respondHTTPError(c, http.StatusBadRequest, "depth must be a positive integer")
 			return
 		}
 		if parsed > wikiGraphMaxDepth {
@@ -837,7 +837,7 @@ func (h *WikiPageHandler) GetGraph(c *gin.Context) {
 	if v := c.Query("limit"); v != "" {
 		parsed, parseErr := strconv.Atoi(v)
 		if parseErr != nil || parsed < 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be a positive integer"})
+			respondHTTPError(c, http.StatusBadRequest, "limit must be a positive integer")
 			return
 		}
 		if parsed > wikiGraphMaxLimit {
@@ -870,7 +870,7 @@ func (h *WikiPageHandler) GetGraph(c *gin.Context) {
 
 	graph, err := h.wikiService.GetGraph(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -889,13 +889,13 @@ func (h *WikiPageHandler) GetGraph(c *gin.Context) {
 func (h *WikiPageHandler) GetStats(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	stats, err := h.wikiService.GetStats(c.Request.Context(), kbID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -916,7 +916,7 @@ func (h *WikiPageHandler) GetStats(c *gin.Context) {
 func (h *WikiPageHandler) ListIssues(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -925,7 +925,7 @@ func (h *WikiPageHandler) ListIssues(c *gin.Context) {
 
 	issues, err := h.wikiService.ListIssues(c.Request.Context(), kbID, slug, status)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -948,13 +948,13 @@ func (h *WikiPageHandler) ListIssues(c *gin.Context) {
 func (h *WikiPageHandler) UpdateIssueStatus(c *gin.Context) {
 	_, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	issueID := secutils.SanitizeForLog(c.Param("issue_id"))
 	if issueID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Issue ID is required"})
+		respondHTTPError(c, http.StatusBadRequest, "Issue ID is required")
 		return
 	}
 
@@ -962,18 +962,18 @@ func (h *WikiPageHandler) UpdateIssueStatus(c *gin.Context) {
 		Status string `json:"status" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid request body: " + err.Error())
 		return
 	}
 
 	validStatuses := map[string]bool{"pending": true, "ignored": true, "resolved": true}
 	if !validStatuses[req.Status] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status. Must be pending, ignored, or resolved"})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid status. Must be pending, ignored, or resolved")
 		return
 	}
 
 	if err := h.wikiService.UpdateIssueStatus(c.Request.Context(), issueID, req.Status); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -994,13 +994,13 @@ func (h *WikiPageHandler) UpdateIssueStatus(c *gin.Context) {
 func (h *WikiPageHandler) SearchPages(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	query := c.Query("q")
 	if query == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Search query 'q' is required"})
+		respondHTTPError(c, http.StatusBadRequest, "Search query 'q' is required")
 		return
 	}
 
@@ -1008,7 +1008,7 @@ func (h *WikiPageHandler) SearchPages(c *gin.Context) {
 
 	pages, err := h.wikiService.SearchPages(c.Request.Context(), kbID, query, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -1026,12 +1026,12 @@ func (h *WikiPageHandler) SearchPages(c *gin.Context) {
 func (h *WikiPageHandler) RebuildLinks(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if err := h.wikiService.RebuildLinks(c.Request.Context(), kbID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -1050,13 +1050,13 @@ func (h *WikiPageHandler) RebuildLinks(c *gin.Context) {
 func (h *WikiPageHandler) Lint(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	report, err := h.lintService.RunLint(c.Request.Context(), kbID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -1075,13 +1075,13 @@ func (h *WikiPageHandler) Lint(c *gin.Context) {
 func (h *WikiPageHandler) AutoFix(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	fixed, err := h.lintService.AutoFix(c.Request.Context(), kbID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 

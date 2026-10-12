@@ -3,8 +3,12 @@ import axios from "axios";
 import { generateRandomString, MAX_FILE_SIZE_MB } from "./index";
 import i18n from '@/i18n'
 import { getApiBaseUrl } from './api-base';
+import { resolveErrorMessage } from './errorMessage';
 
-const t = (key: string) => i18n.global.t(key)
+const t = (key: string, params?: Record<string, unknown>) => {
+  const translated = i18n.global.t(key, params as any)
+  return typeof translated === 'string' ? translated : String(translated)
+}
 
 // API基础URL
 const BASE_URL = getApiBaseUrl();
@@ -109,6 +113,29 @@ function redirectToLogin() {
   window.location.href = '/login';
 }
 
+function extractPayloadMessage(data: any): string | undefined {
+  if (typeof data === 'string' && data) return data
+  if (typeof data !== 'object' || data === null) return undefined
+  if (typeof data?.error === 'string' && data.error) return data.error
+  if (typeof data?.error?.message === 'string' && data.error.message) return data.error.message
+  if (typeof data?.message === 'string' && data.message) return data.message
+  if (typeof data?.msg === 'string' && data.msg) return data.msg
+  return undefined
+}
+
+function buildRejectedError(status: number, data: any, fallbackKey: string) {
+  const payload = typeof data === 'object' && data !== null ? data : {}
+  const baseError = {
+    status,
+    ...(payload as Record<string, unknown>),
+    message: extractPayloadMessage(data),
+  }
+  return {
+    ...baseError,
+    message: resolveErrorMessage(baseError, t, fallbackKey),
+  }
+}
+
 instance.interceptors.response.use(
   (response) => {
     // 根据业务状态码处理逻辑
@@ -129,19 +156,13 @@ instance.interceptors.response.use(
     // 公开接口（auto-setup / login / register / oidc）的 401 不走 refresh 逻辑，直接返回错误
     if ((error.response.status === 401 || error.response.status === 403) && isPublicAuthRequest(originalRequest?.url)) {
       const { status, data } = error.response;
-      const msg = typeof data === 'object'
-        ? (typeof data?.error === 'string' ? data.error : (data?.error?.message || data?.message))
-        : data;
-      return Promise.reject({ status, message: msg || t('error.invalidCredentials') });
+      return Promise.reject(buildRejectedError(status, data, 'error.auth.loginFailed'));
     }
 
     // Embed 调试页/挂件：无 JWT 时直接拒绝，勿走 refresh → /login
     if (error.response.status === 401 && isEmbedPage()) {
       const { status, data } = error.response;
-      const msg = typeof data === 'object'
-        ? (typeof data?.error === 'string' ? data.error : (data?.error?.message || data?.message))
-        : data;
-      return Promise.reject({ status, message: msg || t('error.invalidCredentials') });
+      return Promise.reject(buildRejectedError(status, data, 'error.generic'));
     }
 
     // 如果是401错误且不是刷新token的请求，尝试刷新token
@@ -223,26 +244,7 @@ instance.interceptors.response.use(
     }
 
     const { status, data } = error.response;
-    // 将HTTP状态码一并抛出，方便上层判断401等场景
-    // 后端返回格式: { success: false, error: { code, message, details } }
-    // 提取 error.message 作为顶层 message，方便前端使用 error?.message 获取
-    let errorMessage: string | undefined;
-    if (typeof data === 'object') {
-      if (typeof data?.error === 'string') {
-        errorMessage = data.error;
-      } else if (data?.error?.message) {
-        errorMessage = data.error.message;
-      } else {
-        errorMessage = data?.message;
-      }
-    } else if (typeof data === 'string') {
-      errorMessage = data;
-    }
-    return Promise.reject({ 
-      status, 
-      message: errorMessage,
-      ...(typeof data === 'object' ? data : {}) 
-    });
+    return Promise.reject(buildRejectedError(status, data, 'error.generic'));
   }
 );
 

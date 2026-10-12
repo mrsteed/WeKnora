@@ -166,9 +166,13 @@ func translateUserProvisionError(err error) *apperrors.AppError {
 	case errors.Is(err, service.ErrPhoneAlreadyExists):
 		return newUserConflictAppError("phone", "Phone already exists")
 	case errors.Is(err, service.ErrUserAlreadyExists):
-		return apperrors.NewConflictError("User already exists")
+		return apperrors.NewConflictError("User already exists").WithDetails(map[string]string{
+			"reason": "user.already_exists",
+		})
 	default:
-		return apperrors.NewInternalServerError("Failed to create user").WithDetails(err.Error())
+		return apperrors.NewInternalServerError("Failed to create user").WithDetails(map[string]string{
+			"reason": "bootstrap.user_create_failed",
+		})
 	}
 }
 

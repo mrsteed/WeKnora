@@ -370,6 +370,7 @@ import {
   navigateAfterTenantSwitch,
   stashTenantSwitchToast,
 } from "@/utils/tenantSwitch";
+import { getErrorReason, resolveErrorMessage } from "@/utils/errorMessage";
 import { selectReusableRootOrg } from "@/utils/workspaceSetupRootOrg";
 
 type PersonMode = "existing" | "new" | "invite";
@@ -665,25 +666,18 @@ async function ensureRootOrg(): Promise<CreatedRootOrg | null> {
 }
 
 function resolveBootstrapErrorMessage(err: any): string {
-  const reason = err?.details?.reason || err?.error?.details?.reason;
-  const field = err?.details?.field || err?.error?.details?.field;
-  if (reason === "user_conflict") {
-    if (field === "phone") return t("tenant.setupWizard.errors.phoneExists");
-    if (field === "email") return t("tenant.setupWizard.errors.emailExists");
-    if (field === "username")
-      return t("tenant.setupWizard.errors.usernameExists");
-  }
+  const reason = getErrorReason(err);
   if (reason === "idempotency_key_reused") {
     workspaceSetupStore.rotateIdempotencyKey();
-    return t("tenant.setupWizard.errors.idempotencyKeyReused");
   }
   if (err?.status === 404) {
     return t("tenant.setupWizard.errors.existingUserNotFound");
   }
-  return err?.message || t("tenant.setupWizard.errors.generic");
+  return resolveErrorMessage(err, t, "tenant.setupWizard.errors.generic");
 }
 
 async function runSetup() {
+  if (submitting.value) return;
   if (!pending.value) return;
   if (!validateStepTwo()) return;
 

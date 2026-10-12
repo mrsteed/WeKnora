@@ -1,7 +1,11 @@
 import { get, post, postUpload, put, del } from '../../utils/request';
 import i18n from '@/i18n'
+import { resolveErrorMessage } from '@/utils/errorMessage'
 
-const t = (key: string) => i18n.global.t(key)
+const t = (key: string) => {
+  const translated = i18n.global.t(key)
+  return typeof translated === 'string' ? translated : String(translated)
+}
 
 // 模型类型定义
 export interface ModelConfig {
@@ -225,7 +229,7 @@ export function saveWeKnoraCloudCredentials(data: InitializeWeKnoraCloudRequest)
         if (response.success) {
           resolve(response)
         } else {
-          reject(new Error(response.message || response.error || '凭证保存失败'))
+          reject(new Error(resolveErrorMessage({ message: response.message || response.error }, t, 'error.weknoraCloud.saveCredentialsFailed')))
         }
       })
       .catch((error: any) => {

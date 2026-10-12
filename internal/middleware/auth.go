@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/config"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -160,8 +161,7 @@ func Auth(
 		// 尝试X-API-Key认证（兼容模式）
 		if apiKey := c.GetHeader("X-API-Key"); apiKey != "" {
 			if apiKeyService == nil {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: API key service is not configured"})
-				c.Abort()
+				abortWithReason(c, apperrors.NewUnauthorizedError("Unauthorized: API key service is not configured"), "auth.api_key_service_unavailable")
 				return
 			}
 			if authenticateAPIKeyRequest(c, tenantService, userService, apiKeyService, apiKey) {
@@ -172,11 +172,10 @@ func Auth(
 
 		// 没有任何通道认证成功
 		if bearerPresented {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid or expired token"})
+			abortWithReason(c, apperrors.NewUnauthorizedError("Unauthorized: invalid or expired token"), "auth.invalid_or_expired_token")
 		} else {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: missing authentication"})
+			abortWithReason(c, apperrors.NewUnauthorizedError("Unauthorized: missing authentication"), "auth.missing_authentication")
 		}
-		c.Abort()
 	}
 }
 
@@ -231,10 +230,7 @@ func authenticateJWTUser(
 		tenant, err = tenantService.GetTenantByID(ctx, targetTenantID)
 		if err != nil || tenant == nil {
 			logger.Warnf(ctx, "[auth] tenant lookup failed: tenant=%d user=%s err=%v", targetTenantID, user.ID, err)
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Unauthorized: invalid workspace",
-			})
-			c.Abort()
+			abortWithReason(c, apperrors.NewUnauthorizedError("Unauthorized: invalid workspace"), "auth.invalid_workspace")
 			return false
 		}
 	}
@@ -245,10 +241,7 @@ func authenticateJWTUser(
 		// 强制 RBAC 时，缺少 active membership 即拒绝；fail-open 路径已在
 		// resolveTenantRole 内部处理。
 		logger.Warnf(ctx, "User %s has no active membership in tenant %d", user.ID, targetTenantID)
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Forbidden: not a member of the target workspace",
-		})
-		c.Abort()
+		abortWithReason(c, apperrors.NewForbiddenError("Forbidden: not a member of the target workspace"), "auth.not_member_of_target_workspace")
 		return false
 	}
 
@@ -305,26 +298,21 @@ func resolveTargetTenant(
 		parsedTenantID, err := strconv.ParseUint(tenantHeader, 10, 64)
 		if err != nil || parsedTenantID == 0 {
 			logger.Warnf(ctx, "Invalid X-Tenant-ID header from user=%s: %q (err=%v)", user.ID, tenantHeader, err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid X-Tenant-ID header"})
-			c.Abort()
+			abortWithReason(c, apperrors.NewBadRequestError("Invalid X-Tenant-ID header"), "auth.invalid_tenant_header")
 			return 0, nil, false, false
 		}
 		// 检查用户是否有权限访问目标空间：自家空间、跨空间超管、或
 		// 有 active membership 行——三选一，由 IsTenantAccessible 统一判定。
 		if !IsTenantAccessible(ctx, user, parsedTenantID, memberService, cfg) {
 			logger.Warnf(ctx, "User %s attempted to access tenant %d without permission", user.ID, parsedTenantID)
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "Forbidden: insufficient permissions to access target workspace",
-			})
-			c.Abort()
+			abortWithReason(c, apperrors.NewForbiddenError("Forbidden: insufficient permissions to access target workspace"), "auth.target_workspace_forbidden")
 			return 0, nil, false, false
 		}
 		// 验证目标空间是否存在
 		targetTenant, err := tenantService.GetTenantByID(ctx, parsedTenantID)
 		if err != nil || targetTenant == nil {
 			logger.Warnf(ctx, "Error getting target tenant by ID: %v, tenantID: %d", err, parsedTenantID)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid target workspace ID"})
-			c.Abort()
+			abortWithReason(c, apperrors.NewBadRequestError("Invalid target workspace ID"), "auth.invalid_workspace")
 			return 0, nil, false, false
 		}
 		logger.Infof(ctx, "User %s switching to tenant %d", user.ID, parsedTenantID)
@@ -380,8 +368,7 @@ func authenticateAPIKeyRequest(
 	// BackfillMissingKeyHashes for migration 000065 placeholder rows).
 	key, err := apiKeyService.AuthenticateAPIKey(ctx, apiKey)
 	if err != nil || key == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid API key"})
-		c.Abort()
+		abortWithReason(c, apperrors.NewUnauthorizedError("Unauthorized: invalid API key"), "auth.invalid_api_key")
 		return false
 	}
 
@@ -400,8 +387,7 @@ func authenticateAPIKeyRequest(
 		} else {
 			targetTenantID, parseErr := strconv.ParseUint(tenantHeader, 10, 64)
 			if parseErr != nil || targetTenantID == 0 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid X-Tenant-ID header"})
-				c.Abort()
+				abortWithReason(c, apperrors.NewBadRequestError("Invalid X-Tenant-ID header"), "auth.invalid_tenant_header")
 				return false
 			}
 			attachAPIKeyAuthContext(c, tenantService, userService, targetTenantID, key)
@@ -409,22 +395,17 @@ func authenticateAPIKeyRequest(
 	} else {
 		tenantID := key.TenantIDValue()
 		if tenantID == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid API key scope"})
-			c.Abort()
+			abortWithReason(c, apperrors.NewUnauthorizedError("Unauthorized: invalid API key scope"), "auth.invalid_api_key_scope")
 			return false
 		}
 		if tenantHeader := strings.TrimSpace(c.GetHeader("X-Tenant-ID")); tenantHeader != "" {
 			requestedTenantID, parseErr := strconv.ParseUint(tenantHeader, 10, 64)
 			if parseErr != nil || requestedTenantID == 0 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid X-Tenant-ID header"})
-				c.Abort()
+				abortWithReason(c, apperrors.NewBadRequestError("Invalid X-Tenant-ID header"), "auth.invalid_tenant_header")
 				return false
 			}
 			if requestedTenantID != tenantID {
-				c.JSON(http.StatusForbidden, gin.H{
-					"error": "Forbidden: workspace API key cannot switch workspaces",
-				})
-				c.Abort()
+				abortWithReason(c, apperrors.NewForbiddenError("Forbidden: workspace API key cannot switch workspaces"), "auth.workspace_switch_forbidden")
 				return false
 			}
 		}
@@ -495,8 +476,7 @@ func attachAPIKeyAuthContext(
 	t, err := tenantService.GetTenantByID(c.Request.Context(), tenantID)
 	if err != nil {
 		logger.Warnf(c.Request.Context(), "[auth] API key tenant lookup failed: tenant=%d err=%v", tenantID, err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid API key"})
-		c.Abort()
+		abortWithReason(c, apperrors.NewUnauthorizedError("Unauthorized: invalid API key"), "auth.invalid_api_key")
 		return
 	}
 
@@ -525,8 +505,7 @@ func attachAPIKeyAuthContext(
 		var principalErr error
 		principal, principalErr = resolveAPIPrincipal(c.Request.Context(), t, c.Request.Header)
 		if principalErr != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": apiPrincipalAuthErrorMessage(principalErr)})
-			c.Abort()
+			abortWithReason(c, apperrors.NewUnauthorizedError(apiPrincipalAuthErrorMessage(principalErr)), "auth.invalid_api_key")
 			return
 		}
 	}

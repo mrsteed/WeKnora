@@ -2498,6 +2498,7 @@ export default {
   error: {
     networkError: '네트워크 오류, 연결을 확인해 주세요',
     invalidCredentials: '사용자 이름 또는 비밀번호가 올바르지 않습니다',
+    generic: '오류가 발생했습니다. 잠시 후 다시 시도해 주세요',
     tokenRefreshFailed: '토큰 갱신 실패',
     pleaseRelogin: '다시 로그인해 주세요',
     fileSizeExceeded: '파일 크기는 {size}MB를 초과할 수 없습니다!',
@@ -2507,6 +2508,69 @@ export default {
     missingKbId: '지식베이스 ID가 누락되었습니다',
     tokenNotFound: '로그인 토큰을 찾을 수 없습니다. 다시 로그인해주세요',
     streamFailed: '스트림 연결 실패',
+    messages: {
+      user: {
+        invalid_credentials: '사용자 이름 또는 비밀번호가 올바르지 않습니다',
+        account_disabled: '이 계정은 비활성화되었습니다',
+        already_exists: '사용자가 이미 존재합니다',
+        username_exists: '사용자 이름이 이미 존재합니다',
+        email_exists: '이메일이 이미 존재합니다',
+        phone_exists: '휴대폰 번호가 이미 존재합니다',
+      },
+      bootstrap: {
+        idempotency_key_reused: '이 초기화는 이미 완료되었습니다. 새로고침 후 다시 시작해 주세요',
+        user_create_failed: '워크스페이스 초기화에 실패했습니다. 잠시 후 다시 시도해 주세요',
+      },
+      invite: {
+        email_already_has_account: '이 이메일로 이미 계정이 있습니다. 로그인한 뒤 워크스페이스에 참여해 주세요',
+        link_no_longer_valid_login: '이 초대 링크는 더 이상 유효하지 않습니다. 방금 만든 계정으로 로그인해 계속해 주세요',
+      },
+      tenant: {
+        required: '먼저 워크스페이스를 선택하거나 생성해 주세요',
+      },
+      auth: {
+        api_key_service_unavailable: 'API 키 서비스를 현재 사용할 수 없습니다',
+        invalid_or_expired_token: '세션이 만료되었습니다. 다시 로그인해 주세요',
+        missing_authentication: '먼저 로그인해 주세요',
+        invalid_workspace: '현재 워크스페이스가 유효하지 않거나 사용할 수 없습니다',
+        not_member_of_target_workspace: '대상 워크스페이스의 멤버가 아닙니다',
+        invalid_tenant_header: '워크스페이스 헤더가 잘못되었습니다',
+        target_workspace_forbidden: '대상 워크스페이스에 접근할 권한이 없습니다',
+        invalid_api_key: '유효하지 않은 API 키입니다',
+        invalid_api_key_scope: 'API 키 범위가 올바르지 않습니다',
+        workspace_switch_forbidden: '이 API 키로는 워크스페이스를 전환할 수 없습니다',
+      },
+      embed: {
+        channel_id_required: '임베드 채널 ID가 없습니다',
+        token_required: '임베드 발행 토큰이 없습니다',
+        invalid_channel_or_token: '임베드 채널 또는 토큰이 올바르지 않습니다',
+        channel_disabled: '이 임베드 채널은 비활성화되었습니다',
+        origin_not_allowed: '현재 출처는 허용되지 않습니다',
+        rate_limited: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요',
+        workspace_unavailable: '현재 워크스페이스를 사용할 수 없습니다',
+      },
+      system: {
+        docreader: {
+          addr_required: 'DocReader 주소를 입력해 주세요',
+          addr_empty: 'DocReader 주소는 비워 둘 수 없습니다',
+          addr_invalid: 'DocReader 주소가 올바르지 않습니다',
+          unavailable: '문서 변환 서비스를 현재 사용할 수 없습니다',
+          reconnect_failed: 'DocReader 재연결에 실패했습니다',
+        },
+        parser: {
+          invalid_request_body: '잘못된 요청 본문입니다',
+        },
+        storage: {
+          invalid_request_body: '잘못된 요청 본문입니다',
+          provider_disabled: '이 스토리지 엔진은 비활성화되었습니다',
+        },
+      },
+      sandbox: {
+        sandboxes_still_live: '이 구성은 실행 중이거나 일시 중지된 샌드박스에서 아직 사용 중입니다. 관련 세션을 먼저 종료하거나 삭제하거나 다른 구성을 만들어 주세요.',
+        sandbox_inventory_unverifiable: '현재 이 백엔드의 샌드박스 사용 여부를 확인할 수 없습니다',
+        sandbox_config_cordoned: '다른 사용자가 이 구성을 수정 중입니다. 잠시 후 다시 시도해 주세요',
+      },
+    },
     initialization: {
       checkFailed: '검사 실패',
       testFailed: '테스트 실패'
@@ -2520,6 +2584,15 @@ export default {
       updateFailed: '워크스페이스 정보 업데이트 실패',
       deleteFailed: 'Failed to delete workspace'
     },
+    orgTree: {
+      requestFailed: '조직 트리 작업에 실패했습니다. 잠시 후 다시 시도해 주세요'
+    },
+    organization: {
+      requestFailed: '공유 공간 작업에 실패했습니다. 잠시 후 다시 시도해 주세요'
+    },
+    weknoraCloud: {
+      saveCredentialsFailed: 'WeKnoraCloud 자격 증명 저장에 실패했습니다'
+    },
     model: {
       createFailed: '모델 생성 실패',
       getFailed: '모델 조회 실패',
@@ -2528,6 +2601,7 @@ export default {
     },
     auth: {
       loginFailed: '로그인 실패',
+      autoSetupFailed: '자동 초기화를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요',
       registerFailed: '회원가입 실패',
       getUserFailed: '사용자 정보 조회 실패',
       getTenantFailed: '워크스페이스 정보 조회 실패',

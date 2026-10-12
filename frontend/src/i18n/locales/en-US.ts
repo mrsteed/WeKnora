@@ -4514,6 +4514,7 @@ export default {
   error: {
     networkError: "Network error, please check your connection",
     invalidCredentials: "Invalid username or password",
+    generic: "Something went wrong. Please try again.",
     tokenRefreshFailed: "Token refresh failed",
     pleaseRelogin: "Please log in again",
     fileSizeExceeded: "File size cannot exceed {size}MB!",
@@ -4523,8 +4524,81 @@ export default {
     missingKbId: "Missing knowledge base ID",
     tokenNotFound: "Login token not found, please log in again",
     streamFailed: "Stream connection failed",
+    messages: {
+      user: {
+        invalid_credentials: "Invalid username or password",
+        account_disabled: "This account has been disabled",
+        already_exists: "User already exists",
+        username_exists: "Username already exists",
+        email_exists: "Email already exists",
+        phone_exists: "Phone already exists",
+      },
+      bootstrap: {
+        idempotency_key_reused:
+          "This setup has already completed. Refresh and start a new setup flow.",
+        user_create_failed: "Workspace setup failed. Please try again later.",
+      },
+      invite: {
+        email_already_has_account:
+          "This email already has an account. Please sign in to join the workspace.",
+        link_no_longer_valid_login:
+          "This invitation link is no longer valid. Please sign in to the account you just created.",
+      },
+      tenant: {
+        required: "Please select or create a workspace first",
+      },
+      auth: {
+        api_key_service_unavailable: "API key service is unavailable",
+        invalid_or_expired_token: "Your session has expired. Please log in again",
+        missing_authentication: "Please log in first",
+        invalid_workspace: "The current workspace is invalid or unavailable",
+        not_member_of_target_workspace:
+          "You are not a member of the target workspace",
+        invalid_tenant_header: "The workspace header is invalid",
+        target_workspace_forbidden:
+          "You do not have permission to access the target workspace",
+        invalid_api_key: "Invalid API key",
+        invalid_api_key_scope: "Invalid API key scope",
+        workspace_switch_forbidden:
+          "This API key cannot switch workspaces",
+      },
+      embed: {
+        channel_id_required: "Missing embed channel ID",
+        token_required: "Missing embed publish token",
+        invalid_channel_or_token: "The embed channel or token is invalid",
+        channel_disabled: "This embed channel is disabled",
+        origin_not_allowed: "This origin is not allowed",
+        rate_limited: "Too many requests. Please try again later",
+        workspace_unavailable: "The workspace is currently unavailable",
+      },
+      system: {
+        docreader: {
+          addr_required: "Please provide a DocReader address",
+          addr_empty: "DocReader address cannot be empty",
+          addr_invalid: "The DocReader address is invalid",
+          unavailable: "The document converter is unavailable",
+          reconnect_failed: "Failed to reconnect to DocReader",
+        },
+        parser: {
+          invalid_request_body: "Invalid request body",
+        },
+        storage: {
+          invalid_request_body: "Invalid request body",
+          provider_disabled: "This storage engine is disabled",
+        },
+      },
+      sandbox: {
+        sandboxes_still_live:
+          "This config is still used by running or paused sandboxes. End or delete those sessions first, or create another config.",
+        sandbox_inventory_unverifiable:
+          "Unable to verify sandbox usage for this backend right now",
+        sandbox_config_cordoned:
+          "This config is being modified by another user. Please try again later.",
+      },
+    },
     auth: {
       loginFailed: "Login failed",
+      autoSetupFailed: "Auto-setup is unavailable. Please try again later",
       registerFailed: "Registration failed",
       getUserFailed: "Failed to get user info",
       getTenantFailed: "Failed to get workspace info",
@@ -4538,6 +4612,15 @@ export default {
       getFailed: "Failed to get model",
       updateFailed: "Failed to update model",
       deleteFailed: "Failed to delete model",
+    },
+    orgTree: {
+      requestFailed: "Org-tree operation failed. Please try again later",
+    },
+    organization: {
+      requestFailed: "Shared-space operation failed. Please try again later",
+    },
+    weknoraCloud: {
+      saveCredentialsFailed: "Failed to save WeKnoraCloud credentials",
     },
     tenant: {
       listFailed: "Failed to list workspaces",

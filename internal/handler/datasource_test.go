@@ -126,12 +126,20 @@ func TestDataSource_GetSyncLogs_LimitExceedingMaximum(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for limit > 100, got %d body=%s", w.Code, w.Body.String())
 	}
-	var resp map[string]interface{}
+	var resp struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	errMsg, ok := resp["error"].(string)
-	if !ok || errMsg == "" {
+	if resp.Success {
+		t.Fatalf("expected failure envelope, got success body=%s", w.Body.String())
+	}
+	errMsg := resp.Error.Message
+	if errMsg == "" {
 		t.Fatalf("expected error message in response")
 	}
 	if errMsg != "limit must be between 1 and 100" {
