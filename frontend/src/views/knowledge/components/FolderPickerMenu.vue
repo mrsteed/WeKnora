@@ -1,5 +1,5 @@
 <template>
-  <div class="folder-picker">
+  <div class="folder-picker" :class="{ 'folder-picker--reselect': allowReselect }">
     <div v-if="showBack" class="folder-picker__header" @click.stop="emit('back')">
       <t-icon name="chevron-left" size="16px" />
       <span>{{ t('knowledgeBase.moveToFolder.action') }}</span>
@@ -11,7 +11,7 @@
           v-if="row.kind === 'folder'"
           :data-folder-path="row.path || undefined"
           class="folder-picker__item"
-          :class="{ current: effectiveCurrentPath === row.path }"
+          :class="{ current: activeCurrentPath === row.path }"
           :style="{ '--folder-picker-depth': row.depth }"
           :title="row.path || undefined"
           @click.stop="choose(row.path)"
@@ -31,7 +31,7 @@
           >
             <t-icon name="folder-add" />
           </button>
-          <t-icon v-if="effectiveCurrentPath === row.path" name="check" class="folder-picker__current" />
+          <t-icon v-if="activeCurrentPath === row.path" name="check" class="folder-picker__current" />
         </div>
 
         <div
@@ -86,10 +86,18 @@ const props = withDefaults(defineProps<{
   currentPath?: string
   showBack?: boolean
   allowReselect?: boolean
+  /**
+   * Whether to highlight `currentPath` as the "current folder" (check mark +
+   * muted style). For single-doc moves this is where the file already lives.
+   * In bulk moves there is no single current location, so callers pass false
+   * to avoid root (default currentPath '') being wrongly marked as current.
+   */
+  markCurrent?: boolean
 }>(), {
   currentPath: '',
   showBack: false,
   allowReselect: false,
+  markCurrent: true,
 })
 
 const emit = defineEmits<{
@@ -109,6 +117,11 @@ const selectedPath = ref<string | null>(null)
 
 const effectiveCurrentPath = computed(() =>
   selectedPath.value !== null ? selectedPath.value : (props.currentPath ?? ''),
+)
+
+// Where the "current folder" highlight applies; null means mark nothing.
+const activeCurrentPath = computed(() =>
+  props.markCurrent ? effectiveCurrentPath.value : null,
 )
 
 const displayOptions = computed(() => {
@@ -374,5 +387,28 @@ const commitNewFolder = async () => {
   font-family: var(--app-font-family);
   font-size: 13px;
   outline: none;
+}
+
+/*
+ * allow-reselect 语义（批量移动 / 上传目标）：未传 current-path 时根目录默认
+ * 等价于 current，会被打上 .current（灰字 + 默认光标 + 对勾），看起来像被禁用。
+ * 在 reselect 场景下恢复其正常可点外观，对勾改用品牌色表示"仍可选中"。
+ */
+.folder-picker--reselect .folder-picker__item.current {
+  color: var(--td-text-color-primary);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--td-bg-color-container-hover);
+
+    .folder-picker__add {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+}
+
+.folder-picker--reselect .folder-picker__item.current .folder-picker__current {
+  color: var(--td-brand-color);
 }
 </style>

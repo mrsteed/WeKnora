@@ -86,6 +86,8 @@ const anyBatchLoading = computed(() =>
             <template #content>
               <div class="card-menu">
                 <FolderPickerMenu :options="folderOptions || []"
+                  allow-reselect
+                  :mark-current="false"
                   @confirm="(path: string) => { folderPickerVisible = false; emit('moveToFolder', path) }" />
               </div>
             </template>
