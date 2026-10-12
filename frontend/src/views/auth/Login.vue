@@ -146,9 +146,9 @@
           <div class="form-content">
             <t-form ref="formRef" :data="formData" :rules="formRules" @submit="handleLogin" layout="vertical"
               label-align="top">
-              <t-form-item :label="$t('auth.email')" name="email">
-                <t-input v-model="formData.email" :placeholder="$t('auth.emailPlaceholder')" type="text"
-                  autocomplete="email" size="large" :disabled="loading" />
+              <t-form-item :label="$t('auth.identifier')" name="identifier">
+                <t-input v-model="formData.identifier" :placeholder="$t('auth.identifierPlaceholder')" type="text"
+                  autocomplete="username" size="large" :disabled="loading" />
               </t-form-item>
 
               <t-form-item :label="$t('auth.password')" name="password">
@@ -354,9 +354,10 @@ const oidcLoginText = computed(() => {
 })
 const currentLangOption = computed(() => languageOptions.find(l => l.value === currentLanguage.value))
 
-// Login form data
+// Login form data. identifier accepts username OR email (backend resolves
+// username first, email as fallback).
 const formData = reactive<{ [key: string]: any }>({
-  email: '',
+  identifier: '',
   password: '',
 })
 
@@ -370,9 +371,8 @@ const registerData = reactive<{ [key: string]: any }>({
 
 // Login form validation rules
 const formRules = computed(() => ({
-  email: [
-    { required: true, message: t('auth.emailRequired'), type: 'error' },
-    { email: true, message: t('auth.emailInvalid'), type: 'error' }
+  identifier: [
+    { required: true, message: t('auth.identifierRequired'), type: 'error' }
   ],
   password: [
     { required: true, message: t('auth.passwordRequired'), type: 'error' },
@@ -587,7 +587,7 @@ const handleLogin = async () => {
     loading.value = true
 
     const response = await login({
-      email: formData.email,
+      identifier: formData.identifier,
       password: formData.password,
     })
 
@@ -650,9 +650,9 @@ const handleRegister = async () => {
     if (response.success) {
       MessagePlugin.success(t('auth.registerSuccess'))
 
-      // Switch to login mode and fill in email
+      // Switch to login mode and fill in the identifier (username)
       isRegisterMode.value = false
-      formData.email = registerData.email
+      formData.identifier = registerData.username
 
       // Clear register form
       Object.keys(registerData).forEach(key => {

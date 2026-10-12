@@ -4541,6 +4541,9 @@ export default {
     oidcLoginFailed: 'OIDC 로그인 실패',
     username: '사용자명',
     email: '이메일',
+    identifier: '사용자명/이메일',
+    identifierRequired: '사용자명 또는 이메일을 입력해주세요',
+    identifierPlaceholder: '사용자명 또는 이메일을 입력하세요',
     password: '비밀번호',
     confirmPassword: '비밀번호 확인',
     loginSuccessTitle: '로그인 성공',
@@ -4574,7 +4577,7 @@ export default {
     usernameInvalid: '사용자명은 문자, 숫자, 밑줄, 한글만 포함할 수 있습니다',
     confirmPasswordRequired: '비밀번호를 확인해주세요',
     passwordMismatch: '두 비밀번호가 일치하지 않습니다',
-    loginError: '로그인 오류, 이메일 또는 비밀번호를 확인해주세요',
+    loginError: '로그인 오류, 사용자명/이메일 또는 비밀번호를 확인해주세요',
     loginErrorRetry: '로그인 오류, 나중에 다시 시도해주세요',
     registerError: '가입 오류, 나중에 다시 시도해주세요',
     workspaceOnboarding: {

@@ -4541,6 +4541,9 @@ export default {
     oidcLoginFailed: 'Ошибка входа через OIDC',
     username: 'Имя пользователя',
     email: 'Почта Email',
+    identifier: 'Имя пользователя или Email',
+    identifierRequired: 'Введите имя пользователя или email',
+    identifierPlaceholder: 'Введите имя пользователя или email',
     password: 'Пароль',
     confirmPassword: 'Подтвердите пароль',
     loginSuccessTitle: 'Вход выполнен',
@@ -4574,7 +4577,7 @@ export default {
     usernameInvalid: 'Имя пользователя может содержать только буквы, цифры, подчёркивания и китайские иероглифы',
     confirmPasswordRequired: 'Подтвердите пароль',
     passwordMismatch: 'Введённые пароли не совпадают',
-    loginError: 'Ошибка входа, пожалуйста, проверьте электронную почту или пароль',
+    loginError: 'Ошибка входа, пожалуйста, проверьте имя пользователя/email или пароль',
     loginErrorRetry: 'Ошибка входа, пожалуйста, повторите попытку позже',
     registerError: 'Ошибка регистрации, пожалуйста, повторите попытку позже',
     workspaceOnboarding: {

@@ -8,8 +8,9 @@ const t = (key: string) => {
 }
 
 // 用户登录接口
+// identifier 接受用户名或邮箱（后端优先按用户名解析，兜底按邮箱）。
 export interface LoginRequest {
-  email: string
+  identifier: string
   password: string
 }
 

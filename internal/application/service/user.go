@@ -321,23 +321,40 @@ func (s *userService) GetUserByPhone(ctx context.Context, phone string) (*types.
 	return s.userRepo.GetUserByPhone(ctx, phone)
 }
 
+// resolveLoginUser looks up a user by the login identifier: primary
+// lookup is by username, falling back to email so both keep working as
+// login credentials.
+func (s *userService) resolveLoginUser(ctx context.Context, identifier string) (*types.User, error) {
+	user, err := s.userRepo.GetUserByUsername(ctx, identifier)
+	if err != nil && !errors.Is(err, apprepo.ErrUserNotFound) {
+		return nil, err
+	}
+	if user == nil {
+		user, err = s.userRepo.GetUserByEmail(ctx, identifier)
+		if err != nil && !errors.Is(err, apprepo.ErrUserNotFound) {
+			return nil, err
+		}
+	}
+	return user, nil
+}
+
 // Login authenticates a user and returns tokens
 func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*types.LoginResponse, error) {
 	logger.Info(ctx, "Start user login")
-	// Get user by email
-	user, err := s.userRepo.GetUserByEmail(ctx, req.Email)
+	// Resolve the user by username (email as fallback).
+	user, err := s.resolveLoginUser(ctx, req.Identifier)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get user by email: %v", err)
+		logger.Errorf(ctx, "Failed to resolve user by identifier: %v", err)
 		return &types.LoginResponse{
 			Success: false,
-			Message: "Invalid email or password",
+			Message: "Invalid username/email or password",
 		}, nil
 	}
 	if user == nil {
-		logger.Warn(ctx, "User not found for email")
+		logger.Warn(ctx, "User not found for identifier")
 		return &types.LoginResponse{
 			Success: false,
-			Message: "Invalid email or password",
+			Message: "Invalid username/email or password",
 		}, nil
 	}
 
@@ -356,7 +373,7 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 		logger.Warn(ctx, "Password verification failed")
 		return &types.LoginResponse{
 			Success: false,
-			Message: "Invalid email or password",
+			Message: "Invalid username/email or password",
 		}, nil
 	}
 	logger.Info(ctx, "Password verification successful")

@@ -8,19 +8,26 @@ import (
 )
 
 func TestLoginFailureAppError_InvalidCredentials(t *testing.T) {
-	appErr := loginFailureAppError(&types.LoginResponse{Message: "Invalid email or password"})
-	if appErr == nil {
-		t.Fatal("loginFailureAppError returned nil")
-	}
-	if appErr.HTTPCode != http.StatusUnauthorized {
-		t.Fatalf("HTTPCode = %d, want %d", appErr.HTTPCode, http.StatusUnauthorized)
-	}
-	details, ok := appErr.Details.(map[string]string)
-	if !ok {
-		t.Fatalf("details type = %T, want map[string]string", appErr.Details)
-	}
-	if got := details["reason"]; got != "user.invalid_credentials" {
-		t.Fatalf("reason = %q, want %q", got, "user.invalid_credentials")
+	// Both the legacy message and the current one must map to
+	// user.invalid_credentials (identifier can be username or email).
+	for _, msg := range []string{
+		"Invalid email or password",
+		"Invalid username/email or password",
+	} {
+		appErr := loginFailureAppError(&types.LoginResponse{Message: msg})
+		if appErr == nil {
+			t.Fatalf("loginFailureAppError(%q) returned nil", msg)
+		}
+		if appErr.HTTPCode != http.StatusUnauthorized {
+			t.Fatalf("HTTPCode = %d, want %d (msg %q)", appErr.HTTPCode, http.StatusUnauthorized, msg)
+		}
+		details, ok := appErr.Details.(map[string]string)
+		if !ok {
+			t.Fatalf("details type = %T, want map[string]string (msg %q)", appErr.Details, msg)
+		}
+		if got := details["reason"]; got != "user.invalid_credentials" {
+			t.Fatalf("reason = %q, want %q (msg %q)", got, "user.invalid_credentials", msg)
+		}
 	}
 }
 

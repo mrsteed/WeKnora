@@ -139,9 +139,12 @@ type AuthToken struct {
 }
 
 // LoginRequest represents a login request
+//
+// Identifier accepts either the user's username OR email address; the
+// service layer resolves it (username first, email as fallback).
 type LoginRequest struct {
-	Email    string `json:"email"    binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Identifier string `json:"identifier" binding:"required"`
+	Password   string `json:"password"   binding:"required,min=6"`
 }
 
 type OIDCAuthURLResponse struct {

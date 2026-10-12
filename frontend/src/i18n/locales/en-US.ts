@@ -2126,6 +2126,9 @@ export default {
     oidcLoginFailed: "OIDC login failed",
     username: "Username",
     email: "Email",
+    identifier: "Username or Email",
+    identifierRequired: "Enter your username or email",
+    identifierPlaceholder: "Enter username or email",
     password: "Password",
     confirmPassword: "Confirm Password",
     loginSuccessTitle: "Login successful",
@@ -2162,7 +2165,7 @@ export default {
       "Username can only contain letters, numbers, underscores and Chinese characters",
     confirmPasswordRequired: "Confirm password",
     passwordMismatch: "Entered passwords do not match",
-    loginError: "Login error, please check email or password",
+    loginError: "Login error, please check your username/email or password",
     loginErrorRetry: "Login error, please try again later",
     registerError: "Registration error, please try again later",
     workspaceOnboarding: {
