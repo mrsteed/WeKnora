@@ -1813,6 +1813,7 @@ export default {
     zoomOut: '축소',
     fullscreen: '전체 화면',
     exitFullscreen: '전체 화면 종료',
+    download: '파일 다운로드',
     htmlRendered: '렌더링 미리보기',
     htmlSource: '원본 보기',
     audioLoading: '오디오 로딩 중…',

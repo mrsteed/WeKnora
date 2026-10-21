@@ -1813,6 +1813,7 @@ export default {
     zoomOut: '縮小',
     fullscreen: '全画面表示',
     exitFullscreen: '全画面表示を終了',
+    download: 'ファイルをダウンロード',
     htmlRendered: 'レンダリング表示',
     htmlSource: 'ソースを表示',
     audioLoading: '音声を読み込み中…',

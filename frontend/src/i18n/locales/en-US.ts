@@ -6086,6 +6086,7 @@ export default {
     zoomOut: 'Zoom out',
     fullscreen: 'Fullscreen',
     exitFullscreen: 'Exit Fullscreen',
+    download: 'Download file',
     htmlRendered: 'Rendered preview',
     htmlSource: 'View source',
     audioLoading: 'Loading audio…',

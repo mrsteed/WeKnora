@@ -1813,6 +1813,7 @@ export default {
     zoomOut: 'Уменьшить',
     fullscreen: 'Полноэкранный режим',
     exitFullscreen: 'Выйти из полноэкранного режима',
+    download: 'Скачать файл',
     htmlRendered: 'Отображение',
     htmlSource: 'Исходный код',
     audioLoading: 'Загрузка аудио…',

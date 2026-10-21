@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { indexEmbeddedSourceImages } from '@/utils/sourceImage';
 import { ref, shallowRef, watch, onMounted, onUnmounted, nextTick, defineAsyncComponent } from 'vue';
+import { MessagePlugin } from 'tdesign-vue-next';
 import { previewKnowledgeFile } from '@/api/knowledge-base/index';
 import { previewTemporaryAttachment } from '@/api/chat/temporary-attachments';
 import { downloadArtifact } from '@/api/chat';
@@ -105,6 +106,10 @@ const docxContainer = ref<HTMLElement | null>(null);
 const imageNaturalWidth = ref(0);
 const imageNaturalHeight = ref(0);
 let loadedForId = '';
+// Last fetched raw file bytes, reused by the download action so a second
+// round-trip to the backend isn't needed.
+const previewBlob = ref<Blob | null>(null);
+const downloadBusy = ref(false);
 
 const isFullscreen = ref(false);
 const previewRoot = ref<HTMLElement | null>(null);
@@ -153,6 +158,30 @@ function toggleFullscreen() {
     void exitPreviewFullscreen();
   } else {
     void enterPreviewFullscreen();
+  }
+}
+
+async function downloadPreviewFile() {
+  if (downloadBusy.value) return;
+  downloadBusy.value = true;
+  let objectUrl = '';
+  try {
+    const blob = previewBlob.value || (await fetchPreviewBlob());
+    objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.style.display = 'none';
+    link.setAttribute('href', objectUrl);
+    link.setAttribute('download', props.fileName || 'document');
+    document.body.appendChild(link);
+    link.click();
+    await nextTick();
+    document.body.removeChild(link);
+  } catch (err: any) {
+    console.error('Document download failed:', err);
+    MessagePlugin.error(t('file.downloadFailed'));
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    downloadBusy.value = false;
   }
 }
 
@@ -422,6 +451,7 @@ async function loadPreview() {
 
   try {
     const rawBlob = await fetchPreviewBlob();
+    previewBlob.value = rawBlob;
     let kind = resolvePreviewKind(ft);
     if (kind === 'unsupported') {
       const sample = new Uint8Array(await rawBlob.slice(0, FILE_PREVIEW_SNIFF_BYTES).arrayBuffer());
@@ -531,6 +561,8 @@ function cleanup() {
   pptxSlideCount = 0;
   imageNaturalWidth.value = 0;
   imageNaturalHeight.value = 0;
+  previewBlob.value = null;
+  downloadBusy.value = false;
   loadedForId = '';
   if (docxContainer.value) {
     docxContainer.value.innerHTML = '';
@@ -864,6 +896,11 @@ onUnmounted(() => {
       <div class="preview-toolbar" :class="{ 'is-inline': toolbarTarget && !isFullscreen }" v-if="isFullscreen || (!loading && !error && previewType !== 'unsupported')">
         <span v-if="isFullscreen" class="preview-toolbar-title" :title="fileName">{{ fileName }}</span>
         <div class="preview-toolbar-actions">
+          <t-button theme="default" variant="text" size="small" shape="square"
+            :title="$t('preview.download')" :aria-label="$t('preview.download')"
+            :loading="downloadBusy" @click="downloadPreviewFile">
+            <template #icon><t-icon name="download" /></template>
+          </t-button>
           <t-button
             v-if="previewType === 'html' && allowsHtmlScriptPreview()"
             theme="default" variant="text" size="small" shape="square"

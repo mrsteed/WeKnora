@@ -1813,6 +1813,7 @@ export default {
     zoomOut: '縮小',
     fullscreen: '全螢幕預覽',
     exitFullscreen: '退出全螢幕',
+    download: '下載文件',
     htmlRendered: '渲染預覽',
     htmlSource: '查看源碼',
     audioLoading: '載入音訊中…',
