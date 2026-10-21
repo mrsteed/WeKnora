@@ -141,13 +141,6 @@
             <div class="migration-error-actions">
               <t-link
                 theme="primary"
-                :href="troubleshootingDocsURL"
-                target="_blank"
-                rel="noopener noreferrer"
-              >{{ $t('system.dbMigrationViewDocs') }}</t-link>
-              <span class="migration-error-actions-sep">·</span>
-              <t-link
-                theme="primary"
                 :href="reportIssueURL"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -199,7 +192,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { SystemInfo } from '@/api/system'
 import { useEditorResourcesStore } from '@/stores/editorResources'
 import { useI18n } from 'vue-i18n'
-import { docsUrl } from '@/utils/docsUrl'
 
 const { t, locale } = useI18n()
 
@@ -247,8 +239,6 @@ function formatUptime(totalSeconds: number): string {
   if (seconds > 0 && days === 0) parts.push(t('system.uptimeSeconds', { n: seconds }))
   return parts.join(' ')
 }
-
-const troubleshootingDocsURL = docsUrl('troubleshootingMigrations')
 
 // Pre-fills a new issue with the current migration error so users don't have to
 // paste it manually. Body is intentionally minimal — the bug template will fill

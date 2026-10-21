@@ -595,10 +595,6 @@
               <p v-if="specCompatError" class="form-desc form-desc--error">{{ $t('model.editor.advanced.compat.invalid') }}: {{ specCompatError }}</p>
               <p v-else class="form-desc">
                 {{ $t('model.editor.advanced.compat.desc') }}
-                <a :href="COMPAT_DOC_URL" target="_blank" rel="noopener noreferrer" class="compat-doc-link">
-                  {{ $t('model.editor.advanced.compat.docLink') }}
-                  <t-icon name="jump" size="12px" />
-                </a>
               </p>
             </div>
           </template>
@@ -650,7 +646,6 @@ import CredentialResource, {
 } from '@/components/credentials/CredentialResource.vue'
 import { shouldShowOllamaUnavailableTip } from '@/components/modelEditorSourceState'
 import { WEKNORA_CLOUD_PROVIDER, WKC_MODEL_KINDS, WKC_MODEL_NAME_BY_KIND } from '@/utils/weknoraCloudModels'
-import { docsUrl } from '@/utils/docsUrl'
 
 interface CustomHeaderItem {
   key: string
@@ -706,9 +701,6 @@ const PROTOCOL_OPTIONS = [
   'anthropic-messages',
   'google-generative-ai',
 ] as const
-
-/** Field reference for parameters.spec.compat, per protocol and model type. */
-const COMPAT_DOC_URL = docsUrl('modelsCompat')
 
 /** Legacy thinking_control values still honoured by catalog.Resolve. */
 const LEGACY_THINKING_CONTROL_VALUES = ['none', 'enable_thinking', 'thinking_type', 'chat_template_kwargs'] as const
