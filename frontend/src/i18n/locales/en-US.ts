@@ -124,6 +124,221 @@ export default {
     "historyModels": "{count} models changed",
     "historyNoOverrides": "No administrator changes",
   },
+  automation: {
+    conversationNotice: "This conversation is run by an automation. Manual messages are unavailable; handle pending requests above.",
+    title: 'Automations',
+    description: 'Have the WeKnora assistant run tasks on a schedule as you. You are notified of results and pending approvals.',
+    add: 'New automation',
+    addHint: 'Or ask the WeKnora assistant to set one up',
+    paused: 'Paused',
+    scheduleEnded: 'Ended',
+    scheduleEndedHint: 'This one-time schedule has ended. Run it now, or edit the run time before resuming.',
+    nextRunAt: 'Next {time}',
+    runConfirm: 'Run "{name}" now? This starts an extra run without changing its schedule.',
+    deleteBody: 'Stops any run in progress and deletes the runs, conversations and standing approvals of "{name}". This cannot be undone.',
+    fields: {
+      name: 'Name',
+      instruction: 'Task',
+      schedule: 'Schedule',
+      timezone: 'Timezone',
+      accessLevel: 'Access',
+      sessionMode: 'Conversation',
+      carryLastResult: 'Include the last successful result',
+      overlapPolicy: 'If the last run is still going',
+      misfirePolicy: 'Missed runs',
+      approvalTimeout: 'Approval wait',
+      maxDuration: 'Max run time',
+      notifyOnSuccess: 'Notify on success',
+      nextRun: 'Next run',
+      enabled: 'Enabled',
+    },
+    editor: {
+      model: "Run model",
+      modelHelp: 'Use the assistant’s default model or choose one for this task. Delegated agents use their own models. Changes apply to future runs.',
+      modelDefault: 'Use assistant default',
+      createTitle: 'New automation',
+      editTitle: 'Edit automation',
+      namePlaceholder: 'e.g. Daily knowledge base digest',
+      instructionPlaceholder: 'Say what to do, which sources to use and how to present the result',
+      variablesHint: 'Variables:',
+      unattendedHint: 'Nobody is watching a run, so the assistant cannot ask you questions. Actions that need approval pause it and notify you.',
+      nameDesc: 'Shown in the list and in notifications so you can tell it apart',
+      frequency: 'Repeats',
+      weekdays: 'Days',
+      dayOfMonthDesc: 'In months without this day, it runs on the last day',
+      runAt: 'Run at',
+      cron: 'Cron expression',
+      timeOfDay: 'Time',
+      timezoneDesc: 'Runs by the clock in this time zone, daylight saving included',
+      previewEmpty: 'Once the time is set, the next few runs show up here',
+      carryDesc: 'Starts each new conversation with the last successful result, for incremental summaries',
+      misfireDesc: 'What to do with runs missed while the service was down',
+      maxDurationDesc: 'A run still going after this long is stopped',
+      navGroups: {
+        task: 'Task',
+        run: 'Running',
+      },
+      sections: {
+        basic: {
+          title: 'Basics',
+          desc: 'The WeKnora assistant runs each task. To delegate work, name the agents and their assignments in the task.',
+        },
+        schedule: {
+          title: 'Schedule',
+          desc: 'When the task runs. Runs are at least 5 minutes apart.',
+        },
+        execution: {
+          title: 'Execution',
+          desc: 'What a run may change, which conversation it uses, and what happens on overlap or missed runs.',
+        },
+        notify: {
+          title: 'Approvals and notifications',
+          desc: 'Results and actions waiting for approval appear in the notifications at the top right.',
+        },
+      },
+      sessionModeDesc: {
+        per_run: 'Each run starts a new conversation',
+        persistent: 'All runs share one conversation, so the assistant sees earlier ones',
+      },
+      errors: {
+        name: 'Enter a name',
+        instruction: 'Describe the task to run',
+        schedule: 'Set a valid schedule',
+      },
+      approvalTimeoutHelp: 'A run still waiting after this fails',
+      notifyHint: 'Failures, pending approvals and automatic pauses always notify you',
+      access: {
+        read_only: 'Only reads; changes nothing.',
+        confirm: 'Each change pauses the run for your approval. Recurring ones can be allowed for good in the details.',
+        auto_write: 'Reversible changes run directly; deletions and similar still pause for approval.',
+      },
+    },
+    schedule: {
+      kinds: {
+        daily: 'Daily',
+        weekdays: 'Weekdays',
+        weekly: 'Weekly',
+        monthly: 'Monthly',
+        hourly: 'Hourly',
+        once: 'Once',
+        custom: 'Custom cron',
+      },
+      atMinute: 'Minute past the hour',
+      dayOfMonth: 'Day of month',
+      pickTime: 'Pick a time',
+      customHint: 'Five fields: minute hour day month weekday. 0 9 * * 1-5 is 9:00 on weekdays. At least 5 minutes apart.',
+      nextRuns: 'Next:',
+      invalid: 'Invalid schedule',
+      describe: {
+        hourly: 'Every hour at :{minute}',
+        daily: 'Every day at {time}',
+        weekdays: 'Weekdays at {time}',
+        weekly: 'Every {days} at {time}',
+        monthly: 'Monthly on day {day} at {time}',
+        once: 'Once at {at}',
+        custom: 'cron: {expr}',
+        everyMinutes: 'Every {n} minutes',
+        everyHours: 'Every {n} hours',
+      },
+    },
+    sessionMode: {
+      per_run: 'New conversation each run',
+      persistent: 'One ongoing conversation',
+    },
+    overlap: {
+      skip: 'Skip this run',
+      queue: 'Queue it until the last one ends',
+    },
+    misfire: {
+      skip: 'Skip them',
+      run_once: 'Run once on recovery',
+    },
+    units: {
+      hours: 'hours',
+      minutes: 'minutes',
+    },
+    status: {
+      queued: 'Queued',
+      running: 'Running',
+      awaiting_approval: 'Awaiting approval',
+      succeeded: 'Succeeded',
+      failed: 'Failed',
+      cancelled: 'Stopped',
+      skipped: 'Skipped',
+      needs_attention: 'Needs attention',
+      paused: 'Paused',
+    },
+    runTrigger: {
+      schedule: 'Scheduled',
+      manual: 'Manual',
+      misfire: 'Catch-up',
+    },
+    actions: {
+      runNow: 'Run now',
+      pause: 'Pause',
+      resume: 'Resume',
+      review: 'Review',
+      openConversation: 'Open conversation',
+      stop: 'Stop',
+    },
+    detail: {
+      pausedBecause: 'Paused: {reason}',
+      runs: 'Runs',
+      noRuns: 'No runs yet',
+      stopping: 'Stopping',
+      grants: 'Standing approvals',
+      task: 'Task',
+      durationSeconds: '{n}s',
+      durationMinutes: '{n} min',
+    },
+    grants: {
+      intro: 'Later runs make these calls without asking. Each covers specific resources and lapses when the agent or your workspace role changes. Tools that always need approval never appear here.',
+      active: 'Allowed',
+      none: 'Nothing allowed yet',
+      lapsed: 'The setup changed, so this no longer applies',
+      revoke: 'Revoke',
+      candidates: 'Asked for approval in past runs',
+      noCandidates: 'Nothing to allow yet',
+      allow: 'Always allow',
+      allowTitle: 'Allow in future runs',
+      allowBody: 'Later runs will do "{label}" without pausing for approval.',
+      allowDestructiveBody: '"{label}" deletes or overwrites data and cannot be undone. Once allowed, later runs do it without asking.',
+    },
+    risk: {
+      write: 'Change',
+      destructive: 'Delete/overwrite',
+    },
+    messages: {
+      queued: 'Run started',
+      notFound: 'The automation no longer exists',
+    },
+  },
+  notifications: {
+    pending: "Needs attention",
+    history: "Notification history",
+    clearRead: "Clear read",
+    clearReadConfirm: "Clear read notifications? Run records, conversations, and pending actions will be kept.",
+    handle: "Open",
+    review: "Review",
+    unreadCount: "{count} unread",
+    unread: "Unread",
+    newItems: "New notifications — refresh",
+    loadError: "Could not load notifications",
+    awaitingApproval: "Waiting for your approval",
+    awaitingAuthorization: "Waiting for authorization",
+    awaitingReply: "Waiting for your reply",
+
+    title: 'Notifications',
+    markAllRead: 'Mark all read',
+    pendingInvitations: '{count} pending invitations',
+    empty: 'No notifications',
+    kinds: {
+      automation_succeeded: 'Automation finished',
+      automation_failed: 'Automation failed',
+      automation_awaiting_approval: 'Automation needs approval',
+      automation_paused: 'Automation paused',
+    },
+  },
   toolbox: {
     "title": "Toolbox",
     "description": "Manage skills, external tools, and browser connections for your agents.",
@@ -327,6 +542,7 @@ export default {
     sessionUnread: 'New reply',
     knowledgeBase: 'Knowledge Base',
     agents: 'Agents',
+    automations: 'Automations',
     artifacts: 'Artifacts',
     organizations: 'Shared Spaces',
     newChat: 'New Chat',
@@ -353,6 +569,17 @@ export default {
     noSessions: 'No conversations yet'
   },
   chatHeader: {
+    grants: {
+      menu: 'Allowed actions',
+      description: 'Actions allowed for this conversation without asking again. Revoke one to be asked next time.',
+      empty: 'No allowed actions yet',
+      revoke: 'Revoke',
+      revoked: 'Revoked',
+      revokeFailed: 'Failed to revoke',
+      loadFailed: 'Failed to load',
+    },
+    automationTask: 'Automation',
+    automationOpen: 'Open automation "{name}"',
     moreActions: 'More conversation actions',
     toggleSandboxPanel: 'Sandbox terminal',
     copySessionId: 'Copy Session ID',
@@ -654,7 +881,7 @@ export default {
   },
   knowledgeBase: {
     tagAddAction: 'Add tags',
-    documentCount: '{count} documents',
+    documentCount: '{count} document | {count} documents',
     filters: 'Filters',
     clearFilters: 'Clear filters',
 
@@ -720,9 +947,11 @@ export default {
       title: 'Folders',
       rootRow: 'Root',
       rootRowTip: 'Knowledge base root; documents not in a subfolder live here',
-      folderCardCount: '{count} documents',
+      folderCardCount: '{count} document | {count} documents',
       searchingSubtree: '(including sub-folders)',
       emptyFolder: 'This folder has no documents yet',
+      emptyFolderWithSubfolders: 'This folder has no documents of its own, but {count} in sub-folders',
+      folderContentsCount: '{documents} documents / {folders} folder | {documents} documents / {folders} folders',
       emptySearch: 'No matching documents',
       collapse: 'Collapse folders',
       expand: 'Expand folders',
@@ -947,6 +1176,7 @@ export default {
     selectLoaded: 'Select loaded',
     confirmBatchDeleteDocument: 'Delete {count} selected documents? This action cannot be undone.',
     deleteSubmitted: 'Delete request submitted. Waiting for completion.',
+    assistantDeleted: 'The assistant deleted this knowledge base.',
     deletePending: 'Deletion is still pending. Refresh later to check the result.',
     deleteTaskFailed: 'Deletion failed. Check the document error details and try again.',
     deleteStatusUnavailable: 'Could not confirm the deletion result. Refresh later to check the document status.',
@@ -1214,6 +1444,8 @@ export default {
     toolFallback: 'Tool',
     stepsCompleted: 'Completed <strong>{steps}</strong> step(s)',
     reasoningRounds: '<strong>{rounds}</strong> reasoning round(s)',
+    earlierSteps: '{count} earlier steps',
+    viewReasoning: 'View reasoning',
     toolCalls: '<strong>{tools}</strong> tool call(s)',
     durationSuffix: '<strong>{duration}</strong>',
     stepSummarySeparator: ' · ',
@@ -1780,6 +2012,23 @@ export default {
       skillRolloutNextTurn: 'Rebuild open sessions on the next chat turn',
       skillRolloutNewSession: 'Keep open sessions on their current sandbox; only new sessions use the new image',
       skillRolloutSaveFailed: 'Failed to save the rollout setting',
+      allocationMode: 'Sandbox allocation',
+      allocationModeHint: 'Only affects sessions that have not used a sandbox yet; existing sessions keep their placement and files are never moved.',
+      allocationModeSession: 'One sandbox per session (default)',
+      allocationModeUser: "Share one sandbox across a user's sessions",
+      allocationModeUnavailable: 'Shared sandboxes are not enabled on this deployment (set WEKNORA_SANDBOX_USER_ALLOCATION=enabled on every replica; Redis is required).',
+      userSandboxRetentionDays: 'Keep an empty shared sandbox for (days)',
+      userSandboxRetentionHint: 'After every session on a shared sandbox is deleted, it is removed once it has been empty this long (1–90 days). This is not a minimum file retention: Docker idle cleanup or provider failures may remove it sooner.',
+      userSandboxesInInventory: "{count} of them are shared user sandboxes; each affects all of that user's sessions on this config.",
+      userSandboxesTitle: 'Shared user sandboxes',
+      userSandboxOwner: 'Owner',
+      userSandboxOwnerOtherWorkspace: 'A user from another workspace',
+      userSandboxLiveSessions: 'Sessions',
+      userSandboxEmptySince: 'Empty since',
+      userSandboxReclaimAfter: 'Reclaimed after',
+      userSandboxRelease: 'Release',
+      userSandboxReleaseConfirm: "Releasing deletes the files and installed packages of all of this user's sessions on this config; a new sandbox is created on next use. Release it?",
+      userSandboxBusy: 'A terminal, desktop or command is still running on this sandbox. Try again later.',
       skillInstallGroup: 'Install a new skill',
       skillInstalledGroup: 'Installed',
       skillUploadClick: 'Click to upload a zip bundle',
@@ -2830,6 +3079,21 @@ export default {
     upload: 'Upload File'
   },
   manualEditor: {
+    assistant: {
+      button: 'Assistant',
+      tooltip: 'Let the assistant help you write',
+      continue: 'Continue writing',
+      outline: 'Draft an outline',
+      polish: 'Polish the text',
+      summarize: 'Summarize',
+      open: 'Open assistant',
+      prompts: {
+        continue: 'Continue the text from its end with one more paragraph that follows on from it.',
+        outline: 'Draft a clearly structured outline for this document from its title and current text, and put it at the start of the text.',
+        polish: 'Polish the text: fix typos and awkward sentences without changing the meaning, section by section.',
+        summarize: 'Summarize the key points of this document in the chat. Do not change the text.'
+      }
+    },
     placeholders: {
       heading: 'Heading {level}',
       listItem: 'List item',
@@ -4015,6 +4279,14 @@ export default {
         imageVectorModelUnsupported: 'The current embedding model does not declare image input, so no image vectors will be indexed or recalled',
         imageAttrsSchemaLabel: 'Observable image attributes',
         imageAttrsSchemaDescription: 'The model observes the attributes below (defined by the backend registry) to drive the OCR policy',
+        imagePipelineSectionLabel: 'Image parsing scheme',
+        imagePipelineSectionDescription:
+          'With multimodal parsing on, pick how images are parsed.',
+        imagePipelineLabel: 'Scheme',
+        imagePipelinePlaceholder: 'Select a scheme',
+        imagePipelineLoading: 'Loading pipelines…',
+        imagePipelineLoadError: 'Could not load pipelines',
+          imagePipelineValidateError: 'The current settings could not be checked; the backend re-checks them on save.',
         imageAttrsOcrConditions: 'Trigger OCR based on the observed attribute conditions',
         imageAttrsOcrConditionsDesc: 'When the observed attributes match the conditions below, OCR runs on the image',
         imageAttrsOcrOnUnobserved: 'Run OCR when image-attribute observation fails',
@@ -5428,6 +5700,7 @@ export default {
         enabled: 'MCP service enabled',
         disabled: 'MCP service disabled',
         updateStateFailed: 'Failed to update MCP service status',
+        linkedServiceMissing: 'The MCP service the assistant linked to was not found; it may have been deleted',
         testing: 'Testing {name}...',
         noResponse: 'Test failed: no response from server',
         testFailed: 'Failed to test MCP service',
@@ -5498,6 +5771,7 @@ export default {
         deleted: 'Model deleted',
         deleteFailed: 'Failed to delete model',
         builtinCannotEdit: 'Built-in models cannot be edited',
+        linkedModelMissing: 'The model the assistant linked to was not found; it may have been deleted',
         builtinCannotDelete: 'Built-in models cannot be deleted',
         builtinCannotCopy: 'Built-in models cannot be copied',
         copied: 'Model copied',
@@ -5783,6 +6057,11 @@ export default {
       withWebSearch: 'Web Search'
     },
     organization: {
+      cardStats: {
+        members: '{count} members',
+        knowledgeBases: '{count} knowledge bases',
+        agents: '{count} agents',
+      },
       title: 'Shared Spaces',
       subtitle: 'Create or join shared spaces so multiple workspaces can collaborate and share knowledge bases and agents',
       createOrg: 'Create Shared Space',
@@ -6124,9 +6403,40 @@ export default {
       welcomeDesc: 'Ask how WeKnora works, or have me check and handle document parsing, knowledge base activity and Wiki issues in your workspace, or create and configure agents. Whether I ask before a change depends on the access level below the input box.',
       startFailed: 'Failed to start the assistant. Please try again.',
       askAboutDocument: 'Ask {name}',
+      askAboutAnswer: 'Ask {name} about this answer',
+      selection: {
+        label: 'Selected',
+        lines: '{count} lines selected',
+        detach: 'Don’t include the selection',
+        tip: 'Your selection goes with the message: {text}',
+        tipField: 'Your selection in “{field}” goes with the message: {text}'
+      },
+      bubble: {
+        label: 'Assistant actions',
+        ask: 'Ask assistant',
+        polish: 'Polish',
+        rewrite: 'Rewrite',
+        translate: 'Translate',
+        continue: 'Continue',
+        prompts: {
+          polish: 'Polish the selected text: fix typos and awkward phrasing without changing the meaning, and replace it in place.',
+          rewrite: 'Rewrite the selected text to be clearer and more concise, and replace it in place.',
+          translate: 'Translate the selected text, Chinese into English and other languages into Chinese, and replace it in place.',
+          continue: 'Continue writing after the selected text with one more paragraph that fits the context, placed right after it.'
+        }
+      },
+      fillNotice: {
+        title: 'Assistant filled {count} field(s)',
+        undo: 'Undo',
+        dismiss: 'Dismiss'
+      },
       access: {
         title: 'Access level',
         capped: 'Not allowed by your workspace admin',
+        page: {
+          label: 'See and fill the current page',
+          desc: 'Reads the page on the left and can fill in forms. Never clicks buttons or saves.'
+        },
         levels: {
         read_only: {
           label: 'Read only',
@@ -6143,10 +6453,20 @@ export default {
       }
     },
     context: {
+      detachedLabel: 'Page excluded',
       currentPage: 'Current page',
       detach: 'Don\'t include the current page',
       attachedTip: 'Including the current page: {path}',
-      detachedTip: 'Click to include the current page: {path}'
+      detachedTip: 'Click to include the current page: {path}',
+      chatMessage: 'This answer',
+      pages: {
+        knowledge_base: 'Knowledge base',
+        wiki: 'Wiki',
+        agent_editor: 'Agent editor',
+        settings_models: 'Models',
+        mcp_services: 'MCP services',
+        chat: 'Chat'
+      }
     },
     starters: {
       agentConfig: 'Check this agent’s configuration',
@@ -6160,7 +6480,15 @@ export default {
       recentActivity: 'What changed in this knowledge base recently?',
       formats: 'Which document formats does WeKnora support?',
       createWiki: 'How do I create a Wiki knowledge base?',
-      agents: 'Which agents do I have, and which models do they use?'
+      agents: 'Which agents do I have, and which models do they use?',
+      messageSources: 'What is this answer based on?',
+      messageCheck: 'Is anything in this answer wrong?',
+      modelCheck: 'Check this model\'s configuration',
+      modelUsage: 'Which agents and knowledge bases use these models?',
+      mcpTools: 'Which tools does this MCP service offer?',
+      mcpCheck: 'Why can\'t it connect?',
+      modelSetup: 'Which models do I still need to set up?',
+      mcpSetup: 'How do I connect an MCP service?'
     }
   },
   assistantSettings: {
@@ -6352,6 +6680,7 @@ export default {
   },
   agentStream: {
     askUser: {
+      answerLabel: 'Your answer',
       title: 'Question for you',
       selectPlaceholder: 'Select',
       textPlaceholder: 'Type your answer',
@@ -6378,13 +6707,27 @@ export default {
       expand: 'Expand'
     },
     toolApproval: {
+      title: 'Approval',
+      toolDescription: 'Tool description',
+      delegatedTask: 'Delegated task',
       waiting: 'Awaiting review · {target}',
       waitingStatus: 'Awaiting review',
       targetWithTool: '{service} › {tool}',
       dockQuestion: 'Allow {target} to run?',
+      operationQuestion: 'Allow {action}: “{target}”?',
+      operationQuestionNoTarget: 'Allow {action}?',
+      operationTarget: '{action}: “{target}”',
+      reviewTitle: 'Review · {target}',
+      characterCount: '{count} characters',
       titleWithTarget: 'Review · {service} › {tool}',
       argsLabel: 'Arguments',
       argsModified: 'Modified',
+      allowInSession: 'Allow this for the rest of the conversation',
+      grantLapsed: {
+        changed: 'Your earlier approval no longer applies: the automation\'s agent setup, your role or the access ceiling changed.',
+        expired: 'Your earlier approval has expired.',
+        idle: 'Your earlier approval lapsed after a long time unused.',
+      },
       countdownShort: '{seconds}s',
       approve: 'Approve & run',
       reject: 'Reject',
@@ -6393,6 +6736,7 @@ export default {
       parked: 'Waiting in the background — answer any time',
       parkedUntil: 'Waiting in the background — answer before {time}',
       abandonedTag: 'Abandoned',
+      canceledTag: 'Canceled',
       invalidJson: 'Arguments must be valid JSON',
       submitted: 'Submitted',
       submitFailed: 'Submit failed',
@@ -6422,7 +6766,19 @@ export default {
         mcpServices: 'MCP services',
         skills: 'Skills',
         webSearch: 'Web search',
-        multiTurn: 'Multi-turn conversation'
+        multiTurn: 'Multi-turn conversation',
+        transport: 'Transport',
+        authentication: 'Authentication',
+        usageInstructions: 'Usage instructions',
+        displayName: 'Display name',
+        enabled: 'Enabled',
+        sandbox: 'Sandbox',
+        sandboxes: 'Sandboxes',
+        systemPrompt: 'System prompt',
+        content: 'Content',
+        kbScope: 'Knowledge base scope',
+        mcpScope: 'MCP scope',
+        skillsScope: 'Skills scope'
       },
       value: {
         document: 'Document',
@@ -6490,8 +6846,65 @@ export default {
       databaseQuery: 'Database Query',
       findOperations: 'Find operations',
       runOperation: 'Run operation',
+      spawn_agent: 'Start agent',
+      list_agents: 'List agents',
+      send_message: 'Send message',
+      followup_task: 'Continue task',
+      interrupt_agent: 'Interrupt agent',
+      wait_agent: 'Wait for agent',
+      openPage: 'Open page',
+      viewPage: 'View page',
       searchWeKnoraDocs: 'Search product docs',
-      readWeKnoraDoc: 'Read product doc'
+      readWeKnoraDoc: 'Read product doc',
+      readPage: 'View page',
+      selectTab: 'Select tab',
+      fillPage: 'Fill page'
+    },
+    collaboration: {
+      tabs: 'Task tabs',
+      updates: '{count} updates',
+      mainConversation: 'Main chat',
+      recentProgress: 'Recent progress',
+      waitFailed: 'Could not wait for task updates',
+      assignment: 'Task brief',
+      "title": "Tasks",
+      "unnamed": "Unnamed task",
+      "waiting": "Waiting for task updates…",
+      "status": {
+        "queued": "Queued",
+        "running": "Running",
+        "waiting": "Waiting for your input",
+        "succeeded": "Completed",
+        "failed": "Failed",
+        "interrupted": "Interrupted",
+        "cancelled": "Cancelled",
+        "needs_attention": "Needs attention",
+        "cancelling": "Cancelling",
+        "unknown": "Unknown status"
+      },
+      "phase": {
+        "tool_running": "Using tool",
+        "tool_succeeded": "Tool completed",
+        "tool_failed": "Tool failed"
+      }
+    },
+    pageAccess: {
+      viewed: 'Viewed the current page: {location}'
+    },
+    pageEdit: {
+      title: 'Filled {count} field(s)',
+      undo: 'Undo',
+      undone: 'Fill undone',
+      undoSkipped: '{count} field(s) changed since or no longer on the page were left as they are',
+      unsaved: 'Nothing is saved yet. Review it and save on the page.'
+    },
+    openPage: {
+      open: 'Open',
+      openForm: 'Open and fill in',
+      opened: 'Opened by the assistant',
+      back: 'Back',
+      endpoint: 'Connects to: ',
+      draftHint: 'Filled in from the assistant. Add the API key or other credentials, check it and save it yourself.'
     },
     skillFiles: {
       heading: 'Skill files',
@@ -6534,6 +6947,170 @@ export default {
       binarySuppressed: 'Binary output omitted. Write files to the artifact directory to download them.'
     },
     operations: {
+      names: {
+        data_source: {
+          list: "List data sources",
+          get: "Get data source details",
+          test: "Test data source connection",
+          sync: "Sync data source",
+          pause: "Pause data source sync",
+          resume: "Resume data source sync",
+          list_sync_logs: "List data source sync logs",
+          get_sync_log: "Get data source sync progress",
+          list_resources: "List syncable data source resources",
+          update_sync: "Update data source sync settings",
+        },
+        agent: {
+          list: "List agents",
+          create: "Create agent",
+          get: "Get agent details",
+          delete: "Delete agent",
+          update: "Update agent",
+          copy: "Copy agent",
+        },
+        chunk: {
+          get: "Get chunk details",
+          update: "Update chunk",
+          list_revisions: "List chunk revisions",
+          revert: "Restore chunk revision",
+          list: "List knowledge chunks",
+        },
+        knowledge_base: {
+          list_parser_engines: "List available parser engines",
+          copy: "Copy knowledge base content",
+          duplicate: "Copy knowledge base settings",
+          get_copy_progress: "Get knowledge base copy progress",
+          list: "List knowledge bases",
+          create: "Create knowledge base",
+          get: "Get knowledge base details",
+          delete: "Delete knowledge base",
+          update: "Update knowledge base",
+          list_activity: "List knowledge base activity",
+          search: "Search knowledge base",
+          list_move_targets: "List destination knowledge bases",
+          generate_profile: "Generate knowledge base description",
+          list_tags: "List knowledge base tags",
+          create_tag: "Create knowledge base tag",
+          update_tag: "Update knowledge base tag",
+          delete_tag: "Delete knowledge base tag",
+          list_shared: "List shared knowledge bases",
+        },
+        faq: {
+          batch_update: "Batch update FAQ states and tags",
+          list_entries: "List FAQ entries",
+          delete_entries: "Delete FAQ entries",
+          get_entry: "Get FAQ entry details",
+          update_entry: "Update FAQ entry",
+          add_similar_questions: "Add similar questions",
+          create_entry: "Create FAQ entry",
+        },
+        knowledge: {
+          list: "List knowledge",
+          list_folders: "List knowledge folders",
+          rename_folder: "Rename or move folder",
+          create_manual: "Create knowledge manually",
+          create_from_url: "Create knowledge from URL",
+          batch_delete: "Delete knowledge in batch",
+          batch_reparse: "Reparse knowledge in batch",
+          move_to_folder: "Move knowledge to folder",
+          update_manual: "Update manually created knowledge",
+          move: "Move knowledge to another knowledge base",
+          get_move_progress: "Get knowledge move progress",
+          set_tags: "Set knowledge tags",
+          get: "Get knowledge details",
+          update: "Update knowledge",
+          delete: "Delete knowledge",
+          cancel_parse: "Cancel knowledge parsing",
+          reparse: "Reparse knowledge",
+          get_parse_progress: "Get knowledge parsing progress",
+        },
+        wiki: {
+          list_folders: "List Wiki folders",
+          create_folder: "Create Wiki folder",
+          list_issues: "List Wiki page issues",
+          lint: "Check Wiki pages",
+          move_page: "Move Wiki page",
+          get_page: "Get Wiki page",
+          rebuild_links: "Rebuild Wiki links",
+          revert: "Revert Wiki page revision",
+          list_revisions: "List Wiki page revisions",
+          get_stats: "Get Wiki statistics",
+        },
+        system_admin: {
+          list_admins: "List system administrators",
+          list_users: "List platform users",
+          list_settings: "Read system settings",
+          get_queues: "Read runtime queue status",
+          list_tasks: "List queue tasks",
+        },
+        workspace: {
+          get: "Get current workspace information",
+          update: "Update current workspace profile",
+          list_members: "List current workspace members",
+        },
+        system: {
+          get_info: "Get version and system information",
+        },
+        web_search_provider: {
+          list: "List web search providers",
+          get: "Get web search provider",
+          list_types: "List web search provider types",
+          test: "Test web search connection",
+          update: "Update web search provider",
+          delete: "Delete web search provider",
+        },
+        mcp_service: {
+          list: "List MCP services",
+          create: "Create MCP service",
+          get: "Get MCP service details",
+          update: "Update MCP service",
+          delete: "Delete MCP service",
+          test: "Test MCP service connection",
+          list_tools: "Query live MCP tools",
+          get_metadata: "View synced MCP tools",
+          refresh_metadata: "Sync MCP tool directory",
+        },
+        message: {
+          chat_history_stats: "Get chat history statistics",
+          search: "Search conversation history",
+          list: "Get message history",
+        },
+        model: {
+          list: "List models",
+          list_providers: "List model providers",
+          get_provider: "Get model provider details",
+          get: "Get model details",
+          delete: "Delete model",
+          update: "Update model display information",
+          copy: "Copy model configuration",
+        },
+        skill: {
+          list_installed: "List installed skills",
+          install: "Install skill",
+          get_installed: "Get installed skill details",
+          uninstall: "Uninstall skill",
+          set_enabled: "Set skill enabled state",
+          list: "List executable skills",
+          list_catalog: "List workspace skills",
+          get_catalog: "Get workspace skill details",
+          install_catalog: "Install catalog skill onto sandboxes",
+        },
+        automation: {
+          list: "List automations",
+          create: "Create automation",
+          validate_trigger: "Check schedule",
+          get: "Get automation",
+          update: "Update automation",
+          delete: "Delete automation",
+          pause: "Pause automation",
+          resume: "Resume automation",
+          run_now: "Run automation now",
+          list_runs: "List automation runs",
+        },
+        session: {
+          list: "List conversations",
+        },
+      },
       found: '{count} available',
       unavailableCount: '{count} unavailable',
       empty: 'No matching operations',
@@ -6544,6 +7121,7 @@ export default {
       range: 'Range {min}–{max}',
       risk: {
         read: 'Read',
+        probe: 'Check',
         write: 'Write',
         destructive: 'Destructive'
       },
@@ -6566,6 +7144,11 @@ export default {
       notFound: 'Content not found',
       loadFailed: 'Failed to load',
       noKbForWiki: 'Unable to identify associated knowledge base. Cannot open Wiki.'
+    },
+    entityLink: {
+      kb: 'Knowledge base',
+      doc: 'Document',
+      chunk: 'Passage'
     },
     toolSummary: {
       getDocument: 'Get document: {title}',
@@ -6761,7 +7344,7 @@ export default {
       model: 'Select the LLM used by the agent',
       temperature: 'Control output randomness, 0 is most deterministic, 1 is most random',
       maxTokens: 'Maximum tokens for the model reply. Default is 2048. Custom values are saved as entered.',
-      maxTokensAgent: 'Maximum tokens generated in each reasoning round, including tool-call JSON. Default is 4096 without a sandbox, or 24576 when a sandbox can write or edit files. A custom value is saved as entered and is not changed later.',
+      maxTokensAgent: 'Maximum tokens generated in each reasoning round, including tool-call JSON. Defaults to 24576. A custom value is saved as entered.',
       thinking: 'Enable extended thinking capability (requires model support)',
       conversationSection: 'Configure multi-turn conversation and query rewriting parameters',
       conversationSectionAgent: 'Smart reasoning is always multi-turn. Earlier conversation is kept up to the model context window, and older turns are summarized automatically once it fills',
@@ -6998,6 +7581,8 @@ export default {
       authWaitTimeout: 'Authentication Wait Timeout (s)',
       authWaitTimeoutDesc: 'Maximum seconds to wait for you to complete OAuth authentication when prompted during a conversation; the prompt is skipped after it elapses (only affects OAuth MCP services).',
       authWaitTimeoutPlaceholder: 'Default 600 seconds',
+      accessLevel: 'Access level',
+      accessLevelDesc: 'Whether tools that change data (MCP tools, Wiki writes) run without asking. Read-only leaves them out; confirm asks you each time. MCP tools marked as requiring approval always ask.',
       unavailableService: 'Unavailable service'
     },
     llmCallTimeout: {
@@ -7131,6 +7716,13 @@ export default {
     pauseFailed: 'Failed to pause',
     logs: 'Logs',
     syncModeLabel: 'Sync mode',
+    parseModeLabel: 'Parse mode',
+    parseMode: {
+      inherit: 'Use server setting',
+      blocks: 'Blocks (default)',
+      export: 'Export (docx)',
+    },
+    parseModeHint: 'How Feishu cloud documents are parsed. Blocks is faster and keeps in-document attachments; Export converts documents to docx for parsing and keeps images associated with the document.',
     syncMode: {
       incremental: 'Incremental',
       full: 'Full'
@@ -8112,6 +8704,56 @@ export default {
         'true': { label: 'Yes', description: 'a chart, graph or diagram with plotted values' },
         'false': { label: 'No', description: 'a photo, drawing, icon or decoration' }
       }
+    }
+  },
+  // Overlay wording for the pipeline panel, indexed by pipeline id and field
+  // key (the backend registry supplies both; this only translates). Anything
+  // not covered here falls back to the backend's own wording, so a new
+  // pipeline never shows up as a bare key.
+  imagePipeline: {
+    errors: {
+      noActionEnabled: 'Turn on at least one parsing action, otherwise nothing will be processed.',
+    },
+    default: {
+      name: 'Manual',
+      description: 'Turn the parsing actions on or off to fit the task.',
+      enable_caption: {
+        label: 'Image caption',
+        description: 'Ask the model for a one-line description of every image and store it as the caption.'
+      },
+      enable_ocr: {
+        label: 'OCR',
+        description: 'Extract the text that appears in the image.'
+      },
+      caption: {
+        thinking: {
+          label: 'Caption with thinking',
+          description: 'Let the model think before it writes the caption. In general you do not need thinking; enabling it makes parsing slower and may make the model overthink, so overly long reasoning can run past the limit and truncate the caption, failing the task. Only enable it when you have confirmed it is necessary.',
+        },
+      },
+      ocr: {
+        thinking: {
+          label: 'OCR with thinking',
+          description: 'Let the model think before it transcribes the text. In general you do not need thinking; enabling it makes parsing slower and may make the model overthink, so overly long reasoning can run past the limit and truncate the transcribed text, failing the task. Only enable it when you have confirmed it is necessary.',
+        },
+      }
+    },
+    smartocr: {
+      name: 'Smart',
+      caption: {
+        thinking: {
+          label: 'Describe with thinking',
+          description: 'Let the model think before it describes the image and reports its attributes. In general you do not need thinking; enabling it makes parsing slower and may make the model overthink, so overly long reasoning can run past the limit and truncate the description, failing the task. Only enable it when you have confirmed it is necessary.',
+        },
+      },
+      ocr: {
+        thinking: {
+          label: 'Text recognition with thinking',
+          description: 'Let the model think before it transcribes the text. In general you do not need thinking; enabling it makes parsing slower and may make the model overthink, so overly long reasoning can run past the limit and truncate the transcribed text, failing the task. Only enable it when you have confirmed it is necessary.',
+        },
+      },
+      description:
+        'Observe the image attributes and describe the image first, then decide from the attributes whether to run OCR, saving model calls and speeding up parsing.'
     }
   }
 }

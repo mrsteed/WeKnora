@@ -124,6 +124,221 @@ export default {
     "historyModels": "모델 {count}개 변경",
     "historyNoOverrides": "관리자 변경 없음",
   },
+  automation: {
+    conversationNotice: "자동화 작업이 실행하는 대화입니다. 메시지를 직접 보낼 수 없습니다. 대기 중인 요청은 위에서 처리하세요.",
+    title: '자동화',
+    description: 'WeKnora 도우미가 예약된 시간에 사용자를 대신해 작업을 실행합니다. 결과와 승인 대기 항목을 알려드립니다.',
+    add: '새 자동화',
+    addHint: 'WeKnora 어시스턴트에게 만들어 달라고 할 수도 있습니다',
+    paused: '일시 중지됨',
+    scheduleEnded: '종료됨',
+    scheduleEndedHint: '일회성 일정이 종료되었습니다. 지금 실행하거나 실행 시간을 변경한 후 재개하세요.',
+    nextRunAt: '다음 {time}',
+    runConfirm: '"{name}"을(를) 지금 실행할까요? 기존 일정을 변경하지 않고 추가로 실행합니다.',
+    deleteBody: '진행 중인 실행을 중지하고 "{name}"의 실행 기록, 대화, 상시 승인을 삭제합니다. 되돌릴 수 없습니다.',
+    fields: {
+      name: '이름',
+      instruction: '작업',
+      schedule: '일정',
+      timezone: '시간대',
+      accessLevel: '실행 권한',
+      sessionMode: '대화 방식',
+      carryLastResult: '지난번 성공 결과를 포함',
+      overlapPolicy: '이전 실행이 아직 진행 중이면',
+      misfirePolicy: '놓친 실행',
+      approvalTimeout: '승인 대기 기한',
+      maxDuration: '1회 최대 실행 시간',
+      notifyOnSuccess: '성공 시에도 알림',
+      nextRun: '다음 실행',
+      enabled: '사용',
+    },
+    editor: {
+      model: "실행 모델",
+      modelHelp: '도우미의 기본 모델을 사용하거나 이 작업에 사용할 모델을 선택하세요. 위임받은 에이전트는 각자의 모델을 사용합니다. 변경 사항은 이후 실행에 적용됩니다.',
+      modelDefault: '도우미 기본 모델 사용',
+      createTitle: '새 자동화',
+      editTitle: '자동화 편집',
+      namePlaceholder: '예: 매일 지식 베이스 요약',
+      instructionPlaceholder: '무엇을 할지, 어떤 자료를 쓸지, 결과를 어떻게 낼지 적어 주세요',
+      variablesHint: '사용 가능한 변수:',
+      unattendedHint: '실행 중에는 사용자가 없으므로 도우미가 질문할 수 없습니다. 승인이 필요한 작업은 일시 중지되고 알림이 전송됩니다.',
+      nameDesc: '목록과 알림에 표시되어 작업을 구분하는 데 쓰입니다',
+      frequency: '반복',
+      weekdays: '요일',
+      dayOfMonthDesc: '해당 날짜가 없는 달에는 마지막 날에 실행합니다',
+      runAt: '실행 시각',
+      cron: 'Cron 표현식',
+      timeOfDay: '시간',
+      timezoneDesc: '이 시간대의 시각으로 실행하며, 서머타임도 자동 반영됩니다',
+      previewEmpty: '시간을 설정하면 다음 실행 예정이 여기에 표시됩니다',
+      carryDesc: '새 대화 시작 시 지난번 성공한 결과를 함께 넣습니다. 증분 요약에 적합합니다',
+      misfireDesc: '서비스 중단 중 놓친 실행을 복구 후 어떻게 처리할지',
+      maxDurationDesc: '이 시간이 지나도 끝나지 않은 실행은 중지됩니다',
+      navGroups: {
+        task: '작업',
+        run: '실행',
+      },
+      sections: {
+        basic: {
+          title: '기본 정보',
+          desc: 'WeKnora 도우미가 작업을 실행합니다. 다른 에이전트에 위임하려면 작업에 에이전트와 맡길 일을 명시하세요.',
+        },
+        schedule: {
+          title: '실행 시간',
+          desc: '작업이 언제 실행될지 설정합니다. 실행 간격은 최소 5분입니다.',
+        },
+        execution: {
+          title: '실행 방식',
+          desc: '실행 중 허용할 변경, 사용할 대화, 겹치거나 놓친 실행의 처리 방식.',
+        },
+        notify: {
+          title: '승인 및 알림',
+          desc: '실행 결과와 승인 대기 작업은 오른쪽 위 알림에 표시됩니다.',
+        },
+      },
+      sessionModeDesc: {
+        per_run: '실행마다 새 대화를 엽니다',
+        persistent: '모든 실행이 하나의 대화를 공유하므로 도우미가 이전 내용을 볼 수 있습니다',
+      },
+      errors: {
+        name: '이름을 입력하세요',
+        instruction: '실행할 작업을 입력하세요',
+        schedule: '올바른 실행 시간을 설정하세요',
+      },
+      approvalTimeoutHelp: '이 기한이 지나도 승인되지 않으면 실행이 실패합니다',
+      notifyHint: '실패, 승인 대기, 자동 일시 중지는 항상 알림이 갑니다',
+      access: {
+        read_only: '읽기만 하고 아무것도 변경하지 않습니다.',
+        confirm: '변경할 때마다 일시 중지하고 승인을 요청합니다. 자주 쓰는 작업은 상세에서 상시 승인할 수 있습니다.',
+        auto_write: '되돌릴 수 있는 변경은 바로 실행하고, 삭제 등은 여전히 승인을 기다립니다.',
+      },
+    },
+    schedule: {
+      kinds: {
+        daily: '매일',
+        weekdays: '평일',
+        weekly: '매주',
+        monthly: '매월',
+        hourly: '매시간',
+        once: '한 번',
+        custom: '사용자 지정 cron',
+      },
+      atMinute: '매시 몇 분',
+      dayOfMonth: '매월 며칠',
+      pickTime: '시간 선택',
+      customHint: '다섯 필드: 분 시 일 월 요일. 0 9 * * 1-5는 평일 9:00입니다. 최소 간격은 5분입니다.',
+      nextRuns: '다음:',
+      invalid: '잘못된 일정',
+      describe: {
+        hourly: '매시 {minute}분',
+        daily: '매일 {time}',
+        weekdays: '평일 {time}',
+        weekly: '매주 {days} {time}',
+        monthly: '매월 {day}일 {time}',
+        once: '{at}에 한 번',
+        custom: 'cron: {expr}',
+        everyMinutes: '{n}분마다',
+        everyHours: '{n}시간마다',
+      },
+    },
+    sessionMode: {
+      per_run: '실행마다 새 대화',
+      persistent: '하나의 대화 유지',
+    },
+    overlap: {
+      skip: '이번 실행 건너뛰기',
+      queue: '이전 실행이 끝나면 실행',
+    },
+    misfire: {
+      skip: '건너뛰기',
+      run_once: '복구 후 한 번 실행',
+    },
+    units: {
+      hours: '시간',
+      minutes: '분',
+    },
+    status: {
+      queued: '대기 중',
+      running: '실행 중',
+      awaiting_approval: '승인 대기',
+      succeeded: '성공',
+      failed: '실패',
+      cancelled: '중지됨',
+      skipped: '건너뜀',
+      needs_attention: '확인 필요',
+      paused: '일시 중지됨',
+    },
+    runTrigger: {
+      schedule: '예약',
+      manual: '수동',
+      misfire: '보충 실행',
+    },
+    actions: {
+      runNow: '지금 실행',
+      pause: '일시 중지',
+      resume: '재개',
+      review: '검토',
+      openConversation: '대화 열기',
+      stop: '중지',
+    },
+    detail: {
+      pausedBecause: '일시 중지됨: {reason}',
+      runs: '실행 기록',
+      noRuns: '아직 실행되지 않았습니다',
+      stopping: '중지 중',
+      grants: '상시 승인',
+      task: '작업 내용',
+      durationSeconds: '{n}초',
+      durationMinutes: '{n}분',
+    },
+    grants: {
+      intro: '여기 있는 작업은 이후 실행에서 다시 승인하지 않아도 됩니다. 특정 리소스에만 적용되며 에이전트나 워크스페이스 역할이 바뀌면 효력을 잃습니다. 매번 승인이 필요한 도구는 표시되지 않습니다.',
+      active: '허용됨',
+      none: '상시 승인 없음',
+      lapsed: '설정이 바뀌어 현재 적용되지 않습니다',
+      revoke: '취소',
+      candidates: '이전 실행에서 승인을 요청한 작업',
+      noCandidates: '상시 승인할 수 있는 작업이 아직 없습니다',
+      allow: '항상 허용',
+      allowTitle: '이후 실행에서 허용',
+      allowBody: '이후 실행에서는 "{label}"을(를) 승인 대기 없이 수행합니다.',
+      allowDestructiveBody: '"{label}"은(는) 데이터를 삭제하거나 덮어쓰며 되돌릴 수 없습니다. 허용하면 이후 실행은 묻지 않고 수행합니다.',
+    },
+    risk: {
+      write: '변경',
+      destructive: '삭제/덮어쓰기',
+    },
+    messages: {
+      queued: '실행을 시작했습니다',
+      notFound: '자동화가 없거나 삭제되었습니다',
+    },
+  },
+  notifications: {
+    pending: "처리 필요",
+    history: "알림 기록",
+    clearRead: "읽은 알림 삭제",
+    clearReadConfirm: "읽은 알림을 삭제할까요? 실행 기록, 대화 및 처리 대기 항목은 유지됩니다.",
+    handle: "열기",
+    review: "승인 검토",
+    unreadCount: "읽지 않음 {count}개",
+    unread: "읽지 않음",
+    newItems: "새 알림이 있습니다. 새로고침",
+    loadError: "알림을 불러오지 못했습니다",
+    awaitingApproval: "작업 승인 대기 중",
+    awaitingAuthorization: "인증 완료 대기 중",
+    awaitingReply: "답변 대기 중",
+
+    title: '알림',
+    markAllRead: '모두 읽음',
+    pendingInvitations: '대기 중인 초대 {count}개',
+    empty: '알림 없음',
+    kinds: {
+      automation_succeeded: '자동화 완료',
+      automation_failed: '자동화 실패',
+      automation_awaiting_approval: '자동화 승인 필요',
+      automation_paused: '자동화 일시 중지',
+    },
+  },
   toolbox: {
     "title": "도구함",
     "description": "에이전트의 스킬, 외부 도구 및 브라우저 연결을 관리합니다.",
@@ -972,6 +1187,13 @@ export default {
     pauseFailed: '일시정지 실패',
     logs: '로그',
     syncModeLabel: '동기화 모드',
+    parseModeLabel: '구문 분석 모드',
+    parseMode: {
+      inherit: '서버 설정 사용',
+      blocks: '블록 분석 (기본값)',
+      export: '내보내기 분석 (docx)',
+    },
+    parseModeHint: 'Feishu 클라우드 문서의 구문 분석 방식입니다. 블록 분석은 더 빠르고 문서 내 첨부 파일을 유지합니다. 내보내기 분석은 docx로 변환하여 분석하며 이미지와 문서의 연관성이 더 잘 유지됩니다.',
     createTitle: '데이터 소스 추가',
     editTitle: '데이터 소스 편집',
     nameLabel: '이름',
@@ -1370,6 +1592,8 @@ export default {
       authWaitTimeout: '인증 대기 시간(초)',
       authWaitTimeoutDesc: '대화 중 OAuth 인증이 필요할 때 인증 완료를 기다리는 최대 시간(초)이며, 초과하면 인증 요청을 건너뜁니다(OAuth를 사용하는 MCP 서비스에만 적용).',
       authWaitTimeoutPlaceholder: '기본 600초',
+      accessLevel: '실행 권한 상한',
+      accessLevelDesc: '데이터를 변경하는 도구(MCP 도구, Wiki 쓰기)를 확인 없이 실행할지 여부입니다. 읽기 전용이면 이러한 도구를 제공하지 않고, 변경 전 확인이면 매번 확인을 요청합니다. 승인이 필요하도록 표시된 MCP 도구는 항상 확인합니다.',
       unavailableService: '사용할 수 없는 서비스'
     },
     agentType: {
@@ -1579,7 +1803,7 @@ export default {
       model: '에이전트가 사용할 대규모 언어 모델을 선택하세요',
       temperature: '출력의 무작위성을 제어합니다. 0이 가장 확정적, 1이 가장 무작위',
       maxTokens: '모델 응답의 최대 토큰 수. 「기본값」은 2048입니다. 「사용자 지정」은 입력한 값을 그대로 저장합니다.',
-      maxTokensAgent: '각 추론 라운드에서 생성할 최대 토큰 수(도구 호출 JSON 포함). 「기본값」은 샌드박스 없으면 4096, 파일 쓰기/편집이 가능하면 24576입니다. 「사용자 지정」은 입력한 값을 그대로 저장합니다.',
+      maxTokensAgent: '각 추론 라운드에서 생성할 최대 토큰 수(도구 호출 JSON 포함). 기본값은 24576입니다. 사용자 지정 값은 입력한 대로 저장됩니다.',
       thinking: '모델의 확장 사고 기능 활성화 (모델 지원 필요)',
       conversationSection: '다중 턴 대화 및 질문 재작성 관련 매개변수 설정',
       conversationSectionAgent: '스마트 추론은 항상 다중 턴입니다. 이전 대화는 모델의 컨텍스트 창 범위까지 유지되며, 초과하면 오래된 내용이 자동으로 요약됩니다',
@@ -1798,6 +2022,11 @@ export default {
       loadFailed: '로드 실패',
       noKbForWiki: '연결된 지식베이스를 식별할 수 없어 Wiki를 열 수 없습니다'
     },
+    entityLink: {
+      kb: '지식베이스',
+      doc: '문서',
+      chunk: '청크'
+    },
     tools: {
       searchKnowledge: '지식베이스 검색',
       grepChunks: '텍스트 패턴 검색',
@@ -1831,8 +2060,65 @@ export default {
       databaseQuery: '데이터베이스 조회',
       findOperations: '작업 찾기',
       runOperation: '작업 실행',
+      spawn_agent: '에이전트 시작',
+      list_agents: '에이전트 목록',
+      send_message: '메시지 보내기',
+      followup_task: '작업 계속',
+      interrupt_agent: '에이전트 중단',
+      wait_agent: '에이전트 대기',
+      openPage: '페이지 열기',
+      viewPage: '페이지 확인',
       searchWeKnoraDocs: '제품 문서 검색',
-      readWeKnoraDoc: '제품 문서 읽기'
+      readWeKnoraDoc: '제품 문서 읽기',
+      readPage: '페이지 보기',
+      selectTab: '탭 선택',
+      fillPage: '페이지 입력'
+    },
+    collaboration: {
+      tabs: '작업 탭',
+      updates: '업데이트 {count}개',
+      mainConversation: '기본 대화',
+      recentProgress: '최근 진행 상황',
+      waitFailed: '작업 업데이트 대기 실패',
+      assignment: '작업 내용',
+      "title": "하위 작업",
+      "unnamed": "이름 없는 작업",
+      "waiting": "작업 업데이트 기다리는 중…",
+      "status": {
+        "queued": "대기 중",
+        "running": "진행 중",
+        "waiting": "입력 대기 중",
+        "succeeded": "완료",
+        "failed": "실패",
+        "interrupted": "중단됨",
+        "cancelled": "취소됨",
+        "needs_attention": "확인 필요",
+        "cancelling": "취소 중",
+        "unknown": "알 수 없음"
+      },
+      "phase": {
+        "tool_running": "도구 사용 중",
+        "tool_succeeded": "도구 완료",
+        "tool_failed": "도구 실패"
+      }
+    },
+    pageAccess: {
+      viewed: '현재 페이지를 확인했습니다: {location}'
+    },
+    pageEdit: {
+      title: '{count}곳을 입력했습니다',
+      undo: '되돌리기',
+      undone: '입력을 되돌렸습니다',
+      undoSkipped: '{count}곳은 이미 변경되었거나 페이지에 없어 그대로 두었습니다',
+      unsaved: '아직 저장되지 않았습니다. 확인 후 페이지에서 저장하세요.'
+    },
+    openPage: {
+      open: '열기',
+      openForm: '열고 입력',
+      opened: '어시스턴트가 열었습니다',
+      back: '돌아가기',
+      endpoint: '연결 대상: ',
+      draftHint: '어시스턴트가 미리 채웠습니다. API 키 등 자격 증명을 입력하고 확인한 뒤 직접 저장하세요.'
     },
     skillFiles: {
       heading: '스킬 파일',
@@ -1875,6 +2161,170 @@ export default {
       binarySuppressed: '바이너리 출력은 생략되었습니다. 파일은 산출물 디렉터리에 저장한 뒤 다운로드하세요.'
     },
     operations: {
+      names: {
+        data_source: {
+          list: "데이터 소스 목록 조회",
+          get: "데이터 소스 상세 조회",
+          test: "데이터 소스 연결 테스트",
+          sync: "데이터 소스 동기화",
+          pause: "데이터 소스 동기화 일시 중지",
+          resume: "데이터 소스 동기화 재개",
+          list_sync_logs: "데이터 소스 동기화 이력 조회",
+          get_sync_log: "데이터 소스 동기화 진행 상황 조회",
+          list_resources: "동기화 가능한 리소스 조회",
+          update_sync: "데이터 소스 동기화 설정 수정",
+        },
+        agent: {
+          list: "에이전트 목록 조회",
+          create: "에이전트 생성",
+          get: "에이전트 상세 조회",
+          delete: "에이전트 삭제",
+          update: "에이전트 수정",
+          copy: "에이전트 복사",
+        },
+        chunk: {
+          get: "청크 상세 조회",
+          update: "청크 수정",
+          list_revisions: "청크 변경 이력 조회",
+          revert: "청크 이전 버전 복원",
+          list: "지식 청크 목록 조회",
+        },
+        knowledge_base: {
+          list_parser_engines: "사용 가능한 파싱 엔진 조회",
+          copy: "지식베이스 내용 복사",
+          duplicate: "지식베이스 설정 복사",
+          get_copy_progress: "지식베이스 복사 진행 상황 조회",
+          list: "지식 베이스 목록 조회",
+          create: "지식 베이스 생성",
+          get: "지식 베이스 상세 조회",
+          delete: "지식 베이스 삭제",
+          update: "지식 베이스 수정",
+          list_activity: "지식 베이스 활동 조회",
+          search: "지식 베이스 검색",
+          list_move_targets: "이동 대상 지식 베이스 조회",
+          generate_profile: "지식 베이스 설명 생성",
+          list_tags: "지식 베이스 태그 목록 조회",
+          create_tag: "지식 베이스 태그 생성",
+          update_tag: "지식 베이스 태그 수정",
+          delete_tag: "지식 베이스 태그 삭제",
+          list_shared: "공유 지식 베이스 목록 조회",
+        },
+        faq: {
+          batch_update: "FAQ 상태 및 태그 일괄 수정",
+          list_entries: "FAQ 항목 목록 조회",
+          delete_entries: "FAQ 항목 일괄 삭제",
+          get_entry: "FAQ 항목 상세 조회",
+          update_entry: "FAQ 항목 수정",
+          add_similar_questions: "유사 질문 추가",
+          create_entry: "FAQ 항목 생성",
+        },
+        knowledge: {
+          list: "지식 목록 조회",
+          list_folders: "지식 폴더 목록 조회",
+          rename_folder: "폴더 이름 변경 또는 이동",
+          create_manual: "지식 수동 생성",
+          create_from_url: "URL에서 지식 생성",
+          batch_delete: "지식 일괄 삭제",
+          batch_reparse: "지식 일괄 재분석",
+          move_to_folder: "지식을 폴더로 이동",
+          update_manual: "수동 생성 지식 수정",
+          move: "지식을 다른 지식 베이스로 이동",
+          get_move_progress: "지식 이동 진행 상황 조회",
+          set_tags: "지식 태그 설정",
+          get: "지식 상세 조회",
+          update: "지식 수정",
+          delete: "지식 삭제",
+          cancel_parse: "지식 분석 취소",
+          reparse: "지식 재분석",
+          get_parse_progress: "지식 분석 진행 상황 조회",
+        },
+        wiki: {
+          list_folders: "Wiki 폴더 목록 조회",
+          create_folder: "Wiki 폴더 생성",
+          list_issues: "Wiki 페이지 문제 목록 조회",
+          lint: "Wiki 페이지 검사",
+          move_page: "Wiki 페이지 이동",
+          get_page: "Wiki 페이지 조회",
+          rebuild_links: "Wiki 링크 재구축",
+          revert: "Wiki 페이지 버전 복원",
+          list_revisions: "Wiki 페이지 버전 목록 조회",
+          get_stats: "Wiki 통계 조회",
+        },
+        system_admin: {
+          list_admins: "시스템 관리자 조회",
+          list_users: "플랫폼 사용자 조회",
+          list_settings: "시스템 설정 조회",
+          get_queues: "작업 큐 실행 상태 조회",
+          list_tasks: "큐 작업 조회",
+        },
+        workspace: {
+          get: "현재 워크스페이스 정보 조회",
+          update: "현재 워크스페이스 기본 정보 수정",
+          list_members: "현재 워크스페이스 구성원 조회",
+        },
+        system: {
+          get_info: "버전 및 시스템 정보 조회",
+        },
+        web_search_provider: {
+          list: "웹 검색 서비스 목록 조회",
+          get: "웹 검색 서비스 상세 조회",
+          list_types: "웹 검색 서비스 유형 조회",
+          test: "웹 검색 연결 테스트",
+          update: "웹 검색 서비스 수정",
+          delete: "웹 검색 서비스 삭제",
+        },
+        mcp_service: {
+          list: "MCP 서비스 목록 조회",
+          create: "MCP 서비스 생성",
+          get: "MCP 서비스 상세 조회",
+          update: "MCP 서비스 수정",
+          delete: "MCP 서비스 삭제",
+          test: "MCP 서비스 연결 테스트",
+          list_tools: "MCP 도구 실시간 조회",
+          get_metadata: "동기화된 MCP 도구 보기",
+          refresh_metadata: "MCP 도구 목록 동기화",
+        },
+        message: {
+          chat_history_stats: "채팅 기록 통계 조회",
+          search: "대화 기록 검색",
+          list: "메시지 기록 조회",
+        },
+        model: {
+          list: "모델 목록 조회",
+          list_providers: "모델 제공업체 목록 조회",
+          get_provider: "모델 제공업체 상세 조회",
+          get: "모델 상세 조회",
+          delete: "모델 삭제",
+          update: "모델 표시 정보 수정",
+          copy: "모델 설정 복사",
+        },
+        skill: {
+          list_installed: "설치된 스킬 목록 조회",
+          install: "스킬 설치",
+          get_installed: "설치된 스킬 상세 조회",
+          uninstall: "스킬 제거",
+          set_enabled: "스킬 활성화 상태 설정",
+          list: "실행 가능한 스킬 목록 조회",
+          list_catalog: "워크스페이스 스킬 목록 조회",
+          get_catalog: "워크스페이스 스킬 상세 조회",
+          install_catalog: "카탈로그 스킬을 샌드박스에 설치",
+        },
+        automation: {
+          list: "자동화 목록 가져오기",
+          create: "자동화 만들기",
+          validate_trigger: "실행 시간 확인",
+          get: "자동화 상세 가져오기",
+          update: "자동화 수정",
+          delete: "자동화 삭제",
+          pause: "자동화 일시 중지",
+          resume: "자동화 다시 시작",
+          run_now: "자동화 즉시 실행",
+          list_runs: "자동화 실행 기록 가져오기",
+        },
+        session: {
+          list: "대화 목록 조회",
+        },
+      },
       found: '실행 가능 {count}개',
       unavailableCount: '현재 사용 불가 {count}개',
       empty: '일치하는 작업이 없습니다',
@@ -1885,6 +2335,7 @@ export default {
       range: '범위 {min}–{max}',
       risk: {
         read: '읽기',
+        probe: '점검',
         write: '쓰기',
         destructive: '되돌릴 수 없음'
       },
@@ -1923,6 +2374,7 @@ export default {
       skipFailed: '건너뛰기 실패, 다시 시도하세요'
     },
     askUser: {
+      answerLabel: '내 답변',
       title: '질문이 있습니다',
       selectPlaceholder: '선택하세요',
       textPlaceholder: '답변을 입력하세요',
@@ -1949,13 +2401,27 @@ export default {
       expand: '펼치기'
     },
     toolApproval: {
+      title: '승인',
+      toolDescription: '도구 설명',
+      delegatedTask: '위임된 작업',
       waiting: '승인 대기 · {target}',
       waitingStatus: '승인 대기',
       targetWithTool: '{service} › {tool}',
       dockQuestion: '{target} 실행을 허용할까요?',
+      operationQuestion: '{action} “{target}”을(를) 허용할까요?',
+      operationQuestionNoTarget: '{action}을(를) 허용할까요?',
+      operationTarget: '{action} “{target}”',
+      reviewTitle: '검토 · {target}',
+      characterCount: '{count}자',
       titleWithTarget: '검토 · {service} › {tool}',
       argsLabel: '인수',
       argsModified: '수정됨',
+      allowInSession: '이 대화에서 같은 작업은 모두 허용',
+      grantLapsed: {
+        changed: '이전 허용이 더 이상 적용되지 않습니다. 자동화의 Agent 설정, 역할 또는 권한 상한이 변경되었습니다.',
+        expired: '이전 허용이 만료되었습니다.',
+        idle: '이전 허용이 오랫동안 사용되지 않아 만료되었습니다.',
+      },
       countdownShort: '{seconds}초',
       approve: '승인 후 실행',
       reject: '거부',
@@ -1964,6 +2430,7 @@ export default {
       parked: '백그라운드에서 대기 중 — 나중에 처리할 수 있습니다',
       parkedUntil: '백그라운드에서 대기 중 — {time} 전에 처리하세요',
       abandonedTag: '포기됨',
+      canceledTag: '취소됨',
       invalidJson: '유효한 JSON이 아닙니다',
       submitted: '제출됨',
       submitFailed: '제출 실패',
@@ -1993,7 +2460,19 @@ export default {
         mcpServices: 'MCP 서비스',
         skills: '스킬',
         webSearch: '웹 검색',
-        multiTurn: '멀티턴'
+        multiTurn: '멀티턴',
+        transport: '전송 방식',
+        authentication: '인증 방식',
+        usageInstructions: '사용 안내',
+        displayName: '표시 이름',
+        enabled: '사용',
+        sandbox: '샌드박스',
+        sandboxes: '샌드박스',
+        systemPrompt: '시스템 프롬프트',
+        content: '내용',
+        kbScope: '지식베이스 범위',
+        mcpScope: 'MCP 범위',
+        skillsScope: '스킬 범위'
       },
       value: {
         document: '문서',
@@ -2139,9 +2618,40 @@ export default {
     welcomeDesc: 'WeKnora 사용법을 안내하고, 워크스페이스의 문서 파싱, 지식 베이스 활동, Wiki 문제를 확인하고 처리하며, 에이전트를 만들고 설정할 수도 있습니다. 변경 전에 확인을 요청할지는 입력창 아래의 권한 수준에 따라 정해집니다.',
     startFailed: '어시스턴트를 시작하지 못했습니다. 다시 시도해 주세요.',
     askAboutDocument: '{name}에게 묻기',
+    askAboutAnswer: '이 답변에 대해 {name}에게 묻기',
+    selection: {
+      label: '선택됨',
+      lines: '{count}줄 선택됨',
+      detach: '선택한 내용 빼기',
+      tip: '보낼 때 선택한 내용을 함께 보냅니다: {text}',
+      tipField: '보낼 때 「{field}」에서 선택한 내용을 함께 보냅니다: {text}'
+    },
+    bubble: {
+      label: '어시스턴트 빠른 작업',
+      ask: '어시스턴트에게 묻기',
+      polish: '다듬기',
+      rewrite: '다시 쓰기',
+      translate: '번역',
+      continue: '이어 쓰기',
+      prompts: {
+        polish: '선택한 내용을 다듬어 주세요. 오타와 어색한 표현을 고치되 의미는 바꾸지 말고 그 자리에서 바꿔 주세요.',
+        rewrite: '선택한 내용을 더 명확하고 간결하게 다시 써서 그 자리에서 바꿔 주세요.',
+        translate: '선택한 내용을 번역해 주세요. 중국어는 영어로, 다른 언어는 중국어로 옮겨 그 자리에서 바꿔 주세요.',
+        continue: '선택한 내용 뒤에 문맥에 맞는 문단을 하나 이어 써 주세요.'
+      }
+    },
+    fillNotice: {
+      title: '어시스턴트가 {count}곳을 입력했습니다',
+      undo: '되돌리기',
+      dismiss: '닫기'
+    },
     access: {
       title: '권한 수준',
       capped: '워크스페이스 관리자가 허용하지 않았습니다',
+      page: {
+        label: '현재 페이지 보기 및 입력',
+        desc: '왼쪽 페이지를 읽고 양식을 대신 입력할 수 있습니다. 버튼을 누르거나 저장하지 않습니다.'
+      },
       levels: {
         read_only: {
           label: '읽기 전용',
@@ -2158,10 +2668,20 @@ export default {
       }
     },
     context: {
+      detachedLabel: '페이지 제외됨',
       currentPage: '현재 페이지',
       detach: '현재 페이지 포함하지 않기',
       attachedTip: '현재 페이지 포함됨: {path}',
-      detachedTip: '클릭하여 현재 페이지 포함: {path}'
+      detachedTip: '클릭하여 현재 페이지 포함: {path}',
+      chatMessage: '이 답변',
+      pages: {
+        knowledge_base: '지식베이스',
+        wiki: 'Wiki',
+        agent_editor: '에이전트 편집',
+        settings_models: '모델 관리',
+        mcp_services: 'MCP 서비스',
+        chat: '대화'
+      }
     },
     starters: {
       agentConfig: '이 에이전트의 설정 확인하기',
@@ -2175,7 +2695,15 @@ export default {
       recentActivity: '이 지식 베이스에 최근 어떤 변경이 있었나요?',
       formats: 'WeKnora는 어떤 문서 형식을 지원하나요?',
       createWiki: 'Wiki 지식 베이스는 어떻게 만드나요?',
-      agents: '어떤 에이전트가 있고, 각각 어떤 모델을 쓰나요?'
+      agents: '어떤 에이전트가 있고, 각각 어떤 모델을 쓰나요?',
+      messageSources: '이 답변의 근거는 무엇인가요?',
+      messageCheck: '이 답변에 틀린 내용이 있나요?',
+      modelCheck: '이 모델의 설정을 확인해 줘',
+      modelUsage: '어떤 에이전트와 지식베이스가 이 모델들을 쓰나요?',
+      mcpTools: '이 MCP 서비스는 어떤 도구를 제공하나요?',
+      mcpCheck: '왜 연결되지 않나요?',
+      modelSetup: '어떤 모델을 더 설정해야 하나요?',
+      mcpSetup: 'MCP 서비스는 어떻게 연결하나요?'
     }
   },
   assistantSettings: {
@@ -2272,6 +2800,11 @@ export default {
     videoNotSupported: '브라우저가 동영상 재생을 지원하지 않습니다'
   },
   organization: {
+    cardStats: {
+      members: '멤버 {count}',
+      knowledgeBases: '지식 베이스 {count}',
+      agents: '에이전트 {count}',
+    },
     title: '공유 공간',
     subtitle: '공유 공간를 만들거나 참여하여 여러 스페이스가 함께 협업하고 지식베이스와 에이전트를 공유하세요.',
     createOrg: '공유 공간 생성',
@@ -2872,6 +3405,7 @@ export default {
       deleted: '모델이 삭제되었습니다',
       deleteFailed: '모델 삭제 실패',
       builtinCannotEdit: '기본 제공 모델은 편집할 수 없습니다',
+      linkedModelMissing: '어시스턴트가 연결한 모델을 찾을 수 없습니다. 삭제되었을 수 있습니다',
       builtinCannotDelete: '기본 제공 모델은 삭제할 수 없습니다',
       builtinCannotCopy: '기본 제공 모델은 복사할 수 없습니다',
       copied: '모델이 복사되었습니다',
@@ -2941,6 +3475,7 @@ export default {
       enabled: 'MCP 서비스가 활성화되었습니다',
       disabled: 'MCP 서비스가 비활성화되었습니다',
       updateStateFailed: 'MCP 서비스 상태 업데이트 실패',
+      linkedServiceMissing: '어시스턴트가 연결한 MCP 서비스를 찾을 수 없습니다. 삭제되었을 수 있습니다',
       testing: '{name} 테스트 중...',
       noResponse: '테스트 실패: 서버 응답 없음',
       testFailed: 'MCP 서비스 테스트 실패',
@@ -4362,6 +4897,14 @@ export default {
         imageVectorModelUnsupported: '현재 임베딩 모델은 이미지 입력을 선언하지 않아 이미지 벡터가 생성되거나 검색되지 않습니다',
         imageAttrsSchemaLabel: '관찰 가능한 이미지 속성',
         imageAttrsSchemaDescription: '모델은 아래 속성(백엔드 레지스트리 정의)을 관찰해 OCR 정책을 결정합니다',
+        imagePipelineSectionLabel: '이미지 분석 방식',
+        imagePipelineSectionDescription:
+          '멀티모달 분석이 켜져 있으면 이미지의 분석 방식을 필요에 따라 선택할 수 있습니다.',
+        imagePipelineLabel: '분석 방식',
+        imagePipelinePlaceholder: '분석 방식 선택',
+        imagePipelineLoading: '파이프라인을 불러오는 중…',
+        imagePipelineLoadError: '파이프라인을 불러오지 못했습니다',
+          imagePipelineValidateError: '현재 설정을 검증할 수 없습니다. 저장 시 백엔드가 다시 검사합니다.',
         imageAttrsOcrConditions: '관찰된 속성 조건에 따라 OCR 실행',
         imageAttrsOcrConditionsDesc: '관찰된 속성이 아래 조건을 충족하면 해당 이미지에 OCR을 실행합니다',
         imageAttrsOcrOnUnobserved: '이미지 속성 관찰에 실패해도 OCR 실행',
@@ -5429,6 +5972,21 @@ export default {
     }
   },
   manualEditor: {
+    assistant: {
+      button: '어시스턴트',
+      tooltip: '어시스턴트에게 글쓰기 맡기기',
+      continue: '이어 쓰기',
+      outline: '개요 만들기',
+      polish: '전체 다듬기',
+      summarize: '요점 정리',
+      open: '어시스턴트 열기',
+      prompts: {
+        continue: '본문 끝에서 앞 내용에 이어지는 문단을 하나 써 주세요.',
+        outline: '제목과 현재 내용을 바탕으로 이 문서의 구조가 잘 드러나는 개요를 만들어 본문 맨 앞에 써 주세요.',
+        polish: '본문을 다듬어 주세요. 오타와 어색한 문장을 고치되 의미는 바꾸지 말고 문단별로 고쳐 주세요.',
+        summarize: '이 문서의 요점을 대화에서 정리해 주세요. 본문은 수정하지 마세요.'
+      }
+    },
     defaultTitlePrefix: '새 문서',
     noDocumentKnowledgeBases: '사용 가능한 문서형 지식베이스가 없습니다. 먼저 문서형 지식베이스를 생성해주세요',
     actions: {
@@ -6428,6 +6986,23 @@ export default {
       skillRolloutNextTurn: '이미 열린 세션은 다음 대화 턴에서 샌드박스를 다시 만듭니다',
       skillRolloutNewSession: '이미 열린 세션은 기존 샌드박스를 유지하고, 새 세션만 새 이미지를 사용합니다',
       skillRolloutSaveFailed: '적용 방식 저장에 실패했습니다',
+      allocationMode: 'Sandbox allocation',
+      allocationModeHint: 'Only affects sessions that have not used a sandbox yet; existing sessions keep their placement and files are never moved.',
+      allocationModeSession: 'One sandbox per session (default)',
+      allocationModeUser: "Share one sandbox across a user's sessions",
+      allocationModeUnavailable: 'Shared sandboxes are not enabled on this deployment (set WEKNORA_SANDBOX_USER_ALLOCATION=enabled on every replica; Redis is required).',
+      userSandboxRetentionDays: 'Keep an empty shared sandbox for (days)',
+      userSandboxRetentionHint: 'After every session on a shared sandbox is deleted, it is removed once it has been empty this long (1–90 days). This is not a minimum file retention: Docker idle cleanup or provider failures may remove it sooner.',
+      userSandboxesInInventory: "{count} of them are shared user sandboxes; each affects all of that user's sessions on this config.",
+      userSandboxesTitle: 'Shared user sandboxes',
+      userSandboxOwner: 'Owner',
+      userSandboxOwnerOtherWorkspace: 'A user from another workspace',
+      userSandboxLiveSessions: 'Sessions',
+      userSandboxEmptySince: 'Empty since',
+      userSandboxReclaimAfter: 'Reclaimed after',
+      userSandboxRelease: 'Release',
+      userSandboxReleaseConfirm: "Releasing deletes the files and installed packages of all of this user's sessions on this config; a new sandbox is created on next use. Release it?",
+      userSandboxBusy: 'A terminal, desktop or command is still running on this sandbox. Try again later.',
       skillInstallGroup: '새 스킬 설치',
       skillInstalledGroup: '설치됨',
       skillUploadClick: 'zip 파일을 클릭해 업로드',
@@ -6912,6 +7487,8 @@ export default {
     toolFallback: '도구',
     stepsCompleted: '<strong>{steps}</strong>개 단계 완료',
     reasoningRounds: '사고 <strong>{rounds}</strong>회',
+    earlierSteps: '이전 단계 {count}개',
+    viewReasoning: '사고 과정 보기',
     toolCalls: '도구 <strong>{tools}</strong>회 호출',
     durationSuffix: '소요 시간 <strong>{duration}</strong>',
     stepSummarySeparator: ' · ',
@@ -7389,6 +7966,8 @@ export default {
       folderCardCount: '문서 {count}개',
       searchingSubtree: '(하위 폴더 포함)',
       emptyFolder: '이 폴더에는 아직 문서가 없습니다',
+      emptyFolderWithSubfolders: '이 폴더에는 직접 문서가 없지만 하위 폴더에 {count}개가 있습니다',
+      folderContentsCount: '문서 {documents}개 / 폴더 {folders}개',
       emptySearch: '일치하는 문서가 없습니다',
       collapse: '폴더 접기',
       expand: '폴더 펼치기',
@@ -7613,6 +8192,7 @@ export default {
     selectLoaded: '불러온 문서 선택',
     confirmBatchDeleteDocument: '선택한 {count}개 문서를 삭제하시겠습니까? 삭제 후 복구할 수 없습니다.',
     deleteSubmitted: '삭제 요청이 제출되었습니다. 완료를 기다리는 중입니다.',
+    assistantDeleted: '어시스턴트가 이 지식 베이스를 삭제했습니다.',
     deletePending: '삭제가 아직 완료되지 않았습니다. 잠시 후 새로고침하여 결과를 확인하세요.',
     deleteTaskFailed: '삭제에 실패했습니다. 문서의 오류 세부 정보를 확인한 후 다시 시도하세요.',
     deleteStatusUnavailable: '삭제 결과를 확인할 수 없습니다. 잠시 후 새로고침하여 문서 상태를 확인하세요.',
@@ -7979,6 +8559,17 @@ export default {
     }
   },
   chatHeader: {
+    grants: {
+      menu: '허용된 작업',
+      description: '이 대화에서 다시 묻지 않도록 허용된 작업입니다. 취소하면 다음에 다시 묻습니다.',
+      empty: '허용된 작업이 없습니다',
+      revoke: '취소',
+      revoked: '취소되었습니다',
+      revokeFailed: '취소하지 못했습니다',
+      loadFailed: '불러오지 못했습니다',
+    },
+    automationTask: '자동화',
+    automationOpen: '자동화 「{name}」 열기',
     moreActions: '대화 추가 작업',
     toggleSandboxPanel: '샌드박스 터미널',
     copySessionId: '세션 ID 복사',
@@ -8060,6 +8651,7 @@ export default {
     sessionUnread: '새 답변',
     knowledgeBase: '지식베이스',
     agents: '에이전트',
+    automations: '자동화',
     artifacts: '산출물',
     organizations: '공유 공간',
     newChat: '새 대화',
@@ -8106,6 +8698,56 @@ export default {
         'true': { label: '예', description: '예 —— 차트, 그래프, 도표' },
         'false': { label: '아니오', description: '아니오 —— 사진, 삽화, 아이콘, 장식' }
       }
+    }
+  },
+  // 파이프라인 패널의 오버레이 문구: 파이프라인 id와 필드 key로 색인합니다
+  // (둘 다 백엔드 레지스트리가 제공하며 여기서는 번역만 합니다). 여기서
+  // 다루지 않은 부분은 백엔드 자체 문구로 폴백되므로, 새 파이프라인이 키
+  // 이름 그대로 표시되는 일은 없습니다.
+  imagePipeline: {
+    errors: {
+      noActionEnabled: '분석 동작을 하나 이상 켜세요. 모두 꺼져 있으면 아무것도 처리되지 않습니다.',
+    },
+    default: {
+      name: '수동',
+      description: '작업에 맞게 분석 동작 스위치를 직접 켜거나 끕니다.',
+      enable_caption: {
+        label: '이미지 설명',
+        description: '각 이미지에 대한 한 줄 설명을 생성해 캡션으로 저장합니다.'
+      },
+      enable_ocr: {
+        label: '문자 인식',
+        description: '이미지 속에 나타나는 텍스트를 추출합니다.'
+      },
+      caption: {
+        thinking: {
+          label: '설명 시 사고 사용',
+          description: '설명을 쓰기 전에 모델이 먼저 추론하도록 합니다. 일반적으로 사고는 필요하지 않습니다. 켜면 분석이 느려질 뿐 아니라 사고가 너무 길어져 본문이 잘려서 작업이 실패할 수 있습니다. 꼭 필요하다고 판단될 때만 켜세요.',
+        },
+      },
+      ocr: {
+        thinking: {
+          label: 'OCR 시 사고 사용',
+          description: '텍스트를 추출하기 전에 모델이 먼저 추론하도록 합니다. 일반적으로 사고는 필요하지 않습니다. 켜면 분석이 느려질 뿐 아니라 사고가 너무 길어져 본문이 잘려서 작업이 실패할 수 있습니다. 꼭 필요하다고 판단될 때만 켜세요.',
+        },
+      }
+    },
+    smartocr: {
+      name: '스마트',
+      caption: {
+        thinking: {
+          label: '설명 시 사고 사용',
+          description: '이미지를 설명하고 속성을 보고하기 전에 모델이 먼저 추론하도록 합니다. 일반적으로 사고는 필요하지 않습니다. 켜면 분석이 느려질 뿐 아니라 사고가 너무 길어져 본문이 잘려서 작업이 실패할 수 있습니다. 꼭 필요하다고 판단될 때만 켜세요.',
+        },
+      },
+      ocr: {
+        thinking: {
+          label: '문자 인식 시 사고 사용',
+          description: '텍스트를 추출하기 전에 모델이 먼저 추론하도록 합니다. 일반적으로 사고는 필요하지 않습니다. 켜면 분석이 느려질 뿐 아니라 사고가 너무 길어져 본문이 잘려서 작업이 실패할 수 있습니다. 꼭 필요하다고 판단될 때만 켜세요.',
+        },
+      },
+      description:
+        '먼저 이미지 특징을 관찰하여 설명을 생성하고, 그 특징을 바탕으로 OCR 실행 여부를 결정합니다. 모델 호출을 절약하고 분석 속도를 높입니다.'
     }
   }
 }

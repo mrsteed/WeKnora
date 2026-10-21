@@ -264,11 +264,11 @@ func (c *AutoTagConfig) Normalize() {
 
 // ParserEngineRule maps a set of file types to a specific parser engine.
 type ParserEngineRule struct {
-	FileTypes []string `yaml:"file_types" json:"file_types"`
-	Engine    string   `yaml:"engine"     json:"engine"`
+	FileTypes []string `yaml:"file_types" json:"file_types" extensions:"x-agent"`
+	Engine    string   `yaml:"engine"     json:"engine" extensions:"x-agent"`
 	// XLSXFirstRowAsHeader restores row-1 column context for flat XLSX tables.
 	// nil preserves the parser default; an explicit false disables the mode.
-	XLSXFirstRowAsHeader *bool `yaml:"xlsx_first_row_as_header,omitempty" json:"xlsx_first_row_as_header,omitempty"`
+	XLSXFirstRowAsHeader *bool `yaml:"xlsx_first_row_as_header,omitempty" json:"xlsx_first_row_as_header,omitempty" extensions:"x-agent"`
 }
 
 // ChunkingConfig represents the document splitting configuration
@@ -284,7 +284,7 @@ type ChunkingConfig struct {
 	// types that only a specific engine can parse: ppt/pptx fall back to
 	// markitdown). A linked anydoc binding is preferred for every type it
 	// converts.
-	ParserEngineRules []ParserEngineRule `yaml:"parser_engine_rules,omitempty" json:"parser_engine_rules,omitempty"`
+	ParserEngineRules []ParserEngineRule `yaml:"parser_engine_rules,omitempty" json:"parser_engine_rules,omitempty" extensions:"x-agent,x-agent-response"`
 	// EnableParentChild splits into large parent chunks and small child chunks.
 	// Search matches a child and returns its parent.
 	EnableParentChild bool `yaml:"enable_parent_child,omitempty" json:"enable_parent_child,omitempty" extensions:"x-agent"`
@@ -560,6 +560,17 @@ type ImageProcessingConfig struct {
 	// override it per document through
 	// KnowledgeProcessOverrides.ImageAttrsEnabled.
 	ImageAttrsEnabled bool `yaml:"image_attrs_enabled,omitempty" json:"image_attrs_enabled,omitempty" extensions:"x-agent"` //nolint:lll // one-line struct tag
+	// ImagePipelineID selects the image pipeline by id, so the choice the
+	// settings panel offers is the choice the backend runs. It is unset on
+	// knowledge bases configured before the field existed; those follow
+	// ImageAttrsEnabled — see ResolveImagePipelineID. An explicit id always
+	// wins over the switch.
+	ImagePipelineID string `yaml:"image_pipeline,omitempty" json:"image_pipeline,omitempty" enums:"default,smartocr" extensions:"x-agent"`
+	// ImagePipelineParams holds the tunables of ImagePipelineID, keyed by the
+	// field's own key. The map travels whole: a key a pipeline no longer
+	// declares is dropped when the run reads it, so an old stored config stays
+	// loadable rather than being rewritten on save.
+	ImagePipelineParams map[string]any `yaml:"image_pipeline_params,omitempty" json:"image_pipeline_params,omitempty" extensions:"x-agent,x-agent-response,x-agent-keys=enable_caption|enable_ocr|default.enable_caption|default.enable_ocr"`
 	// ImageVectorEnabled lets a knowledge base whose embedding model takes
 	// images index each image by its own vector and recall it with one. It
 	// is off by default on purpose: a model that takes images is also used
@@ -567,6 +578,22 @@ type ImageProcessingConfig struct {
 	// and widens vector recall. Existing knowledge bases stay off after an
 	// upgrade because the stored JSON has no such key.
 	ImageVectorEnabled bool `yaml:"image_vector_enabled,omitempty" json:"image_vector_enabled,omitempty" extensions:"x-agent"` //nolint:lll // one-line struct tag
+}
+
+// ResolveImagePipelineID returns the pipeline id a knowledge base asks for. An
+// explicit ImagePipelineID wins; without one the old attribute-observation
+// switch still decides, so a knowledge base saved before the selector existed
+// runs the pipeline the switch pointed at. An id that no pipeline registers is
+// ignored here and falls back to the switch, which is what keeps a stored
+// config from pointing at a pipeline that has since been removed.
+func ResolveImagePipelineID(cfg *ImageProcessingConfig) ImagePipelineID {
+	if cfg == nil {
+		return ImagePipelineIDFor(false)
+	}
+	if id := strings.TrimSpace(cfg.ImagePipelineID); id != "" {
+		return NormalizeImagePipelineID(ImagePipelineID(id))
+	}
+	return ImagePipelineIDFor(cfg.ImageAttrsEnabled)
 }
 
 // Value implements the driver.Valuer interface, used to convert ChunkingConfig to database value

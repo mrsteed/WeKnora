@@ -124,6 +124,221 @@ export default {
     "historyModels": "Изменено моделей: {count}",
     "historyNoOverrides": "Нет изменений администратора",
   },
+  automation: {
+    conversationNotice: "Этот диалог выполняется автоматизацией. Отправка сообщений вручную недоступна. Обработайте ожидающие запросы выше.",
+    title: 'Автоматизации',
+    description: 'Помощник WeKnora выполняет задачи по расписанию от вашего имени. О результатах и ожидающих подтверждениях вы получите уведомление.',
+    add: 'Новая автоматизация',
+    addHint: 'Или попросите ассистента WeKnora создать её',
+    paused: 'Приостановлена',
+    scheduleEnded: 'Завершено',
+    scheduleEndedHint: 'Время однократного запуска прошло. Запустите сейчас или измените время перед возобновлением.',
+    nextRunAt: 'Далее {time}',
+    runConfirm: 'Запустить «{name}» сейчас? Дополнительный запуск не изменит расписание.',
+    deleteBody: 'Текущий запуск будет остановлен, а запуски, беседы и постоянные разрешения «{name}» удалены. Это действие необратимо.',
+    fields: {
+      name: 'Название',
+      instruction: 'Задача',
+      schedule: 'Расписание',
+      timezone: 'Часовой пояс',
+      accessLevel: 'Права',
+      sessionMode: 'Беседа',
+      carryLastResult: 'Передавать последний успешный результат',
+      overlapPolicy: 'Если прошлый запуск ещё идёт',
+      misfirePolicy: 'Пропущенные запуски',
+      approvalTimeout: 'Ожидание подтверждения',
+      maxDuration: 'Макс. длительность запуска',
+      notifyOnSuccess: 'Уведомлять об успехе',
+      nextRun: 'Следующий запуск',
+      enabled: 'Включена',
+    },
+    editor: {
+      model: "Модель запуска",
+      modelHelp: 'Используйте модель помощника по умолчанию или выберите другую для этой задачи. Агенты, которым поручена работа, используют свои модели. Изменения применяются к последующим запускам.',
+      modelDefault: 'Модель помощника по умолчанию',
+      createTitle: 'Новая автоматизация',
+      editTitle: 'Изменить автоматизацию',
+      namePlaceholder: 'Например: ежедневная сводка базы знаний',
+      instructionPlaceholder: 'Опишите, что сделать, какие источники использовать и как оформить результат',
+      variablesHint: 'Переменные:',
+      unattendedHint: 'За запуском никто не следит, поэтому помощник не может задавать вопросы. Действия, требующие подтверждения, приостанавливают запуск и присылают уведомление.',
+      nameDesc: 'Показывается в списке и уведомлениях, чтобы отличать задачу',
+      frequency: 'Повтор',
+      weekdays: 'Дни недели',
+      dayOfMonthDesc: 'В месяцы без этого дня запуск будет в последний день',
+      runAt: 'Время запуска',
+      cron: 'Выражение Cron',
+      timeOfDay: 'Время',
+      timezoneDesc: 'Запуск по часам этого часового пояса, с учётом летнего времени',
+      previewEmpty: 'Когда время задано, здесь появятся ближайшие запуски',
+      carryDesc: 'Каждый новый диалог начинается с последнего успешного результата, удобно для сводок изменений',
+      misfireDesc: 'Что делать с запусками, пропущенными, пока сервис не работал',
+      maxDurationDesc: 'Запуск, не завершившийся за это время, останавливается',
+      navGroups: {
+        task: 'Задача',
+        run: 'Выполнение',
+      },
+      sections: {
+        basic: {
+          title: 'Основное',
+          desc: 'Задачи выполняет помощник WeKnora. Для делегирования укажите в задаче агентов и порученную им работу.',
+        },
+        schedule: {
+          title: 'Расписание',
+          desc: 'Когда запускать задачу. Интервал между запусками не меньше 5 минут.',
+        },
+        execution: {
+          title: 'Выполнение',
+          desc: 'Какие изменения разрешены, в каком диалоге идёт запуск и что делать при наложении или пропуске.',
+        },
+        notify: {
+          title: 'Одобрения и уведомления',
+          desc: 'Результаты и действия, ждущие одобрения, появляются в уведомлениях справа вверху.',
+        },
+      },
+      sessionModeDesc: {
+        per_run: 'Каждый запуск открывает новый диалог',
+        persistent: 'Все запуски используют один диалог, поэтому помощник видит предыдущие сообщения',
+      },
+      errors: {
+        name: 'Введите название',
+        instruction: 'Опишите задачу',
+        schedule: 'Задайте корректное расписание',
+      },
+      approvalTimeoutHelp: 'Если подтверждения нет дольше этого срока, запуск завершается ошибкой',
+      notifyHint: 'О сбоях, ожидающих подтверждениях и автоматической паузе вы узнаете всегда',
+      access: {
+        read_only: 'Только чтение, без изменений.',
+        confirm: 'Каждое изменение приостанавливает запуск до вашего подтверждения. Повторяющиеся можно разрешить навсегда в деталях.',
+        auto_write: 'Обратимые изменения выполняются сразу; удаление и подобное по-прежнему ждут подтверждения.',
+      },
+    },
+    schedule: {
+      kinds: {
+        daily: 'Ежедневно',
+        weekdays: 'По будням',
+        weekly: 'Еженедельно',
+        monthly: 'Ежемесячно',
+        hourly: 'Ежечасно',
+        once: 'Однократно',
+        custom: 'Свой cron',
+      },
+      atMinute: 'Минута часа',
+      dayOfMonth: 'День месяца',
+      pickTime: 'Выберите время',
+      customHint: 'Пять полей: минута час день месяц день_недели. 0 9 * * 1-5 — 9:00 по будням. Интервал не меньше 5 минут.',
+      nextRuns: 'Далее:',
+      invalid: 'Недопустимое расписание',
+      describe: {
+        hourly: 'Каждый час в :{minute}',
+        daily: 'Каждый день в {time}',
+        weekdays: 'По будням в {time}',
+        weekly: 'Каждую неделю: {days} в {time}',
+        monthly: 'Ежемесячно, {day}-го в {time}',
+        once: 'Однократно: {at}',
+        custom: 'cron: {expr}',
+        everyMinutes: 'Каждые {n} мин',
+        everyHours: 'Каждые {n} ч',
+      },
+    },
+    sessionMode: {
+      per_run: 'Новая беседа на каждый запуск',
+      persistent: 'Одна общая беседа',
+    },
+    overlap: {
+      skip: 'Пропустить запуск',
+      queue: 'Поставить в очередь',
+    },
+    misfire: {
+      skip: 'Пропустить',
+      run_once: 'Выполнить один раз после восстановления',
+    },
+    units: {
+      hours: 'ч',
+      minutes: 'мин',
+    },
+    status: {
+      queued: 'В очереди',
+      running: 'Выполняется',
+      awaiting_approval: 'Ждёт подтверждения',
+      succeeded: 'Успешно',
+      failed: 'Ошибка',
+      cancelled: 'Остановлен',
+      skipped: 'Пропущен',
+      needs_attention: 'Требует внимания',
+      paused: 'Приостановлена',
+    },
+    runTrigger: {
+      schedule: 'По расписанию',
+      manual: 'Вручную',
+      misfire: 'Догоняющий',
+    },
+    actions: {
+      runNow: 'Запустить сейчас',
+      pause: 'Приостановить',
+      resume: 'Возобновить',
+      review: 'Проверить',
+      openConversation: 'Открыть беседу',
+      stop: 'Остановить',
+    },
+    detail: {
+      pausedBecause: 'Приостановлена: {reason}',
+      runs: 'Запуски',
+      noRuns: 'Запусков пока нет',
+      stopping: 'Остановка',
+      grants: 'Постоянные разрешения',
+      task: 'Задача',
+      durationSeconds: '{n} с',
+      durationMinutes: '{n} мин',
+    },
+    grants: {
+      intro: 'Эти вызовы последующие запуски выполняют без вопросов. Каждое разрешение касается конкретных ресурсов и перестаёт действовать при смене агента или вашей роли. Инструменты, требующие подтверждения каждый раз, здесь не появляются.',
+      active: 'Разрешено',
+      none: 'Пока ничего не разрешено',
+      lapsed: 'Настройки изменились, разрешение не действует',
+      revoke: 'Отозвать',
+      candidates: 'Запрашивали подтверждение в прошлых запусках',
+      noCandidates: 'Пока нечего разрешать',
+      allow: 'Всегда разрешать',
+      allowTitle: 'Разрешить в будущих запусках',
+      allowBody: 'Последующие запуски будут выполнять «{label}» без ожидания подтверждения.',
+      allowDestructiveBody: '«{label}» удаляет или перезаписывает данные безвозвратно. После разрешения последующие запуски будут делать это без вопросов.',
+    },
+    risk: {
+      write: 'Изменение',
+      destructive: 'Удаление/перезапись',
+    },
+    messages: {
+      queued: 'Запуск начат',
+      notFound: 'Автоматизация не найдена или удалена',
+    },
+  },
+  notifications: {
+    pending: "Требуют внимания",
+    history: "История уведомлений",
+    clearRead: "Удалить прочитанные",
+    clearReadConfirm: "Удалить прочитанные уведомления? История запусков, диалоги и ожидающие действия сохранятся.",
+    handle: "Открыть",
+    review: "Рассмотреть",
+    unreadCount: "Непрочитанных: {count}",
+    unread: "Не прочитано",
+    newItems: "Новые уведомления — обновить",
+    loadError: "Не удалось загрузить уведомления",
+    awaitingApproval: "Ожидается ваше одобрение",
+    awaitingAuthorization: "Ожидается авторизация",
+    awaitingReply: "Ожидается ваш ответ",
+
+    title: 'Уведомления',
+    markAllRead: 'Прочитать все',
+    pendingInvitations: 'Ожидающих приглашений: {count}',
+    empty: 'Уведомлений нет',
+    kinds: {
+      automation_succeeded: 'Автоматизация выполнена',
+      automation_failed: 'Сбой автоматизации',
+      automation_awaiting_approval: 'Автоматизация ждёт подтверждения',
+      automation_paused: 'Автоматизация приостановлена',
+    },
+  },
   toolbox: {
     "title": "Инструменты",
     "description": "Управляйте навыками, внешними инструментами и подключением браузера для агентов.",
@@ -972,6 +1187,13 @@ export default {
     pauseFailed: 'Не удалось приостановить',
     logs: 'Журнал',
     syncModeLabel: 'Режим синхронизации',
+    parseModeLabel: 'Режим разбора',
+    parseMode: {
+      inherit: 'Использовать настройки сервера',
+      blocks: 'Блочный разбор (по умолчанию)',
+      export: 'Экспорт (docx)',
+    },
+    parseModeHint: 'Способ разбора облачных документов Feishu. Блочный разбор быстрее и сохраняет вложения документа; экспорт преобразует документ в docx и лучше сохраняет связь изображений с документом.',
     createTitle: 'Добавить источник данных',
     editTitle: 'Редактировать источник данных',
     nameLabel: 'Название',
@@ -1370,6 +1592,8 @@ export default {
       authWaitTimeout: 'Тайм-аут ожидания аутентификации (с)',
       authWaitTimeoutDesc: 'Максимальное время ожидания (в секундах) завершения OAuth-аутентификации при запросе во время диалога; по его истечении запрос пропускается (влияет только на MCP-сервисы с OAuth).',
       authWaitTimeoutPlaceholder: 'Default 600 seconds',
+      accessLevel: 'Access level',
+      accessLevelDesc: 'Whether tools that change data (MCP tools, Wiki writes) run without asking. Read-only leaves them out; confirm asks you each time. MCP tools marked as requiring approval always ask.',
       unavailableService: 'Недоступный сервис'
     },
     agentType: {
@@ -1579,7 +1803,7 @@ export default {
       model: 'Выберите LLM, используемую агентом',
       temperature: 'Контроль случайности выхода: 0 — наиболее детерминированный, 1 — наиболее случайный',
       maxTokens: 'Максимум токенов в ответе. «По умолчанию» — 2048. «Своё» сохраняет введённое число.',
-      maxTokensAgent: 'Максимум токенов за один раунд рассуждения, включая JSON вызовов инструментов. «По умолчанию»: 4096 без песочницы, 24576 с записью/правкой файлов. «Своё» сохраняет введённое число и больше не меняется.',
+      maxTokensAgent: 'Максимум токенов за один раунд рассуждения, включая JSON вызовов инструментов. По умолчанию — 24576. Пользовательское значение сохраняется как введено.',
       thinking: 'Включить расширенное мышление модели (требуется поддержка модели)',
       conversationSection: 'Настройка параметров многооборотного диалога и перефразирования вопросов',
       conversationSectionAgent: 'Умные рассуждения всегда многооборотные. Предыдущий диалог хранится в пределах контекстного окна модели, а при его заполнении ранние ходы автоматически сжимаются в сводку',
@@ -1798,6 +2022,11 @@ export default {
       loadFailed: 'Ошибка загрузки',
       noKbForWiki: 'Не удалось определить связанную базу знаний, Wiki не может быть открыта'
     },
+    entityLink: {
+      kb: 'База знаний',
+      doc: 'Документ',
+      chunk: 'Фрагмент'
+    },
     tools: {
       searchKnowledge: 'Поиск по базе знаний',
       grepChunks: 'Поиск по текстовому шаблону',
@@ -1831,8 +2060,65 @@ export default {
       databaseQuery: 'Запрос к базе данных',
       findOperations: 'Поиск операций',
       runOperation: 'Выполнение операции',
+      spawn_agent: 'Запустить агента',
+      list_agents: 'Список агентов',
+      send_message: 'Отправить сообщение',
+      followup_task: 'Продолжить задачу',
+      interrupt_agent: 'Прервать агента',
+      wait_agent: 'Ожидать агента',
+      openPage: 'Открыть страницу',
+      viewPage: 'Просмотр страницы',
       searchWeKnoraDocs: 'Поиск в документации',
-      readWeKnoraDoc: 'Чтение документации'
+      readWeKnoraDoc: 'Чтение документации',
+      readPage: 'Просмотр страницы',
+      selectTab: 'Выбор вкладки',
+      fillPage: 'Заполнение страницы'
+    },
+    collaboration: {
+      tabs: 'Вкладки задач',
+      updates: 'Обновлений: {count}',
+      mainConversation: 'Основной чат',
+      recentProgress: 'Последние обновления',
+      waitFailed: 'Не удалось дождаться обновлений задач',
+      assignment: 'Задание',
+      "title": "Подзадачи",
+      "unnamed": "Задача без названия",
+      "waiting": "Ожидание обновлений задач…",
+      "status": {
+        "queued": "В очереди",
+        "running": "Выполняется",
+        "waiting": "Ожидает вашего ввода",
+        "succeeded": "Завершена",
+        "failed": "Ошибка",
+        "interrupted": "Прервана",
+        "cancelled": "Отменена",
+        "needs_attention": "Требует внимания",
+        "cancelling": "Отменяется",
+        "unknown": "Статус неизвестен"
+      },
+      "phase": {
+        "tool_running": "Использует инструмент",
+        "tool_succeeded": "Инструмент завершён",
+        "tool_failed": "Ошибка инструмента"
+      }
+    },
+    pageAccess: {
+      viewed: 'Просмотрена текущая страница: {location}'
+    },
+    pageEdit: {
+      title: 'Заполнено полей: {count}',
+      undo: 'Отменить',
+      undone: 'Заполнение отменено',
+      undoSkipped: 'Оставлено без изменений (изменены или исчезли со страницы): {count}',
+      unsaved: 'Ничего ещё не сохранено. Проверьте и сохраните на странице.'
+    },
+    openPage: {
+      open: 'Открыть',
+      openForm: 'Открыть и заполнить',
+      opened: 'Открыто ассистентом',
+      back: 'Назад',
+      endpoint: 'Подключение к: ',
+      draftHint: 'Заполнено ассистентом. Добавьте API-ключ или другие учётные данные, проверьте и сохраните сами.'
     },
     skillFiles: {
       heading: 'Файлы навыка',
@@ -1875,6 +2161,170 @@ export default {
       binarySuppressed: 'Двоичный вывод опущен. Сохраните файлы в каталог артефактов и скачайте их.'
     },
     operations: {
+      names: {
+        data_source: {
+          list: "Получить список источников данных",
+          get: "Получить сведения об источнике данных",
+          test: "Проверить подключение к источнику данных",
+          sync: "Синхронизировать источник данных",
+          pause: "Приостановить синхронизацию источника данных",
+          resume: "Возобновить синхронизацию источника данных",
+          list_sync_logs: "Получить журнал синхронизации источника данных",
+          get_sync_log: "Получить ход синхронизации источника данных",
+          list_resources: "Список ресурсов для синхронизации",
+          update_sync: "Изменить настройки синхронизации",
+        },
+        agent: {
+          list: "Получить список агентов",
+          create: "Создать агента",
+          get: "Получить сведения об агенте",
+          delete: "Удалить агента",
+          update: "Обновить агента",
+          copy: "Копировать агента",
+        },
+        chunk: {
+          get: "Получить сведения о фрагменте",
+          update: "Изменить фрагмент",
+          list_revisions: "Получить историю версий фрагмента",
+          revert: "Восстановить версию фрагмента",
+          list: "Получить список фрагментов знаний",
+        },
+        knowledge_base: {
+          list_parser_engines: "Получить доступные движки разбора",
+          copy: "Скопировать содержимое базы знаний",
+          duplicate: "Скопировать настройки базы знаний",
+          get_copy_progress: "Получить ход копирования базы знаний",
+          list: "Получить список баз знаний",
+          create: "Создать базу знаний",
+          get: "Получить сведения о базе знаний",
+          delete: "Удалить базу знаний",
+          update: "Обновить базу знаний",
+          list_activity: "Получить журнал активности базы знаний",
+          search: "Поиск в базе знаний",
+          list_move_targets: "Получить список баз знаний для перемещения",
+          generate_profile: "Создать описание базы знаний",
+          list_tags: "Получить список тегов базы знаний",
+          create_tag: "Создать тег базы знаний",
+          update_tag: "Обновить тег базы знаний",
+          delete_tag: "Удалить тег базы знаний",
+          list_shared: "Получить список общих баз знаний",
+        },
+        faq: {
+          batch_update: "Изменить статусы и теги FAQ пакетно",
+          list_entries: "Получить список вопросов FAQ",
+          delete_entries: "Удалить вопросы FAQ",
+          get_entry: "Получить сведения о вопросе FAQ",
+          update_entry: "Обновить вопрос FAQ",
+          add_similar_questions: "Добавить похожие вопросы",
+          create_entry: "Создать вопрос FAQ",
+        },
+        knowledge: {
+          list: "Получить список знаний",
+          list_folders: "Получить список папок знаний",
+          rename_folder: "Переименовать или переместить папку",
+          create_manual: "Создать знание вручную",
+          create_from_url: "Создать знание по ссылке",
+          batch_delete: "Удалить знания пакетом",
+          batch_reparse: "Повторно обработать знания пакетом",
+          move_to_folder: "Переместить знания в папку",
+          update_manual: "Обновить знание, созданное вручную",
+          move: "Переместить знания в другую базу",
+          get_move_progress: "Получить статус перемещения знаний",
+          set_tags: "Задать теги знаний",
+          get: "Получить сведения о знании",
+          update: "Обновить знание",
+          delete: "Удалить знание",
+          cancel_parse: "Отменить обработку знания",
+          reparse: "Повторно обработать знание",
+          get_parse_progress: "Получить статус обработки знания",
+        },
+        wiki: {
+          list_folders: "Получить список папок Wiki",
+          create_folder: "Создать папку Wiki",
+          list_issues: "Получить список проблем страниц Wiki",
+          lint: "Проверить страницы Wiki",
+          move_page: "Переместить страницу Wiki",
+          get_page: "Получить страницу Wiki",
+          rebuild_links: "Перестроить ссылки Wiki",
+          revert: "Восстановить версию страницы Wiki",
+          list_revisions: "Получить список версий страницы Wiki",
+          get_stats: "Получить статистику Wiki",
+        },
+        system_admin: {
+          list_admins: "Список системных администраторов",
+          list_users: "Список пользователей платформы",
+          list_settings: "Системные настройки",
+          get_queues: "Состояние очередей задач",
+          list_tasks: "Задачи очереди",
+        },
+        workspace: {
+          get: "Информация о текущем пространстве",
+          update: "Изменить профиль текущего пространства",
+          list_members: "Участники текущего пространства",
+        },
+        system: {
+          get_info: "Версия и сведения о системе",
+        },
+        web_search_provider: {
+          list: "Список поисковых сервисов",
+          get: "Сведения о поисковом сервисе",
+          list_types: "Типы поисковых сервисов",
+          test: "Проверить подключение к поиску",
+          update: "Изменить поисковый сервис",
+          delete: "Удалить поисковый сервис",
+        },
+        mcp_service: {
+          list: "Получить список сервисов MCP",
+          create: "Создать сервис MCP",
+          get: "Получить сведения о сервисе MCP",
+          update: "Обновить сервис MCP",
+          delete: "Удалить сервис MCP",
+          test: "Проверить подключение к сервису MCP",
+          list_tools: "Запросить инструменты MCP с сервера",
+          get_metadata: "Просмотреть синхронизированные инструменты MCP",
+          refresh_metadata: "Синхронизировать каталог инструментов MCP",
+        },
+        message: {
+          chat_history_stats: "Получить статистику истории чатов",
+          search: "Поиск в истории диалогов",
+          list: "Получить историю сообщений",
+        },
+        model: {
+          list: "Получить список моделей",
+          list_providers: "Получить список поставщиков моделей",
+          get_provider: "Получить сведения о поставщике моделей",
+          get: "Получить сведения о модели",
+          delete: "Удалить модель",
+          update: "Обновить отображаемые сведения о модели",
+          copy: "Копировать настройки модели",
+        },
+        skill: {
+          list_installed: "Получить список установленных навыков",
+          install: "Установить навык",
+          get_installed: "Получить сведения об установленном навыке",
+          uninstall: "Удалить навык",
+          set_enabled: "Настроить включение навыка",
+          list: "Получить список доступных для запуска навыков",
+          list_catalog: "Получить список навыков рабочего пространства",
+          get_catalog: "Получить сведения о навыке рабочего пространства",
+          install_catalog: "Установить навык из каталога в песочницы",
+        },
+        automation: {
+          list: "Список автоматизаций",
+          create: "Создать автоматизацию",
+          validate_trigger: "Проверить расписание",
+          get: "Сведения об автоматизации",
+          update: "Изменить автоматизацию",
+          delete: "Удалить автоматизацию",
+          pause: "Приостановить автоматизацию",
+          resume: "Возобновить автоматизацию",
+          run_now: "Запустить автоматизацию сейчас",
+          list_runs: "История запусков автоматизации",
+        },
+        session: {
+          list: "Получить список диалогов",
+        },
+      },
       found: 'Доступно операций: {count}',
       unavailableCount: 'Недоступно: {count}',
       empty: 'Подходящих операций нет',
@@ -1885,6 +2335,7 @@ export default {
       range: 'Диапазон {min}–{max}',
       risk: {
         read: 'Чтение',
+        probe: 'Проверка',
         write: 'Запись',
         destructive: 'Необратимо'
       },
@@ -1923,6 +2374,7 @@ export default {
       skipFailed: 'Не удалось пропустить, повторите попытку'
     },
     askUser: {
+      answerLabel: 'Ваш ответ',
       title: 'Вопрос к вам',
       selectPlaceholder: 'Выберите',
       textPlaceholder: 'Введите ответ',
@@ -1949,13 +2401,27 @@ export default {
       expand: 'Развернуть'
     },
     toolApproval: {
+      title: 'Подтверждение',
+      toolDescription: 'Описание инструмента',
+      delegatedTask: 'Делегированная задача',
       waiting: 'Ожидание проверки · {target}',
       waitingStatus: 'Ожидание проверки',
       targetWithTool: '{service} › {tool}',
       dockQuestion: 'Разрешить вызов {target}?',
+      operationQuestion: 'Разрешить: {action} «{target}»?',
+      operationQuestionNoTarget: 'Разрешить: {action}?',
+      operationTarget: '{action}: «{target}»',
+      reviewTitle: 'Проверка · {target}',
+      characterCount: '{count} симв.',
       titleWithTarget: 'Проверка · {service} › {tool}',
       argsLabel: 'Аргументы',
       argsModified: 'Изменено',
+      allowInSession: 'Разрешать такие действия до конца беседы',
+      grantLapsed: {
+        changed: 'Прежнее разрешение больше не действует: изменились настройки агента автоматизации, ваша роль или предел доступа.',
+        expired: 'Срок прежнего разрешения истёк.',
+        idle: 'Прежнее разрешение истекло: им долго не пользовались.',
+      },
       countdownShort: '{seconds} с',
       approve: 'Подтвердить и выполнить',
       reject: 'Отклонить',
@@ -1964,6 +2430,7 @@ export default {
       parked: 'Ожидает в фоне — можно ответить позже',
       parkedUntil: 'Ожидает в фоне — ответьте до {time}',
       abandonedTag: 'Отменено',
+      canceledTag: 'Отменено',
       invalidJson: 'Некорректный JSON',
       submitted: 'Отправлено',
       submitFailed: 'Ошибка отправки',
@@ -1993,7 +2460,19 @@ export default {
         mcpServices: 'Сервисы MCP',
         skills: 'Навыки',
         webSearch: 'Веб-поиск',
-        multiTurn: 'Многоходовой диалог'
+        multiTurn: 'Многоходовой диалог',
+        transport: 'Транспорт',
+        authentication: 'Аутентификация',
+        usageInstructions: 'Инструкции по использованию',
+        displayName: 'Отображаемое имя',
+        enabled: 'Включено',
+        sandbox: 'Песочница',
+        sandboxes: 'Песочницы',
+        systemPrompt: 'Системный промпт',
+        content: 'Содержимое',
+        kbScope: 'Охват баз знаний',
+        mcpScope: 'Охват MCP',
+        skillsScope: 'Охват навыков'
       },
       value: {
         document: 'Документ',
@@ -2139,9 +2618,40 @@ export default {
     welcomeDesc: 'Я отвечаю на вопросы о WeKnora, а также проверяю и обрабатываю разбор документов, активность баз знаний и проблемы Wiki в вашем пространстве, а также создаю и настраиваю агентов. Спрашивать ли подтверждение перед изменением, зависит от уровня доступа под полем ввода.',
     startFailed: 'Не удалось запустить ассистента. Попробуйте ещё раз.',
     askAboutDocument: 'Спросить: {name}',
+    askAboutAnswer: 'Спросить {name} об этом ответе',
+    selection: {
+      label: 'Выделено',
+      lines: 'Выделено строк: {count}',
+      detach: 'Не прикладывать выделение',
+      tip: 'Выделенный текст будет отправлен с сообщением: {text}',
+      tipField: 'Выделенный текст из «{field}» будет отправлен с сообщением: {text}'
+    },
+    bubble: {
+      label: 'Действия ассистента',
+      ask: 'Спросить ассистента',
+      polish: 'Улучшить',
+      rewrite: 'Переписать',
+      translate: 'Перевести',
+      continue: 'Продолжить',
+      prompts: {
+        polish: 'Улучши выделенный текст: исправь опечатки и неудачные формулировки, не меняя смысла, и замени его на месте.',
+        rewrite: 'Перепиши выделенный текст яснее и короче и замени его на месте.',
+        translate: 'Переведи выделенный текст: китайский на английский, остальные языки на китайский, и замени его на месте.',
+        continue: 'Допиши после выделенного текста ещё один абзац, продолжающий мысль.'
+      }
+    },
+    fillNotice: {
+      title: 'Ассистент заполнил полей: {count}',
+      undo: 'Отменить',
+      dismiss: 'Закрыть'
+    },
     access: {
       title: 'Уровень доступа',
       capped: 'Не разрешено администратором пространства',
+      page: {
+        label: 'Просмотр и заполнение страницы',
+        desc: 'Читает страницу слева и может заполнять формы. Не нажимает кнопки и не сохраняет.'
+      },
       levels: {
         read_only: {
           label: 'Только чтение',
@@ -2158,10 +2668,20 @@ export default {
       }
     },
     context: {
+      detachedLabel: 'Страница не приложена',
       currentPage: 'Текущая страница',
       detach: 'Не прикладывать текущую страницу',
       attachedTip: 'Приложена текущая страница: {path}',
-      detachedTip: 'Нажмите, чтобы приложить текущую страницу: {path}'
+      detachedTip: 'Нажмите, чтобы приложить текущую страницу: {path}',
+      chatMessage: 'Этот ответ',
+      pages: {
+        knowledge_base: 'База знаний',
+        wiki: 'Wiki',
+        agent_editor: 'Редактор агента',
+        settings_models: 'Модели',
+        mcp_services: 'MCP-сервисы',
+        chat: 'Чат'
+      }
     },
     starters: {
       agentConfig: 'Проверь настройки этого агента',
@@ -2175,7 +2695,15 @@ export default {
       recentActivity: 'Что недавно менялось в этой базе знаний?',
       formats: 'Какие форматы документов поддерживает WeKnora?',
       createWiki: 'Как создать базу знаний Wiki?',
-      agents: 'Какие у меня есть агенты и какие модели они используют?'
+      agents: 'Какие у меня есть агенты и какие модели они используют?',
+      messageSources: 'На чём основан этот ответ?',
+      messageCheck: 'Есть ли в этом ответе ошибки?',
+      modelCheck: 'Проверь настройки этой модели',
+      modelUsage: 'Какие агенты и базы знаний используют эти модели?',
+      mcpTools: 'Какие инструменты даёт этот MCP-сервис?',
+      mcpCheck: 'Почему он не подключается?',
+      modelSetup: 'Какие модели мне ещё нужно настроить?',
+      mcpSetup: 'Как подключить MCP-сервис?'
     }
   },
   assistantSettings: {
@@ -2272,6 +2800,11 @@ export default {
     videoNotSupported: 'Ваш браузер не поддерживает воспроизведение видео'
   },
   organization: {
+    cardStats: {
+      members: 'Участники: {count}',
+      knowledgeBases: 'Базы знаний: {count}',
+      agents: 'Агенты: {count}',
+    },
     title: 'Shared Spaces',
     subtitle: 'Create or join shared spaces so multiple workspaces can collaborate and share knowledge bases and agents',
     createOrg: 'Создать общее пространство',
@@ -2872,6 +3405,7 @@ export default {
       deleted: 'Модель удалена',
       deleteFailed: 'Не удалось удалить модель',
       builtinCannotEdit: 'Встроенные модели нельзя редактировать',
+      linkedModelMissing: 'Модель, на которую сослался ассистент, не найдена; возможно, она удалена',
       builtinCannotDelete: 'Встроенные модели нельзя удалить',
       builtinCannotCopy: 'Встроенные модели нельзя копировать',
       copied: 'Модель скопирована',
@@ -2941,6 +3475,7 @@ export default {
       enabled: 'Сервис MCP включён',
       disabled: 'Сервис MCP выключен',
       updateStateFailed: 'Не удалось обновить статус сервиса MCP',
+      linkedServiceMissing: 'MCP-сервис, на который сослался ассистент, не найден; возможно, он удалён',
       testing: 'Тестируем {name}...',
       noResponse: 'Тест не удался: нет ответа от сервера',
       testFailed: 'Не удалось протестировать сервис MCP',
@@ -4362,6 +4897,14 @@ export default {
         imageVectorModelUnsupported: 'Текущая модель эмбеддингов не заявляет поддержку изображений, поэтому векторы изображений не будут ни созданы, ни найдены',
         imageAttrsSchemaLabel: 'Наблюдаемые атрибуты изображений',
         imageAttrsSchemaDescription: 'Модель наблюдает перечисленные ниже атрибуты (определены реестром бэкенда), чтобы управлять политикой OCR',
+        imagePipelineSectionLabel: 'Схема разбора изображений',
+        imagePipelineSectionDescription:
+          'Когда включён мультимодальный разбор, можно выбрать способ разбора изображений.',
+        imagePipelineLabel: 'Способ разбора',
+        imagePipelinePlaceholder: 'Выберите способ разбора',
+        imagePipelineLoading: 'Загрузка пайплайнов…',
+        imagePipelineLoadError: 'Не удалось загрузить пайплайны',
+          imagePipelineValidateError: 'Текущие настройки не удалось проверить; бэкенд проверит их при сохранении.',
         imageAttrsOcrConditions: 'Запуск OCR по наблюдаемым условиям атрибутов',
         imageAttrsOcrConditionsDesc: 'Когда наблюдаемые атрибуты соответствуют условиям ниже, для изображения выполняется OCR',
         imageAttrsOcrOnUnobserved: 'Запускать OCR при сбое наблюдения атрибутов изображения',
@@ -5429,6 +5972,21 @@ export default {
     }
   },
   manualEditor: {
+    assistant: {
+      button: 'Ассистент',
+      tooltip: 'Попросить ассистента помочь с текстом',
+      continue: 'Продолжить текст',
+      outline: 'Составить план',
+      polish: 'Улучшить текст',
+      summarize: 'Кратко изложить',
+      open: 'Открыть ассистента',
+      prompts: {
+        continue: 'Продолжи текст с конца ещё одним абзацем, связанным с предыдущим.',
+        outline: 'Составь по заголовку и текущему тексту чёткий план документа и вставь его в начало текста.',
+        polish: 'Улучши текст: исправь опечатки и неудачные предложения, не меняя смысла, по разделам.',
+        summarize: 'Кратко изложи основные мысли документа в чате. Текст не меняй.'
+      }
+    },
     defaultTitlePrefix: 'Новый документ',
     noDocumentKnowledgeBases: 'Нет доступных баз знаний типа "документ". Пожалуйста, создайте одну сначала',
     actions: {
@@ -6428,6 +6986,23 @@ export default {
       skillRolloutNextTurn: 'Пересоздать песочницу открытых сессий на следующем ходе диалога',
       skillRolloutNewSession: 'Оставить открытые сессии на текущей песочнице; новый образ только у новых сессий',
       skillRolloutSaveFailed: 'Не удалось сохранить способ применения',
+      allocationMode: 'Sandbox allocation',
+      allocationModeHint: 'Only affects sessions that have not used a sandbox yet; existing sessions keep their placement and files are never moved.',
+      allocationModeSession: 'One sandbox per session (default)',
+      allocationModeUser: "Share one sandbox across a user's sessions",
+      allocationModeUnavailable: 'Shared sandboxes are not enabled on this deployment (set WEKNORA_SANDBOX_USER_ALLOCATION=enabled on every replica; Redis is required).',
+      userSandboxRetentionDays: 'Keep an empty shared sandbox for (days)',
+      userSandboxRetentionHint: 'After every session on a shared sandbox is deleted, it is removed once it has been empty this long (1–90 days). This is not a minimum file retention: Docker idle cleanup or provider failures may remove it sooner.',
+      userSandboxesInInventory: "{count} of them are shared user sandboxes; each affects all of that user's sessions on this config.",
+      userSandboxesTitle: 'Shared user sandboxes',
+      userSandboxOwner: 'Owner',
+      userSandboxOwnerOtherWorkspace: 'A user from another workspace',
+      userSandboxLiveSessions: 'Sessions',
+      userSandboxEmptySince: 'Empty since',
+      userSandboxReclaimAfter: 'Reclaimed after',
+      userSandboxRelease: 'Release',
+      userSandboxReleaseConfirm: "Releasing deletes the files and installed packages of all of this user's sessions on this config; a new sandbox is created on next use. Release it?",
+      userSandboxBusy: 'A terminal, desktop or command is still running on this sandbox. Try again later.',
       skillInstallGroup: 'Установить навык',
       skillInstalledGroup: 'Установленные',
       skillUploadClick: 'Нажмите, чтобы загрузить zip',
@@ -6912,6 +7487,8 @@ export default {
     toolFallback: 'Инструмент',
     stepsCompleted: 'Выполнено <strong>{steps}</strong> шаг(ов)',
     reasoningRounds: '<strong>{rounds}</strong> раунд(ов) рассуждений',
+    earlierSteps: 'Предыдущие шаги: {count}',
+    viewReasoning: 'Показать рассуждения',
     toolCalls: '<strong>{tools}</strong> вызов(ов) инструментов',
     durationSuffix: '<strong>{duration}</strong>',
     stepSummarySeparator: ' · ',
@@ -7389,6 +7966,8 @@ export default {
       folderCardCount: 'Документов: {count}',
       searchingSubtree: '(с вложенными папками)',
       emptyFolder: 'В этой папке пока нет документов',
+      emptyFolderWithSubfolders: 'В этой папке нет собственных документов, но в подпапках есть {count}',
+      folderContentsCount: 'Документов: {documents} / {folders} папка | Документов: {documents} / {folders} папки | Документов: {documents} / {folders} папок',
       emptySearch: 'Подходящих документов нет',
       collapse: 'Свернуть папки',
       expand: 'Развернуть папки',
@@ -7613,6 +8192,7 @@ export default {
     selectLoaded: 'Выбрать загруженные',
     confirmBatchDeleteDocument: 'Удалить {count} выбранных документов? Это действие нельзя отменить.',
     deleteSubmitted: 'Запрос на удаление отправлен. Ожидание завершения.',
+    assistantDeleted: 'Ассистент удалил эту базу знаний.',
     deletePending: 'Удаление ещё не завершено. Обновите страницу позже, чтобы проверить результат.',
     deleteTaskFailed: 'Не удалось удалить документы. Проверьте сведения об ошибке и повторите попытку.',
     deleteStatusUnavailable: 'Не удалось подтвердить результат удаления. Обновите страницу позже, чтобы проверить состояние документов.',
@@ -7979,6 +8559,17 @@ export default {
     }
   },
   chatHeader: {
+    grants: {
+      menu: 'Разрешённые действия',
+      description: 'Действия, разрешённые в этом диалоге без повторного запроса. После отзыва запрос появится снова.',
+      empty: 'Разрешённых действий пока нет',
+      revoke: 'Отозвать',
+      revoked: 'Отозвано',
+      revokeFailed: 'Не удалось отозвать',
+      loadFailed: 'Не удалось загрузить',
+    },
+    automationTask: 'Автоматизация',
+    automationOpen: 'Открыть автоматизацию «{name}»',
     moreActions: 'Другие действия с диалогом',
     toggleSandboxPanel: 'Терминал песочницы',
     copySessionId: 'Копировать ID сессии',
@@ -8060,6 +8651,7 @@ export default {
     sessionUnread: 'Новый ответ',
     knowledgeBase: 'База знаний',
     agents: 'Агенты',
+    automations: 'Автоматизации',
     artifacts: 'Артефакты',
     organizations: 'Общие пространства',
     newChat: 'Новый диалог',
@@ -8106,6 +8698,56 @@ export default {
         'true': { label: 'Да', description: 'да —— график, диаграмма или схема' },
         'false': { label: 'Нет', description: 'нет —— фото, рисунок, значок или декор' }
       }
+    }
+  },
+  // Текст панели пайплайнов: индексируется по id пайплайна и ключу поля
+  // (оба даёт реестр бэкенда, здесь только перевод). Всё, что здесь не
+  // указано, откатывается к формулировке бэкенда, поэтому новый пайплайн
+  // не покажется голым именем ключа.
+  imagePipeline: {
+    errors: {
+      noActionEnabled: 'Включите хотя бы одно действие разбора, иначе ничего не будет обработано.',
+    },
+    default: {
+      name: 'Ручной',
+      description: 'Пользователь сам включает или выключает действия разбора под задачу.',
+      enable_caption: {
+        label: 'Описание изображения',
+        description: 'Генерирует однострочное описание каждого изображения и сохраняет его как подпись.'
+      },
+      enable_ocr: {
+        label: 'Распознавание текста',
+        description: 'Извлекает текст, присутствующий на изображении.'
+      },
+      caption: {
+        thinking: {
+          label: 'С размышлением при описании',
+          description: 'Дать модели поразмышлять перед тем, как писать описание. Как правило, в этом нет необходимости: включение размышлений замедляет обработку и слишком длинные размышления могут вытеснить основной текст, из-за чего задача завершится неудачей. Включайте только если вы уверены, что это необходимо.',
+        },
+      },
+      ocr: {
+        thinking: {
+          label: 'С размышлением при распознавании',
+          description: 'Дать модели поразмышлять перед расшифровкой текста. Как правило, в этом нет необходимости: включение размышлений замедляет обработку и слишком длинные размышления могут вытеснить основной текст, из-за чего задача завершится неудачей. Включайте только если вы уверены, что это необходимо.',
+        },
+      }
+    },
+    smartocr: {
+      name: 'Умный',
+      caption: {
+        thinking: {
+          label: 'С размышлением при описании',
+          description: 'Дать модели поразмышлять перед описанием изображения и отчётом о его признаках. Как правило, в этом нет необходимости: включение размышлений замедляет обработку и слишком длинные размышления могут вытеснить основной текст, из-за чего задача завершится неудачей. Включайте только если вы уверены, что это необходимо.',
+        },
+      },
+      ocr: {
+        thinking: {
+          label: 'С размышлением при распознавании текста',
+          description: 'Дать модели поразмышлять перед расшифровкой текста. Как правило, в этом нет необходимости: включение размышлений замедляет обработку и слишком длинные размышления могут вытеснить основной текст, из-за чего задача завершится неудачей. Включайте только если вы уверены, что это необходимо.',
+        },
+      },
+      description:
+        'Сначала наблюдаются признаки изображения и создаётся его описание, затем по этим признакам решается, вызывать ли OCR. Экономит вызовы модели и ускоряет разбор.'
     }
   }
 }

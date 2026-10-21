@@ -124,6 +124,221 @@ export default {
     "historyModels": "修改了 {count} 个模型",
     "historyNoOverrides": "无管理员修改",
   },
+  automation: {
+    conversationNotice: "此会话由自动化任务运行，不能手动发送消息。请在上方处理待审批事项。",
+    title: '自动化',
+    description: '让 WeKnora 助手按计划以你的身份执行任务，结果和待审批事项会通知你。',
+    add: '新建自动化',
+    addHint: '也可以直接让 WeKnora 助手帮你创建',
+    paused: '已暂停',
+    scheduleEnded: '已结束',
+    scheduleEndedHint: '一次性计划已结束。可立即运行，或修改运行时间后恢复。',
+    nextRunAt: '下次 {time}',
+    runConfirm: '立即运行「{name}」？这将启动一次额外运行，不影响原有计划。',
+    deleteBody: '将停止进行中的运行，并删除「{name}」的运行记录、对话和长期授权。此操作无法撤销。',
+    fields: {
+      name: '名称',
+      instruction: '任务',
+      schedule: '运行时间',
+      timezone: '时区',
+      accessLevel: '执行权限',
+      sessionMode: '对话形式',
+      carryLastResult: '把上次成功的结果带入本次对话',
+      overlapPolicy: '上次仍在运行时',
+      misfirePolicy: '错过的运行',
+      approvalTimeout: '审批等待期限',
+      maxDuration: '单次运行时长上限',
+      notifyOnSuccess: '成功时也通知',
+      nextRun: '下次运行',
+      enabled: '启用',
+    },
+    editor: {
+      model: "运行模型",
+      modelHelp: '默认沿用助手的模型设置，也可以单独指定。委派的智能体使用各自的模型。修改后用于后续运行。',
+      modelDefault: '跟随助手默认模型',
+      createTitle: '新建自动化',
+      editTitle: '编辑自动化',
+      namePlaceholder: '例如：每日知识库周报',
+      instructionPlaceholder: '写清楚要做什么、用哪些资料、结果如何输出',
+      variablesHint: '可用变量：',
+      unattendedHint: '运行时无人在场，助手不能向你提问；需要审批的操作会暂停并通知你。',
+      nameDesc: '在列表和通知里显示，方便你认出这项任务',
+      frequency: '重复频率',
+      weekdays: '星期',
+      dayOfMonthDesc: '当月没有这一天时，在最后一天运行',
+      runAt: '运行时间',
+      cron: 'Cron 表达式',
+      timeOfDay: '时间',
+      timezoneDesc: '按这个时区的钟点运行，夏令时会自动换算',
+      previewEmpty: '设置好时间后，这里会显示接下来几次的运行时间',
+      carryDesc: '新对话开头附上上次成功运行的结果，适合做增量汇总',
+      misfireDesc: '服务停机期间错过的运行，恢复后如何处理',
+      maxDurationDesc: '超过这个时长仍未完成，本次运行会被终止',
+      navGroups: {
+        task: '任务',
+        run: '运行',
+      },
+      sections: {
+        basic: {
+          title: '基本信息',
+          desc: '任务由 WeKnora 助手执行。需要其他智能体时，请在任务中写明委派对象和工作。',
+        },
+        schedule: {
+          title: '运行时间',
+          desc: '设置任务什么时候运行，两次运行至少间隔 5 分钟。',
+        },
+        execution: {
+          title: '执行方式',
+          desc: '运行时可以做哪些修改、在哪个对话里进行，以及重叠和错过时的处理。',
+        },
+        notify: {
+          title: '审批与通知',
+          desc: '运行结果和待审批的操作会出现在右上角的通知里。',
+        },
+      },
+      sessionModeDesc: {
+        per_run: '每次运行开一个新对话，互不影响',
+        persistent: '所有运行都在同一个对话里，助手能看到之前的内容',
+      },
+      errors: {
+        name: '请填写名称',
+        instruction: '请填写要执行的任务',
+        schedule: '请设置有效的运行时间',
+      },
+      approvalTimeoutHelp: '超过期限仍未审批，本次运行记为失败',
+      notifyHint: '失败、等待审批和自动暂停总会通知你',
+      access: {
+        read_only: '只查看，不做任何修改。',
+        confirm: '每次修改前暂停并通知你审批；可在详情里把常用操作设为长期授权。',
+        auto_write: '可恢复的修改直接执行；删除等操作仍暂停等待审批。',
+      },
+    },
+    schedule: {
+      kinds: {
+        daily: '每天',
+        weekdays: '工作日',
+        weekly: '每周',
+        monthly: '每月',
+        hourly: '每小时',
+        once: '仅一次',
+        custom: '自定义 cron',
+      },
+      atMinute: '每小时的第几分钟',
+      dayOfMonth: '每月几号',
+      pickTime: '选择时间',
+      customHint: '五段式：分 时 日 月 周，例如 0 9 * * 1-5 表示工作日 9:00。最短间隔 5 分钟。',
+      nextRuns: '接下来：',
+      invalid: '触发时间不合法',
+      describe: {
+        hourly: '每小时第 {minute} 分',
+        daily: '每天 {time}',
+        weekdays: '工作日 {time}',
+        weekly: '每周 {days} {time}',
+        monthly: '每月 {day} 日 {time}',
+        once: '仅在 {at}',
+        custom: 'cron：{expr}',
+        everyMinutes: '每 {n} 分钟',
+        everyHours: '每 {n} 小时',
+      },
+    },
+    sessionMode: {
+      per_run: '每次新对话',
+      persistent: '始终同一对话',
+    },
+    overlap: {
+      skip: '跳过本次',
+      queue: '排队，等上次结束后运行',
+    },
+    misfire: {
+      skip: '跳过',
+      run_once: '恢复后补跑一次',
+    },
+    units: {
+      hours: '小时',
+      minutes: '分钟',
+    },
+    status: {
+      queued: '排队中',
+      running: '运行中',
+      awaiting_approval: '等待审批',
+      succeeded: '成功',
+      failed: '失败',
+      cancelled: '已停止',
+      skipped: '已跳过',
+      needs_attention: '需要检查',
+      paused: '已暂停',
+    },
+    runTrigger: {
+      schedule: '按计划',
+      manual: '手动',
+      misfire: '补跑',
+    },
+    actions: {
+      runNow: '立即运行',
+      pause: '暂停',
+      resume: '恢复',
+      review: '去审批',
+      openConversation: '查看对话',
+      stop: '停止',
+    },
+    detail: {
+      pausedBecause: '已暂停：{reason}',
+      runs: '运行记录',
+      noRuns: '还没有运行过',
+      stopping: '正在停止',
+      grants: '长期授权',
+      task: '任务内容',
+      durationSeconds: '{n} 秒',
+      durationMinutes: '{n} 分钟',
+    },
+    grants: {
+      intro: '这里的操作在以后的运行中无需再次审批。只针对具体资源；更换智能体或你的空间角色变化后自动失效。需要每次审批的工具不会出现在这里。',
+      active: '已授权',
+      none: '暂无长期授权',
+      lapsed: '配置已变化，此授权暂不生效',
+      revoke: '撤销',
+      candidates: '运行中请求过审批的操作',
+      noCandidates: '还没有可设为长期授权的操作',
+      allow: '以后都允许',
+      allowTitle: '设为长期授权',
+      allowBody: '以后的运行执行「{label}」时将不再暂停等待审批。',
+      allowDestructiveBody: '「{label}」会删除或覆盖数据，且无法撤销。确认后，以后的运行将直接执行它，不再询问。',
+    },
+    risk: {
+      write: '修改',
+      destructive: '删除/覆盖',
+    },
+    messages: {
+      queued: '已开始运行',
+      notFound: '自动化不存在或已删除',
+    },
+  },
+  notifications: {
+    pending: "待处理",
+    history: "通知记录",
+    clearRead: "清理已读",
+    clearReadConfirm: "清理已读通知？不会删除运行记录、对话或待处理事项。",
+    handle: "去处理",
+    review: "去审批",
+    unreadCount: "{count} 条未读",
+    unread: "未读",
+    newItems: "有新通知，点击刷新",
+    loadError: "通知加载失败",
+    awaitingApproval: "等待你确认操作",
+    awaitingAuthorization: "等待你完成授权",
+    awaitingReply: "等待你回复",
+
+    title: '通知',
+    markAllRead: '全部已读',
+    pendingInvitations: '{count} 个待处理邀请',
+    empty: '暂无通知',
+    kinds: {
+      automation_succeeded: '自动化已完成',
+      automation_failed: '自动化失败',
+      automation_awaiting_approval: '自动化等待审批',
+      automation_paused: '自动化已暂停',
+    },
+  },
   toolbox: {
     "title": "工具箱",
     "description": "管理智能体可用的技能、外部工具和浏览器连接。",
@@ -972,6 +1187,13 @@ export default {
     pauseFailed: '暂停失败',
     logs: '日志',
     syncModeLabel: '同步模式',
+    parseModeLabel: '解析模式',
+    parseMode: {
+      inherit: '使用服务器配置',
+      blocks: '块级解析（默认）',
+      export: '导出解析（docx）',
+    },
+    parseModeHint: '飞书云文档的解析方式。块级解析更快并保留文档内附件；导出解析将文档导出为 docx 后解析，图片与文档的关联更完整。',
     createTitle: '添加数据源',
     editTitle: '编辑数据源',
     nameLabel: '名称',
@@ -1372,6 +1594,8 @@ export default {
       authWaitTimeout: '授权等待超时（秒）',
       authWaitTimeoutDesc: '对话中触发 OAuth 授权时，等待你完成授权的最长秒数，超时后自动跳过授权提示（仅对使用 OAuth 的 MCP 服务生效）。',
       authWaitTimeoutPlaceholder: '默认 600 秒',
+      accessLevel: '执行权限上限',
+      accessLevelDesc: '修改数据的工具（MCP 工具、Wiki 写入）能否直接执行：只读时不提供这类工具，修改前确认时每次先征求你同意。被标记为需要审批的 MCP 工具始终需要确认。',
       unavailableService: '不可用服务'
     },
     agentType: {
@@ -1581,7 +1805,7 @@ export default {
       model: '选择智能体使用的大语言模型',
       temperature: '控制输出的随机性，0 最确定，1 最随机',
       maxTokens: '模型生成回复的最大 Token 数。选「默认」时为 2048；选「自定义」后按你填的数保存。',
-      maxTokensAgent: '每一轮推理的最大生成 Token（含工具调用 JSON）。选「默认」时，未绑沙箱为 4096，绑了沙箱（可写/改文件）为 24576。选「自定义」后按你填的数保存，不再自动改。',
+      maxTokensAgent: '每一轮推理的最大生成 Token（含工具调用 JSON）。默认 24576。选「自定义」后按你填的数保存。',
       thinking: '启用模型的扩展思考能力（需要模型支持）',
       conversationSection: '配置多轮对话开关与问题改写开关（改写提示词见「提示词」）',
       conversationSectionAgent: '智能推理始终为多轮模式：按模型上下文窗口保留历史对话，超出时自动把较早的内容压缩成摘要。',
@@ -1800,6 +2024,11 @@ export default {
       loadFailed: '加载失败',
       noKbForWiki: '无法识别关联的知识库，无法打开 Wiki'
     },
+    entityLink: {
+      kb: '知识库',
+      doc: '文档',
+      chunk: '片段'
+    },
     tools: {
       searchKnowledge: '知识库检索',
       grepChunks: '搜索关键词',
@@ -1833,8 +2062,65 @@ export default {
       databaseQuery: '数据库查询',
       findOperations: '查找操作',
       runOperation: '执行操作',
+      spawn_agent: '启动智能体',
+      list_agents: '查看智能体',
+      send_message: '发送消息',
+      followup_task: '继续任务',
+      interrupt_agent: '中断智能体',
+      wait_agent: '等待智能体',
+      openPage: '打开页面',
+      viewPage: '查看页面',
       searchWeKnoraDocs: '搜索产品文档',
-      readWeKnoraDoc: '阅读产品文档'
+      readWeKnoraDoc: '阅读产品文档',
+      readPage: '查看当前页面',
+      selectTab: '切换标签',
+      fillPage: '填写页面'
+    },
+    collaboration: {
+      tabs: '任务标签页',
+      updates: '{count} 条进展',
+      mainConversation: '主对话',
+      recentProgress: '最近进展',
+      waitFailed: '等待子任务更新失败',
+      assignment: '任务说明',
+      "title": "子任务",
+      "unnamed": "未命名任务",
+      "waiting": "等待子任务更新…",
+      "status": {
+        "queued": "排队中",
+        "running": "进行中",
+        "waiting": "等待你处理",
+        "succeeded": "已完成",
+        "failed": "失败",
+        "interrupted": "已中断",
+        "cancelled": "已取消",
+        "needs_attention": "需要处理",
+        "cancelling": "正在取消",
+        "unknown": "状态未知"
+      },
+      "phase": {
+        "tool_running": "正在使用工具",
+        "tool_succeeded": "工具已完成",
+        "tool_failed": "工具失败"
+      }
+    },
+    pageAccess: {
+      viewed: '已查看当前页面：{location}'
+    },
+    pageEdit: {
+      title: '已填写 {count} 处',
+      undo: '撤销',
+      undone: '已撤销这次填写',
+      undoSkipped: '{count} 处已被你改过或不在页面上，未撤销',
+      unsaved: '尚未保存，请检查后在页面上自行保存'
+    },
+    openPage: {
+      open: '打开',
+      openForm: '打开并填写',
+      opened: '助手已打开',
+      back: '返回',
+      endpoint: '将连接到：',
+      draftHint: '已按助手的建议预填。请补全密钥等凭据，检查后自己保存。'
     },
     skillFiles: {
       heading: '技能文件',
@@ -1877,6 +2163,170 @@ export default {
       binarySuppressed: '二进制输出已省略，请将文件写入产物目录后下载'
     },
     operations: {
+      names: {
+        data_source: {
+          list: "获取数据源列表",
+          get: "获取数据源详情",
+          test: "测试数据源连接",
+          sync: "同步数据源",
+          pause: "暂停数据源同步",
+          resume: "恢复数据源同步",
+          list_sync_logs: "获取数据源同步记录",
+          get_sync_log: "获取数据源同步进度",
+          list_resources: "查询数据源可同步资源",
+          update_sync: "修改数据源同步配置",
+        },
+        agent: {
+          list: "获取智能体列表",
+          create: "创建智能体",
+          get: "获取智能体详情",
+          delete: "删除智能体",
+          update: "更新智能体",
+          copy: "复制智能体",
+        },
+        chunk: {
+          get: "获取分块详情",
+          update: "更新分块",
+          list_revisions: "获取分块历史版本",
+          revert: "恢复分块历史版本",
+          list: "获取知识分块列表",
+        },
+        knowledge_base: {
+          list_parser_engines: "获取可用解析引擎",
+          copy: "复制知识库内容",
+          duplicate: "复制知识库设置",
+          get_copy_progress: "获取知识库复制进度",
+          list: "获取知识库列表",
+          create: "创建知识库",
+          get: "获取知识库详情",
+          delete: "删除知识库",
+          update: "更新知识库",
+          list_activity: "获取知识库活动记录",
+          search: "搜索知识库",
+          list_move_targets: "获取可移动的目标知识库",
+          generate_profile: "生成知识库描述",
+          list_tags: "获取知识库标签列表",
+          create_tag: "创建知识库标签",
+          update_tag: "更新知识库标签",
+          delete_tag: "删除知识库标签",
+          list_shared: "获取共享知识库列表",
+        },
+        faq: {
+          batch_update: "批量修改 FAQ 状态和标签",
+          list_entries: "获取 FAQ 条目列表",
+          delete_entries: "批量删除 FAQ 条目",
+          get_entry: "获取 FAQ 条目详情",
+          update_entry: "更新 FAQ 条目",
+          add_similar_questions: "添加相似问",
+          create_entry: "创建 FAQ 条目",
+        },
+        knowledge: {
+          list: "获取知识列表",
+          list_folders: "获取知识文件夹列表",
+          rename_folder: "重命名或移动文件夹",
+          create_manual: "手动创建知识",
+          create_from_url: "从链接创建知识",
+          batch_delete: "批量删除知识",
+          batch_reparse: "批量重新解析知识",
+          move_to_folder: "移动知识到文件夹",
+          update_manual: "更新手动创建的知识",
+          move: "移动知识到其他知识库",
+          get_move_progress: "获取知识移动进度",
+          set_tags: "设置知识标签",
+          get: "获取知识详情",
+          update: "更新知识",
+          delete: "删除知识",
+          cancel_parse: "取消知识解析",
+          reparse: "重新解析知识",
+          get_parse_progress: "获取知识解析进度",
+        },
+        wiki: {
+          list_folders: "获取 Wiki 文件夹列表",
+          create_folder: "创建 Wiki 文件夹",
+          list_issues: "获取 Wiki 页面问题列表",
+          lint: "检查 Wiki 页面",
+          move_page: "移动 Wiki 页面",
+          get_page: "获取 Wiki 页面",
+          rebuild_links: "重建 Wiki 链接",
+          revert: "还原 Wiki 页面版本",
+          list_revisions: "获取 Wiki 页面版本列表",
+          get_stats: "获取 Wiki 统计信息",
+        },
+        system_admin: {
+          list_admins: "查询系统管理员",
+          list_users: "查询平台用户",
+          list_settings: "查询系统设置",
+          get_queues: "查询任务队列运行状态",
+          list_tasks: "查询队列任务",
+        },
+        workspace: {
+          get: "查询当前空间信息",
+          update: "修改当前空间基本信息",
+          list_members: "查询当前空间成员",
+        },
+        system: {
+          get_info: "查询版本与系统信息",
+        },
+        web_search_provider: {
+          list: "获取网络搜索服务列表",
+          get: "获取网络搜索服务详情",
+          list_types: "获取网络搜索服务类型",
+          test: "测试网络搜索连接",
+          update: "修改网络搜索服务",
+          delete: "删除网络搜索服务",
+        },
+        mcp_service: {
+          list: "获取 MCP 服务列表",
+          create: "创建 MCP 服务",
+          get: "获取 MCP 服务详情",
+          update: "更新 MCP 服务",
+          delete: "删除 MCP 服务",
+          test: "测试 MCP 服务连接",
+          list_tools: "实时查询 MCP 工具",
+          get_metadata: "查看已同步 MCP 工具",
+          refresh_metadata: "同步 MCP 工具目录",
+        },
+        message: {
+          chat_history_stats: "获取聊天历史统计",
+          search: "搜索历史对话",
+          list: "获取消息历史",
+        },
+        model: {
+          list: "获取模型列表",
+          list_providers: "获取模型厂商列表",
+          get_provider: "获取模型厂商详情",
+          get: "获取模型详情",
+          delete: "删除模型",
+          update: "更新模型显示信息",
+          copy: "复制模型配置",
+        },
+        skill: {
+          list_installed: "获取已安装技能列表",
+          install: "安装技能",
+          get_installed: "获取已安装技能详情",
+          uninstall: "卸载技能",
+          set_enabled: "设置技能启用状态",
+          list: "获取可执行技能列表",
+          list_catalog: "获取工作空间技能列表",
+          get_catalog: "获取工作空间技能详情",
+          install_catalog: "将目录技能安装到沙箱",
+        },
+        automation: {
+          list: "获取自动化列表",
+          create: "创建自动化",
+          validate_trigger: "校验运行时间",
+          get: "获取自动化详情",
+          update: "更新自动化",
+          delete: "删除自动化",
+          pause: "暂停自动化",
+          resume: "恢复自动化",
+          run_now: "立即运行自动化",
+          list_runs: "获取自动化运行记录",
+        },
+        session: {
+          list: "获取会话列表",
+        },
+      },
       found: '{count} 个可执行操作',
       unavailableCount: '{count} 个当前不可用',
       empty: '没有匹配的操作',
@@ -1887,6 +2337,7 @@ export default {
       range: '范围 {min}–{max}',
       risk: {
         read: '只读',
+        probe: '检测',
         write: '写入',
         destructive: '不可恢复'
       },
@@ -1925,6 +2376,7 @@ export default {
       skipFailed: '跳过失败，请重试'
     },
     askUser: {
+      answerLabel: '你的回答',
       title: '向你提问',
       selectPlaceholder: '请选择',
       textPlaceholder: '输入你的回答',
@@ -1951,13 +2403,27 @@ export default {
       expand: '展开'
     },
     toolApproval: {
+      title: '人工审核',
+      toolDescription: '工具说明',
+      delegatedTask: '子任务',
       waiting: '等待审核 · {target}',
       waitingStatus: '等待审核',
       targetWithTool: '{service} › {tool}',
       dockQuestion: '允许调用 {target}？',
+      operationQuestion: '允许{action}「{target}」？',
+      operationQuestionNoTarget: '允许{action}？',
+      operationTarget: '{action}「{target}」',
+      reviewTitle: '人工审核 · {target}',
+      characterCount: '{count} 字',
       titleWithTarget: '人工审核 · {service} › {tool}',
       argsLabel: '调用参数',
       argsModified: '已修改',
+      allowInSession: '本会话内同类操作都允许',
+      grantLapsed: {
+        changed: '之前的允许已失效：自动化的 Agent 配置、成员角色或权限上限已变化。',
+        expired: '之前的允许已过期。',
+        idle: '之前的允许因长期未使用已失效。',
+      },
       countdownShort: '{seconds}s',
       approve: '通过并执行',
       reject: '拒绝',
@@ -1966,6 +2432,7 @@ export default {
       parked: '已转入后台等待，可稍后处理',
       parkedUntil: '已转入后台等待，{time} 前可处理',
       abandonedTag: '已放弃',
+      canceledTag: '已取消',
       invalidJson: '参数不是合法 JSON',
       submitted: '已提交',
       submitFailed: '提交失败',
@@ -1995,7 +2462,19 @@ export default {
         mcpServices: 'MCP 服务',
         skills: '技能',
         webSearch: '联网搜索',
-        multiTurn: '多轮对话'
+        multiTurn: '多轮对话',
+        transport: '传输方式',
+        authentication: '认证方式',
+        usageInstructions: '使用说明',
+        displayName: '显示名称',
+        enabled: '启用',
+        sandbox: '沙箱',
+        sandboxes: '沙箱',
+        systemPrompt: '系统提示词',
+        content: '内容',
+        kbScope: '知识库范围',
+        mcpScope: 'MCP 范围',
+        skillsScope: '技能范围'
       },
       value: {
         document: '文档',
@@ -2141,9 +2620,40 @@ export default {
     welcomeDesc: '我可以解答 WeKnora 的用法，也可以查看和处理你空间里的文档解析、知识库动态和 Wiki 问题，还能帮你创建和配置智能体。改动前是否先请你确认，由输入框下方的权限等级决定。',
     startFailed: '启动助手失败，请重试',
     askAboutDocument: '问 {name}',
+    askAboutAnswer: '就这条回答问 {name}',
+    selection: {
+      label: '已选中',
+      lines: '已选 {count} 行',
+      detach: '不带上选中内容',
+      tip: '发送时会带上选中的内容：{text}',
+      tipField: '发送时会带上「{field}」中选中的内容：{text}'
+    },
+    bubble: {
+      label: '助手快捷操作',
+      ask: '问助手',
+      polish: '润色',
+      rewrite: '改写',
+      translate: '翻译',
+      continue: '续写',
+      prompts: {
+        polish: '润色选中的内容：修正错别字和不通顺的地方，不改变原意，直接在原处替换。',
+        rewrite: '改写选中的内容，让表达更清晰简洁，直接在原处替换。',
+        translate: '翻译选中的内容：中文译成英文，其他语言译成中文，直接在原处替换。',
+        continue: '接着选中的内容往下续写一段，与上下文衔接，写在选中内容之后。'
+      }
+    },
+    fillNotice: {
+      title: '助手已填写 {count} 处',
+      undo: '撤销',
+      dismiss: '关闭'
+    },
     access: {
       title: '权限等级',
       capped: '空间管理员未开放这一等级',
+      page: {
+        label: '查看和填写当前页面',
+        desc: '读取左侧页面，并可代为填写表单；不会点击按钮或保存'
+      },
       levels: {
         read_only: {
           label: '只读',
@@ -2160,10 +2670,20 @@ export default {
       }
     },
     context: {
+      detachedLabel: '未附带页面',
       currentPage: '当前页面',
       detach: '不附带当前页面',
       attachedTip: '已附带当前页面：{path}',
-      detachedTip: '点击附带当前页面：{path}'
+      detachedTip: '点击附带当前页面：{path}',
+      chatMessage: '这条回答',
+      pages: {
+        knowledge_base: '知识库',
+        wiki: 'Wiki',
+        agent_editor: '智能体编辑',
+        settings_models: '模型管理',
+        mcp_services: 'MCP 服务',
+        chat: '对话'
+      }
     },
     starters: {
       agentConfig: '检查这个智能体的配置',
@@ -2177,7 +2697,15 @@ export default {
       recentActivity: '这个知识库最近有哪些变动？',
       formats: 'WeKnora 支持哪些文档格式？',
       createWiki: '怎样创建 Wiki 知识库？',
-      agents: '我有哪些智能体？分别用的什么模型？'
+      agents: '我有哪些智能体？分别用的什么模型？',
+      messageSources: '这个回答的依据是什么？',
+      messageCheck: '这个回答有没有说错？',
+      modelCheck: '检查这个模型的配置',
+      modelUsage: '哪些智能体和知识库在用这些模型？',
+      mcpTools: '这个 MCP 服务提供哪些工具？',
+      mcpCheck: '它为什么连不上？',
+      modelSetup: '我还需要配置哪些模型？',
+      mcpSetup: '怎样接入一个 MCP 服务？'
     }
   },
   assistantSettings: {
@@ -2274,6 +2802,11 @@ export default {
     videoNotSupported: '您的浏览器不支持视频播放'
   },
   organization: {
+    cardStats: {
+      members: '{count} 成员',
+      knowledgeBases: '{count} 知识库',
+      agents: '{count} 智能体',
+    },
     title: '共享空间',
     subtitle: '创建或加入共享空间，让多个空间互相协作，共享知识库与智能体',
     createOrg: '创建共享空间',
@@ -2874,6 +3407,7 @@ export default {
       deleted: '模型已删除',
       deleteFailed: '删除模型失败',
       builtinCannotEdit: '内置模型不能编辑',
+      linkedModelMissing: '没有找到助手链接的模型，它可能已被删除',
       builtinCannotDelete: '内置模型不能删除',
       builtinCannotCopy: '内置模型不能复制',
       copied: '模型已复制',
@@ -2943,6 +3477,7 @@ export default {
       enabled: '已启用 MCP 服务',
       disabled: '已禁用 MCP 服务',
       updateStateFailed: '更新 MCP 服务状态失败',
+      linkedServiceMissing: '没有找到助手链接的 MCP 服务，它可能已被删除',
       testing: '正在测试 {name}...',
       noResponse: '测试失败：未收到服务器响应',
       testFailed: '测试 MCP 服务失败',
@@ -4364,6 +4899,13 @@ export default {
         imageVectorModelUnsupported: '当前向量模型未声明图片输入，开启后不会生成或召回图片向量',
         imageAttrsSchemaLabel: '可观察的图片属性',
         imageAttrsSchemaDescription: '模型会观察以下属性（由后端注册表定义）以驱动 OCR 策略',
+        imagePipelineSectionLabel: '图片解析方案',
+        imagePipelineSectionDescription: '多模态解析开启后，可以根据需要选择图片的解析方案',
+        imagePipelineLabel: '选择解析方案',
+        imagePipelinePlaceholder: '请选择解析方案',
+        imagePipelineLoading: '正在读取流水线…',
+        imagePipelineLoadError: '读取流水线失败',
+          imagePipelineValidateError: '无法校验当前设置，保存时后端会再次检查。',
         imageAttrsOcrConditions: '根据观察到的属性条件触发 OCR',
         imageAttrsOcrConditionsDesc: '当观察到的属性满足以下条件时，对图片进行 OCR',
         imageAttrsOcrOnUnobserved: '图片属性观察失败时仍执行 OCR',
@@ -5431,6 +5973,21 @@ export default {
     }
   },
   manualEditor: {
+    assistant: {
+      button: '助手',
+      tooltip: '让助手帮你写',
+      continue: '续写',
+      outline: '生成大纲',
+      polish: '润色全文',
+      summarize: '总结要点',
+      open: '打开助手',
+      prompts: {
+        continue: '接着正文末尾续写一段，与前文衔接。',
+        outline: '根据标题和现有内容，为这篇文档拟一份结构清晰的大纲，写在正文开头。',
+        polish: '润色正文：修正错别字和不通顺的句子，不改变原意，分段修改。',
+        summarize: '总结这篇文档的要点，在对话里回复，不要修改正文。'
+      }
+    },
     defaultTitlePrefix: '新建文档',
     noDocumentKnowledgeBases: '暂无可用的文档型知识库，请先创建一个文档型知识库',
     actions: {
@@ -6430,6 +6987,23 @@ export default {
       skillRolloutNextTurn: '已有会话在下一轮提问时重建沙箱',
       skillRolloutNewSession: '已有会话保持原沙箱，仅新会话使用新镜像',
       skillRolloutSaveFailed: '保存生效方式失败',
+      allocationMode: '沙箱分配方式',
+      allocationModeHint: '只影响还没有用过沙箱的会话；已有会话保持原来的分配，不会搬迁文件。',
+      allocationModeSession: '每个会话一台沙箱（默认）',
+      allocationModeUser: '同一用户的会话共用一台沙箱',
+      allocationModeUnavailable: '当前部署未开启共用沙箱（需在所有实例设置 WEKNORA_SANDBOX_USER_ALLOCATION=enabled，并配置 Redis）。',
+      userSandboxRetentionDays: '空置沙箱保留天数',
+      userSandboxRetentionHint: '某台共用沙箱上的会话全部删除后，空置满这个天数会被自动删除（1–90 天）。这不是文件最少保留时间：Docker 空闲回收或服务商故障可能更早删除。',
+      userSandboxesInInventory: '其中 {count} 台是用户共用沙箱，影响该用户在此配置下的全部会话。',
+      userSandboxesTitle: '用户共用沙箱',
+      userSandboxOwner: '用户',
+      userSandboxOwnerOtherWorkspace: '其他空间的用户',
+      userSandboxLiveSessions: '会话数',
+      userSandboxEmptySince: '空置起点',
+      userSandboxReclaimAfter: '预计回收',
+      userSandboxRelease: '释放',
+      userSandboxReleaseConfirm: '释放后，该用户在此配置下全部会话的文件和已安装的包都会丢失，下次使用时会新建沙箱。确定释放？',
+      userSandboxBusy: '这台沙箱上还有终端、桌面或命令在运行，请稍后再试。',
       skillInstallGroup: '安装新技能',
       skillInstalledGroup: '已安装',
       skillUploadClick: '点击上传 zip 压缩包',
@@ -6914,6 +7488,8 @@ export default {
     toolFallback: '工具',
     stepsCompleted: '已完成 <strong>{steps}</strong> 个步骤',
     reasoningRounds: '思考 <strong>{rounds}</strong> 轮',
+    earlierSteps: '已完成 {count} 个步骤',
+    viewReasoning: '查看思路',
     toolCalls: '调用 <strong>{tools}</strong> 次工具',
     durationSuffix: '耗时 <strong>{duration}</strong>',
     stepSummarySeparator: ' · ',
@@ -7391,6 +7967,8 @@ export default {
       folderCardCount: '{count} 个文档',
       searchingSubtree: '（含子目录）',
       emptyFolder: '这个文件夹里还没有文档',
+      emptyFolderWithSubfolders: '这个目录里没有直接文档，子目录里有 {count} 个',
+      folderContentsCount: '{documents} 个文档 / {folders} 个文件夹',
       emptySearch: '没有匹配的文档',
       collapse: '收起目录',
       expand: '展开目录',
@@ -7615,6 +8193,7 @@ export default {
     selectLoaded: '全选已加载',
     confirmBatchDeleteDocument: '确认删除选中的 {count} 个文档？删除后将无法恢复。',
     deleteSubmitted: '删除任务已提交，正在等待完成。',
+    assistantDeleted: '助手已删除这个知识库。',
     deletePending: '删除尚未完成，请稍后刷新查看结果。',
     deleteTaskFailed: '删除任务失败，请查看文档错误详情后重试。',
     deleteStatusUnavailable: '暂时无法确认删除结果，请稍后刷新查看文档状态。',
@@ -7981,6 +8560,17 @@ export default {
     }
   },
   chatHeader: {
+    grants: {
+      menu: '已允许的操作',
+      description: '本对话中已允许、不再询问的操作。撤销后再次调用时会重新询问。',
+      empty: '暂无已允许的操作',
+      revoke: '撤销',
+      revoked: '已撤销',
+      revokeFailed: '撤销失败',
+      loadFailed: '加载失败',
+    },
+    automationTask: '自动化',
+    automationOpen: '打开自动化「{name}」',
     moreActions: '更多对话操作',
     toggleSandboxPanel: '沙箱终端',
     copySessionId: '复制会话 ID',
@@ -8062,6 +8652,7 @@ export default {
     sessionUnread: '有新回复',
     knowledgeBase: '知识库',
     agents: '智能体',
+    automations: '自动化',
     artifacts: '产物',
     organizations: '共享空间',
     newChat: '新对话',
@@ -8108,6 +8699,54 @@ export default {
         'true': { label: '是', description: '是 —— 图表、曲线或示意图' },
         'false': { label: '否', description: '否 —— 照片、插画、图标或装饰图' }
       }
+    }
+  },
+  // 流水线选择面板的覆盖文案：按流水线 id 与字段 key 索引（后端注册表给出
+  // id 与 key，这里只做翻译）。未覆盖的流水线或字段回落到后端自带的英文
+  // 说明，所以新增流水线不会显示成键名。
+  imagePipeline: {
+    errors: {
+      noActionEnabled: '至少开启一个解析动作，否则多模态不会处理任何内容。',
+    },
+    default: {
+      name: '传统',
+      description: '用户根据任务需要手动选择解析动作开关。',
+      enable_caption: {
+        label: '图片描述',
+        description: '让模型为每张图片生成一句内容描述，作为图片的说明文字。'
+      },
+      enable_ocr: {
+        label: '文字识别',
+        description: '提取图片中出现的文字。'
+      },
+      caption: {
+        thinking: {
+          label: '图片描述时开启思考',
+          description: '让模型在写描述前先思考。一般情况下不需要开启思考，开启之后不仅更慢，还可能造成大模型思考内容过长截断正文输出造成任务失败。请仅在确认有必要的情况下开启。',
+        },
+      },
+      ocr: {
+        thinking: {
+          label: '文字识别时开启思考',
+          description: '让模型在提取文字前先思考。一般情况下不需要开启思考，开启之后不仅更慢，还可能造成大模型思考内容过长截断正文输出造成任务失败。请仅在确认有必要的情况下开启。',
+        },
+      }
+    },
+    smartocr: {
+      name: '智能模式',
+      caption: {
+        thinking: {
+          label: '描述时开启思考',
+          description: '让模型在描述图片并观察属性前先思考。一般情况下不需要开启思考，开启之后不仅更慢，还可能造成大模型思考内容过长截断正文输出造成任务失败。请仅在确认有必要的情况下开启。',
+        },
+      },
+      ocr: {
+        thinking: {
+          label: '文字识别时开启思考',
+          description: '让模型在提取文字前先思考。一般情况下不需要开启思考，开启之后不仅更慢，还可能造成大模型思考内容过长截断正文输出造成任务失败。请仅在确认有必要的情况下开启。',
+        },
+      },
+      description: '先观察图片特征并进行图片描述，再根据图片特征决定是否调用OCR对图片进行识别，以节省模型调用次数并提升解析速度。'
     }
   }
 }
