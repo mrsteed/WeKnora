@@ -64,10 +64,6 @@
                 <template #icon><t-icon name="user-add" /></template>
                 {{ $t('admin.member.createUser') }}
               </t-button>
-              <t-button theme="default" size="small" @click="showAssignDialog = true">
-                <template #icon><t-icon name="usergroup-add" /></template>
-                {{ $t('admin.member.addMember') }}
-              </t-button>
             </div>
           </div>
           <MemberTable
@@ -89,13 +85,6 @@
       :node="editingNode"
       :parent-id="editorParentId"
       @success="handleEditorSuccess"
-    />
-
-    <AssignOrgDialog
-      v-model:visible="showAssignDialog"
-      :org-id="selectedOrgId || ''"
-      :org-name="selectedOrgName"
-      @success="handleAssignSuccess"
     />
 
     <CreateUserDialog
@@ -134,7 +123,6 @@ import type { OrgMember, OrgTreeNode } from '@/api/org-tree'
 import OrgTreeNodeItem from './components/OrgTreeNodeItem.vue'
 import OrgTreeEditor from './components/OrgTreeEditor.vue'
 import MemberTable from './components/MemberTable.vue'
-import AssignOrgDialog from './components/AssignOrgDialog.vue'
 import CreateUserDialog from './components/CreateUserDialog.vue'
 import EditUserDialog from './components/EditUserDialog.vue'
 import ResetUserPasswordDialog from './components/ResetUserPasswordDialog.vue'
@@ -216,7 +204,6 @@ const handleMove = async (payload: { nodeId: string; newParentId: string | null 
   }
 }
 
-const showAssignDialog = ref(false)
 const showCreateUserDialog = ref(false)
 const showEditUserDialog = ref(false)
 const showResetPasswordDialog = ref(false)
@@ -273,11 +260,6 @@ const handleSetSuperAdmin = async (userId: string, isSuperAdmin: boolean) => {
   } catch {
     MessagePlugin.error(t('common.operationFailed'))
   }
-}
-
-const handleAssignSuccess = () => {
-  memberRefreshKey.value++
-  orgTreeStore.fetchTree()
 }
 
 const handleCreateUserSuccess = () => {

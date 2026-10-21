@@ -40,6 +40,7 @@
             <template #icon><t-icon name="history" /></template>
             {{ $t('tenantMember.audit.tabLabel') }}
           </t-button>
+          <!-- 「邀请成员」入口已按产品要求下线（邀请逻辑保留，仅移除按钮入口）。
           <t-popup v-if="canManage" v-model="invitePopupVisible" trigger="click" placement="bottom-end"
             destroy-on-close overlay-class-name="wk-popover wk-popover--form member-invite-popup-overlay">
             <t-button theme="default" variant="text" size="small" class="members-list-add-btn"
@@ -87,9 +88,7 @@
               </div>
             </template>
           </t-popup>
-          <!-- Share-link generator. Sits next to the invite-by-email
-               popup so the two flows live side-by-side: "I know who"
-               (email input) vs "I don't" (one link, group chat). -->
+          <!-- 「生成共享链接」入口已按产品要求下线（共享链接逻辑保留，仅移除按钮入口）。
           <t-popup v-if="canManage" v-model="shareLinkPopupVisible" trigger="click" placement="bottom-end"
             destroy-on-close overlay-class-name="wk-popover wk-popover--form member-invite-popup-overlay">
             <t-button theme="default" variant="text" size="small" class="members-list-add-btn"
@@ -149,6 +148,7 @@
               </div>
             </template>
           </t-popup>
+          -->
         </div>
       </div>
       <p class="section-description">
@@ -165,6 +165,7 @@
             </span>
           </template>
         </t-tab-panel>
+        <!-- 「待接受的邀请」标签入口已按产品要求下线（列表逻辑保留，仅移除标签入口）。
         <t-tab-panel v-if="canManage" value="invitations">
           <template #label>
             <span class="members-tab-label"><t-icon name="mail" size="16px" />
@@ -172,6 +173,7 @@
             </span>
           </template>
         </t-tab-panel>
+        -->
       </t-tabs>
       <t-input v-show="activeListTab === 'members'" v-model="searchQuery" class="members-list-search"
         :placeholder="$t('tenantMember.searchPlaceholder')" :aria-label="$t('tenantMember.searchPlaceholder')" clearable>

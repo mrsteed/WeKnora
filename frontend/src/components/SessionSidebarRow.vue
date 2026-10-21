@@ -259,6 +259,10 @@ const confirmDangerAction = (): void => {
 
 .session-row-menu-wrap {
   position: relative;
+  // 高于 aside 右缘宽度拖拽手柄（z-index: 10）：手柄贴边 8px 与会话行最右侧的
+  // "更多"按钮有极小重叠，不抬升层级的话点击会被拖拽手柄吞掉（pointerdown 捕获
+  // 并抑制 click），菜单打不开，删除/清空等全部点不了。
+  z-index: 11;
   flex: 0 0 0;
   width: 0;
   min-width: 0;

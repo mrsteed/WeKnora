@@ -53,7 +53,7 @@
         <TenantSelector v-if="canAccessAllTenants && !uiStore.sidebarCollapsed" />
 
         <!-- 侧栏边缘拖拽调宽，拖窄时自动收缩 -->
-        <PanelResizeHandle edge="right" :label="t('knowledgeStages.resizeDrawer')"
+        <PanelResizeHandle class="aside-resize-handle" edge="right" :label="t('knowledgeStages.resizeDrawer')"
             :value="uiStore.sidebarDisplayWidth" :min="SIDEBAR_COLLAPSED_WIDTH" :max="SIDEBAR_MAX_WIDTH"
             @start="startSidebarResize" @resize="resizeSidebar" @end="uiStore.sidebarResizing = false" />
 
@@ -1946,6 +1946,21 @@ const resizeSidebar = (delta: number, keyboard: boolean) => {
 }
 </style>
 <style lang="less">
+// aside 右缘拖宽手柄的侧栏专用修正（非 scoped：grip 元素在 PanelResizeHandle 子组件内部）：
+// 通用实现为左侧抽屉设计（抓手外溢 + 垂直居中 52x80 隐形桥接区），
+// 放到侧栏右缘时会把隐形捕获区伸进会话行，点中"更多"按钮反而触发宽度拖拽、
+// 菜单点不开（删除/清空因此不可用）。这里把手收回手柄内并移除桥接区，
+// 只保留贴边 8px 的拖拽条。
+.aside-resize-handle {
+    &::before {
+        display: none;
+    }
+
+    .panel-resize-handle__grip {
+        --grip-offset: 0;
+    }
+}
+
 // Dark mode: invert dark logo to light
 html[theme-mode="dark"] .aside_box .logo_box .logo {
     filter: invert(1) hue-rotate(180deg);
