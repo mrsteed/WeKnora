@@ -168,6 +168,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 		ID:               uuid.New().String(),
 		TenantID:         tenantID,
 		KnowledgeBaseID:  kbID,
+		CreatedBy:        resolveKnowledgeCreatorIDFromContext(ctx),
 		Type:             "file",
 		Channel:          defaultChannel(channel),
 		Title:            safeFilename,
@@ -385,6 +386,7 @@ func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
 		ID:               uuid.New().String(),
 		TenantID:         tenantID,
 		KnowledgeBaseID:  kbID,
+		CreatedBy:        resolveKnowledgeCreatorIDFromContext(ctx),
 		Type:             "url",
 		Channel:          defaultChannel(channel),
 		Title:            title,
@@ -620,6 +622,7 @@ func (s *knowledgeService) createKnowledgeFromFileURL(
 		ID:               uuid.New().String(),
 		TenantID:         tenantID,
 		KnowledgeBaseID:  kbID,
+		CreatedBy:        resolveKnowledgeCreatorIDFromContext(ctx),
 		Type:             "file_url",
 		Channel:          defaultChannel(channel),
 		Title:            title,
@@ -787,10 +790,18 @@ func (s *knowledgeService) CreateKnowledgeFromManual(ctx context.Context,
 	fileName := ensureManualFileName(title)
 	meta := types.NewManualKnowledgeMetadata(cleanContent, status, 1)
 
+	// Empty or omitted folder path keeps the entry at the KB root.
+	folderPath, err := normalizeTargetFolderPath(ctx, payload.FolderPath)
+	if err != nil {
+		return nil, err
+	}
+
 	knowledge := &types.Knowledge{
 		TenantID:         tenantID,
 		KnowledgeBaseID:  kbID,
+		CreatedBy:        resolveKnowledgeCreatorIDFromContext(ctx),
 		Type:             types.KnowledgeTypeManual,
+		FolderPath:       folderPath,
 		Channel:          defaultChannel(channel),
 		Title:            title,
 		Description:      "",
@@ -906,6 +917,7 @@ func (s *knowledgeService) createKnowledgeFromPassageInternal(ctx context.Contex
 		ID:               uuid.New().String(),
 		TenantID:         ctx.Value(types.TenantIDContextKey).(uint64),
 		KnowledgeBaseID:  kbID,
+		CreatedBy:        resolveKnowledgeCreatorIDFromContext(ctx),
 		Type:             "passage",
 		Channel:          defaultChannel(channel),
 		ParseStatus:      "pending",

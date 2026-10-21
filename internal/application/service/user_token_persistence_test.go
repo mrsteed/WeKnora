@@ -45,7 +45,7 @@ func TestLoginFailsWhenTokensCannotBePersisted(t *testing.T) {
 	user := persistedTestUser(t, 0, "user@example.com", "Secure9!")
 	svc.userRepo.(*stubUserRepoForAuth).users["user-1"] = user
 
-	resp, err := svc.Login(ctx, &types.LoginRequest{Email: user.Email, Password: "Secure9!"})
+	resp, err := svc.Login(ctx, &types.LoginRequest{Identifier: user.Email, Password: "Secure9!"})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.False(t, resp.Success,

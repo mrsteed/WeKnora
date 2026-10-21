@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     pinned_at DATETIME NULL,
     asr_config TEXT,
     vector_store_id VARCHAR(36),
+    visibility VARCHAR(20) NOT NULL DEFAULT 'private',
+    organization_id VARCHAR(36),
     storage_backend_id VARCHAR(36),
     wiki_config TEXT,
     indexing_strategy TEXT,

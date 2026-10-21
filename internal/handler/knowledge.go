@@ -33,6 +33,7 @@ type KnowledgeHandler struct {
 	cfg               *config.Config
 	kgService         interfaces.KnowledgeService
 	kbService         interfaces.KnowledgeBaseService
+	kbVisibility      interfaces.KBVisibilityService
 	kbShareService    interfaces.KBShareService
 	agentShareService interfaces.AgentShareService
 	chunkService      interfaces.ChunkService
@@ -89,6 +90,7 @@ func NewKnowledgeHandler(
 	cfg *config.Config,
 	kgService interfaces.KnowledgeService,
 	kbService interfaces.KnowledgeBaseService,
+	kbVisibility interfaces.KBVisibilityService,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
 	chunkService interfaces.ChunkService,
@@ -107,6 +109,7 @@ func NewKnowledgeHandler(
 		cfg:               cfg,
 		kgService:         kgService,
 		kbService:         kbService,
+		kbVisibility:      kbVisibility,
 		kbShareService:    kbShareService,
 		agentShareService: agentShareService,
 		chunkService:      chunkService,
@@ -115,6 +118,42 @@ func NewKnowledgeHandler(
 		asynqClient:       asynqClient,
 		spanRepo:          spanRepo,
 	}
+}
+
+func canBypassSameTenantKnowledgeVisibilityFromContext(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	userVal, _ := c.Get(types.UserContextKey.String())
+	user, _ := userVal.(*types.User)
+	return types.IsPlatformPrivilegedUser(user)
+}
+
+func (h *KnowledgeHandler) canMutateKnowledge(c *gin.Context, knowledge *types.Knowledge) (bool, error) {
+	if knowledge == nil {
+		return false, nil
+	}
+	userID := c.GetString(types.UserIDContextKey.String())
+	if knowledge.CreatedBy != "" && userID != "" && knowledge.CreatedBy == userID {
+		return true, nil
+	}
+	if h.kbVisibility == nil {
+		return false, nil
+	}
+	ctx := c.Request.Context()
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	return h.kbVisibility.CanManageKB(ctx, userID, tenantID, knowledge.KnowledgeBaseID, canBypassSameTenantKnowledgeVisibilityFromContext(c))
+}
+
+func (h *KnowledgeHandler) requireKnowledgeMutation(c *gin.Context, knowledge *types.Knowledge) error {
+	allowed, err := h.canMutateKnowledge(c, knowledge)
+	if err != nil {
+		return errors.NewInternalServerError(err.Error())
+	}
+	if !allowed {
+		return errors.NewForbiddenError("No permission to operate on this knowledge")
+	}
+	return nil
 }
 
 // requireKBOwnershipOrAdmin enforces the same "KB creator OR Admin+" matrix
@@ -156,7 +195,7 @@ func (h *KnowledgeHandler) validateKnowledgeBaseAccessWithKBID(
 	kbID string,
 ) (*types.KnowledgeBase, string, uint64, types.OrgMemberRole, error) {
 	kbID = secutils.SanitizeForLog(kbID)
-	grant, err := resolveHandlerKBAccess(c, kbID, h.kbService, h.kbShareService, h.agentShareService)
+	grant, err := resolveHandlerKBAccess(c, kbID, h.kbService, h.kbShareService, h.agentShareService, h.kbVisibility)
 	if err != nil {
 		return nil, kbID, 0, "", err
 	}
@@ -174,6 +213,7 @@ func (h *KnowledgeHandler) validateKnowledgeBaseWriteAccessWithKBID(
 		h.kbShareService,
 		h.agentShareService,
 		types.OrgRoleEditor,
+		h.kbVisibility,
 	)
 	if err != nil {
 		return nil, kbID, 0, "", err
@@ -1611,6 +1651,20 @@ type RenameKnowledgeFolderRequest struct {
 	To   string `json:"to"   binding:"required"`
 }
 
+// CreateKnowledgeFolderRequest is the payload for creating (or ensuring) an
+// empty folder inside a knowledge base.
+type CreateKnowledgeFolderRequest struct {
+	// Path is the full slash-separated folder path, relative to the KB root.
+	Path string `json:"path" binding:"required"`
+}
+
+// DeleteKnowledgeFolderRequest is the payload for deleting an empty folder.
+// Only folders holding no real document can be deleted; non-empty folders are
+// refused with HTTP 409 and the subtree document count in the error details.
+type DeleteKnowledgeFolderRequest struct {
+	Path string `json:"path" binding:"required"`
+}
+
 // RenameKnowledgeFolder godoc
 // @Summary      重命名或移动文件夹
 // @Description  把一个文件夹及其所有子目录改到新路径。目标路径已存在时两个文件夹合并；不能移动到自身子目录下
@@ -1666,6 +1720,122 @@ func (h *KnowledgeHandler) RenameKnowledgeFolder(c *gin.Context) {
 			"moved_count": affected,
 			"folder_path": types.NormalizeKnowledgeFolderPath(req.To),
 		},
+	})
+}
+
+// CreateKnowledgeFolder materializes an empty folder in the sidebar tree. The
+// folder is backed by a synthetic placeholder document (folders are a
+// projection of knowledge rows, so an empty one needs a marker row).
+// @Summary      创建（或确保存在）空文件夹
+// @Description  在知识库侧边栏树中物化一个空文件夹；若该目录已含真实文档则幂等无副作用
+// @Tags         知识管理
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                        true  "知识库ID"
+// @Param        request  body      CreateKnowledgeFolderRequest  true  "创建请求"
+// @Success      200      {object}  map[string]interface{}        "创建成功"
+// @Failure      400      {object}  errors.AppError               "请求参数错误"
+// @Failure      403      {object}  errors.AppError               "权限不足"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /knowledge-bases/{id}/knowledge/folders [post]
+func (h *KnowledgeHandler) CreateKnowledgeFolder(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req CreateKnowledgeFolderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewBadRequestError("Invalid request parameters: " + err.Error()))
+		return
+	}
+
+	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccess(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+		c.Error(errors.NewForbiddenError("No permission to modify knowledge"))
+		return
+	}
+	if err := h.requireKBOwnershipOrAdmin(c, kbID); err != nil {
+		c.Error(err)
+		return
+	}
+	ctx = types.WithExecutionTenant(ctx, effectiveTenantID)
+
+	folderPath, created, err := h.kgService.CreateKnowledgeFolder(ctx, kbID, req.Path)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    gin.H{"folder_path": folderPath, "created": created},
+	})
+}
+
+// DeleteKnowledgeFolder deletes an empty folder. Folders derived from real
+// documents disappear on their own when the last document leaves them; this
+// endpoint only ever removes the synthetic placeholder that keeps an empty
+// folder visible in the sidebar tree.
+// @Summary      删除空文件夹
+// @Description  仅删除不含真实文档的空文件夹（占位行）；目录非空时返回 409
+// @Tags         知识管理
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                        true  "知识库ID"
+// @Param        request  body      DeleteKnowledgeFolderRequest  true  "删除请求"
+// @Success      200      {object}  map[string]interface{}        "删除成功"
+// @Failure      400      {object}  errors.AppError               "请求参数错误"
+// @Failure      403      {object}  errors.AppError               "权限不足"
+// @Failure      409      {object}  errors.AppError               "目录非空"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /knowledge-bases/{id}/knowledge/folders [delete]
+func (h *KnowledgeHandler) DeleteKnowledgeFolder(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req DeleteKnowledgeFolderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewBadRequestError("Invalid request parameters: " + err.Error()))
+		return
+	}
+
+	_, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccess(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	if permission != types.OrgRoleAdmin && permission != types.OrgRoleEditor {
+		c.Error(errors.NewForbiddenError("No permission to modify knowledge"))
+		return
+	}
+	if err := h.requireKBOwnershipOrAdmin(c, kbID); err != nil {
+		c.Error(err)
+		return
+	}
+	ctx = types.WithExecutionTenant(ctx, effectiveTenantID)
+
+	deleted, err := h.kgService.DeleteKnowledgeFolder(ctx, kbID, req.Path)
+	if err != nil {
+		if appErr, ok := errors.IsAppError(err); ok {
+			c.Error(appErr)
+			return
+		}
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    gin.H{"folder_path": req.Path, "deleted": deleted},
 	})
 }
 
@@ -2956,7 +3126,7 @@ func (h *KnowledgeHandler) MoveKnowledge(c *gin.Context) {
 		c.Error(errors.NewForbiddenError("No permission to access source knowledge base"))
 		return
 	}
-	if err := h.requireKBOwnershipOrAdmin(c, req.SourceKBID); err != nil {
+	if err := requireMoveKBManagePermission(c, h.kbVisibility, req.SourceKBID); err != nil {
 		c.Error(err)
 		return
 	}
@@ -2975,17 +3145,18 @@ func (h *KnowledgeHandler) MoveKnowledge(c *gin.Context) {
 		c.Error(errors.NewForbiddenError("No permission to access target knowledge base"))
 		return
 	}
-	if err := h.requireKBOwnershipOrAdmin(c, req.TargetKBID); err != nil {
+	if err := requireMoveKBManagePermission(c, h.kbVisibility, req.TargetKBID); err != nil {
 		c.Error(err)
 		return
 	}
 
-	// Resolve explicit write grants independently for both body IDs.
-	if _, err := resolveHandlerKBAccessFor(c, req.SourceKBID, h.kbService, nil, nil, types.OrgRoleEditor); err != nil {
+	// Keep the transfer-grant path wired: WithKBTransfer below consumes the
+	// source/target KB grants injected here.
+	if _, err := resolveHandlerKBAccessFor(c, req.SourceKBID, h.kbService, nil, nil, types.OrgRoleEditor, h.kbVisibility); err != nil {
 		_ = c.Error(err)
 		return
 	}
-	if _, err := resolveHandlerKBAccessFor(c, req.TargetKBID, h.kbService, nil, nil, types.OrgRoleEditor); err != nil {
+	if _, err := resolveHandlerKBAccessFor(c, req.TargetKBID, h.kbService, nil, nil, types.OrgRoleEditor, h.kbVisibility); err != nil {
 		_ = c.Error(err)
 		return
 	}
@@ -3036,6 +3207,10 @@ func (h *KnowledgeHandler) MoveKnowledge(c *gin.Context) {
 		}
 		if knowledge.ParseStatus != types.ParseStatusCompleted {
 			c.Error(errors.NewBadRequestError(fmt.Sprintf("Knowledge item %s is not in completed status (current: %s)", kID, knowledge.ParseStatus)))
+			return
+		}
+		if err := h.requireKnowledgeMutation(c, knowledge); err != nil {
+			c.Error(err)
 			return
 		}
 	}

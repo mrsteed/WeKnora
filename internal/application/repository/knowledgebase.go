@@ -91,6 +91,36 @@ func (r *knowledgeBaseRepository) ListKnowledgeBasesByTenantID(
 	return kbs, nil
 }
 
+// ListAccessibleKBs returns same-tenant KBs filtered by local visibility rules.
+func (r *knowledgeBaseRepository) ListAccessibleKBs(
+	ctx context.Context, userID string, tenantID uint64, orgIDs []string,
+) ([]*types.KnowledgeBase, error) {
+	var kbs []*types.KnowledgeBase
+
+	query := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND is_temporary = ?", tenantID, false)
+
+	if len(orgIDs) > 0 {
+		query = query.Where(
+			"(visibility = ? OR visibility = '' OR visibility IS NULL) OR (visibility = ? AND organization_id IN ?) OR (visibility = ? AND creator_id = ?)",
+			types.KBVisibilityGlobal,
+			types.KBVisibilityOrg, orgIDs,
+			types.KBVisibilityPrivate, userID,
+		)
+	} else {
+		query = query.Where(
+			"(visibility = ? OR visibility = '' OR visibility IS NULL) OR (visibility = ? AND creator_id = ?)",
+			types.KBVisibilityGlobal,
+			types.KBVisibilityPrivate, userID,
+		)
+	}
+
+	if err := query.Order("created_at DESC").Find(&kbs).Error; err != nil {
+		return nil, err
+	}
+	return kbs, nil
+}
+
 // userKBPinRow mirrors the user_kb_pins table. Kept local to the
 // repository because it never escapes the package; callers see the
 // higher-level map[kb_id]pinned_at returned by ListUserKBPinIDs.

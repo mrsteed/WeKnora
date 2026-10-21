@@ -187,6 +187,7 @@ func RequireKBAccess(
 	kbService KBLookup,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
+	kbVisibility interfaces.KBVisibilityService,
 	cfg *config.Config,
 ) gin.HandlerFunc {
 	warnOnNilConfig(cfg)
@@ -205,7 +206,7 @@ func RequireKBAccess(
 			return
 		}
 
-		grant, err := resolveKBAccess(ctx, c, kbID, requiredPermission, kbService, kbShareService, agentShareService)
+		grant, err := resolveKBAccess(ctx, c, kbID, requiredPermission, kbService, kbShareService, agentShareService, kbVisibility)
 		switch {
 		case stderrors.Is(err, access.ErrUnauthorized):
 			_ = c.Error(apperrors.NewUnauthorizedError("Unauthorized"))
@@ -274,6 +275,7 @@ func resolveKBAccess(
 	kbService KBLookup,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
+	kbVisibility interfaces.KBVisibilityService,
 ) (*KBAccess, error) {
 	request := KBAccessRequest(c)
 	if request.Caller.TenantID == 0 {
@@ -286,5 +288,40 @@ func resolveKBAccess(
 		}
 		return nil, err
 	}
-	return access.ResolveKB(ctx, request, kb, requiredPermission, kbShareService, agentShareService)
+	grant, err := access.ResolveKB(ctx, request, kb, requiredPermission, kbShareService, agentShareService)
+	if err != nil {
+		return nil, err
+	}
+	// Same-tenant grants still respect KB visibility (global / org / private):
+	// a member of one org cannot open a sibling org's KB just by sharing the
+	// tenant. Cross-tenant grants (share / agent) are resolved downstream of
+	// the tenant boundary and are unaffected.
+	if kb.TenantID == request.Caller.TenantID {
+		permission, err := access.ApplySameTenantVisibility(ctx, kbVisibility, request, kb,
+			requiredPermission, kbAccessPrivilegedOperatorFromContext(c))
+		if err != nil {
+			return nil, err
+		}
+		grant.Permission = permission
+	}
+	return grant, nil
+}
+
+// kbAccessPrivilegedOperatorFromContext reports whether the authenticated
+// caller carries platform-admin identity and therefore bypasses same-tenant
+// KB visibility. Falls back to the system-admin context flag when the full
+// user row is not stashed on the gin context.
+func kbAccessPrivilegedOperatorFromContext(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	userVal, ok := c.Get(types.UserContextKey.String())
+	if !ok {
+		return types.IsSystemAdminFromContext(c.Request.Context())
+	}
+	user, ok := userVal.(*types.User)
+	if !ok || user == nil {
+		return types.IsSystemAdminFromContext(c.Request.Context())
+	}
+	return types.IsPlatformPrivilegedUser(user)
 }

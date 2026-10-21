@@ -3,11 +3,13 @@ package client
 import (
 	"context"
 	"log"
+	"net"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/Tencent/WeKnora/docreader/proto"
+	ipclass "github.com/Tencent/WeKnora/internal/ipclass"
 	"google.golang.org/grpc/resolver"
 )
 
@@ -50,7 +52,27 @@ func requireLiveDocReaderClient(t *testing.T) *Client {
 	return client
 }
 
+// skipScrapeUnlessDNSPublic skips live scrape tests when the network's DNS
+// yields a restricted address for the public test host. The SSRF guard
+// rejects such URLs on purpose, and even whitelisted the address would not
+// be reachable, so the scrape cannot be verified without a real public route.
+func skipScrapeUnlessDNSPublic(t *testing.T, host string) {
+	t.Helper()
+	addrs, err := net.LookupIP(host)
+	if err != nil || len(addrs) == 0 {
+		t.Skipf("cannot resolve %q in this environment: %v", host, err)
+	}
+	for _, ip := range addrs {
+		class, _ := ipclass.Classify(ip)
+		if class == ipclass.Public {
+			return
+		}
+	}
+	t.Skipf("DNS on this network resolves %q into a restricted range; the public scrape cannot be verified here", host)
+}
+
 func TestReadURL(t *testing.T) {
+	skipScrapeUnlessDNSPublic(t, "example.com")
 	client := requireLiveDocReaderClient(t)
 	client.SetDebug(true)
 

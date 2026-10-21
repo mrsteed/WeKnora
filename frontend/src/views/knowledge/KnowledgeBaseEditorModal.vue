@@ -39,6 +39,17 @@
               <p class="form-tip">{{ $t('knowledgeEditor.basic.typeDescription') }}</p>
             </div>
 
+            <!-- 可见性（对齐 WeKnora 的组织可见性） -->
+            <div v-if="authStore.isSuperAdmin || orgStore.myOrgTreeOrgs.length > 0" class="form-item">
+              <label class="form-label">{{ $t('knowledgeEditor.basic.visibilityLabel') }}</label>
+              <t-radio-group v-model="formData.visibility">
+                <t-radio-button value="private">{{ $t('knowledgeEditor.basic.visibilityPrivate') }}</t-radio-button>
+                <t-radio-button value="org">{{ $t('knowledgeEditor.basic.visibilityOrg') }}</t-radio-button>
+                <t-radio-button v-if="canSetGlobalVisibility" value="global">{{ $t('knowledgeEditor.basic.visibilityGlobal') }}</t-radio-button>
+              </t-radio-group>
+              <p class="form-tip">{{ $t('knowledgeEditor.basic.visibilityTip') }}</p>
+            </div>
+
             <!-- 索引策略 (紧跟类型选择) -->
             <div v-if="!isFAQ" class="form-item">
               <label class="form-label required">{{ $t('knowledgeEditor.indexing.title') }}</label>
@@ -632,6 +643,7 @@ import { copyWithToast } from '@/utils/clipboard'
 import { useEditorResourcesStore } from '@/stores/editorResources'
 import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
+import { useOrganizationStore } from '@/stores/organization'
 import KBModelConfig from './settings/KBModelConfig.vue'
 import KBParserSettings from './settings/KBParserSettings.vue'
 import KBStorageSettings from './settings/KBStorageSettings.vue'
@@ -647,9 +659,16 @@ import { useI18n } from 'vue-i18n'
 
 const uiStore = useUIStore()
 const authStore = useAuthStore()
+const orgStore = useOrganizationStore()
 const chatResources = useChatResourcesStore()
 const editorResources = useEditorResourcesStore()
 const { t, te } = useI18n()
+
+// 协作者（贡献者及以下租户角色，非超管）创建知识库时不展示「全局可见」选项，
+// 仅保留私有 / 组织可见；编辑已有全局可见 KB 时保持选项可见，避免单选组无选中态。
+const canSetGlobalVisibility = computed(
+  () => authStore.isSuperAdmin || authStore.hasRole('admin') || formData.value?.visibility === 'global',
+)
 
 // The attribute panel and the OCR conditions are both rendered from the
 // registry, in the operator's language: the registry supplies the wording and
@@ -672,6 +691,8 @@ const props = defineProps<{
   mode: 'create' | 'edit'
   kbId?: string
   initialType?: 'document' | 'faq'
+  initialVisibility?: 'private' | 'org' | 'global'
+  initialOrganizationId?: string
 }>()
 
 // Emits
@@ -679,6 +700,28 @@ const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
   (e: 'success', kbId: string): void
 }>()
+
+// 解析当前账号应归属的组织：优先调用方显式指定，其次当前组织，最后回退到
+// 我组织树中的第一个组织。组织可见的 KB 必须落到一个具体组织节点上。
+const resolveAutoOrganizationID = (): string => {
+  const availableOrgIDs = new Set(orgStore.myOrgTreeOrgs.map((org) => org.id))
+  const candidates = [
+    props.initialOrganizationId,
+    orgStore.currentOrgTreeOrganization?.id,
+    orgStore.myOrgTreeOrgs[0]?.id,
+  ]
+  for (const candidate of candidates) {
+    if (candidate && availableOrgIDs.has(candidate)) {
+      return candidate
+    }
+  }
+  return ''
+}
+
+const normalizeEditorVisibility = (value?: string): 'private' | 'org' | 'global' => {
+  const normalized = (value || '').trim()
+  return normalized === 'org' || normalized === 'global' ? normalized : 'private'
+}
 
 /** 首次保存创建成功后留在弹窗内，继续配置共享等设置 */
 const savedKbId = ref<string | null>(null)
@@ -911,11 +954,20 @@ watch(
 )
 
 // 初始化表单数据
-const initFormData = (type: 'document' | 'faq' = 'document') => {
+const initFormData = (
+  type: 'document' | 'faq' = 'document',
+  visibility: 'private' | 'org' | 'global' = 'private',
+  initialOrganizationId?: string,
+) => {
+  const organizationId = visibility === 'org'
+    ? (initialOrganizationId || resolveAutoOrganizationID())
+    : ''
   return {
     type,
     name: '',
     description: '',
+    visibility,
+    organization_id: organizationId,
     faqConfig: {
       indexMode: 'question_only',
       questionIndexMode: 'separate'
@@ -1069,10 +1121,13 @@ const loadKBData = async (
 
     // 设置表单数据
     const kbType = (kb.type as 'document' | 'faq') || 'document'
+    const kbVisibility = normalizeEditorVisibility((kb as any).visibility)
     formData.value = {
       type: kbType,
       name: kb.name || '',
       description: kb.description || '',
+      visibility: kbVisibility,
+      organization_id: kbVisibility === 'org' ? ((kb as any).organization_id || '') : '',
       faqConfig: {
         indexMode: kb.faq_config?.index_mode || 'question_only',
         questionIndexMode: kb.faq_config?.question_index_mode || 'separate'
@@ -1434,6 +1489,16 @@ const validateForm = (): boolean => {
     return false
   }
 
+  // 组织可见性自动使用当前组织树中的当前组织；无可用组织则拦截
+  if (formData.value.visibility === 'org' && !formData.value.organization_id) {
+    formData.value.organization_id = resolveAutoOrganizationID()
+  }
+  if (formData.value.visibility === 'org' && !formData.value.organization_id) {
+    MessagePlugin.warning(t('knowledgeEditor.basic.orgRequired'))
+    currentSection.value = 'basic'
+    return false
+  }
+
   // 验证多模态配置（如果启用）
   if (formData.value.multimodalConfig.enabled && !formData.value.multimodalConfig.vllmModelId) {
     MessagePlugin.warning(t('knowledgeEditor.messages.multimodalInvalid'))
@@ -1458,6 +1523,10 @@ const buildSubmitData = () => {
     name: formData.value.name,
     description: formData.value.description,
     type: formData.value.type,
+    visibility: formData.value.visibility || 'private',
+    organization_id: formData.value.visibility === 'org'
+      ? (formData.value.organization_id || resolveAutoOrganizationID())
+      : undefined,
     chunking_config: {
       chunk_size: formData.value.chunkingConfig.chunkSize,
       chunk_overlap: formData.value.chunkingConfig.chunkOverlap,
@@ -1709,6 +1778,8 @@ const doSubmit = async () => {
       await updateKnowledgeBase(kbId, {
         name: data.name,
         description: data.description,
+        visibility: data.visibility,
+        organization_id: data.organization_id,
         config: updateConfig
       })
 
@@ -1874,7 +1945,8 @@ watch(() => props.visible, async (newVal) => {
       await loadKBData(targetKbId, generation)
     } else {
       // 创建模式：初始化空表单，并预填空间默认存储引擎
-      formData.value = initFormData(props.initialType || 'document')
+      const visibility = props.initialVisibility || 'private'
+      formData.value = initFormData(props.initialType || 'document', visibility, props.initialOrganizationId)
       formData.value.storageProvider = tenantDefaultStorageProvider.value
       hasFiles.value = false
       applyDefaultModelsIfEmpty()

@@ -54,7 +54,16 @@ func TestQuestionOriginInTargets(t *testing.T) {
 // An agent that retrieves only on @mention treats a picked suggestion from
 // one of its bases as selecting that base, and nothing outside its scope.
 func TestResolveKnowledgeBasesAnchorsOnQuestionOriginWhenRetrievingOnlyOnMention(t *testing.T) {
-	svc := &sessionService{}
+	// The agent scope resolver fetches the configured KBs through the KB
+	// service, so the bare sessionService needs a stub that knows both IDs.
+	svc := &sessionService{
+		knowledgeBaseService: &tagTargetKnowledgeBaseService{
+			kbs: map[string]*types.KnowledgeBase{
+				"kb-a": {ID: "kb-a", TenantID: 10000},
+				"kb-b": {ID: "kb-b", TenantID: 10000},
+			},
+		},
+	}
 	request := func(originKB string) *types.QARequest {
 		req := &types.QARequest{
 			Session: &types.Session{TenantID: 10000},

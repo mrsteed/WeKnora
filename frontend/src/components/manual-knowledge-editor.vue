@@ -9,6 +9,9 @@ import {
   getKnowledgeBaseById,
   createManualKnowledge,
   updateManualKnowledge,
+  listKnowledgeFolders,
+  type KnowledgeFolderNode,
+  type KnowledgeFolderTree,
 } from '@/api/knowledge-base'
 import { useUploadConfirmStore } from '@/stores/uploadConfirm'
 import { useOrganizationStore } from '@/stores/organization'
@@ -79,7 +82,13 @@ const form = reactive({
   title: '',
   content: '',
   status: 'draft' as ManualStatus,
+  folderPath: '',
 })
+
+// Folder picker (create mode only): flattened from the KB's folder tree.
+const folderOptions = ref<any[]>([])
+const folderLoading = ref(false)
+const folderLoadedFor = ref<string | null>(null)
 
 const initialLoaded = ref(false)
 const kbOptions = ref<KnowledgeBaseOption[]>([])
@@ -588,6 +597,46 @@ watch([previewHTML, activeView, () => form.kbId], async () => {
 
 const kbDisabled = computed(() => mode.value === 'edit' && !!form.kbId)
 
+const folderSelectable = computed(() => mode.value === 'create' && !currentKnowledgeId.value)
+
+function buildFolderOptions(nodes: KnowledgeFolderNode[]): any[] {
+  return (nodes || []).map((n) => {
+    const children = buildFolderOptions(n.children || [])
+    return {
+      label: n.name,
+      value: n.path,
+      // An empty children array would render a useless arrow on leaf rows.
+      ...(children.length ? { children } : {}),
+    }
+  })
+}
+
+async function ensureFolderOptions(kbIdValue: string) {
+  if (!kbIdValue || folderLoadedFor.value === kbIdValue) return
+  folderLoading.value = true
+  try {
+    const res: any = await listKnowledgeFolders(kbIdValue)
+    const tree = (res?.data as KnowledgeFolderTree) || null
+    folderOptions.value = buildFolderOptions(tree?.folders || [])
+    folderLoadedFor.value = kbIdValue
+  } catch (error) {
+    console.error('[ManualEditor] Failed to load folder tree:', error)
+    folderOptions.value = []
+  } finally {
+    folderLoading.value = false
+  }
+}
+
+watch(
+  () => form.kbId,
+  async (val) => {
+    // The previous selection belonged to the other KB.
+    form.folderPath = ''
+    if (!val) return
+    await ensureFolderOptions(val)
+  },
+)
+
 const dialogTitle = computed(() =>
   mode.value === 'edit' ? t('manualEditor.title.edit') : t('manualEditor.title.create'),
 )
@@ -787,12 +836,20 @@ const handleSave = async (targetStatus: ManualStatus) => {
       status: string
       tag_ids?: string[]
       process_config?: KnowledgeProcessOverrides
+      folder_path?: string
     } = {
       title: form.title.trim(),
       content: form.content,
       status: targetStatus,
     }
     payload.tag_ids = [...manualTagIds.value]
+
+    // Folder placement only applies when creating; moving an existing entry
+    // into a folder belongs to the dedicated move endpoint.
+    const isCreating = !(mode.value === 'edit' && currentKnowledgeId.value)
+    if (isCreating && form.folderPath) {
+      payload.folder_path = form.folderPath
+    }
 
     if (targetStatus === 'publish') {
       let kbInfo: any
@@ -1005,6 +1062,19 @@ onBeforeUnmount(() => {
               <div class="kb-empty">{{ $t('manualEditor.noDocumentKnowledgeBases') }}</div>
             </template>
           </t-select>
+          <t-cascader
+            v-if="folderSelectable"
+            class="doc-meta__folder"
+            v-model="form.folderPath"
+            size="small"
+            clearable
+            check-strictly
+            :loading="folderLoading"
+            :options="folderOptions"
+            :placeholder="$t('manualEditor.form.folderPlaceholder')"
+            :aria-label="$t('manualEditor.form.folderLabel')"
+            :popup-props="{ attach: 'body', zIndex: 2600 }"
+          />
           <span v-if="lastUpdatedText" class="doc-meta__time">{{ lastUpdatedText }}</span>
         </div>
       </div>
@@ -1231,7 +1301,8 @@ onBeforeUnmount(() => {
   font-size: var(--app-text-md);
 }
 
-:deep(.doc-meta__kb) {
+:deep(.doc-meta__kb),
+:deep(.doc-meta__folder) {
   /* TDesign 的 select 根节点是块级；这里让它收到内容宽度，
      否则框比文字宽，箭头够不到右边缘，看着就是没对齐 */
   flex: 0 1 auto;

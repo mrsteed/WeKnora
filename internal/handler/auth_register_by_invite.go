@@ -159,6 +159,7 @@ func (h *AuthHandler) RegisterByInvite(c *gin.Context) {
 		c.Error(&apperrors.AppError{
 			Code:     apperrors.ErrNotFound,
 			Message:  "invitation link is invalid or has been revoked",
+			Details:  map[string]string{"reason": "invite.invalid_or_revoked"},
 			HTTPCode: http.StatusGone,
 		})
 		return
@@ -172,7 +173,9 @@ func (h *AuthHandler) RegisterByInvite(c *gin.Context) {
 	// existing account via /me/invitations once we wire that path.
 	if existing, _ := h.userService.GetUserByEmail(ctx, req.Email); existing != nil {
 		c.Error(apperrors.NewConflictError(
-			"this email already has an account; please log in to join the workspace"))
+			"this email already has an account; please log in to join the workspace").WithDetails(map[string]string{
+			"reason": "invite.email_already_has_account",
+		}))
 		return
 	}
 
@@ -191,7 +194,7 @@ func (h *AuthHandler) RegisterByInvite(c *gin.Context) {
 	if err != nil {
 		logger.Errorf(ctx, "register-by-invite: user create failed for %s: %v",
 			secutils.SanitizeForLog(req.Email), err)
-		c.Error(apperrors.NewBadRequestError(err.Error()))
+		c.Error(registrationFailureAppError(err))
 		return
 	}
 
@@ -218,6 +221,7 @@ func (h *AuthHandler) RegisterByInvite(c *gin.Context) {
 		c.Error(&apperrors.AppError{
 			Code:     apperrors.ErrNotFound,
 			Message:  "invitation link is no longer valid; please log in to your new account",
+			Details:  map[string]string{"reason": "invite.link_no_longer_valid_login"},
 			HTTPCode: http.StatusGone,
 		})
 		return

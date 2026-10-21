@@ -40,8 +40,24 @@ import (
 // default URL (self-hosted runtimes) or a templated one (Azure), which the
 // SSRF guard rejects before any request is built. Those cases are re-pointed
 // at 127.0.0.1 by reachableBaseURL.
+//
+// The public vendor hosts are whitelisted as well: validation resolves the
+// name, and on machines whose DNS intercepts public names into private
+// ranges the guard would reject them before the wire shape is exercised.
 func TestMain(m *testing.M) {
-	secutils.SetSSRFWhitelistFromRaw("127.0.0.1")
+	// Vendor default endpoints (the catalog ships one per provider). The
+	// set is deliberately limited to API hosts; doc/console URLs never
+	// reach SSRF validation in these tests.
+	secutils.SetSSRFWhitelistFromRaw(
+		"127.0.0.1," +
+			"api.anthropic.com,api.cohere.com,api.deepseek.com,api.hunyuan.cloud.tencent.com," +
+			"api-inference.modelscope.cn,api.jina.ai,api.lkeap.cloud.tencent.com," +
+			"api.longcat.chat,api.minimax.cn,api.minimax.io,api.minimaxi.com,api.moonshot.ai," +
+			"api.moonshot.cn,api.novita.ai,api.openai.com,api.pinecone.io,api.qnaigc.com," +
+			"api.siliconflow.cn,api.xiaomimimo.com,ai.api.nvidia.com,ark.cn-beijing.volces.com," +
+			"build.nvidia.com,dashscope.aliyuncs.com,generativelanguage.googleapis.com," +
+			"huggingface.co,integrate.api.nvidia.com,open.bigmodel.cn,openrouter.ai," +
+			"qianfan.baidubce.com,requesty.ai,router.requesty.ai,weknora.weixin.qq.com")
 	defer secutils.ResetSSRFWhitelistForTest()
 	os.Exit(m.Run())
 }

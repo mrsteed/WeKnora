@@ -124,6 +124,15 @@
                         >
                           <t-icon name="jump" size="14px" />
                         </a>
+                        <a
+                          v-if="item.knowledgeId"
+                          class="reference-item__open"
+                          role="button"
+                          :aria-label="t('common.download')"
+                          @click.stop.prevent="downloadReference(item)"
+                        >
+                          <t-icon name="download" size="14px" />
+                        </a>
                       </div>
                       <p v-if="item.snippet && !expandedKeys.has(item.key)" class="reference-item__snippet">
                         {{ formatReferenceSnippet(item.snippet) }}
@@ -181,6 +190,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { MessagePlugin } from 'tdesign-vue-next'
 import { REFERENCES_PANEL_WIDTH, useChatReferencesDrawer } from '@/composables/useChatReferencesDrawer'
 import ArtifactFileIcon from '@/views/chat/components/ArtifactFileIcon.vue'
 import ChatReferenceSourceView from '@/components/ChatReferenceSourceView.vue'
@@ -191,6 +201,8 @@ import {
   resolveReferenceHighlightKey,
   type ReferenceListItem,
 } from '@/utils/referenceSources'
+import { downKnowledgeDetails } from '@/api/knowledge-base/index'
+import { resolveKnowledgeDownloadFileName } from '@/views/knowledge/knowledgeDownloadFileName'
 
 const props = defineProps<{
   embeddedMode?: boolean
@@ -287,8 +299,9 @@ function backToList() {
 }
 
 function onSourceUnavailable() {
-  // No original document to show (FAQ or unsupported source): fall back
-  // to the list with the cited card highlighted.
+  // No original document to show (FAQ or unsupported source such as legacy
+  // .doc/.ppt binaries): fall back to the list with the cited card highlighted.
+  MessagePlugin.info(t('chat.referenceSourceUnavailable'))
   backToList()
 }
 
@@ -388,6 +401,32 @@ function getDocumentHref(item: ReferenceListItem) {
     path: `/platform/knowledge-bases/${item.knowledgeBaseId}`,
     query,
   }).href
+}
+
+async function downloadReference(item: ReferenceListItem) {
+  if (!item.knowledgeId) return
+  try {
+    const file = await downKnowledgeDetails(item.knowledgeId)
+    const objectUrl = URL.createObjectURL(file)
+    const link = document.createElement('a')
+    link.style.display = 'none'
+    link.href = objectUrl
+    link.download = resolveKnowledgeDownloadFileName({
+      id: item.knowledgeId,
+      file_name: item.title,
+      title: item.title,
+    })
+    document.body.appendChild(link)
+    link.click()
+    nextTick(() => {
+      link.remove()
+      URL.revokeObjectURL(objectUrl)
+    })
+  } catch {
+    // /knowledge/:id/download needs Contributor + KB write permission, which is
+    // intentionally stricter than viewing — degrade instead of a raw axios error.
+    MessagePlugin.warning(t('chat.referenceDownloadDenied'))
+  }
 }
 
 function shouldShowItemTitle(item: ReferenceListItem) {

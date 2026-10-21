@@ -18,6 +18,7 @@ import type {
   KnowledgeBaseShare,
   AgentShareResponse
 } from '@/api/organization'
+import type { OrgTreeNode } from '@/api/org-tree'
 import {
   listMyOrganizations,
   createOrganization,
@@ -43,6 +44,7 @@ import {
   reviewJoinRequest as reviewJoinRequestApi,
   requestRoleUpgrade as requestRoleUpgradeApi
 } from '@/api/organization'
+import { getMyOrgTreeOrganizations, getOrgTree } from '@/api/org-tree'
 import { getCurrentLanguage } from '@/utils/request'
 import { createVersionedRequestCoordinator } from './versionedRequest'
 import { shouldForceLocalizedRefetch } from './localizedResourceCache'
@@ -64,6 +66,9 @@ export const useOrganizationStore = defineStore('organization', () => {
   const previewData = ref<OrganizationPreview | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const currentOrganizationId = ref<string>(localStorage.getItem('weknora_current_org_id') || '')
+  const myOrgTreeOrgs = ref<OrgTreeNode[]>([])
+  const allOrgTreeOrgs = ref<OrgTreeNode[]>([])
   /** 各空间内知识库/智能体数量（由 GET /organizations 的 resource_counts 填充，供列表侧栏使用） */
   const resourceCounts = ref<ResourceCountsByOrg | null>(null)
   // 组织 / 共享资源列表不设 TTL：每次 fetch 都发请求（并发共用同一个），
@@ -94,6 +99,11 @@ export const useOrganizationStore = defineStore('organization', () => {
   const totalPendingJoinRequestCount = computed(() =>
     organizations.value.reduce((sum, org) => sum + (org.pending_join_request_count ?? 0), 0)
   )
+
+  const currentOrgTreeOrganization = computed(() => {
+    if (!currentOrganizationId.value) return null
+    return myOrgTreeOrgs.value.find(org => org.id === currentOrganizationId.value) || null
+  })
 
   // Actions
 
@@ -745,6 +755,43 @@ export const useOrganizationStore = defineStore('organization', () => {
     currentMembers.value = []
   }
 
+  function switchOrganization(orgId: string | null) {
+    currentOrganizationId.value = orgId || ''
+    if (orgId) {
+      localStorage.setItem('weknora_current_org_id', orgId)
+    } else {
+      localStorage.removeItem('weknora_current_org_id')
+    }
+  }
+
+  async function fetchAllOrgTreeOrgs() {
+    try {
+      const response = await getOrgTree()
+      if (response.success && response.data) {
+        allOrgTreeOrgs.value = response.data
+      }
+    } catch (e: any) {
+      console.error('Failed to fetch all org tree organizations:', e)
+    }
+  }
+
+  async function fetchMyOrgTreeOrganizations() {
+    try {
+      const response = await getMyOrgTreeOrganizations()
+      if (response.success && response.data) {
+        myOrgTreeOrgs.value = response.data
+        const hasCurrentOrg =
+          !!currentOrganizationId.value &&
+          response.data.some((org) => org.id === currentOrganizationId.value)
+        if (!hasCurrentOrg) {
+          switchOrganization(response.data[0]?.id || null)
+        }
+      }
+    } catch (e: any) {
+      console.error('Failed to fetch org-tree organizations:', e)
+    }
+  }
+
   /**
    * Get user's permission for a specific knowledge base
    * Returns 'owner' if user owns the KB, or the share permission ('admin' | 'editor' | 'viewer'), or null if no access
@@ -786,6 +833,10 @@ export const useOrganizationStore = defineStore('organization', () => {
     searchableOrganizations.value = []
     resourceCounts.value = null
     previewData.value = null
+    myOrgTreeOrgs.value = []
+    allOrgTreeOrgs.value = []
+    currentOrganizationId.value = ''
+    localStorage.removeItem('weknora_current_org_id')
     error.value = null
     sharedAgentsLoadedLocale = ''
     sharedAgentsInflightLocale = ''
@@ -808,15 +859,20 @@ export const useOrganizationStore = defineStore('organization', () => {
     previewData,
     loading,
     error,
+    currentOrganizationId,
+    myOrgTreeOrgs,
+    allOrgTreeOrgs,
 
     // Computed
     myOrganizations,
     ownedOrganizations,
     joinedOrganizations,
     totalPendingJoinRequestCount,
+    currentOrgTreeOrganization,
 
     // Actions
     fetchOrganizations,
+    fetchAllOrgTreeOrgs,
     create,
     updateOrganization,
     update,
@@ -844,6 +900,8 @@ export const useOrganizationStore = defineStore('organization', () => {
     requestOrganizationRoleUpgrade,
     setCurrentOrganization,
     clearCurrentOrganizationContext,
+    switchOrganization,
+    fetchMyOrgTreeOrganizations,
     getKBPermission,
     canEditKB,
     canManageKB,

@@ -1,10 +1,14 @@
 import { get, post, postUpload, put, del } from '../../utils/request';
+import { resolveErrorMessage } from '@/utils/errorMessage'
 import i18n from '@/i18n'
 import { ModelInUseError, modelInUseErrorFromRequest } from './modelUsage'
 
 export * from './modelUsage'
 
-const t = (key: string) => i18n.global.t(key)
+const t = (key: string) => {
+  const translated = i18n.global.t(key)
+  return typeof translated === 'string' ? translated : String(translated)
+}
 
 // Protocol-neutral thinking level. Mirrors internal/models/api.ReasoningEffort.
 export type ReasoningEffortLevel =
@@ -311,7 +315,7 @@ export function saveWeKnoraCloudCredentials(data: InitializeWeKnoraCloudRequest)
         if (response.success) {
           resolve(response)
         } else {
-          reject(new Error(response.message || response.error || '凭证保存失败'))
+          reject(new Error(resolveErrorMessage({ message: response.message || response.error }, t, 'error.weknoraCloud.saveCredentialsFailed')))
         }
       })
       .catch((error: any) => {

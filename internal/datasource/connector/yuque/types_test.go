@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 // Yuque's runtime API returns the doc `status` field as an integer (0 or 1),
@@ -81,6 +82,13 @@ func TestV2Doc_Status_RejectsUnexpectedShapes(t *testing.T) {
 }
 
 func TestParseYuqueConfig(t *testing.T) {
+	// Custom base_url resolution reaches DNS; names may resolve into
+	// private ranges where DNS is intercepted on this machine, so whitelist
+	// the host to keep the test hermetic.
+	t.Setenv("SSRF_WHITELIST", "company.yuque.com,www.yuque.com")
+	secutils.ResetSSRFWhitelistForTest()
+	t.Cleanup(secutils.ResetSSRFWhitelistForTest)
+
 	t.Run("valid full", func(t *testing.T) {
 		cfg, err := parseYuqueConfig(&types.DataSourceConfig{
 			Credentials: map[string]interface{}{

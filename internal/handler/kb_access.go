@@ -27,12 +27,14 @@ func resolvedKBAccess(c *gin.Context, kbID string, required types.OrgMemberRole)
 // the handler checks even when the middleware's RBAC rollout flag is disabled.
 func resolveHandlerKBAccess(c *gin.Context, kbID string, kbService middleware.KBLookup,
 	shares interfaces.KBShareService, agents interfaces.AgentShareService,
+	kbVisibility interfaces.KBVisibilityService,
 ) (*access.KBAccess, error) {
-	return resolveHandlerKBAccessFor(c, kbID, kbService, shares, agents, types.OrgRoleViewer)
+	return resolveHandlerKBAccessFor(c, kbID, kbService, shares, agents, types.OrgRoleViewer, kbVisibility)
 }
 
 func resolveHandlerKBAccessFor(c *gin.Context, kbID string, kbService middleware.KBLookup,
 	shares interfaces.KBShareService, agents interfaces.AgentShareService, required types.OrgMemberRole,
+	kbVisibility interfaces.KBVisibilityService,
 ) (*access.KBAccess, error) {
 	ctx := c.Request.Context()
 	request := middleware.KBAccessRequest(c)
@@ -58,6 +60,20 @@ func resolveHandlerKBAccessFor(c *gin.Context, kbID string, kbService middleware
 	}
 	grant, err := access.ResolveKB(ctx, request, kb, required, shares, agents)
 	if err == nil {
+		// Same-tenant grants still respect KB visibility (global/org/private),
+		// mirroring the route guard in the middleware KB-access path.
+		if kb.TenantID == request.Caller.TenantID {
+			permission, err := access.ApplySameTenantVisibility(ctx, kbVisibility, request, kb,
+				required, canBypassSameTenantResourceVisibilityFromContext(c))
+			if err != nil {
+				grant = nil
+				err = kbAccessHTTPError(err)
+			} else {
+				grant.Permission = permission
+			}
+		}
+	}
+	if err == nil && grant != nil {
 		// Preserve authorization for body-based routes without changing the
 		// execution tenant until the handler performs its resource operation.
 		c.Request = c.Request.WithContext(grant.WithGrant(ctx))

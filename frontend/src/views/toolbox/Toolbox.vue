@@ -26,15 +26,9 @@
         <div class="toolbox-tabs" role="tablist" :aria-label="t('toolbox.title')">
           <button v-for="item in visibleItems" :key="item.key" type="button" role="tab" class="toolbox-tab"
             :aria-selected="selectedItem?.key === item.key" @click="select(item.key)">
-            <BrowserIcon v-if="item.key === 'browserconnection'" width="16" height="16" />
-            <t-icon v-else :name="item.icon" size="16px" />
+            <t-icon :name="item.icon" size="16px" />
             <span>{{ t(item.title) }}</span>
-            <span v-if="item.key === 'browserconnection' && browserStatus" class="toolbox-tab-status"
-              :class="`is-${browserStatus}`">
-              <i aria-hidden="true" />{{ t(`localBrowser.${browserStatus}`) }}
-            </span>
-            <span v-else-if="item.key !== 'browserconnection' && counts[item.key] !== undefined"
-              class="toolbox-tab-count">{{ counts[item.key] }}</span>
+            <span v-if="counts[item.key] !== undefined" class="toolbox-tab-count">{{ counts[item.key] }}</span>
           </button>
         </div>
         <!-- 面板通过 Teleport 把搜索框放到标签栏右侧 -->
@@ -46,7 +40,6 @@
           <SkillSettings v-if="selectedItem.key === 'skills'" ref="panel" :key="sandboxId"
             :initial-sandbox-id="sandboxId" @count="counts.skills = $event" />
           <McpSettings v-else-if="selectedItem.key === 'mcp'" ref="panel" @count="counts.mcp = $event" />
-          <BrowserConnectionSettings v-else-if="selectedItem.key === 'browserconnection'" />
         </div>
       </section>
     </template>
@@ -60,7 +53,6 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
-import { useBrowserConnectionStore } from '@/stores/browserConnection'
 import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities'
 import { listSkillCatalog } from '@/api/skill'
 import { listMCPServices } from '@/api/mcp-service'
@@ -71,35 +63,31 @@ import {
   type ToolboxSection,
 } from '@/config/toolbox'
 import ResourceIcon from '@/components/icons/ResourceIcon.vue'
-import BrowserIcon from '@/components/icons/BrowserIcon.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import SkillSettings from '@/views/settings/SkillSettings.vue'
 import McpSettings from '@/views/settings/McpSettings.vue'
-import BrowserConnectionSettings from '@/views/settings/BrowserConnectionSettings.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const authStore = useAuthStore()
-const browserConnection = useBrowserConnectionStore()
 const capabilities = useDeploymentCapabilitiesStore()
 const panel = ref<{ openAdd?: () => void } | null>(null)
 const counts = reactive<Partial<Record<ToolboxSection, number>>>({})
 const requestedSection = computed(() => typeof route.params.section === 'string' ? route.params.section : '')
 const sandboxId = computed(() => typeof route.query.sandboxId === 'string' ? route.query.sandboxId : '')
-const visibleItems = computed(() => TOOLBOX_ITEMS.filter((item) => canAccessToolboxSection(item.key, {
-  currentTenantRole: authStore.currentTenantRole,
-  canAccessAllTenants: authStore.canAccessAllTenants,
-  hasRole: (role) => authStore.hasRole(role),
-  isSupported: (capability) => capabilities.isSupported(capability),
-})))
+// “浏览器连接”标签页已按需求从工具箱移除；类型/路由保持可用，以便既有
+// 深链接（聊天预览、侧边栏状态提示）仍能优雅回退到第一个可见标签，
+// 而不是破坏 ToolboxSection 联合类型或 toolbox.test.ts 的键集校验。
+const visibleItems = computed(() => TOOLBOX_ITEMS
+  .filter((item) => item.key !== 'browserconnection')
+  .filter((item) => canAccessToolboxSection(item.key, {
+    currentTenantRole: authStore.currentTenantRole,
+    canAccessAllTenants: authStore.canAccessAllTenants,
+    hasRole: (role) => authStore.hasRole(role),
+    isSupported: (capability) => capabilities.isSupported(capability),
+  })))
 const selectedItem = computed(() => visibleItems.value.find((item) => item.key === requestedSection.value))
-
-const browserStatus = computed(() => {
-  if (!browserConnection.loaded || !browserConnection.enabled) return ''
-  if (browserConnection.connected) return 'connected'
-  return browserConnection.device ? 'offline' : 'notPaired'
-})
 
 const select = (section: ToolboxSection) => {
   if (section === requestedSection.value) return
@@ -117,7 +105,7 @@ watch([selectedItem, visibleItems], () => {
 const summaries: Record<ToolboxSection, () => Promise<void>> = {
   skills: async () => { counts.skills = (await listSkillCatalog())?.data?.length ?? 0 },
   mcp: async () => { counts.mcp = (await listMCPServices()).length },
-  browserconnection: async () => { if (!browserConnection.loaded) await browserConnection.refresh() },
+  browserconnection: async () => { /* 标签页已移除，状态轮询不再需要 */ },
 }
 watch(() => visibleItems.value.map((item) => item.key), (keys, previous = []) => {
   for (const key of keys) {

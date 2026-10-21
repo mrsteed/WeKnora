@@ -51,6 +51,39 @@ func (r *customAgentRepository) ListAgentsByTenantID(ctx context.Context, tenant
 	return agents, nil
 }
 
+// ListAccessibleAgents filters same-tenant custom agents by local visibility rules.
+func (r *customAgentRepository) ListAccessibleAgents(
+	ctx context.Context, userID string, tenantID uint64, orgIDs []string,
+) ([]*types.CustomAgent, error) {
+	var agents []*types.CustomAgent
+
+	query := r.db.WithContext(ctx).
+		Table("custom_agents").
+		Select("custom_agents.*, users.username as creator_name").
+		Joins("LEFT JOIN users ON custom_agents.created_by = users.id").
+		Where("custom_agents.tenant_id = ? AND custom_agents.is_builtin = ? AND custom_agents.deleted_at IS NULL", tenantID, false)
+
+	if len(orgIDs) > 0 {
+		query = query.Where(
+			"(custom_agents.visibility = ? OR custom_agents.visibility = '' OR custom_agents.visibility IS NULL) OR (custom_agents.visibility = ? AND custom_agents.organization_id IN ?) OR (custom_agents.visibility = ? AND custom_agents.created_by = ?)",
+			types.AgentVisibilityGlobal,
+			types.AgentVisibilityOrg, orgIDs,
+			types.AgentVisibilityPrivate, userID,
+		)
+	} else {
+		query = query.Where(
+			"(custom_agents.visibility = ? OR custom_agents.visibility = '' OR custom_agents.visibility IS NULL) OR (custom_agents.visibility = ? AND custom_agents.created_by = ?)",
+			types.AgentVisibilityGlobal,
+			types.AgentVisibilityPrivate, userID,
+		)
+	}
+
+	if err := query.Order("custom_agents.created_at DESC").Scan(&agents).Error; err != nil {
+		return nil, err
+	}
+	return agents, nil
+}
+
 // UpdateAgent updates an agent
 func (r *customAgentRepository) UpdateAgent(ctx context.Context, agent *types.CustomAgent) error {
 	return r.db.WithContext(ctx).Save(agent).Error

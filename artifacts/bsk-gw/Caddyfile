@@ -1,0 +1,30 @@
+# BrowserSkill 远程配对 WSS 网关
+# 浏览器/扩展 -> wss://192.168.1.188:8443 -> (本文件) -> 127.0.0.1:8081 WeKnora 后端
+# 以 --network host 运行，容器内 127.0.0.1 即宿主机回环。
+{
+	# 显式提供自签证书，禁用自动 HTTPS（避免抢占 :80/:443）
+	auto_https off
+
+	# 只用 TCP 协议(h1/h2)，禁用 HTTP/3(QUIC/UDP)：
+	# 防止 Chromium Service Worker 切换 QUIC 后因 UDP 被丢包导致请求挂起
+	servers {
+		protocols h1 h2
+	}
+}
+
+:8443 {
+	tls /certs/cert.pem /certs/key.pem
+
+	# 访问日志打到 stderr：docker logs bsk-ws-gw 查看（确认请求是否到达网关）
+	log {
+		output stderr
+		format json
+		level INFO
+	}
+
+	# Caddy reverse_proxy 自动处理 Upgrade: websocket
+	reverse_proxy 127.0.0.1:8081 {
+		# WebSocket 长连接：放大 flush 间隔相关超时
+		flush_interval -1
+	}
+}

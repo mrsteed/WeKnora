@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/gin-gonic/gin"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -47,16 +48,31 @@ func (s *stubKBCreateService) CreateKnowledgeBase(_ context.Context, kb *types.K
 	return kb, nil
 }
 
-func newCreateKBRouter(svc interfaces.KnowledgeBaseService) *gin.Engine {
+type stubCreateKBOrgTreeService struct {
+	interfaces.OrgTreeService
+	getNodeFn func(context.Context, string, uint64) (*types.Organization, error)
+}
+
+func (s *stubCreateKBOrgTreeService) GetNode(ctx context.Context, nodeID string, tenantID uint64) (*types.Organization, error) {
+	if s.getNodeFn != nil {
+		return s.getNodeFn(ctx, nodeID, tenantID)
+	}
+	return nil, repository.ErrOrganizationNotFound
+}
+
+func newCreateKBRouter(svc interfaces.KnowledgeBaseService, orgSvc interfaces.OrgTreeService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(middleware.ErrorHandler())
 	r.Use(func(c *gin.Context) {
+		ctx := context.WithValue(c.Request.Context(), types.TenantIDContextKey, uint64(1))
+		ctx = context.WithValue(ctx, types.UserIDContextKey, "u-test")
+		c.Request = c.Request.WithContext(ctx)
 		c.Set(types.TenantIDContextKey.String(), uint64(1))
 		c.Set(types.UserIDContextKey.String(), "u-test")
 		c.Next()
 	})
-	h := &KnowledgeBaseHandler{service: svc}
+	h := &KnowledgeBaseHandler{service: svc, orgTreeService: orgSvc}
 	r.POST("/knowledge-bases", h.CreateKnowledgeBase)
 	return r
 }
@@ -69,7 +85,7 @@ func TestCreateKB_PreservesTypedErrorCode_2200(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/knowledge-bases",
 		strings.NewReader(`{"name":"kb"}`))
 	req.Header.Set("Content-Type", "application/json")
-	newCreateKBRouter(svc).ServeHTTP(w, req)
+	newCreateKBRouter(svc, nil).ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
@@ -91,7 +107,7 @@ func TestCreateKB_PreservesTypedErrorCode_2201(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/knowledge-bases",
 		strings.NewReader(`{"name":"kb"}`))
 	req.Header.Set("Content-Type", "application/json")
-	newCreateKBRouter(svc).ServeHTTP(w, req)
+	newCreateKBRouter(svc, nil).ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
@@ -109,10 +125,27 @@ func TestCreateKB_GenericErrorStillFallsThroughTo500(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/knowledge-bases",
 		strings.NewReader(`{"name":"kb"}`))
 	req.Header.Set("Content-Type", "application/json")
-	newCreateKBRouter(svc).ServeHTTP(w, req)
+	newCreateKBRouter(svc, nil).ServeHTTP(w, req)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 for raw infra error, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateKB_RejectsCrossTenantOrganizationID(t *testing.T) {
+	svc := &stubKBCreateService{}
+	orgSvc := &stubCreateKBOrgTreeService{}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/knowledge-bases",
+		strings.NewReader(`{"name":"kb","visibility":"org","organization_id":"org-other"}`))
+	req.Header.Set("Content-Type", "application/json")
+	newCreateKBRouter(svc, orgSvc).ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for cross-tenant organization_id, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "organization_id does not belong to current tenant") {
+		t.Fatalf("expected invalid organization_id error, got %s", w.Body.String())
 	}
 }
 

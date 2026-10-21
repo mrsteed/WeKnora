@@ -49,13 +49,26 @@ detect_compose_cmd() {
     return 1
 }
 
+compose_run() {
+    local cmd=("$DOCKER_COMPOSE_BIN")
+    if [ -n "$DOCKER_COMPOSE_SUBCMD" ]; then
+        cmd+=("$DOCKER_COMPOSE_SUBCMD")
+    fi
+
+    if [ -n "${WEKNORA_DEV_COMPOSE_PROJECT_NAME:-}" ]; then
+        COMPOSE_PROJECT_NAME="$WEKNORA_DEV_COMPOSE_PROJECT_NAME" "${cmd[@]}" "$@"
+    else
+        "${cmd[@]}" "$@"
+    fi
+}
+
 # 显示帮助信息
 show_help() {
     printf "%b\n" "${GREEN}WeKnora 开发环境脚本${NC}"
     echo "用法: $0 [命令] [选项]"
     echo ""
     echo "命令:"
-    echo "  start      启动基础设施服务（postgres, redis, docreader, langfuse）"
+    echo "  start      启动基础设施服务（postgres, redis, docreader；默认带 minio）"
     echo "  stop       停止所有服务"
     echo "  restart    重启所有服务"
     echo "  logs       查看服务日志"
@@ -69,8 +82,7 @@ show_help() {
     echo "  --qdrant      启动 Qdrant 向量数据库"
     echo "  --neo4j       启动 Neo4j 图数据库"
     echo "  --dex         启动 Dex（OIDC 身份认证）"
-    echo "  --langfuse    启动 Langfuse（默认已开启）"
-    echo "  --no-langfuse 不启动 Langfuse"
+    echo "  --langfuse    启动 Langfuse（默认关闭，按需开启）"
     echo "  --odl-hybrid  启动 OpenDataLoader hybrid（Docling，镜像较大，按需启用）"
     echo "  --full        启动所有可选服务（不含 odl-hybrid，需另加 --odl-hybrid）"
     echo ""
@@ -208,15 +220,21 @@ start_services() {
     
     # 解析 profile 参数
     shift  # 移除 "start" 命令本身
-    # 默认启动基础设施（postgres / redis / docreader）+ langfuse，
-    # 其余可选服务通过 --minio / --qdrant / --neo4j / --dex / --full 按需开启。
-    PROFILES="--profile langfuse"
-    ENABLED_SERVICES="langfuse"
+    # 默认启动基础设施（postgres / redis / docreader）+ minio + searxng。
+    # searxng 默认随栈启动（自托管联网搜索），可用 --no-searxng 关闭。
+    # 其余可选服务通过 --qdrant / --neo4j / --dex / --langfuse / --full 按需开启。
+    # 注意：stop_services 的 down 已带 --profile full（涵盖 searxng），无需同步修改。
+    PROFILES="--profile minio --profile searxng"
+    ENABLED_SERVICES="minio searxng"
     while [ $# -gt 0 ]; do
         case "$1" in
             --minio)
                 PROFILES="$PROFILES --profile minio"
                 ENABLED_SERVICES="$ENABLED_SERVICES minio"
+                ;;
+            --no-searxng)
+                PROFILES="${PROFILES// --profile searxng/}"
+                ENABLED_SERVICES="${ENABLED_SERVICES//searxng/}"
                 ;;
             --qdrant)
                 PROFILES="$PROFILES --profile qdrant"
@@ -233,10 +251,6 @@ start_services() {
             --langfuse)
                 PROFILES="$PROFILES --profile langfuse"
                 ENABLED_SERVICES="$ENABLED_SERVICES langfuse"
-                ;;
-            --no-langfuse)
-                PROFILES="${PROFILES//--profile langfuse/}"
-                ENABLED_SERVICES="${ENABLED_SERVICES//langfuse/}"
                 ;;
             --odl-hybrid)
                 if [[ "$ENABLED_SERVICES" != *"odl-hybrid"* ]]; then
@@ -255,17 +269,22 @@ start_services() {
         shift
     done
 
+    if _should_enable_odl_hybrid_from_env && [[ "$ENABLED_SERVICES" != *"odl-hybrid"* ]]; then
+        _enable_odl_hybrid_profile
+    fi
+
     # 启动服务（odl-hybrid 单独 --build，避免每次重建 docreader）
-    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml $PROFILES up -d
+    local bootstrap_profiles="${PROFILES//--profile odl-hybrid/}"
+    compose_run -f docker-compose.dev.yml $bootstrap_profiles up -d
     local compose_rc=$?
     if [ "$compose_rc" -eq 0 ] && [[ "$ENABLED_SERVICES" == *"odl-hybrid"* ]]; then
         log_info "构建/更新 odl-hybrid 镜像..."
-        "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml $PROFILES up -d --build odl-hybrid
+        compose_run -f docker-compose.dev.yml $PROFILES up -d --build odl-hybrid
         _wait_odl_hybrid_ready || true
         # docreader 需读取 DOCREADER_ODL_HYBRID；若刚改 .env，强制重建以注入环境变量
         if _should_enable_odl_hybrid_from_env; then
             log_info "重建 docreader 以应用 DOCREADER_ODL_HYBRID=${DOCREADER_ODL_HYBRID} ..."
-            "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml up -d --force-recreate docreader
+            compose_run -f docker-compose.dev.yml up -d --force-recreate docreader
         fi
     fi
 
@@ -279,7 +298,10 @@ start_services() {
         
         # 根据启用的 profile 显示额外服务
         if [[ "$ENABLED_SERVICES" == *"minio"* ]]; then
-            echo "  - MinIO:         localhost:9000 (Console: localhost:9001)"
+            echo "  - MinIO:         localhost:${MINIO_PORT:-9009} (Console: localhost:${MINIO_CONSOLE_PORT:-9010})"
+        fi
+        if [[ "$PROFILES" == *"searxng"* || "$PROFILES" == *"full"* ]]; then
+            echo "  - SearXNG:       http://127.0.0.1:${SEARXNG_PORT:-8888} (控制台 Provider 用 http://searxng:8080 或 127.0.0.1:${SEARXNG_PORT:-8888})"
         fi
         if [[ "$ENABLED_SERVICES" == *"qdrant"* ]]; then
             echo "  - Qdrant:        localhost:6333 (gRPC: localhost:6334)"
@@ -319,8 +341,19 @@ stop_services() {
     fi
     
     cd "$PROJECT_ROOT"
-    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml down
-    
+    if [ -f ".env" ] || [ -f ".env.local" ]; then
+        load_env_files >/dev/null 2>&1 || true
+    fi
+    # down 必须带上 start 时可能激活过的 profile，否则位于 profile 之下的服务
+    # （minio 默认 + qdrant/neo4j/dex/langfuse 等可选项，以及 .env 启用的 odl-hybrid）
+    # 不会被 down 覆盖而残留运行。`full` 已涵盖 minio/qdrant/neo4j/dex/langfuse/
+    # opensearch/milvus/searxng/sandbox；对"从未创建过容器"的服务 down 会安全跳过。
+    local down_profile_args="--profile minio --profile full --profile opensearch-ui"
+    if _should_enable_odl_hybrid_from_env; then
+        down_profile_args="$down_profile_args --profile odl-hybrid"
+    fi
+    compose_run -f docker-compose.dev.yml $down_profile_args down
+
     if [ $? -eq 0 ]; then
         log_success "所有服务已停止"
         return 0
@@ -345,7 +378,14 @@ show_logs() {
     fi
 
     cd "$PROJECT_ROOT"
-    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml logs -f
+    if [ -f ".env" ] || [ -f ".env.local" ]; then
+        load_env_files >/dev/null 2>&1 || true
+    fi
+    local profile_args=""
+    if _should_enable_odl_hybrid_from_env; then
+        profile_args="--profile odl-hybrid"
+    fi
+    compose_run -f docker-compose.dev.yml $profile_args logs -f
 }
 
 # 查看状态
@@ -356,7 +396,14 @@ show_status() {
     fi
 
     cd "$PROJECT_ROOT"
-    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml ps
+    if [ -f ".env" ] || [ -f ".env.local" ]; then
+        load_env_files >/dev/null 2>&1 || true
+    fi
+    local profile_args=""
+    if _should_enable_odl_hybrid_from_env; then
+        profile_args="--profile odl-hybrid"
+    fi
+    compose_run -f docker-compose.dev.yml $profile_args ps
 }
 
 # 远程开发模式下检查基础设施端口是否可达
@@ -471,7 +518,7 @@ start_app() {
         export DB_HOST="${DB_HOST:-$DEV_REMOTE_HOST}"
         export REDIS_ADDR="${REDIS_ADDR:-$DEV_REMOTE_HOST:6379}"
         export DOCREADER_ADDR="${DOCREADER_ADDR:-$DEV_REMOTE_HOST:50051}"
-        export MINIO_ENDPOINT="${MINIO_ENDPOINT:-$DEV_REMOTE_HOST:9000}"
+        export MINIO_ENDPOINT="${MINIO_ENDPOINT:-$DEV_REMOTE_HOST:${MINIO_PORT:-9009}}"
         export MILVUS_ADDRESS="${MILVUS_ADDRESS:-$DEV_REMOTE_HOST:19530}"
         export NEO4J_URI="${NEO4J_URI:-bolt://$DEV_REMOTE_HOST:7687}"
         export QDRANT_HOST="${QDRANT_HOST:-$DEV_REMOTE_HOST}"
@@ -481,7 +528,7 @@ start_app() {
     else
         export DB_HOST=127.0.0.1
         export DOCREADER_ADDR=127.0.0.1:50051
-        export MINIO_ENDPOINT=127.0.0.1:9000
+        export MINIO_ENDPOINT=127.0.0.1:${MINIO_PORT:-9009}
         export REDIS_ADDR=127.0.0.1:6379
         export MILVUS_ADDRESS=127.0.0.1:19530
         export NEO4J_URI=bolt://127.0.0.1:7687

@@ -2813,31 +2813,6 @@ defineExpose({
             :currentAgentId="selectedAgentId" :agents="enabledAgents" :all-models="allModels"
             @close="closeAgentModeSelector" @select="handleSelectAgent" @not-ready="handleAgentNotReady" />
 
-          <t-tooltip v-if="settingsStore.isAgentStreamMode" placement="top" theme="light"
-            :popupProps="{ overlayClassName: 'input-field-tooltip' }">
-            <template #content>
-              <div v-if="!browserConnection.knownOffline" class="browser-source-tooltip">
-                <strong>{{ $t('localBrowser.local') }}</strong>
-                <span>{{ $t('localBrowser.sourceHint') }}</span>
-              </div>
-              <div v-else class="tooltip-with-link">
-                <span>{{ $t(browserSourceUnavailableHint) }}</span>
-                <a href="#" @click.prevent="openBrowserConnectionSettings">{{ $t('localBrowser.openSettings') }}</a>
-              </div>
-            </template>
-            <button type="button" class="control-btn browser-source-btn"
-              :class="{
-                active: settingsStore.isLocalBrowserEnabled && browserConnection.online,
-                disabled: browserConnection.knownOffline,
-              }"
-              :aria-pressed="settingsStore.isLocalBrowserEnabled && browserConnection.online"
-              :aria-disabled="browserConnection.knownOffline"
-              :aria-label="$t('localBrowser.local')"
-              @click.stop="toggleBrowserSource">
-              <BrowserIcon class="control-icon" />
-            </button>
-          </t-tooltip>
-
           <!-- WebSearch 开关按钮（智能体未启用时不显示） -->
           <t-tooltip v-if="showWebSearchButton" placement="top" theme="light"
             :popupProps="{ overlayClassName: 'input-field-tooltip' }">
@@ -3646,44 +3621,6 @@ const getImgSrc = (url: string) => {
     &:hover {
       background: rgba(0, 0, 0, 0.7);
     }
-  }
-}
-
-.browser-source-btn {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  background: transparent;
-
-  &:hover:not(.disabled):not(.active) {
-    color: var(--td-text-color-primary);
-  }
-
-  &.active {
-    color: var(--td-brand-color);
-    background: var(--td-bg-color-secondarycontainer);
-
-    &:hover {
-      color: var(--td-brand-color);
-      background: var(--td-bg-color-secondarycontainer);
-    }
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--td-brand-color);
-    outline-offset: 2px;
-  }
-}
-
-.browser-source-tooltip {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-width: 240px;
-  line-height: 1.5;
-
-  strong {
-    font-weight: 500;
   }
 }
 

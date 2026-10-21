@@ -93,7 +93,7 @@ func (s *processSyncKBService) ListKnowledgeBasesByTenantID(context.Context, uin
 }
 
 func (s *processSyncKBService) UpdateKnowledgeBase(
-	context.Context, string, string, string, *types.KnowledgeBaseConfig, *types.VLMConfig,
+	context.Context, string, string, string, *types.KnowledgeBaseConfig, *types.VLMConfig, string, string,
 ) (*types.KnowledgeBase, error) {
 	return nil, nil
 }

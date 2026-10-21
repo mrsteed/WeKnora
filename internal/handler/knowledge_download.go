@@ -66,7 +66,7 @@ func (h *KnowledgeHandler) BatchDownloadKnowledge(c *gin.Context) {
 
 	kbID := c.Param("id")
 	grant, err := resolveHandlerKBAccessFor(
-		c, kbID, h.kbService, h.kbShareService, h.agentShareService, types.OrgRoleEditor,
+		c, kbID, h.kbService, h.kbShareService, h.agentShareService, types.OrgRoleEditor, h.kbVisibility,
 	)
 	if err != nil {
 		_ = c.Error(err)

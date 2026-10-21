@@ -92,40 +92,40 @@ func (h *Handler) IssueSandboxDesktopTicket(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := desktopSessionIDParam(c)
 	if sessionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "session id is required"})
+		respondHTTPError(c, http.StatusBadRequest, "session id is required")
 		return
 	}
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
 		if stderrors.Is(err, errors.ErrSessionNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+			respondHTTPError(c, http.StatusNotFound, "session not found")
 			return
 		}
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"session_id": sessionID})
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load session"})
+		respondHTTPError(c, http.StatusInternalServerError, "failed to load session")
 		return
 	}
 	userID, ok := types.UserIDFromContext(ctx)
 	if !ok || userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok || tenantID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 	accessToken := sandboxTerminalBearerToken(c)
 	if accessToken == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: access token required"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized: access token required")
 		return
 	}
 	record, err := h.userService.GetAccessTokenByValue(ctx, accessToken)
 	if err != nil || record == nil || strings.TrimSpace(record.ID) == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 	if err := service.AssertAccessTokenStillActive(record, userID, time.Now()); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 	ticket, err := h.desktopTickets.Issue(ctx, service.SandboxDesktopTicketClaims{
@@ -133,7 +133,7 @@ func (h *Handler) IssueSandboxDesktopTicket(c *gin.Context) {
 	})
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"session_id": sessionID})
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue ticket"})
+		respondHTTPError(c, http.StatusInternalServerError, "failed to issue ticket")
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
@@ -154,7 +154,7 @@ func (h *Handler) IssueSandboxDesktopTicket(c *gin.Context) {
 func (h *Handler) SandboxDesktopWS(c *gin.Context) {
 	sessionID := desktopSessionIDParam(c)
 	if sessionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "session id is required"})
+		respondHTTPError(c, http.StatusBadRequest, "session id is required")
 		return
 	}
 
@@ -166,11 +166,11 @@ func (h *Handler) SandboxDesktopWS(c *gin.Context) {
 	//    for the same reason.
 	claims, err := h.desktopTickets.Consume(c.Request.Context(), c.Query("ticket"))
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid or expired ticket"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized: invalid or expired ticket")
 		return
 	}
 	if claims.SessionID != sessionID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "ticket is not valid for this session"})
+		respondHTTPError(c, http.StatusForbidden, "ticket is not valid for this session")
 		return
 	}
 	user, err := h.checkTerminalAuth(c.Request.Context(), service.SandboxTerminalTicketClaims{
@@ -179,11 +179,11 @@ func (h *Handler) SandboxDesktopWS(c *gin.Context) {
 	}, true)
 	if err != nil {
 		if stderrors.Is(err, service.ErrTerminalAuthDenied) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			respondHTTPError(c, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
 		logger.ErrorWithFields(c.Request.Context(), err, map[string]interface{}{"session_id": sessionID})
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to validate ticket"})
+		respondHTTPError(c, http.StatusInternalServerError, "failed to validate ticket")
 		return
 	}
 	if !middleware.AttachAuthenticatedUser(
@@ -199,11 +199,11 @@ func (h *Handler) SandboxDesktopWS(c *gin.Context) {
 	releaseSlot, acquired, slotHold, err := h.acquireDesktopSlot(ctx, sessionID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"session_id": sessionID})
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reserve desktop"})
+		respondHTTPError(c, http.StatusInternalServerError, "failed to reserve desktop")
 		return
 	}
 	if !acquired {
-		c.JSON(http.StatusConflict, gin.H{"error": desktopErrBusy})
+		respondHTTPError(c, http.StatusConflict, desktopErrBusy)
 		return
 	}
 	defer releaseSlot()
@@ -230,7 +230,7 @@ func (h *Handler) SandboxDesktopWS(c *gin.Context) {
 	desktop, err := h.desktopService.EnsureSessionDesktop(ensureCtx, sessionID, provision)
 	if err != nil {
 		if slotHold != nil && slotHold.Err() != nil {
-			c.JSON(http.StatusConflict, gin.H{"error": desktopErrBusy})
+			respondHTTPError(c, http.StatusConflict, desktopErrBusy)
 			return
 		}
 		_, code := desktopErrorStatus(err)
@@ -264,7 +264,7 @@ func (h *Handler) SandboxDesktopWS(c *gin.Context) {
 	if err != nil {
 		_ = desktop.Conn.Close()
 		logger.Warnf(ctx, "[sandbox-desktop] bad server handshake session=%s: %v", sessionID, err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": desktopErrUpstream})
+		respondHTTPError(c, http.StatusBadGateway, desktopErrUpstream)
 		return
 	}
 
@@ -829,11 +829,11 @@ func (r *desktopRelay) TouchFromFrontend() {
 func (h *Handler) ReportSandboxDesktopActivity(c *gin.Context) {
 	sessionID := desktopSessionIDParam(c)
 	if sessionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "session id is required"})
+		respondHTTPError(c, http.StatusBadRequest, "session id is required")
 		return
 	}
 	if _, err := h.sessionService.GetOwnedSession(c.Request.Context(), sessionID); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		respondHTTPError(c, http.StatusNotFound, "session not found")
 		return
 	}
 	touchDesktopRelay(sessionID)

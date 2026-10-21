@@ -32,6 +32,8 @@ import UploadTasksPanel from '@/components/upload-tasks/UploadTasksPanel.vue'
 import NewUserGuide from '@/components/NewUserGuide.vue'
 import { useCommandPaletteStore } from '@/stores/commandPalette'
 import { useChatResourcesStore } from '@/stores/chatResources'
+import { useAuthStore } from '@/stores/auth'
+import { useOrganizationStore } from '@/stores/organization'
 import { useUIStore } from '@/stores/ui'
 import { getKnowledgeBaseById } from '@/api/knowledge-base/index'
 import { MessagePlugin } from 'tdesign-vue-next'
@@ -212,6 +214,9 @@ onMounted(() => {
     maybeOpenCmdkFromRoute()
     // 后台预取对话输入栏资源，进入 creatChat / chat 时复用缓存
     void useChatResourcesStore().prefetchChatInput()
+    if (useAuthStore().isLoggedIn) {
+        void useOrganizationStore().fetchMyOrgTreeOrganizations()
+    }
 });
 
 // 监听路由变化，兼容 SPA 内部跳转时的 ?cmdk= 参数

@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
+
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -26,7 +27,7 @@ func MCPEndpointAuth(svc interfaces.MCPEndpointService, tenantSvc interfaces.Ten
 		token := extractMCPEndpointToken(c)
 		if endpointID == "" || token == "" {
 			c.Header("WWW-Authenticate", `Bearer realm="weknora-mcp"`)
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: missing bearer token"})
+			c.Error(apperrors.NewUnauthorizedError("unauthorized: missing bearer token"))
 			c.Abort()
 			return
 		}
@@ -34,25 +35,25 @@ func MCPEndpointAuth(svc interfaces.MCPEndpointService, tenantSvc interfaces.Ten
 		if err != nil {
 			switch {
 			case errors.Is(err, service.ErrMCPEndpointDisabled):
-				c.JSON(http.StatusForbidden, gin.H{"error": "mcp endpoint disabled"})
+				c.Error(apperrors.NewForbiddenError("mcp endpoint disabled"))
 			case errors.Is(err, service.ErrMCPEndpointTokenInvalid), errors.Is(err, service.ErrMCPEndpointNotFound):
 				c.Header("WWW-Authenticate", `Bearer realm="weknora-mcp"`)
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: invalid token"})
+				c.Error(apperrors.NewUnauthorizedError("unauthorized: invalid token"))
 			default:
 				logger.Warnf(c.Request.Context(), "[mcp-endpoint] auth lookup failed: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "authentication unavailable"})
+				c.Error(apperrors.NewInternalServerError("authentication unavailable"))
 			}
 			c.Abort()
 			return
 		}
 		tenant, err := tenantSvc.GetTenantByID(c.Request.Context(), ep.TenantID)
 		if err != nil || tenant == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "workspace unavailable"})
+			c.Error(apperrors.NewInternalServerError("workspace unavailable"))
 			c.Abort()
 			return
 		}
 		if strings.EqualFold(tenant.Status, "inactive") || strings.EqualFold(tenant.Status, "disabled") {
-			c.JSON(http.StatusForbidden, gin.H{"error": "workspace inactive"})
+			c.Error(apperrors.NewTenantInactiveError())
 			c.Abort()
 			return
 		}

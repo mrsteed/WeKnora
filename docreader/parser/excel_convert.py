@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import logging
 import os
 import subprocess
@@ -23,7 +24,13 @@ def detect_excel_format(content: bytes) -> str | None:
 
     from pandas.io.excel._base import inspect_excel_format
 
-    ext = inspect_excel_format(content_or_path=content)
+    try:
+        ext = inspect_excel_format(content_or_path=content)
+    except TypeError:
+        # Newer pandas rejects raw bytes and only accepts a file path or
+        # file-like object. Keep the old fast path for older versions and
+        # fall back to an in-memory stream when bytes are no longer accepted.
+        ext = inspect_excel_format(content_or_path=io.BytesIO(content))
     if ext in ("xlsx", "xls", "xlsb", "ods"):
         return ext
     if ext == "zip":

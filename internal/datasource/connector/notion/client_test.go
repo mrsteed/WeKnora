@@ -352,6 +352,10 @@ func TestClientQueryDatabaseAll(t *testing.T) {
 var _ = time.Now
 
 func TestDownloadFile_RejectsLoopbackURL(t *testing.T) {
+	// The base-URL check resolves api.notion.com; DNS may be intercepted
+	// (resolving public names into private ranges) on this machine, so
+	// whitelist the host to keep the test hermetic.
+	t.Setenv("SSRF_WHITELIST", "api.notion.com")
 	secutils.ResetSSRFWhitelistForTest()
 	t.Cleanup(secutils.ResetSSRFWhitelistForTest)
 

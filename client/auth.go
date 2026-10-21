@@ -8,9 +8,11 @@ import (
 )
 
 // LoginRequest is the body for POST /api/v1/auth/login.
+//
+// Identifier accepts either the user's username or email address.
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Identifier string `json:"identifier"`
+	Password   string `json:"password"`
 }
 
 // LoginResponse is the body returned by POST /api/v1/auth/login.

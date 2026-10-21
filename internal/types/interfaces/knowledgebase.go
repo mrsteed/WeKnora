@@ -68,19 +68,19 @@ type KnowledgeBaseService interface {
 	//   - description: New knowledge base description
 	//   - config: Knowledge base configuration, including chunking strategy, vectorization settings, etc.
 	//   - vlmConfig: Optional multimodal (vision) config; nil means no change
+	//   - visibility: Optional visibility update. Empty means keep the current value.
+	//   - organizationID: Organization ID used when visibility is org. Non-org visibility clears it.
 	// Returns:
 	//   - Updated knowledge base object
 	//   - Possible errors such as not existing, insufficient permissions, etc.
 	UpdateKnowledgeBase(ctx context.Context,
 		id string, name string, description string, config *types.KnowledgeBaseConfig, vlmConfig *types.VLMConfig,
+		visibility string, organizationID string,
 	) (*types.KnowledgeBase, error)
 
 	// DeleteKnowledgeBase deletes a knowledge base
 	// Parameters:
 	//   - ctx: Context information
-	//   - id: Unique identifier of the knowledge base
-	// Returns:
-	//   - Possible errors such as not existing, insufficient permissions, etc.
 	DeleteKnowledgeBase(ctx context.Context, id string) error
 
 	// TogglePinKnowledgeBase toggles the pin status of a knowledge base
@@ -206,6 +206,9 @@ type KnowledgeBaseRepository interface {
 	//   - List of knowledge base objects
 	//   - Possible errors such as database errors, etc.
 	ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
+
+	// ListAccessibleKBs filters same-tenant KBs by local visibility rules.
+	ListAccessibleKBs(ctx context.Context, userID string, tenantID uint64, orgIDs []string) ([]*types.KnowledgeBase, error)
 
 	// UpdateKnowledgeBase updates a knowledge base record
 	// Parameters:

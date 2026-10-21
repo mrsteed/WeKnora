@@ -109,6 +109,14 @@ func (s *sessionService) restrictTagScopesToAgentScope(
 	if len(tagScopes) == 0 {
 		return nil
 	}
+	if resolver := s.agentScopeResolver(); resolver != nil {
+		_, _, filteredTagScopes, err := resolver.RestrictKnowledgeTargets(ctx, agent, sessionTenantID, nil, nil, tagScopes)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to restrict tag scopes to agent scope: %v", err)
+			return nil
+		}
+		return filteredTagScopes
+	}
 	allowedKBIDs := s.resolveKnowledgeBasesFromAgent(ctx, agent, sessionTenantID)
 	allowedSet := make(map[string]bool, len(allowedKBIDs))
 	for _, id := range allowedKBIDs {
@@ -347,6 +355,17 @@ func (s *sessionService) restrictMentionsToAgentScope(
 	kbIDs []string,
 	knowledgeIDs []string,
 ) ([]string, []string) {
+	if resolver := s.agentScopeResolver(); resolver != nil {
+		filteredKBs, filteredKnowledge, _, err := resolver.RestrictKnowledgeTargets(ctx, agent, sessionTenantID, kbIDs, knowledgeIDs, nil)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to restrict explicit KB targets to agent scope: %v", err)
+			return nil, nil
+		}
+		logger.Infof(ctx, "Restricted @mentions to agent scope: kbs %d->%d, knowledge %d->%d",
+			len(kbIDs), len(filteredKBs), len(knowledgeIDs), len(filteredKnowledge))
+		return filteredKBs, filteredKnowledge
+	}
+
 	allowedKBIDs := s.resolveKnowledgeBasesFromAgent(ctx, agent, sessionTenantID)
 	if len(allowedKBIDs) == 0 {
 		logger.Warnf(ctx, "Shared agent has no allowed KBs, blocking all @mentions")

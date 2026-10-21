@@ -136,6 +136,21 @@
             </div>
           </div>
 
+          <!-- 组织可见性（仅在非内置智能体，且当前账号是超管或属于某个组织时显示） -->
+          <div v-if="!isBuiltinAgent && (authStore.isSuperAdmin || orgStore.myOrgTreeOrgs.length > 0)" class="setting-row">
+            <div class="setting-info">
+              <label>{{ $t('agent.editor.visibilityLabel') }}</label>
+              <p class="desc">{{ $t('agent.editor.visibilityTip') }}</p>
+            </div>
+            <div class="setting-control">
+              <t-radio-group v-model="formData.visibility">
+                <t-radio-button value="private">{{ $t('agent.editor.visibilityPrivate') }}</t-radio-button>
+                <t-radio-button value="org">{{ $t('agent.editor.visibilityOrg') }}</t-radio-button>
+                <t-radio-button v-if="canSetGlobalVisibility" value="global">{{ $t('agent.editor.visibilityGlobal') }}</t-radio-button>
+              </t-radio-group>
+            </div>
+          </div>
+
           <!-- 长期记忆。留在基础信息这一组而不是「多轮对话」，是因为它与
                多轮历史窗口无关，且智能推理恰恰是最需要这个开关的模式。
                这个开关只能"关"：空间或个人设置关闭时，这里打开也不生效。 -->
@@ -1512,7 +1527,7 @@
               <p class="desc">{{ $t('agent.editor.selectKnowledgeBasesDesc') }}</p>
             </div>
             <div class="setting-control">
-              <t-select v-model="formData.config.knowledge_bases" multiple
+              <t-select v-model="visibleKbSelection" multiple
                 :placeholder="$t('agent.editor.selectKnowledgeBases')" filterable :min-collapsed-num="3">
                 <t-option-group v-if="filteredMyKbOptions.length"
                   :label="$t('agent.editor.myKnowledgeBases')">
@@ -1946,6 +1961,12 @@ const deploymentCapabilities = useDeploymentCapabilitiesStore();
 const router = useRouter();
 const orgStore = useOrganizationStore();
 const chatResources = useChatResourcesStore();
+
+// 协作者（贡献者及以下租户角色，非超管）创建智能体时不展示「全局可见」选项，
+// 仅保留私有 / 组织可见；编辑已有全局可见智能体时保持选项可见，避免单选组无选中态。
+const canSetGlobalVisibility = computed(
+  () => authStore.isSuperAdmin || authStore.hasRole('admin') || formData.value?.visibility === 'global',
+);
 const editorResources = useEditorResourcesStore();
 
 const { t, locale: i18nLocale } = useI18n();
@@ -1954,6 +1975,8 @@ const props = defineProps<{
   visible: boolean;
   mode: 'create' | 'edit';
   agent?: CustomAgent | null;
+  initialVisibility?: 'private' | 'org' | 'global';
+  initialOrganizationId?: string;
   initialSection?: string;
   initialHighlightField?: string;
   // readOnly hides the save button so a Viewer who clicks an agent
@@ -1973,6 +1996,16 @@ const emit = defineEmits<{
 const savedAgent = ref<CustomAgent | null>(null);
 const editorMode = computed(() => (savedAgent.value ? 'edit' : props.mode));
 const editorAgent = computed(() => savedAgent.value ?? props.agent ?? null);
+
+// 解析"组织可见"时使用的默认组织 ID：优先调用方指定，其次当前组织，最后第一个所属组织
+const resolveAutoOrganizationID = (): string => {
+  return (
+    props.initialOrganizationId ||
+    orgStore.currentOrganizationId ||
+    orgStore.myOrgTreeOrgs[0]?.id ||
+    ''
+  );
+}
 const isPostCreateSession = computed(() => !!savedAgent.value);
 const saveButtonLabel = computed(() =>
   editorMode.value === 'create'
@@ -2853,6 +2886,8 @@ const defaultFormData = {
   name: '',
   description: '',
   is_builtin: false,
+  visibility: 'private' as 'private' | 'org' | 'global',
+  organization_id: '',
   config: {
     // 基础设置
     agent_mode: 'smart-reasoning' as 'quick-answer' | 'smart-reasoning',
@@ -2963,6 +2998,11 @@ const defaultFormData = {
 
 const formData = ref(JSON.parse(JSON.stringify(defaultFormData)));
 
+const normalizeEditorVisibility = (value?: string): 'private' | 'org' | 'global' => {
+  const normalized = (value || '').trim();
+  return normalized === 'org' || normalized === 'global' ? normalized : 'private';
+};
+
 const starterSuggestionModeOptions = computed(() => [
   { value: 'curated', label: t('agentEditor.questionSuggestions.modeCurated') },
   { value: 'knowledge', label: t('agentEditor.questionSuggestions.modeKnowledge') },
@@ -3060,6 +3100,16 @@ const activePromptAnchor = ref('system');
 
 const hasAnyIntentCustomized = computed(() =>
   intentPromptTemplates.value.some((item) => isIntentCustomized(item.id)),
+);
+
+// 监听可见性切换为 org 且未选组织时，自动填默认组织
+watch(
+  () => formData.value.visibility,
+  (visibility) => {
+    if (visibility === 'org' && !formData.value.organization_id) {
+      formData.value.organization_id = resolveAutoOrganizationID();
+    }
+  },
 );
 
 // Agent 模式下本组只剩「保留轮数」（以及有知识库时的检索保留），
@@ -3407,6 +3457,23 @@ const filteredKbOptionsForPreset = computed(() => {
 const filteredMyKbOptions = computed(() => filteredKbOptionsForPreset.value.filter(kb => !kb.shared));
 const filteredSharedKbOptions = computed(() => filteredKbOptionsForPreset.value.filter(kb => kb.shared));
 
+// "指定知识库"选区代理：config.knowledge_bases 里可能包含当前账号无可见权限的 KB
+//（例如管理员代配），对应选项不在 kbOptions 中，多选下拉会把它渲染成裸 UUID chip。
+// get 只显示可见集合内的 ID；set 写回时把隐藏 ID 合并回去，保存不丢管理员原有配置。
+const kbOptionIdSet = computed(() => new Set(kbOptions.value.map(kb => kb.value)));
+const visibleKbSelection = computed({
+  get: () => {
+    const ids = formData.value.config.knowledge_bases || [];
+    // options 尚未异步加载完成时原样返回，避免误清空
+    return kbOptionIdSet.value.size ? ids.filter(id => kbOptionIdSet.value.has(id)) : ids;
+  },
+  set: (val: string[]) => {
+    const hidden = (formData.value.config.knowledge_bases || [])
+      .filter(id => !kbOptionIdSet.value.has(id));
+    formData.value.config.knowledge_bases = [...val, ...hidden];
+  },
+});
+
 // 当前选中的 KB 中，有多少个在新预设 / 模式下会被禁用（用于保存前提示）。
 // quick-answer 模式下 preset 恒为 null，但 wiki-only KB 仍属"被禁用"，
 // 所以这里不再依赖 preset 是否存在，直接看是否有被 disable 的选中项。
@@ -3577,6 +3644,9 @@ watch(() => props.visible, async (val) => {
     if (props.mode === 'edit' && props.agent) {
       // 深度复制对象以避免引用问题
       const agentData = JSON.parse(JSON.stringify(props.agent));
+      const visibility = normalizeEditorVisibility(agentData.visibility);
+      agentData.visibility = visibility;
+      agentData.organization_id = visibility === 'org' ? (agentData.organization_id || '') : '';
 
       // 确保 config 对象存在
       if (!agentData.config) {
@@ -3669,6 +3739,11 @@ watch(() => props.visible, async (val) => {
       storedToolNames.value = [];
       keepAllowedToolsUnset.value = false;
       const newFormData = JSON.parse(JSON.stringify(defaultFormData));
+      const initialVisibility = props.initialVisibility || 'private';
+      newFormData.visibility = initialVisibility;
+      newFormData.organization_id = initialVisibility === 'org'
+        ? resolveAutoOrganizationID()
+        : '';
       // 应用系统默认检索参数
       newFormData.config.embedding_top_k = defaultEmbeddingTopK.value;
       newFormData.config.keyword_threshold = defaultKeywordThreshold.value;
@@ -3841,14 +3916,8 @@ const fillBuiltinAgentDefaults = () => {
 // 监听知识库选择模式变化
 watch(kbSelectionMode, (mode) => {
   formData.value.config.kb_selection_mode = mode;
-  if (mode === 'none') {
-    // 不使用知识库，清空相关配置
-    formData.value.config.knowledge_bases = [];
-  } else if (mode === 'all') {
-    // 全部知识库，清空指定列表
-    formData.value.config.knowledge_bases = [];
-  }
-  // selected 模式保持 knowledge_bases 不变
+  // 切换模式时保留已选知识库：后端以 kb_selection_mode 为准解析范围，
+  // 切回"指定知识库"时之前的选择不丢失
 });
 
 // 监听 MCP 选择模式变化
@@ -4972,6 +5041,16 @@ const handleSave = async () => {
   if (!isBuiltinAgent.value) {
     if (!formData.value.name || !formData.value.name.trim()) {
       MessagePlugin.error(t('agent.editor.nameRequired'));
+      currentSection.value = 'basic';
+      return;
+    }
+
+    // "组织可见"时必须指定所属组织；优先自动解析，其次提示用户
+    if (formData.value.visibility === 'org' && !formData.value.organization_id) {
+      formData.value.organization_id = resolveAutoOrganizationID();
+    }
+    if (formData.value.visibility === 'org' && !formData.value.organization_id) {
+      MessagePlugin.error(t('agent.editor.orgRequired'));
       currentSection.value = 'basic';
       return;
     }

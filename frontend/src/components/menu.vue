@@ -92,20 +92,14 @@
                             </div>
                             <template v-if="!uiStore.sidebarCollapsed">
                                 <span class="menu_title" :title="item.title">{{ item.title }}</span>
-                                <span v-if="item.path === 'organizations' && orgStore.totalPendingJoinRequestCount > 0"
+                                <span v-if="item.path === 'admin' && orgStore.totalPendingJoinRequestCount > 0"
                                     class="menu-pending-badge"
                                     :title="t('organization.settings.pendingJoinRequestsBadge')">{{
                                         orgStore.totalPendingJoinRequestCount }}</span>
                                 <span v-if="item.path === 'toolbox' && toolboxPreview.length" class="menu-toolbox-stack"
-                                    :title="toolboxPreview.map((tool) => tool.key === 'browserconnection' && browserStackStatus
-                                        ? `${t(tool.title)} (${t(`localBrowser.${browserStackStatus}`)})` : t(tool.title)).join(' · ')">
+                                    :title="toolboxPreview.map((tool) => t(tool.title)).join(' · ')">
                                     <span v-for="tool in toolboxPreview" :key="tool.key" class="menu-toolbox-stack__item">
-                                        <template v-if="tool.key === 'browserconnection'">
-                                            <BrowserIcon width="12" height="12" />
-                                            <i v-if="browserStackStatus" class="menu-toolbox-stack__status"
-                                                :class="`is-${browserStackStatus}`" aria-hidden="true" />
-                                        </template>
-                                        <t-icon v-else :name="tool.icon" size="12px" />
+                                        <t-icon :name="tool.icon" size="12px" />
                                     </span>
                                 </span>
                             </template>
@@ -269,8 +263,7 @@ import { useSessionActivityStore } from '@/stores/sessionActivity';
 import { useAuthStore } from '@/stores/auth';
 import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities';
 import { TOOLBOX_ITEMS, canAccessToolboxSection } from '@/config/toolbox';
-import BrowserIcon from '@/components/icons/BrowserIcon.vue';
-import { useBrowserConnectionStore } from '@/stores/browserConnection';
+
 import { useOrganizationStore } from '@/stores/organization';
 import { useUIStore } from '@/stores/ui';
 import { useCommandPaletteStore } from '@/stores/commandPalette';
@@ -315,23 +308,19 @@ const { entries: sessionActivityEntries, unread: sessionUnread } = storeToRefs(s
 let sessionActivityTimer: ReturnType<typeof setInterval> | undefined;
 const authStore = useAuthStore();
 const deploymentCapabilities = useDeploymentCapabilitiesStore();
-const toolboxPreview = computed(() => TOOLBOX_ITEMS.filter((item) => canAccessToolboxSection(item.key, {
-    currentTenantRole: authStore.currentTenantRole,
-    canAccessAllTenants: authStore.canAccessAllTenants,
-    hasRole: (role) => authStore.hasRole(role),
-    isSupported: (capability) => deploymentCapabilities.isSupported(capability),
-})));
+// “浏览器连接”标签页已按需求从工具箱移除，侧边栏徽章同步不再展示其小图标。
+const browserConnectionExcluded = (item: (typeof TOOLBOX_ITEMS)[number]) =>
+    item.key !== 'browserconnection';
+const toolboxPreview = computed(() => TOOLBOX_ITEMS
+    .filter(browserConnectionExcluded)
+    .filter((item) => canAccessToolboxSection(item.key, {
+        currentTenantRole: authStore.currentTenantRole,
+        canAccessAllTenants: authStore.canAccessAllTenants,
+        hasRole: (role) => authStore.hasRole(role),
+        isSupported: (capability) => deploymentCapabilities.isSupported(capability),
+    })));
 const orgStore = useOrganizationStore();
 const uiStore = useUIStore();
-const browserConnection = useBrowserConnectionStore();
-const browserStackStatus = computed(() => {
-    if (!uiStore.sidebarBrowserStatus) return '';
-    if (!browserConnection.loaded || !browserConnection.enabled || !browserConnection.device) return '';
-    return browserConnection.connected ? 'connected' : 'offline';
-});
-watch(() => uiStore.sidebarBrowserStatus && toolboxPreview.value.some((tool) => tool.key === 'browserconnection'), (visible) => {
-    if (visible && !browserConnection.loaded) browserConnection.refresh().catch(() => {});
-}, { immediate: true });
 const commandPaletteStore = useCommandPaletteStore();
 
 // Platform-aware label for the ⌘K hint. navigator.platform is deprecated but
@@ -451,8 +440,8 @@ const isMenuItemActive = (itemPath: string): boolean => {
             return currentRoute === 'toolbox';
         case 'artifacts':
             return currentRoute === 'artifactLibrary';
-        case 'organizations':
-            return currentRoute === 'organizationList';
+        case 'admin':
+            return currentRoute === 'organManage';
         case 'creatChat':
             return currentRoute === 'kbCreatChat' || currentRoute === 'globalCreatChat';
         case 'settings':
@@ -479,7 +468,7 @@ const getIconActiveState = (itemPath: string) => {
 };
 
 // 分离上下两部分菜单（使用 visibleMenuArr 以便 lite 模式过滤 logout）
-const TOP_MENU_PATHS = new Set(['creatChat', 'knowledge-bases', 'artifacts', 'agents', 'toolbox', 'organizations']);
+const TOP_MENU_PATHS = new Set(['creatChat', 'knowledge-bases', 'artifacts', 'agents', 'toolbox', 'admin']);
 
 const topMenuItems = computed<MenuItem[]>(() => {
     return (visibleMenuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => TOP_MENU_PATHS.has(item.path));
@@ -1170,9 +1159,9 @@ const handleMenuClick = async (path: string) => {
         }
     } else if (path === 'agents') {
         router.push('/platform/agents')
-    } else if (path === 'organizations') {
-        // 组织菜单项：跳转到组织列表
-        router.push('/platform/organizations')
+    } else if (path === 'admin') {
+        // 组织管理菜单项：跳转到组织管理页
+        router.push('/platform/admin/organ')
     } else if (path === 'settings') {
         // 设置菜单项：打开设置弹窗并跳转路由
         uiStore.openSettings()
@@ -1899,24 +1888,6 @@ const resizeSidebar = (delta: number, keyboard: boolean) => {
     &:nth-child(1) { z-index: 3; --stack-rotate: -10deg; }
     &:nth-child(2) { z-index: 2; --stack-delay: 50ms; }
     &:nth-child(3) { z-index: 1; --stack-rotate: 10deg; --stack-delay: 100ms; }
-}
-
-.menu-toolbox-stack__status {
-    position: absolute;
-    right: -1px;
-    bottom: -1px;
-    width: 6px;
-    height: 6px;
-    border-radius: var(--app-radius-pill);
-    box-shadow: 0 0 0 1.5px var(--td-bg-color-container);
-
-    &.is-connected {
-        background: var(--td-success-color);
-    }
-
-    &.is-offline {
-        background: var(--td-warning-color);
-    }
 }
 
 @keyframes menu-toolbox-stack-in {

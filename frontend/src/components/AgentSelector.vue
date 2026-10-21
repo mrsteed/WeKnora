@@ -11,6 +11,8 @@
         </div>
 
         <div class="agent-selector-content" @scroll="hideDetailPanel">
+          <!-- 内置 / 自定义智能体并排两列显示 -->
+          <div class="agent-groups-row">
           <!-- 内置智能体 -->
           <div class="agent-group">
             <div class="agent-group-title">{{ $t('agent.builtinAgents') }}</div>
@@ -51,6 +53,7 @@
                 </t-tooltip>
               </div>
             </div>
+          </div>
           </div>
 
           <!-- 共享给我 -->
@@ -428,10 +431,26 @@ const updateDetailPanelPosition = () => {
   const rowRect = rectToCssPx(el.getBoundingClientRect(), zoom);
   const { width: vw, height: vh } = cssViewportSize(zoom);
 
-  // 浮层显示在列表右侧，保留小间隙；透明桥接区覆盖间隙，避免鼠标移入时浮层消失
-  let left = rowRect.right + DETAIL_PANEL_GAP;
-  if (left + DETAIL_PANEL_WIDTH > vw - 8) {
-    left = Math.max(8, vw - DETAIL_PANEL_WIDTH - 8);
+  // 两列布局下：hover 左列（内置智能体）时浮层尽量显示在左侧，避免盖住
+  // 右列自定义智能体；右列保持原有「右侧浮动」行为。
+  const ddEl = el.closest('.agent-selector-dropdown') as HTMLElement | null;
+  const ddRect = ddEl ? rectToCssPx(ddEl.getBoundingClientRect(), zoom) : null;
+  const midX = ddRect ? ddRect.left + ddRect.width / 2 : vw / 2;
+  const inLeftHalf = rowRect.left + rowRect.width / 2 < midX;
+
+  let left: number;
+  if (inLeftHalf) {
+    left = rowRect.left - DETAIL_PANEL_GAP - DETAIL_PANEL_WIDTH;
+    // 左侧放不下时贴屏幕左边缘保底（仍落在左列一侧，不遮挡右列）
+    if (left < 8) {
+      left = 8;
+    }
+  } else {
+    // 浮层显示在列表右侧，保留小间隙；透明桥接区覆盖间隙，避免鼠标移入时浮层消失
+    left = rowRect.right + DETAIL_PANEL_GAP;
+    if (left + DETAIL_PANEL_WIDTH > vw - 8) {
+      left = Math.max(8, vw - DETAIL_PANEL_WIDTH - 8);
+    }
   }
 
   const panelHeight = detailPanelRef.value?.offsetHeight || 180;
@@ -548,7 +567,8 @@ const updateDropdownPosition = () => {
   const rect = rectToCssPx(props.anchorEl.getBoundingClientRect(), zoom);
   const { width: vw, height: vh } = cssViewportSize(zoom);
 
-  const dropdownWidth = 220;
+  // 加宽下拉宽度，两列布局下尽量完整展示智能体名称
+  const dropdownWidth = 360;
   const offsetY = 6;
 
   let left = Math.floor(rect.left);
@@ -697,6 +717,23 @@ watch(activeDetail, (detail) => {
     margin-bottom: 4px;
     padding-bottom: 4px;
     border-bottom: .5px solid var(--td-component-stroke);
+  }
+}
+
+/* 内置 / 自定义两组并排两列，不用上下堆叠 */
+.agent-groups-row {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: .5px solid var(--td-component-stroke);
+
+  > .agent-group {
+    flex: 1;
+    min-width: 0;
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
   }
 }
 

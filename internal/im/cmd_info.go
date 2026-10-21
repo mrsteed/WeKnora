@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	appservice "github.com/Tencent/WeKnora/internal/application/service"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
@@ -13,10 +15,11 @@ import (
 // understand what the bot can do without leaving the chat.
 type InfoCommand struct {
 	kbService interfaces.KnowledgeBaseService
+	kbScope   *appservice.AgentKBScopeResolver
 }
 
-func newInfoCommand(kbService interfaces.KnowledgeBaseService) *InfoCommand {
-	return &InfoCommand{kbService: kbService}
+func newInfoCommand(kbService interfaces.KnowledgeBaseService, kbScope *appservice.AgentKBScopeResolver) *InfoCommand {
+	return &InfoCommand{kbService: kbService, kbScope: kbScope}
 }
 
 func (c *InfoCommand) Name() string        { return "info" }
@@ -59,7 +62,21 @@ func (c *InfoCommand) Execute(ctx context.Context, cmdCtx *CommandContext, _ []s
 	// KBSelectionMode: "all" uses every KB under the tenant (IDs list is empty),
 	// "selected" uses the explicit KnowledgeBases list, "none"/empty means disabled.
 	sb.WriteString("\n📚 **知识库**\n")
-	if cfg.KBSelectionMode == "all" {
+	if c.kbScope != nil {
+		kbs, err := c.kbScope.ResolveKnowledgeBases(ctx, cmdCtx.CustomAgent, cmdCtx.TenantID)
+		if err != nil {
+			logger.Warnf(ctx, "/info failed to resolve KB scope for agent %s: %v", cmdCtx.CustomAgent.ID, err)
+		} else if len(kbs) > 0 {
+			for _, kb := range kbs {
+				sb.WriteString(fmt.Sprintf("  · %s\n", kb.Name))
+			}
+			sb.WriteString(fmt.Sprintf("  共 %d 个\n", len(kbs)))
+		} else if strings.EqualFold(strings.TrimSpace(cfg.KBSelectionMode), "none") || len(cfg.KnowledgeBases) == 0 {
+			sb.WriteString("  未配置\n")
+		} else {
+			sb.WriteString("  当前范围为空\n")
+		}
+	} else if cfg.KBSelectionMode == "all" {
 		kbs, err := c.kbService.ListKnowledgeBasesByTenantID(ctx, cmdCtx.TenantID)
 		if err == nil && len(kbs) > 0 {
 			for _, kb := range kbs {

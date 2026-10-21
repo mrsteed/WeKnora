@@ -87,6 +87,23 @@
     transition: background-color var(--app-motion-fast) ease, color var(--app-motion-fast) ease;
   }
 
+  &.is-danger {
+    color: var(--td-error-color, #d54941);
+
+    .menu-icon {
+      color: var(--td-error-color, #d54941);
+    }
+
+    &:hover {
+      background: var(--td-error-color-light, rgba(213, 73, 65, 0.08));
+      color: var(--td-error-color, #d54941);
+
+      .menu-icon {
+        color: var(--td-error-color, #d54941);
+      }
+    }
+  }
+
   &:hover {
     background: var(--td-bg-color-container-hover);
     color: var(--td-text-color-primary);

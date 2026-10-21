@@ -222,7 +222,7 @@ func (h *Handler) StopSession(c *gin.Context) {
 	sessionID := secutils.SanitizeForLog(c.Param("session_id"))
 
 	if sessionID == "" {
-		c.JSON(400, gin.H{"error": "Session ID is required"})
+		respondHTTPError(c, http.StatusBadRequest, "Session ID is required")
 		return
 	}
 
@@ -232,7 +232,7 @@ func (h *Handler) StopSession(c *gin.Context) {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"session_id": sessionID,
 		})
-		c.JSON(400, gin.H{"error": "message_id is required"})
+		respondHTTPError(c, http.StatusBadRequest, "message_id is required")
 		return
 	}
 
@@ -243,7 +243,7 @@ func (h *Handler) StopSession(c *gin.Context) {
 	tenantID, exists := c.Get(types.TenantIDContextKey.String())
 	if !exists {
 		logger.Error(ctx, "Failed to get tenant ID")
-		c.JSON(401, gin.H{"error": "Unauthorized"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 	tenantIDUint := tenantID.(uint64)
@@ -255,14 +255,14 @@ func (h *Handler) StopSession(c *gin.Context) {
 			"session_id": sessionID,
 			"message_id": assistantMessageID,
 		})
-		c.JSON(404, gin.H{"error": "Message not found"})
+		respondHTTPError(c, http.StatusNotFound, "Message not found")
 		return
 	}
 
 	// Verify message belongs to this session (double check)
 	if message.SessionID != sessionID {
 		logger.Warnf(ctx, "Message %s does not belong to session %s", assistantMessageID, sessionID)
-		c.JSON(403, gin.H{"error": "Message does not belong to this session"})
+		respondHTTPError(c, http.StatusForbidden, "Message does not belong to this session")
 		return
 	}
 
@@ -274,13 +274,13 @@ func (h *Handler) StopSession(c *gin.Context) {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"session_id": sessionID,
 		})
-		c.JSON(404, gin.H{"error": "Session not found"})
+		respondHTTPError(c, http.StatusNotFound, "Session not found")
 		return
 	}
 
 	if session.TenantID != tenantIDUint {
 		logger.Warnf(ctx, "Session %s does not belong to tenant %d", sessionID, tenantIDUint)
-		c.JSON(403, gin.H{"error": "Access denied"})
+		respondHTTPError(c, http.StatusForbidden, "Access denied")
 		return
 	}
 
@@ -313,7 +313,7 @@ func (h *Handler) StopSession(c *gin.Context) {
 			"session_id": sessionID,
 			"message_id": assistantMessageID,
 		})
-		c.JSON(500, gin.H{"error": "Failed to write stop event"})
+		respondHTTPError(c, http.StatusInternalServerError, "Failed to write stop event")
 		return
 	}
 

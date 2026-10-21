@@ -436,30 +436,40 @@ func (h *SystemHandler) ReconnectDocReader(c *gin.Context) {
 		Addr string `json:"addr" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"code": 1, "msg": "请提供 addr 参数"})
+		c.Error(apperrors.NewValidationError("请提供 addr 参数").WithDetails(map[string]string{
+			"reason": "system.docreader.addr_required",
+		}))
 		return
 	}
 	addr := strings.TrimSpace(req.Addr)
 	if addr == "" {
-		c.JSON(400, gin.H{"code": 1, "msg": "addr 不能为空"})
+		c.Error(apperrors.NewValidationError("addr 不能为空").WithDetails(map[string]string{
+			"reason": "system.docreader.addr_empty",
+		}))
 		return
 	}
 
 	// SSRF validation for docreader address
 	if err := secutils.ValidateURLForSSRF(addr); err != nil {
 		logger.Warnf(c.Request.Context(), "SSRF validation failed for docreader addr: %v", err)
-		c.JSON(400, gin.H{"code": 1, "msg": secutils.FormatSSRFError("DocReader 地址", addr, err)})
+		c.Error(apperrors.NewValidationError(secutils.FormatSSRFError("DocReader 地址", addr, err)).WithDetails(map[string]string{
+			"reason": "system.docreader.addr_invalid",
+		}))
 		return
 	}
 
 	if h.documentReader == nil {
-		c.JSON(500, gin.H{"code": 1, "msg": "document converter not initialized"})
+		c.Error(apperrors.NewServiceUnavailableError("document converter not initialized").WithDetails(map[string]string{
+			"reason": "system.docreader.unavailable",
+		}))
 		return
 	}
 
 	if err := h.documentReader.Reconnect(addr); err != nil {
 		logger.Errorf(c.Request.Context(), "Failed to reconnect docreader to %s: %v", addr, err)
-		c.JSON(200, gin.H{"code": 1, "msg": fmt.Sprintf("连接失败: %v", err)})
+		c.Error(apperrors.NewServiceUnavailableError(fmt.Sprintf("连接失败: %v", err)).WithDetails(map[string]string{
+			"reason": "system.docreader.reconnect_failed",
+		}))
 		return
 	}
 
@@ -496,7 +506,9 @@ func (h *SystemHandler) ReconnectDocReader(c *gin.Context) {
 func (h *SystemHandler) CheckParserEngines(c *gin.Context) {
 	var body types.ParserEngineConfig
 	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(400, gin.H{"code": 1, "msg": "请求体格式错误"})
+		c.Error(apperrors.NewValidationError("请求体格式错误").WithDetails(map[string]string{
+			"reason": "system.parser.invalid_request_body",
+		}))
 		return
 	}
 	var existing *types.ParserEngineConfig
@@ -919,11 +931,15 @@ func (h *SystemHandler) CheckStorageEngine(c *gin.Context) {
 
 	var req StorageCheckRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"code": 1, "msg": "请求体格式错误"})
+		c.Error(apperrors.NewValidationError("请求体格式错误").WithDetails(map[string]string{
+			"reason": "system.storage.invalid_request_body",
+		}))
 		return
 	}
 	if !isStorageProviderAllowed(req.Provider) {
-		c.JSON(403, gin.H{"code": 1, "msg": "该存储引擎已被禁用"})
+		c.Error(apperrors.NewForbiddenError("该存储引擎已被禁用").WithDetails(map[string]string{
+			"reason": "system.storage.provider_disabled",
+		}))
 		return
 	}
 
@@ -1313,14 +1329,14 @@ func (h *SystemHandler) PromoteUserToSystemAdmin(c *gin.Context) {
 
 	var req PromoteUserToSystemAdminRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid request: "+err.Error())
 		return
 	}
 
 	userID := strings.TrimSpace(req.UserID)
 	email := strings.TrimSpace(req.Email)
 	if userID == "" && email == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Either user_id or email is required"})
+		respondHTTPError(c, http.StatusBadRequest, "Either user_id or email is required")
 		return
 	}
 
@@ -1341,11 +1357,11 @@ func (h *SystemHandler) PromoteUserToSystemAdmin(c *gin.Context) {
 	}
 	if err != nil {
 		logger.Errorf(ctx, "Error fetching user (id=%q email=%q): %v", userID, email, err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		respondHTTPError(c, http.StatusNotFound, "User not found")
 		return
 	}
 	if user == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		respondHTTPError(c, http.StatusNotFound, "User not found")
 		return
 	}
 
@@ -1364,7 +1380,7 @@ func (h *SystemHandler) PromoteUserToSystemAdmin(c *gin.Context) {
 	user.IsSystemAdmin = true
 	if err := h.userSvc.UpdateUser(ctx, user); err != nil {
 		logger.Errorf(ctx, "Error promoting user %s to system admin: %v", req.UserID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to promote user"})
+		respondHTTPError(c, http.StatusInternalServerError, "Failed to promote user")
 		return
 	}
 
@@ -1403,7 +1419,7 @@ func (h *SystemHandler) RevokeSystemAdmin(c *gin.Context) {
 
 	var req RevokeSystemAdminRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid request: "+err.Error())
 		return
 	}
 
@@ -1428,7 +1444,7 @@ func (h *SystemHandler) RevokeSystemAdmin(c *gin.Context) {
 		// noop probe.
 		if user == nil {
 			logger.Errorf(ctx, "RevokeSystemAdmin returned nil user with ErrUserNotSystemAdmin for %s", req.UserID)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to revoke system admin privileges"})
+			respondHTTPError(c, http.StatusInternalServerError, "Failed to revoke system admin privileges")
 			return
 		}
 		logger.Infof(ctx, "Revoke noop (user %s was not a system admin)", user.ID)
@@ -1450,11 +1466,11 @@ func (h *SystemHandler) RevokeSystemAdmin(c *gin.Context) {
 		})
 		return
 	case errors.Is(err, repository.ErrUserNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		respondHTTPError(c, http.StatusNotFound, "User not found")
 		return
 	default:
 		logger.Errorf(ctx, "Error revoking system admin from user %s: %v", req.UserID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to revoke system admin privileges"})
+		respondHTTPError(c, http.StatusInternalServerError, "Failed to revoke system admin privileges")
 		return
 	}
 }
@@ -1506,7 +1522,7 @@ func (h *SystemHandler) ListSystemAdmins(c *gin.Context) {
 	users, total, err := h.userSvc.ListSystemAdmins(ctx, offset, limit)
 	if err != nil {
 		logger.Errorf(ctx, "Error listing system admins: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list system admins"})
+		respondHTTPError(c, http.StatusInternalServerError, "Failed to list system admins")
 		return
 	}
 
@@ -1567,7 +1583,7 @@ func (h *SystemHandler) ListUsers(c *gin.Context) {
 	users, hasMore, err := h.userSvc.ListAllUsers(ctx, offset, limit)
 	if err != nil {
 		logger.Errorf(ctx, "Error listing users: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list users"})
+		respondHTTPError(c, http.StatusInternalServerError, "Failed to list users")
 		return
 	}
 
@@ -1607,7 +1623,7 @@ func (h *SystemHandler) SetUserStatus(c *gin.Context) {
 
 	var req SetUserStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid request")
 		return
 	}
 
@@ -1616,13 +1632,13 @@ func (h *SystemHandler) SetUserStatus(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrUserNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+			respondHTTPError(c, http.StatusNotFound, "User not found")
 		case errors.Is(err, service.ErrCannotDisableSelf),
 			errors.Is(err, service.ErrCannotDisableLastAdmin):
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondHTTPError(c, http.StatusBadRequest, err.Error())
 		default:
 			logger.Errorf(ctx, "Error setting user status: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user status"})
+			respondHTTPError(c, http.StatusInternalServerError, "Failed to update user status")
 		}
 		return
 	}
@@ -1661,34 +1677,34 @@ func (h *SystemHandler) ResetUserPassword(c *gin.Context) {
 
 	var req ResetUserPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid password reset request"})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid password reset request")
 		return
 	}
 	req.Email = strings.TrimSpace(req.Email)
 
 	if err := service.ValidatePasswordPolicy(req.NewPassword, h.complexPasswordEnabled(ctx)); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	user, err := h.userSvc.GetUserByEmail(ctx, req.Email)
 	if err != nil || user == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		respondHTTPError(c, http.StatusNotFound, "User not found")
 		return
 	}
 	callerID, _ := types.UserIDFromContext(ctx)
 	if callerID == user.ID {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot reset your own password here"})
+		respondHTTPError(c, http.StatusBadRequest, "Cannot reset your own password here")
 		return
 	}
 
 	if err := h.userSvc.AdminResetPassword(ctx, user.ID, req.NewPassword); err != nil {
 		if service.IsPasswordPolicyError(err) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondHTTPError(c, http.StatusBadRequest, err.Error())
 			return
 		}
 		logger.Errorf(ctx, "Failed to reset password for user %s: %v", user.ID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reset user password"})
+		respondHTTPError(c, http.StatusInternalServerError, "Failed to reset user password")
 		return
 	}
 
@@ -1736,19 +1752,19 @@ func (h *SystemHandler) CreateSystemUser(c *gin.Context) {
 
 	var req types.AdminCreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user creation request"})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid user creation request")
 		return
 	}
 	req.Username = secutils.SanitizeForLog(strings.TrimSpace(req.Username))
 	req.Email = secutils.SanitizeForLog(strings.TrimSpace(req.Email))
 	// Password is intentionally NOT trimmed or sanitized.
 	if req.Username == "" || req.Email == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Username and email are required"})
+		respondHTTPError(c, http.StatusBadRequest, "Username and email are required")
 		return
 	}
 	// Binding's min=2/max=50 ran on the raw JSON, re-check the trimmed value.
 	if n := utf8.RuneCountInString(req.Username); n < 2 || n > 50 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Username must be 2-50 characters"})
+		respondHTTPError(c, http.StatusBadRequest, "Username must be 2-50 characters")
 		return
 	}
 
@@ -1758,7 +1774,7 @@ func (h *SystemHandler) CreateSystemUser(c *gin.Context) {
 		case errors.Is(err, service.ErrUserEmailExists) || errors.Is(err, service.ErrUserUsernameExists):
 			if user == nil {
 				logger.Errorf(ctx, "Duplicate identity error without a resolved user: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+				respondHTTPError(c, http.StatusInternalServerError, "Failed to create user")
 				return
 			}
 			logger.Infof(ctx, "Create user noop (identity already exists, ID: %s)", user.ID)
@@ -1770,12 +1786,12 @@ func (h *SystemHandler) CreateSystemUser(c *gin.Context) {
 			})
 			c.JSON(http.StatusOK, CreateSystemUserResponse{User: user.ToUserInfo()})
 		case errors.Is(err, service.ErrPasswordPolicy):
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondHTTPError(c, http.StatusBadRequest, err.Error())
 		case errors.Is(err, service.ErrUserIdentityConflict):
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			respondHTTPError(c, http.StatusConflict, err.Error())
 		default:
 			logger.Errorf(ctx, "Failed to create user: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+			respondHTTPError(c, http.StatusInternalServerError, "Failed to create user")
 		}
 		return
 	}
@@ -1989,11 +2005,11 @@ func runtimeTaskPageSize(c *gin.Context) int {
 func (h *SystemHandler) listRuntimeTasks(c *gin.Context, state types.RuntimeTaskState) {
 	queue := c.Param("queue")
 	if !isKnownRuntimeQueue(queue) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown task queue"})
+		respondHTTPError(c, http.StatusBadRequest, "Unknown task queue")
 		return
 	}
 	if !state.Valid() {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown task state"})
+		respondHTTPError(c, http.StatusBadRequest, "Unknown task state")
 		return
 	}
 	pageSize := runtimeTaskPageSize(c)
@@ -2024,7 +2040,7 @@ func (h *SystemHandler) listRuntimeTasks(c *gin.Context, state types.RuntimeTask
 			return
 		}
 		logger.Errorf(c.Request.Context(), "list runtime queue tasks queue=%s state=%s: %v", queue, state, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list queue tasks"})
+		respondHTTPError(c, http.StatusInternalServerError, "Failed to list queue tasks")
 		return
 	}
 	if page.Tasks == nil {
@@ -2091,7 +2107,7 @@ func runtimeTaskParams(c *gin.Context) (string, string, bool) {
 	queue := c.Param("queue")
 	taskID := c.Param("task_id")
 	if !isKnownRuntimeQueue(queue) || taskID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid queue or task ID"})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid queue or task ID")
 		return "", "", false
 	}
 	return queue, taskID, true
@@ -2104,20 +2120,20 @@ func (h *SystemHandler) mutateRuntimeTask(c *gin.Context, action types.RuntimeTa
 	}
 	inspector, supported := h.taskInspector.(interfaces.RuntimeTaskInspector)
 	if !supported {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Task queue is unavailable"})
+		respondHTTPError(c, http.StatusServiceUnavailable, "Task queue is unavailable")
 		return
 	}
 	task, available, err := inspector.GetRuntimeTask(c.Request.Context(), queue, taskID)
 	if !available {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Task queue is unavailable"})
+		respondHTTPError(c, http.StatusServiceUnavailable, "Task queue is unavailable")
 		return
 	}
 	if err != nil || task == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Task is no longer available"})
+		respondHTTPError(c, http.StatusConflict, "Task is no longer available")
 		return
 	}
 	if !task.Allows(action) {
-		c.JSON(http.StatusConflict, gin.H{"error": "Action is not allowed for the current task state"})
+		respondHTTPError(c, http.StatusConflict, "Action is not allowed for the current task state")
 		return
 	}
 
@@ -2130,7 +2146,7 @@ func (h *SystemHandler) mutateRuntimeTask(c *gin.Context, action types.RuntimeTa
 	switch action {
 	case types.RuntimeTaskActionCancel:
 		if h.knowledgeSvc == nil || task.TenantID == 0 || task.KnowledgeID == "" {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Business cancellation is unavailable"})
+			respondHTTPError(c, http.StatusServiceUnavailable, "Business cancellation is unavailable")
 			return
 		}
 		cancelCtx := context.WithValue(c.Request.Context(), types.TenantIDContextKey, task.TenantID)
@@ -2146,36 +2162,36 @@ func (h *SystemHandler) mutateRuntimeTask(c *gin.Context, action types.RuntimeTa
 				}
 			}
 			logger.Errorf(c.Request.Context(), "cancel runtime queue task queue=%s task=%s: %v", queue, taskID, err)
-			c.JSON(http.StatusConflict, gin.H{"error": "Task can no longer be cancelled"})
+			respondHTTPError(c, http.StatusConflict, "Task can no longer be cancelled")
 			return
 		}
 		auditAction = types.AuditActionSystemQueueTaskCancelled
 	case types.RuntimeTaskActionRunNow:
 		available, err = inspector.RunRuntimeTask(c.Request.Context(), queue, taskID)
 		if !available {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Task queue is unavailable"})
+			respondHTTPError(c, http.StatusServiceUnavailable, "Task queue is unavailable")
 			return
 		}
 		if err != nil {
 			logger.Errorf(c.Request.Context(), "run queue task now queue=%s task=%s: %v", queue, taskID, err)
-			c.JSON(http.StatusConflict, gin.H{"error": "Task is no longer available to run"})
+			respondHTTPError(c, http.StatusConflict, "Task is no longer available to run")
 			return
 		}
 		auditAction = types.AuditActionSystemQueueTaskRunNow
 	case types.RuntimeTaskActionDelete:
 		available, err = inspector.DeleteRuntimeTask(c.Request.Context(), queue, taskID)
 		if !available {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Task queue is unavailable"})
+			respondHTTPError(c, http.StatusServiceUnavailable, "Task queue is unavailable")
 			return
 		}
 		if err != nil {
 			logger.Errorf(c.Request.Context(), "delete queue task queue=%s task=%s: %v", queue, taskID, err)
-			c.JSON(http.StatusConflict, gin.H{"error": "Task is no longer available for deletion"})
+			respondHTTPError(c, http.StatusConflict, "Task is no longer available for deletion")
 			return
 		}
 		auditAction = types.AuditActionSystemQueueTaskDeleted
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown task action"})
+		respondHTTPError(c, http.StatusBadRequest, "Unknown task action")
 		return
 	}
 	h.emitQueueTaskAudit(c.Request.Context(), auditAction, queue, taskID, auditDetails)
@@ -2246,22 +2262,22 @@ func (h *SystemHandler) MutateRuntimeTask(c *gin.Context) {
 func (h *SystemHandler) PurgeArchivedRuntimeTasks(c *gin.Context) {
 	queue := c.Param("queue")
 	if !isKnownRuntimeQueue(queue) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid queue"})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid queue")
 		return
 	}
 	inspector, supported := h.taskInspector.(interfaces.RuntimeTaskInspector)
 	if !supported {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Task queue is unavailable"})
+		respondHTTPError(c, http.StatusServiceUnavailable, "Task queue is unavailable")
 		return
 	}
 	deleted, available, err := inspector.PurgeArchivedRuntimeTasks(c.Request.Context(), queue)
 	if !available {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Task queue is unavailable"})
+		respondHTTPError(c, http.StatusServiceUnavailable, "Task queue is unavailable")
 		return
 	}
 	if err != nil {
 		logger.Errorf(c.Request.Context(), "purge archived queue tasks queue=%s: %v", queue, err)
-		c.JSON(http.StatusConflict, gin.H{"error": "Archived tasks could not be purged"})
+		respondHTTPError(c, http.StatusConflict, "Archived tasks could not be purged")
 		return
 	}
 	h.emitQueueTaskAudit(c.Request.Context(), types.AuditActionSystemQueueArchivedPurged, queue, "",
@@ -2274,7 +2290,7 @@ func (h *SystemHandler) ListSystemSettings(c *gin.Context) {
 	rows, err := h.systemSettingSvc.List(ctx)
 	if err != nil {
 		logger.Errorf(ctx, "list system settings failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list system settings"})
+		respondHTTPError(c, http.StatusInternalServerError, "Failed to list system settings")
 		return
 	}
 	if rows == nil {
@@ -2353,11 +2369,11 @@ func (h *SystemHandler) GetSystemSetting(c *gin.Context) {
 		// Service-layer "unknown key" surfaces as a generic error here;
 		// distinguish via the error string rather than typed errors so
 		// we don't grow a sentinel package for a single error class.
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	if row == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "setting not yet persisted"})
+		respondHTTPError(c, http.StatusNotFound, "setting not yet persisted")
 		return
 	}
 	c.JSON(http.StatusOK, row)
@@ -2395,11 +2411,11 @@ func (h *SystemHandler) UpdateSystemSetting(c *gin.Context) {
 
 	var req UpdateSystemSettingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid request: "+err.Error())
 		return
 	}
 	if req.Value == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "value is required"})
+		respondHTTPError(c, http.StatusBadRequest, "value is required")
 		return
 	}
 
@@ -2408,7 +2424,7 @@ func (h *SystemHandler) UpdateSystemSetting(c *gin.Context) {
 		// Whether this is "unknown key" / "type mismatch" / "DB error"
 		// is encoded in the error message at the service layer; surface
 		// it verbatim. UI captures it as the toast text.
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	h.enrichSettingsModifiedBy(ctx, []*types.SystemSetting{row})
@@ -2447,7 +2463,7 @@ func (h *SystemHandler) ApplyDefaultStorageQuotaToAllTenants(c *gin.Context) {
 	affected, err := h.tenantSvc.BulkSetStorageQuota(ctx, quotaBytes)
 	if err != nil {
 		logger.Errorf(ctx, "BulkSetStorageQuota failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to apply storage quota"})
+		respondHTTPError(c, http.StatusInternalServerError, "Failed to apply storage quota")
 		return
 	}
 
@@ -2500,7 +2516,7 @@ func (h *SystemHandler) ResetSystemSetting(c *gin.Context) {
 		// every error as 400 so the UI captures it as a toast. A real
 		// DB failure here is rare and indistinguishable from "bad key"
 		// at this layer — operators see the message either way.
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})

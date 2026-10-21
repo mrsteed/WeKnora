@@ -14,6 +14,12 @@ fi
 
 export VITE_IS_DOCKER="${VITE_IS_DOCKER:-true}"
 
+# The project uses pnpm as the authoritative lockfile source.
+command -v pnpm >/dev/null 2>&1 || {
+	echo "!! pnpm is required but not installed. Install it with: npm i -g pnpm (or corepack enable pnpm)" >&2
+	exit 1
+}
+
 cd "$PROJECT_ROOT/frontend"
-npm ci
-npm run build
+pnpm install --frozen-lockfile
+pnpm run build

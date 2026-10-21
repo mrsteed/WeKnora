@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/utils"
 )
 
 func TestParseOssFilePath(t *testing.T) {
@@ -99,6 +101,12 @@ func TestParseOssFilePath(t *testing.T) {
 }
 
 func TestNewOSSClient(t *testing.T) {
+	// The endpoint check resolves the host unless it is whitelisted; keep
+	// the test off the network (DNS may be intercepted on this machine).
+	t.Setenv("SSRF_WHITELIST", "oss-cn-hangzhou.aliyuncs.com,example.com")
+	utils.ResetSSRFWhitelistForTest()
+	t.Cleanup(utils.ResetSSRFWhitelistForTest)
+
 	tests := []struct {
 		name      string
 		endpoint  string
@@ -170,6 +178,12 @@ func TestCheckOssConnectivity_InvalidEndpoint(t *testing.T) {
 }
 
 func TestOssEnsureBucket_NonExistent(t *testing.T) {
+	// The endpoint check resolves the host unless it is whitelisted; keep
+	// the test off the network (DNS may be intercepted on this machine).
+	t.Setenv("SSRF_WHITELIST", "oss-cn-hangzhou.aliyuncs.com")
+	utils.ResetSSRFWhitelistForTest()
+	t.Cleanup(utils.ResetSSRFWhitelistForTest)
+
 	client, err := newOSSClient(
 		"https://oss-cn-hangzhou.aliyuncs.com",
 		"cn-hangzhou",
@@ -188,6 +202,12 @@ func TestOssEnsureBucket_NonExistent(t *testing.T) {
 }
 
 func TestOssEnsureBucket_CreateFails(t *testing.T) {
+	// The endpoint check resolves the host unless it is whitelisted; keep
+	// the test off the network (DNS may be intercepted on this machine).
+	t.Setenv("SSRF_WHITELIST", "oss-cn-hangzhou.aliyuncs.com")
+	utils.ResetSSRFWhitelistForTest()
+	t.Cleanup(utils.ResetSSRFWhitelistForTest)
+
 	client, err := newOSSClient(
 		"https://oss-cn-hangzhou.aliyuncs.com",
 		"cn-hangzhou",

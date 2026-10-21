@@ -83,11 +83,11 @@ func parseStorageTarget(filePath string) (backendID, provider string) {
 func requireFilePathQuery(c *gin.Context) (string, bool) {
 	filePath := strings.TrimSpace(c.Query("file_path"))
 	if filePath == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing required parameter: file_path"})
+		respondHTTPError(c, http.StatusBadRequest, "missing required parameter: file_path")
 		return "", false
 	}
 	if strings.Contains(filePath, "..") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file path"})
+		respondHTTPError(c, http.StatusBadRequest, "invalid file path")
 		return "", false
 	}
 	return filePath, true
@@ -116,7 +116,7 @@ func resolveCatalogResource(
 		return filePath, false, true
 	}
 	if resource.TenantID != ownerTenantID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: resource not accessible"})
+		respondHTTPError(c, http.StatusForbidden, "forbidden: resource not accessible")
 		return "", false, false
 	}
 	return resolvedPath, true, true
@@ -179,7 +179,7 @@ func newFileServeHandler(
 
 		tenant, _ := c.Request.Context().Value(types.TenantInfoContextKey).(*types.Tenant)
 		if tenant == nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: workspace context missing"})
+			respondHTTPError(c, http.StatusUnauthorized, "unauthorized: workspace context missing")
 			return
 		}
 		filePath, resourceResolved, ok := resolveCatalogResource(c, resourceCatalog, filePath, tenant.ID)
@@ -195,7 +195,7 @@ func newFileServeHandler(
 				logger.Warnf(c.Request.Context(),
 					"[Router] /files denied cross-tenant or invalid path: tenant_id=%d file_path=%q err=%v",
 					tenant.ID, filePath, err)
-				c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: file path not accessible"})
+				respondHTTPError(c, http.StatusForbidden, "forbidden: file path not accessible")
 				return
 			}
 		}
@@ -465,12 +465,12 @@ func fileAccessError(c *gin.Context, err error) bool {
 	case errors.Is(err, access.ErrNotFound):
 		c.Status(http.StatusNotFound)
 	case errors.Is(err, access.ErrUnauthorized):
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: workspace context missing"})
+		respondHTTPError(c, http.StatusUnauthorized, "unauthorized: workspace context missing")
 	case errors.Is(err, access.ErrForbidden):
-		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: file not accessible from this resource"})
+		respondHTTPError(c, http.StatusForbidden, "forbidden: file not accessible from this resource")
 	default:
 		if app, ok := apperrors.IsAppError(err); ok {
-			c.JSON(app.HTTPCode, gin.H{"error": app.Message})
+			respondHTTPError(c, app.HTTPCode, app.Message)
 		} else {
 			logger.Warnf(c.Request.Context(), "file authorization failed: %v", err)
 			c.Status(http.StatusServiceUnavailable)
@@ -559,19 +559,19 @@ func presignedFileHandler(tenantService interfaces.TenantService, absDir string,
 		if filePath == "" || tenantIDStr == "" || expiresStr == "" || sig == "" {
 			logger.Warnf(ctx, "[Router] /files/presigned missing params: client_ip=%s ua=%q file_path=%q tenant_id=%q expires=%q has_sig=%v",
 				clientIP, userAgent, filePath, tenantIDStr, expiresStr, sig != "")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "missing required parameters"})
+			respondHTTPError(c, http.StatusBadRequest, "missing required parameters")
 			return
 		}
 		if strings.Contains(filePath, "..") {
 			logger.Warnf(ctx, "[Router] /files/presigned rejected path traversal: client_ip=%s file_path=%q", clientIP, filePath)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file path"})
+			respondHTTPError(c, http.StatusBadRequest, "invalid file path")
 			return
 		}
 
 		tenantID, err := strconv.ParseUint(tenantIDStr, 10, 64)
 		if err != nil {
 			logger.Warnf(ctx, "[Router] /files/presigned invalid tenant_id: client_ip=%s tenant_id=%q err=%v", clientIP, tenantIDStr, err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant_id"})
+			respondHTTPError(c, http.StatusBadRequest, "invalid tenant_id")
 			return
 		}
 
@@ -582,7 +582,7 @@ func presignedFileHandler(tenantService interfaces.TenantService, absDir string,
 		if !secutils.VerifyFileURLSig(filePath, tenantID, expiresStr, sig) {
 			logger.Warnf(ctx, "[Router] /files/presigned sig invalid or expired: client_ip=%s ua=%q tenant_id=%d file_path=%q expires=%s",
 				clientIP, userAgent, tenantID, filePath, expiresStr)
-			c.JSON(http.StatusForbidden, gin.H{"error": "invalid or expired signature"})
+			respondHTTPError(c, http.StatusForbidden, "invalid or expired signature")
 			return
 		}
 
@@ -657,7 +657,7 @@ func servePresignedPreview(
 
 			tenant, _ := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 			if tenant == nil {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: workspace context missing"})
+				respondHTTPError(c, http.StatusUnauthorized, "unauthorized: workspace context missing")
 				return
 			}
 
@@ -669,7 +669,7 @@ func servePresignedPreview(
 			}
 			if !resourceResolved {
 				if err := secutils.ValidateStoragePathTenant(filePath, tenant.ID); err != nil {
-					c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: file path not accessible"})
+					respondHTTPError(c, http.StatusForbidden, "forbidden: file path not accessible")
 					return
 				}
 			}

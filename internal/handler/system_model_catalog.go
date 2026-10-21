@@ -24,7 +24,7 @@ import (
 func (h *SystemHandler) GetModelCatalog(c *gin.Context) {
 	state, err := h.modelCatalogSvc.State(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Model catalog is unavailable"})
+		respondHTTPError(c, http.StatusServiceUnavailable, "Model catalog is unavailable")
 		return
 	}
 	c.JSON(http.StatusOK, state)
@@ -72,7 +72,7 @@ func (h *SystemHandler) changeModelCatalog(c *gin.Context, publish bool) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, service.MaxCatalogOverlayBytes+4096)
 	var req service.CatalogUpdate
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid model catalog request (maximum 1 MiB)"})
+		respondHTTPError(c, http.StatusBadRequest, "Invalid model catalog request (maximum 1 MiB)")
 		return
 	}
 	var state *service.CatalogState
@@ -85,11 +85,11 @@ func (h *SystemHandler) changeModelCatalog(c *gin.Context, publish bool) {
 	if err != nil {
 		switch {
 		case errors.Is(err, repository.ErrCatalogVersionConflict):
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			respondHTTPError(c, http.StatusConflict, err.Error())
 		case errors.Is(err, service.ErrInvalidCatalog):
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondHTTPError(c, http.StatusBadRequest, err.Error())
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update model catalog"})
+			respondHTTPError(c, http.StatusInternalServerError, "Failed to update model catalog")
 		}
 		return
 	}

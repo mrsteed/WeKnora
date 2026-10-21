@@ -48,6 +48,7 @@ services:
       - data-files:/data/files
       - docreader-tmp:/tmp/docreader:ro
       - ./config/config.yaml:/app/config/config.yaml
+      - ./config/export:/app/config/export:ro
       # Docker 沙箱默认关闭（见 WEKNORA_SANDBOX_DOCKER_ENABLED）。需要本机 daemon 时
       # 同时设 true 并挂载实际 socket——这等同宿主机 root，仅私有化单机。
       # 入口脚本会按 socket GID 把 appuser 加入对应组（compose group_add 在 gosu 后无效）。
@@ -124,7 +125,7 @@ services:
 
       # 认证 / 空间 / RBAC / 审计
       # 禁止新用户注册（生产建议 true）
-      - DISABLE_REGISTRATION=${DISABLE_REGISTRATION:-false}
+      - DISABLE_REGISTRATION=${DISABLE_REGISTRATION:-true}
       # 开启后密码必须包含大小写字母、数字和特殊字符，特殊字符包含：!@#$%^&*()_+-=[]{}|;:,.<>?
       - WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED=${WEKNORA_AUTH_COMPLEX_PASSWORD_ENABLED:-false}
       # 公开注册后的默认空间策略：create_personal（默认，自动创建个人空间）/ tenantless
@@ -625,8 +626,8 @@ services:
     image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     container_name: WeKnora-minio
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${MINIO_PORT:-9009}:9000"
+      - "${MINIO_CONSOLE_PORT:-9010}:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ACCESS_KEY_ID:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_ACCESS_KEY:-minioadmin}

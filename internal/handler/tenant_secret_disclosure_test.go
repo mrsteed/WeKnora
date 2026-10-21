@@ -10,6 +10,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -163,6 +164,12 @@ func TestGetTenantKVViewerAllowedForNonSecretKey(t *testing.T) {
 }
 
 func TestPutTenantParserConfigAdminPreservesRedactedSecrets(t *testing.T) {
+	// The mineru_endpoint SSRF check resolves the host; DNS may be intercepted
+	// (public names resolving into private ranges) on this machine, so
+	// whitelist it to keep the test hermetic.
+	utils.SetSSRFWhitelistFromRaw("example.com")
+	t.Cleanup(func() { utils.SetSSRFWhitelistFromRaw("") })
+
 	tenant := secretTenantFixture()
 	engine := newTenantHandlerTestEngine(t, types.TenantRoleAdmin, tenant)
 

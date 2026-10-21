@@ -29,12 +29,16 @@ import (
 
 // KnowledgeBaseHandler defines the HTTP handler for knowledge base operations
 type KnowledgeBaseHandler struct {
-	cfg                *config.Config
-	service            interfaces.KnowledgeBaseService
-	profileService     interfaces.KnowledgeBaseProfileService
-	knowledgeService   interfaces.KnowledgeService
-	kbShareService     interfaces.KBShareService
-	agentShareService  interfaces.AgentShareService
+	cfg               *config.Config
+	service           interfaces.KnowledgeBaseService
+	profileService    interfaces.KnowledgeBaseProfileService
+	knowledgeService  interfaces.KnowledgeService
+	kbVisibility      interfaces.KBVisibilityService
+	kbShareService    interfaces.KBShareService
+	agentShareService interfaces.AgentShareService
+	// orgTreeService validates organization_id on visibility='org' KBs at
+	// create/update time.
+	orgTreeService     interfaces.OrgTreeService
 	asynqClient        interfaces.TaskEnqueuer
 	vectorStoreService interfaces.VectorStoreService // enriches KB responses with bound store display
 	// userService 仅在 list 类接口里用于批量回填 creator_name；
@@ -52,8 +56,10 @@ func NewKnowledgeBaseHandler(
 	cfg *config.Config,
 	service interfaces.KnowledgeBaseService,
 	knowledgeService interfaces.KnowledgeService,
+	kbVisibility interfaces.KBVisibilityService,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
+	orgTreeService interfaces.OrgTreeService,
 	asynqClient interfaces.TaskEnqueuer,
 	vectorStoreService interfaces.VectorStoreService,
 	userService interfaces.UserService,
@@ -66,14 +72,44 @@ func NewKnowledgeBaseHandler(
 		profileService:     profileService,
 		service:            service,
 		knowledgeService:   knowledgeService,
+		kbVisibility:       kbVisibility,
 		kbShareService:     kbShareService,
 		agentShareService:  agentShareService,
+		orgTreeService:     orgTreeService,
 		asynqClient:        asynqClient,
 		vectorStoreService: vectorStoreService,
 		userService:        userService,
 		fileService:        fileService,
 		storageResolver:    storageResolver,
 	}
+}
+
+// validateKnowledgeBaseOrganization verifies that organization_id exists in the
+// current tenant's org tree. Used by the visibility='org' create/update path so
+// an org KB can never point at a foreign or deleted organization.
+func (h *KnowledgeBaseHandler) validateKnowledgeBaseOrganization(ctx context.Context, organizationID string) error {
+	orgID := strings.TrimSpace(organizationID)
+	if orgID == "" {
+		return apperrors.NewBadRequestError("organization_id is required when visibility is 'org'")
+	}
+	if h.orgTreeService == nil {
+		return apperrors.NewInternalServerError("organization service unavailable")
+	}
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok || tenantID == 0 {
+		return apperrors.NewUnauthorizedError("Unauthorized")
+	}
+	if _, err := h.orgTreeService.GetNode(ctx, orgID, tenantID); err != nil {
+		if stderrors.Is(err, repository.ErrOrganizationNotFound) {
+			return apperrors.NewBadRequestError("organization_id does not belong to current tenant")
+		}
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"organization_id": orgID,
+			"tenant_id":       tenantID,
+		})
+		return apperrors.NewInternalServerError("failed to validate organization_id")
+	}
+	return nil
 }
 
 // resolveResourceRewriter builds the storage-reference rewriter for one response
@@ -440,8 +476,27 @@ func (h *KnowledgeBaseHandler) CreateKnowledgeBase(c *gin.Context) {
 		c.Error(apperrors.NewBadRequestError("Storage provider is not allowed by STORAGE_ALLOW_LIST"))
 		return
 	}
+	if req.Visibility == "" {
+		req.Visibility = types.KBVisibilityPrivate
+	}
+	switch req.Visibility {
+	case types.KBVisibilityGlobal:
+	case types.KBVisibilityOrg:
+		if strings.TrimSpace(req.OrganizationID) == "" {
+			c.Error(apperrors.NewBadRequestError("organization_id is required when visibility is 'org'"))
+			return
+		}
+		if err := h.validateKnowledgeBaseOrganization(ctx, req.OrganizationID); err != nil {
+			c.Error(err)
+			return
+		}
+	case types.KBVisibilityPrivate:
+	default:
+		c.Error(apperrors.NewBadRequestError("Invalid visibility value, must be 'global', 'org', or 'private'"))
+		return
+	}
 
-	logger.Infof(ctx, "Creating knowledge base, name: %s", secutils.SanitizeForLog(req.Name))
+	logger.Infof(ctx, "Creating knowledge base, name: %s, visibility: %s", secutils.SanitizeForLog(req.Name), req.Visibility)
 	// Create knowledge base using the service
 	kb, err := h.service.CreateKnowledgeBase(ctx, &req)
 	if err != nil {
@@ -478,7 +533,7 @@ func (h *KnowledgeBaseHandler) validateAndGetKnowledgeBase(
 	c *gin.Context,
 ) (*types.KnowledgeBase, string, uint64, types.OrgMemberRole, error) {
 	id := secutils.SanitizeForLog(c.Param("id"))
-	grant, err := resolveHandlerKBAccess(c, id, h.service, h.kbShareService, h.agentShareService)
+	grant, err := resolveHandlerKBAccess(c, id, h.service, h.kbShareService, h.agentShareService, h.kbVisibility)
 	if err != nil {
 		return nil, id, 0, "", err
 	}
@@ -535,6 +590,23 @@ func (h *KnowledgeBaseHandler) GetKnowledgeBase(c *gin.Context) {
 func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 	ctx := c.Request.Context()
 
+	// Optional org scope: narrow the (already visibility-scoped) list to a
+	// single organization. Ported from the mdev branch; applied in-process
+	// after the visibility choke point so it can never widen the scope.
+	organizationParam := c.Query("organization_id")
+	filterByOrganization := func(kbs []*types.KnowledgeBase) []*types.KnowledgeBase {
+		if organizationParam == "" {
+			return kbs
+		}
+		filtered := make([]*types.KnowledgeBase, 0, len(kbs))
+		for _, kb := range kbs {
+			if kb != nil && kb.OrganizationID == organizationParam {
+				filtered = append(filtered, kb)
+			}
+		}
+		return filtered
+	}
+
 	agentID := c.Query("agent_id")
 	if agentID != "" {
 		agent, err := resolveSharedAgentForRequest(c, agentID, h.agentShareService)
@@ -555,6 +627,10 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 			return
 		}
 		kbs = filterKnowledgeBasesForSharedAgent(kbs, agent)
+		kbs = filterByOrganization(kbs)
+		// Intersect the caller's API-key scope as well: list / search / batch
+		// must agree on which KBs the key may touch, and the shared-agent
+		// narrowing alone never widens or narrows a scoped key correctly.
 		kbs = filterKnowledgeBasesForAPIKeyScope(ctx, kbs)
 
 		c.JSON(http.StatusOK, gin.H{
@@ -564,13 +640,37 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 		return
 	}
 
-	// Get all knowledge bases for this tenant
-	kbs, err := h.service.ListKnowledgeBases(ctx)
+	// Get all knowledge bases for this tenant, scoped by KB visibility
+	// (global / org / private): a member only sees their own private KBs,
+	// global KBs, and org KBs of the organizations they belong to (plus
+	// descendants). Platform-privileged users bypass the scope.
+	userIDVal, _ := c.Get(types.UserIDContextKey.String())
+	userID, _ := userIDVal.(string)
+	currentTenantID := c.GetUint64(types.TenantIDContextKey.String())
+	if userID == "" {
+		c.Error(apperrors.NewUnauthorizedError("User ID not found in context"))
+		return
+	}
+
+	var kbs []*types.KnowledgeBase
+	var err error
+	if h.kbVisibility != nil {
+		var bypassVisibility bool
+		if userVal, ok := c.Get(types.UserContextKey.String()); ok {
+			if user, ok := userVal.(*types.User); ok && user != nil {
+				bypassVisibility = canBypassSameTenantResourceVisibility(ctx, user)
+			}
+		}
+		kbs, err = h.kbVisibility.ListAccessibleKBs(ctx, userID, currentTenantID, bypassVisibility)
+	} else {
+		kbs, err = h.service.ListKnowledgeBases(ctx)
+	}
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(apperrors.NewInternalServerError(err.Error()))
 		return
 	}
+	kbs = filterByOrganization(kbs)
 
 	// Optional creator filter — drives the [All | Mine | Others] segmented
 	// control on the list page. We filter in-process rather than pushing
@@ -734,9 +834,14 @@ func (h *KnowledgeBaseHandler) TogglePinKnowledgeBase(c *gin.Context) {
 
 // UpdateKnowledgeBaseRequest defines the request body structure for updating a knowledge base
 type UpdateKnowledgeBaseRequest struct {
-	Name        string                     `json:"name"        binding:"required"`
-	Description string                     `json:"description"`
-	Config      *types.KnowledgeBaseConfig `json:"config"`
+	Name        string `json:"name"          binding:"required"`
+	Description string `json:"description"`
+	// Visibility updates the same-tenant visibility scope. Empty means keep
+	// the current value (ported from the mdev branch).
+	Visibility string `json:"visibility"`
+	// OrganizationID scopes org-visible KBs to one org-tree node.
+	OrganizationID string                     `json:"organization_id"`
+	Config         *types.KnowledgeBaseConfig `json:"config"`
 	// VLMConfig updates the knowledge base's multimodal (vision) config.
 	// Optional: nil means "no change", mirroring how CreateKnowledgeBase
 	// accepts a top-level vlm_config.
@@ -802,12 +907,31 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 			return
 		}
 	}
+	if req.Visibility != "" {
+		switch req.Visibility {
+		case types.KBVisibilityGlobal:
+		case types.KBVisibilityOrg:
+			if strings.TrimSpace(req.OrganizationID) == "" {
+				c.Error(apperrors.NewBadRequestError("organization_id is required when visibility is 'org'"))
+				return
+			}
+			if err := h.validateKnowledgeBaseOrganization(ctx, req.OrganizationID); err != nil {
+				c.Error(err)
+				return
+			}
+		case types.KBVisibilityPrivate:
+		default:
+			c.Error(apperrors.NewBadRequestError("Invalid visibility value, must be 'global', 'org', or 'private'"))
+			return
+		}
+	}
 
-	logger.Infof(ctx, "Updating knowledge base, ID: %s, name: %s",
-		secutils.SanitizeForLog(id), secutils.SanitizeForLog(req.Name))
+	logger.Infof(ctx, "Updating knowledge base, ID: %s, name: %s, visibility: %s",
+		secutils.SanitizeForLog(id), secutils.SanitizeForLog(req.Name), req.Visibility)
 
 	// Update the knowledge base
-	kb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config, req.VLMConfig)
+	kb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config, req.VLMConfig,
+		req.Visibility, req.OrganizationID)
 	if err != nil {
 		// A rejected vlm_config is the caller's mistake, not a server failure.
 		if appErr, ok := apperrors.IsAppError(err); ok {
@@ -972,7 +1096,7 @@ func (h *KnowledgeBaseHandler) CopyKnowledgeBase(c *gin.Context) {
 		return
 	}
 	tenantID := caller.TenantID
-	sourceGrant, err := resolveHandlerKBAccessFor(c, req.SourceID, h.service, nil, nil, types.OrgRoleViewer)
+	sourceGrant, err := resolveHandlerKBAccessFor(c, req.SourceID, h.service, nil, nil, types.OrgRoleViewer, h.kbVisibility)
 	if err != nil {
 		c.Error(err)
 		return
@@ -996,7 +1120,7 @@ func (h *KnowledgeBaseHandler) CopyKnowledgeBase(c *gin.Context) {
 			targetKB.CreatorID = caller.UserID
 		}
 	} else {
-		targetGrant, err := resolveHandlerKBAccessFor(c, req.TargetID, h.service, nil, nil, types.OrgRoleEditor)
+		targetGrant, err := resolveHandlerKBAccessFor(c, req.TargetID, h.service, nil, nil, types.OrgRoleEditor, h.kbVisibility)
 		if err != nil {
 			_ = c.Error(err)
 			return
@@ -1319,31 +1443,19 @@ func (h *KnowledgeBaseHandler) ListMoveTargets(c *gin.Context) {
 		c.Error(errors.NewForbiddenError("No permission to access this knowledge base"))
 		return
 	}
-
-	// Get all knowledge bases
-	allKBs, err := h.service.ListKnowledgeBases(ctx)
-	if err != nil {
-		c.Error(errors.NewInternalServerError(err.Error()))
+	if err := requireMoveKBManagePermission(c, h.kbVisibility, sourceKBID); err != nil {
+		c.Error(err)
 		return
 	}
 
-	// Filter eligible targets
-	targets := make([]*types.KnowledgeBase, 0)
-	for _, kb := range allKBs {
-		if kb.ID == sourceKBID {
-			continue
-		}
-		if kb.IsTemporary {
-			continue
-		}
-		if kb.Type != sourceKB.Type {
-			continue
-		}
-		if kb.EmbeddingModelID != sourceKB.EmbeddingModelID {
-			continue
-		}
-		targets = append(targets, kb)
+	// Get KBs the caller may actually move into, then apply the move-specific
+	// business compatibility filters (same type/model, not temporary, not self).
+	allKBs, err := listManageableMoveTargetKBs(c, h.service, h.kbVisibility)
+	if err != nil {
+		c.Error(err)
+		return
 	}
+	targets := filterMoveTargetsByBusinessRules(sourceKB, allKBs)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

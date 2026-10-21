@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { defineComponent } from 'vue'
 import type { RouteLocationNormalized } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useOrganizationStore } from '@/stores/organization'
 import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities'
 import { autoSetup, userInfoFromApi } from '@/api/auth'
 import type { DeploymentCapabilityKey } from '@/config/deploymentCapabilities'
@@ -40,6 +41,8 @@ function hasPendingOIDCCallback() {
   const hash = window.location.hash || ''
   return hash.includes('oidc_result=') || hash.includes('oidc_error=')
 }
+
+const myOrgTreeOrgsLoadedTenants = new Set<string>()
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -189,6 +192,23 @@ const router = createRouter({
           name: "organizationList",
           component: () => import("../views/organization/OrganizationList.vue"),
           meta: { requiresInit: true, requiresAuth: true, requiredCapability: 'organizations' }
+        },
+        {
+          path: "admin",
+          name: "admin",
+          component: () => import("../views/admin/AdminLayout.vue"),
+          meta: { requiresInit: true, requiresAuth: true, requiresOrgAdmin: true },
+          redirect: "/platform/admin/organ",
+          children: [
+            {
+              path: "organ",
+              name: "organManage",
+              component: () => import("../views/admin/OrganManage.vue"),
+              meta: { requiresInit: true, requiresAuth: true, requiresOrgAdmin: true }
+            },
+            { path: "org-tree", redirect: { name: "organManage" } },
+            { path: "members", redirect: { name: "organManage" } },
+          ],
         },
         // Compatibility redirects for /platform/system/* URLs. System
         // administration surfaces live as dedicated sections inside the
@@ -393,6 +413,20 @@ router.beforeEach(async (to, from, next) => {
   // the bounce. This is UI-only; the server enforces the real check.
   if (to.meta.requiresSystemAdmin === true) {
     if (!authStore.isSystemAdmin) {
+      next('/platform/knowledge-bases')
+      return
+    }
+  }
+
+  if (to.meta.requiresOrgAdmin === true) {
+    if (!authStore.isSuperAdmin) {
+      const orgFetchTenantKey = String(authStore.effectiveTenantId ?? '')
+      if (!myOrgTreeOrgsLoadedTenants.has(orgFetchTenantKey)) {
+        myOrgTreeOrgsLoadedTenants.add(orgFetchTenantKey)
+        await useOrganizationStore().fetchMyOrgTreeOrganizations()
+      }
+    }
+    if (!authStore.isSuperAdmin && !authStore.isOrgEditor) {
       next('/platform/knowledge-bases')
       return
     }

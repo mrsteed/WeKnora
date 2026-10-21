@@ -154,3 +154,48 @@ func ResolveKB(ctx context.Context, request KBRequest, kb *types.KnowledgeBase, 
 	}
 	return nil, ErrForbidden
 }
+
+// KBVisibilityChecker enforces the same-tenant KB visibility scope
+// (global / org / private) on a knowledge base that already resolved to the
+// caller's own tenant. The checker is optional: a nil value preserves the
+// legacy full-tenant grant for call sites that run without an org scope.
+type KBVisibilityChecker interface {
+	CanAccessKB(ctx context.Context, userID string, tenantID uint64, kbID string, isPrivileged bool) (bool, error)
+	CanManageKB(ctx context.Context, userID string, tenantID uint64, kbID string, isPrivileged bool) (bool, error)
+}
+
+// ApplySameTenantVisibility re-checks a resolved same-tenant grant against
+// the KB's visibility scope. A nil checker or a platform-privileged operator
+// keeps the legacy full-tenant Admin grant. Otherwise a read route needs
+// CanAccessKB and a write route needs CanManageKB; the effective permission
+// is downgraded to Viewer when the caller can read but cannot manage.
+func ApplySameTenantVisibility(ctx context.Context, vis KBVisibilityChecker, request KBRequest,
+	kb *types.KnowledgeBase, required types.OrgMemberRole, isPrivileged bool,
+) (types.OrgMemberRole, error) {
+	if vis == nil || isPrivileged || kb == nil {
+		return types.OrgRoleAdmin, nil
+	}
+	tenantID := kb.TenantID
+	userID := request.Caller.UserID
+	if required == types.OrgRoleViewer {
+		canRead, err := vis.CanAccessKB(ctx, userID, tenantID, kb.ID, false)
+		if err != nil {
+			return "", err
+		}
+		if !canRead {
+			return "", ErrForbidden
+		}
+		if canManage, err := vis.CanManageKB(ctx, userID, tenantID, kb.ID, false); err == nil && canManage {
+			return types.OrgRoleAdmin, nil
+		}
+		return types.OrgRoleViewer, nil
+	}
+	canManage, err := vis.CanManageKB(ctx, userID, tenantID, kb.ID, false)
+	if err != nil {
+		return "", err
+	}
+	if !canManage {
+		return "", ErrForbidden
+	}
+	return types.OrgRoleAdmin, nil
+}

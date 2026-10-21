@@ -42,6 +42,7 @@ type RouterParams struct {
 	EvaluationService            interfaces.EvaluationService
 	KBShareService               interfaces.KBShareService
 	AgentShareService            interfaces.AgentShareService
+	KBVisibilityService          interfaces.KBVisibilityService
 	KBHandler                    *handler.KnowledgeBaseHandler
 	KnowledgeHandler             *handler.KnowledgeHandler
 	TenantHandler                *handler.TenantHandler
@@ -81,6 +82,7 @@ type RouterParams struct {
 	UserFavoriteHandler          *handler.UserResourceFavoriteHandler
 	SkillHandler                 *handler.SkillHandler
 	OrganizationHandler          *handler.OrganizationHandler
+	OrgTreeHandler               *handler.OrgTreeHandler
 	IMHandler                    *handler.IMHandler
 	EmbedChannelHandler          *handler.EmbedChannelHandler
 	EmbedChannelService          interfaces.EmbedChannelService
@@ -93,6 +95,7 @@ type RouterParams struct {
 	WeKnoraCloudHandler          *handler.WeKnoraCloudHandler
 	WikiPageHandler              *handler.WikiPageHandler
 	MemoryHandler                *handler.MemoryHandler
+	ExportHandler                *handler.ExportHandler
 	HostSandbox                  service.HostSandboxManager
 }
 
@@ -247,6 +250,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 			params.ChunkService,
 			params.KBShareService,
 			params.AgentShareService,
+			params.KBVisibilityService,
 		)
 
 		// API-key gate: single authority for X-API-Key principals. Runs
@@ -319,6 +323,14 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterUserFavoriteRoutes(v1, params.UserFavoriteHandler, rbacGuards)
 		RegisterSkillRoutes(v1, params.SkillHandler, rbacGuards)
 		RegisterOrganizationRoutes(v1, params.OrganizationHandler, rbacGuards)
+		RegisterOrgTreeRoutes(v1, params.OrgTreeHandler)
+		if params.OrgTreeHandler != nil {
+			superAdmin := v1.Group("", rbacGuards.SystemAdmin())
+			{
+				RegisterOrgTreeSuperAdminRoutes(superAdmin, params.OrgTreeHandler)
+			}
+			v1.GET("/my-organizations", params.OrgTreeHandler.GetMyOrganizations)
+		}
 		RegisterIMChannelRoutes(v1, params.IMHandler, rbacGuards)
 		RegisterEmbedChannelRoutes(v1, params.EmbedChannelHandler, rbacGuards)
 		RegisterMCPEndpointRoutes(v1, params.MCPEndpointHandler, rbacGuards)
@@ -326,6 +338,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler, rbacGuards)
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler, rbacGuards)
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
+		RegisterExportRoutes(v1, params.ExportHandler)
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 
 		// Fail fast if any declared API-key policy points at a route
@@ -336,6 +349,52 @@ func NewRouter(params RouterParams) *gin.Engine {
 	}
 
 	return r
+}
+
+// RegisterOrgTreeRoutes registers org-tree management routes.
+// Fine-grained permission checks are enforced inside OrgTreeHandler.
+func RegisterOrgTreeRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
+	if orgTreeHandler == nil {
+		return
+	}
+	orgTree := r.Group("/org-tree")
+	{
+		orgTree.GET("/search-users", orgTreeHandler.SearchUsersForAssign)
+		orgTree.GET("", orgTreeHandler.GetOrgTree)
+		orgTree.POST("", orgTreeHandler.CreateOrgNode)
+		orgTree.GET("/:id", orgTreeHandler.GetOrgNode)
+		orgTree.PUT("/:id", orgTreeHandler.UpdateOrgNode)
+		orgTree.DELETE("/:id", orgTreeHandler.DeleteOrgNode)
+		orgTree.POST("/:id/move", orgTreeHandler.MoveOrgNode)
+		orgTree.GET("/:id/members", orgTreeHandler.ListOrgMembers)
+		orgTree.POST("/:id/members", orgTreeHandler.AssignUser)
+		orgTree.POST("/:id/create-user", orgTreeHandler.CreateUserInOrg)
+		orgTree.PUT("/:id/users/:user_id", orgTreeHandler.UpdateUserInOrg)
+		orgTree.DELETE("/:id/members/:user_id", orgTreeHandler.RemoveUser)
+		orgTree.PUT("/:id/admin", orgTreeHandler.SetOrgAdmin)
+	}
+}
+
+// RegisterOrgTreeSuperAdminRoutes registers org-tree routes that require system admin privileges.
+func RegisterOrgTreeSuperAdminRoutes(r *gin.RouterGroup, orgTreeHandler *handler.OrgTreeHandler) {
+	if orgTreeHandler == nil {
+		return
+	}
+	r.PUT("/org-tree/super-admin", orgTreeHandler.SetSuperAdmin)
+	r.PUT("/org-tree/:id/users/:user_id/password", orgTreeHandler.UpdateUserPasswordInOrg)
+}
+
+// RegisterExportRoutes 注册文档导出相关的路由。
+func RegisterExportRoutes(r *gin.RouterGroup, exportHandler *handler.ExportHandler) {
+	if exportHandler == nil {
+		return
+	}
+	exportGroup := r.Group("/export")
+	{
+		exportGroup.POST("/document", exportHandler.ExportDocument)
+		exportGroup.GET("/capabilities", exportHandler.ExportCapabilities)
+		exportGroup.POST("/html", exportHandler.ExportHTML)
+	}
 }
 
 // trustedProxies returns the proxy CIDRs/IPs whose X-Forwarded-For headers

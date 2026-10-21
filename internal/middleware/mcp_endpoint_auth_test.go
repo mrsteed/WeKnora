@@ -32,6 +32,7 @@ func newMCPAuthTestEngine(svc *fakeMCPEndpointService, capture *map[string]any) 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.ContextWithFallback = true
+	r.Use(ErrorHandler())
 	tenantSvc := &fakeTenantService{tenant: &types.Tenant{ID: 42, Status: "active"}}
 	r.POST("/mcp/:endpoint_id", MCPEndpointAuth(svc, tenantSvc), func(c *gin.Context) {
 		ctx := c.Request.Context()

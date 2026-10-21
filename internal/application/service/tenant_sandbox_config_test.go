@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	ipclass "github.com/Tencent/WeKnora/internal/ipclass"
 	"github.com/Tencent/WeKnora/internal/sandbox"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -463,7 +465,30 @@ func newTestConfigService(
 	return svc
 }
 
+// skipIfDNSIntercepted skips a test whose endpoint URL must pass the
+// outbound-URL guard when the network's DNS resolves public names into
+// restricted ranges (e.g. a corporate sinkhole mapping them into TEST-NET
+// /15). The behaviour under test does not depend on the endpoint being
+// reachable, and loosening the guard to make the test pass is worse than
+// skipping it.
+func skipIfDNSIntercepted(t *testing.T, host string) {
+	t.Helper()
+	addrs, err := net.LookupIP(host)
+	if err != nil || len(addrs) == 0 {
+		t.Skipf("no DNS available for %q in this environment: %v", host, err)
+	}
+	for _, ip := range addrs {
+		class, _ := ipclass.Classify(ip)
+		switch class {
+		case ipclass.Public, ipclass.Documentation:
+			return
+		}
+	}
+	t.Skipf("DNS on this network resolves %q into a restricted range; the outbound-URL guard cannot be verified here", host)
+}
+
 func TestQueryTemplatesEnsuresMissingWeKnoraTemplate(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	client := &stubProviderClient{
 		templates: []sandbox.RemoteTemplate{{ID: "tpl-custom", Name: "custom", Status: "ready"}},
 		ensured:   &sandbox.RemoteTemplate{ID: "tpl-weknora", Name: "weknora", Status: "building", Standard: true},
@@ -483,6 +508,7 @@ func TestQueryTemplatesEnsuresMissingWeKnoraTemplate(t *testing.T) {
 }
 
 func TestQueryTemplatesEnsuresMissingDesktopTemplate(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	client := &stubProviderClient{
 		templates: []sandbox.RemoteTemplate{
 			{ID: "tpl-weknora", Name: "weknora", Status: "ready", Standard: true},
@@ -514,6 +540,7 @@ func TestQueryTemplatesEnsuresMissingDesktopTemplate(t *testing.T) {
 }
 
 func TestQueryTemplatesEnsureDesktopFailureKeepsCatalog(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	client := &stubProviderClient{
 		templates: []sandbox.RemoteTemplate{
 			{ID: "tpl-weknora", Name: "weknora", Status: "ready", Standard: true},
@@ -535,6 +562,7 @@ func TestQueryTemplatesEnsureDesktopFailureKeepsCatalog(t *testing.T) {
 }
 
 func TestQueryTemplatesReplaceDesktopFailureIsFatal(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	stored := e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "tpl-desktop", 300)
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID: "cfg-a", TenantID: 7, SandboxType: "e2b", Config: stored,
@@ -559,6 +587,7 @@ func TestQueryTemplatesReplaceDesktopFailureIsFatal(t *testing.T) {
 // provider's catalog, so overlapping requests have to share one attempt or the
 // cluster ends up with a template per click.
 func TestQueryTemplatesCollapsesConcurrentProvisioning(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	client := &stubProviderClient{ensureDelay: 50 * time.Millisecond}
 	svc := newTestConfigService(t, &fakeConfigRepo{}, client, stubAgentRepo{})
 
@@ -582,6 +611,7 @@ func TestQueryTemplatesCollapsesConcurrentProvisioning(t *testing.T) {
 // Two tenants pointing at different clusters must not be serialised behind one
 // another, and neither may receive the other's template.
 func TestQueryTemplatesProvisionsPerClusterIndependently(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	client := &stubProviderClient{}
 	svc := newTestConfigService(t, &fakeConfigRepo{}, client, stubAgentRepo{})
 
@@ -599,6 +629,7 @@ func TestQueryTemplatesProvisionsPerClusterIndependently(t *testing.T) {
 // A cluster whose only WeKnora template failed to build must be reprovisioned,
 // not reported as already equipped.
 func TestQueryTemplatesReprovisionsOverFailedStandardTemplate(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	client := &stubProviderClient{
 		templates: []sandbox.RemoteTemplate{
 			{ID: "tpl-broken", Name: "weknora", Status: "failed", Standard: true, Error: "no space left"},
@@ -625,6 +656,7 @@ func TestQueryTemplatesReprovisionsOverFailedStandardTemplate(t *testing.T) {
 // Without EnsureStandard the catalog is read-only, so a failed template is
 // reported as it is rather than silently hidden.
 func TestQueryTemplatesReportsFailedStandardTemplateWithoutEnsure(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	client := &stubProviderClient{templates: []sandbox.RemoteTemplate{
 		{ID: "tpl-broken", Name: "weknora", Status: "failed", Standard: true, Error: "no space left"},
 	}}
@@ -644,6 +676,7 @@ func TestQueryTemplatesReportsFailedStandardTemplateWithoutEnsure(t *testing.T) 
 // EnsureStandard that cannot recover must still return the catalog: a 500
 // would hide the provider's lastError and stop the wizard from polling.
 func TestQueryTemplatesSurfacesFailedEnsureWithoutProvisioning(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	client := &stubProviderClient{
 		templates: []sandbox.RemoteTemplate{
 			{ID: "tpl-broken", Name: "weknora", Status: "failed", Standard: true, Error: "TOOMANYREQUESTS"},
@@ -686,6 +719,7 @@ func TestQueryTemplatesReplaceStandardRequiresConfigID(t *testing.T) {
 }
 
 func TestQueryTemplatesReplaceStandardPersistsNewTemplateID(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	stored := e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "tpl-old", 300)
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID: "cfg-a", TenantID: 7, SandboxType: "e2b", Config: stored,
@@ -721,6 +755,7 @@ func TestQueryTemplatesReplaceStandardPersistsNewTemplateID(t *testing.T) {
 }
 
 func TestQueryTemplatesReplaceStandardKeepsOldTemplateWhileReplacementBuilds(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	stored := e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "tpl-old", 300)
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID: "cfg-a", TenantID: 7, SandboxType: "e2b", Config: stored,
@@ -758,6 +793,7 @@ func TestQueryTemplatesReplaceStandardKeepsOldTemplateWhileReplacementBuilds(t *
 }
 
 func TestQueryTemplatesReplaceStandardKeepsOldTemplateWhenPersistFails(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	stored := e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "tpl-old", 300)
 	repo := &fakeConfigRepo{
 		entity: &types.TenantSandboxConfigEntity{
@@ -883,6 +919,7 @@ func TestQueryTemplatesReplaceStandardRefusesWhenSkillSnapshotExists(t *testing.
 }
 
 func TestUpdateRefusesTemplateChangeWhenSkillSnapshotExists(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	stored := e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "t1", 300)
 	stored.SkillImage = &types.SkillImageConfig{SnapshotID: "snap-1"}
@@ -904,6 +941,7 @@ func TestUpdateRefusesTemplateChangeWhenSkillSnapshotExists(t *testing.T) {
 }
 
 func TestUpdateRefusesDesktopEnabledChangeWhenSkillSnapshotExists(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	stored := e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "t1", 300)
 	stored.SkillImage = &types.SkillImageConfig{SnapshotID: "snap-1"}
@@ -927,6 +965,7 @@ func TestUpdateRefusesDesktopEnabledChangeWhenSkillSnapshotExists(t *testing.T) 
 }
 
 func TestUpdateRefusesIdentityChangeWhenSkillSnapshotExists(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	stored := e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "t1", 300)
 	stored.SkillImage = &types.SkillImageConfig{SnapshotID: "snap-1"}
@@ -948,6 +987,7 @@ func TestUpdateRefusesIdentityChangeWhenSkillSnapshotExists(t *testing.T) {
 }
 
 func TestUpdateRefusesIdentityChangeWhileSkillIsInstalling(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	stored := e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "t1", 300)
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
@@ -972,6 +1012,7 @@ func TestUpdateRefusesIdentityChangeWhileSkillIsInstalling(t *testing.T) {
 }
 
 func TestQueryTemplatesEnsureAndReplaceDoNotShareSingleflight(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	stored := e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "t1", 300)
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID: "cfg-a", TenantID: 7, SandboxType: "e2b", Config: stored,
@@ -1041,6 +1082,7 @@ func TestUpdateRefusesDNSChangeWhenSkillSnapshotExists(t *testing.T) {
 }
 
 func TestUpdateRefusesPrivateEndpointChangeWhenSkillSnapshotExists(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	stored := e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "t1", 300)
 	stored.SkillImage = &types.SkillImageConfig{SnapshotID: "snap-1"}
@@ -1064,6 +1106,7 @@ func TestUpdateRefusesPrivateEndpointChangeWhenSkillSnapshotExists(t *testing.T)
 }
 
 func TestQueryTemplatesDeduplicatesSameProviderTemplateID(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	client := &stubProviderClient{templates: []sandbox.RemoteTemplate{
 		{ID: "tpl-weknora", Name: "weknora", Status: "building", Standard: true},
 		{ID: "tpl-weknora", Name: "project-b89e/weknora", Status: "ready", Standard: true},
@@ -1082,6 +1125,7 @@ func TestQueryTemplatesDeduplicatesSameProviderTemplateID(t *testing.T) {
 }
 
 func TestQueryTemplatesResolvesMaskedStoredCredential(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID: "cfg-a", TenantID: 7, SandboxType: "e2b",
 		Config: e2bCfg("stored-secret", "https://api.e2b.app", "e2b.app", "old", 300),
@@ -1103,6 +1147,7 @@ func TestQueryTemplatesResolvesMaskedStoredCredential(t *testing.T) {
 // An identity change while sandboxes are alive must be refused, and the stored
 // credentials must remain untouched so cleanup stays possible.
 func TestUpdateRefusesIdentityChangeWhileSandboxesLive(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID:          "cfg-a",
@@ -1128,6 +1173,7 @@ func TestUpdateRefusesIdentityChangeWhileSandboxesLive(t *testing.T) {
 
 // With no live sandboxes the write proceeds, and the cordon brackets it.
 func TestUpdateIdentityChangeCordonsThenWrites(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID:          "cfg-a",
@@ -1149,6 +1195,7 @@ func TestUpdateIdentityChangeCordonsThenWrites(t *testing.T) {
 
 // A non-identity edit must not pay for a cordon or a provider round-trip.
 func TestUpdateNonIdentityEditSkipsCordon(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	client := &stubProviderClient{}
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
@@ -1176,6 +1223,7 @@ func TestUpdateNonIdentityEditSkipsCordon(t *testing.T) {
 // install path. Wiping it is how a config can list two ready skills while
 // every session still boots the base template.
 func TestUpdateKeepsSkillImageWhenEditorOmitsIt(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	stored := e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "t1", 300)
 	stored.SkillImage = &types.SkillImageConfig{
@@ -1206,6 +1254,7 @@ func TestUpdateKeepsSkillImageWhenEditorOmitsIt(t *testing.T) {
 }
 
 func TestUpdateRefusalCarriesInventory(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID:          "cfg-a",
@@ -1232,6 +1281,7 @@ func TestUpdateRefusalCarriesInventory(t *testing.T) {
 }
 
 func TestUpdateSweepsSandboxCreatedDuringCordonWindow(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	ctx, cancel := context.WithCancel(context.Background())
 	client := &stubProviderClient{inventories: [][]sandbox.RemoteSandboxSummary{
@@ -1259,6 +1309,7 @@ func TestUpdateSweepsSandboxCreatedDuringCordonWindow(t *testing.T) {
 }
 
 func TestUpdateClearsCordonWhenRequestContextCancelled(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	ctx, cancel := context.WithCancel(context.Background())
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
@@ -1281,6 +1332,7 @@ func TestUpdateClearsCordonWhenRequestContextCancelled(t *testing.T) {
 }
 
 func TestDeleteRefusesWhileSandboxesLive(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID:          "cfg-a",
 		TenantID:    7,
@@ -1343,6 +1395,7 @@ func TestDeleteForceRemovesConfigWithUnverifiableInventory(t *testing.T) {
 // would strand paused sandboxes nobody can reach again - the exact leak this
 // whole flow exists to prevent.
 func TestDeleteForceStillRefusesVerifiedLiveSandboxes(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID: "cfg-a", TenantID: 7, Name: "prod", SandboxType: "e2b",
 		Config: e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "t1", 300),
@@ -1381,6 +1434,7 @@ func TestInventoryMarksUnverifiableInsteadOfFailing(t *testing.T) {
 // so the admin can fix a mistyped key; sandboxes_still_live still blocks when
 // the old credentials can list live instances.
 func TestUpdateProceedsWhenInventoryUnverifiable(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	t.Setenv("SYSTEM_AES_KEY", strings.Repeat("k", 32))
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID: "cfg-a", TenantID: 7, Name: "prod", SandboxType: "e2b",
@@ -1404,6 +1458,7 @@ func TestUpdateProceedsWhenInventoryUnverifiable(t *testing.T) {
 }
 
 func TestDeleteSoftDeletesWhenEmpty(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID:          "cfg-a",
 		TenantID:    7,
@@ -1705,6 +1760,7 @@ func TestWorkspaceScriptsDisabledPolicy(t *testing.T) {
 }
 
 func TestDeleteReleasesSkillSnapshotsBeforeSoftDelete(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	fx := newSnapshotReleaseFixture(t, nil)
 
 	err := fx.svc.Delete(context.Background(), 7, "cfg-a", false)
@@ -1728,6 +1784,7 @@ func TestDeleteReleasesSkillSnapshotsBeforeSoftDelete(t *testing.T) {
 // one. Deleting the config drops the only reader those bytes will ever have, so
 // they have to go with it — nothing else records that the version existed.
 func TestDeleteReclaimsArchivePinnedOnlyByThisConfig(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	fx := newSnapshotReleaseFixture(t, nil)
 	fx.skills.skills[0].BundleRef = "bundle://skill-a-v1.zip"
 
@@ -1737,6 +1794,7 @@ func TestDeleteReclaimsArchivePinnedOnlyByThisConfig(t *testing.T) {
 }
 
 func TestDeleteKeepsArchiveAnotherConfigStillPins(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	fx := newSnapshotReleaseFixture(t, nil)
 	fx.skills.skills[0].BundleRef = "bundle://skill-a-v1.zip"
 	// A sibling sandbox was built from the same replaced archive and is not
@@ -1755,6 +1813,7 @@ func TestDeleteKeepsArchiveAnotherConfigStillPins(t *testing.T) {
 // leaked archive costs storage; a deleted one costs some other sandbox its
 // files, so an unreadable table keeps it.
 func TestDeleteKeepsPinnedArchiveWhenReadersCannotBeListed(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	fx := newSnapshotReleaseFixture(t, nil)
 	fx.skills.skills[0].BundleRef = "bundle://skill-a-v1.zip"
 	fx.skills.listTenantErr = stderrors.New("database unavailable")
@@ -1765,6 +1824,7 @@ func TestDeleteKeepsPinnedArchiveWhenReadersCannotBeListed(t *testing.T) {
 }
 
 func TestDeleteRefusesWhenSnapshotReleaseFailsWithoutForce(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	fx := newSnapshotReleaseFixture(t, map[string]error{
 		"snap-2": stderrors.New("provider unavailable"),
 	})
@@ -1784,6 +1844,7 @@ func TestDeleteRefusesWhenSnapshotReleaseFailsWithoutForce(t *testing.T) {
 }
 
 func TestDeleteWithForceProceedsAndRecordsThePartialSuccess(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	fx := newSnapshotReleaseFixture(t, map[string]error{
 		"snap-2": stderrors.New("provider unavailable"),
 	})
@@ -1827,6 +1888,7 @@ func TestDeleteMarksBuildingSnapshotsWhenProviderHasNoSnapshotClient(t *testing.
 // its commit and the ledger write: PruneSupersededSnapshots walks live configs,
 // so once this row is gone nothing can reach that snapshot again.
 func TestDeleteReleasesAnAbandonedBuildByPlannedName(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID: "cfg-a", TenantID: 7, Name: "prod", SandboxType: "e2b",
 		Config: e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "t1", 300),
@@ -1861,6 +1923,7 @@ func TestDeleteReleasesAnAbandonedBuildByPlannedName(t *testing.T) {
 // A planned name that resolves to nothing is the ordinary case: the commit
 // never happened, so there is no provider resource to release.
 func TestDeleteAcceptsAnAbandonedBuildThatNeverCommitted(t *testing.T) {
+	skipIfDNSIntercepted(t, "api.e2b.app")
 	repo := &fakeConfigRepo{entity: &types.TenantSandboxConfigEntity{
 		ID: "cfg-a", TenantID: 7, Name: "prod", SandboxType: "e2b",
 		Config: e2bCfg("key-a", "https://api.e2b.app", "e2b.app", "t1", 300),

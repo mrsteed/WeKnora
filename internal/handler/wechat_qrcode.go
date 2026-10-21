@@ -30,7 +30,7 @@ func (h *IMHandler) WeChatGetQRCode(c *gin.Context) {
 	result, err := qrCodeService.GetLoginQRCode(ctx)
 	if err != nil {
 		logger.Errorf(ctx, "[WeChat] Failed to generate QR code: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate QR code: " + err.Error()})
+		respondHTTPError(c, http.StatusInternalServerError, "failed to generate QR code: "+err.Error())
 		return
 	}
 
@@ -65,14 +65,14 @@ func (h *IMHandler) WeChatPollQRCodeStatus(c *gin.Context) {
 		QRCode string `json:"qrcode" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "qrcode is required"})
+		respondHTTPError(c, http.StatusBadRequest, "qrcode is required")
 		return
 	}
 
 	result, err := qrCodeService.PollQRCodeStatus(ctx, req.QRCode)
 	if err != nil {
 		logger.Errorf(ctx, "[WeChat] Failed to poll QR code status: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check QR code status"})
+		respondHTTPError(c, http.StatusInternalServerError, "failed to check QR code status")
 		return
 	}
 

@@ -45,20 +45,20 @@ func TestUpdateKnowledgeBaseAppliesVLMConfig(t *testing.T) {
 	ctx := context.Background()
 
 	// nil vlmConfig must preserve whatever is already stored.
-	kb, err := svc.UpdateKnowledgeBase(ctx, "kb-1", "n", "d", nil, nil)
+	kb, err := svc.UpdateKnowledgeBase(ctx, "kb-1", "n", "d", nil, nil, "", "")
 	require.NoError(t, err)
 	assert.False(t, kb.VLMConfig.Enabled, "absent vlm_config must not enable multimodal")
 
 	// Providing vlm_config must persist it — this was silently dropped before #1723.
 	kb, err = svc.UpdateKnowledgeBase(ctx, "kb-1", "n", "d", nil,
-		&types.VLMConfig{Enabled: true, ModelID: "vlm-1"})
+		&types.VLMConfig{Enabled: true, ModelID: "vlm-1"}, "", "")
 	require.NoError(t, err)
 	assert.True(t, kb.VLMConfig.Enabled)
 	assert.Equal(t, "vlm-1", kb.VLMConfig.ModelID)
 
 	// Disabling clears the model, like the initialization config endpoint does.
 	kb, err = svc.UpdateKnowledgeBase(ctx, "kb-1", "n", "d", nil,
-		&types.VLMConfig{Enabled: false, ModelID: "vlm-1"})
+		&types.VLMConfig{Enabled: false, ModelID: "vlm-1"}, "", "")
 	require.NoError(t, err)
 	assert.False(t, kb.VLMConfig.Enabled)
 	assert.Empty(t, kb.VLMConfig.ModelID)
@@ -86,7 +86,7 @@ func TestUpdateKnowledgeBaseManagedVLMClearsLegacyFields(t *testing.T) {
 	kb, err := svc.UpdateKnowledgeBase(ctx, "kb-1", "n", "d", nil, &types.VLMConfig{
 		Enabled: true, ModelID: "vlm-1",
 		ModelName: "evil", BaseURL: "http://169.254.169.254", APIKey: "k", InterfaceType: "ollama",
-	})
+	}, "", "")
 	require.NoError(t, err)
 	assert.Equal(t, "vlm-1", kb.VLMConfig.ModelID)
 	assert.Empty(t, kb.VLMConfig.ModelName)
@@ -94,7 +94,7 @@ func TestUpdateKnowledgeBaseManagedVLMClearsLegacyFields(t *testing.T) {
 	assert.Empty(t, kb.VLMConfig.APIKey)
 	assert.Empty(t, kb.VLMConfig.InterfaceType)
 
-	kb, err = svc.UpdateKnowledgeBase(ctx, "kb-1", "n", "d", nil, &types.VLMConfig{Enabled: false})
+	kb, err = svc.UpdateKnowledgeBase(ctx, "kb-1", "n", "d", nil, &types.VLMConfig{Enabled: false}, "", "")
 	require.NoError(t, err)
 	assert.False(t, kb.VLMConfig.IsEnabled(), "disable after managed must not fall back to legacy")
 }
@@ -112,7 +112,7 @@ func TestUpdateKnowledgeBaseDisablesLegacyVLM(t *testing.T) {
 			repo.rows["kb-1"] = newLegacyVLMKB()
 			svc := newVLMUpdateService(repo)
 
-			kb, err := svc.UpdateKnowledgeBase(context.Background(), "kb-1", "n", "d", nil, &req)
+			kb, err := svc.UpdateKnowledgeBase(context.Background(), "kb-1", "n", "d", nil, &req, "", "")
 			require.NoError(t, err)
 			assert.False(t, kb.VLMConfig.IsEnabled())
 			assert.Empty(t, kb.VLMConfig.ModelName)
@@ -132,13 +132,13 @@ func TestUpdateKnowledgeBaseLegacyVLMEchoKeepsLegacy(t *testing.T) {
 
 	kb, err := svc.UpdateKnowledgeBase(ctx, "kb-1", "n", "d", nil, &types.VLMConfig{
 		Enabled: false, ModelName: "stored", BaseURL: "https://stored.example",
-	})
+	}, "", "")
 	require.NoError(t, err)
 	assert.True(t, kb.VLMConfig.IsEnabled())
 	assert.Equal(t, newLegacyVLMKB().VLMConfig, kb.VLMConfig)
 
 	// enabled=true without a model_id keeps a legacy KB as it is.
-	kb, err = svc.UpdateKnowledgeBase(ctx, "kb-1", "n", "d", nil, &types.VLMConfig{Enabled: true})
+	kb, err = svc.UpdateKnowledgeBase(ctx, "kb-1", "n", "d", nil, &types.VLMConfig{Enabled: true}, "", "")
 	require.NoError(t, err)
 	assert.True(t, kb.VLMConfig.IsEnabled())
 	assert.Equal(t, "https://stored.example", kb.VLMConfig.BaseURL)
@@ -151,7 +151,7 @@ func TestUpdateKnowledgeBaseRejectsEnableWithoutModel(t *testing.T) {
 	repo.rows["kb-1"] = &types.KnowledgeBase{ID: "kb-1", Name: "old", TenantID: 1}
 	svc := newVLMUpdateService(repo)
 
-	_, err := svc.UpdateKnowledgeBase(context.Background(), "kb-1", "n", "d", nil, &types.VLMConfig{Enabled: true})
+	_, err := svc.UpdateKnowledgeBase(context.Background(), "kb-1", "n", "d", nil, &types.VLMConfig{Enabled: true}, "", "")
 
 	appErr, ok := apperrors.IsAppError(err)
 	require.True(t, ok, "error = %v, want an AppError", err)
@@ -173,7 +173,7 @@ func TestUpdateKnowledgeBaseRejectsOverlongVLMInstructions(t *testing.T) {
 	_, err := svc.UpdateKnowledgeBase(ctx, "kb-1", "n", "d", nil, &types.VLMConfig{
 		Enabled: true, ModelID: "vlm-1",
 		CustomInstructions: strings.Repeat("字", types.MaxCustomPromptInstructionsLength+1),
-	})
+	}, "", "")
 	appErr, ok := apperrors.IsAppError(err)
 	require.True(t, ok, "error = %v, want an AppError", err)
 	assert.Equal(t, http.StatusBadRequest, appErr.HTTPCode)
@@ -182,7 +182,7 @@ func TestUpdateKnowledgeBaseRejectsOverlongVLMInstructions(t *testing.T) {
 	kb, err := svc.UpdateKnowledgeBase(ctx, "kb-1", "n", "d", nil, &types.VLMConfig{
 		Enabled: true, ModelID: "vlm-1",
 		CustomInstructions: strings.Repeat("字", types.MaxCustomPromptInstructionsLength),
-	})
+	}, "", "")
 	require.NoError(t, err)
 	assert.Len(t, []rune(kb.VLMConfig.CustomInstructions), types.MaxCustomPromptInstructionsLength)
 }
@@ -197,8 +197,7 @@ func TestUpdateKnowledgeBaseRejectsInvalidVLMModel(t *testing.T) {
 			svc := newVLMUpdateService(repo)
 
 			_, err := svc.UpdateKnowledgeBase(context.Background(), "kb-1", "n", "d", nil,
-				&types.VLMConfig{Enabled: true, ModelID: modelID})
-
+				&types.VLMConfig{Enabled: true, ModelID: modelID}, "", "")
 			appErr, ok := apperrors.IsAppError(err)
 			require.True(t, ok, "error = %v, want an AppError", err)
 			assert.Equal(t, http.StatusBadRequest, appErr.HTTPCode)
@@ -230,7 +229,7 @@ func TestUpdateKnowledgeBaseMixedVLMDisableClearsLegacy(t *testing.T) {
 			repo.rows["kb-1"] = newMixedVLMKB()
 			svc := newVLMUpdateService(repo)
 
-			kb, err := svc.UpdateKnowledgeBase(context.Background(), "kb-1", "n", "d", nil, &req)
+			kb, err := svc.UpdateKnowledgeBase(context.Background(), "kb-1", "n", "d", nil, &req, "", "")
 			require.NoError(t, err)
 			assert.False(t, kb.VLMConfig.IsEnabled(), "disable must not fall back to the stored base_url")
 			assert.Empty(t, kb.VLMConfig.ModelID)
@@ -251,7 +250,7 @@ func TestUpdateKnowledgeBaseMixedVLMEnableWithoutModelRejected(t *testing.T) {
 
 	_, err := svc.UpdateKnowledgeBase(context.Background(), "kb-1", "n", "d", nil, &types.VLMConfig{
 		Enabled: true, ModelName: "stored", BaseURL: "https://stored.example",
-	})
+	}, "", "")
 
 	appErr, ok := apperrors.IsAppError(err)
 	require.True(t, ok, "error = %v, want an AppError", err)
@@ -267,7 +266,7 @@ func TestUpdateKnowledgeBaseMixedVLMKeepsManagedModel(t *testing.T) {
 
 	kb, err := svc.UpdateKnowledgeBase(context.Background(), "kb-1", "n", "d", nil, &types.VLMConfig{
 		Enabled: true, ModelID: "vlm-1", ModelName: "stored", BaseURL: "https://stored.example",
-	})
+	}, "", "")
 	require.NoError(t, err)
 	assert.Equal(t, "vlm-1", kb.VLMConfig.ModelID)
 	assert.True(t, kb.VLMConfig.IsEnabled())

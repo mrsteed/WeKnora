@@ -75,9 +75,12 @@ import MyInvitationsDialog from '@/components/MyInvitationsDialog.vue'
 import { logout as logoutApi } from '@/api/auth'
 import type { TenantInfo } from '@/api/tenant'
 import { useAuthStore } from '@/stores/auth'
+import { useWorkspaceSetupStore } from '@/stores/workspaceSetup'
+import { navigateAfterTenantSwitch, persistLastActiveTenantPreference } from '@/utils/tenantSwitch'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const workspaceSetupStore = useWorkspaceSetupStore()
 const createVisible = ref(false)
 const invitationsVisible = ref(false)
 const policyLoading = ref(true)
@@ -112,7 +115,10 @@ watch(
 async function onTenantCreated(tenant: TenantInfo) {
   await authStore.refreshFromAuthMe()
   authStore.setSelectedTenant(tenant.id, tenant.name)
-  await router.replace('/platform/knowledge-bases')
+  workspaceSetupStore.start(tenant)
+  const persist = persistLastActiveTenantPreference(tenant.id)
+  Promise.race([persist, new Promise((resolve) => setTimeout(resolve, 300))])
+    .finally(() => navigateAfterTenantSwitch())
 }
 
 async function handleLogout() {

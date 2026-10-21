@@ -155,6 +155,8 @@ type sessionService struct {
 	webSearchStateRepo    interfaces.WebSearchStateService       // Service for web search state
 	webSearchProviderRepo interfaces.WebSearchProviderRepository // Repository for web search provider entities
 	kbShareService        interfaces.KBShareService              // Service for KB sharing operations
+	kbVisibility          interfaces.KBVisibilityService         // Same-tenant KB visibility service
+	agentKBScope          *AgentKBScopeResolver                  // Centralized agent KB scope resolver
 	suggestionRepo        interfaces.MessageSuggestionRepository
 	sandboxMgr            sandbox.Manager // Default sandbox backend; used to reclaim per-session MicroVMs on delete
 	sandboxResolver       sandbox.TenantSandboxResolver
@@ -190,6 +192,8 @@ func NewSessionService(cfg *config.Config,
 	webSearchStateRepo interfaces.WebSearchStateService,
 	webSearchProviderRepo interfaces.WebSearchProviderRepository,
 	kbShareService interfaces.KBShareService,
+	kbVisibility interfaces.KBVisibilityService,
+	agentKBScope *AgentKBScopeResolver,
 	suggestionRepo interfaces.MessageSuggestionRepository,
 	sandboxMgr sandbox.Manager,
 	sandboxResolver sandbox.TenantSandboxResolver,
@@ -215,6 +219,8 @@ func NewSessionService(cfg *config.Config,
 		webSearchStateRepo:    webSearchStateRepo,
 		webSearchProviderRepo: webSearchProviderRepo,
 		kbShareService:        kbShareService,
+		kbVisibility:          kbVisibility,
+		agentKBScope:          agentKBScope,
 		suggestionRepo:        suggestionRepo,
 		sandboxMgr:            sandboxMgr,
 		sandboxResolver:       sandboxResolver,
@@ -228,6 +234,16 @@ func NewSessionService(cfg *config.Config,
 		tenantSkillRepo:       tenantSkillRepo,
 		busyGate:              busyGate,
 	}
+}
+
+func (s *sessionService) agentScopeResolver() *AgentKBScopeResolver {
+	if s == nil {
+		return nil
+	}
+	if s.agentKBScope != nil {
+		return s.agentKBScope
+	}
+	return NewAgentKBScopeResolver(s.knowledgeBaseService, s.kbVisibility, s.kbShareService, s.knowledgeService)
 }
 
 // CreateSession creates a new conversation session

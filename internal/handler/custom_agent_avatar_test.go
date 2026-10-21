@@ -68,10 +68,19 @@ func TestCustomAgentAvatarAndErrorResponses(t *testing.T) {
 				agent: &types.CustomAgent{ID: "custom-1", Name: "old", Avatar: "🤖", TenantID: 1},
 				err:   tc.repoErr,
 			}
-			svc := service.NewCustomAgentService(repo, nil, nil, nil, nil, nil, nil, nil)
+			svc := service.NewCustomAgentService(repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 			h := &CustomAgentHandler{service: svc}
 			router := gin.New()
 			router.Use(middleware.ErrorHandler())
+			// The agent handlers require an authenticated caller in the gin
+			// context plus a tenant role in the request context.
+			router.Use(func(c *gin.Context) {
+				c.Set(types.UserContextKey.String(), &types.User{ID: "tester", TenantID: 1})
+				c.Set(types.UserIDContextKey.String(), "tester")
+				c.Request = c.Request.WithContext(
+					context.WithValue(c.Request.Context(), types.TenantRoleContextKey, types.TenantRoleAdmin))
+				c.Next()
+			})
 			router.PUT("/agents/:id", h.UpdateAgent)
 			router.POST("/agents", h.CreateAgent)
 			router.GET("/agents/:id", h.GetAgent)

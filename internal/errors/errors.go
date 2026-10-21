@@ -22,6 +22,7 @@ const (
 	ErrServiceUnavailable ErrorCode = 1008
 	ErrTimeout            ErrorCode = 1009
 	ErrValidation         ErrorCode = 1010
+	ErrRequestTooLarge    ErrorCode = 1011
 
 	// Tenant related error codes (2000-2099)
 	ErrTenantNotFound         ErrorCode = 2000
@@ -165,6 +166,30 @@ func NewServiceUnavailableError(message string) *AppError {
 	}
 }
 
+// NewTimeoutError creates a timeout (504) error.
+func NewTimeoutError(message string) *AppError {
+	if message == "" {
+		message = "请求处理超时"
+	}
+	return &AppError{
+		Code:     ErrTimeout,
+		Message:  message,
+		HTTPCode: http.StatusGatewayTimeout,
+	}
+}
+
+// NewRequestTooLargeError creates a request entity too large (413) error.
+func NewRequestTooLargeError(message string) *AppError {
+	if message == "" {
+		message = "请求内容过大"
+	}
+	return &AppError{
+		Code:     ErrRequestTooLarge,
+		Message:  message,
+		HTTPCode: http.StatusRequestEntityTooLarge,
+	}
+}
+
 // NewValidationError creates a validation error
 func NewValidationError(message string) *AppError {
 	return &AppError{
@@ -272,6 +297,45 @@ func NewVectorStoreUnavailableError(message string) *AppError {
 		Code:     ErrVectorStoreUnavailable,
 		Message:  message,
 		HTTPCode: http.StatusBadRequest,
+	}
+}
+
+// NewHTTPStatusError adapts an existing HTTP status/message pair into the
+// standard AppError envelope without forcing each caller to re-select a
+// constructor. It is intended for incremental migrations away from ad-hoc
+// JSON error bodies.
+func NewHTTPStatusError(status int, message string) *AppError {
+	switch status {
+	case http.StatusBadRequest:
+		return NewBadRequestError(message)
+	case http.StatusUnauthorized:
+		return NewUnauthorizedError(message)
+	case http.StatusForbidden:
+		return NewForbiddenError(message)
+	case http.StatusNotFound:
+		return NewNotFoundError(message)
+	case http.StatusGone:
+		return &AppError{Code: ErrNotFound, Message: message, HTTPCode: status}
+	case http.StatusConflict:
+		return NewConflictError(message)
+	case http.StatusLocked:
+		return &AppError{Code: ErrConflict, Message: message, HTTPCode: status}
+	case http.StatusTooManyRequests:
+		return NewTooManyRequestsError(message)
+	case http.StatusRequestEntityTooLarge:
+		return NewRequestTooLargeError(message)
+	case http.StatusGatewayTimeout:
+		return NewTimeoutError(message)
+	case http.StatusServiceUnavailable:
+		return NewServiceUnavailableError(message)
+	default:
+		if status >= 500 {
+			return &AppError{Code: ErrInternalServer, Message: message, HTTPCode: status}
+		}
+		if status >= 400 {
+			return &AppError{Code: ErrBadRequest, Message: message, HTTPCode: status}
+		}
+		return NewInternalServerError(message)
 	}
 }
 

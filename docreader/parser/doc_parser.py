@@ -7,7 +7,10 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 
-import textract
+try:
+    import textract
+except ModuleNotFoundError:  # optional fallback dependency; disabled in the default chain
+    textract = None
 
 from docreader.config import CONFIG
 from docreader.models.document import Document
@@ -237,6 +240,8 @@ class DocParser(Docx2Parser):
         return Document(content=text)
 
     def _parse_with_textract(self, temp_file_path: str) -> Document:
+        if textract is None:
+            raise RuntimeError("textract is not installed")
         logger.info(f"Parsing DOC file with textract: {temp_file_path}")
         text = textract.process(temp_file_path, method="antiword").decode("utf-8")
         logger.info(f"Successfully extracted {len(text)} bytes of DOC using textract")

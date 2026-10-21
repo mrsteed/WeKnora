@@ -67,13 +67,18 @@ class StdMarkitdownParser(BaseParser):
             ext = "." + ext
 
         with parser_worker_limit("markitdown", CONFIG.markitdown_max_workers):
-            result = self._convert_markitdown(content, ext, keep_data_uris=True)
-            if result is None:
-                logger.warning(
-                    "MarkItDown failed with embedded images for %s; retrying without data URIs",
-                    ft or ext,
-                )
+            if pptx_bytes is not None:
+                # PPTX image recovery expects unresolved placeholders so every
+                # picture can be attached through Document.images in slide order.
                 result = self._convert_markitdown(content, ext, keep_data_uris=False)
+            else:
+                result = self._convert_markitdown(content, ext, keep_data_uris=True)
+                if result is None:
+                    logger.warning(
+                        "MarkItDown failed with embedded images for %s; retrying without data URIs",
+                        ft or ext,
+                    )
+                    result = self._convert_markitdown(content, ext, keep_data_uris=False)
 
         text = result.text_content
         images: dict[str, str] = {}

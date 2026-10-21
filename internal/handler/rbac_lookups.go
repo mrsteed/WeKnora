@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 
 	apprepo "github.com/Tencent/WeKnora/internal/application/repository"
@@ -243,4 +244,24 @@ func resolveKBCreatorByKnowledgeID(
 		return "", err
 	}
 	return creatorID, nil
+}
+
+func isPrivilegedResourceOperator(user *types.User) bool {
+	return types.IsPlatformPrivilegedUser(user)
+}
+
+// canBypassSameTenantResourceVisibility reports whether the user carries
+// platform-admin identity and therefore bypasses same-tenant resource
+// visibility (org-scoped knowledge bases / knowledge rows).
+func canBypassSameTenantResourceVisibility(ctx context.Context, user *types.User) bool {
+	return isPrivilegedResourceOperator(user)
+}
+
+func canBypassSameTenantResourceVisibilityFromContext(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	userVal, _ := c.Get(types.UserContextKey.String())
+	user, _ := userVal.(*types.User)
+	return canBypassSameTenantResourceVisibility(c.Request.Context(), user)
 }

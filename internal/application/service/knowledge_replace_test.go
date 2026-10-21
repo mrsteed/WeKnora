@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
@@ -99,6 +101,13 @@ func (f *replaceFileStore) SaveFile(context.Context, *multipart.FileHeader, uint
 	f.saved++
 	*f.events = append(*f.events, "save")
 	return "new/file.md", nil
+}
+
+// GetFile stands in for a readable source; reparsing re-checks that the
+// stored source is still accessible. No event: a plain read is expected to
+// succeed and is not itself interesting to the assertions.
+func (f *replaceFileStore) GetFile(_ context.Context, _ string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("original source")), nil
 }
 
 func (f *replaceFileStore) DeleteFile(_ context.Context, filePath string) error {

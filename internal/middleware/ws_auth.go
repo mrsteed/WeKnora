@@ -8,9 +8,10 @@
 package middleware
 
 import (
-	"net/http"
 	"strconv"
 	"strings"
+
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -36,7 +37,7 @@ func AttachAuthenticatedUser(
 	jwtTenantID uint64,
 ) bool {
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid or expired token"})
+		c.Error(apperrors.NewUnauthorizedError("Unauthorized: invalid or expired token"))
 		c.Abort()
 		return false
 	}

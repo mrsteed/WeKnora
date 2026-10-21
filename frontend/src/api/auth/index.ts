@@ -1,11 +1,16 @@
 import { post, get, put } from '@/utils/request'
+import { resolveErrorMessage } from '@/utils/errorMessage'
 import i18n from '@/i18n'
 
-const t = (key: string) => i18n.global.t(key)
+const t = (key: string) => {
+  const translated = i18n.global.t(key)
+  return typeof translated === 'string' ? translated : String(translated)
+}
 
 // 用户登录接口
+// identifier 接受用户名或邮箱（后端优先按用户名解析，兜底按邮箱）。
 export interface LoginRequest {
-  email: string
+  identifier: string
   password: string
 }
 
@@ -19,6 +24,7 @@ export interface LoginResponse {
     avatar?: string
     tenant_id: number
     can_access_all_tenants?: boolean
+    is_super_admin?: boolean
     is_system_admin?: boolean
     is_active: boolean
     created_at: string
@@ -118,6 +124,7 @@ export interface UserInfo {
   avatar?: string
   tenant_id: string
   can_access_all_tenants?: boolean
+  is_super_admin?: boolean
   preferences?: UserPreferences
   is_system_admin?: boolean
   created_at: string
@@ -158,6 +165,7 @@ export function userInfoFromApi(
     avatar: u?.avatar,
     tenant_id: String(tid) || '',
     can_access_all_tenants: u?.can_access_all_tenants === true,
+    is_super_admin: u?.is_super_admin === true,
     is_system_admin: u?.is_system_admin === true,
     preferences: u?.preferences,
     created_at: u?.created_at || new Date().toISOString(),
@@ -317,7 +325,7 @@ export function autoSetup(): Promise<LoginResponse> {
     } catch (error: any) {
       return {
         success: false,
-        message: error.message || 'Auto-setup unavailable'
+        message: resolveErrorMessage(error, t, 'error.auth.autoSetupFailed')
       }
     }
   })()
@@ -546,7 +554,7 @@ export async function getInvitationByToken(token: string): Promise<InviteLookupR
     const response = await post(`/api/v1/auth/invitations/lookup`, { token })
     return response as unknown as InviteLookupResponse
   } catch (error: any) {
-    return { success: false, message: error.message || '' }
+    return { success: false, message: resolveErrorMessage(error, t, 'inviteRegister.invalidBody') }
   }
 }
 

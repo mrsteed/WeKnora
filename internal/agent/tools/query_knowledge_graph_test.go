@@ -53,6 +53,8 @@ func (s *stubKnowledgeBaseService) UpdateKnowledgeBase(
 	string,
 	*types.KnowledgeBaseConfig,
 	*types.VLMConfig,
+	string,
+	string,
 ) (*types.KnowledgeBase, error) {
 	return nil, nil
 }

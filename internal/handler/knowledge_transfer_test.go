@@ -27,10 +27,13 @@ func (*transferHandlerKnowledge) SaveKnowledgeMoveProgress(context.Context, *typ
 }
 
 func (*transferHandlerKnowledge) GetKnowledgeByID(_ context.Context, id string) (*types.Knowledge, error) {
+	// CreatedBy matches the caller injected by transferHandlerRouter so
+	// requireKnowledgeMutation passes without a KB visibility service.
 	return &types.Knowledge{
 		ID:              id,
 		TenantID:        7,
 		KnowledgeBaseID: "source",
+		CreatedBy:       "user",
 		ParseStatus:     types.ParseStatusCompleted,
 	}, nil
 }
@@ -47,6 +50,7 @@ func transferHandlerRouter(scope *types.TenantAPIKeyScope) *gin.Engine {
 			ctx = types.WithTenantAPIKeyScope(ctx, *scope)
 		}
 		c.Set(types.TenantIDContextKey.String(), uint64(7))
+		c.Set(types.UserIDContextKey.String(), "user")
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	})

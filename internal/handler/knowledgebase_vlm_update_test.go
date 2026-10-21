@@ -27,6 +27,7 @@ func (s *vlmUpdateKBService) GetKnowledgeBaseByID(context.Context, string) (*typ
 
 func (s *vlmUpdateKBService) UpdateKnowledgeBase(
 	_ context.Context, _, _, _ string, _ *types.KnowledgeBaseConfig, _ *types.VLMConfig,
+	_ string, _ string,
 ) (*types.KnowledgeBase, error) {
 	s.updated = true
 	return s.kb, nil
@@ -76,10 +77,8 @@ func TestUpdateKnowledgeBaseVLMConfigRequiresSettingsAccess(t *testing.T) {
 				c.Next()
 			})
 			r.PUT("/:id", middleware.RequireKBAccess(
-				middleware.KBIDFromParam("id"), types.OrgRoleEditor, svc, shares, nil,
-				&config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}},
-			), h.UpdateKnowledgeBase)
-
+				middleware.KBIDFromParam("id"), types.OrgRoleEditor, svc, shares, nil, nil,
+				&config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}), h.UpdateKnowledgeBase)
 			w := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPut, "/kb-1", strings.NewReader(tc.body))
 			req.Header.Set("Content-Type", "application/json")

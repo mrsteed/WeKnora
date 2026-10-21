@@ -15,6 +15,11 @@ func TestSSRFSafeURL(t *testing.T) {
 		rawURL        string
 		wantOK        bool
 		wantReasonSub string
+		// dnsHost is set when the expected verdict can only be reached once the
+		// hostname resolves into the public space; on networks whose DNS
+		// sinkholes public names into restricted ranges the sub-test is
+		// skipped instead of failing for the wrong reason.
+		dnsHost string
 	}{
 		{
 			name:          "empty URL",
@@ -102,6 +107,7 @@ func TestSSRFSafeURL(t *testing.T) {
 			rawURL:        "https://example.com:3306/db",
 			wantOK:        false,
 			wantReasonSub: "port 3306 is blocked for security reasons",
+			dnsHost:       "example.com",
 		},
 	}
 
@@ -110,6 +116,9 @@ func TestSSRFSafeURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			if tt.dnsHost != "" {
+				skipIfDNSResolvesRestricted(t, tt.dnsHost)
+			}
 			ok, reason := isSSRFSafeURL(tt.rawURL)
 			if ok != tt.wantOK {
 				t.Fatalf("isSSRFSafeURL(%q) ok = %v, want %v, reason = %q", tt.rawURL, ok, tt.wantOK, reason)
@@ -130,7 +139,28 @@ func TestSSRFSafeURL_AllowPublicDomain(t *testing.T) {
 		if strings.Contains(reason, "DNS resolution failed") {
 			t.Skipf("skip due to DNS unavailable in test environment: %s", reason)
 		}
+		// Networks that sinkhole public names into restricted ranges make the
+		// guard reject the URL for a different, legitimate reason.
+		if strings.Contains(reason, "restricted") || strings.Contains(reason, "private IP") {
+			t.Skipf("cannot verify public-domain allowance on this network: %s", reason)
+		}
 		t.Fatalf("expected public domain to be allowed, got ok=%v reason=%q", ok, reason)
+	}
+}
+
+// skipIfDNSResolvesRestricted skips a sub-test when the network's DNS
+// resolves the public test hostname into a restricted range; the assertion
+// only makes sense on a network where public names resolve publicly.
+func skipIfDNSResolvesRestricted(t *testing.T, host string) {
+	t.Helper()
+	addrs, err := net.LookupIP(host)
+	if err != nil {
+		t.Skipf("cannot resolve %q in this environment: %v", host, err)
+	}
+	for _, ip := range addrs {
+		if restricted, _ := isRestrictedIP(ip); restricted {
+			t.Skipf("DNS on this network resolves %q into a restricted range (%s); the expected verdict cannot be isolated here", host, ip)
+		}
 	}
 }
 

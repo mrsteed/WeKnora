@@ -384,6 +384,7 @@
               </div>
               <div v-if="answerFullyRendered && event.done && event.content && event.content.trim() && !embeddedMode"
                 class="answer-toolbar">
+                <ExportDropdown v-if="canExportAnswer(event)" :content="resolveAnswerExportContent(event)" />
                 <t-tooltip v-if="canFork" :content="forkTooltip">
                   <t-button size="small" variant="outline" shape="round" @click.stop="emitFork">
                     <t-icon name="git-branch" />
@@ -642,6 +643,7 @@ import SandboxCommandProgress from '@/components/SandboxCommandProgress.vue';
 import ToolResultRenderer from './ToolResultRenderer.vue';
 import ToolApprovalCard from './ToolApprovalCard.vue';
 import McpOAuthCard from './McpOAuthCard.vue';
+import ExportDropdown from './ExportDropdown.vue';
 import ChatRequestInfoButton from '@/components/ChatRequestInfoButton.vue';
 import ChatCitationFloat from '@/components/ChatCitationFloat.vue';
 import picturePreview from '@/components/picture-preview.vue';
@@ -703,6 +705,7 @@ import {
   type CachedMermaidSvgHtml,
 } from '@/utils/chatMessageShared';
 import { copyWithToast } from '@/utils/clipboard';
+import { resolveChatExportContent } from '@/utils/exportUtils';
 import {
   configureMarkedForChatMarkdown,
   renderChatMarkdown,
@@ -1029,6 +1032,13 @@ const embedAuthProps = computed(() => ({
   embedSessionSig: props.embedSessionSig,
   embedVisitorId: props.embedVisitorId,
 }));
+
+const resolveAnswerExportContent = (answerEvent?: any): string => {
+  const fallbackContent = typeof answerEvent?.content === 'string' ? answerEvent.content : '';
+  return resolveChatExportContent(props.session as any, fallbackContent);
+};
+
+const canExportAnswer = (answerEvent?: any): boolean => Boolean(resolveAnswerExportContent(answerEvent));
 
 const showRequestInfo = computed(
   () => !props.embeddedMode && !!(props.session?.request_id || props.session?.id),

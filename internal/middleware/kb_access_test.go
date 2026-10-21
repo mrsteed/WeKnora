@@ -240,6 +240,7 @@ func runGuard(
 		kbsvc,
 		shareSvc,
 		agentSvc,
+		nil,
 		cfgRBAC(true),
 	)
 	guard(c)
@@ -335,6 +336,7 @@ func TestRequireKBAccess_NoTenant_Aborts(t *testing.T) {
 		KBIDFromParam("id"),
 		types.OrgRoleViewer,
 		&stubKBLookup{},
+		nil,
 		nil,
 		nil,
 		cfgRBAC(true),
@@ -525,9 +527,8 @@ func TestRequireKBAccess_Forbidden_EnforcedEvenWhenRBACDisabled(t *testing.T) {
 
 	guard := RequireKBAccess(
 		KBIDFromParam("id"),
-		types.OrgRoleEditor, // would-deny
-		kbsvc, share, nil,
-		cfgRBAC(false), // enforcement off
+		types.OrgRoleEditor,                    // would-deny
+		kbsvc, share, nil, nil, cfgRBAC(false), // enforcement off
 	)
 	guard(c)
 	require.True(t, c.IsAborted(), "cross-workspace access stays denied when EnableRBAC is off")
@@ -550,6 +551,7 @@ func TestRequireKBAccess_NotFound_FiresEvenWhenRBACDisabled(t *testing.T) {
 		types.OrgRoleViewer,
 		&stubKBLookup{kbs: map[string]*types.KnowledgeBase{}},
 		nil, nil,
+		nil,
 		cfgRBAC(false),
 	)
 	guard(c)

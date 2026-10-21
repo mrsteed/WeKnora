@@ -1163,7 +1163,7 @@ watch(
 // 监听菜单创建智能体事件
 const handleOpenAgentEditor = (event: CustomEvent) => {
   if (event.detail?.mode === 'create') {
-    openCreateModal()
+    void openCreateModal()
   }
 }
 
@@ -1517,23 +1517,31 @@ const handleEditorSuccess = (agent?: CustomAgent) => {
 }
 
 // 暴露创建方法供外部调用
-const openCreateModal = () => {
+const ensureAgentCreateReady = async () => {
+  if (!isReadyForAgent.value) {
+    MessagePlugin.warning(t('contextualGuide.tenantModels.needChatModelFirst'))
+    uiStore.openSettings('models')
+    return false
+  }
+  return true
+}
+
+const openCreateModal = async () => {
+  const ready = await ensureAgentCreateReady()
+  if (!ready) return false
   editingAgent.value = null
   editorMode.value = 'create'
   editorInitialSection.value = 'basic'
   editorInitialHighlightField.value = ''
   editorVisible.value = true
+  return true
 }
 
 // 创建智能体
-const handleCreateAgent = () => {
-  if (!isReadyForAgent.value) {
-    MessagePlugin.warning(t('contextualGuide.tenantModels.needChatModelFirst'))
-    uiStore.openSettings('models')
-    return
-  }
+const handleCreateAgent = async () => {
+  const opened = await openCreateModal()
+  if (!opened) return
   markContextualGuideDone('agentList')
-  openCreateModal()
 }
 
 defineExpose({

@@ -17,6 +17,10 @@ func TestValidateConnectorBaseURLBlocksLoopback(t *testing.T) {
 }
 
 func TestValidateConnectorBaseURLAllowsPublicHTTPS(t *testing.T) {
+	// The public-host check resolves the name; DNS may be intercepted
+	// (resolving public names into private ranges) on this machine, so
+	// whitelist the host to keep the test hermetic.
+	t.Setenv("SSRF_WHITELIST", "open.feishu.cn")
 	secutils.ResetSSRFWhitelistForTest()
 	t.Cleanup(secutils.ResetSSRFWhitelistForTest)
 

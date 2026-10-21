@@ -47,6 +47,7 @@ export function pickUsableStorageProvider(
 
 type EditorResourceKey =
   | 'storageEngine'
+  | 'storageEngineStatus'
   | 'mcpServices'
   | 'skills'
   | 'skillCatalog'
@@ -99,6 +100,14 @@ export const useEditorResourcesStore = defineStore('editorResources', () => {
     },
     ({ configRes, statusRes }) => {
       storageConfig.value = configRes?.data ?? null
+      storageStatus.value = statusRes?.data?.engines ?? []
+      storageAllowedProviders.value = statusRes?.data?.allowed_providers ?? []
+    },
+  )
+
+  const storageEngineStatusResource = createCachedResource(
+    async () => getStorageEngineStatus(),
+    (statusRes) => {
       storageStatus.value = statusRes?.data?.engines ?? []
       storageAllowedProviders.value = statusRes?.data?.allowed_providers ?? []
     },
@@ -237,6 +246,7 @@ export const useEditorResourcesStore = defineStore('editorResources', () => {
 
   const resources: Record<EditorResourceKey, ReturnType<typeof createCachedResource>> = {
     storageEngine: storageEngineResource,
+    storageEngineStatus: storageEngineStatusResource,
     mcpServices: mcpServicesResource,
     skills: skillsResource,
     skillCatalog: skillCatalogResource,
@@ -251,6 +261,10 @@ export const useEditorResourcesStore = defineStore('editorResources', () => {
 
   async function ensureStorageEngine(force = false): Promise<void> {
     return storageEngineResource.ensure(force)
+  }
+
+  async function ensureStorageEngineStatus(force = false): Promise<void> {
+    return storageEngineStatusResource.ensure(force)
   }
 
   function resolveUsableStorageProvider(candidate?: string): string {
@@ -328,7 +342,7 @@ export const useEditorResourcesStore = defineStore('editorResources', () => {
       ensureAgentTypePresets(force),
       ensureAgentTools(force),
       ensurePromptTemplates(force),
-      ensureStorageEngine(force),
+      ensureStorageEngineStatus(force),
       ensurePlaceholders(force),
       ensureTenantRetrievalConfig(force),
     ])
@@ -376,6 +390,7 @@ export const useEditorResourcesStore = defineStore('editorResources', () => {
     parserEngines,
     systemInfo,
     ensureStorageEngine,
+    ensureStorageEngineStatus,
     resolveUsableStorageProvider,
     ensureMcpServices,
     ensureSkills,

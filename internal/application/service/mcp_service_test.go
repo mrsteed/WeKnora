@@ -288,6 +288,12 @@ func TestUpdateMCPService_RespectsScalarFieldPresence(t *testing.T) {
 
 func TestUpdateMCPService_AppliesNonScalarUpdateWithoutName(t *testing.T) {
 	ctx := context.Background()
+	// example.com is resolved by the SSRF guard; on networks whose DNS
+	// intercepts public names into restricted ranges, whitelist the host to
+	// keep the test hermetic.
+	utils.SetSSRFWhitelistFromRaw("example.com")
+	t.Cleanup(utils.ResetSSRFWhitelistForTest)
+
 	svc, repo := newTestService()
 	id := seedService(t, repo, "stored-api", "stored-token")
 	// Use resolvable example.com paths: subdomains like before.example.com fail

@@ -1,6 +1,6 @@
 -- Per-session extraction progress and deferred proposal replacement.
-ALTER TABLE memory_subjects ADD COLUMN extraction_state JSONB;
-ALTER TABLE memory_items ADD COLUMN replaces_id VARCHAR(36) NOT NULL DEFAULT '';
+ALTER TABLE memory_subjects ADD COLUMN IF NOT EXISTS extraction_state JSONB;
+ALTER TABLE memory_items ADD COLUMN IF NOT EXISTS replaces_id VARCHAR(36) NOT NULL DEFAULT '';
 
 -- Progress is an indexed row per conversation; subject rows only hold a lease.
 CREATE TABLE IF NOT EXISTS memory_extraction_sessions (

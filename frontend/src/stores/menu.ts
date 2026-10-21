@@ -35,7 +35,7 @@ export const useMenuStore = defineStore('menuStore', () => {
     { title: '', titleKey: 'menu.artifacts', icon: 'artifact', path: 'artifacts', requiredCapability: 'settings.sandbox' },
     { title: '', titleKey: 'menu.agents', icon: 'agent', path: 'agents', requiredCapability: 'agents' },
     { title: '', titleKey: 'toolbox.title', icon: 'toolbox', path: 'toolbox' },
-    { title: '', titleKey: 'menu.organizations', icon: 'organization', path: 'organizations', requiredCapability: 'organizations' },
+    { title: '', titleKey: 'menu.orgMemberManage', icon: 'organization', path: 'admin', requiredCapability: 'organizations' },
     { title: '', titleKey: 'menu.settings', icon: 'setting', path: 'settings' },
     { title: '', titleKey: 'menu.logout', icon: 'logout', path: 'logout' }
   ])
@@ -79,6 +79,15 @@ export const useMenuStore = defineStore('menuStore', () => {
         return false
       }
       if (item.path === 'organizations' && !authStore.hasRole('admin')) {
+        return false
+      }
+      // 组织管理入口：仅超级管理员 / 组织管理员 / 组织编辑（直接成员
+      // editor 及以上角色）可见；与路由 requiresOrgAdmin 守卫同源判定。
+      if (item.path === 'admin' && !authStore.isSuperAdmin && !authStore.isOrgEditor) {
+        return false
+      }
+      // 工具箱入口已收紧为仅空间 owner / 超级管理员可见。
+      if (item.path === 'toolbox' && !authStore.isSuperAdmin && !authStore.hasRole('owner')) {
         return false
       }
       if (!deploymentCapabilities.isSupported(item.requiredCapability)) {

@@ -44,6 +44,11 @@ func TestSkillPythonVerifier(t *testing.T) {
 		// wantNote is a substring of a stdout note - something the checker
 		// reported without refusing the install.
 		wantNote string
+		// skipWhenInstalled names distributions whose presence in the host
+		// interpreter defeats the case's premise (it assumes a bare venv). The
+		// case is skipped rather than rewritten: on dev machines that carry
+		// the package the "not installed" branch cannot be exercised at all.
+		skipWhenInstalled []string
 	}{{
 		name: "a syntax error",
 		files: map[string]string{
@@ -78,8 +83,9 @@ func TestSkillPythonVerifier(t *testing.T) {
 			"requirements.txt": "# pinned\npandas==3.0.1\n-r other.txt\n",
 			"scripts/run.py":   "x = 1\n",
 		},
-		wantProblem: "requirements.txt declares pandas but it is not installed",
-		wantExit:    2,
+		wantProblem:       "requirements.txt declares pandas but it is not installed",
+		wantExit:          2,
+		skipWhenInstalled: []string{"pandas"},
 	}, {
 		// pip skips a line whose marker is false here, so refusing the install
 		// over it rejects a skill whose requirements are all present. Markers
@@ -148,6 +154,11 @@ func TestSkillPythonVerifier(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			for _, dist := range tc.skipWhenInstalled {
+				if pythonHasDistribution(t, dist) {
+					t.Skipf("%s is already installed in this environment's python3; the bare-venv premise of this case cannot be verified here", dist)
+				}
+			}
 			root := writeSkillTree(t, tc.files)
 			entry := pythonFiles(tc.files)
 			if len(tc.optional) > 0 {
@@ -374,6 +385,25 @@ func pythonCanEvaluateMarkers(t *testing.T) bool {
 		return false
 	}
 	return exec.Command(python, "-c", "from packaging.markers import Marker").Run() == nil
+}
+
+// pythonHasDistribution reports whether the interpreter the verifier runs
+// under already carries the named distribution.
+func pythonHasDistribution(t *testing.T, dist string) bool {
+	t.Helper()
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		return false
+	}
+	code := "import importlib.metadata as m; print(m.version(" + pythonStringLiteral(dist) + "))"
+	var stderr bytes.Buffer
+	cmd := exec.Command(python, "-c", code)
+	cmd.Stderr = &stderr
+	return cmd.Run() == nil
+}
+
+func pythonStringLiteral(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
 }
 
 // runSkillPythonVerifier feeds the embedded checker to a real interpreter the

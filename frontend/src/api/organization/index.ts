@@ -1,4 +1,15 @@
 import { get, post, put, del } from '@/utils/request'
+import i18n from '@/i18n'
+import { resolveErrorMessage } from '@/utils/errorMessage'
+
+const t = (key: string) => {
+  const translated = i18n.global.t(key)
+  return typeof translated === 'string' ? translated : String(translated)
+}
+
+function fallbackOrganizationError(error: unknown, fallbackKey: string): string {
+  return resolveErrorMessage(error, t, fallbackKey)
+}
 
 // Organization types
 export interface Organization {
@@ -337,7 +348,7 @@ export async function createOrganization(req: CreateOrganizationRequest): Promis
     const response = await post('/api/v1/organizations', req)
     return response as unknown as ApiResponse<Organization>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to create organization' }
+    return { success: false, message: fallbackOrganizationError(error, 'organization.createFailed') }
   }
 }
 
@@ -349,7 +360,7 @@ export async function getOrganization(id: string): Promise<ApiResponse<Organizat
     const response = await get(`/api/v1/organizations/${id}`)
     return response as unknown as ApiResponse<Organization>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to get organization' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -361,7 +372,7 @@ export async function listMyOrganizations(): Promise<ApiResponse<ListOrganizatio
     const response = await get('/api/v1/organizations')
     return response as unknown as ApiResponse<ListOrganizationsResponse>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to list organizations' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -373,7 +384,7 @@ export async function updateOrganization(id: string, req: UpdateOrganizationRequ
     const response = await put(`/api/v1/organizations/${id}`, req)
     return response as unknown as ApiResponse<Organization>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to update organization' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -385,7 +396,7 @@ export async function deleteOrganization(id: string): Promise<ApiResponse<void>>
     const response = await del(`/api/v1/organizations/${id}`)
     return response as unknown as ApiResponse<void>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to delete organization' }
+    return { success: false, message: fallbackOrganizationError(error, 'organization.deleteFailed') }
   }
 }
 
@@ -397,7 +408,7 @@ export async function joinOrganization(req: JoinOrganizationRequest): Promise<Ap
     const response = await post('/api/v1/organizations/join', req)
     return response as unknown as ApiResponse<Organization>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to join organization' }
+    return { success: false, message: fallbackOrganizationError(error, 'organization.joinFailed') }
   }
 }
 
@@ -410,7 +421,7 @@ export async function submitJoinRequest(req: SubmitJoinRequestRequest): Promise<
     const response = await post('/api/v1/organizations/join-request', req)
     return response as unknown as ApiResponse<void>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to submit join request' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -422,7 +433,7 @@ export async function previewOrganization(inviteCode: string): Promise<ApiRespon
     const response = await get(`/api/v1/organizations/preview/${inviteCode}`)
     return response as unknown as ApiResponse<OrganizationPreview>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to preview organization' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -445,7 +456,7 @@ export async function searchSearchableOrganizations(
       message: res.message,
     }
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to search organizations' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -464,7 +475,7 @@ export async function joinOrganizationById(
     const response = await post('/api/v1/organizations/join-by-id', body)
     return response as unknown as ApiResponse<Organization>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to join organization' }
+    return { success: false, message: fallbackOrganizationError(error, 'organization.joinFailed') }
   }
 }
 
@@ -476,7 +487,7 @@ export async function leaveOrganization(id: string): Promise<ApiResponse<void>> 
     const response = await post(`/api/v1/organizations/${id}/leave`, {})
     return response as unknown as ApiResponse<void>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to leave organization' }
+    return { success: false, message: fallbackOrganizationError(error, 'organization.leaveFailed') }
   }
 }
 
@@ -491,7 +502,7 @@ export async function requestRoleUpgrade(
     const response = await post(`/api/v1/organizations/${orgId}/request-upgrade`, request)
     return response as unknown as ApiResponse<JoinRequestResponse>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to submit upgrade request' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -503,7 +514,7 @@ export async function generateInviteCode(id: string): Promise<ApiResponse<{ invi
     const response = await post(`/api/v1/organizations/${id}/invite-code`, {})
     return response as unknown as ApiResponse<{ invite_code: string }>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to generate invite code' }
+    return { success: false, message: fallbackOrganizationError(error, 'organization.inviteCodeRefreshFailed') }
   }
 }
 
@@ -517,7 +528,7 @@ export async function listMembers(orgId: string): Promise<ApiResponse<ListMember
     const response = await get(`/api/v1/organizations/${orgId}/members`)
     return response as unknown as ApiResponse<ListMembersResponse>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to list members' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -529,7 +540,7 @@ export async function updateMemberRole(orgId: string, tenantId: number, req: Upd
     const response = await put(`/api/v1/organizations/${orgId}/members/${tenantId}`, req)
     return response as unknown as ApiResponse<void>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to update member role' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -541,7 +552,7 @@ export async function removeMember(orgId: string, tenantId: number): Promise<Api
     const response = await del(`/api/v1/organizations/${orgId}/members/${tenantId}`)
     return response as unknown as ApiResponse<void>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to remove member' }
+    return { success: false, message: fallbackOrganizationError(error, 'organization.memberRemoveFailed') }
   }
 }
 
@@ -553,7 +564,7 @@ export async function listJoinRequests(orgId: string): Promise<ApiResponse<ListJ
     const response = await get(`/api/v1/organizations/${orgId}/join-requests`)
     return response as unknown as ApiResponse<ListJoinRequestsResponse>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to list join requests' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -565,7 +576,7 @@ export async function reviewJoinRequest(orgId: string, requestId: string, req: R
     const response = await put(`/api/v1/organizations/${orgId}/join-requests/${requestId}/review`, req)
     return response as unknown as ApiResponse<void>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to review join request' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -579,7 +590,7 @@ export async function shareKnowledgeBase(kbId: string, req: ShareKnowledgeBaseRe
     const response = await post(`/api/v1/knowledge-bases/${kbId}/shares`, req)
     return response as unknown as ApiResponse<KnowledgeBaseShare>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to share knowledge base' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -591,7 +602,7 @@ export async function listKBShares(kbId: string): Promise<ApiResponse<ListShares
     const response = await get(`/api/v1/knowledge-bases/${kbId}/shares`)
     return response as unknown as ApiResponse<ListSharesResponse>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to list shares' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -603,7 +614,7 @@ export async function updateSharePermission(kbId: string, shareId: string, req: 
     const response = await put(`/api/v1/knowledge-bases/${kbId}/shares/${shareId}`, req)
     return response as unknown as ApiResponse<void>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to update share permission' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -615,7 +626,7 @@ export async function removeShare(kbId: string, shareId: string): Promise<ApiRes
     const response = await del(`/api/v1/knowledge-bases/${kbId}/shares/${shareId}`)
     return response as unknown as ApiResponse<void>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to remove share' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -627,7 +638,7 @@ export async function listSharedKnowledgeBases(): Promise<ApiResponse<SharedKnow
     const response = await get('/api/v1/shared-knowledge-bases')
     return response as unknown as ApiResponse<SharedKnowledgeBase[]>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to list shared knowledge bases' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -639,7 +650,7 @@ export async function listOrganizationSharedKnowledgeBases(orgId: string): Promi
     const response = await get(`/api/v1/organizations/${orgId}/shared-knowledge-bases`)
     return response as unknown as ApiResponse<OrganizationSharedKnowledgeBaseItem[]>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to list organization shared knowledge bases' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -651,7 +662,7 @@ export async function listOrgShares(orgId: string): Promise<ApiResponse<ListShar
     const response = await get(`/api/v1/organizations/${orgId}/shares`)
     return response as unknown as ApiResponse<ListSharesResponse>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to list organization shares' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -661,7 +672,7 @@ export async function shareAgent(agentId: string, req: ShareKnowledgeBaseRequest
     const response = await post(`/api/v1/agents/${agentId}/shares`, req)
     return response as unknown as ApiResponse<AgentShareResponse>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to share agent' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -670,7 +681,7 @@ export async function listAgentShares(agentId: string): Promise<ApiResponse<List
     const response = await get(`/api/v1/agents/${agentId}/shares`)
     return response as unknown as ApiResponse<ListAgentSharesResponse>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to list agent shares' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -679,7 +690,7 @@ export async function updateAgentSharePermission(agentId: string, shareId: strin
     const response = await put(`/api/v1/agents/${agentId}/shares/${shareId}`, req)
     return response as unknown as ApiResponse<void>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to update share permission' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -688,7 +699,7 @@ export async function removeAgentShare(agentId: string, shareId: string): Promis
     const response = await del(`/api/v1/agents/${agentId}/shares/${shareId}`)
     return response as unknown as ApiResponse<void>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to remove share' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -697,7 +708,7 @@ export async function listSharedAgents(): Promise<ApiResponse<SharedAgentInfo[]>
     const response = await get('/api/v1/shared-agents')
     return response as unknown as ApiResponse<SharedAgentInfo[]>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to list shared agents' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -709,7 +720,7 @@ export async function listOrganizationSharedAgents(orgId: string): Promise<ApiRe
     const response = await get(`/api/v1/organizations/${orgId}/shared-agents`)
     return response as unknown as ApiResponse<OrganizationSharedAgentItem[]>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to list organization shared agents' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -725,7 +736,7 @@ export async function setSharedAgentDisabledByMe(
     })
     return response as unknown as ApiResponse<void>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to update preference' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -734,7 +745,7 @@ export async function listOrgAgentShares(orgId: string): Promise<ApiResponse<Lis
     const response = await get(`/api/v1/organizations/${orgId}/agent-shares`)
     return response as unknown as ApiResponse<ListAgentSharesResponse>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to list organization agent shares' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -752,7 +763,7 @@ export async function searchTenantsForInvite(
     const response = await get(`/api/v1/organizations/${orgId}/search-tenants?q=${encodeURIComponent(query)}&limit=${limit}`)
     return response as unknown as ApiResponse<TenantInviteCandidate[]>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to search tenants' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }
 
@@ -780,6 +791,6 @@ export async function inviteMember(
     const response = await post(`/api/v1/organizations/${orgId}/invite`, req)
     return response as unknown as ApiResponse<void>
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to invite member' }
+    return { success: false, message: fallbackOrganizationError(error, 'error.organization.requestFailed') }
   }
 }

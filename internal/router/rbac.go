@@ -140,6 +140,7 @@ type rbacGuards struct {
 	chunkService      middleware.ChunkLookup
 	kbShareService    interfaces.KBShareService
 	agentShareService interfaces.AgentShareService
+	kbVisibility      interfaces.KBVisibilityService
 
 	// apiKeyAuthorizer is the single source of truth for which routes an
 	// X-API-Key principal may call. Routes opt in via the apiKeyGroup
@@ -162,6 +163,7 @@ func newRBACGuards(
 	chunkService interfaces.ChunkService,
 	kbShareService interfaces.KBShareService,
 	agentShareService interfaces.AgentShareService,
+	kbVisibility interfaces.KBVisibilityService,
 ) *rbacGuards {
 	g := &rbacGuards{cfg: cfg, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	if kbHandler != nil {
@@ -186,6 +188,7 @@ func newRBACGuards(
 	g.chunkService = chunkService
 	g.kbShareService = kbShareService
 	g.agentShareService = agentShareService
+	g.kbVisibility = kbVisibility
 	return g
 }
 
@@ -560,6 +563,7 @@ func (g *rbacGuards) KBAccessRead(param string) gin.HandlerFunc {
 		g.kbService,
 		g.kbShareService,
 		g.agentShareService,
+		g.kbVisibility,
 		g.cfg,
 	)
 }
@@ -574,6 +578,7 @@ func (g *rbacGuards) KBAccessWrite(param string) gin.HandlerFunc {
 		g.kbService,
 		g.kbShareService,
 		g.agentShareService,
+		g.kbVisibility,
 		g.cfg,
 	)
 }
@@ -589,6 +594,7 @@ func (g *rbacGuards) KBAccessReadFromKnowledgeIDParam(param string) gin.HandlerF
 		g.kbService,
 		g.kbShareService,
 		g.agentShareService,
+		g.kbVisibility,
 		g.cfg,
 	)
 }
@@ -602,6 +608,7 @@ func (g *rbacGuards) KBAccessWriteFromKnowledgeIDParam(param string) gin.Handler
 		g.kbService,
 		g.kbShareService,
 		g.agentShareService,
+		g.kbVisibility,
 		g.cfg,
 	)
 }
@@ -616,6 +623,7 @@ func (g *rbacGuards) KBAccessReadFromChunkIDParam(param string) gin.HandlerFunc 
 		g.kbService,
 		g.kbShareService,
 		g.agentShareService,
+		g.kbVisibility,
 		g.cfg,
 	)
 }
@@ -630,6 +638,7 @@ func (g *rbacGuards) KBAccessWriteFromChunkIDParam(param string) gin.HandlerFunc
 		g.kbService,
 		g.kbShareService,
 		g.agentShareService,
+		g.kbVisibility,
 		g.cfg,
 	)
 }

@@ -80,7 +80,7 @@ func (h *MCPEndpointHandler) CreateMCPEndpoint(c *gin.Context) {
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	var req mcpEndpointRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	enabled := true
@@ -179,7 +179,7 @@ func (h *MCPEndpointHandler) UpdateMCPEndpoint(c *gin.Context) {
 	id := secutils.SanitizeForLog(c.Param("endpoint_id"))
 	var req mcpEndpointRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondHTTPError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	ep, err := h.svc.Update(c.Request.Context(), tenantID, id, interfaces.MCPEndpointUpdate{
@@ -271,20 +271,20 @@ func mcpEndpointResponse(ep *types.MCPEndpoint, token string) gin.H {
 func writeMCPEndpointMgmtError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrMCPEndpointNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"error": "mcp endpoint not found"})
+		respondHTTPError(c, http.StatusNotFound, "mcp endpoint not found")
 	default:
 		var appErr *apperrors.AppError
 		if errors.As(err, &appErr) {
 			switch appErr.Code {
 			case apperrors.ErrNotFound:
-				c.JSON(http.StatusNotFound, gin.H{"error": appErr.Message})
+				respondHTTPError(c, http.StatusNotFound, appErr.Message)
 				return
 			case apperrors.ErrBadRequest, apperrors.ErrValidation:
-				c.JSON(http.StatusBadRequest, gin.H{"error": appErr.Message})
+				respondHTTPError(c, http.StatusBadRequest, appErr.Message)
 				return
 			}
 		}
 		logger.Error(c.Request.Context(), "mcp endpoint management failed", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "operation failed"})
+		respondHTTPError(c, http.StatusInternalServerError, "operation failed")
 	}
 }

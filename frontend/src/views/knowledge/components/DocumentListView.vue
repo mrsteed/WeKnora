@@ -17,6 +17,8 @@ interface Tag {
 interface KnowledgeItem {
   id: string;
   file_name: string;
+  created_by?: string;
+  created_by_nickname?: string;
   original_file_name?: string;
   folder_path?: string;
   file_type?: string;
@@ -90,6 +92,14 @@ const formatTime = (time?: string) => {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${yy}-${MM}-${dd} ${hh}:${mm}`;
+};
+
+const getUploaderLabel = (item: KnowledgeItem) => {
+  const nickname = item.created_by_nickname?.trim();
+  if (nickname) return nickname;
+  const createdBy = item.created_by?.trim();
+  if (createdBy) return createdBy;
+  return '--';
 };
 
 const getSourceInfo = (item: KnowledgeItem): { icon: string; label: string } => {
@@ -300,6 +310,10 @@ const handleAction = (action: 'download' | 'edit' | 'reparse' | 'cancel-parse' |
                 <span class="meta-sep" aria-hidden="true">·</span>
                 <span>{{ formatFileSize(item.file_size) }}</span>
               </template>
+              <span class="meta-sep" aria-hidden="true">·</span>
+              <span :title="`${t('knowledgeBase.columnUploader')}: ${getUploaderLabel(item)}`">
+                {{ t('knowledgeBase.columnUploader') }}: {{ getUploaderLabel(item) }}
+              </span>
               <span class="meta-sep" aria-hidden="true">·</span>
               <span :title="t('knowledgeBase.columnUpdatedAt')">{{ formatTime(item.updated_at) }}</span>
             </span>

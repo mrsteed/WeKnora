@@ -47,7 +47,27 @@ func (s *stubMoveKGService) GetKnowledgeByID(_ context.Context, _ string) (*type
 	return nil, errors.New("knowledge not found")
 }
 
-func newMoveGateRouter(kb interfaces.KnowledgeBaseService, kg interfaces.KnowledgeService) *gin.Engine {
+type moveGateKBVisibilityStub struct {
+	manageByKB map[string]bool
+}
+
+func (s moveGateKBVisibilityStub) ListAccessibleKBs(context.Context, string, uint64, bool) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+
+func (s moveGateKBVisibilityStub) CanManageKB(_ context.Context, _ string, _ uint64, kbID string, _ bool) (bool, error) {
+	return s.manageByKB[kbID], nil
+}
+
+func (s moveGateKBVisibilityStub) CanAccessKB(context.Context, string, uint64, string, bool) (bool, error) {
+	return false, nil
+}
+
+func newMoveGateRouter(
+	kb interfaces.KnowledgeBaseService,
+	kg interfaces.KnowledgeService,
+	vis interfaces.KBVisibilityService,
+) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(middleware.ErrorHandler())
@@ -59,7 +79,7 @@ func newMoveGateRouter(kb interfaces.KnowledgeBaseService, kg interfaces.Knowled
 	// asynqClient stays nil: every case here either rejects at the gate or
 	// fails at knowledge-ID validation, so enqueue is never reached. A nil
 	// deref would mean the gate let a request through to enqueue unexpectedly.
-	h := &KnowledgeHandler{kbService: kb, kgService: kg}
+	h := &KnowledgeHandler{kbService: kb, kgService: kg, kbVisibility: vis}
 	r.POST("/move", h.MoveKnowledge)
 	return r
 }
@@ -108,7 +128,9 @@ func TestMoveKnowledge_CrossStoreGate(t *testing.T) {
 				}
 				return nil, errors.New("kb not found")
 			}}
-			router := newMoveGateRouter(kb, &stubMoveKGService{})
+			router := newMoveGateRouter(kb, &stubMoveKGService{}, moveGateKBVisibilityStub{
+				manageByKB: map[string]bool{"kb-src": true, "kb-dst": true},
+			})
 
 			body, _ := json.Marshal(map[string]any{
 				"knowledge_ids": []string{"k1"},
@@ -132,5 +154,37 @@ func TestMoveKnowledge_CrossStoreGate(t *testing.T) {
 					w.Body.String(), tt.wantBodyNotHas)
 			}
 		})
+	}
+}
+
+func TestMoveKnowledge_RejectsTargetWithoutManagePermission(t *testing.T) {
+	storeA := "store-a"
+	kb := &stubMoveKBService{byID: func(_ context.Context, id string) (*types.KnowledgeBase, error) {
+		switch id {
+		case "kb-src", "kb-dst":
+			return &types.KnowledgeBase{ID: id, TenantID: 1, Type: "document", EmbeddingModelID: "m1", VectorStoreID: &storeA}, nil
+		}
+		return nil, errors.New("kb not found")
+	}}
+	router := newMoveGateRouter(kb, &stubMoveKGService{}, moveGateKBVisibilityStub{
+		manageByKB: map[string]bool{"kb-src": true, "kb-dst": false},
+	})
+
+	body, _ := json.Marshal(map[string]any{
+		"knowledge_ids": []string{"k1"},
+		"source_kb_id":  "kb-src",
+		"target_kb_id":  "kb-dst",
+		"mode":          "reparse",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/move", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "No permission to operate on this knowledge base") {
+		t.Fatalf("body %q does not contain expected permission error", w.Body.String())
 	}
 }

@@ -230,8 +230,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	user, err := h.userService.Register(ctx, &req)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to register user: %v", err)
-		appErr := errors.NewBadRequestError(err.Error())
-		c.Error(appErr)
+		c.Error(registrationFailureAppError(err))
 		return
 	}
 
@@ -268,12 +267,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.Error(appErr)
 		return
 	}
-	email := secutils.SanitizeForLog(req.Email)
+	identifier := secutils.SanitizeForLog(req.Identifier)
 
 	// Validate required fields
-	if req.Email == "" || req.Password == "" {
+	if req.Identifier == "" || req.Password == "" {
 		logger.Error(ctx, "Missing required login fields")
-		appErr := errors.NewValidationError("Email and password are required")
+		appErr := errors.NewValidationError("Username/email and password are required")
 		c.Error(appErr)
 		return
 	}
@@ -282,7 +281,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	response, err := h.userService.Login(ctx, &req)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to login user: %v", err)
-		appErr := errors.NewUnauthorizedError("Login failed").WithDetails(err.Error())
+		appErr := errors.NewUnauthorizedError("Login failed").WithDetails(map[string]string{
+			"reason": "auth.login_failed",
+		})
 		c.Error(appErr)
 		return
 	}
@@ -290,14 +291,57 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Check if login was successful
 	if !response.Success {
 		logger.Warnf(ctx, "Login failed: %s", response.Message)
-		c.JSON(http.StatusUnauthorized, dto.NewAuthLoginResponse(response))
+		c.Error(loginFailureAppError(response))
 		return
 	}
 
 	// User is already in the correct format from service
 
-	logger.Infof(ctx, "User logged in successfully, email: %s", email)
+	logger.Infof(ctx, "User logged in successfully, identifier: %s", identifier)
 	c.JSON(http.StatusOK, dto.NewAuthLoginResponse(response))
+}
+
+func loginFailureAppError(response *types.LoginResponse) *errors.AppError {
+	message := strings.TrimSpace(response.Message)
+	switch message {
+	case "Invalid email or password":
+		return errors.NewUnauthorizedError(message).WithDetails(map[string]string{
+			"reason": "user.invalid_credentials",
+		})
+	case "Account is disabled":
+		return errors.NewForbiddenError(message).WithDetails(map[string]string{
+			"reason": "user.account_disabled",
+		})
+	default:
+		if message == "" {
+			message = "Login failed"
+		}
+		return errors.NewUnauthorizedError(message).WithDetails(map[string]string{
+			"reason": "auth.login_failed",
+		})
+	}
+}
+
+func registrationFailureAppError(err error) *errors.AppError {
+	message := strings.TrimSpace(err.Error())
+	switch message {
+	case "user with this email already exists":
+		return errors.NewConflictError(message).WithDetails(map[string]string{
+			"reason": "user.email_exists",
+		})
+	case "user with this username already exists":
+		return errors.NewConflictError(message).WithDetails(map[string]string{
+			"reason": "user.username_exists",
+		})
+	case "failed to process password", "failed to create workspace", "failed to create user":
+		return errors.NewInternalServerError(message).WithDetails(map[string]string{
+			"reason": "auth.register_failed",
+		})
+	default:
+		return errors.NewBadRequestError(message).WithDetails(map[string]string{
+			"reason": "auth.register_failed",
+		})
+	}
 }
 
 // GetOIDCAuthorizationURL godoc

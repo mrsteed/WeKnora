@@ -233,6 +233,7 @@ import {
 } from '@/config/integrations'
 import {
   SETTINGS_SECTION_MIN_ROLE,
+  SUPER_ADMIN_ONLY_SETTINGS_SECTIONS,
   SYSTEM_ADMIN_SETTINGS_SECTIONS,
 } from '@/config/settingsAccess'
 import { SETTINGS_SECTION_CAPABILITY, skillSettingsSupported } from '@/config/deploymentCapabilities'
@@ -286,8 +287,9 @@ type NavGroup = {
 // 以「页面里至少有 1 个有意义的写操作所要求的最低角色」为基准，把基础设
 // 施配置（models 写、ollama 下载、websearch 写、parser/storage/vector/mcp
 // CRUD、sandbox 连接、skills 安装、chat-history 配置）统一收到 admin；只读类（general / system info /
-// tenant-info / members 名册）保留 viewer 可见；最高敏感的 reset api
-// key 是 owner-only。改这张表前请在 router.go 里复核对应路由组。
+// tenant-info）保留 viewer 可见；成员管理仅 owner（超级管理员经
+// canAccessAllTenants bypass）可见；最高敏感的 reset api key 是
+// owner-only。改这张表前请在 router.go 里复核对应路由组。
 //
 // 特别说明：
 // - chathistory 页面唯一的「启用消息索引」开关 PUT /tenants/kv/chat-history-config
@@ -334,6 +336,10 @@ const canSeeSection = (key: string): boolean => {
   if (SYSTEM_ADMIN_SECTIONS.has(key)) {
     return authStore.isSystemAdmin
   }
+  // Ollama 配置 / 系统信息：仅超级管理员（isSuperAdmin）与 superuser 可见。
+  if (SUPER_ADMIN_ONLY_SETTINGS_SECTIONS.has(key)) {
+    return authStore.isSuperAdmin || authStore.canAccessAllTenants
+  }
   const min = SETTINGS_SECTION_MIN_ROLE[key] ?? 'viewer'
   // canAccessAllTenants（superuser）和路由层一样必须 bypass，否则 cross-tenant
   // 管理员看不到自己有权操作的入口（参考 TenantMembers.vue 的 canManage）。
@@ -354,7 +360,6 @@ const navItems = computed(() => {
   const all: NavItem[] = [
     { key: 'general', icon: 'setting', label: t('general.title') },
     { key: 'ollama', icon: 'server', label: 'Ollama' },
-    { key: 'weknoracloud', icon: '', label: 'WeKnora Cloud' },
     { key: 'models', icon: 'control-platform', label: t('settings.modelManagement') },
     { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig') },
     { key: 'chathistory', icon: 'chat', label: t('chatHistorySettings.title') },
@@ -406,7 +411,7 @@ const navGroups = computed<NavGroup[]>(() => {
     {
       key: 'models_runtime',
       label: t('settings.navGroups.modelsRuntime'),
-      items: pickItems(['models', 'ollama', 'weknoracloud']),
+      items: pickItems(['models', 'ollama']),
     },
     {
       key: 'integrations',

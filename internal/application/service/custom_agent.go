@@ -36,14 +36,17 @@ const (
 
 // customAgentService implements the CustomAgentService interface
 type customAgentService struct {
-	repo           interfaces.CustomAgentRepository
-	chunkRepo      interfaces.ChunkRepository
-	kbService      interfaces.KnowledgeBaseService
-	kbShareService interfaces.KBShareService
-	wikiPageRepo   interfaces.WikiPageRepository
-	tagRepo        interfaces.KnowledgeTagRepository
-	knowledgeRepo  interfaces.KnowledgeRepository
-	agentShareRepo interfaces.AgentShareRepository
+	repo             interfaces.CustomAgentRepository
+	chunkRepo        interfaces.ChunkRepository
+	kbService        interfaces.KnowledgeBaseService
+	kbShareService   interfaces.KBShareService
+	wikiPageRepo     interfaces.WikiPageRepository
+	tagRepo          interfaces.KnowledgeTagRepository
+	knowledgeRepo    interfaces.KnowledgeRepository
+	agentShareRepo   interfaces.AgentShareRepository
+	kbVisibility     interfaces.KBVisibilityService
+	knowledgeService interfaces.KnowledgeService
+	agentKBScope     *AgentKBScopeResolver
 }
 
 // NewCustomAgentService creates a new custom agent service
@@ -56,17 +59,33 @@ func NewCustomAgentService(
 	tagRepo interfaces.KnowledgeTagRepository,
 	knowledgeRepo interfaces.KnowledgeRepository,
 	agentShareRepo interfaces.AgentShareRepository,
+	kbVisibility interfaces.KBVisibilityService,
+	knowledgeService interfaces.KnowledgeService,
+	agentKBScope *AgentKBScopeResolver,
 ) interfaces.CustomAgentService {
 	return &customAgentService{
-		repo:           repo,
-		chunkRepo:      chunkRepo,
-		kbService:      kbService,
-		kbShareService: kbShareService,
-		wikiPageRepo:   wikiPageRepo,
-		tagRepo:        tagRepo,
-		knowledgeRepo:  knowledgeRepo,
-		agentShareRepo: agentShareRepo,
+		repo:             repo,
+		chunkRepo:        chunkRepo,
+		kbService:        kbService,
+		kbShareService:   kbShareService,
+		wikiPageRepo:     wikiPageRepo,
+		tagRepo:          tagRepo,
+		knowledgeRepo:    knowledgeRepo,
+		agentShareRepo:   agentShareRepo,
+		kbVisibility:     kbVisibility,
+		knowledgeService: knowledgeService,
+		agentKBScope:     agentKBScope,
 	}
+}
+
+func (s *customAgentService) agentScopeResolver() *AgentKBScopeResolver {
+	if s == nil {
+		return nil
+	}
+	if s.agentKBScope != nil {
+		return s.agentKBScope
+	}
+	return NewAgentKBScopeResolver(s.kbService, s.kbVisibility, s.kbShareService, s.knowledgeService)
 }
 
 // CreateAgent creates a new custom agent
@@ -75,6 +94,13 @@ func (s *customAgentService) CreateAgent(ctx context.Context, agent *types.Custo
 	if strings.TrimSpace(agent.Name) == "" {
 		return nil, ErrAgentNameRequired
 	}
+
+	visibility, organizationID, err := normalizeCustomAgentVisibility(agent.Visibility, agent.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	agent.Visibility = visibility
+	agent.OrganizationID = organizationID
 
 	// Generate UUID and set creation timestamps
 	if agent.ID == "" {
@@ -313,6 +339,16 @@ func (s *customAgentService) UpdateAgent(
 	existingAgent.Config = agent.Config
 	existingAgent.UpdatedAt = time.Now()
 
+	// Update visibility if provided
+	if agent.Visibility != "" {
+		visibility, organizationID, err := normalizeCustomAgentVisibility(agent.Visibility, agent.OrganizationID)
+		if err != nil {
+			return nil, err
+		}
+		existingAgent.Visibility = visibility
+		existingAgent.OrganizationID = organizationID
+	}
+
 	// Ensure defaults
 	existingAgent.EnsureDefaults()
 	if err := existingAgent.Config.QuestionSuggestions.Validate(); err != nil {
@@ -330,6 +366,28 @@ func (s *customAgentService) UpdateAgent(
 
 	logger.Infof(ctx, "Custom agent updated successfully, ID: %s", agent.ID)
 	return existingAgent, nil
+}
+
+func normalizeCustomAgentVisibility(visibility string, organizationID string) (string, string, error) {
+	visibility = strings.TrimSpace(visibility)
+	if visibility == "" {
+		visibility = types.AgentVisibilityPrivate
+	}
+
+	switch visibility {
+	case types.AgentVisibilityGlobal:
+		return visibility, "", nil
+	case types.AgentVisibilityOrg:
+		organizationID = strings.TrimSpace(organizationID)
+		if organizationID == "" {
+			return "", "", errors.New("organization_id is required when visibility is org")
+		}
+		return visibility, organizationID, nil
+	case types.AgentVisibilityPrivate:
+		return visibility, "", nil
+	default:
+		return "", "", errors.New("invalid agent visibility")
+	}
 }
 
 // checkSharedAgentKBScope keeps an edit from widening a shared agent's KB
@@ -363,9 +421,13 @@ func (s *customAgentService) checkSharedAgentKBScope(
 
 // updateBuiltinAgent updates a built-in agent's configuration (but not basic info)
 func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *types.CustomAgent, tenantID uint64) (*types.CustomAgent, error) {
-	// Persist locale-independent display fields (the YAML "default" locale) so
-	// read paths that skip builtin localization see a stable language.
-	defaultAgent := types.GetBuiltinAgent(agent.ID, tenantID)
+	// Persist display fields in the request locale (falling back to the YAML
+	// "default" locale) so that read paths serving the stored row verbatim do
+	// not flip an edited built-in agent to English for Chinese users.
+	defaultAgent := types.GetBuiltinAgentWithContext(ctx, agent.ID, tenantID)
+	if defaultAgent == nil {
+		defaultAgent = types.GetBuiltinAgent(agent.ID, tenantID)
+	}
 	if defaultAgent == nil {
 		return nil, ErrAgentNotFound
 	}
@@ -378,7 +440,15 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 
 	if existingAgent != nil {
 		// Update existing record - only update config, keep basic info unchanged
+		// (display fields are refreshed from the locale-aware defaults so a
+		// row previously seeded in the default/English locale follows the UI
+		// language on the next save).
+		existingAgent.Name = defaultAgent.Name
+		existingAgent.Description = defaultAgent.Description
+		existingAgent.Avatar = defaultAgent.Avatar
 		existingAgent.Config = agent.Config
+		existingAgent.Visibility = types.AgentVisibilityGlobal
+		existingAgent.OrganizationID = ""
 		existingAgent.UpdatedAt = time.Now()
 		existingAgent.EnsureDefaults()
 		if err := existingAgent.Config.QuestionSuggestions.Validate(); err != nil {
@@ -407,6 +477,7 @@ func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *type
 		Avatar:      defaultAgent.Avatar,
 		IsBuiltin:   true,
 		TenantID:    tenantID,
+		Visibility:  types.AgentVisibilityGlobal,
 		Config:      agent.Config,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
@@ -497,15 +568,17 @@ func (s *customAgentService) CopyAgent(ctx context.Context, id string) (*types.C
 
 	// Create a new agent with copied data
 	newAgent := &types.CustomAgent{
-		ID:          uuid.New().String(),
-		Name:        sourceAgent.Name + " (副本)",
-		Description: sourceAgent.Description,
-		Avatar:      sourceAgent.Avatar,
-		IsBuiltin:   false, // Copied agents are never built-in
-		TenantID:    tenantID,
-		Config:      sourceAgent.Config,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:             uuid.New().String(),
+		Name:           sourceAgent.Name + " (副本)",
+		Description:    sourceAgent.Description,
+		Avatar:         sourceAgent.Avatar,
+		IsBuiltin:      false, // Copied agents are never built-in
+		TenantID:       tenantID,
+		Visibility:     types.AgentVisibilityPrivate,
+		OrganizationID: "",
+		Config:         sourceAgent.Config,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 	// The clone is owned by whoever ran the copy, not the original
 	// creator — same reasoning as CopyKnowledgeBase. Skip synthetic
@@ -575,11 +648,12 @@ func (s *customAgentService) getSuggestedQuestions(
 		limit = suggestionMaxLimit
 	}
 
-	if err := types.AuthorizeTenantAPIKeyKnowledgeTargets(ctx, kbIDs, knowledgeIDs); err != nil {
+	requestedKBIDs := append([]string(nil), kbIDs...)
+	rawScopeTagIDs := flattenTagScopeIDs(tagScopes)
+	if err := types.AuthorizeTenantAPIKeyKnowledgeTargets(ctx, requestedKBIDs, knowledgeIDs); err != nil {
 		return nil, err
 	}
-	scopeTagIDs := flattenTagScopeIDs(tagScopes)
-	if err := types.AuthorizeTenantAPIKeyOptionalTagIDs(ctx, scopeTagIDs); err != nil {
+	if err := types.AuthorizeTenantAPIKeyOptionalTagIDs(ctx, rawScopeTagIDs); err != nil {
 		return nil, err
 	}
 	knowledgeIDs = s.readableSuggestionKnowledgeIDs(ctx, knowledgeIDs)
@@ -595,6 +669,13 @@ func (s *customAgentService) getSuggestedQuestions(
 	if err != nil {
 		return nil, err
 	}
+	if resolver := s.agentScopeResolver(); resolver != nil {
+		kbIDs, knowledgeIDs, tagScopes, err = resolver.RestrictKnowledgeTargets(ctx, agent, tenantID, kbIDs, knowledgeIDs, tagScopes)
+		if err != nil {
+			return nil, err
+		}
+	}
+	scopeTagIDs := flattenTagScopeIDs(tagScopes)
 
 	var curated []types.SuggestedQuestion
 	starterMode := types.SuggestionModeKnowledge
@@ -697,7 +778,7 @@ func (s *customAgentService) getSuggestedQuestions(
 	// explicitly selected KBs remain additive.
 	effectiveKBIDs = excludeSuggestionStrings(effectiveKBIDs, resolvedTags.KnowledgeBaseIDs)
 
-	filteredKBIDs, err := types.FilterKnowledgeBasesForTenantAPIKeyScope(ctx, kbIDs, effectiveKBIDs)
+	filteredKBIDs, err := types.FilterKnowledgeBasesForTenantAPIKeyScope(ctx, requestedKBIDs, effectiveKBIDs)
 	if err != nil {
 		return nil, err
 	}

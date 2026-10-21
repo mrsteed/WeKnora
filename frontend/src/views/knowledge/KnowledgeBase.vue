@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, watch, reactive, computed, nextTick } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import DocContent from "@/components/doc-content.vue";
+import { useConfirmDelete } from '@/components/settings/useConfirmDelete';
 import useKnowledgeBase from '@/hooks/useKnowledgeBase';
 import { useRoute, useRouter } from 'vue-router';
 import EmptyKnowledge from '@/components/empty-knowledge.vue';
@@ -37,6 +38,8 @@ import {
   listKnowledgeFolders,
   moveKnowledgeToFolder,
   renameKnowledgeFolder,
+  createKnowledgeFolder,
+  deleteKnowledgeFolder,
   downKnowledgeDetails,
   type KnowledgeFolderTree,
 } from "@/api/knowledge-base/index";
@@ -964,6 +967,115 @@ const handleFolderRename = async ({ from, to }: { from: string; to: string }) =>
   }
 };
 
+// Drag-and-drop move from the folder tree. The tree hands over { from, to } where
+// `to` is the target folder path with the dragged folder's own name appended
+// ("drop onto X" makes it a child of X, including the root). It is the same
+// whole-subtree re-path as a rename, so it reuses the rename endpoint and the
+// identical selected-folder remap below.
+const handleFolderMove = async ({ from, to }: { from: string; to: string }) => {
+  if (!kbId.value || !to || from === to) return;
+  if (!canMoveFolderTo(from, to)) {
+    MessagePlugin.warning(t('knowledgeBase.folderTree.renameInvalid'));
+    return;
+  }
+  try {
+    const res: any = await renameKnowledgeFolder(kbId.value, from, to);
+    const movedCount = res?.data?.moved_count ?? 0;
+    if (movedCount === 0) {
+      MessagePlugin.warning(t('knowledgeBase.folderTree.moveFailed'));
+      await loadFolderTree(kbId.value);
+      return;
+    }
+    MessagePlugin.success(t('knowledgeBase.folderTree.moveSuccess'));
+    // Follow the folder to its new path so the user stays where they were.
+    if (selectedFolderPath.value === from) {
+      selectedFolderPath.value = to;
+    } else if (selectedFolderPath.value.startsWith(`${from}/`)) {
+      selectedFolderPath.value = to + selectedFolderPath.value.slice(from.length);
+    }
+    resetPage();
+    await loadKnowledgeFiles(kbId.value);
+    await loadFolderTree(kbId.value);
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('knowledgeBase.folderTree.moveFailed'));
+  }
+};
+
+// Empty-folder creation from the tree (root "+" button or a folder's context
+// menu). The backend materializes a placeholder row only when no real document
+// exists at the path, so the call is safe to issue for existing folders too.
+const handleFolderCreate = async (path: string) => {
+  if (!kbId.value || !path) return;
+  try {
+    await createKnowledgeFolder(kbId.value, path);
+    MessagePlugin.success(t('knowledgeBase.folderTree.createSuccess'));
+    // Open the new folder: expand everything on its path and select it.
+    selectedFolderPath.value = path;
+    resetPage();
+    await loadFolderTree(kbId.value);
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('knowledgeBase.folderTree.createFailed'));
+    await loadFolderTree(kbId.value);
+  }
+};
+
+/** Name of the folder at `path`, for confirm-dialog copy. */
+const folderNameAt = (tree: any, path: string) => {
+  const idx = path.lastIndexOf('/');
+  return idx >= 0 ? path.slice(idx + 1) : path;
+};
+
+const confirmDelete = useConfirmDelete();
+
+const handleFolderDelete = (path: string) => {
+  if (!kbId.value || !path || path === ROOT_FOLDER_PATH) return;
+  // `rows` in the tree is derived from the same payload; here we read the
+  // counts straight from the cached tree so the confirm copy matches what is
+  // displayed (the backend re-checks and is authoritative).
+  let docCount = 0;
+  const walk = (nodes: any[]) => {
+    for (const n of nodes || []) {
+      if (n.path === path) {
+        // Mirror the row badge: total_count is the number the tree displays,
+        // and it already includes every descendant folder.
+        docCount = n.total_count || 0;
+        return true;
+      }
+      if (n.children?.length && walk(n.children)) return true;
+    }
+    return false;
+  };
+  walk(folderTree.value?.folders || []);
+  const name = folderNameAt(folderTree.value, path);
+  if (docCount > 0) {
+    MessagePlugin.warning(
+      t('knowledgeBase.folderTree.deleteBlocked', { name, count: docCount }),
+    );
+    return;
+  }
+  confirmDelete({
+    title: t('knowledgeBase.folderTree.delete'),
+    body: t('knowledgeBase.folderTree.deleteConfirm', { name }),
+    onConfirm: async () => {
+      try {
+        await deleteKnowledgeFolder(kbId.value, path);
+        MessagePlugin.success(t('knowledgeBase.folderTree.deleteSuccess'));
+        // A deleted folder can no longer be the browse location: fall back to
+        // the root, mirroring the existing stale-path recovery at tree load.
+        if (selectedFolderPath.value === path || selectedFolderPath.value.startsWith(path + '/')) {
+          selectedFolderPath.value = ROOT_FOLDER_PATH;
+        }
+        resetPage();
+        await loadFolderTree(kbId.value);
+        await loadKnowledgeFiles(kbId.value);
+      } catch (error: any) {
+        MessagePlugin.error(error?.message || t('knowledgeBase.folderTree.deleteFailed'));
+        await loadFolderTree(kbId.value);
+      }
+    }
+  });
+};
+
 const handleFolderTreeCollapsedChange = (value: boolean) => {
   folderTreeCollapsed.value = value;
   writeStoredFlag(FOLDER_TREE_COLLAPSED_KEY, value);
@@ -1152,7 +1264,12 @@ watch(() => kbId.value, (newKbId, oldKbId) => {
     folderTree.value = null;
     selectedFolderPath.value = ROOT_FOLDER_PATH;
   }
-  loadKnowledgeBaseInfo(newKbId);
+  // Cold start (e.g. opening a ?knowledge_id= link in a new tab): the initial
+  // root-level list is loaded here and the cardList watcher below will only
+  // react to non-empty lists, so kick the locate funnel once this load settles.
+  loadKnowledgeBaseInfo(newKbId).then(() => {
+    if (pendingKnowledgeId.value) void tryAutoOpenDocument();
+  });
 }, { immediate: true });
 
 watch(selectedTagIds, (newVal, oldVal) => {
@@ -1268,37 +1385,124 @@ const pendingKnowledgeId = ref<string | null>(
   (route.query.knowledge_id as string) || null
 );
 
-let autoOpenRequest = 0;
+// Current locate target (drives the pulse highlight + cleanup on unmount).
+const locatingKnowledgeId = ref<string | null>(null);
+let locateTimer: number | null = null;
+
+const scrollToAndHighlight = (id: string) => {
+  locatingKnowledgeId.value = id;
+  let attempts = 0;
+  const tick = () => {
+    const el: HTMLElement | null =
+      document.querySelector(`.knowledge-card[data-select-id="${id}"]`) ||
+      document.querySelector(`.doc-list-row[data-select-id="${id}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('knowledge-locate-highlight');
+      window.setTimeout(() => {
+        el.classList.remove('knowledge-locate-highlight');
+        if (locatingKnowledgeId.value === id) locatingKnowledgeId.value = null;
+      }, 3000);
+    } else if (++attempts < 30) {
+      // Card is still rendering; keep polling.
+      requestAnimationFrame(tick);
+    }
+  };
+  requestAnimationFrame(tick);
+};
+const waitForCard = (id: string, tries: number, delay: number): Promise<boolean> =>
+  new Promise((resolve) => {
+    if (id !== locatingKnowledgeId.value) return resolve(false); // superseded by a newer target
+    let n = 0;
+    const tick = () => {
+      if (id !== locatingKnowledgeId.value) return;
+      if (cardList.value?.find((c: KnowledgeCard) => c.id === id)) return resolve(true);
+      if (++n >= tries) return resolve(false);
+      locateTimer = window.setTimeout(tick, delay);
+    };
+    tick();
+  });
+
+const clearLocateState = (id: string) => {
+  if (locateTimer) { clearTimeout(locateTimer); locateTimer = null; }
+  if (locatingKnowledgeId.value === id) locatingKnowledgeId.value = null;
+};
 
 const tryAutoOpenDocument = async () => {
-  if (!pendingKnowledgeId.value) return;
   const targetId = pendingKnowledgeId.value;
+  if (!targetId || isFAQ.value) return;
+  if (locatingKnowledgeId.value && locatingKnowledgeId.value !== targetId) return; // locate in flight
   pendingKnowledgeId.value = null;
-  const request = ++autoOpenRequest;
-  const card = cardList.value.find((c: KnowledgeCard) => c.id === targetId);
+  locatingKnowledgeId.value = targetId;
 
-  // The current card list only contains the folder being browsed. A document
-  // opened from chat references may live in any nested folder, so resolve its
-  // folder from the detail endpoint before opening the drawer. Otherwise the
-  // drawer opens correctly while the page misleadingly remains at KB root.
-  let target = card || ({ id: targetId } as KnowledgeCard);
+  // ① Fetch the single doc first: a ?knowledge_id= link may point at a doc that
+  // lives in a sub-folder the current root-level list does not contain.
+  let meta: any = null;
   try {
-    const response: any = await getKnowledgeDetails(targetId);
-    if (request !== autoOpenRequest) return;
-    const detail = response?.data || response;
-    if (detail && typeof detail === 'object') {
-      target = { ...target, ...detail, id: targetId } as KnowledgeCard;
-      selectedFolderPath.value = detail.folder_path || ROOT_FOLDER_PATH;
-    }
-  } catch (error) {
-    // Keep the previous ID-only fallback: getCardDetails will surface the
-    // normal detail loading error, while links to root-level files still work.
-    console.error('Failed to resolve referenced document folder', error);
+    const r: any = await getKnowledgeDetails(targetId);
+    if (r?.success && r.data) meta = r.data;
+  } catch { /* deleted / no permission → fall through to fallback */ }
+  if (locatingKnowledgeId.value !== targetId) return; // superseded by a newer target
+  if (!kbId.value) { clearLocateState(targetId); return; }
+
+  const locateInLoaded = () => !!cardList.value?.find((c: KnowledgeCard) => c.id === targetId);
+  const rememberRestore = () => ({
+    folder: selectedFolderPath.value,
+    keyword: docSearchKeyword.value,
+    page,
+  });
+  // Reset the paged-in state (handleScroll bumps `page` for lazy loading) and
+  // restore the browsing state. The keyword/folder watchers may schedule one
+  // harmless extra reload, which settles to the same restored view.
+  const restoreState = (saved: ReturnType<typeof rememberRestore>) => {
+    resetPage();
+    knowledgeScroll.value?.scrollTo({ top: 0 });
+    docSearchKeyword.value = saved.keyword;
+    selectedFolderPath.value = saved.folder;
+    page = saved.page;
+  };
+
+  // ② Already in the loaded list → scroll + highlight + open drawer.
+  if (locateInLoaded()) {
+    scrollToAndHighlight(targetId);
+    nextTick(() => openCardDetails(cardList.value.find((c: KnowledgeCard) => c.id === targetId)!));
+    return;
   }
 
-  if (request !== autoOpenRequest) return;
-  await nextTick();
-  openCardDetails(target);
+  const saved = rememberRestore();
+
+  // ③ Navigate into the target's own folder so its card enters the list.
+  if (meta?.folder_path) {
+    selectedFolderPath.value = meta.folder_path;
+    await loadKnowledgeFiles(kbId.value);
+    if (locateInLoaded()) {
+      scrollToAndHighlight(targetId);
+      nextTick(() => openCardDetails(cardList.value.find((c: KnowledgeCard) => c.id === targetId)!));
+      return;
+    }
+  }
+
+  // ④ Fallback: full-KB search by exact file name (folder_recursive kicks in via isFiltering).
+  if (meta?.file_name || meta?.title) {
+    docSearchKeyword.value = (meta.file_name || meta.title).trim();
+    await loadKnowledgeFiles(kbId.value);
+  }
+
+  // ⑤ Retry window covers lazy loading, slow folder trees and re-renders.
+  const found = await waitForCard(targetId, 8, 300);
+  if (locatingKnowledgeId.value !== targetId) return; // superseded
+  if (found) {
+    scrollToAndHighlight(targetId);
+    nextTick(() => openCardDetails(cardList.value.find((c: KnowledgeCard) => c.id === targetId)!));
+  } else {
+    // ⑥ Document not reachable for this user (deleted / cross-tenant): restore
+    // browsing state and open an empty-shell drawer (its own fetch will surface
+    // the 404/403 path) instead of leaving the user with a random folder.
+    restoreState(saved);
+    clearLocateState(targetId);
+    MessagePlugin.warning(t('knowledgeBase.docNotFound'));
+    nextTick(() => openCardDetails({ id: targetId } as KnowledgeCard));
+  }
 };
 
 // React to later ?knowledge_id= changes on the same KB route (no remount).
@@ -1338,6 +1542,7 @@ onUnmounted(() => {
   window.removeEventListener('weknora:knowledge-file-drop', handleKnowledgeFileDrop as EventListener);
   window.removeEventListener('weknora:open-knowledge', handleOpenKnowledgeEvent as EventListener);
   stopMovePoll();
+  clearLocateState(locatingKnowledgeId.value || '');
   if (timeout !== null) {
     clearTimeout(timeout);
     timeout = null;
@@ -2347,7 +2552,7 @@ const handleKBEditorSuccess = (kbIdValue: string) => {
           <KbFolderTree v-if="showFolderTree && !folderTreeCollapsed" :tree="folderTree" :selected-path="selectedFolderPath"
             :loading="folderTreeLoading" :can-edit="canEdit" :root-label="kbInfo?.name"
             @select="handleFolderSelect" @update:collapsed="handleFolderTreeCollapsedChange"
-            @rename="handleFolderRename" />
+            @rename="handleFolderRename" @move="handleFolderMove" @create="handleFolderCreate" @delete="handleFolderDelete" />
           <div class="tag-content">
             <div class="doc-card-area">
               <div class="doc-filter-bar">
@@ -2644,6 +2849,17 @@ const handleKBEditorSuccess = (kbIdValue: string) => {
   box-shadow: 0 8px 32px rgb(0 0 0 / 10%);
 }
 
+/* ?knowledge_id= locate pulse — applied to card/row elements rendered by the
+   grid (DocumentCardView) and list (DocumentListView) children. */
+.knowledge-locate-highlight {
+  position: relative;
+  animation: kb-locate-pulse 0.7s ease-in-out 4;
+  border-radius: 8px;
+}
+@keyframes kb-locate-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50%      { box-shadow: 0 0 0 3px color-mix(in srgb, var(--td-brand-color) 55%, transparent); }
+}
 </style>
 <style scoped lang="less">
 .knowledge-layout {

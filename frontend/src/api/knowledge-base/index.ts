@@ -241,6 +241,8 @@ export function createKnowledgeBase(data: {
   name: string;
   description?: string;
   type?: 'document' | 'faq';
+  visibility?: 'global' | 'org' | 'private';
+  organization_id?: string;
   chunking_config?: any;
   image_processing_config?: ImageProcessingConfig;
   embedding_model_id?: string;
@@ -297,6 +299,8 @@ export function getKnowledgeBaseById(id: string, options?: { agent_id?: string; 
 export function updateKnowledgeBase(id: string, data: {
   name: string;
   description?: string;
+  visibility?: 'global' | 'org' | 'private';
+  organization_id?: string;
   config?: {
     chunking_config?: any;
     image_processing_config?: ImageProcessingConfig;
@@ -452,6 +456,8 @@ export function createManualKnowledge(
     status: string
     tag_ids?: string[]
     process_config?: KnowledgeProcessOverrides
+    /** Optional target folder (e.g. "docs/spec"); empty = KB root. */
+    folder_path?: string
   },
 ) {
   return post(`/api/v1/knowledge-bases/${kbId}/knowledge/manual`, data);
@@ -525,6 +531,17 @@ export function moveKnowledgeToFolder(kbId: string, ids: string[], folderPath: s
 /** Rename or move a folder together with everything below it. */
 export function renameKnowledgeFolder(kbId: string, from: string, to: string) {
   return put(`/api/v1/knowledge-bases/${kbId}/knowledge/folders`, { from, to });
+}
+
+/** Create (or ensure) an empty folder at the given full path. */
+export function createKnowledgeFolder(kbId: string, path: string) {
+  return post(`/api/v1/knowledge-bases/${kbId}/knowledge/folders`, { path });
+}
+
+/** Delete an empty folder at the given full path. Non-empty folders are
+ *  refused by the backend with HTTP 409 and `total_docs` in the error. */
+export function deleteKnowledgeFolder(kbId: string, path: string) {
+  return del(`/api/v1/knowledge-bases/${kbId}/knowledge/folders`, { path });
 }
 
 export function getKnowledgeDetails(id: string, options?: { agent_id?: string; agent_source_tenant_id?: string }) {

@@ -16,6 +16,68 @@ export interface TenantInfo {
   updated_at: string
 }
 
+export type WorkspaceBootstrapMode = 'existing' | 'new' | 'invite'
+export type WorkspaceBootstrapStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'completed'
+  | 'partial_success'
+
+export interface WorkspaceBootstrapRequest {
+  idempotency_key: string
+  mode: WorkspaceBootstrapMode
+  tenant_role: string
+  should_setup_org: boolean
+  root_org_id?: string
+  root_org_name?: string
+  root_org_description?: string
+  org_role?: string
+  existing_email?: string
+  invite_message?: string
+  new_username?: string
+  new_email?: string
+  new_phone?: string
+  new_password?: string
+}
+
+export interface WorkspaceBootstrapStepResult {
+  status: 'pending' | 'skipped' | 'completed' | 'reused' | 'failed'
+  message?: string
+}
+
+export interface WorkspaceBootstrapRootOrg {
+  id: string
+  name: string
+  reused: boolean
+}
+
+export interface WorkspaceBootstrapResult {
+  idempotency_key: string
+  status: WorkspaceBootstrapStatus
+  mode: WorkspaceBootstrapMode
+  root_org?: WorkspaceBootstrapRootOrg | null
+  user?: {
+    id: string
+    username: string
+    email: string
+    phone?: string
+    avatar?: string
+    tenant_id: number
+    is_active: boolean
+    can_access_all_tenants?: boolean
+    is_super_admin?: boolean
+    is_system_admin?: boolean
+  } | null
+  invite_url?: string
+  steps: {
+    root_org: WorkspaceBootstrapStepResult
+    user_provision: WorkspaceBootstrapStepResult
+    tenant_membership: WorkspaceBootstrapStepResult
+    org_assignment: WorkspaceBootstrapStepResult
+    invite_link: WorkspaceBootstrapStepResult
+  }
+}
+
 export type APIPrincipalMode = 'tenant' | 'direct_header' | 'signed_token'
 
 export interface APIPrincipalConfig {
@@ -324,6 +386,38 @@ export async function createTenant(
       message: code === 2005
         ? t('tenant.create.disabled')
         : (error.message || t('error.tenant.createFailed')),
+    }
+  }
+}
+
+export async function bootstrapWorkspace(
+  tenantId: number,
+  payload: WorkspaceBootstrapRequest,
+): Promise<{
+  success: boolean
+  data?: WorkspaceBootstrapResult
+  message?: string
+  status?: number
+  details?: any
+  error?: any
+}> {
+  try {
+    const response = await post(`/api/v1/tenants/${tenantId}/bootstrap`, payload)
+    return response as unknown as {
+      success: boolean
+      data?: WorkspaceBootstrapResult
+      message?: string
+      status?: number
+      details?: any
+      error?: any
+    }
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || t('tenant.setupWizard.errors.generic'),
+      status: error?.status,
+      details: error?.details || error?.error?.details,
+      error: error?.error,
     }
   }
 }

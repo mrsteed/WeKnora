@@ -1,6 +1,10 @@
 # Server configuration
+# NOTE: 本地 `make dev-app` 的 Go 进程直接监听此端口，不读 .env 的 APP_PORT
+# （APP_PORT 仅供 docker compose 容器化部署做宿主机端口映射）。
+# 前端 vite dev 代理默认指向 http://localhost:8081，故此处与前端保持 8081 对齐。
+# 注意：LoadConfig 的 ${VAR} 替换不支持 bash 的 ${VAR:-默认} 语法，这里写死字面量。
 server:
-  port: 8080
+  port: 8081
   host: "0.0.0.0"
 
 # Conversation service configuration

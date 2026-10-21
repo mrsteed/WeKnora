@@ -153,17 +153,17 @@ func (h *Handler) SandboxTerminalWS(c *gin.Context) {
 		sessionID = strings.TrimSpace(c.Param("session_id"))
 	}
 	if sessionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "session id is required"})
+		respondHTTPError(c, http.StatusBadRequest, "session id is required")
 		return
 	}
 
 	claims, err := service.ParseSandboxTerminalTicket(c.Query("ticket"))
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid or expired ticket"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized: invalid or expired ticket")
 		return
 	}
 	if claims.SessionID != sessionID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "ticket is not valid for this session"})
+		respondHTTPError(c, http.StatusForbidden, "ticket is not valid for this session")
 		return
 	}
 	// One call covers the whole handshake identity: minting token still live,
@@ -172,11 +172,11 @@ func (h *Handler) SandboxTerminalWS(c *gin.Context) {
 	user, err := h.checkTerminalAuth(c.Request.Context(), *claims, true)
 	if err != nil {
 		if stderrors.Is(err, service.ErrTerminalAuthDenied) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid or expired ticket"})
+			respondHTTPError(c, http.StatusUnauthorized, "Unauthorized: invalid or expired ticket")
 			return
 		}
 		logger.ErrorWithFields(c.Request.Context(), err, map[string]interface{}{"session_id": sessionID})
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to validate ticket"})
+		respondHTTPError(c, http.StatusInternalServerError, "failed to validate ticket")
 		return
 	}
 	if !middleware.AttachAuthenticatedUser(
@@ -189,7 +189,7 @@ func (h *Handler) SandboxTerminalWS(c *gin.Context) {
 
 	release, ok := sessionTerminalLimiter.acquire(sessionID)
 	if !ok {
-		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many terminals for this session"})
+		respondHTTPError(c, http.StatusTooManyRequests, "too many terminals for this session")
 		return
 	}
 	defer release()
@@ -347,46 +347,46 @@ func (h *Handler) IssueSandboxTerminalTicket(c *gin.Context) {
 		sessionID = strings.TrimSpace(c.Param("id"))
 	}
 	if sessionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "session id is required"})
+		respondHTTPError(c, http.StatusBadRequest, "session id is required")
 		return
 	}
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
 		if stderrors.Is(err, errors.ErrSessionNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+			respondHTTPError(c, http.StatusNotFound, "session not found")
 			return
 		}
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"session_id": sessionID})
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load session"})
+		respondHTTPError(c, http.StatusInternalServerError, "failed to load session")
 		return
 	}
 	userID, ok := types.UserIDFromContext(ctx)
 	if !ok || userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok || tenantID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 	accessToken := sandboxTerminalBearerToken(c)
 	if accessToken == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: access token required"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized: access token required")
 		return
 	}
 	record, err := h.userService.GetAccessTokenByValue(ctx, accessToken)
 	if err != nil || record == nil || strings.TrimSpace(record.ID) == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 	if err := service.AssertAccessTokenStillActive(record, userID, time.Now()); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		respondHTTPError(c, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 	ticket, err := service.IssueSandboxTerminalTicket(userID, tenantID, sessionID, record.ID, 0)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"session_id": sessionID})
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue ticket"})
+		respondHTTPError(c, http.StatusInternalServerError, "failed to issue ticket")
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

@@ -84,6 +84,9 @@ func (s *stubAgentRepoForModelDelete) GetAgentByID(context.Context, string, uint
 func (s *stubAgentRepoForModelDelete) ListAgentsByTenantID(context.Context, uint64) ([]*types.CustomAgent, error) {
 	return nil, nil
 }
+func (s *stubAgentRepoForModelDelete) ListAccessibleAgents(context.Context, string, uint64, []string) ([]*types.CustomAgent, error) {
+	return nil, nil
+}
 func (s *stubAgentRepoForModelDelete) UpdateAgent(context.Context, *types.CustomAgent) error {
 	return nil
 }

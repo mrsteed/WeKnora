@@ -47,6 +47,15 @@ func sendAgent(t *testing.T, svc *savingAgentService, method, allowedTools strin
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(middleware.ErrorHandler())
+	// The agent handlers require an authenticated caller in the gin context
+	// plus a tenant role in the request context.
+	r.Use(func(c *gin.Context) {
+		c.Set(types.UserContextKey.String(), &types.User{ID: "tester", TenantID: 1})
+		c.Set(types.UserIDContextKey.String(), "tester")
+		c.Request = c.Request.WithContext(
+			context.WithValue(c.Request.Context(), types.TenantRoleContextKey, types.TenantRoleAdmin))
+		c.Next()
+	})
 	h := &CustomAgentHandler{service: svc}
 	r.POST("/agents", h.CreateAgent)
 	r.PUT("/agents/:id", h.UpdateAgent)

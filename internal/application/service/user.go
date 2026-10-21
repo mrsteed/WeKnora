@@ -47,6 +47,24 @@ var (
 	// user, so a blind idempotent retry would return the wrong account.
 	ErrUserIdentityConflict = errors.New("email and username refer to conflicting existing identities")
 
+	// ErrUserContactRequired is returned when neither email nor phone is supplied.
+	ErrUserContactRequired = errors.New("at least one of email or phone is required")
+
+	// ErrUserCredentialsRequired is returned when mandatory username/password fields are empty.
+	ErrUserCredentialsRequired = errors.New("username and password are required")
+
+	// ErrUsernameAlreadyExists indicates a username collision during org-tree provisioning.
+	ErrUsernameAlreadyExists = errors.New("username already exists")
+
+	// ErrEmailAlreadyExists indicates an email collision during org-tree provisioning.
+	ErrEmailAlreadyExists = errors.New("email already exists")
+
+	// ErrPhoneAlreadyExists indicates a phone collision during org-tree provisioning.
+	ErrPhoneAlreadyExists = errors.New("phone already exists")
+
+	// ErrUserAlreadyExists is the generic fallback when a unique violation cannot be attributed.
+	ErrUserAlreadyExists = errors.New("user already exists")
+
 	// ErrPasswordPolicy is returned when a newly chosen password does not
 	// meet the product's public 8-32 character, letter-and-number contract.
 	// It is exported so HTTP handlers can translate the failure to a 400
@@ -225,23 +243,121 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	return user, nil
 }
 
+// CreateUserByAdmin creates a new user under an existing tenant.
+func (s *userService) CreateUserByAdmin(ctx context.Context, req *types.CreateUserInOrgRequest, tenantID uint64) (*types.User, error) {
+	logger.Info(ctx, "Admin creating a new user")
+
+	req.Username = strings.TrimSpace(req.Username)
+	req.Email = strings.TrimSpace(req.Email)
+	req.Phone = strings.TrimSpace(req.Phone)
+
+	if req.Email == "" && req.Phone == "" {
+		return nil, ErrUserContactRequired
+	}
+	if req.Username == "" || req.Password == "" {
+		return nil, ErrUserCredentialsRequired
+	}
+	if err := ValidatePasswordPolicy(req.Password, s.complexPasswordEnabled(ctx)); err != nil {
+		return nil, err
+	}
+
+	existingUser, _ := s.userRepo.GetUserByUsername(ctx, req.Username)
+	if existingUser != nil {
+		return nil, ErrUsernameAlreadyExists
+	}
+	if req.Email != "" {
+		existingUser, _ = s.userRepo.GetUserByEmail(ctx, req.Email)
+		if existingUser != nil {
+			return nil, ErrEmailAlreadyExists
+		}
+	}
+	if req.Phone != "" {
+		existingUser, _ = s.userRepo.GetUserByPhone(ctx, req.Phone)
+		if existingUser != nil {
+			return nil, ErrPhoneAlreadyExists
+		}
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to hash password: %v", err)
+		return nil, errors.New("failed to process password")
+	}
+
+	user := &types.User{
+		ID:           uuid.New().String(),
+		Username:     req.Username,
+		Email:        req.Email,
+		Phone:        req.Phone,
+		PasswordHash: string(hashedPassword),
+		TenantID:     tenantID,
+		IsActive:     true,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	if err := s.userRepo.CreateUser(ctx, user); err != nil {
+		logger.Errorf(ctx, "Failed to create user: %v", err)
+		if isUniqueViolation(err) {
+			msg := strings.ToLower(err.Error())
+			switch {
+			case strings.Contains(msg, "idx_users_username_active_unique"),
+				strings.Contains(msg, "users.username"),
+				strings.Contains(msg, "users_username_key"):
+				return nil, ErrUsernameAlreadyExists
+			case strings.Contains(msg, "idx_users_email_active_unique"),
+				strings.Contains(msg, "users.email"),
+				strings.Contains(msg, "users_email_key"):
+				return nil, ErrEmailAlreadyExists
+			case strings.Contains(msg, "idx_users_phone_active_unique"),
+				strings.Contains(msg, "idx_users_phone_unique"),
+				strings.Contains(msg, "users.phone"):
+				return nil, ErrPhoneAlreadyExists
+			default:
+				return nil, ErrUserAlreadyExists
+			}
+		}
+		return nil, errors.New("failed to create user")
+	}
+
+	logger.Info(ctx, "User created by admin successfully")
+	return user, nil
+}
+
+// resolveLoginUser looks up a user by the login identifier: primary
+// lookup is by username, falling back to email so both keep working as
+// login credentials.
+func (s *userService) resolveLoginUser(ctx context.Context, identifier string) (*types.User, error) {
+	user, err := s.userRepo.GetUserByUsername(ctx, identifier)
+	if err != nil && !errors.Is(err, apprepo.ErrUserNotFound) {
+		return nil, err
+	}
+	if user == nil {
+		user, err = s.userRepo.GetUserByEmail(ctx, identifier)
+		if err != nil && !errors.Is(err, apprepo.ErrUserNotFound) {
+			return nil, err
+		}
+	}
+	return user, nil
+}
+
 // Login authenticates a user and returns tokens
 func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*types.LoginResponse, error) {
 	logger.Info(ctx, "Start user login")
-	// Get user by email
-	user, err := s.userRepo.GetUserByEmail(ctx, req.Email)
+	// Resolve the user by username (email as fallback).
+	user, err := s.resolveLoginUser(ctx, req.Identifier)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to get user by email: %v", err)
+		logger.Errorf(ctx, "Failed to resolve user by identifier: %v", err)
 		return &types.LoginResponse{
 			Success: false,
-			Message: "Invalid email or password",
+			Message: "Invalid username/email or password",
 		}, nil
 	}
 	if user == nil {
-		logger.Warn(ctx, "User not found for email")
+		logger.Warn(ctx, "User not found for identifier")
 		return &types.LoginResponse{
 			Success: false,
-			Message: "Invalid email or password",
+			Message: "Invalid username/email or password",
 		}, nil
 	}
 
@@ -260,7 +376,7 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 		logger.Warn(ctx, "Password verification failed")
 		return &types.LoginResponse{
 			Success: false,
-			Message: "Invalid email or password",
+			Message: "Invalid username/email or password",
 		}, nil
 	}
 	logger.Info(ctx, "Password verification successful")
@@ -583,6 +699,11 @@ func (s *userService) GetUserByUsername(ctx context.Context, username string) (*
 	return s.userRepo.GetUserByUsername(ctx, username)
 }
 
+// GetUserByPhone gets a user by phone number.
+func (s *userService) GetUserByPhone(ctx context.Context, phone string) (*types.User, error) {
+	return s.userRepo.GetUserByPhone(ctx, phone)
+}
+
 // GetUserByTenantID gets the first user (owner) of a tenant
 func (s *userService) GetUserByTenantID(ctx context.Context, tenantID uint64) (*types.User, error) {
 	return s.userRepo.GetUserByTenantID(ctx, tenantID)
@@ -767,6 +888,26 @@ func (s *userService) ChangePassword(ctx context.Context, userID, oldPassword, n
 	// Invalidate every outstanding session so a stolen token cannot
 	// survive a password rotation.
 	return s.tokenRepo.RevokeTokensByUserID(ctx, userID)
+}
+
+// AdminSetPassword resets another user's password without revoking sessions.
+func (s *userService) AdminSetPassword(ctx context.Context, userID, newPassword string) error {
+	if err := ValidatePasswordPolicy(newPassword, s.complexPasswordEnabled(ctx)); err != nil {
+		return err
+	}
+
+	user, err := s.userRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	user.PasswordHash = string(hashedPassword)
+	user.UpdatedAt = time.Now()
+	return s.userRepo.UpdateUser(ctx, user)
 }
 
 // AdminResetPassword replaces a user's password without checking the previous

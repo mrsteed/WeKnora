@@ -566,6 +566,8 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	description string,
 	config *types.KnowledgeBaseConfig,
 	vlmConfig *types.VLMConfig,
+	visibility string,
+	organizationID string,
 ) (*types.KnowledgeBase, error) {
 	if id == "" {
 		logger.Error(ctx, "Knowledge base ID is empty")
@@ -593,6 +595,9 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	}
 	if config != nil {
 		changedFields = append(changedFields, "config")
+	}
+	if visibility != "" && (kb.Visibility != visibility || kb.OrganizationID != organizationID) {
+		changedFields = append(changedFields, "visibility")
 	}
 
 	// Update the knowledge base properties
@@ -650,6 +655,13 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 		}
 		kb.VLMConfig = next
 	}
+	if visibility != "" {
+		kb.Visibility = visibility
+		kb.OrganizationID = organizationID
+		if err := normalizeKnowledgeBaseVisibility(kb); err != nil {
+			return nil, err
+		}
+	}
 	kb.UpdatedAt = time.Now()
 	kb.EnsureDefaults()
 
@@ -672,6 +684,38 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 
 	logger.Infof(ctx, "Knowledge base updated successfully, ID: %s, name: %s", kb.ID, kb.Name)
 	return kb, nil
+}
+
+// normalizeKnowledgeBaseVisibility validates and normalizes the visibility
+// fields on an in-memory KB so that global/private KBs never carry a stale
+// organization_id. Ported from the mdev branch; kept service-side so every
+// caller reuses the same normalization.
+func normalizeKnowledgeBaseVisibility(kb *types.KnowledgeBase) error {
+	if kb == nil {
+		return nil
+	}
+	visibility := strings.TrimSpace(kb.Visibility)
+	if visibility == "" {
+		visibility = types.KBVisibilityPrivate
+	}
+	switch visibility {
+	case types.KBVisibilityGlobal:
+		kb.Visibility = visibility
+		kb.OrganizationID = ""
+	case types.KBVisibilityOrg:
+		organizationID := strings.TrimSpace(kb.OrganizationID)
+		if organizationID == "" {
+			return errors.New("organization_id is required when visibility is org")
+		}
+		kb.Visibility = visibility
+		kb.OrganizationID = organizationID
+	case types.KBVisibilityPrivate:
+		kb.Visibility = visibility
+		kb.OrganizationID = ""
+	default:
+		return errors.New("invalid knowledge base visibility")
+	}
+	return nil
 }
 
 // TogglePinKnowledgeBase toggles whether the calling user has pinned

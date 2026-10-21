@@ -227,7 +227,7 @@ func runLogin(ctx context.Context, opts *LoginOptions, fopts *cmdutil.FormatOpti
 		}
 	}
 
-	resp, err := svc.Login(ctx, sdk.LoginRequest{Email: opts.Email, Password: opts.Password})
+	resp, err := svc.Login(ctx, sdk.LoginRequest{Identifier: opts.Email, Password: opts.Password})
 	if err != nil {
 		// Transport errors (connection refused, DNS failure) must not be
 		// surfaced as auth.bad_credential — credentials may be fine but the

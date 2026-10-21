@@ -154,6 +154,9 @@ export interface CustomAgent {
   created_by?: string;
   // creator_name 由后端 list 接口批量回填，仅用于列表卡片来源徽章。
   creator_name?: string;
+  visibility?: 'global' | 'org' | 'private';
+  organization_id?: string;
+  organization_name?: string;
   config: CustomAgentConfig;
   created_at?: string;
   updated_at?: string;
@@ -164,6 +167,8 @@ export interface CreateAgentRequest {
   name: string;
   description?: string;
   avatar?: string;
+  visibility?: 'global' | 'org' | 'private';
+  organization_id?: string;
   config?: CustomAgentConfig;
 }
 
@@ -172,6 +177,8 @@ export interface UpdateAgentRequest {
   name: string;
   description?: string;
   avatar?: string;
+  visibility?: 'global' | 'org' | 'private';
+  organization_id?: string;
   config?: CustomAgentConfig;
 }
 

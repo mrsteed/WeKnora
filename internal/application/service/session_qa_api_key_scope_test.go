@@ -11,7 +11,16 @@ func TestResolveKnowledgeBasesFiltersImplicitAgentDefaultsForRestrictedAPIKey(t 
 	ctx := types.WithTenantAPIKeyScope(context.Background(), types.TenantAPIKeyScope{
 		KnowledgeBaseIDs: types.StringArray{"kb-allowed"},
 	})
-	svc := &sessionService{}
+	// The agent scope resolver fetches the configured KBs through the KB
+	// service, so the bare sessionService needs a stub that knows both IDs.
+	svc := &sessionService{
+		knowledgeBaseService: &tagTargetKnowledgeBaseService{
+			kbs: map[string]*types.KnowledgeBase{
+				"kb-allowed": {ID: "kb-allowed", TenantID: 10000},
+				"kb-blocked": {ID: "kb-blocked", TenantID: 10000},
+			},
+		},
+	}
 
 	kbIDs, knowledgeIDs, err := svc.resolveKnowledgeBases(ctx, &types.QARequest{
 		Session: &types.Session{TenantID: 10000},

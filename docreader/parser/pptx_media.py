@@ -111,9 +111,7 @@ def extract_pptx_media_rasterized(pptx_bytes: bytes) -> List[bytes]:
         png = rasterize_media_bytes(os.path.basename(path), raw)
         if png:
             rasterized.append(png)
-            logger.info(
-                "Rasterized pptx media %s (%d -> %d bytes)", path, len(raw), len(png)
-            )
+            logger.info("Rasterized pptx media %s (%d -> %d bytes)", path, len(raw), len(png))
         else:
             logger.warning("Failed to rasterize pptx media %s", path)
     return rasterized
@@ -221,6 +219,4 @@ def attach_pptx_media_to_markdown(
 
 
 def markdown_needs_pptx_media_attach(markdown: str) -> bool:
-    return any(
-        _is_unresolved_image_ref(m.group(2)) for m in _MARKDOWN_IMAGE.finditer(markdown)
-    )
+    return any(_is_unresolved_image_ref(m.group(2)) for m in _MARKDOWN_IMAGE.finditer(markdown))
