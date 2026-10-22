@@ -521,9 +521,9 @@ func (s *wikiPageService) GetIndex(ctx context.Context, kbID string) (*types.Wik
 	page, err := s.repo.GetBySlug(ctx, kbID, "index")
 	if err != nil {
 		if errors.Is(err, repository.ErrWikiPageNotFound) {
-			// Create default index page
-			return s.createDefaultPage(ctx, kbID, "index", "Index", types.WikiPageTypeIndex,
-				"# Wiki Index\n\nThis is the index page. It will be automatically updated as pages are added.\n")
+			// Create default index page (空 Wiki 的占位内容，按产品主语言中文呈现)
+			return s.createDefaultPage(ctx, kbID, "index", "索引", types.WikiPageTypeIndex,
+				"# 索引\n\n这是索引页。随着 Wiki 页面的生成，内容将自动更新。\n")
 		}
 		return nil, err
 	}

@@ -2304,7 +2304,12 @@ func (s *wikiIngestService) rebuildIndexPage(ctx context.Context, chatModel chat
 			"InstructionScope":   "wiki_content",
 		})
 		if genErr != nil {
-			intro = "# Wiki Index\n\nThis wiki contains knowledge extracted from uploaded documents.\n"
+			// LLM 生成失败时的兜底 intro，跟随请求语言（产品主语言中文）
+			if strings.HasPrefix(lang, "zh") {
+				intro = "# 索引\n\n本 Wiki 汇集了从上传文档中提取的知识。\n"
+			} else {
+				intro = "# Wiki Index\n\nThis wiki contains knowledge extracted from uploaded documents.\n"
+			}
 		} else {
 			intro = strings.TrimSpace(generatedIntro)
 		}
