@@ -5,7 +5,8 @@ set -euo pipefail
 # WeKnora PROD 运维脚本核心（参照 BeadForge/deploy_prod/scripts/compose.sh 风格）
 #
 # 依据: my_docs/20260929-02-生产模式编译启动与运维命令方案.md
-#   - 默认 profile 集: minio + langfuse（对齐 make dev-start），可用 --no-minio/--no-langfuse 关闭
+#   - 默认 profile 集: minio + searxng（2026-10-22 调整；langfuse 不再默认启动，
+#     需要时用 profile-up langfuse 追加），可用 --no-minio/--no-searxng 关闭
 #   - 本地自编译: 仅 app（SELF_BUILT_SERVICES），绝不被 docker pull 覆盖
 #   - 其它官方镜像（docreader/minio/langfuse/clickhouse/paradedb/redis/…）在 up 前
 #     由 ensure_official_images 按 profile 感知预拉；up 命令绝不用 --build/--pull，
@@ -59,11 +60,15 @@ CORE_SERVICES=(postgres redis docreader app)
 # 全部可选 profile（与 docker-compose.yml 一致；opensearch 仅存在于 dev 编排，不在生产列表内）
 PROFILES="minio qdrant milvus weaviate neo4j doris dex searxng langfuse odl-hybrid full"
 
-# 默认必启 profile（对齐 make dev-start 的硬编码默认）：
+# 默认必启 profile（2026-10-22 调整，不再对齐 dev-start 的 minio+langfuse）：
 #   - minio   : STORAGE_TYPE=minio 时后端 initFileService 启动查 bucket，缺它会 panic → 强依赖
-#   - langfuse: dev-start 默认开的可观测栈（.env 配了 LANGFUSE_*KEY 后 app 会自动上报）
-# 可用 up --no-minio / --no-langfuse 关闭；用 profile-up 追加其余（qdrant/neo4j/dex...）。
-DEFAULT_PROFILES="minio langfuse"
+#   - searxng : Web 搜索服务（compose 默认 127.0.0.1:8888 环回绑定，见 compose 注释）
+# langfuse 不再默认启动；需要可观测上报时: ${0} profile-up langfuse
+# （.env 配了 LANGFUSE_*KEY 后 app 会自动上报）。
+# sandbox 镜像（build-only、无常驻容器、仅 full profile 下有 config）由 up 前
+# ensure_sandbox_image 默认确保就位，不再依赖手动启用 full。
+# 可用 up --no-minio / --no-searxng 关闭；用 profile-up 追加其余（qdrant/neo4j/dex/langfuse...）。
+DEFAULT_PROFILES="minio searxng"
 
 # 本地自编译服务（绝不从 registry 拉取，避免官方 latest 覆盖本地构建）
 #
@@ -71,15 +76,13 @@ DEFAULT_PROFILES="minio langfuse"
 #   weknora-docreader:latest 镜像已发布且与仓库构建等价（dev-start 亦直接拉取），
 #   故归入官方镜像走 pull；真正必须本地构建的只有 app。
 #   frontend（nginx + dist）由宿主机自管，前端包与 nginx 配置都不进镜像。
+#   （0.8.3 起前端 Dockerfile 已支持 in-image 多阶段构建 dist，但本脚本维持宿主机
+#     自管口径，build/rebuild-all 传 frontend 依旧拒绝。）
+#
+# minio：0.8.3 起 compose 已改用镜像源 pgsty/minio（主 minio 与 langfuse minio
+# 同为 pgsty/minio:RELEASE.2026-08-04T00-00-00Z），属可正常 pull 的公开源，
+# 无需 gowah 转推兜底（该兜底是针对 0.7.2 下架的 minio/minio 源，已随版本移除）。
 SELF_BUILT_SERVICES=("app")
-
-# minio 官方仓库 minio/minio 已从 Docker Hub 下架（2025-09 起匿名拉取 401，
-# 各国内镜像 1panel/daocloud 透传上游也是 403）。兜底转推源见下：
-#   实际镜像: gowah/minio:${MINIO_MIRROR_TAG}  （MinIO 版本 RELEASE.2025-04-22T22-12-26Z，
-#   与 compose 中 minio/minio:RELEASE.2025-09-07T16-13-09Z 的 S3 语义完全兼容）
-# pull 失败时自动改用此源并 retag 为 compose 所需的原始名，见 ensure_official_images()
-MINIO_MIRROR_TAG="RELEASE.2025-04-22T22-12-26Z"
-MINIO_MIRROR_IMAGE="gowah/minio:${MINIO_MIRROR_TAG}"
 
 # $1=服务名，$@（其余，可选）= 已构造好的 --profile 前缀（--profile a --profile b ...）。
 # 关键：profile 服务（minio/langfuse/...）不带 --profile 时不出现在 config 输出，
@@ -135,7 +138,7 @@ ensure_official_images() {
     img="$(service_image "$s" "${prof_args[@]}")"
     [[ -z "$img" ]] && continue
     # 去重：compose 里多个服务可共用同一镜像（minio 主服务与 langfuse 各起一个
-    # minio 都用 minio/minio:RELEASE.2025-09-07...），同一次调用只处理一次
+    # minio 都用 pgsty/minio:RELEASE.2026-08-04...），同一次调用只处理一次
     if [[ "${seen_imgs}" == *" ${img} "* ]]; then continue; fi
     seen_imgs+="${img} "
     # 本地已有该 tag → 跳过（这些官方镜像都是固定版本 tag，本地备好即视为满足）
@@ -143,22 +146,40 @@ ensure_official_images() {
       log "官方镜像 ${img} 本地已存在，跳过预拉取"
       continue
     fi
-    # 本地没有 → 拉取；minio 官方仓库已从 Docker Hub 下架，直接走转推源兜底
+    # 本地没有 → 直接 docker pull 官方/公开源镜像（minio 现为 pgsty/minio，可正常拉取）。
     # 注意：pull 的完整 stderr（401/403/manifest unknown/超时等真实原因）必须展示给
     # 调用者，不允许再 2>/dev/null 吞掉 —— 只压掉 "Pulling..." 进度条噪声行。
-    if [[ "$img" == minio/minio:* ]]; then
-      log "官方源 ${img} 已下架，改用转推源 ${MINIO_MIRROR_IMAGE} 并 retag"
-      if docker pull "${MINIO_MIRROR_IMAGE}" 2>&1 | grep -v 'Pulling\|Pull complete\|^Downloading\|^Waiting\|^Done\|^Status:'; then
-        docker tag "${MINIO_MIRROR_IMAGE}" "$img"
-      else
-        warn "pull ${img} 与兜底源 ${MINIO_MIRROR_IMAGE} 均失败（真实错误见上方输出）；up 时该服务将因缺镜像启动失败"
-      fi
-    else
-      log "预拉取官方镜像 ${img}"
-      docker pull "$img" 2>&1 | grep -v 'Pulling\|Pull complete\|^Downloading\|^Waiting\|^Done\|^Status:' \
-        || warn "pull ${img} 失败（真实错误见上方输出）；up 时该服务可能因缺镜像启动失败"
-    fi
+    log "预拉取官方镜像 ${img}"
+    docker pull "$img" 2>&1 | grep -v 'Pulling\|Pull complete\|^Downloading\|^Waiting\|^Done\|^Status:' \
+      || warn "pull ${img} 失败（真实错误见上方输出）；up 时该服务可能因缺镜像启动失败"
   done
+}
+
+# 默认确保 sandbox 镜像就位（2026-10-22 要求：up 阶段默认备好）。
+# sandbox 不起常驻服务、无独立 profile（config 仅在 full 下可解析），
+# 故 ensure_official_images 的 profile 感知预拉覆盖不到它，需单独处理。
+# 策略对齐 0.8.3 官方 scripts/start_all.sh（ensure_sandbox_image：pull 优先）：
+#   0.8.3 起 wechatopenai/weknora-sandbox 有官方发布镜像（latest/main 等 tag，见
+#   scripts/build_images.sh），故先 docker pull（拉 ${WEKNORA_VERSION:-latest}）；
+#   pull 失败才回退本地 build（compose build 段）。失败只 warn 不阻断启动。
+ensure_sandbox_image() {
+  local img
+  img="$(service_image sandbox --profile full)"
+  if [[ -z "$img" ]]; then
+    warn "无法解析 sandbox 镜像（service_image sandbox --profile full 为空）；跳过"
+    return 0
+  fi
+  if docker image inspect "$img" >/dev/null 2>&1; then
+    log "sandbox 镜像 ${img} 本地已存在，跳过"
+    return 0
+  fi
+  log "预拉取 sandbox 镜像 ${img}（官方镜像；skills 沙箱执行所需，无容器）"
+  if docker pull "$img" 2>&1 | grep -v 'Pulling\|Pull complete\|^Downloading\|^Waiting\|^Done\|^Status:'; then
+    return 0
+  fi
+  warn "pull ${img} 失败（真实错误见上方输出），回退本地构建"
+  "${DC[@]}" build sandbox \
+    || warn "sandbox 镜像构建亦失败；技能首次使用沙箱时会再次尝试（非阻断）"
 }
 
 # 把 profile 名列表转成 `--profile a --profile b ...` 形式的参数数组，结果写入全局 PROF_FLAGS
@@ -196,11 +217,14 @@ port_in_use() { # $1=port
 }
 
 check_dev_conflict() {
-  # dev 套容器（docker-compose.dev.yml）在跑会抢 5432/6379/宿主映射端口等
+  # dev 套容器（docker-compose.dev.yml）在跑会抢 5432/6379/8888/50051 等宿主端口。
+  # 0.8.3：dev start 默认 minio + searxng（与生产默认 profile 同集，searxng 同抢
+  # 127.0.0.1:8888），且 dev 不再起 app/frontend 容器（改本地 make dev-app 跑）；
+  # 容器名全为 WeKnora-*-dev，唯 odl-hybrid 例外无 -dev 后缀，一并探测。
   local dev_up
-  dev_up="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cE 'WeKnora-(postgres|redis|app|frontend|docreader)-dev' || true)"
+  dev_up="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cE 'WeKnora-.*-dev|WeKnora-odl-hybrid' || true)"
   if [[ "${dev_up}" -gt 0 ]]; then
-    warn "检测到 dev 基础设施容器在运行（WeKnora-postgres-dev/redis-dev），生产容器会因 5432/6379 端口冲突起不来；请先: cd <repo> && make dev-stop"
+    warn "检测到 dev 容器在运行（WeKnora-*-dev / WeKnora-odl-hybrid），生产容器会因 5432/6379/8888 等端口冲突起不来；请先: cd <repo> && make dev-stop"
     return 1
   fi
   return 0
@@ -265,7 +289,8 @@ try_healthy() { # $1=服务名 $2=超时秒
 cmd_up() {
   build=false
   explicit_svcs=()
-  # 默认 profile 集（对齐 make dev-start）：minio + langfuse，可逐项 --no-* 关闭
+  # 默认 profile 集（2026-10-22 调整）：minio + searxng，可逐项 --no-* 关闭；
+  # langfuse 不再默认启动（profile-up langfuse 追加）
   local -a up_profiles
   read -r -a up_profiles <<< "$DEFAULT_PROFILES"
   for a in "$@"; do
@@ -273,8 +298,8 @@ cmd_up() {
       --build) build=true ;;
       --no-build) build=false ;;
       --no-minio) up_profiles=("${up_profiles[@]/minio/}") ;;
-      --no-langfuse) up_profiles=("${up_profiles[@]/langfuse/}") ;;
-      --profile) die "up 不支持 --profile；默认已含 minio langfuse，追加其它请用: ${0} profile-up <profile>" ;;
+      --no-searxng) up_profiles=("${up_profiles[@]/searxng/}") ;;
+      --profile) die "up 不支持 --profile；默认已含 minio searxng，追加其它（如 langfuse）请用: ${0} profile-up <profile>" ;;
       -h|--help) usage; exit 1 ;;
       -*) die "up: 未知参数 $a（显式服务名请放参数后）" ;;
       *) explicit_svcs+=("$a") ;;
@@ -304,6 +329,7 @@ cmd_up() {
     # 显式服务模式：profile 名提供 config 解析上下文，确保 profile 服务的 image 能被查到；
     # 自编译服务名跳过；跳过健康等待
     ensure_official_images "${prof_clean[@]}" "${explicit_svcs[@]}"
+    ensure_sandbox_image   # 默认确保 sandbox 镜像就位（pull 优先，幂等，已有秒过）
     log "up 显式服务: ${explicit_svcs[*]}（显式模式不做健康等待）"
     local -a ex_up_flags=(up -d)
     [[ "$build" == true ]] && ex_up_flags+=(--force-recreate)
@@ -312,14 +338,17 @@ cmd_up() {
     return 0
   fi
 
-  # 核心集 + 默认 profile（minio langfuse）：
+  # 核心集 + 默认 profile（minio searxng）：
   #  1) 预拉所有将被启动的官方镜像（自编译 app/frontend 自动跳过）
   #     —— 避免 up 阶段 compose 内部逐层拉取失败难定位；
+  #  2) 默认确保 sandbox 镜像就位（pull 优先、缺失才回退构建，对齐 scripts/start_all.sh）。
   # 绝不用 --build / --pull：自编译 app 用本地镜像，其他用 ensure_official_images
   # 已 pull 的官方镜像；compose 发现本地已有镜像即直接创建容器。
+  ensure_official_images "${prof_clean[@]}"
+  ensure_sandbox_image
   #
   # 分两段 up，实现"失败隔离"：
-  #   第一段 = 基础设施（postgres/redis/docreader + minio/langfuse 外部组件），
+  #   第一段 = 基础设施（postgres/redis/docreader + minio/searxng 外部组件），
   #            它们之间不依赖 app 健康 → 即使 app 镜像/运行有问题也不受影响；
   #   第二段 = app 后端本体，单独失败只告警、不回滚第一段。
   #   frontend(nginx) 已改宿主机自管，故 app/frontend 均从 compose 启动集合里剔除。
@@ -375,7 +404,7 @@ cmd_down() {
       *) warn "down: 忽略未知参数 $a" ;;
     esac
   done
-  # down 必须带上 up 所用 profile，否则 minio/langfuse 容器删不掉、残留占网络
+  # down 必须带上 up 所用 profile，否则 minio/searxng 容器删不掉、残留占网络
   # （与 dev.sh stop 的"全量 profile 超集"同理）。--all 时把 PROFILES 全带上以清干净。
   local dn_profiles
   if [[ "$all" == true ]]; then dn_profiles="$PROFILES"; else dn_profiles="$DEFAULT_PROFILES"; fi
@@ -443,11 +472,15 @@ _build_self_built() { # $@ = 目标服务（缺省 app）
   if [[ $# -eq 0 ]]; then targets=(app); else targets=("$@"); fi
   local app_args=()
   if [[ -f ./scripts/get_version.sh ]]; then
-    eval "$(./scripts/get_version.sh env)" 2>/dev/null || true
-    app_args=(--build-arg VERSION_ARG="${VERSION:-unknown}"
-              --build-arg COMMIT_ID_ARG="${COMMIT_ID:-unknown}"
-              --build-arg BUILD_TIME_ARG="${BUILD_TIME:-unknown}"
-              --build-arg GO_VERSION_ARG="${GO_VERSION:-unknown}")
+    # 用 0.8.3 官方 docker-args 子命令取 key=value（与 make docker-build-app 注入项一致）。
+    # 注意：输出每行形如 `--build-arg VERSION_ARG=0.8.3`（flag 与值之间有空格，
+    # 且 BUILD_TIME/GO_VERSION 值本身含空格），故剥前缀后值必须整体引用成一个元素，
+    # 数组内固定两元素一组: --build-arg  KEY=VALUE
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      kv="${line#--build-arg }"
+      app_args+=(--build-arg "$kv")
+    done < <(./scripts/get_version.sh docker-args 2>/dev/null)
   fi
   for t in "${targets[@]}"; do
     case "$t" in
@@ -503,7 +536,7 @@ cmd_rebuild_all() {
   # rebuild-all 只对"正在运行"的容器 --force-recreate，绝不新拉缺失的依赖容器。
   # minio 是 app 的硬依赖（STORAGE_TYPE=minio 时 initFileService 启动即查 bucket），
   # 若 minio 曾被 down 移除，仅重建 app 会因 DNS 解析不到 minio 而 panic → Restarting 死循环。
-  # 故重建目标前先把默认 profile 依赖服务（minio/langfuse）确保在线：已在运行者幂等秒过，
+  # 故重建目标前先把默认 profile 依赖服务（minio/searxng）确保在线：已在运行者幂等秒过，
   # 缺失者拉起。profile 服务必须带 --profile 才能在 compose config 中解析，故此处透传。
   local -a rb_dep_profiles=() rb_defp dp
   read -r -a rb_defp <<< "$DEFAULT_PROFILES"
@@ -518,6 +551,7 @@ cmd_rebuild_all() {
     done
     log "rebuild-precheck: 确保依赖服务在线: ${rb_dep_svcs[*]:-（无 app 硬依赖）}"
     ensure_official_images "${rb_dep_profiles[@]}"
+    ensure_sandbox_image   # 发版路径同样默认确保 sandbox 镜像就位（pull 优先，幂等）
     if [[ ${#rb_dep_svcs[@]} -gt 0 ]]; then
       "${DC[@]}" "${PROF_FLAGS[@]}" up -d "${rb_dep_svcs[@]}" \
         || warn "依赖服务 up 存在失败容器（见上）；继续重建目标容器"
@@ -586,20 +620,20 @@ usage() {
 Usage: ${0##*/} <command> [args...]    （在 \$REPO_ROOT=\${REPO_ROOT} 下执行）
 
 Commands:
-  up [--build] [--no-minio] [--no-langfuse] [svc...]
+  up [--build] [--no-minio] [--no-searxng] [svc...]
       启动生产核心集 (postgres redis docreader app)
-      + 默认 profile (minio langfuse, 对齐 make dev-start)。
-      自动: 1) 预拉所有官方镜像（app 跳过）2) 启动
+      + 默认 profile (minio searxng; langfuse 不再默认启动, 用 profile-up 追加)。
+      自动: 1) 预拉所有官方镜像（app 跳过）2) 确保 sandbox 镜像就位（缺失即构建）3) 启动
       --build           先本地 build app，再以其 --force-recreate app 容器（发版路径；
                         其余服务仍走官方 pull）。仅换镜像不起容器请用: rebuild.sh
       --no-minio        关闭默认 minio profile（当 STORAGE_TYPE 非 minio 时可用）
-      --no-langfuse     关闭默认 langfuse profile
+      --no-searxng      关闭默认 searxng profile
       传 svc...         只 up 列出服务（跳过健康等待，显式服务模式）
   up-services <svc...>
       --force-recreate 重建指定服务容器（复用现镜像；换镜像后最常用）。
       可选服务名: app redis postgres docreader（不含 frontend）。
   down [--purge-data] [--all]
-      停止并删除生产容器（默认含 minio langfuse profile；--all 含全部 profile）。
+      停止并删除生产容器（默认含 minio searxng profile；--all 含全部 profile）。
       --purge-data 同时删除数据卷（不可恢复！）。
   status
       compose ps + app /health + frontend HTTP 探测（端口读 .env）。
@@ -615,18 +649,19 @@ Commands:
       rebuild.sh 封装此命令。
   profile-up <profile...>
       启用其它可选 profile 并 up：qdrant milvus weaviate neo4j doris dex
-      searxng odl-hybrid full（minio/langfuse 默认已含，可用此命令再叠加；
+      searxng langfuse odl-hybrid full（minio/searxng 默认已含，langfuse 需此命令开启；
       full 会一并启用 sandbox/mcp 等 build 服务，谨慎使用）。
 
 Examples:
-  ${0##*/} up                      # 启动核心 + minio + langfuse，自动预拉官方镜像
+  ${0##*/} up                      # 启动核心 + minio + searxng，自动预拉官方镜像（sandbox 镜像缺失即构建）
   ${0##*/} up --build              # 先构建 app，再启动（frontend 由宿主机自管）
-  ${0##*/} up --no-langfuse        # 关 langfuse，只开 minio
+  ${0##*/} up --no-searxng         # 关 searxng，只开 minio
+  ${0##*/} profile-up langfuse     # 追加可观测栈（2026-10-22 起不再默认启动）
   ${0##*/} rebuild-all             # 发版: 重建 app + 容器（frontend 由宿主机自管）
   ${0##*/} status
   ${0##*/} logs -n                 # 快照一次
   ${0##*/} profile-up qdrant       # 追加 qdrant（原默认 profile 仍生效）
-  ${0##*/} down                    # 停生产（含 minio langfuse）
+  ${0##*/} down                    # 停生产（含 minio searxng）
   ${0##*/} down --all              # 停生产 + 所有 profile 容器
 
 Notes:
