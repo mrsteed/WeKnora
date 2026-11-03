@@ -23,6 +23,33 @@ ARG TARGETOS
 ARG TARGETARCH
 RUN bash scripts/build_browserskill.sh /opt/weknora/browserskill "${TARGETOS}/${TARGETARCH}"
 
+# anydoc Rust 静态库（office 文档解析，cgo 链接进 Go 二进制）。
+# 独立阶段：父层只依赖 third_party/anydoc-go 与脚本，且缓存 rust 工具链，
+# 因此"只改 Go 源码"不会使本阶段失效，anydoc 层保持 CACHED（不再每次装 Rust/重编）。
+FROM --platform=$TARGETPLATFORM node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS anydoc-lib
+WORKDIR /app
+ARG APK_MIRROR_ARG
+RUN if [ -n "$APK_MIRROR_ARG" ]; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends ca-certificates && \
+        rm -rf /var/lib/apt/lists/* && \
+        sed -i "s@deb.debian.org@${APK_MIRROR_ARG}@g" /etc/apt/sources.list.d/debian.sources; \
+    fi && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends build-essential pkg-config cmake curl git python3 ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
+ENV PATH=/usr/local/cargo/bin:$PATH
+# 工具链 + 依赖仓库缓存在 /usr/local/{rustup,cargo}：首跑装一次，后续命中缓存、不重装。
+RUN --mount=type=cache,target=/usr/local/rustup \
+    --mount=type=cache,target=/usr/local/cargo \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+COPY third_party/anydoc-go/ ./third_party/anydoc-go/
+COPY scripts/build-anydoc-lib.sh ./scripts/build-anydoc-lib.sh
+RUN --mount=type=cache,target=/usr/local/rustup \
+    --mount=type=cache,target=/usr/local/cargo \
+    ./scripts/build-anydoc-lib.sh
+
 # Build stage
 FROM golang:1.26-bookworm AS builder
 
@@ -71,23 +98,16 @@ ENV COMMIT_ID=${COMMIT_ID_ARG}
 ENV BUILD_TIME=${BUILD_TIME_ARG}
 ENV GO_VERSION=${GO_VERSION_ARG}
 
-# Link the anydoc parser engine (office docs converted in-process, no
-# Python docreader). Default on so Hub / compose images ship a working
-# engine; pass WITH_ANYDOC=0 to skip the Rust toolchain (~few minutes and
-# ~1 GB of build-stage layers).
+# anydoc 静态库由独立 anydoc-lib 阶段产出（该阶段只依赖 third_party/anydoc-go），
+# 只改 Go 源码时它保持 CACHED；这里直接 COPY 其产物 .a，不再就地装 Rust/重编。
 ARG WITH_ANYDOC=1
-ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
-ENV PATH=/usr/local/cargo/bin:$PATH
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    if [ "$WITH_ANYDOC" = "1" ]; then \
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-            | sh -s -- -y --profile minimal --default-toolchain stable && \
-        ./scripts/build-anydoc-lib.sh; \
-    fi
+COPY --from=anydoc-lib /app/third_party/anydoc-go/lib/linux_amd64_gnu/libanydoc_go.a third_party/anydoc-go/lib/linux_amd64_gnu/libanydoc_go.a
 
 # Build the application with version info
+# /root/.cache/go-build 持久化 Go 编译缓存：纯 Go 改动只重编受影响包并重新链接，
+# 由“整包全量重编”降为增量（秒级~十几秒），不再每次几分钟。
 RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
     if [ "$WITH_ANYDOC" = "1" ]; then \
         make build-prod GO_BUILD_TAGS=anydoc; \
     else \

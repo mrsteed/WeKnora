@@ -39,6 +39,9 @@ temp/
 # 本地构建产物 / 二进制
 WeKnora
 WeKnora-lite
+# anydoc(Rust) 构建产物：进镜像由 anydoc-lib 阶段生成，勿把宿主机产物带入构建上下文
+third_party/anydoc-go/target/
+third_party/anydoc-go/lib/
 /server
 /dist/
 /build/

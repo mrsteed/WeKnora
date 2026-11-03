@@ -519,11 +519,25 @@ cmd_build() {
 }
 
 cmd_rebuild_all() {
-  # rebuild-all [svc...]: build 指定自编译服务（默认 app）后
+  # rebuild-all [--fast] [svc...]: build 指定自编译服务（默认 app）后
   # 对"正在运行的容器"做 --force-recreate；容器未跑则 up -d。
+  # --fast: 只改 Go 源码的快速发版路径——跳过硬依赖预热/官方镜像预拉/sandbox
+  #         确保（假设基础设施已由 start.sh/up 拉起且 healthly），只做增量构建
+  #         app（Go/anydoc 走 Dockerfile 的 BuildKit 缓存，秒级）+ 重建容器，最省时；
+  #         若依赖(minio/searxng)不在，请走默认（非 fast）让其自动预热。
   check_docker; detect_compose; check_env_file
-  local targets=() t
-  if [[ $# -eq 0 ]]; then targets=(app); else targets=("$@"); fi
+  local fast=false raw_arg raw=()
+  for raw_arg in "$@"; do
+    case "$raw_arg" in
+      --fast) fast=true ;;
+      -h|--help) usage; exit 1 ;;
+      -*) die "rebuild-all: 未知参数 $raw_arg（可选: --fast [app]）" ;;
+      *) raw+=("$raw_arg") ;;
+    esac
+  done
+  local -a targets=()
+  if [[ ${#raw[@]} -eq 0 ]]; then targets=(app); else targets=("${raw[@]}"); fi
+  local t
   for t in "${targets[@]}"; do
     case "$t" in
       # docreader 属官方镜像（pull 更新），不走 rebuild；显式拒绝防误编译
@@ -538,6 +552,8 @@ cmd_rebuild_all() {
   # 若 minio 曾被 down 移除，仅重建 app 会因 DNS 解析不到 minio 而 panic → Restarting 死循环。
   # 故重建目标前先把默认 profile 依赖服务（minio/searxng）确保在线：已在运行者幂等秒过，
   # 缺失者拉起。profile 服务必须带 --profile 才能在 compose config 中解析，故此处透传。
+  # fast 模式整体跳过（见函数头）：依赖已在跑则无需这些网络/拉起动作。
+  if [[ "$fast" == false ]]; then
   local -a rb_dep_profiles=() rb_defp dp
   read -r -a rb_defp <<< "$DEFAULT_PROFILES"
   for dp in "${rb_defp[@]}"; do [[ -n "$dp" ]] && rb_dep_profiles+=("$dp"); done
@@ -557,6 +573,10 @@ cmd_rebuild_all() {
         || warn "依赖服务 up 存在失败容器（见上）；继续重建目标容器"
     fi
     PROF_FLAGS=()   # 还原全局：目标容器重建/up 保持原有（无 profile）语义
+  fi
+  fi   # 结束 if [[ "$fast" == false ]]：fast 模式跳过整个依赖预热/镜像预拉
+  if [[ "$fast" == true ]]; then
+    log "rebuild-fast: 跳过依赖预热/官方镜像预拉（假设 minio/searxng 已 healthly）；仅增量构建 app + 重建容器"
   fi
 
   _build_self_built "${targets[@]}"
@@ -644,9 +664,12 @@ Commands:
       构建本地自编译镜像，默认 app（--pull=false，绝不拉官方覆盖本地）。
       docreader 属官方镜像正常走 pull；特殊改动才 build docreader。
       frontend 已改宿主机自管，不在此构建。
-  rebuild-all [svc...]
+  rebuild-all [--fast] [svc...]
       本地 build（默认 app）+ 对运行中容器 --force-recreate（发版核心）。
       rebuild.sh 封装此命令。
+      --fast  只改 Go 源码的快速发版：增量构建 app + 重建容器，跳过依赖预热/
+              官方镜像/sandbox 预拉（假设 minio/searxng 已 healthly）。依赖不在时
+              走默认（非 fast）让其自动预热。
   profile-up <profile...>
       启用其它可选 profile 并 up：qdrant milvus weaviate neo4j doris dex
       searxng langfuse odl-hybrid full（minio/searxng 默认已含，langfuse 需此命令开启；
@@ -658,6 +681,7 @@ Examples:
   ${0##*/} up --no-searxng         # 关 searxng，只开 minio
   ${0##*/} profile-up langfuse     # 追加可观测栈（2026-10-22 起不再默认启动）
   ${0##*/} rebuild-all             # 发版: 重建 app + 容器（frontend 由宿主机自管）
+  ${0##*/} rebuild-all --fast      # 只改 Go: 增量构建 app + 重建容器（最快）
   ${0##*/} status
   ${0##*/} logs -n                 # 快照一次
   ${0##*/} profile-up qdrant       # 追加 qdrant（原默认 profile 仍生效）
