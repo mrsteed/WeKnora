@@ -696,8 +696,11 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	// 同步返回当前用户的 memberships，让前端在页面刷新（仅命中 /auth/me）
 	// 后也能恢复 currentTenantRole，避免角色信息只在 login 那一刻可用。
 	memberships := h.userService.BuildLoginMemberships(ctx, user, tenant)
-	canCreateTenant := user.CanAccessAllTenants ||
-		resolveTenantSelfServiceCreationEnabled(ctx, h.configInfo, h.systemSettingSvc)
+	// 创建空间与"跨空间超管"身份绑定：仅平台超管 (IsSystemAdmin/IsSuperAdmin)
+	// 或跨空间访问用户 (CanAccessAllTenants) 拥有该入口。空间(租户)管理员与普通
+	// 用户不可自行创建，避免与 self_service_creation_enabled 全局开关耦合，
+	// 否则空间管理员会在开关打开时看到/调用创建入口（本需求下不允许）。
+	canCreateTenant := types.HasCrossTenantAccessCapability(user)
 	autoAcceptInvitation := h.systemSettingSvc != nil &&
 		h.systemSettingSvc.GetBool(ctx, "tenant.auto_accept_invitation", "WEKNORA_TENANT_AUTO_ACCEPT_INVITATION", false)
 	c.JSON(http.StatusOK, gin.H{

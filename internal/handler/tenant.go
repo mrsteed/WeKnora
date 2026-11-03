@@ -248,7 +248,9 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 	}
 	apiKeyScope, hasAPIKeyScope := types.TenantAPIKeyScopeFromContext(ctx)
 	platformCaller := hasAPIKeyScope && apiKeyScope.IsPlatform()
-	catalogManager := caller.CanAccessAllTenants || platformCaller
+	// 目录创建权 = 跨空间超管身份 (IsSystemAdmin/IsSuperAdmin/CanAccessAllTenants)
+	// 或平台级 API Key。空间(租户)管理员不在此列，不能据此绕过 self-service 策略。
+	catalogManager := types.HasCrossTenantAccessCapability(caller) || platformCaller
 
 	// Deployment-level policy: ordinary users may be restricted to joining
 	// existing workspaces by invitation. This check is authoritative; the
