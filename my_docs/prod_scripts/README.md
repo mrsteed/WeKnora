@@ -13,6 +13,8 @@
 | `logs.sh`    | 日志（默认跟 app/docreader/postgres） | `docker compose logs -f` |
 | `rebuild.sh` | 发版：本地 build app + 重建运行中容器（数据不动；frontend 已改宿主机自管） | `make docker-build-app && compose up -d --force-recreate app` |
 | `compose.sh` | 核心：up/up-services/down/status/logs/build/rebuild-all/profile-up/config | — |
+| `create_admin.sh` | 直库创建管理员（DISABLE_REGISTRATION 下的兜底通道；bcrypt 哈希与 app 端 cost=10 对齐） | `psql` 直插 tenants/users/tenant_members |
+| `sync_tenant_models.sh` | 租户「模型管理 + 网络搜索」同步：`./sync_tenant_models.sh <目标租户ID> [源租户ID]`（默认源=张毅强 10004）；新 UUID 直库复制 models + web_search_providers，幂等去重、单事务回滚、只增不删 | `psql`（docker exec WeKnora-postgres） |
 | `README.md`  | 本文档 | — |
 
 顶层脚本只透传参数给 `compose.sh`（`exec bash compose.sh <cmd> "$@"`），逻辑全在核心里。
