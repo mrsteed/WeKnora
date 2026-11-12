@@ -134,13 +134,14 @@ async function poll() {
   } catch { /* Background polling does not replace explicit action errors. */ }
   finally {
     polling = false
-    if (alive) {
-      previewStale.value = !!preview.value && Date.now() - lastFrame > 5000
-      // Schedule in the visible PiP document when the conversation is in the background.
-      const timerWindow = pipTarget.value?.ownerDocument.defaultView || window
-      const timer = timerWindow.setTimeout(poll, !status.value.enabled ? 30000 : status.value.selected && !status.value.idle ? 1000 : 5000)
-      cancelTimer = () => timerWindow.clearTimeout(timer)
-    }
+    if (!alive) return
+    previewStale.value = !!preview.value && Date.now() - lastFrame > 5000
+    // 后端关闭 BrowserSkill 功能（enabled 恒为 false）时不再轮询，避免 /local-browser 心跳刷日志。
+    if (!status.value.enabled) return
+    // Schedule in the visible PiP document when the conversation is in the background.
+    const timerWindow = pipTarget.value?.ownerDocument.defaultView || window
+    const timer = timerWindow.setTimeout(poll, status.value.selected && !status.value.idle ? 1000 : 5000)
+    cancelTimer = () => timerWindow.clearTimeout(timer)
   }
 }
 const onVisible = () => { cancelTimer?.(); if (!document.hidden || pipTarget.value) void poll() }

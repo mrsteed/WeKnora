@@ -66,14 +66,17 @@ export const useBrowserConnectionStore = defineStore('browserConnection', {
       pollTimer = undefined
     },
     async poll() {
+      // 后端关闭 BrowserSkill 功能（BROWSERSKILL_BINARY 为空）时 enabled 恒为 false，
+      // 本会话内不会变回在线，不再发心跳，避免 /api/v1/me/browser 轮询刷屏。
+      if (this.loaded && !this.enabled) return
       try {
         if (!document.hidden) await this.refresh()
       } catch {
         // Keep the last known status; the composer stays conservative once loaded.
       }
-      if (this.subscribers > 0) {
-        pollTimer = setTimeout(() => { void this.poll() }, this.online ? 5000 : 3000)
-      }
+      if (this.subscribers <= 0) return
+      if (this.loaded && !this.enabled) return
+      pollTimer = setTimeout(() => { void this.poll() }, this.online ? 5000 : 3000)
     },
   },
 })
